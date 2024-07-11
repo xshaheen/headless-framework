@@ -4,6 +4,7 @@ namespace Framework.BuildingBlocks.Helpers;
 /// Asynchronous locking based on a string key.
 /// <a href="https://stackoverflow.com/questions/31138179/asynchronous-locking-based-on-a-key">See this stackoverflow question</a>
 /// </summary>
+[PublicAPI]
 public static class AsyncDuplicateLock
 {
     private static readonly Dictionary<string, RefCounted<SemaphoreSlim>> _SemaphoreSlims = new(StringComparer.Ordinal);
@@ -44,24 +45,20 @@ public static class AsyncDuplicateLock
         return item.Value;
     }
 
-    private sealed class Releaser : IDisposable
+    private sealed class Releaser(string key) : IDisposable
     {
-        private readonly string _key;
-
-        internal Releaser(string key) => _key = key;
-
         public void Dispose()
         {
             RefCounted<SemaphoreSlim> item;
 
             lock (_SemaphoreSlims)
             {
-                item = _SemaphoreSlims[_key];
+                item = _SemaphoreSlims[key];
                 --item.RefCount;
 
                 if (item.RefCount == 0)
                 {
-                    _SemaphoreSlims.Remove(_key);
+                    _SemaphoreSlims.Remove(key);
                 }
             }
 

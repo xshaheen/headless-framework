@@ -1,0 +1,775 @@
+﻿using Primitives.Generator.Extensions;
+using Primitives.Generator.Models;
+
+namespace Primitives.Generator.Helpers;
+
+/// <summary>A helper class providing methods for generating code related to Swagger, TypeConverter, JsonConverter, and other operations.</summary>
+internal static class MethodGeneratorHelper
+{
+    /// <summary>TryCreate,TryCreate with error message methods for the specified type, and ValidateOrThrow.</summary>
+    /// <param name="data">The generator data containing type information.</param>
+    /// <param name="builder">The source code builder.</param>
+    internal static void GenerateMandatoryMethods(this SourceCodeBuilder builder, GeneratorData data)
+    {
+        builder
+            .AppendSummary("Tries to create an instance of AsciiString from the specified value.")
+            .AppendParamDescription("value", $"The value to create {data.ClassName} from")
+            .AppendParamDescription(
+                "result",
+                $"When this method returns, contains the created {data.ClassName} if the conversion succeeded, or null if the conversion failed."
+            )
+            .AppendReturnsDescription("true if the conversion succeeded; otherwise, false.");
+
+        var primitiveType =
+            data.ParentSymbols.Count != 0 ? data.ParentSymbols[0].GetFriendlyName() : data.PrimitiveTypeFriendlyName;
+
+        builder
+            .Append("public static bool TryCreate(")
+            .Append(primitiveType)
+            .Append(" value, [NotNullWhen(true)] out ")
+            .Append(data.ClassName)
+            .AppendLine("? result)")
+            .OpenBracket()
+            .Append("return TryCreate(value, out result, out _);")
+            .CloseBracket()
+            .NewLine();
+
+        builder
+            .AppendSummary("Tries to create an instance of AsciiString from the specified value.")
+            .AppendParamDescription("value", $"The value to create {data.ClassName} from")
+            .AppendParamDescription(
+                "result",
+                $"When this method returns, contains the created {data.ClassName} if the conversion succeeded, or null if the conversion failed."
+            )
+            .AppendParamDescription(
+                "errorMessage",
+                "When this method returns, contains the error message if the conversion failed; otherwise, null."
+            )
+            .AppendReturnsDescription("true if the conversion succeeded; otherwise, false.");
+
+        builder
+            .Append("public static bool TryCreate(")
+            .Append(primitiveType)
+            .Append(" value,[NotNullWhen(true)]  out ")
+            .Append(data.ClassName)
+            .AppendLine("? result, [NotNullWhen(false)]  out string? errorMessage)")
+            .OpenBracket();
+
+        if (data.StringLengthAttributeValidation is not null)
+        {
+            var (minValue, maxValue) = data.StringLengthAttributeValidation.Value;
+            var hasMinValue = minValue >= 0;
+            var hasMaxValue = maxValue != int.MaxValue;
+
+            if (hasMinValue || hasMaxValue)
+            {
+                builder
+                    .Append("if (value.Length is ")
+                    .AppendIf(hasMinValue, $"< {minValue}")
+                    .AppendIf(hasMinValue && hasMaxValue, " or ")
+                    .AppendIf(hasMaxValue, $"> {maxValue}")
+                    .AppendLine(")")
+                    .OpenBracket()
+                    .AppendLine("result = null;")
+                    .AppendLine($"errorMessage =\" String length is out of range {minValue}..{maxValue}\";")
+                    .AppendLine("return false;")
+                    .CloseBracket();
+            }
+        }
+
+        builder
+            .AppendLine("var validationResult = Validate(value);")
+            .NewLine()
+            .AppendLine("if (!validationResult.IsValid)")
+            .OpenBracket()
+            .AppendLine("result = null;")
+            .AppendLine("errorMessage = validationResult.ErrorMessage;")
+            .AppendLine("return false;")
+            .CloseBracket()
+            .NewLine()
+            .AppendLine("result = new (value, false);")
+            .AppendLine("errorMessage = null;")
+            .AppendLine("return true;")
+            .CloseBracket()
+            .NewLine();
+
+        builder
+            .AppendSummary("Validates the specified value and throws an exception if it is not valid.")
+            .AppendParamDescription("value", "The value to validate")
+            .AppendExceptionDescription("InvalidPrimitiveValueException", "Thrown when the value is not valid.");
+
+        builder
+            .AppendLine($"public void ValidateOrThrow({primitiveType} value)")
+            .OpenBracket()
+            .AppendLine("var result = Validate(value);")
+            .NewLine()
+            .AppendLine("if (!result.IsValid)")
+            .OpenBracket()
+            .AppendLine("throw new InvalidPrimitiveValueException(result.ErrorMessage, this);")
+            .CloseBracket()
+            .CloseBracket();
+    }
+
+    /// <summary>Generates implicit operators for a specified class.</summary>
+    /// <param name="data">The GeneratorData for the class.</param>
+    /// <param name="builder">The SourceCodeBuilder for generating source code.</param>
+    internal static void GenerateImplicitOperators(this SourceCodeBuilder builder, GeneratorData data)
+    {
+        var primitiveName = data.ClassName;
+        var primitiveType = data.TypeSymbol;
+        var underlyingFriendlyName = data.PrimitiveTypeFriendlyName;
+        var underlyingType = data.PrimitiveTypeSymbol;
+
+        // From Underlying to our type
+        if (underlyingType.IsValueType || primitiveType.IsValueType)
+        {
+            builder
+                .AppendSummary(
+                    $"Implicit conversion from <see cref = \"{underlyingFriendlyName}\"/> to <see cref = \"{primitiveName}\"/>"
+                )
+                .AppendMethodImplAggressiveInliningAttribute()
+                .Append($"public static implicit operator {primitiveName}({underlyingFriendlyName} value)")
+                .AppendLine(" => new(value);")
+                .NewLine();
+        }
+
+        builder
+            .AppendSummary(
+                $"Implicit conversion from <see cref = \"{underlyingFriendlyName}\"/> (nullable) to <see cref = \"{primitiveName}\"/> (nullable)"
+            )
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
+            .Append($"public static implicit operator {primitiveName}?({underlyingFriendlyName}? value)")
+            .AppendLine($" => value is null ? null : new(value{(underlyingType.IsValueType ? ".Value" : "")});")
+            .NewLine();
+
+        // From our type to underlying type
+        if (underlyingType.IsValueType || primitiveType.IsValueType)
+        {
+            builder
+                .AppendSummary(
+                    $"Implicit conversion from <see cref = \"{primitiveName}\"/> to <see cref = \"{underlyingFriendlyName}\"/>"
+                )
+                .AppendMethodImplAggressiveInliningAttribute()
+                .Append($"public static implicit operator {underlyingFriendlyName}({primitiveName} value)")
+                .AppendLine($" => ({underlyingFriendlyName})value.{data.FieldName};")
+                .NewLine();
+        }
+
+        builder
+            .AppendSummary(
+                $"Implicit conversion from <see cref = \"{primitiveName}\"/> (nullable) to <see cref = \"{underlyingFriendlyName}\"/> (nullable)"
+            )
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
+            .Append($"public static implicit operator {underlyingFriendlyName}?({primitiveName}? value)")
+            .AppendLine(
+                $" => value is null ? null : ({underlyingFriendlyName}?)value{(primitiveType.IsValueType ? ".Value" : "")}.{data.FieldName};"
+            )
+            .NewLine();
+
+        if (data.ParentSymbols.Count != 0)
+        {
+            var parentClassName = data.ParentSymbols[0].Name;
+
+            if (primitiveType.IsValueType)
+            {
+                builder
+                    .AppendSummary(
+                        $"Implicit conversion from <see cref = \"{parentClassName}\"/> to <see cref = \"{primitiveName}\"/>"
+                    )
+                    .AppendMethodImplAggressiveInliningAttribute()
+                    .Append($"public static implicit operator {primitiveName}({parentClassName} value)")
+                    .AppendLine(" => new(value);")
+                    .NewLine();
+            }
+
+            builder
+                .AppendSummary(
+                    $"Implicit conversion from <see cref = \"{parentClassName}\"/> (nullable) to <see cref = \"{primitiveName}\"/> (nullable)"
+                )
+                .AppendMethodImplAggressiveInliningAttribute()
+                .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
+                .Append($"public static implicit operator {primitiveName}?({parentClassName}? value)")
+                .AppendLine(
+                    $" => value is null ? null : ({primitiveName}?)value{(underlyingType.IsValueType ? ".Value" : "")};"
+                )
+                .NewLine();
+        }
+
+        if (data.UnderlyingType is PrimitiveUnderlyingType.DateOnly or PrimitiveUnderlyingType.TimeOnly)
+        {
+            builder
+                .AppendSummary(
+                    $"Implicit conversion from <see cref = \"{primitiveName}\"/> to <see cref = \"DateTime\"/>"
+                )
+                .AppendMethodImplAggressiveInliningAttribute()
+                .Append($"public static implicit operator DateTime({primitiveName} value)")
+                .AppendLine($" => (({underlyingFriendlyName})value.{data.FieldName}).ToDateTime();")
+                .NewLine();
+
+            builder
+                .AppendSummary(
+                    $"Implicit conversion from <see cref = \"DateTime\"/> to <see cref = \"{primitiveName}\"/>"
+                )
+                .AppendMethodImplAggressiveInliningAttribute()
+                .Append($"public static implicit operator {primitiveName}(DateTime value)")
+                .AppendLine($" => {data.UnderlyingType}.FromDateTime(value);")
+                .NewLine();
+        }
+    }
+
+    /// <summary>Generates comparison operators (&lt;, &lt;=, &gt;, &gt;=) for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="fieldName">The name of the field to compare.</param>
+    /// <param name="builder">The source code builder.</param>
+    internal static void GenerateComparisonCode(this SourceCodeBuilder builder, string className, string fieldName)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static bool operator <({className} left, {className} right)")
+            .AppendLine($" => left.{fieldName} < right.{fieldName};")
+            .NewLine();
+
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static bool operator <=({className} left, {className} right)")
+            .AppendLine($" => left.{fieldName} <= right.{fieldName};")
+            .NewLine();
+
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static bool operator >({className} left, {className} right)")
+            .AppendLine($" => left.{fieldName} > right.{fieldName};")
+            .NewLine();
+
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static bool operator >=({className} left, {className} right)")
+            .AppendLine($" => left.{fieldName} >= right.{fieldName};");
+    }
+
+    /// <summary>Generates an addition operator for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="fieldName">The name of the field to perform addition on.</param>
+    /// <param name="builder">The source code builder.</param>
+    internal static void GenerateAdditionCode(this SourceCodeBuilder builder, string className, string fieldName)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static {className} operator +({className} left, {className} right)")
+            .AppendLine($" => new(left.{fieldName} + right.{fieldName});");
+    }
+
+    /// <summary>Generates a subtraction operator for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="fieldName">The name of the field to perform subtraction on.</param>
+    /// <param name="builder">The source code builder.</param>
+    public static void GenerateSubtractionCode(this SourceCodeBuilder builder, string className, string fieldName)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static {className} operator -({className} left, {className} right)")
+            .AppendLine($" => new(left.{fieldName} - right.{fieldName});");
+    }
+
+    /// <summary>Generates a division operator for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="fieldName">The name of the field to perform division on.</param>
+    /// <param name="builder">The source code builder.</param>
+    public static void GenerateDivisionCode(this SourceCodeBuilder builder, string className, string fieldName)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static {className} operator /({className} left, {className} right)")
+            .AppendLine($" => new(left.{fieldName} / right.{fieldName});");
+    }
+
+    /// <summary>Generates a multiplication operator for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="fieldName">The name of the field to perform multiplication on.</param>
+    /// <param name="builder">The source code builder.</param>
+    public static void GenerateMultiplyCode(this SourceCodeBuilder builder, string className, string fieldName)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static {className} operator *({className} left, {className} right)")
+            .AppendLine($" => new(left.{fieldName} * right.{fieldName});");
+    }
+
+    /// <summary>Generates a modulus operator for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="fieldName">The name of the field to perform modulus on.</param>
+    /// <param name="builder">The source code builder.</param>
+    public static void GenerateModulusCode(this SourceCodeBuilder builder, string className, string fieldName)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static {className} operator %({className} left, {className} right)")
+            .AppendLine($" => new(left.{fieldName} % right.{fieldName});");
+    }
+
+    /// <summary>Generates methods required for implementing ISpanFormattable for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
+    /// <param name="fieldName">The name of the field.</param>
+    public static void GenerateSpanFormattable(this SourceCodeBuilder builder, string fieldName)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine(
+                $"public string ToString(string? format, IFormatProvider? formatProvider) => {fieldName}.ToString(format, formatProvider);"
+            )
+            .NewLine();
+
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine(
+                "public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)"
+            )
+            .OpenBracket()
+            .Append("return ((ISpanFormattable)")
+            .Append(fieldName)
+            .AppendLine(").TryFormat(destination, out charsWritten, format, provider);")
+            .CloseBracket();
+    }
+
+    /// <summary>Generates a method for formatting to UTF-8 if the condition NET8_0_OR_GREATER is met.</summary>
+    /// <param name="builder">The SourceCodeBuilder to append the generated code.</param>
+    /// <param name="fieldName">The name of the field.</param>
+    internal static void GenerateUtf8Formattable(this SourceCodeBuilder builder, string fieldName)
+    {
+        builder
+            .AppendPreProcessorDirective("if NET8_0_OR_GREATER")
+            .AppendInheritDoc("IUtf8SpanFormattable.TryFormat")
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine(
+                "public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)"
+            )
+            .OpenBracket()
+            .Append("return ((IUtf8SpanFormattable)")
+            .Append(fieldName)
+            .AppendLine(").TryFormat(utf8Destination, out bytesWritten, format, provider);")
+            .CloseBracket()
+            .AppendPreProcessorDirective("endif");
+    }
+
+    /// <summary>Generates Parse and TryParse methods for the specified type.</summary>
+    /// <param name="data">The <see cref="GeneratorData"/> object containing information about the data type.</param>
+    /// <param name="builder">The <see cref="SourceCodeBuilder"/> used to build the source code.</param>
+    /// <remarks>This method generates parsing methods based on the provided data type and serialization format.</remarks>
+    public static void GenerateParsable(this SourceCodeBuilder builder, GeneratorData data)
+    {
+        var underlyingType =
+            data.ParentSymbols.Count == 0 ? data.PrimitiveTypeFriendlyName : data.ParentSymbols[0].Name;
+
+        var dataClassName = data.ClassName;
+        var format = data.SerializationFormat;
+        var isString = data.IsPrimitiveUnderlyingTypString();
+        var isChar = data.IsPrimitiveUnderlyingTypeChar();
+        var isBool = data.IsPrimitiveUnderlyingTypeBool();
+
+        #region T Parse(ReadOnlySpan<char> s, IFormatProvider? provider)
+
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static {dataClassName} Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => ");
+
+        if (isString)
+        {
+            builder.AppendLine("s.ToString();");
+        }
+        else if (isChar)
+        {
+            builder.AppendLine("char.Parse(s);");
+        }
+        else if (isBool)
+        {
+            builder.AppendLine("bool.Parse(s);");
+        }
+        else
+        {
+            builder
+                .Append($"{underlyingType}.")
+                .AppendLineIfElse(format is null, "Parse(s, provider);", $"ParseExact(s, \"{format}\", provider);");
+        }
+
+        #endregion
+
+        builder.NewLine();
+
+        #region T Parse(string s, IFormatProvider? provider)
+
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine(
+                $"public static {dataClassName} Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);"
+            );
+
+        #endregion
+
+        builder.NewLine();
+
+        #region bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, out T result)
+
+        builder
+            .AppendInheritDoc()
+            .AppendLine(
+                $"public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, [MaybeNullWhen(false)] out {dataClassName} result)"
+            )
+            .OpenBracket();
+
+        if (isString)
+        {
+            builder.AppendLine("var value = s.ToString();");
+            builder.AppendLine("if (s.IsEmpty)");
+        }
+        else if (isChar)
+        {
+            builder.AppendLine("if (!char.TryParse(s, out var value))");
+        }
+        else if (isBool)
+        {
+            builder.AppendLine("if (!bool.TryParse(s, out var value))");
+        }
+        else
+        {
+            builder
+                .AppendIf(format is null, $"if (!{underlyingType}.TryParse(s, provider, out var value))")
+                .AppendIf(format is not null, $"if (!{underlyingType}.TryParseExact(s, \"{format}\", out var value))");
+        }
+
+        builder.OpenBracket().AppendLine("result = default;").AppendLine("return false;").CloseBracket().NewLine();
+
+        if (!data.TypeSymbol.IsValueType)
+        {
+            builder.AppendLine($"return {dataClassName}.TryCreate(value, out result);");
+        }
+        else
+        {
+            builder
+                .AppendLine("if (TryCreate(value, out var created))")
+                .OpenBracket()
+                .AppendLine("result = created.Value;")
+                .AppendLine("return true;")
+                .CloseBracket()
+                .NewLine()
+                .AppendLine("result = default;")
+                .AppendLine("return false;");
+        }
+
+        builder.CloseBracket();
+
+        #endregion
+
+        builder.NewLine();
+
+        #region bool TryParse(string? s, IFormatProvider? provider, out T result)
+
+        builder
+            .AppendInheritDoc()
+            .AppendLine(
+                $"public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out {dataClassName} result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);"
+            );
+
+        #endregion
+    }
+
+    /// <summary>Generates code for implementing the IComparable interface for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="isValueType">A flag indicating if the type is a value type.</param>
+    /// <param name="builder">The source code builder.</param>
+    internal static void GenerateComparableCode(this SourceCodeBuilder builder, string className, bool isValueType)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendLine("public int CompareTo(object? obj)")
+            .OpenBracket()
+            .AppendLine("return obj switch")
+            .OpenBracket()
+            .AppendLine("null => 1,")
+            .AppendLine($"{className} c => CompareTo(c),")
+            .AppendLine($"_ => throw new ArgumentException(\"Object is not a {className}\", nameof(obj)),")
+            .CloseExpressionBracket()
+            .CloseBracket();
+
+        var nullable = isValueType ? "" : "?";
+
+        builder
+            .NewLine()
+            .AppendInheritDoc()
+            .AppendLine($"public int CompareTo({className}{nullable} other)")
+            .OpenBracket()
+            .Append("if (")
+            .AppendIf(!isValueType, "other is null || ")
+            .AppendLine("!other._isInitialized)")
+            .OpenBracket()
+            .AppendLine("return 1;")
+            .CloseBracket()
+            .NewLine()
+            .AppendLine("if (!_isInitialized)")
+            .OpenBracket()
+            .AppendLine("return -1;")
+            .CloseBracket()
+            .NewLine()
+            .AppendLine("return _value.CompareTo(other._value);")
+            .CloseBracket();
+    }
+
+    /// <summary>Generates equality and inequality operators for the specified type.</summary>
+    /// <param name="className">The name of the class.</param>
+    /// <param name="isValueType">A flag indicating if the type is a value type.</param>
+    /// <param name="builder">The source code builder.</param>
+    public static void GenerateEquatableOperators(this SourceCodeBuilder builder, string className, bool isValueType)
+    {
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine($"public override bool Equals(object? obj) => obj is {className} other && Equals(other);")
+            .NewLine();
+
+        var nullable = isValueType ? "" : "?";
+
+        builder
+            .AppendInheritDoc()
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine($"public bool Equals({className}{nullable} other)")
+            .OpenBracket()
+            .Append("if (")
+            .AppendIf(!isValueType, "other is null || ")
+            .AppendLine("!_isInitialized || !other._isInitialized)")
+            .OpenBracket()
+            .AppendLine("return false;")
+            .CloseBracket()
+            .NewLine()
+            .AppendLine("return _value.Equals(other._value);")
+            .CloseBracket()
+            .NewLine();
+
+        builder
+            .AppendMethodImplAggressiveInliningAttribute()
+            .Append($"public static bool operator ==({className}{nullable} left, {className}{nullable} right)");
+
+        if (isValueType)
+        {
+            builder.AppendLine(" => left.Equals(right);");
+        }
+        else
+        {
+            builder.NewLine();
+
+            builder
+                .OpenBracket()
+                .AppendLine("if (ReferenceEquals(left, right))")
+                .AppendIndentation()
+                .AppendLine("return true;")
+                .AppendLine("if (left is null || right is null)")
+                .AppendIndentation()
+                .AppendLine("return false;")
+                .AppendLine("return left.Equals(right);")
+                .CloseBracket()
+                .NewLine();
+        }
+
+        builder.NewLine();
+
+        builder
+            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendLine(
+                $"public static bool operator !=({className}{nullable} left, {className}{nullable} right) => !(left == right);"
+            );
+    }
+
+    /// <summary>Generates the necessary methods for implementing the IXmlSerializable interface.</summary>
+    /// <param name="data">The generator data.</param>
+    /// <param name="builder">The source code builder.</param>
+    public static void GenerateIXmlSerializableMethods(this SourceCodeBuilder builder, GeneratorData data)
+    {
+        builder.AppendInheritDoc();
+        builder.AppendLine("public XmlSchema? GetSchema() => null;").NewLine();
+
+        var method = data.PrimitiveTypeFriendlyName switch
+        {
+            "string" => "ReadElementContentAsString",
+            "bool" => "ReadElementContentAsBoolean",
+            _ => $"ReadElementContentAs<{data.PrimitiveTypeFriendlyName}>"
+        };
+
+        builder.AppendInheritDoc();
+
+        builder
+            .AppendLine("public void ReadXml(XmlReader reader)")
+            .OpenBracket()
+            .Append("var value = reader.")
+            .Append(method)
+            .AppendLine("();")
+            .AppendLine("ValidateOrThrow(value);")
+            .AppendLine("System.Runtime.CompilerServices.Unsafe.AsRef(in _value) = value;")
+            .AppendLine("System.Runtime.CompilerServices.Unsafe.AsRef(in _isInitialized) = true;")
+            .CloseBracket()
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        if (string.Equals(data.PrimitiveTypeFriendlyName, "string", StringComparison.Ordinal))
+        {
+            builder.AppendLine($"public void WriteXml(XmlWriter writer) => writer.WriteString({data.FieldName});");
+        }
+        else if (data.SerializationFormat is null)
+        {
+            builder.AppendLine(
+                $"public void WriteXml(XmlWriter writer) => writer.WriteValue((({data.PrimitiveTypeFriendlyName}){data.FieldName}).ToXmlString());"
+            );
+        }
+        else
+        {
+            builder.AppendLine(
+                $"public void WriteXml(XmlWriter writer) => writer.WriteString({data.FieldName}.ToString(\"{data.SerializationFormat}\"));"
+            );
+        }
+    }
+
+    /// <summary>Generates IConvertible interface methods for the specified type.</summary>
+    /// <param name="data">The generator data containing type information.</param>
+    /// <param name="builder">The source code builder.</param>
+    internal static void GenerateConvertibles(this SourceCodeBuilder builder, GeneratorData data)
+    {
+        var fieldName = $"({data.UnderlyingType}){data.FieldName}";
+
+        if (data.UnderlyingType is PrimitiveUnderlyingType.DateOnly or PrimitiveUnderlyingType.TimeOnly)
+        {
+            fieldName = '(' + fieldName + ").ToDateTime()";
+        }
+
+        builder.AppendInheritDoc();
+        builder.AppendMethodImplAggressiveInliningAttribute();
+
+        builder
+            .Append("TypeCode IConvertible.GetTypeCode()")
+            .AppendLine($" => ((IConvertible){fieldName}).GetTypeCode();")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("bool IConvertible.ToBoolean(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToBoolean(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("byte IConvertible.ToByte(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToByte(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("char IConvertible.ToChar(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToChar(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("DateTime IConvertible.ToDateTime(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToDateTime(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("decimal IConvertible.ToDecimal(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToDecimal(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("double IConvertible.ToDouble(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToDouble(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("short IConvertible.ToInt16(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToInt16(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("int IConvertible.ToInt32(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToInt32(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("long IConvertible.ToInt64(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToInt64(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("sbyte IConvertible.ToSByte(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToSByte(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("float IConvertible.ToSingle(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToSingle(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("string IConvertible.ToString(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToString(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("object IConvertible.ToType(Type conversionType, IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToType(conversionType, provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("ushort IConvertible.ToUInt16(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToUInt16(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("uint IConvertible.ToUInt32(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToUInt32(provider);")
+            .NewLine();
+
+        builder.AppendInheritDoc();
+
+        builder
+            .Append("ulong IConvertible.ToUInt64(IFormatProvider? provider)")
+            .AppendLine($" => ((IConvertible){fieldName}).ToUInt64(provider);");
+    }
+}

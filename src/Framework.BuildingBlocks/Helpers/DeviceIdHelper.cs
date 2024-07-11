@@ -2,6 +2,7 @@ using DeviceId;
 
 namespace Framework.BuildingBlocks.Helpers;
 
+[PublicAPI]
 public static class DeviceIdHelper
 {
     private static readonly DeviceIdBuilder _DeviceIdBuilder = new DeviceIdBuilder()

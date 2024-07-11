@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Title>Framework.Primitives.Generator</Title>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <RootNamespace>Primitives.Generator</RootNamespace>
+    <AssemblyName>$(Product).Framework.Primitives.Generator</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <!-- This ensures the output of this project is treated as an analyzer by projects that reference it -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- Must be disabled when IncludeBuildOutput = false -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <!-- Specify that this is a development dependency, which won't be included transitively by projects using your package -->
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- Prevent analyzer/generator authors from using banned APIs -->
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="PrimitiveGeneratorJsonConverters" />
+    <CompilerVisibleProperty Include="PrimitiveGeneratorTypeConverters" />
+    <CompilerVisibleProperty Include="PrimitiveGeneratorSwashbuckleSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveGeneratorNswagSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveGeneratorXmlConverters" />
+    <CompilerVisibleProperty Include="PrimitiveGeneratorEntityFrameworkCoreValueConverters" />
+  </ItemGroup>
+
+  <ItemGroup Label="This ensures the library will be packaged as a source generator when we use `dotnet pack`">
+    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="buildTransitive\*.props" Pack="true" PackagePath="buildTransitive\" />
+    <None Include="lib\netstandard2.0\_._" Pack="true" PackagePath="lib\netstandard2.0\" />
+  </ItemGroup>
+
+</Project>
