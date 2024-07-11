@@ -32,7 +32,7 @@
   </PropertyGroup>
 
   <PropertyGroup Label="Packages Information">
-    <Product>Zad.Framework</Product>
+    <Product>Zad</Product>
     <Authors>Mahmoud Shaheen</Authors>
     <Company>Mahmoud Shaheen</Company>
     <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>
@@ -75,7 +75,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Package References">
-    <PackageReference Include="Microsoft.SourceLink.GitHub"  PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="MinVer" PrivateAssets="All" />
   </ItemGroup>
 
