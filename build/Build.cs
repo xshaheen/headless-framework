@@ -12,7 +12,7 @@ using Nuke.Common.Utilities.Collections;
 using static Nuke.Common.Tools.DotCover.DotCoverTasks;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 
-sealed class Build : NukeBuild
+file sealed class Build : NukeBuild
 {
     public static int Main() => Execute<Build>(x => x.Compile);
 
