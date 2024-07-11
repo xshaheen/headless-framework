@@ -23,6 +23,7 @@
     <PackageVersion Include="EasyCaching.Core" Version="1.9.2" />
     <PackageVersion Include="EasyCaching.InMemory" Version="1.9.2" />
     <PackageVersion Include="EasyCaching.Redis" Version="1.9.2" />
+    <PackageVersion Include="EasyCaching.Serialization.MemoryPack" Version="1.9.2" />
     <PackageVersion Include="EasyCaching.Serialization.SystemTextJson" Version="1.9.2" />
     <PackageVersion Include="FileSignatures" Version="5.0.2" />
     <PackageVersion Include="FirebaseAdmin" Version="2.4.1" />
