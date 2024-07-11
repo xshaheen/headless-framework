@@ -31,6 +31,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.BuildingBlocks.Pr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.BuildingBlocks.Domains", "src\Framework.BuildingBlocks.Domains\Framework.BuildingBlocks.Domains.csproj", "{93429496-05B1-4F74-923F-9DF1DBE6157A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Hosting", "src\Framework.Hosting\Framework.Hosting.csproj", "{87047EE1-F8DE-4C9E-918D-2ACB15E571EF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,10 @@ Global
 		{93429496-05B1-4F74-923F-9DF1DBE6157A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{93429496-05B1-4F74-923F-9DF1DBE6157A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{93429496-05B1-4F74-923F-9DF1DBE6157A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{87047EE1-F8DE-4C9E-918D-2ACB15E571EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{87047EE1-F8DE-4C9E-918D-2ACB15E571EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{87047EE1-F8DE-4C9E-918D-2ACB15E571EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{87047EE1-F8DE-4C9E-918D-2ACB15E571EF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -84,6 +90,7 @@ Global
 		{26E032E6-DE7B-476E-96DB-9D7C201654E3} = {9DF89FEA-3DC2-4C8D-B844-29E42743354A}
 		{F72F8F14-0C93-43A1-832D-1BDD450BD2AD} = {1412395E-3C6D-4C83-A4DF-9082CD69D042}
 		{93429496-05B1-4F74-923F-9DF1DBE6157A} = {1412395E-3C6D-4C83-A4DF-9082CD69D042}
+		{87047EE1-F8DE-4C9E-918D-2ACB15E571EF} = {1412395E-3C6D-4C83-A4DF-9082CD69D042}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
