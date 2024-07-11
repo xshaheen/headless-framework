@@ -84,8 +84,6 @@ dotnet_analyzer_diagnostic.severity = default
 
 ############ .NET Code Style Severities
 
-# CA1036: Override methods on comparable types
-dotnet_diagnostic.CA1036.severity = suggestion
 # CA1848: Use the LoggerMessage delegates
 dotnet_diagnostic.ca1848.severity = silent
 # CA1724: Type names should not match namespaces
@@ -212,11 +210,15 @@ dotnet_diagnostic.ca1836.severity = warning
 dotnet_diagnostic.ca2011.severity = warning
 # CA2012: Use ValueTask correctly
 dotnet_diagnostic.ca2012.severity = warning
+# CA1036: A class that implements IComparable<T> or IComparable should override comparison operators
+dotnet_diagnostic.ca1036.severity = suggestion
 
 ############ Analyzers
 
 # RCS1175: Unused this parameter | Controlled by dotnet_code_quality_unused_parameters
 dotnet_diagnostic.rcs1175.severity = none
+# RCS1047: Non-asynchronous method name should not end with 'Async'
+dotnet_diagnostic.rcs1047.severity = none
 # RCS1170: Use read-only auto-implemented property
 dotnet_diagnostic.rcs1170.severity = silent
 # RCS1021: Convert lambda expression body to expression-body
@@ -243,6 +245,8 @@ dotnet_diagnostic.vsthrd110.severity = error
 dotnet_diagnostic.vsthrd002.severity = none
 # MA0045: Do not use blocking call (make method async)
 dotnet_diagnostic.ma0045.severity = suggestion
+# MA0097: A class that implements IComparable<T> or IComparable should override comparison operators. Justification: .NET has CA1036
+dotnet_diagnostic.ma0097.severity = none
 # AsyncifyInvocation: Use Task Async
 dotnet_diagnostic.asyncifyinvocation.severity = error
 # AsyncifyVariable: Use Task Async

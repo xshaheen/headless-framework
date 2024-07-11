@@ -1,5 +1,6 @@
 namespace Framework.BuildingBlocks.Helpers;
 
+[PublicAPI]
 public static class ExecutableFinder
 {
     // https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/path

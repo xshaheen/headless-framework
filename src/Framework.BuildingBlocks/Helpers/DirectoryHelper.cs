@@ -1,6 +1,7 @@
 namespace Framework.BuildingBlocks.Helpers;
 
 /// <summary>A helper class for Directory operations.</summary>
+[PublicAPI]
 public static class DirectoryHelper
 {
     public static void CreateIfNotExists(string directory)

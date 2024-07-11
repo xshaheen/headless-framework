@@ -7,6 +7,7 @@ using Framework.BuildingBlocks.Constants;
 
 namespace Framework.BuildingBlocks.Helpers;
 
+[PublicAPI]
 public static partial class FileHelper
 {
     public static readonly SearchValues<char> InvalidFileNameChars = SearchValues.Create(
