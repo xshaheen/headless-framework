@@ -1,5 +1,6 @@
 namespace Framework.Arguments;
 
+[PublicAPI]
 public static partial class Argument
 {
     private static string _AssertString(object? obj)

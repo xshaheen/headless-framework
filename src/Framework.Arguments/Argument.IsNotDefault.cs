@@ -11,8 +11,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message.</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is not <see langword="default"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsDefault<T>(
         T argument,
         string? message = null,
@@ -37,8 +37,8 @@ public static partial class Argument
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the value is not default for that type.</returns>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is default for that type.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotDefault<T>(
         T argument,
         string? message = null,
@@ -58,8 +58,8 @@ public static partial class Argument
     }
 
     /// <inheritdoc cref="IsNotDefault{T}(T,string?,string?)"/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T? IsNotDefault<T>(
         T? argument,
         string? message = null,

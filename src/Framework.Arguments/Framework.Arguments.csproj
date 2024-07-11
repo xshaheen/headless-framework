@@ -5,8 +5,4 @@
     <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="JetBrains.Annotations" />
-  </ItemGroup>
-
 </Project>

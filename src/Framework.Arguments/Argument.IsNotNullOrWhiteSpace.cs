@@ -17,8 +17,9 @@ public static partial class Argument
     /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is an empty or white space string.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string IsNotNullOrWhiteSpace(
-        [NotNull] string? argument,
+        [SystemNotNull] string? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
@@ -38,6 +39,7 @@ public static partial class Argument
     }
 
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool _IsWhiteSpace(string value)
     {
         foreach (var t in value)

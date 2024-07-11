@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using NoEnumeration = JetBrains.Annotations.NoEnumerationAttribute;
 
 namespace Framework.Arguments;
 
@@ -15,7 +14,7 @@ public static partial class Argument
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T? IsNull<T>(
-        [NoEnumeration] T? argument,
+        [JetBrainsNoEnumeration] T? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
@@ -37,7 +36,7 @@ public static partial class Argument
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNull<T>(
-        [NoEnumeration] T? argument,
+        [JetBrainsNoEnumeration] T? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )

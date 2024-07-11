@@ -13,8 +13,8 @@ public static partial class Argument
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the value is not out of range.</returns>
     /// <exception cref="InvalidEnumArgumentException"><paramref name="argument" /> if the value is out of range.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsInEnum<T>(
         T argument,
         string? message = null,
@@ -42,8 +42,8 @@ public static partial class Argument
     }
 
     /// <inheritdoc cref="IsInEnum{T}(T,string?,string?)"/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsInEnum<T>(
         int argument,
         string? message = null,

@@ -13,6 +13,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is not negative.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is negative.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsPositive<T>(
         T argument,
         string? message = null,
@@ -35,6 +36,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is not negative.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is negative.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsPositive(
         int argument,
         string? message = null,
@@ -51,6 +53,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsPositive(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long IsPositive(
         long argument,
         string? message = null,
@@ -67,6 +70,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsPositive(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float IsPositive(
         float argument,
         string? message = null,
@@ -83,6 +87,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsPositive(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double IsPositive(
         double argument,
         string? message = null,
@@ -99,6 +104,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsPositive(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static decimal IsPositive(
         decimal argument,
         string? message = null,
@@ -115,6 +121,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsPositive(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short IsPositive(
         short argument,
         string? message = null,
@@ -131,6 +138,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsPositive(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static TimeSpan IsPositive(
         TimeSpan argument,
         string? message = null,

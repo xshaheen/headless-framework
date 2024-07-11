@@ -11,8 +11,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is not of type <typeparamref name="T"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsOfType<T>(
         object argument,
         string? message = null,
@@ -38,8 +38,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is of type <typeparamref name="T"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsNotOfType<T>(
         object argument,
         string? message = null,
@@ -65,8 +65,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if the type of <paramref name="argument"/> is not the same as <paramref name="type"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsOfType(
         object argument,
         Type type,
@@ -91,8 +91,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if the type of <paramref name="argument"/> is the same as <paramref name="type"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsNotOfType(
         object argument,
         Type type,
@@ -117,8 +117,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> can't be assigned to type <typeparamref name="T"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsAssignableToType<T>(
         object argument,
         string? message = null,
@@ -142,8 +142,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> can be assigned to type <typeparamref name="T"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsNotAssignableToType<T>(
         object argument,
         string? message = null,
@@ -167,8 +167,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> can't be assigned to <paramref name="type"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsAssignableToType(
         object argument,
         Type type,
@@ -193,8 +193,8 @@ public static partial class Argument
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">The name of the input parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> can be assigned to <paramref name="type"/>.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsNotAssignableToType(
         object argument,
         Type type,

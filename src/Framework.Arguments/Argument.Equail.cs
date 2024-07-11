@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Framework.Arguments;
@@ -13,6 +14,7 @@ public static partial class Argument
     /// <param name="targetName">The name of the target parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is not the same instance as <paramref name="target"/>.</exception>
     /// <remarks>The method is generic to prevent using it with value types.</remarks>
+    [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsReferenceEqualTo<T>(
         T argument,
@@ -44,6 +46,7 @@ public static partial class Argument
     /// <param name="targetName">The name of the target parameter being tested.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is the same instance as <paramref name="target"/>.</exception>
     /// <remarks>The method is generic to prevent using it with value types.</remarks>
+    [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsReferenceNotEqualTo<T>(
         T argument,

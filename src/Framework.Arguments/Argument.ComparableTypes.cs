@@ -15,6 +15,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is not equal to <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsEqualTo<T>(
         T argument,
         T expected,
@@ -43,6 +44,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is less than or equal to <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not less than or equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsLessThanOrEqualTo<T>(
         T argument,
         T expected,
@@ -71,6 +73,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is greater than or equal to <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not greater than or equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsGreaterThanOrEqualTo<T>(
         T argument,
         T expected,
@@ -99,6 +102,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is less than <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not less than <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsLessThan<T>(
         T argument,
         T expected,
@@ -126,6 +130,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is greater than <paramref name="expected"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not greater than <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsGreaterThan<T>(
         T argument,
         T expected,
@@ -156,6 +161,7 @@ public static partial class Argument
     /// <param name="maximumValueParamName"></param>
     /// <exception cref="ArgumentException">if the <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ValidRange<T>(
         T minimumValue,
         T maximumValue,
@@ -188,6 +194,7 @@ public static partial class Argument
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsInclusiveBetween<T>(
         T argument,
         T minimumValue,
@@ -223,6 +230,7 @@ public static partial class Argument
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsExclusiveBetween<T>(
         T argument,
         T minimumValue,
@@ -258,6 +266,7 @@ public static partial class Argument
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsLeftOpenedBetween<T>(
         T argument,
         T minimumValue,
@@ -293,6 +302,7 @@ public static partial class Argument
     /// <returns><paramref name="argument" /> if the value is in range.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> if the value is out of range.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsRightOpenedBetween<T>(
         T argument,
         T minimumValue,
@@ -329,6 +339,7 @@ public static partial class Argument
     /// <exception cref="ArgumentException"></exception>
     /// <exception cref="ArgumentOutOfRangeException"></exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IEnumerable<T> HaveAllItemsInRange<T>(
         IEnumerable<T> argument,
         T minimumValue,
@@ -359,6 +370,7 @@ public static partial class Argument
     }
 
     [return: NotNullIfNotNull(nameof(obj))]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static string? _ToInvariantString(this object? obj)
     {
         return obj switch

@@ -17,8 +17,9 @@ public static partial class Argument
     /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is default for that type.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotNullOrDefault<T>(
-        [NotNull] T? argument,
+        [SystemNotNull] T? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
