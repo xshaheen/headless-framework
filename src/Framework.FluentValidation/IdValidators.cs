@@ -1,5 +1,4 @@
 ﻿using FluentValidation;
-using Framework.BuildingBlocks.Constants;
 
 namespace Framework.FluentValidation;
 
