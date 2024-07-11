@@ -5,12 +5,4 @@
     <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Twilio.AspNet.Core" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Framework.Sms\Framework.Sms.csproj" />
-  </ItemGroup>
-
 </Project>

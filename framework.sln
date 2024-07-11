@@ -7,6 +7,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	ProjectSection(SolutionItems) = preProject
 		README.md = README.md
 		nuget.config = nuget.config
+		src\Directory.Packages.props = src\Directory.Packages.props
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "_build", "build\_build.csproj", "{9D4242B8-6D61-44A4-A77A-4681029A01E0}"
@@ -46,6 +47,24 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sms.Twilio", "src\Framework.Sms.Twilio\Framework.Sms.Twilio.csproj", "{23529990-9DCD-4D40-B596-CC75115C1B61}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sms.Cequens", "src\Framework.Sms.Cequens\Framework.Sms.Cequens.csproj", "{75378DD4-9210-4A97-9B5A-6AC039388AF6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Emails", "Emails", "{B1D800CC-8B29-41A1-A4C1-F8D091268699}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Emails", "src\Framework.Emails\Framework.Emails.csproj", "{431CAE04-21EE-42E4-A6AA-97BEAD59FCAE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Emails.Aws", "src\Framework.Emails.Aws\Framework.Emails.Aws.csproj", "{5C0F2FF4-873A-4DC4-984C-AE097B13E1B0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Emails.Mailkit", "src\Framework.Emails.Mailkit\Framework.Emails.Mailkit.csproj", "{33753858-C624-4F61-B33A-25C76064663A}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Blobs", "Blobs", "{B36919A7-AE4D-4C80-93F9-DBD8D79564D0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs", "src\Framework.Blobs\Framework.Blobs.csproj", "{9BC6524E-5A66-48E0-A354-0164AE246DC8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Aws", "src\Framework.Blobs.Aws\Framework.Blobs.Aws.csproj", "{A9DE2B13-675E-4F19-B573-1F2F42AD104E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Azure", "src\Framework.Blobs.Azure\Framework.Blobs.Azure.csproj", "{63B39020-FD36-4681-93C8-5B1817519833}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.FileSystem", "src\Framework.Blobs.FileSystem\Framework.Blobs.FileSystem.csproj", "{2FF811C7-A025-4D3E-AD50-B80E719A367A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -115,6 +134,34 @@ Global
 		{75378DD4-9210-4A97-9B5A-6AC039388AF6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{75378DD4-9210-4A97-9B5A-6AC039388AF6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{75378DD4-9210-4A97-9B5A-6AC039388AF6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{431CAE04-21EE-42E4-A6AA-97BEAD59FCAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{431CAE04-21EE-42E4-A6AA-97BEAD59FCAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{431CAE04-21EE-42E4-A6AA-97BEAD59FCAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{431CAE04-21EE-42E4-A6AA-97BEAD59FCAE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5C0F2FF4-873A-4DC4-984C-AE097B13E1B0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5C0F2FF4-873A-4DC4-984C-AE097B13E1B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5C0F2FF4-873A-4DC4-984C-AE097B13E1B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5C0F2FF4-873A-4DC4-984C-AE097B13E1B0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33753858-C624-4F61-B33A-25C76064663A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33753858-C624-4F61-B33A-25C76064663A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33753858-C624-4F61-B33A-25C76064663A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33753858-C624-4F61-B33A-25C76064663A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9BC6524E-5A66-48E0-A354-0164AE246DC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9BC6524E-5A66-48E0-A354-0164AE246DC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9BC6524E-5A66-48E0-A354-0164AE246DC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9BC6524E-5A66-48E0-A354-0164AE246DC8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A9DE2B13-675E-4F19-B573-1F2F42AD104E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9DE2B13-675E-4F19-B573-1F2F42AD104E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9DE2B13-675E-4F19-B573-1F2F42AD104E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9DE2B13-675E-4F19-B573-1F2F42AD104E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{63B39020-FD36-4681-93C8-5B1817519833}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{63B39020-FD36-4681-93C8-5B1817519833}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{63B39020-FD36-4681-93C8-5B1817519833}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{63B39020-FD36-4681-93C8-5B1817519833}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2FF811C7-A025-4D3E-AD50-B80E719A367A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2FF811C7-A025-4D3E-AD50-B80E719A367A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2FF811C7-A025-4D3E-AD50-B80E719A367A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2FF811C7-A025-4D3E-AD50-B80E719A367A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -135,6 +182,13 @@ Global
 		{E0D244B4-CA86-4AB5-8616-FD1FFCF1387A} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
 		{23529990-9DCD-4D40-B596-CC75115C1B61} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
 		{75378DD4-9210-4A97-9B5A-6AC039388AF6} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
+		{431CAE04-21EE-42E4-A6AA-97BEAD59FCAE} = {B1D800CC-8B29-41A1-A4C1-F8D091268699}
+		{5C0F2FF4-873A-4DC4-984C-AE097B13E1B0} = {B1D800CC-8B29-41A1-A4C1-F8D091268699}
+		{33753858-C624-4F61-B33A-25C76064663A} = {B1D800CC-8B29-41A1-A4C1-F8D091268699}
+		{9BC6524E-5A66-48E0-A354-0164AE246DC8} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
+		{A9DE2B13-675E-4F19-B573-1F2F42AD104E} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
+		{63B39020-FD36-4681-93C8-5B1817519833} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
+		{2FF811C7-A025-4D3E-AD50-B80E719A367A} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
