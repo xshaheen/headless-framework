@@ -54,6 +54,8 @@
     <PackageVersion Include="Microsoft.Extensions.Http.Polly" Version="8.0.3" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="MinVer" Version="5.0.0" />
     <PackageVersion Include="morelinq" Version="4.2.0" />
     <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="0.21.0" />
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
