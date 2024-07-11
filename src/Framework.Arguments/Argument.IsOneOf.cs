@@ -15,6 +15,7 @@ public static partial class Argument
     /// <returns><paramref name="argument" /> if value is not one of the <paramref name="validValues"/>.</returns>
     /// <exception cref="ArgumentException"></exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsOneOf(
         int argument,
         IReadOnlyCollection<int> validValues,
@@ -36,6 +37,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long IsOneOf(
         long argument,
         IReadOnlyCollection<long> validValues,
@@ -57,6 +59,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static decimal IsOneOf(
         decimal argument,
         IReadOnlyCollection<decimal> validValues,
@@ -78,6 +81,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double IsOneOf(
         double argument,
         IReadOnlyCollection<double> validValues,
@@ -99,6 +103,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float IsOneOf(
         float argument,
         IReadOnlyCollection<float> validValues,
@@ -120,6 +125,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string IsOneOf(
         string argument,
         IReadOnlyList<string> validValues,

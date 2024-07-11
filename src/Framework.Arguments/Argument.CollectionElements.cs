@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Framework.Arguments;
@@ -13,8 +12,9 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument has not null.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> has any null element.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<T> HasNoNulls<T>(
-        [NotNull] IReadOnlyCollection<T?>? argument,
+        [SystemNotNull] IReadOnlyCollection<T?>? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
@@ -40,8 +40,9 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument has not null or empty element.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> has any null or empty element.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<string> HasNoNullOrEmptyElements(
-        [NotNull] IReadOnlyCollection<string?>? argument,
+        [SystemNotNull] IReadOnlyCollection<string?>? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
@@ -66,8 +67,9 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument has not null or white space element.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> has any null or white space element.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<string> HasNoNullOrWhiteSpaceElements(
-        [NotNull] IReadOnlyCollection<string?>? argument,
+        [SystemNotNull] IReadOnlyCollection<string?>? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )

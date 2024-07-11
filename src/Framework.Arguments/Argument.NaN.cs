@@ -13,8 +13,8 @@ public static partial class Argument
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the value is not a NaN.</returns>
     /// <exception cref="ArgumentException">Thrown if <paramref name="argument" /> is NaN.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotNaN<T>(
         T argument,
         string? message = null,
@@ -37,8 +37,8 @@ public static partial class Argument
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the value is NaN.</returns>
     /// <exception cref="ArgumentException"><paramref name="argument" /> if the value is NaN.</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNaN<T>(
         T argument,
         string? message = null,

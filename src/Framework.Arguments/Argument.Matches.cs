@@ -17,6 +17,7 @@ public static partial class Argument
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is not match <paramref name="pattern"/>.</exception>
     // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Global
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string Matches(
         string argument,
         Regex pattern,

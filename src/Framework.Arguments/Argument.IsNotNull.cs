@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using NoEnumeration = JetBrains.Annotations.NoEnumerationAttribute;
 
 namespace Framework.Arguments;
 
@@ -13,11 +11,11 @@ public static partial class Argument
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
     /// <returns><paramref name="argument" /> if the argument is not null.</returns>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is null.</exception>
-    [return: NotNull]
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [return: SystemNotNull]
     public static T IsNotNull<T>(
-        [NoEnumeration] [NotNull] T? argument,
+        [JetBrainsNoEnumeration] [SystemNotNull] T? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
@@ -34,7 +32,7 @@ public static partial class Argument
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotNull<T>(
-        [NoEnumeration] [NotNull] T? argument,
+        [JetBrainsNoEnumeration] [SystemNotNull] T? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )

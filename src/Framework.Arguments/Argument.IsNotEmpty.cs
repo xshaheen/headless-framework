@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using NoEnumeration = JetBrains.Annotations.NoEnumerationAttribute;
 
 namespace Framework.Arguments;
 
@@ -15,6 +14,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the value is not empty.</returns>
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]
     public static IReadOnlyCollection<T>? IsNotEmpty<T>(
         IReadOnlyCollection<T>? argument,
@@ -29,9 +29,10 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNotEmpty{T}(IReadOnlyCollection{T}?,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]
     public static IEnumerable<T>? IsNotEmpty<T>(
-        [NoEnumeration] IEnumerable<T>? argument,
+        [JetBrainsNoEnumeration] IEnumerable<T>? argument,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
@@ -51,6 +52,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNotEmpty{T}(IReadOnlyCollection{T}?,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]
     public static string? IsNotEmpty(
         string? argument,

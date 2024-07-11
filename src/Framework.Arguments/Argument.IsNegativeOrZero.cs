@@ -13,6 +13,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is negative or zero.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is positive.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNegativeOrZero<T>(
         T argument,
         string? message = null,
@@ -35,6 +36,7 @@ public static partial class Argument
     /// <returns><paramref name="paramName" /> if the argument is negative or zero.</returns>
     /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is positive.</exception>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsNegativeOrZero(
         int argument,
         string? message = null,
@@ -51,6 +53,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNegativeOrZero(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long IsNegativeOrZero(
         long argument,
         string? message = null,
@@ -67,6 +70,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNegativeOrZero(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float IsNegativeOrZero(
         float argument,
         string? message = null,
@@ -83,6 +87,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNegativeOrZero(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double IsNegativeOrZero(
         double argument,
         string? message = null,
@@ -99,6 +104,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNegativeOrZero(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static decimal IsNegativeOrZero(
         decimal argument,
         string? message = null,
@@ -115,6 +121,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNegativeOrZero(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short IsNegativeOrZero(
         short argument,
         string? message = null,
@@ -131,6 +138,7 @@ public static partial class Argument
 
     /// <inheritdoc cref="IsNegativeOrZero(int,string?,string?)"/>
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static TimeSpan IsNegativeOrZero(
         TimeSpan argument,
         string? message = null,
