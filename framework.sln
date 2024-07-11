@@ -15,6 +15,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Arguments", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.BuildingBlocks", "src\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj", "{E00B7B8B-8092-4FFF-9151-A437F795F33E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.FluentValidation", "src\Framework.FluentValidation\Framework.FluentValidation.csproj", "{5C854AF5-88AE-4E50-BB67-EBC4D92822BF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.FluentValidation.FormFile", "src\Framework.FluentValidation.FormFile\Framework.FluentValidation.FormFile.csproj", "{065993A5-8A1C-4187-BDD7-CE2D9C646AE7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -31,6 +35,14 @@ Global
 		{E00B7B8B-8092-4FFF-9151-A437F795F33E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E00B7B8B-8092-4FFF-9151-A437F795F33E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E00B7B8B-8092-4FFF-9151-A437F795F33E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5C854AF5-88AE-4E50-BB67-EBC4D92822BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5C854AF5-88AE-4E50-BB67-EBC4D92822BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5C854AF5-88AE-4E50-BB67-EBC4D92822BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5C854AF5-88AE-4E50-BB67-EBC4D92822BF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{065993A5-8A1C-4187-BDD7-CE2D9C646AE7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{065993A5-8A1C-4187-BDD7-CE2D9C646AE7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{065993A5-8A1C-4187-BDD7-CE2D9C646AE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{065993A5-8A1C-4187-BDD7-CE2D9C646AE7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

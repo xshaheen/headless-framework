@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>1.3</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="phone_number:local_number" xml:space="preserve">
+    <value>رقم الهاتف الذي تم إدخاله لا يحتوي على جميع المعلومات المطلوب للاتصال به من أي مكان داخل الدولة أو خارجها. الرجاء إدخال رقم الهاتف بالتنسيق الدولي.</value>
+  </data>
+  <data name="phone_number:invalid_country_code" xml:space="preserve">
+    <value>الرقم له رمز اتصال غير صالح للبلد.</value>
+  </data>
+  <data name="phone_number:invalid_number" xml:space="preserve">
+    <value>"{PropertyValue}" ليس رقم هاتف صالحًا.</value>
+  </data>
+  <data name="collection:minimum_elements" xml:space="preserve">
+    <value>يجب أن يحتوي {PropertyName} على {MinElements} من العناصر على الأقل. يحتوي {PropertyName} على {TotalElements}.</value>
+  </data>
+  <data name="collection:maximum_elements" xml:space="preserve">
+    <value>يجب ان تحتوي {PropertyName} علي عناصر اقل من {MaxElements}. {PropertyName} تحتوي علي {TotalElements}.</value>
+  </data>
+  <data name="collection:unique_elements" xml:space="preserve">
+    <value>يجب أن يحتوي {PropertyName} على عناصر غير مكررة. يحتوي {PropertyName} على {TotalDuplicates} من التكرارات.</value>
+  </data>
+  <data name="national_id:invalid_egyptian_national_id" xml:space="preserve">
+    <value>الرقم القومي الذي تم إدخاله غير صالح.</value>
+  </data>
+  <data name="url:invalid" xml:space="preserve">
+    <value>عنوان URL غير صالح.</value>
+  </data>
+</root>

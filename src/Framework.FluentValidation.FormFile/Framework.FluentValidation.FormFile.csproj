@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace).FormFile</AssemblyName>
+    <RootNamespace>Framework.FluentValidation</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FileSignatures" Version="5.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Label="Resx">
+    <EmbeddedResource Update="Resources\FluentValidatorErrors.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>FluentValidatorErrors.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <Compile Update="Resources\FluentValidatorErrors.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>FluentValidatorErrors.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+</Project>
