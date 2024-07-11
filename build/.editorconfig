@@ -1,0 +1,58 @@
+[*.cs]
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+dotnet_style_require_accessibility_modifiers = never:warning
+
+csharp_style_expression_bodied_methods = true:silent
+csharp_style_expression_bodied_properties = true:warning
+csharp_style_expression_bodied_indexers = true:warning
+csharp_style_expression_bodied_accessors = true:warning
+
+# CA1707: Identifiers should not contain underscores
+dotnet_diagnostic.ca1707.severity = none
+# MA0038: Make method static (deprecated, use CA1822 instead)
+dotnet_diagnostic.ma0038.severity = none
+# CA1050: Declare types in namespaces
+dotnet_diagnostic.ca1050.severity = none
+
+# Naming Styles
+
+# camel_case_style - Define the camelCase style
+dotnet_naming_style.camel_case_style.capitalization = camel_case
+# pascal_case_style - Define the PascalCase style
+dotnet_naming_style.pascal_case_style.capitalization = pascal_case
+
+# Naming Rules
+
+# All private constant fields must be PascalCase
+dotnet_naming_symbols.private_constant_fields_group.applicable_accessibilities = private
+dotnet_naming_symbols.private_constant_fields_group.required_modifiers = const
+dotnet_naming_symbols.private_constant_fields_group.applicable_kinds = field
+dotnet_naming_rule.private_constant_fields_must_be_pascal_case_rule.symbols = private_constant_fields_group
+dotnet_naming_rule.private_constant_fields_must_be_pascal_case_rule.style = pascal_case_style
+dotnet_naming_rule.private_constant_fields_must_be_pascal_case_rule.severity = suggestion
+
+# All private static readonly fields must be PascalCase
+dotnet_naming_symbols.private_static_readonly_fields_group.applicable_accessibilities = private
+dotnet_naming_symbols.private_static_readonly_fields_group.required_modifiers = readonly, static
+dotnet_naming_symbols.private_static_readonly_fields_group.applicable_kinds = field
+dotnet_naming_rule.private_static_readonly_fields_must_be_pascal_case_rule.symbols = private_static_readonly_fields_group
+dotnet_naming_rule.private_static_readonly_fields_must_be_pascal_case_rule.style = pascal_case_style
+dotnet_naming_rule.private_static_readonly_fields_must_be_pascal_case_rule.severity = suggestion
+
+# All private fields must be camelCase
+dotnet_naming_symbols.private_fields_group.applicable_accessibilities = private
+dotnet_naming_symbols.private_fields_group.applicable_kinds = field
+dotnet_naming_rule.private_fields_group_must_be_camel_case_rule.symbols = private_fields_group
+dotnet_naming_rule.private_fields_group_must_be_camel_case_rule.style = pascal_case_style
+dotnet_naming_rule.private_fields_group_must_be_camel_case_rule.severity = suggestion
+
+# All private methods must be _PascalCase()
+# Custom
+dotnet_naming_symbols.private_methods_group.applicable_accessibilities = private
+dotnet_naming_symbols.private_methods_group.applicable_kinds = method
+dotnet_naming_rule.private_methods_group_must_be_camel_case_rule.symbols = private_methods_group
+dotnet_naming_rule.private_methods_group_must_be_camel_case_rule.style = pascal_case_style
+dotnet_naming_rule.private_methods_group_must_be_camel_case_rule.severity = suggestion

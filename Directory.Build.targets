@@ -1,0 +1,11 @@
+﻿<Project>
+
+  <Target Name="Versioning" BeforeTargets="MinVer">
+    <PropertyGroup Label="Build">
+      <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+      <MinVerVerbosity>normal</MinVerVerbosity>
+      <MinVerTagPrefix>v</MinVerTagPrefix>
+    </PropertyGroup>
+  </Target>
+
+</Project>

@@ -1,0 +1,73 @@
+<Project>
+
+  <PropertyGroup Label="Compiler settings">
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WarningsAsErrors>nullable</WarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Packages Compiler settings">
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Packages Source Link">
+    <!-- Ensures consistent, reproducible builds -->
+    <Deterministic>true</Deterministic>
+    <!-- Specifies that the symbol package should be generated in the `.snupkg` format instead of the legacy `.nupkg` -->
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!--  Ensures that debugging symbols `.pdb` are generated -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <!-- Optional: Declare that the Repository URL can be published to NuSpec -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <!-- Optional: Embed source files that are not tracked by the source control manager to the PDB -->
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <!-- Optional: Include PDB in the built .nupkg -->
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Packages Information">
+    <Product>Zad.Framework</Product>
+    <Authors>Mahmoud Shaheen</Authors>
+    <Company>Mahmoud Shaheen</Company>
+    <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <PropertyGroup Label="CI" Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Repository">
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/xshaheen/framework.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/xshaheen/framework</PackageProjectUrl>
+    <PackageReleaseNotes>https://github.com/xshaheen/framework/releases</PackageReleaseNotes>
+  </PropertyGroup>
+
+  <PropertyGroup Label="License">
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+  </PropertyGroup>
+
+  <ItemGroup Label="Files">
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup Label="Global usings" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <Using Include="System.Collections.Immutable" />
+    <Using Include="System.Globalization" />
+  </ItemGroup>
+
+  <ItemGroup Label="Package References">
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="5.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
