@@ -6,11 +6,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Serilog" />
-    <PackageReference Include="Serilog.Sinks.File" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.309.7" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Framework.Blobs\Framework.Blobs.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 

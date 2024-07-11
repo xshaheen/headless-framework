@@ -7,9 +7,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FileSignatures" Version="5.0.1" />
+    <PackageReference Include="FileSignatures" />
   </ItemGroup>
-
+  
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />

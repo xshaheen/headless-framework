@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.301" />
-    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="3.7.301.60" />
+    <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" />
   </ItemGroup>
 
   <ItemGroup>
