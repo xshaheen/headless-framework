@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true"></xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>1.3</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral,
+      PublicKeyToken=b77a5c561934e089
+    </value>
+  </resheader>
+  <data name="file:not_empty" xml:space="preserve">
+    <value>File must not be empty.</value>
+  </data>
+  <data name="file:unexpected_signature" xml:space="preserve">
+    <value>The file type is not allowed.</value>
+  </data>
+  <data name="file:greater_than_or_equal_to" xml:space="preserve">
+    <value>The size of '{PropertyName}' must be less than {MaxLength} MB. You uploaded {TotalLength} MB.</value>
+  </data>
+  <data name="file:less_than_or_equal_to" xml:space="preserve">
+    <value>The size of '{PropertyName}' must be at least {MinLength} MB. You uploaded {TotalLength} MB.</value>
+  </data>
+</root>
