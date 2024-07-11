@@ -1,5 +1,4 @@
 <Project>
-
   <ItemGroup Label="Global">
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc" Version="8.1.0" />
@@ -61,6 +60,7 @@
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
     <PackageVersion Include="NSwag.AspNetCore" Version="14.0.7" />
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
+    <PackageVersion Include="Nuke.Common" Version="8.0.0" />
     <PackageVersion Include="OneOf" Version="3.0.263" />
     <PackageVersion Include="Polly" Version="8.3.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.0.0" />
@@ -89,7 +89,6 @@
     <PackageVersion Include="Xdot.Arguments" Version="2.0.0" />
     <PackageVersion Include="TimeZoneConverter" Version="6.1.0" />
   </ItemGroup>
-
   <ItemGroup Label="Analyzers">
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.10.48" />
     <PackageVersion Include="AsyncFixer" Version="1.6.0" />
@@ -101,5 +100,4 @@
     <PackageVersion Include="SerilogAnalyzer" Version="0.15.0" />
     <PackageVersion Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
-
 </Project>
