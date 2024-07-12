@@ -18,6 +18,7 @@ internal sealed class MailkitSmtpSettings
     public bool RequiresAuthentication => !string.IsNullOrEmpty(User) && !string.IsNullOrEmpty(Password);
 }
 
+[UsedImplicitly]
 internal sealed class MailkitSmtpSettingsValidator : AbstractValidator<MailkitSmtpSettings>
 {
     public MailkitSmtpSettingsValidator()

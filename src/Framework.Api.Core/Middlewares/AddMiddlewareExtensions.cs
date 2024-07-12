@@ -1,9 +1,9 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Api.Core.Middlewares;
 
-public static class Extensions
+public static class AddMiddlewareExtensions
 {
     /// <summary>Adds the server timing middleware.</summary>
     public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)

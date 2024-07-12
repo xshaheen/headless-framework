@@ -45,7 +45,7 @@ public sealed class FluentValidationRule
             Matches = propertyValidator => propertyValidator is INotNullValidator,
             Apply = context =>
             {
-                var propertySchema = context.GetPropertySchema();
+                var propertySchema = context.PropertySchema;
 
                 propertySchema.IsNullableRaw = false;
 
@@ -72,7 +72,7 @@ public sealed class FluentValidationRule
             Matches = propertyValidator => propertyValidator is INotEmptyValidator,
             Apply = context =>
             {
-                var propertySchema = context.GetPropertySchema();
+                var propertySchema = context.PropertySchema;
 
                 propertySchema.IsNullableRaw = false;
 
@@ -102,7 +102,7 @@ public sealed class FluentValidationRule
             Apply = context =>
             {
                 var lengthValidator = (ILengthValidator)context.PropertyValidator;
-                var propertySchema = context.GetPropertySchema();
+                var propertySchema = context.PropertySchema;
 
                 if (lengthValidator.Max > 0)
                 {
@@ -129,7 +129,7 @@ public sealed class FluentValidationRule
             {
                 var regularExpressionValidator = (IRegularExpressionValidator)context.PropertyValidator;
 
-                var propertySchema = context.GetPropertySchema();
+                var propertySchema = context.PropertySchema;
                 propertySchema.Pattern = regularExpressionValidator.Expression;
             },
         };
@@ -152,7 +152,7 @@ public sealed class FluentValidationRule
                     comparisonValidator.ValueToCompare,
                     CultureInfo.InvariantCulture
                 );
-                var propertySchema = context.GetPropertySchema();
+                var propertySchema = context.PropertySchema;
 
                 switch (comparisonValidator.Comparison)
                 {
@@ -185,7 +185,7 @@ public sealed class FluentValidationRule
             Apply = context =>
             {
                 var betweenValidator = (IBetweenValidator)context.PropertyValidator;
-                var propertySchema = context.GetPropertySchema();
+                var propertySchema = context.PropertySchema;
 
                 if (betweenValidator.From.IsSupportedSwaggerNumericNumeric())
                 {
@@ -227,7 +227,7 @@ public sealed class FluentValidationRule
                 propertyValidator.GetType().IsSubClassOfGeneric(typeof(AspNetCoreCompatibleEmailValidator<>)),
             Apply = context =>
             {
-                var propertySchema = context.GetPropertySchema();
+                var propertySchema = context.PropertySchema;
                 propertySchema.Pattern = "^[^@]+@[^@]+$"; // [^@] All chars except @
             },
         };

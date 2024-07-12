@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using Framework.FluentValidation;
 
 namespace Framework.Sms.Cequens;
@@ -16,6 +16,7 @@ public sealed class CequensSettings
     public required string Token { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class CequensSettingsValidator : AbstractValidator<CequensSettings>
 {
     public CequensSettingsValidator()

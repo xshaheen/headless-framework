@@ -3,7 +3,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Framework.Blobs.FileSystem;
 
-public static class Extensions
+public static class AddFileSystemBlobExtensions
 {
     public static IHostApplicationBuilder AddFileSystemBlobStorage(this IHostApplicationBuilder builder)
     {

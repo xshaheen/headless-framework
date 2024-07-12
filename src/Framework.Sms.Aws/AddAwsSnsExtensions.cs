@@ -1,11 +1,11 @@
-﻿using Amazon.Extensions.NETCore.Setup;
+using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleNotificationService;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.Aws;
 
-public static class Extensions
+public static class AddAwsSnsExtensions
 {
     /// <summary>
     /// AWSOptions usage:

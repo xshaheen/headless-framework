@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using Framework.FluentValidation;
 
 namespace Framework.Sms.Twilio;
@@ -12,6 +12,7 @@ public sealed class TwilioSettings
     public required string PhoneNumber { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class TwilioSettingsValidator : AbstractValidator<TwilioSettings>
 {
     public TwilioSettingsValidator()

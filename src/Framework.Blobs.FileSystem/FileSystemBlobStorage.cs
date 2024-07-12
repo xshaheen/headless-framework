@@ -30,10 +30,10 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
     public ValueTask<IReadOnlyList<bool>> BulkDeleteAsync(
         IReadOnlyCollection<string> blobNames,
         string[] container,
-        CancellationToken abort = default
+        CancellationToken cancellationToken = default
     )
     {
-        abort.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
 
         var results = blobNames.Select(fileName => _Delete(_GetFilePath(container, fileName))).ToList();
 

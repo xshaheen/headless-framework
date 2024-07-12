@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Framework.Integrations.PushNotifications;
 
-public static class Extensions
+public static class AddPushNotificationsExtensions
 {
     public static void AddPushNotifications(this IHostApplicationBuilder builder, string sectionName)
     {

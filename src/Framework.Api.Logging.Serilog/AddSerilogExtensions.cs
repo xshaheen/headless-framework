@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Api.Logging.Serilog;
 
-public static class Extensions
+public static class AddSerilogExtensions
 {
     /// <summary>Adds the serilog enrichers middleware.</summary>
     public static IServiceCollection AddSerilogEnrichers(this IServiceCollection services)

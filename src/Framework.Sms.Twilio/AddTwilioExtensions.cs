@@ -1,10 +1,10 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.Twilio;
 
-public static class Extensions
+public static class AddTwilioExtensions
 {
     public static void AddTwilioSmsSender(this IHostApplicationBuilder builder, string configKey)
     {

@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 
 namespace Framework.Sms.Aws;
 
@@ -7,6 +7,7 @@ public sealed class AwsSnsSmsSettings
     public required string SenderId { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class AwsSnsSmsSettingsValidator : AbstractValidator<AwsSnsSmsSettings>
 {
     public AwsSnsSmsSettingsValidator()
