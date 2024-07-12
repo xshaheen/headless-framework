@@ -13,6 +13,11 @@
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.17.0" />
     <PackageVersion Include="ByteSize" Version="2.1.2" />
     <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.2.2" />
+    <PackageVersion Include="Couchbase.Extensions.Compression.Snappier" Version="3.0.1-beta.1" />
+    <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.6.1" />
+    <PackageVersion Include="Couchbase.Extensions.MultiOp" Version="1.0.0" />
+    <PackageVersion Include="Couchbase.Transactions" Version="3.5.1" />
+    <PackageVersion Include="CouchbaseNetClient" Version="3.6.1" />
     <PackageVersion Include="Dapper" Version="2.1.35" />
     <PackageVersion Include="DeviceId" Version="6.7.0" />
     <PackageVersion Include="DeviceId.Linux" Version="6.4.0" />
@@ -39,6 +44,7 @@
     <PackageVersion Include="IPAddressRange" Version="6.0.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.2.0" />
     <PackageVersion Include="libphonenumber-csharp" Version="8.13.40" />
+    <PackageVersion Include="Linq2Couchbase" Version="2.0.0" />
     <PackageVersion Include="LinqKit.Microsoft.EntityFrameworkCore" Version="8.1.5" />
     <PackageVersion Include="MailKit" Version="4.7.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
