@@ -1,0 +1,5 @@
+﻿namespace Framework.Database.EntityFramework.DataGrid.Ordering;
+
+public sealed record Order(string Property, bool Ascending = false);
+
+public sealed class Orders : List<Order>;

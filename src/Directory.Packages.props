@@ -17,15 +17,16 @@
     <PackageVersion Include="DeviceId" Version="6.7.0" />
     <PackageVersion Include="DeviceId.Linux" Version="6.4.0" />
     <PackageVersion Include="DeviceId.Windows.Wmi" Version="6.6.0" />
-    <PackageVersion Include="DotNetCore.CAP" Version="8.1.0" />
-    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.1.0" />
-    <PackageVersion Include="DotNetCore.CAP.OpenTelemetry" Version="8.1.0" />
-    <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.1.0" />
+    <PackageVersion Include="DotNetCore.CAP" Version="8.2.0" />
+    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.2.0" />
+    <PackageVersion Include="DotNetCore.CAP.OpenTelemetry" Version="8.2.0" />
+    <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.2.0" />
     <PackageVersion Include="EasyCaching.Core" Version="1.9.2" />
     <PackageVersion Include="EasyCaching.InMemory" Version="1.9.2" />
     <PackageVersion Include="EasyCaching.Redis" Version="1.9.2" />
     <PackageVersion Include="EasyCaching.Serialization.MemoryPack" Version="1.9.2" />
     <PackageVersion Include="EasyCaching.Serialization.SystemTextJson" Version="1.9.2" />
+    <PackageVersion Include="EFCore.CheckConstraints" Version="8.0.1" />
     <PackageVersion Include="FileSignatures" Version="5.0.2" />
     <PackageVersion Include="FirebaseAdmin" Version="3.0.0" />
     <PackageVersion Include="FluentDateTime" Version="3.0.0" />
@@ -38,6 +39,7 @@
     <PackageVersion Include="IPAddressRange" Version="6.0.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.2.0" />
     <PackageVersion Include="libphonenumber-csharp" Version="8.13.40" />
+    <PackageVersion Include="LinqKit.Microsoft.EntityFrameworkCore" Version="8.1.5" />
     <PackageVersion Include="MailKit" Version="4.7.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="8.0.7" />
@@ -60,6 +62,7 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.6.3" />
     <PackageVersion Include="Microsoft.OpenApi" Version="1.6.15" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MinVer" Version="5.0.0" />
