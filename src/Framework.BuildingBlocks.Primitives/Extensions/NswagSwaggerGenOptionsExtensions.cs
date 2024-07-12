@@ -1,6 +1,5 @@
 ﻿using System.Reflection;
 using NJsonSchema.Generation;
-using Primitives;
 
 namespace Framework.BuildingBlocks.Primitives.Extensions;
 

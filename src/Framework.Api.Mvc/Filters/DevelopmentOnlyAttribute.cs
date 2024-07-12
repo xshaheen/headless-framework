@@ -1,0 +1,29 @@
+using Framework.Api.Core.Abstractions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+namespace Framework.Api.Mvc.Filters;
+
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+public sealed class DevelopmentOnlyAttribute : Attribute, IResourceFilter
+{
+    public void OnResourceExecuting(ResourceExecutingContext context)
+    {
+        var services = context.HttpContext.RequestServices;
+        var environment = services.GetRequiredService<IWebHostEnvironment>();
+
+        if (environment.IsDevelopment())
+        {
+            return;
+        }
+
+        var creator = services.GetRequiredService<ProblemDetailsCreator>();
+        var endpointNotFound = creator.EndpointNotFound(context.HttpContext);
+        context.Result = new NotFoundObjectResult(endpointNotFound);
+    }
+
+    public void OnResourceExecuted(ResourceExecutedContext context) { }
+}
