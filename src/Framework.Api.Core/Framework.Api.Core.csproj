@@ -11,6 +11,7 @@
     <PackageReference Include="Mediator.Abstractions" />
     <PackageReference Include="Microsoft.AspNetCore.MiddlewareAnalysis" />
     <PackageReference Include="Microsoft.Extensions.DiagnosticAdapter" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="NetEscapades.AspNetCore.SecurityHeaders" />
     <PackageReference Include="OpenTelemetry" />
   </ItemGroup>
