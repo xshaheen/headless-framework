@@ -382,10 +382,7 @@ internal static class Executor
                 PrimitiveUnderlyingType.UInt32 => true,
                 PrimitiveUnderlyingType.Int64 => true,
                 PrimitiveUnderlyingType.UInt64 => true,
-                //PrimitiveUnderlyingType.Int128 => true,
-                //PrimitiveUnderlyingType.UInt128 => true,
-                PrimitiveUnderlyingType.Decimal
-                    => true,
+                PrimitiveUnderlyingType.Decimal => true,
                 PrimitiveUnderlyingType.Double => true,
                 PrimitiveUnderlyingType.Single => true,
                 _ => true
@@ -427,7 +424,7 @@ internal static class Executor
     /// <param name="data">The GeneratorData containing information about the data type.</param>
     /// <param name="options">The PrimitiveGlobalOptions for code generation.</param>
     /// <param name="context">The SourceProductionContext for reporting diagnostics.</param>
-    /// <returns>True if the code generation process was successful; otherwise, false.</returns>
+    /// <returns>True if the code generation process was successful, otherwise, false.</returns>
     private static bool _ProcessType(
         GeneratorData data,
         PrimitiveGlobalOptions options,
