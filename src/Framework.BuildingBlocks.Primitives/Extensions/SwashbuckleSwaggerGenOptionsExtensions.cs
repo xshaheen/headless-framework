@@ -1,5 +1,4 @@
 ﻿using System.Reflection;
-using Primitives;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Framework.BuildingBlocks.Primitives.Extensions;
