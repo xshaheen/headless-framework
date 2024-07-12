@@ -2,44 +2,8 @@ namespace Framework.BuildingBlocks.Constants;
 
 public static class JwtClaimTypes
 {
-    public const string AuthenticationType = "AuthenticationTypes.Federation";
-
-    public const string AccountType = "account_type";
-
-    public const string UserId = "user_id";
-
-    public const string AccountId = "sub";
-
-    public const string Name = "name";
-
-    public const string Email = "email";
-
-    public const string UserName = "name";
-
-    public const string EmailVerified = "email_verified";
-
-    public const string PhoneCountryCode = "phone_country_code";
-
-    public const string PhoneNumber = "phone_number";
-
-    public const string PhoneNumberVerified = "phone_number_verified";
-
-    public const string FirstName = "first_name";
-
-    public const string LastName = "last_name";
-
-    public const string FullName = "full_name";
-
-    public const string SecurityStamp = "security_stamp";
-
-    /// <summary>The role claim type.</summary>
-    public const string Roles = "role";
-
-    /// <summary>The permission claim type.</summary>
-    public const string Permission = "permission";
-
-    /// <summary>The tenant identifier claim type.</summary>
-    public const string TenantId = "tenant_id";
+    /// <summary>Subject - Identifier for the End-User at the Issuer.</summary>
+    public const string Subject = "sub";
 
     /// <summary>Audience(s) that this ID Token is intended for. It MUST contain the OAuth 2.0 client_id of the Relying Party as an audience value. It MAY also contain identifiers for other audiences. In the general case, the aud value is an array of case sensitive strings. In the common special case when there is one audience, the aud value MAY be a single case sensitive string.</summary>
     public const string Audience = "aud";
@@ -55,36 +19,6 @@ public static class JwtClaimTypes
 
     /// <summary>The exp (expiration time) claim identifies the expiration time on or after which the token MUST NOT be accepted for processing, specified as the number of seconds from 1970-01-01T0:0:0Z</summary>
     public const string Expiration = "exp";
-
-    /// <summary>Time the End-User's information was last updated. Its value is a JSON number representing the number of seconds from 1970-01-01T0:0:0Z as measured in UTC until the date/time.</summary>
-    public const string UpdatedAt = "updated_at";
-
-    /// <summary>String from the time zone database (http://www.twinsun.com/tz/tz-link.htm) representing the End-User's time zone. For example, Europe/Paris or America/Los_Angeles.</summary>
-    public const string ZoneInfo = "zoneinfo";
-
-    /// <summary>End-User's locale, represented as a BCP47 [RFC5646] language tag. This is typically an ISO 639-1 Alpha-2 [ISO639‑1] language code in lowercase and an ISO 3166-1 Alpha-2 [ISO3166‑1] country code in uppercase, separated by a dash. For example, en-US or fr-CA. As a compatibility note, some implementations have used an underscore as the separator rather than a dash, for example, en_US; Relying Parties MAY choose to accept this locale syntax as well.</summary>
-    public const string Locale = "locale";
-
-    /// <summary>The identity provider.</summary>
-    public const string IdentityProvider = "idp";
-
-    /// <summary>OAuth 2.0 Client Identifier valid at the Authorization Server.</summary>
-    public const string ClientId = "client_id";
-
-    /// <summary>OpenID Connect requests MUST contain the "openid" scope value. If the openid scope value is not present, the behavior is entirely unspecified. Other scope values MAY be present. Scope values used that are not understood by an implementation SHOULD be ignored.</summary>
-    public const string Scope = "scope";
-
-    /// <summary>The "act" (actor) claim provides a means within a JWT to express that delegation has occurred and identify the acting party to whom authority has been delegated.The "act" claim value is a JSON object and members in the JSON object are claims that identify the actor. The claims that make up the "act" claim identify and possibly provide additional information about the actor.</summary>
-    public const string Actor = "act";
-
-    /// <summary>The "may_act" claim makes a statement that one party is authorized to become the actor and act on behalf of another party. The claim value is a JSON object and members in the JSON object are claims that identify the party that is asserted as being eligible to act for the party identified by the JWT containing the claim.</summary>
-    public const string MayAct = "may_act";
-
-    /// <summary>Authentication Methods References. JSON array of strings that are identifiers for authentication methods used in the authentication.</summary>
-    public const string AuthenticationMethod = "amr";
-
-    /// <summary>Session identifier. This represents a Session of an OP at an RP to a User Agent or device for a logged-in End-User. Its contents are unique to the OP and opaque to the RP.</summary>
-    public const string SessionId = "sid";
 
     /// <summary>
     /// Authentication Context Class Reference. String specifying an Authentication Context Class Reference value that identifies the Authentication Context Class that the authentication performed satisfied.
@@ -119,6 +53,15 @@ public static class JwtClaimTypes
     /// <summary>JWT ID. A unique identifier for the token, which can be used to prevent reuse of the token. These tokens MUST only be used once, unless conditions for reuse were negotiated between the parties; any such negotiation is beyond the scope of this specification.</summary>
     public const string JwtId = "jti";
 
-    /// <summary>Defines a set of event statements that each may add additional claims to fully describe a single logical event that has occurred.</summary>
-    public const string Events = "events";
+    /// <summary>OAuth 2.0 Client Identifier valid at the Authorization Server.</summary>
+    public const string ClientId = "client_id";
+
+    /// <summary>OpenID Connect requests MUST contain the "openid" scope value. If the openid scope value is not present, the behavior is entirely unspecified. Other scope values MAY be present. Scope values used that are not understood by an implementation SHOULD be ignored.</summary>
+    public const string Scope = "scope";
+
+    /// <summary>The "act" (actor) claim provides a means within a JWT to express that delegation has occurred and identify the acting party to whom authority has been delegated.The "act" claim value is a JSON object and members in the JSON object are claims that identify the actor. The claims that make up the "act" claim identify and possibly provide additional information about the actor.</summary>
+    public const string Actor = "act";
+
+    /// <summary>The "may_act" claim makes a statement that one party is authorized to become the actor and act on behalf of another party. The claim value is a JSON object and members in the JSON object are claims that identify the party that is asserted as being eligible to act for the party identified by the JWT containing the claim.</summary>
+    public const string MayAct = "may_act";
 }

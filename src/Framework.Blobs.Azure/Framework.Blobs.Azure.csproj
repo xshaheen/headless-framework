@@ -7,8 +7,8 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.20.0" />
-    <PackageReference Include="Azure.Storage.Blobs.Batch" Version="12.17.0" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="Azure.Storage.Blobs.Batch" />
   </ItemGroup>
 
   <ItemGroup>
