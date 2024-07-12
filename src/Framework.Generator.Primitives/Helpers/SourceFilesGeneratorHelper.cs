@@ -14,6 +14,7 @@ internal static class SourceFilesGeneratorHelper
     private const string _NswagSwaggerExtensionsClassName = "AddNswagSwaggerPrimitivesMappingsExtensions";
     private const string _NswagAddPrimitivesMethodName = "AddSwaggerPrimitiveMappings";
     private const string _ValueConverterExtensionsClassName = "AddPrimitivesValueConvertersExtensions";
+    private const string _ValueConverterAddPrimitivesMethodName = "AddPrimitivePropertyConversions";
 
     /// <summary>Adds Swagger mappings for specific custom types to ensure proper OpenAPI documentation generation.</summary>
     /// <param name="context">The source production context.</param>
@@ -375,7 +376,7 @@ internal static class SourceFilesGeneratorHelper
 
         builder
             .AppendLine(
-                "public static ModelConfigurationBuilder AddPrimitivePropertyConversions(this ModelConfigurationBuilder configurationBuilder)"
+                $"public static ModelConfigurationBuilder {_ValueConverterAddPrimitivesMethodName}(this ModelConfigurationBuilder configurationBuilder)"
             )
             .OpenBracket();
 
