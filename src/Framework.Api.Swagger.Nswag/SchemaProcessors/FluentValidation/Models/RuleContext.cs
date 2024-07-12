@@ -16,10 +16,7 @@ public sealed class RuleContext(
 
     public IPropertyValidator PropertyValidator { get; } = propertyValidator;
 
-    public JsonSchema GetPropertySchema()
-    {
-        return ProcessorContext.Schema.IsObject
+    public JsonSchema PropertySchema => ProcessorContext.Schema.IsObject
             ? ProcessorContext.Schema.Properties[PropertyKey]
             : ProcessorContext.Schema;
-    }
 }

@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -76,6 +76,7 @@ public sealed class CequensSmsSender(
         return token?.Data?.AccessToken;
     }
 
+    [UsedImplicitly]
     private sealed class CequensAuthResponse
     {
         public DataResponse? Data { get; init; }

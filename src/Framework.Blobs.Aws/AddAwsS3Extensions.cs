@@ -1,11 +1,11 @@
-﻿using Amazon.Extensions.NETCore.Setup;
-using Amazon.SimpleEmailV2;
+using Amazon.Extensions.NETCore.Setup;
+using Amazon.S3;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace Framework.Emails.Aws;
+namespace Framework.Blobs.Aws;
 
-public static class Extensions
+public static class AddAwsS3Extensions
 {
     /// <summary>
     /// AWSOptions usage:
@@ -20,9 +20,15 @@ public static class Extensions
     /// // or pass null to use the default AWSOptions registered in the DI container
     /// </code>
     /// </summary>
-    public static void AddAwsSesEmailSender(this IHostApplicationBuilder builder, AWSOptions? options)
+    public static IHostApplicationBuilder AddAwsS3BlobStorage(
+        this IHostApplicationBuilder builder,
+        AWSOptions? awsOptions = null
+    )
     {
-        builder.Services.TryAddAWSService<IAmazonSimpleEmailServiceV2>(options);
-        builder.Services.AddSingleton<IEmailSender, AwsSesEmailSender>();
+        builder.Services.TryAddAWSService<IAmazonS3>(awsOptions);
+        builder.Services.AddSingleton<IBlobNamingNormalizer, AwsBlobNamingNormalizer>();
+        builder.Services.AddSingleton<IBlobStorage, AwsBlobStorage>();
+
+        return builder;
     }
 }

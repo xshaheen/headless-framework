@@ -18,15 +18,15 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
 
     public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> formFiles,
+        IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(formFiles);
+        Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = formFiles.Select(async file => await UploadAsync(file, container, cancellationToken));
+        var tasks = blobs.Select(async file => await UploadAsync(file, container, cancellationToken));
         var result = await Task.WhenAll(tasks);
 
         return result;

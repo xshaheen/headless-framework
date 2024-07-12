@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         return builder;
     }
 
+    [UsedImplicitly]
     private sealed class AntiforgeryOptionsConfiguration(IOptions<DataProtectionOptions> dataProtectionOptions)
         : IConfigureOptions<AntiforgeryOptions>
     {

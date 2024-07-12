@@ -3,7 +3,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Framework.Blobs.Azure;
 
-public static class Extensions
+public static class AddAzureBlobExtensions
 {
     public static IHostApplicationBuilder AddAzureBlobStorage(
         this IHostApplicationBuilder builder,

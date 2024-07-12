@@ -1,10 +1,10 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.Infobip;
 
-public static class Extensions
+public static class AddInfobipExtensions
 {
     public static void AddInfobipSmsSender(this IHostApplicationBuilder builder, string configKey)
     {

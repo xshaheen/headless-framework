@@ -1,4 +1,4 @@
-﻿using EasyCaching.Core.Configurations;
+using EasyCaching.Core.Configurations;
 using EasyCaching.Serialization.MemoryPack;
 using EasyCaching.Serialization.SystemTextJson.Configurations;
 using Framework.BuildingBlocks.Constants;
@@ -7,7 +7,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Framework.Caching.EasyCache;
 
-public static class Extensions
+public static class AddEasyCacheExtensions
 {
     private const string _JsonSerializerName = "json";
     private const string _MemSerializerName = "memory";

@@ -12,7 +12,8 @@ public interface ISqlConnectionFactory
     string GetConnectionString();
 }
 
-internal sealed class SqlConnectionFactory(string connectionString)
+[PublicAPI]
+public sealed class SqlConnectionFactory(string connectionString)
     : ISqlConnectionFactory,
         IAsyncDisposable,
         IDisposable

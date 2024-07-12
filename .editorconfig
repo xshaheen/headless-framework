@@ -107,7 +107,7 @@ dotnet_diagnostic.ca1054.severity = none
 # CA1056: URI properties should not be strings
 dotnet_diagnostic.ca1056.severity = none
 # CA1308: Normalize strings to uppercase
-dotnet_diagnostic.ca1308.severity = suggestion
+dotnet_diagnostic.ca1308.severity = none
 # CA1000: Do not declare static members on generic types
 dotnet_diagnostic.ca1000.severity = suggestion
 # CA1014: Mark assemblies with CLSCompliantAttribute
@@ -179,7 +179,7 @@ dotnet_diagnostic.ide0055.severity = silent
 # CA1724: Type names should not match namespaces
 dotnet_diagnostic.ca1724.severity = suggestion
 # CA1812 Avoid uninstantiated internal classes
-dotnet_diagnostic.ca1812.severity = suggestion
+dotnet_diagnostic.ca1812.severity = none
 # CA1008: Enums should have zero value
 dotnet_diagnostic.ca1008.severity = suggestion
 # CA1819: Properties should not return arrays

@@ -7,7 +7,8 @@ public interface IConnectionStringChecker
     Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString);
 }
 
-internal sealed class SqlServerConnectionStringChecker : IConnectionStringChecker
+[PublicAPI]
+public sealed class SqlServerConnectionStringChecker : IConnectionStringChecker
 {
     public async Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString)
     {

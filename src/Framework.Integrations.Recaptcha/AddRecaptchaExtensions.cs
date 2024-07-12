@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Framework.Integrations.Recaptcha;
 
 /// <summary>Extension methods for adding reCAPTCHA services to the DI container.</summary>
-public static class Extensions
+public static class AddRecaptchaExtensions
 {
     /// <summary>Adds services required for using reCAPTCHA.</summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>

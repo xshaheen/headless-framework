@@ -3,7 +3,6 @@ using PhoneNumbers;
 
 namespace Framework.BuildingBlocks.Validators;
 
-#pragma warning disable ERP022 // Exit point 'return result;' swallows an unobserved exception.
 public static class MobilePhoneNumberValidator
 {
     public static bool IsValid(string phoneNumber, int countryCode)

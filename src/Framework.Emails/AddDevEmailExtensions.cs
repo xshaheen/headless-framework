@@ -1,10 +1,10 @@
-﻿using Framework.Emails.Dev;
+using Framework.Emails.Dev;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Framework.Emails;
 
-public static class Extensions
+public static class AddDevEmailExtensions
 {
     public static void AddDevEmailSender(this IHostApplicationBuilder builder)
     {

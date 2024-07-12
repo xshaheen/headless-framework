@@ -1,10 +1,10 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.VictoryLink;
 
-public static class Extensions
+public static class AddVictoryLinkExtensions
 {
     public static void AddVictoryLinkSmsSender(this IHostApplicationBuilder builder, string configKey)
     {

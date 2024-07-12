@@ -69,13 +69,13 @@ public sealed class AzureBlobStorage : IBlobStorage
     public async ValueTask<IReadOnlyList<bool>> BulkDeleteAsync(
         IReadOnlyCollection<string> blobNames,
         string[] container,
-        CancellationToken abort = default
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(blobNames);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobNames.Select(async fileName => await DeleteAsync(fileName, container, abort));
+        var tasks = blobNames.Select(async fileName => await DeleteAsync(fileName, container, cancellationToken));
         var result = await Task.WhenAll(tasks);
 
         return result;

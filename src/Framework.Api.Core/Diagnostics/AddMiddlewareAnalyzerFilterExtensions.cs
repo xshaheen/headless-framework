@@ -1,11 +1,12 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.MiddlewareAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Api.Core.Diagnostics;
 
-public static class Extensions
+[PublicAPI]
+public static class AddMiddlewareAnalyzerFilterExtensions
 {
     public static void AddMiddlewareAnalyzerFilter(this WebApplicationBuilder builder)
     {

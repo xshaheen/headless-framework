@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 
 namespace Framework.Sms.VictoryLink;
 
@@ -11,6 +11,7 @@ public sealed class VictoryLinkSettings
     public required string Password { get; init; }
 }
 
+[UsedImplicitly]
 internal sealed class VictoryLinkSettingsValidator : AbstractValidator<VictoryLinkSettings>
 {
     public VictoryLinkSettingsValidator()

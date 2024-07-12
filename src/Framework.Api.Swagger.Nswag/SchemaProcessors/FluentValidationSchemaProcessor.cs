@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using FluentValidation.Internal;
 using FluentValidation.Validators;
 using Framework.Api.Swagger.Nswag.SchemaProcessors.FluentValidation;
@@ -203,7 +203,7 @@ public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
     {
         // Note: IValidatorDescriptor doesn't return IncludeRules so we need to get validators manually.
         var includeRules = ValidationExtensions
-            .EmptyIfNull((validator as IEnumerable<IValidationRule>))
+            .EmptyIfNull(validator as IEnumerable<IValidationRule>)
             .Where(rule => rule.HasNoCondition() && rule is IIncludeRule);
 
         var childAdapters = includeRules
@@ -223,9 +223,7 @@ public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
 
             var adapterType = adapter.GetType();
 
-#pragma warning disable REFL003, REFL017 // adapter is of type ChildValidatorAdaptor<,>
             var adapterMethod = adapterType.GetMethod(nameof(ChildValidatorAdaptor<object, object>.GetValidator));
-#pragma warning restore REFL017, REFL003
 
             if (adapterMethod is null)
             {

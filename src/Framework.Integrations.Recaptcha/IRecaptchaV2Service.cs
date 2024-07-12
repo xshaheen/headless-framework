@@ -19,6 +19,7 @@ public interface IRecaptchaV2Service
 }
 
 /// <summary><a href="https://developers.google.com/recaptcha/docs/verify">API Documentation</a>.</summary>
+[PublicAPI]
 internal sealed class RecaptchaV2Service(
     HttpClient httpClient,
     IOptions<RecaptchaSettings> options,
