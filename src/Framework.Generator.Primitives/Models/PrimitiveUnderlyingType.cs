@@ -6,7 +6,7 @@ internal enum PrimitiveUnderlyingType
     // Represents a string Primitive type.
     String,
 
-    // Represents a GUID Primitive type.
+    // Represents a Guid Primitive type.
     Guid,
 
     // Represents a boolean Primitive type.
@@ -63,6 +63,6 @@ internal enum PrimitiveUnderlyingType
     // Represents a character Primitive type.
     Char,
 
-    // Represents other Primitive type.
+    // Represents another Primitive type.
     Other
 }

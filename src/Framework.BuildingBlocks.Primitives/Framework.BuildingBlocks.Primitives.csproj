@@ -8,7 +8,7 @@
   <PropertyGroup Label="Primitives Generator Settings">
     <PrimitiveGeneratorTypeConverters>true</PrimitiveGeneratorTypeConverters>
     <PrimitiveGeneratorJsonConverters>true</PrimitiveGeneratorJsonConverters>
-    <PrimitiveGeneratorXmlConverters>false</PrimitiveGeneratorXmlConverters>
+    <PrimitiveGeneratorXmlConverters>true</PrimitiveGeneratorXmlConverters>
     <PrimitiveGeneratorNswagSwaggerConverters>true</PrimitiveGeneratorNswagSwaggerConverters>
     <PrimitiveGeneratorSwashbuckleSwaggerConverters>true</PrimitiveGeneratorSwashbuckleSwaggerConverters>
     <PrimitiveGeneratorEntityFrameworkCoreValueConverters>true</PrimitiveGeneratorEntityFrameworkCoreValueConverters>
@@ -17,10 +17,17 @@
   <ItemGroup Label="Primitives Generator Settings">
     <CompilerVisibleProperty Include="PrimitiveGeneratorJsonConverters" />
     <CompilerVisibleProperty Include="PrimitiveGeneratorTypeConverters" />
+    <CompilerVisibleProperty Include="PrimitiveGeneratorXmlConverters" />
     <CompilerVisibleProperty Include="PrimitiveGeneratorSwashbuckleSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveGeneratorNswagSwaggerConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorXmlConverters" />
     <CompilerVisibleProperty Include="PrimitiveGeneratorEntityFrameworkCoreValueConverters" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="NJsonSchema" />
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,11 +37,14 @@
     <ProjectReference Include="..\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" ExcludeAssets="runtime" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>Generated</CompilerGeneratedFilesOutputPath>
+  </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
-    <PackageReference Include="Microsoft.OpenApi" />
-    <PackageReference Include="NJsonSchema" />
-    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+    <ProjectReference Include="..\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Compile Remove="$(CompilerGeneratedFilesOutputPath)/**/*.cs" />
   </ItemGroup>
 
 </Project>
