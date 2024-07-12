@@ -5,6 +5,8 @@ public interface IEntity
 {
     /// <summary>Returns an array of ordered keys for this entity.</summary>
     IReadOnlyList<object> GetKeys();
+
+    string GetKey() => string.Join(":", GetKeys());
 }
 
 /// <inheritdoc cref="IEntity"/>
