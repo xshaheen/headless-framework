@@ -4,11 +4,11 @@
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />
-    <PackageVersion Include="Audit.EntityFramework.Core" Version="25.0.4" />
-    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.300" />
-    <PackageVersion Include="AWSSDK.S3" Version="3.7.310.5" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.304.12" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.301.66" />
+    <PackageVersion Include="Audit.EntityFramework.Core" Version="25.0.7" />
+    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.301" />
+    <PackageVersion Include="AWSSDK.S3" Version="3.7.310.6" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.304.13" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.302" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.20.0" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.17.0" />
     <PackageVersion Include="ByteSize" Version="2.1.2" />
@@ -16,6 +16,7 @@
     <PackageVersion Include="Couchbase.Extensions.Compression.Snappier" Version="3.0.1-beta.1" />
     <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.6.1" />
     <PackageVersion Include="Couchbase.Extensions.MultiOp" Version="1.0.0" />
+    <PackageVersion Include="Couchbase.Extensions.OpenTelemetry" Version="3.6.1" />
     <PackageVersion Include="Couchbase.Transactions" Version="3.5.1" />
     <PackageVersion Include="CouchbaseNetClient" Version="3.6.1" />
     <PackageVersion Include="Dapper" Version="2.1.35" />
@@ -46,7 +47,7 @@
     <PackageVersion Include="libphonenumber-csharp" Version="8.13.40" />
     <PackageVersion Include="Linq2Couchbase" Version="2.0.0" />
     <PackageVersion Include="LinqKit.Microsoft.EntityFrameworkCore" Version="8.1.5" />
-    <PackageVersion Include="MailKit" Version="4.7.0" />
+    <PackageVersion Include="MailKit" Version="4.7.1.1" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="8.0.7" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
@@ -59,7 +60,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.3" />
     <PackageVersion Include="Microsoft.AspNetCore.OData" Version="8.2.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.7" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.3" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.7" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" Version="8.0.3" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.7.2" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
@@ -67,13 +68,13 @@
     <PackageVersion Include="Microsoft.Extensions.DiagnosticAdapter" Version="3.1.32" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.0" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.1" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="7.6.3" />
     <PackageVersion Include="Microsoft.OpenApi" Version="1.6.15" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MinVer" Version="5.0.0" />
     <PackageVersion Include="morelinq" Version="4.2.0" />
-    <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="0.21.0" />
+    <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="0.22.0" />
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
     <PackageVersion Include="NJsonSchema" Version="11.0.1" />
@@ -91,19 +92,19 @@
     <PackageVersion Include="Serilog" Version="4.0.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.1" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.0.3" />
-    <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.0" />
+    <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Span" Version="3.1.0" />
     <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     <PackageVersion Include="Serilog.Expressions" Version="5.0.0" />
     <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
     <PackageVersion Include="Serilog.Formatting.Elasticsearch" Version="10.0.0" />
-    <PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.1" />
+    <PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.2" />
     <PackageVersion Include="Serilog.Sinks.ApplicationInsights" Version="4.0.0" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="2.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageVersion Include="Serilog.Sinks.Elasticsearch" Version="10.0.0" />
-    <PackageVersion Include="Serilog.Sinks.File" Version="5.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageVersion Include="Serilog.Sinks.Seq" Version="8.0.0" />
     <PackageVersion Include="Snappier" Version="1.1.6" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.6.2" />
