@@ -9,6 +9,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.Storage.Blobs.Batch" />
+    <PackageReference Include="Microsoft.Extensions.Azure" />
   </ItemGroup>
 
   <ItemGroup>

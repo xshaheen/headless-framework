@@ -7,6 +7,7 @@
   
   <ItemGroup>
     <PackageReference Include="ByteSize" />
+    <PackageReference Include="CommunityToolkit.HighPerformance" />
     <PackageReference Include="DeviceId" />
     <PackageReference Include="DeviceId.Linux" />
     <PackageReference Include="DeviceId.Windows.Wmi" />
@@ -17,6 +18,8 @@
     <PackageReference Include="IdGen" />
     <PackageReference Include="IPAddressRange" />
     <PackageReference Include="libphonenumber-csharp" />
+    <PackageReference Include="NetEscapades.AspNetCore.SecurityHeaders" />
+    <PackageReference Include="NetEscapades.EnumGenerators" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
     <PackageReference Include="Nito.AsyncEx" />
