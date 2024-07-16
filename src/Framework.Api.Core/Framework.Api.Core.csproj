@@ -8,6 +8,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Asp.Versioning.Abstractions" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Mediator.Abstractions" />
     <PackageReference Include="Microsoft.AspNetCore.MiddlewareAnalysis" />
     <PackageReference Include="Microsoft.Extensions.DiagnosticAdapter" />
@@ -15,6 +16,8 @@
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="NetEscapades.AspNetCore.SecurityHeaders" />
     <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>
