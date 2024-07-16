@@ -13,7 +13,7 @@ public abstract class ApiControllerBase : ControllerBase
 {
     private IConfiguration? _config;
     private ISender? _sender;
-    private ProblemDetailsCreator? _problemDetailsCreator;
+    private IProblemDetailsCreator? _problemDetailsCreator;
 
     protected IConfiguration Configuration =>
         _config ??=
@@ -25,9 +25,9 @@ public abstract class ApiControllerBase : ControllerBase
             HttpContext.RequestServices.GetService<ISender>()
             ?? throw new InvalidOperationException($"{nameof(ISender)} service not registered");
 
-    private ProblemDetailsCreator ProblemDetailsCreator =>
+    private IProblemDetailsCreator ProblemDetailsCreator =>
         _problemDetailsCreator ??=
-            HttpContext.RequestServices.GetService<ProblemDetailsCreator>()
+            HttpContext.RequestServices.GetService<IProblemDetailsCreator>()
             ?? throw new InvalidOperationException($"{nameof(ProblemDetailsCreator)} service not registered");
 
     [NonAction]

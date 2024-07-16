@@ -14,12 +14,12 @@ namespace Framework.Api.MinimalApi.Filters;
 
 public sealed partial class MinimalApiExceptionFilter : IEndpointFilter
 {
-    private readonly ProblemDetailsCreator _problemDetailsCreator;
+    private readonly IProblemDetailsCreator _problemDetailsCreator;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<MinimalApiExceptionFilter> _logger;
 
     public MinimalApiExceptionFilter(
-        ProblemDetailsCreator problemDetailsCreator,
+        IProblemDetailsCreator problemDetailsCreator,
         IHostEnvironment environment,
         ILogger<MinimalApiExceptionFilter> logger
     )

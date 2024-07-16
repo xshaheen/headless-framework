@@ -18,13 +18,13 @@ namespace Framework.Api.Mvc.Filters;
 
 public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 {
-    private readonly ProblemDetailsCreator _problemDetailsCreator;
+    private readonly IProblemDetailsCreator _problemDetailsCreator;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<MvcApiExceptionFilter> _logger;
     private readonly Dictionary<Type, Action<ExceptionContext>> _exceptionHandlers;
 
     public MvcApiExceptionFilter(
-        ProblemDetailsCreator problemDetailsCreator,
+        IProblemDetailsCreator problemDetailsCreator,
         IHostEnvironment environment,
         ILogger<MvcApiExceptionFilter> logger
     )

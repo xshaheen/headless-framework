@@ -52,7 +52,7 @@ public sealed class NoTrailingSlashAttribute : Attribute, IResourceFilter
     /// <param name="context">The <see cref="ResourceExecutingContext" />.</param>
     private static void _HandleTrailingSlashRequest(ResourceExecutingContext context)
     {
-        var creator = context.HttpContext.RequestServices.GetRequiredService<ProblemDetailsCreator>();
+        var creator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
         var endpointNotFound = creator.EndpointNotFound(context.HttpContext);
         context.Result = new NotFoundObjectResult(endpointNotFound);
     }

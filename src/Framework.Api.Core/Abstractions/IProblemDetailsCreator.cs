@@ -7,7 +7,22 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Framework.Api.Core.Abstractions;
 
-public sealed class ProblemDetailsCreator(IClock clock)
+public interface IProblemDetailsCreator
+{
+    ProblemDetails EndpointNotFound(HttpContext context);
+    ProblemDetails EntityNotFound(HttpContext context, string entity, string key);
+    ProblemDetails MalformedSyntax(HttpContext context);
+
+    ProblemDetails UnprocessableEntity(
+        HttpContext context,
+        IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> errorDescriptors
+    );
+
+    ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errorDescriptors);
+    ProblemDetails InternalError(HttpContext context, string stackTrace);
+}
+
+public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
 {
     public ProblemDetails EndpointNotFound(HttpContext context)
     {

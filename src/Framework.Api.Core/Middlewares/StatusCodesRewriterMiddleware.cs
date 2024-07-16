@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Framework.Api.Core.Middlewares;
 
-public sealed class StatusCodesRewriterMiddleware(ProblemDetailsCreator problemDetailsCreator) : IMiddleware
+public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problemDetailsCreator) : IMiddleware
 {
     /// <summary>Executes the middleware.</summary>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)

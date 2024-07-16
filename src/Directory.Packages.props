@@ -75,6 +75,7 @@
     <PackageVersion Include="MinVer" Version="5.0.0" />
     <PackageVersion Include="morelinq" Version="4.2.0" />
     <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="0.22.0" />
+    <PackageVersion Include="NetEscapades.EnumGenerators" Version="1.0.0-beta09" />
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
     <PackageVersion Include="NJsonSchema" Version="11.0.1" />

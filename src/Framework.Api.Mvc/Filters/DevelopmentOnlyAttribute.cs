@@ -20,7 +20,7 @@ public sealed class DevelopmentOnlyAttribute : Attribute, IResourceFilter
             return;
         }
 
-        var creator = services.GetRequiredService<ProblemDetailsCreator>();
+        var creator = services.GetRequiredService<IProblemDetailsCreator>();
         var endpointNotFound = creator.EndpointNotFound(context.HttpContext);
         context.Result = new NotFoundObjectResult(endpointNotFound);
     }
