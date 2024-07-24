@@ -11,7 +11,7 @@ public static class FileValidators
     {
         return builder
             .Must((_, file) => file is null || file.Length > 0)
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.FileNotEmpty());
+            .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileNotEmpty());
     }
 
     public static IRuleBuilderOptions<T, IFormFile?> GreaterThanOrEqualTo<T>(
@@ -41,7 +41,7 @@ public static class FileValidators
                     return false;
                 }
             )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.FileGreaterThanOrEqualToValidator());
+            .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileGreaterThanOrEqualToValidator());
     }
 
     public static IRuleBuilderOptions<T, IFormFile?> LessThanOrEqualTo<T>(
@@ -71,7 +71,7 @@ public static class FileValidators
                     return false;
                 }
             )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.FileLessThanOrEqualToValidator());
+            .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileLessThanOrEqualToValidator());
     }
 
     public static IRuleBuilderOptions<T, TIFormFile?> ContentTypes<T, TIFormFile>(
@@ -102,7 +102,7 @@ public static class FileValidators
                     return false;
                 }
             )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.FileContentTypeValidator());
+            .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileContentTypeValidator());
     }
 
     public static IRuleBuilderOptions<T, TIFormFile?> HaveSignatures<T, TIFormFile>(
@@ -127,7 +127,7 @@ public static class FileValidators
                     return predicate(format);
                 }
             )
-            .WithErrorDescriptor(FluentValidatorErrorDescriber.FileSignatureValidator());
+            .WithErrorDescriptor(FluentValidatorFormFileErrorDescriber.FileSignatureValidator());
     }
 
     /*
