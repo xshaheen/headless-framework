@@ -2,7 +2,7 @@ using Framework.BuildingBlocks;
 
 namespace Framework.FluentValidation.Resources;
 
-public static class FluentValidatorErrorDescriber
+public static class FluentValidatorFormFileErrorDescriber
 {
     public static ErrorDescriptor FileNotEmpty()
     {
@@ -19,10 +19,7 @@ public static class FluentValidatorErrorDescriber
 
     public static ErrorDescriptor FileLessThanOrEqualToValidator()
     {
-        return new(
-            code: "file:less_than_or_equal_to",
-            description: FluentValidatorErrors.file_less_than_or_equal_to
-        );
+        return new(code: "file:less_than_or_equal_to", description: FluentValidatorErrors.file_less_than_or_equal_to);
     }
 
     public static ErrorDescriptor FileContentTypeValidator()

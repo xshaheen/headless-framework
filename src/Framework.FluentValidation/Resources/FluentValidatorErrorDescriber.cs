@@ -2,7 +2,7 @@ using Framework.BuildingBlocks;
 
 namespace Framework.FluentValidation.Resources;
 
-internal static class FluentValidatorErrorDescriber
+public static class FluentValidatorErrorDescriber
 {
     public static class Collections
     {
