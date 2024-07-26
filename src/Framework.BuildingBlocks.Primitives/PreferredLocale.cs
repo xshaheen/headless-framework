@@ -4,6 +4,7 @@ using Framework.BuildingBlocks.Domains;
 
 namespace Framework.BuildingBlocks.Primitives;
 
+[PublicAPI]
 [ComplexType]
 [DebuggerDisplay("{" + nameof(Language) + "}-{" + nameof(Country) + "}")]
 public sealed class PreferredLocale : ValueObject

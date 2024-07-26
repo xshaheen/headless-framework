@@ -8,6 +8,7 @@ using Framework.Arguments;
 
 namespace Framework.BuildingBlocks.Primitives;
 
+[PublicAPI]
 [ComplexType]
 [DebuggerDisplay("{" + nameof(Amount) + "}{" + nameof(CurrencyCode) + "}")]
 public sealed class Currency(decimal amount, string currencyCode)
