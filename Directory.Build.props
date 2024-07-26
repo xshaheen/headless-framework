@@ -1,0 +1,33 @@
+<Project>
+
+  <PropertyGroup Label="Compiler settings">
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WarningsAsErrors>nullable</WarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Nuget settings">
+    <!-- 👇 Use directory.packages.props for nuget package versions -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- 👇 Enable deterministic restore -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <!-- 👇 Enable faster restore times -->
+    <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
+  </PropertyGroup>
+
+  <ItemGroup Label="Global usings">
+    <Using Include="System.Collections.Immutable" />
+    <Using Include="System.Globalization" />
+    <Using Include="JetBrains.Annotations" />
+  </ItemGroup>
+
+  <ItemGroup Label="Package References">
+    <PackageReference Include="JetBrains.Annotations" />
+  </ItemGroup>
+
+</Project>

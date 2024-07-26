@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using File = Framework.BuildingBlocks.Primitives.File;
 
 namespace Framework.Database.EntityFramework.Contexts;
 
@@ -24,6 +25,8 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         configurationBuilder.Properties<Money>().HavePrecision(32, 10);
         configurationBuilder.Properties<Enum>().HaveMaxLength(100).HaveConversion<string>();
         configurationBuilder.Properties<Locale>().HaveConversion<LocaleConverter, LocaleComparer>();
+        configurationBuilder.Properties<File>().HaveConversion<FileConverter>();
+        configurationBuilder.Properties<Image>().HaveConversion<ImageConverter>();
         configurationBuilder
             .Properties<ExtraProperties>()
             .HaveConversion<ExtraPropertiesConverter, ExtraPropertiesComparer>();

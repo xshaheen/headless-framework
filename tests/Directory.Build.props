@@ -1,0 +1,46 @@
+<Project>
+
+  <Import Project="../Directory.Build.props" />
+
+  <PropertyGroup Label="Compiler settings">
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <WarningsAsErrors>nullable</WarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <ItemGroup Label="Global Packages">
+    <PackageReference Include="AutoBogus" />
+    <PackageReference Include="AutoBogus.NSubstitute" />
+    <PackageReference Include="Bogus" />
+    <PackageReference Include="DeepCloner" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="FluentAssertions.Extensions" />
+    <PackageReference Include="FluentAssertions.Json" />
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup Label="Global Analyzers">
+    <PackageReference Include="FluentAssertions.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="NSubstitute.Analyzers.CSharp">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup Label="Global usings">
+    <Using Include="NSubstitute" />
+    <Using Include="Bogus" />
+    <Using Include="FluentAssertions" />
+    <Using Include="Xunit" />
+    <Using Include="Xunit.Abstractions" />
+  </ItemGroup>
+
+</Project>

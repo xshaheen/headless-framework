@@ -1,0 +1,15 @@
+[*.cs]
+# CA1014: Mark assemblies with CLSCompliantAttribute
+dotnet_diagnostic.ca1014.severity = none
+# CA1707: Identifiers should not contain underscores. Justification: Underscores are okay for tests
+dotnet_diagnostic.ca1707.severity = none
+# IDE1006: Identifiers should be capitalized. Justification: Not capitalized are okay for tests
+dotnet_diagnostic.ide1006.severity = none
+# IDE0022: Use expression body for methods. Justification: Noisy for tests
+dotnet_diagnostic.ide0022.severity = none
+# VSTHRD200: Use "Async" suffix for async methods. Justification: No async suffixes are okay for tests
+dotnet_diagnostic.vsthrD200.severity = none
+# RCS1046: Asynchronous method name should end with 'Async'. Justification: No async suffixes are okay for tests
+dotnet_diagnostic.rcs1046.severity = none
+# CA1308: Normalize strings to uppercase
+dotnet_diagnostic.ca1308.severity = none

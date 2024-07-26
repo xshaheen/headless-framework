@@ -2,6 +2,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
 using Framework.BuildingBlocks.Domains;
 using Framework.BuildingBlocks.Extensions.Normalizers;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PhoneNumbers;
 using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;
 
@@ -126,3 +128,61 @@ public sealed class PhoneNumber : ValueObject
         return new(phoneNumber.CountryCode, phoneNumber.NationalNumber.ToString(CultureInfo.InvariantCulture));
     }
 }
+
+#region Entity Framework
+
+public static class PhoneNumberConstants
+{
+    public static class Codes
+    {
+        public const int MinLength = 1;
+        public const int MaxLength = 10;
+    }
+
+    public static class Numbers
+    {
+        public const int MinLength = 5;
+        public const int MaxLength = 30;
+    }
+}
+
+public static class PhoneNumberConfiguration
+{
+    public static void OptionalBuilder<TEntity>(OwnedNavigationBuilder<TEntity, PhoneNumber> navigationBuilder)
+        where TEntity : class
+    {
+        OptionalBuilder(navigationBuilder, "Phone");
+    }
+
+    public static void OptionalBuilder<TEntity>(
+        OwnedNavigationBuilder<TEntity, PhoneNumber> navigationBuilder,
+        string prefix
+    )
+        where TEntity : class
+    {
+        navigationBuilder.Property(x => x.CountryCode).HasColumnName(prefix + nameof(PhoneNumber.CountryCode));
+
+        navigationBuilder
+            .Property(x => x.Number)
+            .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength)
+            .HasColumnName(prefix + nameof(PhoneNumber.Number));
+    }
+
+    public static void RequiredBuilder<TEntity>(OwnedNavigationBuilder<TEntity, PhoneNumber> navigationBuilder)
+        where TEntity : class
+    {
+        navigationBuilder
+            .Property(x => x.CountryCode)
+            .IsRequired()
+            .HasColumnName("Phone" + nameof(PhoneNumber.CountryCode));
+
+        navigationBuilder
+            .Property(x => x.Number)
+            .IsRequired()
+            .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength)
+            .HasColumnName("Phone" + nameof(PhoneNumber.Number));
+    }
+}
+
+
+#endregion
