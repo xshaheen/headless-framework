@@ -4,6 +4,7 @@ using Framework.BuildingBlocks.Domains;
 
 namespace Framework.BuildingBlocks.Primitives;
 
+[PublicAPI]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
 public sealed class NormalizedString : ValueObject
 {

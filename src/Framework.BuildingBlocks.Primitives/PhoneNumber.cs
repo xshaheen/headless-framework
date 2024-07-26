@@ -7,6 +7,7 @@ using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;
 
 namespace Framework.BuildingBlocks.Primitives;
 
+[PublicAPI]
 [ComplexType]
 public sealed class PhoneNumber : ValueObject
 {

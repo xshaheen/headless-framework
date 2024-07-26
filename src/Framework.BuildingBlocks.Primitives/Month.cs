@@ -3,6 +3,7 @@ using Primitives;
 
 namespace Framework.BuildingBlocks.Primitives;
 
+[PublicAPI]
 [StructLayout(LayoutKind.Auto)]
 public readonly partial struct Month : IPrimitive<int>
 {
