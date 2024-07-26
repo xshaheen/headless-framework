@@ -99,6 +99,7 @@ public static class AddNswagSwaggerPrimitivesMappingsExtensions
                     schema.Type = JsonObjectType.String;
                     schema.Format = "string";
                     schema.Title = "UserId";
+                    schema.Description = @"User identifier.";
                 }
             )
         );

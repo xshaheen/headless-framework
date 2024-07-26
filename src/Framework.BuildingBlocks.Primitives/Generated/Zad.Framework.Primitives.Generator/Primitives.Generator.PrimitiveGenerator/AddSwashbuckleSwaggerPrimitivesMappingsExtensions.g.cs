@@ -67,7 +67,8 @@ public static class AddSwashbuckleSwaggerPrimitivesMappingsExtensions
         options.MapType<UserId>(() => new OpenApiSchema
         {
             Type = "string",
-            Title = "UserId"
+            Title = "UserId",
+            Description = @"User identifier."
         });
     }
 }
