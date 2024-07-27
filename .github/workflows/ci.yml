@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'build/**'
   pull_request:
     branches: [ "main" ]
     paths:
@@ -43,12 +44,10 @@ jobs:
           lfs: true
           fetch-depth: 0
 
-      - name: "Setup .NET"
+      - name: "Setup .NET SDK"
         uses: actions/setup-dotnet@v4.0.0
         with:
-          dotnet-version: |
-            8.0.x
-            7.0.x
+          global-json-file: "./global.json"
 
       - name: "Setup nuget cache"
         uses: actions/cache@v4
