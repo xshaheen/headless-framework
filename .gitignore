@@ -286,11 +286,4 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
-/TestWebApi/logs/20181002.txt
-/TestWebApi/logs
-/EventPublisher/logs
-/Tests/B7.CommonTest.Api/logs
-/TestApps/Demos/B7.Tests.Api/logs
-/TestApps/Demos/B7.Tests.Gateway.Api/logs
-global.json
-/Demos/B7.Tests.Api/logs
+
