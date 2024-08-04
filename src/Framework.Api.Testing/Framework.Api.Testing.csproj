@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AutoBogus" />
+    <PackageReference Include="AutoBogus.NSubstitute" />
+    <PackageReference Include="Bogus" />
+    <PackageReference Include="DeepCloner" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="FluentAssertions.Extensions" />
+    <PackageReference Include="FluentAssertions.Json" />
+    <PackageReference Include="MartinCostello.Logging.XUnit" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Respawn" />
+    <PackageReference Include="Serilog.Sinks.Debug" />
+    <PackageReference Include="Serilog.Sinks.XUnit" />
+    <PackageReference Include="Testcontainers" />
+    <PackageReference Include="WireMock.Net" />
+    <PackageReference Include="WireMock.Net.FluentAssertions" />
+    <PackageReference Include="WireMock.Net.Testcontainers" />
+    <PackageReference Include="WireMock.Net.xUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Api.Core\Framework.Api.Core.csproj" />
+  </ItemGroup>
+
+</Project>

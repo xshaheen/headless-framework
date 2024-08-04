@@ -58,8 +58,10 @@
     <PackageVersion Include="Linq2Couchbase" Version="2.0.0" />
     <PackageVersion Include="LinqKit.Microsoft.EntityFrameworkCore" Version="8.1.5" />
     <PackageVersion Include="MailKit" Version="4.7.1.1" />
+    <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.4.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="8.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.7" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
@@ -103,6 +105,7 @@
     <PackageVersion Include="Polly.Core" Version="8.4.1" />
     <PackageVersion Include="Polly.Extensions" Version="8.4.1" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.4.1" />
+    <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.0.0" />
     <PackageVersion Include="Scrutor" Version="4.2.2" />
     <PackageVersion Include="Serilog" Version="4.0.1" />
@@ -119,16 +122,24 @@
     <PackageVersion Include="Serilog.Sinks.ApplicationInsights" Version="4.0.0" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="2.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Debug" Version="3.0.0" />
     <PackageVersion Include="Serilog.Sinks.Elasticsearch" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageVersion Include="Serilog.Sinks.Seq" Version="8.0.0" />
+    <PackageVersion Include="Serilog.Sinks.XUnit" Version="3.0.5" />
     <PackageVersion Include="Snappier" Version="1.1.6" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="6.6.2" />
     <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.6.2" />
     <PackageVersion Include="System.Reactive" Version="6.0.1" />
+    <PackageVersion Include="Testcontainers" Version="3.9.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="3.9.0" />
     <PackageVersion Include="TimeZoneConverter" Version="6.1.0" />
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.0.2" />
+    <PackageVersion Include="WireMock.Net" Version="1.5.62" />
+    <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.5.62" />
+    <PackageVersion Include="WireMock.Net.Testcontainers" Version="1.5.62" />
+    <PackageVersion Include="WireMock.Net.xUnit" Version="1.5.62" />
     <PackageVersion Include="xunit" Version="2.9.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
