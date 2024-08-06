@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Folder Include="DefinitionsProviders\" />
+    <Folder Include="Definitions\" />
+    <Folder Include="ValueProviders\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
