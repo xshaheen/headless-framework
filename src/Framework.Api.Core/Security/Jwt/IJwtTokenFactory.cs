@@ -4,7 +4,7 @@ using Framework.BuildingBlocks.Abstractions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Framework.Api.Core.Abstractions;
+namespace Framework.Api.Core.Security.Jwt;
 
 public interface IJwtTokenFactory
 {
@@ -17,19 +17,6 @@ public interface IJwtTokenFactory
         string? audience,
         TimeSpan? notBefore = null
     );
-}
-
-public static class JwtTokenHelper
-{
-    public static readonly JsonWebTokenHandler TokenHandler = _CreateHandler();
-
-    private static JsonWebTokenHandler _CreateHandler()
-    {
-        JsonWebTokenHandler.DefaultMapInboundClaims = false;
-        JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
-
-        return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false, };
-    }
 }
 
 public sealed class JwtTokenFactory(IClock clock) : IJwtTokenFactory

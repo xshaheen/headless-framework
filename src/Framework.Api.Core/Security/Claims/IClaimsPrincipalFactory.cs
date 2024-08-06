@@ -3,7 +3,7 @@ using Framework.BuildingBlocks.Constants;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Api.Core.Abstractions;
+namespace Framework.Api.Core.Security.Claims;
 
 public interface IClaimsPrincipalFactory
 {

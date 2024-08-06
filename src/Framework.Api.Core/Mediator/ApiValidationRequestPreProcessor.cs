@@ -48,7 +48,7 @@ public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse> : Mess
         }
 
         _logger.LogMediatorMessageValidation(
-            userId: _requestContext.UserId,
+            userId: _requestContext.User.UserId,
             messageName: typeof(TMessage).Name,
             message: message,
             failures: failures
