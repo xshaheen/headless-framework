@@ -5,6 +5,8 @@ using FluentValidation;
 using Framework.Api.Core.Abstractions;
 using Framework.Api.Core.Diagnostics;
 using Framework.Api.Core.Middlewares;
+using Framework.Api.Core.Security.Claims;
+using Framework.Api.Core.Security.Jwt;
 using Framework.BuildingBlocks.Abstractions;
 using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.Helpers;
@@ -37,6 +39,8 @@ public static class ApiRegistration
         builder.Services.AddApiCoreResponseCompression();
         builder.Services.AddApiCoreConfigurations();
 
+        builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+        builder.Services.AddScoped<IWebClientInfoProvider, HttpWebClientInfoProvider>();
         builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
         builder.Services.AddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
         builder.Services.AddScoped<IRequestTime, RequestTime>();
@@ -44,6 +48,7 @@ public static class ApiRegistration
         builder.Services.AddSingleton<IFileFormatInspector>(FileFormatInspector);
         builder.Services.AddSingleton<IContentTypeProvider>(FileExtensionContentTypeProvider);
 
+        builder.Services.AddSingleton<ICurrentPrincipalAccessor, CurrentPrincipalAccessor>();
         builder.Services.AddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
         builder.Services.AddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.AddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();

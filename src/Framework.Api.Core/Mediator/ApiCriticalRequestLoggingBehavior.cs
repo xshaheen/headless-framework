@@ -34,7 +34,7 @@ public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse> : IPi
         if (elapsed >= 1.Seconds())
         {
             _logger.LogMediatorSlowResponse(
-                userId: _requestContext.UserId,
+                userId: _requestContext.User.UserId,
                 elapsed: elapsed,
                 messageName: typeof(TMessage).Name,
                 message: message,

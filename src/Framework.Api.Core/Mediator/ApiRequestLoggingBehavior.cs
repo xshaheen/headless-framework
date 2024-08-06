@@ -22,7 +22,7 @@ public sealed class ApiRequestLoggingBehavior<TMessage, TResponse> : MessagePreP
     protected override ValueTask Handle(TMessage message, CancellationToken cancellationToken)
     {
         _logger.LogMediatorMessage(
-            userId: _requestContext.UserId,
+            userId: _requestContext.User.UserId,
             messageName: typeof(TMessage).Name,
             message: message
         );

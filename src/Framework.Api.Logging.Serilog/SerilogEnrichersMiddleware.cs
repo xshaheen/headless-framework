@@ -10,26 +10,20 @@ public sealed class SerilogEnrichersMiddleware(IRequestContext requestContext) :
 {
     private const string _UserId = "UserId";
     private const string _AccountId = "AccountId";
-    private const string _TenantId = "TenantId";
     private const string _CorrelationId = "CorrelationId";
 
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
         var enrichers = new List<ILogEventEnricher>();
 
-        if (requestContext.UserId is not null)
+        if (requestContext.User.UserId is not null)
         {
-            enrichers.Add(new PropertyEnricher(_UserId, requestContext.UserId));
+            enrichers.Add(new PropertyEnricher(_UserId, requestContext.User.UserId));
         }
 
-        if (requestContext.AccountId is not null)
+        if (requestContext.User.AccountId is not null)
         {
-            enrichers.Add(new PropertyEnricher(_AccountId, requestContext.AccountId));
-        }
-
-        if (requestContext.TenantId is not null)
-        {
-            enrichers.Add(new PropertyEnricher(_TenantId, requestContext.TenantId));
+            enrichers.Add(new PropertyEnricher(_AccountId, requestContext.User.AccountId));
         }
 
         if (requestContext.CorrelationId is not null)
