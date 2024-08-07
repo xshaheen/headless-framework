@@ -199,12 +199,12 @@ public sealed class ProblemDetailsOperationFilter : IOperationFilter
             return;
         }
 
-        if (value.Content.TryGetValue(ContentTypes.ProblemJson, out var problemJsonMediaType))
+        if (value.Content.TryGetValue(ContentTypes.Application.ProblemJson, out var problemJsonMediaType))
         {
             problemJsonMediaType.Example = problemDetails;
         }
 
-        if (value.Content.TryGetValue(ContentTypes.ProblemXml, out var problemXmlMediaType))
+        if (value.Content.TryGetValue(ContentTypes.Application.ProblemXml, out var problemXmlMediaType))
         {
             problemXmlMediaType.Example = problemDetails;
         }

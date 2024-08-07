@@ -25,7 +25,7 @@ public static class ApiRegistration
     public static readonly FileFormatInspector FileFormatInspector = new(FileFormatLocator.GetFormats());
 
     public static readonly FileExtensionContentTypeProvider FileExtensionContentTypeProvider =
-        new() { Mappings = { [".liquid"] = ContentTypes.Html, [".md"] = ContentTypes.Html, }, };
+        new() { Mappings = { [".liquid"] = ContentTypes.Text.Html, [".md"] = ContentTypes.Text.Html, }, };
 
     public static void AddApiCore(this WebApplicationBuilder builder)
     {
@@ -89,7 +89,7 @@ public static class ApiRegistration
             .AddResponseCompression(options =>
             {
                 options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
-                    [ContentTypes.ProblemJson, ContentTypes.Svg, ContentTypes.Icon]
+                    [ContentTypes.Application.ProblemJson, ContentTypes.Image.SvgXml, ContentTypes.Image.Icon]
                 );
 
                 options.Providers.Add<BrotliCompressionProvider>();

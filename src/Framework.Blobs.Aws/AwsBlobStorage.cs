@@ -226,7 +226,7 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
     {
         return contentTypeProvider.TryGetContentType(fileName, out var contentType)
             ? contentType
-            : ContentTypes.DefaultContentType;
+            : ContentTypes.Application.OctetStream;
     }
 
     #endregion
