@@ -6,12 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="DefinitionsProviders\" />
-    <Folder Include="Definitions\" />
-    <Folder Include="ValueProviders\" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <ProjectReference Include="..\Framework.Api.Core\Framework.Api.Core.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 
