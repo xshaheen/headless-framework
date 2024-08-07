@@ -8,7 +8,7 @@ namespace Framework.BuildingBlocks.Specifications.Internals;
 /// For more information about this solution,
 /// please refer to http://blogs.msdn.com/b/meek/archive/2008/05/02/linq-to-entities-combining-predicates.aspx.
 /// </summary>
-internal class ParameterRebinder(Dictionary<ParameterExpression, ParameterExpression>? map) : ExpressionVisitor
+internal sealed class ParameterRebinder(Dictionary<ParameterExpression, ParameterExpression>? map) : ExpressionVisitor
 {
     private readonly Dictionary<ParameterExpression, ParameterExpression> _map = map ?? [];
 

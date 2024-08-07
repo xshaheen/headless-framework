@@ -22,7 +22,8 @@ public abstract class IdentityDbContextBase<
     TUserLogin,
     TRoleClaim,
     TUserToken
-> : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>
+>(DbContextOptions options)
+    : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>(options)
     where TUser : IdentityUser<TKey>
     where TRole : IdentityRole<TKey>
     where TKey : IEquatable<TKey>
@@ -32,9 +33,6 @@ public abstract class IdentityDbContextBase<
     where TRoleClaim : IdentityRoleClaim<TKey>
     where TUserToken : IdentityUserToken<TKey>
 {
-    protected IdentityDbContextBase(DbContextOptions options)
-        : base(options) { }
-
     protected abstract string DefaultSchema { get; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -333,17 +331,20 @@ public abstract class IdentityDbContextBase<
         CancellationToken cancellationToken = new()
     )
     {
-        var emitters = _ProcessEntries().ToList();
+        var (distributedMessagesEmitters, localMessagesEmitters) = _ProcessEntries();
 
-        if (emitters.Count == 0)
+        if (distributedMessagesEmitters.Count == 0)
         {
+            await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
+
             return await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         if (Database.CurrentTransaction is not null)
         {
+            await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
             var result = await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-            await PublishMessagesAsync(emitters, Database.CurrentTransaction, cancellationToken);
+            await PublishMessagesAsync(distributedMessagesEmitters, Database.CurrentTransaction, cancellationToken);
 
             return result;
         }
@@ -357,8 +358,10 @@ public abstract class IdentityDbContextBase<
                     cancellationToken
                 );
 
+                await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
                 var result = await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-                await PublishMessagesAsync(emitters, transaction, cancellationToken);
+                await PublishMessagesAsync(distributedMessagesEmitters, transaction, cancellationToken);
+
                 await transaction.CommitAsync(cancellationToken);
 
                 return result;
@@ -367,17 +370,20 @@ public abstract class IdentityDbContextBase<
 
     protected virtual int BaseSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
-        var emitters = _ProcessEntries().ToList();
+        var (distributedMessagesEmitters, localMessagesEmitters) = _ProcessEntries();
 
-        if (emitters.Count == 0)
+        if (distributedMessagesEmitters.Count == 0)
         {
+            PublishMessages(localMessagesEmitters);
+
             return _CoreSaveChanges(acceptAllChangesOnSuccess);
         }
 
         if (Database.CurrentTransaction is not null)
         {
+            PublishMessages(localMessagesEmitters);
             var result = _CoreSaveChanges(acceptAllChangesOnSuccess);
-            PublishMessages(emitters, Database.CurrentTransaction);
+            PublishMessages(distributedMessagesEmitters, Database.CurrentTransaction);
 
             return result;
         }
@@ -387,8 +393,11 @@ public abstract class IdentityDbContextBase<
             .Execute(() =>
             {
                 using var transaction = Database.BeginTransaction(IsolationLevel.ReadCommitted);
+
+                PublishMessages(localMessagesEmitters);
                 var result = _CoreSaveChanges(acceptAllChangesOnSuccess);
-                PublishMessages(emitters, transaction);
+                PublishMessages(distributedMessagesEmitters, transaction);
+
                 transaction.Commit();
 
                 return result;
@@ -409,33 +418,53 @@ public abstract class IdentityDbContextBase<
 
     #region Messages
 
-    private IEnumerable<EmitterMessages> _ProcessEntries()
+    private (List<EmitterDistributedMessages>, List<EmitterLocalMessages>) _ProcessEntries()
     {
+        var emittedDistributedMessages = new List<EmitterDistributedMessages>();
+        var emittedLocalMessages = new List<EmitterLocalMessages>();
+
         foreach (var entry in ChangeTracker.Entries())
         {
             ProcessEntry(entry);
 
-            if (entry.Entity is not IMessageEmitter emitter)
+            if (entry.Entity is IDistributedMessageEmitter distributedMessageEmitter)
             {
-                continue;
+                var messages = distributedMessageEmitter.GetDistributedMessages();
+
+                if (messages.Count > 0)
+                {
+                    emittedDistributedMessages.Add(new(distributedMessageEmitter, messages));
+                }
             }
 
-            var messages = emitter.GetMessages();
-
-            if (messages.Count > 0)
+            if (entry.Entity is ILocalMessageEmitter localMessageEmitter)
             {
-                yield return new(emitter, messages);
+                var messages = localMessageEmitter.GetLocalMessages();
+
+                if (messages.Count > 0)
+                {
+                    emittedLocalMessages.Add(new(localMessageEmitter, messages));
+                }
             }
         }
+
+        return (emittedDistributedMessages, emittedLocalMessages);
     }
 
     public abstract Task PublishMessagesAsync(
-        List<EmitterMessages> emitters,
+        List<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     );
 
-    public abstract void PublishMessages(List<EmitterMessages> emitters, IDbContextTransaction currentTransaction);
+    public abstract void PublishMessages(
+        List<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction
+    );
+
+    public abstract Task PublishMessagesAsync(List<EmitterLocalMessages> emitters, CancellationToken cancellationToken);
+
+    public abstract void PublishMessages(List<EmitterLocalMessages> emitters);
 
     #endregion
 }

@@ -7,13 +7,13 @@ namespace Framework.BuildingBlocks.Domains;
 public interface IAggregateRoot : IEntity;
 
 /// <inheritdoc cref="IAggregateRoot"/>
-public abstract class AggregateRoot : Entity, IAggregateRoot, IMessageEmitter
+public abstract class AggregateRoot : Entity, IAggregateRoot, IDistributedMessageEmitter
 {
-    private List<IIntegrationMessage>? _messages;
+    private List<IDistributedMessage>? _messages;
 
-    public void AddMessage(IIntegrationMessage e) => (_messages ??= []).Add(e);
+    public void AddMessage(IDistributedMessage e) => (_messages ??= []).Add(e);
 
-    public void ClearMessages() => _messages?.Clear();
+    public void ClearDistributedMessages() => _messages?.Clear();
 
-    public IReadOnlyList<IIntegrationMessage> GetMessages() => _messages ?? [];
+    public IReadOnlyList<IDistributedMessage> GetDistributedMessages() => _messages ?? [];
 }

@@ -8,8 +8,8 @@ namespace DotNetCore.CAP.Monitoring;
 
 public static class CapMessageExtensions
 {
-    public static PayloadMessage<TPayload> GetPayloadMessage<TPayload>(this MessageDto message)
-        where TPayload : IMessagePayload
+    public static PayloadDistributedMessage<TPayload> GetPayloadMessage<TPayload>(this MessageDto message)
+        where TPayload : IDistributedMessagePayload
     {
         var content = JsonSerializer.Deserialize<JsonElement>(
             message.Content!,
@@ -18,7 +18,7 @@ public static class CapMessageExtensions
 
         var payload = content
             .GetProperty("value")
-            .Deserialize<PayloadMessage<TPayload>>(PlatformJsonConstants.DefaultInternalJsonOptions);
+            .Deserialize<PayloadDistributedMessage<TPayload>>(PlatformJsonConstants.DefaultInternalJsonOptions);
 
         return payload!;
     }

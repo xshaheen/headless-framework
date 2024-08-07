@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.BuildingBlocks.Domains\Framework.BuildingBlocks.Domains.csproj" />
+    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
   </ItemGroup>
 
 </Project>
