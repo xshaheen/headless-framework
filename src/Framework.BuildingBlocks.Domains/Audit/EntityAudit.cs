@@ -1,4 +1,5 @@
-﻿namespace Framework.BuildingBlocks.Domains;
+﻿// ReSharper disable once CheckNamespace
+namespace Framework.BuildingBlocks.Domains;
 
 #region Entity
 

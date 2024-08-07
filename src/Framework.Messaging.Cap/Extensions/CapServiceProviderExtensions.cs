@@ -10,13 +10,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class CapServiceProviderExtensions
 {
-    public static async Task<PayloadMessage<TPayload>?> GetPayloadMessageAsync<TPayload>(
+    public static async Task<PayloadDistributedMessage<TPayload>?> GetPayloadMessageAsync<TPayload>(
         this IServiceProvider provider,
         string name,
         MessageType type = MessageType.Publish,
         string? status = nameof(StatusName.Succeeded)
     )
-        where TPayload : IMessagePayload
+        where TPayload : IDistributedMessagePayload
     {
         var message = await provider.GetMessageAsync(name, type, status);
 

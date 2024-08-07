@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.ExceptionServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using Framework.BuildingBlocks;
 
 #pragma warning disable IDE0130
@@ -8,6 +10,14 @@ namespace System;
 
 public static class ExceptionExtensions
 {
+    /// <summary>Uses <see cref="Capture"/> method to re-throws exception while preserving stack trace.</summary>
+    /// <param name="exception">Exception to be re-thrown</param>
+    [DoesNotReturn]
+    public static void ReThrow(this Exception exception)
+    {
+        ExceptionDispatchInfo.Capture(exception).Throw();
+    }
+
     [DoesNotReturn]
     public static void ThrowConflictException(this Exception ex)
     {
