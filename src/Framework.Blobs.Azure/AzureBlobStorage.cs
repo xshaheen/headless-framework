@@ -211,7 +211,7 @@ public sealed class AzureBlobStorage : IBlobStorage
     {
         return _contentTypeProvider.TryGetContentType(fileName, out var contentType)
             ? contentType
-            : ContentTypes.DefaultContentType;
+            : ContentTypes.Application.OctetStream;
     }
 
     private BlobClient _GetBlobClient(string blobUri)

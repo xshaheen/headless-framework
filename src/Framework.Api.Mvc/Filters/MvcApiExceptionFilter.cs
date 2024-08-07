@@ -87,7 +87,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 
         context.Result = new UnprocessableEntityObjectResult(details)
         {
-            ContentTypes = [ContentTypes.ProblemJson, ContentTypes.ProblemXml],
+            ContentTypes = [ContentTypes.Application.ProblemJson, ContentTypes.Application.ProblemXml],
         };
 
         context.HttpContext.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";
