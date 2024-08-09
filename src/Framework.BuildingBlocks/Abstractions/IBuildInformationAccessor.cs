@@ -4,21 +4,25 @@ namespace Framework.BuildingBlocks.Abstractions;
 
 public interface IBuildInformationAccessor
 {
-    public string? GetProduct();
-
-    public string? GetDescription();
-
+    string? GetTitle();
+    string? GetProduct();
+    string? GetDescription();
+    string? GetCompany();
     string? GetBuildNumber();
+    string? CommitNumber();
 }
 
 public sealed class BuildInformationAccessor : IBuildInformationAccessor
 {
-    // TODO: It will be helpful to add the git commit hash
-    // Check this: https://www.hanselman.com/blog/adding-a-git-commit-hash-and-azure-devops-build-number-and-build-id-to-an-aspnet-website
+    public string? GetTitle() => AssemblyInformation.Entry.Title;
 
-    public string? GetProduct() => AssemblyInformation.Entry.Version;
+    public string? GetProduct() => AssemblyInformation.Entry.Product;
 
-    public string? GetDescription() => AssemblyInformation.Entry.Version;
+    public string? GetDescription() => AssemblyInformation.Entry.Description;
+
+    public string? GetCompany() => AssemblyInformation.Entry.Company;
 
     public string? GetBuildNumber() => AssemblyInformation.Entry.Version;
+
+    public string? CommitNumber() => AssemblyInformation.Entry.CommitNumber;
 }
