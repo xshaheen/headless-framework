@@ -56,6 +56,7 @@ public static class ApiRegistration
 
         builder.Services.AddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
         builder.Services.AddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
+        builder.Services.AddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
         builder.Services.AddSingleton<IClock, Clock>();
         builder.Services.AddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
         builder.Services.AddSingleton<IHashService>(_ => new HashService(iterations: 10000, size: 128));
