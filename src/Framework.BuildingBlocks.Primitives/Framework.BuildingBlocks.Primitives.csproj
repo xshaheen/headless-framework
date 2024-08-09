@@ -5,6 +5,7 @@
     <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
   </PropertyGroup>
 
+
   <PropertyGroup Label="Primitives Generator Settings">
     <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
     <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
@@ -22,6 +23,11 @@
     <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
   </ItemGroup>
+
+  <!--
+   TODO: Remove EF, Swagger generation and package reference from
+         here and include it in Swagger project & EF project
+   -->
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
