@@ -6,21 +6,21 @@
   </PropertyGroup>
 
   <PropertyGroup Label="Primitives Generator Settings">
-    <PrimitiveGeneratorTypeConverters>true</PrimitiveGeneratorTypeConverters>
-    <PrimitiveGeneratorJsonConverters>true</PrimitiveGeneratorJsonConverters>
-    <PrimitiveGeneratorXmlConverters>true</PrimitiveGeneratorXmlConverters>
-    <PrimitiveGeneratorNswagSwaggerConverters>true</PrimitiveGeneratorNswagSwaggerConverters>
-    <PrimitiveGeneratorSwashbuckleSwaggerConverters>true</PrimitiveGeneratorSwashbuckleSwaggerConverters>
-    <PrimitiveGeneratorEntityFrameworkCoreValueConverters>true</PrimitiveGeneratorEntityFrameworkCoreValueConverters>
+    <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
+    <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+    <PrimitiveXmlConverters>true</PrimitiveXmlConverters>
+    <PrimitiveNswagSwaggerConverters>true</PrimitiveNswagSwaggerConverters>
+    <PrimitiveSwashbuckleSwaggerConverters>true</PrimitiveSwashbuckleSwaggerConverters>
+    <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
   </PropertyGroup>
 
   <ItemGroup Label="Primitives Generator Settings">
-    <CompilerVisibleProperty Include="PrimitiveGeneratorJsonConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorTypeConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorXmlConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorSwashbuckleSwaggerConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorNswagSwaggerConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorEntityFrameworkCoreValueConverters" />
+    <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
+    <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
+    <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
+    <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
   </ItemGroup>
 
   <ItemGroup>

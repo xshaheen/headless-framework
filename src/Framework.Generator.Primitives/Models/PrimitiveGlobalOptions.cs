@@ -48,5 +48,5 @@ internal sealed record PrimitiveGlobalOptions
     /// <value>
     ///   <c>true</c> if Entity Framework Core value converters should be generated; otherwise, <c>false</c>.
     /// </value>
-    public bool GenerateEntityFrameworkCoreValueConverters { get; set; }
+    public bool GenerateEntityFrameworkValueConverters { get; set; }
 }

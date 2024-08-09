@@ -93,7 +93,7 @@ internal static class Executor
                     context.AddTypeConverter(generatorData);
                 }
 
-                if (globalOptions.GenerateEntityFrameworkCoreValueConverters)
+                if (globalOptions.GenerateEntityFrameworkValueConverters)
                 {
                     efValueConverterTypes.Add(generatorData.TypeSymbol);
 

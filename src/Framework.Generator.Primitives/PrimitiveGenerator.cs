@@ -13,7 +13,7 @@ namespace Primitives.Generator;
 [Generator]
 public sealed class PrimitiveGenerator : IIncrementalGenerator
 {
-    /// <summary>Initializes the DomainPrimitiveGenerator and registers it as a source code generator.</summary>
+    /// <summary>Initializes the PrimitiveGenerator and registers it as a source code generator.</summary>
     /// <param name="context">The generator initialization context.</param>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -50,7 +50,7 @@ public sealed class PrimitiveGenerator : IIncrementalGenerator
         var result = new PrimitiveGlobalOptions();
 
         if (
-            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveGeneratorJsonConverters", out var value)
+            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveJsonConverters", out var value)
             && bool.TryParse(value, out var generateJsonConverters)
         )
         {
@@ -58,7 +58,7 @@ public sealed class PrimitiveGenerator : IIncrementalGenerator
         }
 
         if (
-            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveGeneratorTypeConverters", out value)
+            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveTypeConverters", out value)
             && bool.TryParse(value, out var generateTypeConverter)
         )
         {
@@ -66,27 +66,23 @@ public sealed class PrimitiveGenerator : IIncrementalGenerator
         }
 
         if (
-            analyzerOptions.GlobalOptions.TryGetValue(
-                "build_property.PrimitiveGeneratorSwashbuckleSwaggerConverters",
-                out value
-            ) && bool.TryParse(value, out var generateSwashbuckleSwaggerConverters)
+            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveSwashbuckleSwaggerConverters", out value)
+            && bool.TryParse(value, out var generateSwashbuckleSwaggerConverters)
         )
         {
             result.GenerateSwashbuckleSwaggerConverters = generateSwashbuckleSwaggerConverters;
         }
 
         if (
-            analyzerOptions.GlobalOptions.TryGetValue(
-                "build_property.PrimitiveGeneratorNswagSwaggerConverters",
-                out value
-            ) && bool.TryParse(value, out var generateNswagSwaggerConverters)
+            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveNswagSwaggerConverters", out value)
+            && bool.TryParse(value, out var generateNswagSwaggerConverters)
         )
         {
             result.GenerateNswagSwaggerConverters = generateNswagSwaggerConverters;
         }
 
         if (
-            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveGeneratorXmlConverters", out value)
+            analyzerOptions.GlobalOptions.TryGetValue("build_property.PrimitiveXmlConverters", out value)
             && bool.TryParse(value, out var generateXmlSerialization)
         )
         {
@@ -95,12 +91,12 @@ public sealed class PrimitiveGenerator : IIncrementalGenerator
 
         if (
             analyzerOptions.GlobalOptions.TryGetValue(
-                "build_property.PrimitiveGeneratorEntityFrameworkCoreValueConverters",
+                "build_property.PrimitiveEntityFrameworkValueConverters",
                 out value
             ) && bool.TryParse(value, out var generateEntityFrameworkValueConverters)
         )
         {
-            result.GenerateEntityFrameworkCoreValueConverters = generateEntityFrameworkValueConverters;
+            result.GenerateEntityFrameworkValueConverters = generateEntityFrameworkValueConverters;
         }
 
         return result;

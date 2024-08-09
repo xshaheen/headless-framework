@@ -25,12 +25,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <CompilerVisibleProperty Include="PrimitiveGeneratorJsonConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorTypeConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorSwashbuckleSwaggerConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorNswagSwaggerConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorXmlConverters" />
-    <CompilerVisibleProperty Include="PrimitiveGeneratorEntityFrameworkCoreValueConverters" />
+    <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
+    <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
+    <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
+    <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
   </ItemGroup>
 
   <ItemGroup Label="This ensures the library will be packaged as a source generator when we use `dotnet pack`">
