@@ -430,20 +430,23 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         return (emittedDistributedMessages, emittedLocalMessages);
     }
 
-    public abstract Task PublishMessagesAsync(
+    protected abstract Task PublishMessagesAsync(
         List<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     );
 
-    public abstract void PublishMessages(
+    protected abstract void PublishMessages(
         List<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction
     );
 
-    public abstract Task PublishMessagesAsync(List<EmitterLocalMessages> emitters, CancellationToken cancellationToken);
+    protected abstract Task PublishMessagesAsync(
+        List<EmitterLocalMessages> emitters,
+        CancellationToken cancellationToken
+    );
 
-    public abstract void PublishMessages(List<EmitterLocalMessages> emitters);
+    protected abstract void PublishMessages(List<EmitterLocalMessages> emitters);
 
     #endregion
 }
