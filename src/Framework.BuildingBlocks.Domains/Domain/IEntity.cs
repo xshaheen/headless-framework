@@ -1,7 +1,6 @@
-// ReSharper disable once CheckNamespace
-
 using Framework.BuildingBlocks.Domains.Helpers;
 
+// ReSharper disable once CheckNamespace
 namespace Framework.BuildingBlocks.Domains;
 
 /// <summary>Defines an entity. It's primary key may not be "Id" or it may have a composite primary key.</summary>
