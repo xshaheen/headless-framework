@@ -1,3 +1,7 @@
+// ReSharper disable once CheckNamespace
+
+using Framework.BuildingBlocks.Domains.Helpers;
+
 namespace Framework.BuildingBlocks.Domains;
 
 /// <summary>Defines an entity. It's primary key may not be "Id" or it may have a composite primary key.</summary>
@@ -10,7 +14,7 @@ public interface IEntity
 }
 
 /// <inheritdoc cref="IEntity"/>
-public abstract class Entity : Base<Entity>, IEntity
+public abstract class Entity : EquatableBase<Entity>, IEntity
 {
     public abstract IReadOnlyList<object> GetKeys();
 

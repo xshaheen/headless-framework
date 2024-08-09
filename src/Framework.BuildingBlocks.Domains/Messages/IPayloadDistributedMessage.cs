@@ -1,4 +1,7 @@
 // ReSharper disable once CheckNamespace
+
+using Framework.BuildingBlocks.Domains.Helpers;
+
 namespace Framework.BuildingBlocks.Domains;
 
 public interface IDistributedMessagePayload
@@ -11,7 +14,7 @@ public interface IPayloadDistributedMessage<out T> : IDistributedMessage
     T Payload { get; }
 }
 
-public class PayloadDistributedMessage<T> : Base<PayloadDistributedMessage<T>>, IPayloadDistributedMessage<T>
+public class PayloadDistributedMessage<T> : EquatableBase<PayloadDistributedMessage<T>>, IPayloadDistributedMessage<T>
     where T : IDistributedMessagePayload
 {
     public string MessageKey => T.MessageKey;
