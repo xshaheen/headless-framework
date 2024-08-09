@@ -1,9 +1,9 @@
-namespace Framework.BuildingBlocks.Domains;
+namespace Framework.BuildingBlocks.Domains.Helpers;
 
-public abstract class Base<T> : IEquatable<Base<T>>
-    where T : Base<T>
+public abstract class EquatableBase<T> : IEquatable<EquatableBase<T>>
+    where T : EquatableBase<T>
 {
-    public bool Equals(Base<T>? other)
+    public bool Equals(EquatableBase<T>? other)
     {
         if (other is null)
         {
@@ -18,19 +18,19 @@ public abstract class Base<T> : IEquatable<Base<T>>
         return GetType() == other.GetType() && EqualityComponents().SequenceEqual(other.EqualityComponents());
     }
 
-    public static bool operator ==(Base<T>? left, Base<T>? right)
+    public static bool operator ==(EquatableBase<T>? left, EquatableBase<T>? right)
     {
         return !(left is null ^ right is null) && left?.Equals(right) != false;
     }
 
-    public static bool operator !=(Base<T>? left, Base<T>? right)
+    public static bool operator !=(EquatableBase<T>? left, EquatableBase<T>? right)
     {
         return !(left == right);
     }
 
     public sealed override bool Equals(object? obj)
     {
-        return Equals(obj as Base<T>);
+        return Equals(obj as EquatableBase<T>);
     }
 
     public sealed override int GetHashCode()
