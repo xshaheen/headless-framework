@@ -8,13 +8,20 @@ namespace Framework.BuildingBlocks.Domains;
 public interface IAggregateRoot : IEntity;
 
 /// <inheritdoc cref="IAggregateRoot"/>
-public abstract class AggregateRoot : Entity, IAggregateRoot, IDistributedMessageEmitter
+public abstract class AggregateRoot : Entity, IAggregateRoot, IDistributedMessageEmitter, ILocalMessageEmitter
 {
-    private List<IDistributedMessage>? _messages;
+    private List<ILocalMessage>? _localMessages;
+    private List<IDistributedMessage>? _distributedMessages;
 
-    public void AddMessage(IDistributedMessage e) => (_messages ??= []).Add(e);
+    public void AddMessage(IDistributedMessage e) => (_distributedMessages ??= []).Add(e);
 
-    public void ClearDistributedMessages() => _messages?.Clear();
+    public void ClearDistributedMessages() => _distributedMessages?.Clear();
 
-    public IReadOnlyList<IDistributedMessage> GetDistributedMessages() => _messages ?? [];
+    public IReadOnlyList<IDistributedMessage> GetDistributedMessages() => _distributedMessages ?? [];
+
+    public void AddMessage(ILocalMessage e) => (_localMessages ??= []).Add(e);
+
+    public IReadOnlyList<ILocalMessage> GetLocalMessages() => _localMessages ?? [];
+
+    public void ClearLocalMessages() => _localMessages?.Clear();
 }
