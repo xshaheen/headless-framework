@@ -1,4 +1,4 @@
-using System.Reflection;
+using Framework.BuildingBlocks.Helpers;
 
 namespace Framework.BuildingBlocks.Abstractions;
 
@@ -21,18 +21,4 @@ public sealed class BuildInformationAccessor : IBuildInformationAccessor
     public string? GetDescription() => AssemblyInformation.Entry.Version;
 
     public string? GetBuildNumber() => AssemblyInformation.Entry.Version;
-
-    private sealed record AssemblyInformation(string? Product, string? Description, string? Version)
-    {
-        public static readonly AssemblyInformation Current = new(typeof(AssemblyInformation).Assembly);
-
-        public static readonly AssemblyInformation Entry = new(Assembly.GetEntryAssembly()!);
-
-        private AssemblyInformation(Assembly assembly)
-            : this(
-                Product: assembly.GetAssemblyProduct(),
-                Description: assembly.GetAssemblyDescription(),
-                Version: assembly.GetAssemblyVersion()
-            ) { }
-    }
 }
