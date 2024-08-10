@@ -10,11 +10,11 @@ using SixLabors.ImageSharp.Formats;
 namespace Framework.Imaging.ImageSharp;
 
 public sealed class ImageSharpImageCompressorContributor(
-    IOptions<ImageSharpCompressOptions> options,
+    IOptions<ImageSharpOptions> options,
     ILogger<ImageSharpImageCompressorContributor> logger
 ) : IImageCompressorContributor
 {
-    private readonly ImageSharpCompressOptions _options = options.Value;
+    private readonly ImageSharpOptions _options = options.Value;
 
     public async Task<ImageStreamCompressResult> TryCompressAsync(
         Stream stream,
@@ -83,9 +83,9 @@ public sealed class ImageSharpImageCompressorContributor(
     {
         return format.DefaultMimeType switch
         {
-            ContentTypes.Image.Jpeg => _options.JpegEncoder,
-            ContentTypes.Image.Png => _options.PngEncoder,
-            ContentTypes.Image.Webp => _options.WebpEncoder,
+            ContentTypes.Image.Jpeg => _options.JpegCompressEncoder,
+            ContentTypes.Image.Png => _options.PngCompressEncoder,
+            ContentTypes.Image.Webp => _options.WebpCompressEncoder,
             _ => throw new NotSupportedException($"No encoder available for the given format: {format.Name}"),
         };
     }
