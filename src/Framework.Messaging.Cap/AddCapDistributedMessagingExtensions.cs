@@ -13,8 +13,10 @@ public static class AddCapDistributedMessagingExtensions
 
         services.AddCap(capOptions =>
         {
+            capOptions.FailedMessageExpiredAfter = 30 * 24 * 3600; // 30 days
+            capOptions.SucceedMessageExpiredAfter = 5 * 24 * 3600; // 30 days
+            capOptions.CollectorCleaningInterval = 5 * 60; // 5 minutes
             PlatformJsonConstants.ConfigureInternalJsonOptions(capOptions.JsonSerializerOptions);
-
             setupAction.Invoke(capOptions);
         });
     }
