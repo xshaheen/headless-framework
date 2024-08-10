@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Framework.BuildingBlocks.Constants;
 using Framework.Imaging.Contracts;
 using SixLabors.ImageSharp;
@@ -33,10 +34,12 @@ public sealed class ImageSharpImageResizerContributor : IImageResizerContributor
 
         var image = await Image.LoadAsync(stream, cancellationToken);
 
-        if (!_CanResize(image.Metadata.DecodedImageFormat!.DefaultMimeType))
+        if (!_CanResize(image.Metadata.DecodedImageFormat?.DefaultMimeType))
         {
             return new(stream, ImageProcessState.Unsupported);
         }
+
+        Debug.Assert(image.Metadata.DecodedImageFormat is not null);
 
         if (_resizeModeMap.TryGetValue(resizeArgs.Mode, out var resizeMode))
         {

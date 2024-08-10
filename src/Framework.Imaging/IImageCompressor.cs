@@ -62,7 +62,7 @@ public sealed class ImageCompressor : IImageCompressor
             return result;
         }
 
-        return new ImageCompressResult<Stream>(stream, ImageProcessState.Unsupported);
+        return new(stream, ImageProcessState.Unsupported);
     }
 
     public async Task<ImageCompressResult<byte[]>> CompressAsync(
@@ -77,7 +77,7 @@ public sealed class ImageCompressor : IImageCompressor
         {
             var result = await imageCompressorContributor.TryCompressAsync(bytes, mimeType, cancellationToken);
 
-            if (result.State == ImageProcessState.Unsupported)
+            if (result.State is ImageProcessState.Unsupported)
             {
                 continue;
             }
@@ -85,7 +85,7 @@ public sealed class ImageCompressor : IImageCompressor
             return result;
         }
 
-        return new ImageCompressResult<byte[]>(bytes, ImageProcessState.Unsupported);
+        return new(bytes, ImageProcessState.Unsupported);
     }
 
     private static void _SeekToBegin(Stream stream)

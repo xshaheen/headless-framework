@@ -48,7 +48,7 @@ public sealed class ImageResizer : IImageResizer
 
         if (!stream.CanRead)
         {
-            return new ImageResizeResult<Stream>(stream, ImageProcessState.Unsupported);
+            return new(stream, ImageProcessState.Unsupported);
         }
 
         if (!stream.CanSeek)
@@ -73,7 +73,7 @@ public sealed class ImageResizer : IImageResizer
             return result;
         }
 
-        return new ImageResizeResult<Stream>(stream, ImageProcessState.Unsupported);
+        return new(stream, ImageProcessState.Unsupported);
     }
 
     public async Task<ImageResizeResult<byte[]>> ResizeAsync(

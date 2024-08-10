@@ -1,4 +1,5 @@
-﻿using Framework.BuildingBlocks.Constants;
+﻿using System.Diagnostics;
+using Framework.BuildingBlocks.Constants;
 using Framework.Imaging.Contracts;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
@@ -28,10 +29,12 @@ public sealed class ImageSharpImageCompressorContributor : IImageCompressorContr
 
         var image = await Image.LoadAsync(stream, cancellationToken);
 
-        if (!_CanCompress(image.Metadata.DecodedImageFormat!.DefaultMimeType))
+        if (!_CanCompress(image.Metadata.DecodedImageFormat?.DefaultMimeType))
         {
             return new(stream, ImageProcessState.Unsupported);
         }
+
+        Debug.Assert(image.Metadata.DecodedImageFormat is not null);
 
         var memoryStream = await _GetStreamFromImageAsync(image, image.Metadata.DecodedImageFormat, cancellationToken);
 
