@@ -5,31 +5,20 @@ namespace Framework.Imaging;
 
 public interface IImageCompressor
 {
-    Task<ImageCompressResult<Stream>> CompressAsync(
+    Task<ImageStreamCompressResult> CompressAsync(
         Stream stream,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<ImageCompressResult<byte[]>> CompressAsync(
-        byte[] bytes,
-        string? mimeType = null,
+        ImageCompressArgs args,
         CancellationToken cancellationToken = default
     );
 }
 
-public sealed class ImageCompressor : IImageCompressor
+public sealed class ImageCompressor(IEnumerable<IImageCompressorContributor> contributors) : IImageCompressor
 {
-    private IEnumerable<IImageCompressorContributor> ImageCompressorContributors { get; }
+    private readonly IEnumerable<IImageCompressorContributor> _compressorContributors = contributors.Reverse();
 
-    public ImageCompressor(IEnumerable<IImageCompressorContributor> imageCompressorContributors)
-    {
-        ImageCompressorContributors = imageCompressorContributors.Reverse();
-    }
-
-    public async Task<ImageCompressResult<Stream>> CompressAsync(
+    public async Task<ImageStreamCompressResult> CompressAsync(
         Stream stream,
-        string? mimeType = null,
+        ImageCompressArgs args,
         CancellationToken cancellationToken = default
     )
     {
@@ -37,7 +26,7 @@ public sealed class ImageCompressor : IImageCompressor
 
         if (!stream.CanRead)
         {
-            return new(stream, ImageProcessState.Unsupported);
+            return ImageStreamCompressResult.CannotRead();
         }
 
         if (!stream.CanSeek)
@@ -48,9 +37,9 @@ public sealed class ImageCompressor : IImageCompressor
             stream = memoryStream;
         }
 
-        foreach (var imageCompressorContributor in ImageCompressorContributors)
+        foreach (var imageCompressorContributor in _compressorContributors)
         {
-            var result = await imageCompressorContributor.TryCompressAsync(stream, mimeType, cancellationToken);
+            var result = await imageCompressorContributor.TryCompressAsync(stream, args, cancellationToken);
 
             _SeekToBegin(stream);
 
@@ -62,30 +51,7 @@ public sealed class ImageCompressor : IImageCompressor
             return result;
         }
 
-        return new(stream, ImageProcessState.Unsupported);
-    }
-
-    public async Task<ImageCompressResult<byte[]>> CompressAsync(
-        byte[] bytes,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(bytes);
-
-        foreach (var imageCompressorContributor in ImageCompressorContributors)
-        {
-            var result = await imageCompressorContributor.TryCompressAsync(bytes, mimeType, cancellationToken);
-
-            if (result.State is ImageProcessState.Unsupported)
-            {
-                continue;
-            }
-
-            return result;
-        }
-
-        return new(bytes, ImageProcessState.Unsupported);
+        return ImageStreamCompressResult.NotSupported();
     }
 
     private static void _SeekToBegin(Stream stream)

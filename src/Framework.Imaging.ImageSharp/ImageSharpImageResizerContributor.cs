@@ -1,68 +1,67 @@
 using System.Diagnostics;
 using Framework.BuildingBlocks.Constants;
 using Framework.Imaging.Contracts;
+using Framework.Imaging.ImageSharp.Internals;
+using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 
 namespace Framework.Imaging.ImageSharp;
 
-public sealed class ImageSharpImageResizerContributor : IImageResizerContributor
+public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageResizerContributor> logger)
+    : IImageResizerContributor
 {
-    private readonly Dictionary<ImageResizeMode, ResizeMode> _resizeModeMap =
-        new()
-        {
-            { ImageResizeMode.None, default },
-            { ImageResizeMode.Stretch, ResizeMode.Stretch },
-            { ImageResizeMode.BoxPad, ResizeMode.BoxPad },
-            { ImageResizeMode.Min, ResizeMode.Min },
-            { ImageResizeMode.Max, ResizeMode.Max },
-            { ImageResizeMode.Crop, ResizeMode.Crop },
-            { ImageResizeMode.Pad, ResizeMode.Pad }
-        };
-
-    public async Task<ImageResizeResult<Stream>> TryResizeAsync(
+    public async Task<ImageStreamResizeResult> TryResizeAsync(
         Stream stream,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
+        ImageResizeArgs args,
         CancellationToken cancellationToken = default
     )
     {
-        if (!string.IsNullOrWhiteSpace(mimeType) && !_CanResize(mimeType))
+        if (!string.IsNullOrWhiteSpace(args.MimeType) && !_CanResize(args.MimeType))
         {
-            return new(stream, ImageProcessState.Unsupported);
+            return ImageStreamResizeResult.NotSupported();
         }
 
-        var image = await Image.LoadAsync(stream, cancellationToken);
+        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken);
 
-        if (!_CanResize(image.Metadata.DecodedImageFormat?.DefaultMimeType))
+        if (error is not null)
         {
-            return new(stream, ImageProcessState.Unsupported);
+            return ImageStreamResizeResult.NotSupported(error);
         }
 
-        Debug.Assert(image.Metadata.DecodedImageFormat is not null);
+        Debug.Assert(image is not null);
+        var format = image.Metadata.DecodedImageFormat;
 
-        if (_resizeModeMap.TryGetValue(resizeArgs.Mode, out var resizeMode))
+        if (format is null)
         {
-            image.Mutate(x => x.Resize(new ResizeOptions { Size = _GetSize(resizeArgs), Mode = resizeMode }));
+            return ImageStreamResizeResult.NotSupported();
         }
-        else
+
+        var mimeType = format.DefaultMimeType;
+
+        if (!_CanResize(mimeType))
         {
-            throw new NotSupportedException("Resize mode " + resizeArgs.Mode + "is not supported!");
+            return ImageStreamResizeResult.NotSupportedMimeType(mimeType);
         }
+
+        var resizeMode = _GetResizeMode(args.Mode);
+
+        if (resizeMode is null)
+        {
+            return ImageStreamResizeResult.Done(stream, mimeType, image.Width, image.Height);
+        }
+
+        image.Mutate(x => x.Resize(new ResizeOptions { Size = _GetSize(args), Mode = resizeMode.Value }));
 
         var memoryStream = new MemoryStream();
 
         try
         {
-            await image.SaveAsync(
-                memoryStream,
-                image.Metadata.DecodedImageFormat,
-                cancellationToken: cancellationToken
-            );
+            await image.SaveAsync(memoryStream, format, cancellationToken);
 
             memoryStream.Position = 0;
 
-            return new(memoryStream, ImageProcessState.Done);
+            return ImageStreamResizeResult.Done(memoryStream, mimeType, image.Width, image.Height);
         }
         catch
         {
@@ -72,32 +71,19 @@ public sealed class ImageSharpImageResizerContributor : IImageResizerContributor
         }
     }
 
-    public async Task<ImageResizeResult<byte[]>> TryResizeAsync(
-        byte[] bytes,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    )
+    private static ResizeMode? _GetResizeMode(ImageResizeMode mode)
     {
-        if (!string.IsNullOrWhiteSpace(mimeType) && !_CanResize(mimeType))
+        return mode switch
         {
-            return new(bytes, ImageProcessState.Unsupported);
-        }
-
-        using var ms = new MemoryStream(bytes);
-
-        var result = await TryResizeAsync(ms, resizeArgs, mimeType, cancellationToken);
-
-        if (result.State is not ImageProcessState.Done)
-        {
-            return new(bytes, result.State);
-        }
-
-        var newBytes = await result.Result.GetAllBytesAsync(cancellationToken);
-
-        await result.Result.DisposeAsync();
-
-        return new(newBytes, result.State);
+            ImageResizeMode.None or ImageResizeMode.Default => null,
+            ImageResizeMode.Stretch => ResizeMode.Stretch,
+            ImageResizeMode.BoxPad => ResizeMode.BoxPad,
+            ImageResizeMode.Min => ResizeMode.Min,
+            ImageResizeMode.Max => ResizeMode.Max,
+            ImageResizeMode.Crop => ResizeMode.Crop,
+            ImageResizeMode.Pad => ResizeMode.Pad,
+            _ => throw new InvalidOperationException($"Unknown {nameof(ImageResizeMode)}={mode}")
+        };
     }
 
     private static bool _CanResize(string? mimeType)

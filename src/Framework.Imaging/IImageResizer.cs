@@ -6,24 +6,16 @@ namespace Framework.Imaging;
 
 public interface IImageResizer
 {
-    Task<ImageResizeResult<Stream>> ResizeAsync(
+    Task<ImageStreamResizeResult> ResizeAsync(
         Stream stream,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<ImageResizeResult<byte[]>> ResizeAsync(
-        byte[] bytes,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
+        ImageResizeArgs args,
         CancellationToken cancellationToken = default
     );
 }
 
 public sealed class ImageResizer : IImageResizer
 {
-    private readonly IEnumerable<IImageResizerContributor> _imageResizerContributors;
+    private readonly IEnumerable<IImageResizerContributor> _resizerContributors;
     private readonly ImageResizeOptions _imageResizeOptions;
 
     public ImageResizer(
@@ -31,24 +23,23 @@ public sealed class ImageResizer : IImageResizer
         IOptions<ImageResizeOptions> imageResizeOptions
     )
     {
-        _imageResizerContributors = imageResizerContributors.Reverse();
+        _resizerContributors = imageResizerContributors.Reverse();
         _imageResizeOptions = imageResizeOptions.Value;
     }
 
-    public async Task<ImageResizeResult<Stream>> ResizeAsync(
+    public async Task<ImageStreamResizeResult> ResizeAsync(
         Stream stream,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
+        ImageResizeArgs args,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(stream);
 
-        _ChangeDefaultResizeMode(resizeArgs);
+        _ChangeDefaultResizeMode(args);
 
         if (!stream.CanRead)
         {
-            return new(stream, ImageProcessState.Unsupported);
+            return ImageStreamResizeResult.CannotRead();
         }
 
         if (!stream.CanSeek)
@@ -59,13 +50,13 @@ public sealed class ImageResizer : IImageResizer
             stream = memoryStream;
         }
 
-        foreach (var imageResizerContributor in _imageResizerContributors)
+        foreach (var resizerContributor in _resizerContributors)
         {
-            var result = await imageResizerContributor.TryResizeAsync(stream, resizeArgs, mimeType, cancellationToken);
+            var result = await resizerContributor.TryResizeAsync(stream, args, cancellationToken);
 
             _SeekToBegin(stream);
 
-            if (result.State == ImageProcessState.Unsupported)
+            if (result.State is ImageProcessState.Unsupported)
             {
                 continue;
             }
@@ -73,33 +64,7 @@ public sealed class ImageResizer : IImageResizer
             return result;
         }
 
-        return new(stream, ImageProcessState.Unsupported);
-    }
-
-    public async Task<ImageResizeResult<byte[]>> ResizeAsync(
-        byte[] bytes,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(bytes);
-
-        _ChangeDefaultResizeMode(resizeArgs);
-
-        foreach (var imageResizerContributor in _imageResizerContributors)
-        {
-            var result = await imageResizerContributor.TryResizeAsync(bytes, resizeArgs, mimeType, cancellationToken);
-
-            if (result.State == ImageProcessState.Unsupported)
-            {
-                continue;
-            }
-
-            return result;
-        }
-
-        return new ImageResizeResult<byte[]>(bytes, ImageProcessState.Unsupported);
+        return ImageStreamResizeResult.NotSupported();
     }
 
     private void _ChangeDefaultResizeMode(ImageResizeArgs resizeArgs)
