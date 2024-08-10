@@ -63,6 +63,7 @@
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="8.0.7" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.7" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.0" />
@@ -109,6 +110,7 @@
     <PackageVersion Include="Polly.RateLimiting" Version="8.4.1" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.0.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="1.1.2" />
     <PackageVersion Include="Scrutor" Version="4.2.2" />
     <PackageVersion Include="Serilog" Version="4.0.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="8.0.1" />
