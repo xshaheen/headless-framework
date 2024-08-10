@@ -6,27 +6,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Enrichers.ClientInfo" />
-    <PackageReference Include="Serilog.Enrichers.Environment" />
-    <PackageReference Include="Serilog.Enrichers.Process" />
-    <PackageReference Include="Serilog.Enrichers.Span" />
-    <PackageReference Include="Serilog.Enrichers.Thread" />
-    <PackageReference Include="Serilog.Expressions" />
-    <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Serilog.Formatting.Elasticsearch" />
-    <PackageReference Include="Serilog.Settings.Configuration" />
     <PackageReference Include="Serilog.Sinks.ApplicationInsights" />
-    <PackageReference Include="Serilog.Sinks.Async" />
-    <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.Elasticsearch" />
-    <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Sinks.Seq" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Api.Core\Framework.Api.Core.csproj" />
+    <ProjectReference Include="..\Framework.Logging.Serilog\Framework.Logging.Serilog.csproj" />
   </ItemGroup>
 
 </Project>
