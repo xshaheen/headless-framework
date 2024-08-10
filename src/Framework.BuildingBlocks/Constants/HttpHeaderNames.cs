@@ -10,6 +10,7 @@ public static class HttpHeaderNames
     public const string Forwards = "X-Forwarded-For";
     public const string XPoweredBy = "X-Powered-By";
     public const string Locale = "X-Locale";
+    public const string ClientVersion = "X-Client-Version";
     public const string Location = "Location";
     public const string ContentDisposition = "Content-Disposition";
     public const string ETag = "ETag";
