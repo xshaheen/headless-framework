@@ -4,15 +4,9 @@ namespace Framework.Imaging;
 
 public interface IImageCompressorContributor
 {
-    Task<ImageCompressResult<Stream>> TryCompressAsync(
+    Task<ImageStreamCompressResult> TryCompressAsync(
         Stream stream,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<ImageCompressResult<byte[]>> TryCompressAsync(
-        byte[] bytes,
-        string? mimeType = null,
+        ImageCompressArgs args,
         CancellationToken cancellationToken = default
     );
 }

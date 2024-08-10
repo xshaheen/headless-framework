@@ -1,89 +1,71 @@
 ﻿using System.Diagnostics;
 using Framework.BuildingBlocks.Constants;
 using Framework.Imaging.Contracts;
+using Framework.Imaging.ImageSharp.Internals;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 
 namespace Framework.Imaging.ImageSharp;
 
-public sealed class ImageSharpImageCompressorContributor : IImageCompressorContributor
+public sealed class ImageSharpImageCompressorContributor(
+    IOptions<ImageSharpCompressOptions> options,
+    ILogger<ImageSharpImageCompressorContributor> logger
+) : IImageCompressorContributor
 {
-    private readonly ImageSharpCompressOptions _options;
+    private readonly ImageSharpCompressOptions _options = options.Value;
 
-    public ImageSharpImageCompressorContributor(IOptions<ImageSharpCompressOptions> options)
-    {
-        _options = options.Value;
-    }
-
-    public async Task<ImageCompressResult<Stream>> TryCompressAsync(
+    public async Task<ImageStreamCompressResult> TryCompressAsync(
         Stream stream,
-        string? mimeType = null,
+        ImageCompressArgs args,
         CancellationToken cancellationToken = default
     )
     {
-        if (!string.IsNullOrWhiteSpace(mimeType) && !_CanCompress(mimeType))
+        if (!string.IsNullOrWhiteSpace(args.MimeType) && !_CanCompress(args.MimeType))
         {
-            return new(stream, ImageProcessState.Unsupported);
+            return ImageStreamCompressResult.NotSupported();
         }
 
-        var image = await Image.LoadAsync(stream, cancellationToken);
+        var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken);
 
-        if (!_CanCompress(image.Metadata.DecodedImageFormat?.DefaultMimeType))
+        if (error is not null)
         {
-            return new(stream, ImageProcessState.Unsupported);
+            return ImageStreamCompressResult.NotSupported(error);
         }
 
-        Debug.Assert(image.Metadata.DecodedImageFormat is not null);
+        Debug.Assert(image is not null);
+        var format = image.Metadata.DecodedImageFormat;
 
-        var memoryStream = await _GetStreamFromImageAsync(image, image.Metadata.DecodedImageFormat, cancellationToken);
+        if (format is null)
+        {
+            return ImageStreamCompressResult.NotSupported();
+        }
+
+        if (!_CanCompress(format.DefaultMimeType))
+        {
+            return ImageStreamCompressResult.NotSupportedMimeType(format.DefaultMimeType);
+        }
+
+        var memoryStream = await _CreateCompressedStreamAsync(image, format, cancellationToken);
 
         if (memoryStream.Length < stream.Length)
         {
-            return new(memoryStream, ImageProcessState.Done);
+            return ImageStreamCompressResult.Done(memoryStream);
         }
 
         await memoryStream.DisposeAsync();
 
-        return new(stream, ImageProcessState.Canceled);
+        return ImageStreamCompressResult.Failed("The compressed image is larger than the original.");
     }
 
-    public async Task<ImageCompressResult<byte[]>> TryCompressAsync(
-        byte[] bytes,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (!string.IsNullOrWhiteSpace(mimeType) && !_CanCompress(mimeType))
-        {
-            return new(bytes, ImageProcessState.Unsupported);
-        }
-
-        using var ms = new MemoryStream(bytes);
-        var result = await TryCompressAsync(ms, mimeType, cancellationToken);
-
-        if (result.State is not ImageProcessState.Done)
-        {
-            return new(bytes, result.State);
-        }
-
-        var newBytes = await result.Result.GetAllBytesAsync(cancellationToken);
-        await result.Result.DisposeAsync();
-
-        return new(newBytes, result.State);
-    }
-
-    private async Task<Stream> _GetStreamFromImageAsync(
-        Image image,
-        IImageFormat format,
-        CancellationToken cancellationToken = default
-    )
+    private async Task<Stream> _CreateCompressedStreamAsync(Image image, IImageFormat format, CancellationToken token)
     {
         var memoryStream = new MemoryStream();
 
         try
         {
-            await image.SaveAsync(memoryStream, _GetEncoder(format), cancellationToken: cancellationToken);
+            await image.SaveAsync(memoryStream, _GetCompressEncoder(format), cancellationToken: token);
 
             memoryStream.Position = 0;
 
@@ -97,7 +79,7 @@ public sealed class ImageSharpImageCompressorContributor : IImageCompressorContr
         }
     }
 
-    private IImageEncoder _GetEncoder(IImageFormat format)
+    private IImageEncoder _GetCompressEncoder(IImageFormat format)
     {
         return format.DefaultMimeType switch
         {

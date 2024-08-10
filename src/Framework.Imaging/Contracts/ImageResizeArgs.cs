@@ -2,13 +2,13 @@ namespace Framework.Imaging.Contracts;
 
 public sealed class ImageResizeArgs
 {
-    private int _width;
-    private int _height;
+    private readonly int _width;
+    private readonly int _height;
 
     public int Width
     {
         get => _width;
-        set
+        private init
         {
             if (value < 0)
             {
@@ -22,7 +22,7 @@ public sealed class ImageResizeArgs
     public int Height
     {
         get => _height;
-        set
+        private init
         {
             if (value < 0)
             {
@@ -33,9 +33,19 @@ public sealed class ImageResizeArgs
         }
     }
 
+    public string? MimeType { get; private init; }
+
     public ImageResizeMode Mode { get; set; } = ImageResizeMode.Default;
 
-    public ImageResizeArgs(int? width = null, int? height = null, ImageResizeMode? mode = null)
+    public void ChangeDefaultResizeMode(ImageResizeMode defaultMode)
+    {
+        if (Mode is ImageResizeMode.Default)
+        {
+            Mode = defaultMode;
+        }
+    }
+
+    public ImageResizeArgs(int? width = null, int? height = null, string? mimeType = null, ImageResizeMode? mode = null)
     {
         if (mode.HasValue)
         {
@@ -44,5 +54,6 @@ public sealed class ImageResizeArgs
 
         Width = width ?? 0;
         Height = height ?? 0;
+        MimeType = mimeType;
     }
 }

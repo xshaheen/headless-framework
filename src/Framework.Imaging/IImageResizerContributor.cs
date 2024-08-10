@@ -4,17 +4,9 @@ namespace Framework.Imaging;
 
 public interface IImageResizerContributor
 {
-    Task<ImageResizeResult<Stream>> TryResizeAsync(
+    Task<ImageStreamResizeResult> TryResizeAsync(
         Stream stream,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<ImageResizeResult<byte[]>> TryResizeAsync(
-        byte[] bytes,
-        ImageResizeArgs resizeArgs,
-        string? mimeType = null,
+        ImageResizeArgs args,
         CancellationToken cancellationToken = default
     );
 }
