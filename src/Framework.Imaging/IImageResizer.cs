@@ -16,15 +16,15 @@ public interface IImageResizer
 public sealed class ImageResizer : IImageResizer
 {
     private readonly IEnumerable<IImageResizerContributor> _resizerContributors;
-    private readonly ImageResizeOptions _imageResizeOptions;
+    private readonly ImagingOptions _imagingOptions;
 
     public ImageResizer(
         IEnumerable<IImageResizerContributor> imageResizerContributors,
-        IOptions<ImageResizeOptions> imageResizeOptions
+        IOptions<ImagingOptions> imageResizeOptions
     )
     {
         _resizerContributors = imageResizerContributors.Reverse();
-        _imageResizeOptions = imageResizeOptions.Value;
+        _imagingOptions = imageResizeOptions.Value;
     }
 
     public async Task<ImageStreamResizeResult> ResizeAsync(
@@ -71,7 +71,7 @@ public sealed class ImageResizer : IImageResizer
     {
         if (resizeArgs.Mode == ImageResizeMode.Default)
         {
-            resizeArgs.Mode = _imageResizeOptions.DefaultResizeMode;
+            resizeArgs.Mode = _imagingOptions.DefaultResizeMode;
         }
     }
 
