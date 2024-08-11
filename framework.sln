@@ -135,6 +135,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Logging", "Logging", "{661C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Logging.Serilog", "src\Framework.Logging.Serilog\Framework.Logging.Serilog.csproj", "{52138F3C-512F-492C-9771-7147AF3B3660}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.BuildingBlocks.Primitives.Tests.Units", "tests\Framework.BuildingBlocks.Primitives.Tests.Units\Framework.BuildingBlocks.Primitives.Tests.Units.csproj", "{BFD0E7D2-EBDC-4CD2-9FFE-465C3551A962}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -327,6 +329,10 @@ Global
 		{52138F3C-512F-492C-9771-7147AF3B3660}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{52138F3C-512F-492C-9771-7147AF3B3660}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{52138F3C-512F-492C-9771-7147AF3B3660}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BFD0E7D2-EBDC-4CD2-9FFE-465C3551A962}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BFD0E7D2-EBDC-4CD2-9FFE-465C3551A962}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BFD0E7D2-EBDC-4CD2-9FFE-465C3551A962}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BFD0E7D2-EBDC-4CD2-9FFE-465C3551A962}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -378,6 +384,7 @@ Global
 		{3CD18BFF-A012-492F-82AD-33417EC3B22F} = {8441B91E-D006-4267-9280-F1ECBC08D998}
 		{19D2BF87-02D2-4D46-862C-69DBD51D99DF} = {DDE5B4C3-E149-430A-BC51-E984F8435B54}
 		{52138F3C-512F-492C-9771-7147AF3B3660} = {661CFF04-0F0C-4F0A-A61D-5FCF7DB29D15}
+		{BFD0E7D2-EBDC-4CD2-9FFE-465C3551A962} = {37CCF5C8-27B3-4006-9FB7-E3F8E5BF94CF}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
