@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Framework.BuildingBlocks.Domains\Framework.BuildingBlocks.Domains.csproj" />
     <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 
 </Project>
