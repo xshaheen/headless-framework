@@ -169,7 +169,7 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(minimumValue))] string? minimumValueParamName = null,
         [CallerArgumentExpression(nameof(maximumValue))] string? maximumValueParamName = null
     )
-        where T : IComparable, IComparable<T>
+        where T : IComparable
     {
         if (minimumValue.CompareTo(maximumValue) > 0)
         {
