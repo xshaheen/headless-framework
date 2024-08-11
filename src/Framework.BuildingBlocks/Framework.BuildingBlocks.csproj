@@ -4,7 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
   </PropertyGroup>
-  
+
   <ItemGroup>
     <PackageReference Include="ByteSize" />
     <PackageReference Include="CommunityToolkit.HighPerformance" />
@@ -18,7 +18,6 @@
     <PackageReference Include="IdGen" />
     <PackageReference Include="IPAddressRange" />
     <PackageReference Include="libphonenumber-csharp" />
-    <PackageReference Include="NetEscapades.AspNetCore.SecurityHeaders" />
     <PackageReference Include="NetEscapades.EnumGenerators" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
