@@ -27,6 +27,7 @@
     <PackageReference Include="Snappier" />
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
+    <PackageReference Include="ZString" />
   </ItemGroup>
 
   <ItemGroup>

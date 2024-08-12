@@ -1,0 +1,64 @@
+using System.Diagnostics;
+using Cysharp.Text;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Presentation;
+using DocumentFormat.OpenXml.Wordprocessing;
+
+namespace Framework.Media.Indexing;
+
+public class PresentationDocumentMediaFileTextProvider : IMediaFileTextProvider
+{
+    public Task<string> GetTextAsync(string path, Stream fileStream)
+    {
+        try
+        {
+            using var document = PresentationDocument.Open(fileStream, false);
+            var slideIds = document.PresentationPart?.Presentation.SlideIdList?.ChildElements.Cast<SlideId>();
+
+            if (slideIds is null || !slideIds.Any())
+            {
+                return Task.FromResult(string.Empty);
+            }
+
+            using var stringBuilder = ZString.CreateStringBuilder();
+
+            foreach (var slideId in slideIds)
+            {
+                var relationshipId = slideId.RelationshipId?.Value;
+
+                if (
+                    relationshipId is null
+                    || document.PresentationPart!.GetPartById(relationshipId) is not SlidePart slidePart
+                )
+                {
+                    continue;
+                }
+
+                var slideText = _GetText(slidePart);
+
+                stringBuilder.AppendLine(slideText);
+            }
+
+            return Task.FromResult(stringBuilder.ToString());
+        }
+        catch
+        {
+            return Task.FromResult(string.Empty);
+        }
+    }
+
+    private static string _GetText(SlidePart slidePart)
+    {
+        using var stringBuilder = ZString.CreateStringBuilder();
+
+        foreach (var paragraph in slidePart.Slide.Descendants<Paragraph>())
+        {
+            foreach (var text in paragraph.Descendants<DocumentFormat.OpenXml.Drawing.Text>())
+            {
+                stringBuilder.Append(text.Text);
+            }
+        }
+
+        return stringBuilder.ToString();
+    }
+}
