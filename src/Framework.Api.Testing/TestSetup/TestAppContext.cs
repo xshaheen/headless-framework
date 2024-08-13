@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Framework.BuildingBlocks.Constants;
 using MartinCostello.Logging.XUnit;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Migrations;

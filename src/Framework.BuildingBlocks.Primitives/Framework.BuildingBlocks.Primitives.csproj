@@ -12,7 +12,7 @@
     <PrimitiveXmlConverters>true</PrimitiveXmlConverters>
     <PrimitiveNswagSwaggerConverters>true</PrimitiveNswagSwaggerConverters>
     <PrimitiveSwashbuckleSwaggerConverters>true</PrimitiveSwashbuckleSwaggerConverters>
-    <PrimitiveEntityFrameworkValueConverters>true</PrimitiveEntityFrameworkValueConverters>
+    <PrimitiveEntityFrameworkValueConverters>false</PrimitiveEntityFrameworkValueConverters>
   </PropertyGroup>
 
   <ItemGroup Label="Primitives Generator Settings">
@@ -30,8 +30,6 @@
    -->
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.OpenApi" />
     <PackageReference Include="NJsonSchema" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />

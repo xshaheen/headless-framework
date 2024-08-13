@@ -12,12 +12,12 @@ public static class SwashbuckleSwaggerGenOptionsExtensions
     /// <summary>Adds Swagger mappings for all Primitive types to the specified SwaggerGenOptions.</summary>
     public static void AddPrimitivesSwaggerMappings(this SwaggerGenOptions options, params Assembly[] assemblies)
     {
-        InvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
+        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
     }
 
     /// <summary>Adds Swagger mappings for all Primitive types to the specified SwaggerGenOptions.</summary>
     public static void AddAllPrimitivesSwaggerMappings(this SwaggerGenOptions options)
     {
-        InvokeHelper.InvokeInAllPrimitiveAssemblies(_TypeName, _MethodName, options);
+        PrimitiveInvokeHelper.InvokeInAllPrimitiveAssemblies(_TypeName, _MethodName, options);
     }
 }

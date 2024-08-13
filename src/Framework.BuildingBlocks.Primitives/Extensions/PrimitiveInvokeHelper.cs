@@ -3,9 +3,9 @@ using Primitives;
 
 namespace Framework.BuildingBlocks.Primitives.Extensions;
 
-internal static class InvokeHelper
+public static class PrimitiveInvokeHelper
 {
-    internal static void InvokeInAllPrimitiveAssemblies(string typeName, string methodName, object methodParameter)
+    public static void InvokeInAllPrimitiveAssemblies(string typeName, string methodName, object methodParameter)
     {
         var loadedAssemblies = new HashSet<string>(
             AppDomain.CurrentDomain.GetAssemblies().Where(a => _IsSystemAssembly(a.FullName)).Select(a => a.FullName!),
@@ -42,7 +42,7 @@ internal static class InvokeHelper
         }
     }
 
-    internal static void InvokeInAssemblies(
+    public static void InvokeInAssemblies(
         Assembly[] assemblies,
         string typeName,
         string methodName,

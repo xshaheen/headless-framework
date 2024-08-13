@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Framework.Api.Core.Security;
 using Framework.Api.Core.Security.Claims;
 using Framework.BuildingBlocks.Primitives;
 

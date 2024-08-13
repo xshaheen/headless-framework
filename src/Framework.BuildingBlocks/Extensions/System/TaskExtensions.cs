@@ -26,4 +26,32 @@ public static class TaskExtensions
             )
             .Unwrap();
     }
+
+    /// <summary>
+    /// https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm
+    /// </summary>
+    public static void Forget(this Task task)
+    {
+        // Only care about tasks that may fault or are faulted,
+        // so fast-path for SuccessfullyCompleted and Canceled tasks
+        if (!task.IsCompleted || task.IsFaulted)
+        {
+            _ = forgetAwaited(task);
+        }
+
+        return;
+
+        static async Task forgetAwaited(Task task)
+        {
+            try
+            {
+                // No need to resume on the original SynchronizationContext
+                await task.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Nothing to do here
+            }
+        }
+    }
 }

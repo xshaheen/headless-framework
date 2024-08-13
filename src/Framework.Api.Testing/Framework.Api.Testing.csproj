@@ -15,6 +15,8 @@
     <PackageReference Include="FluentAssertions.Json" />
     <PackageReference Include="MartinCostello.Logging.XUnit" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Respawn" />
     <PackageReference Include="Serilog.Sinks.Debug" />

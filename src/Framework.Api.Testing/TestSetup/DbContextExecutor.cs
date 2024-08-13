@@ -3,7 +3,6 @@ using System.Linq.Expressions;
 using System.Security.Claims;
 using Framework.BuildingBlocks.Domains;
 using Mediator;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 

@@ -1,7 +1,4 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
-using System.Text.Json;
-using Framework.BuildingBlocks.Constants;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.BuildingBlocks.Primitives;
 
@@ -52,13 +49,3 @@ public static class FileConstants
     public const int ContentTypeMaxLength = 150;
     public const int Md5MaxLength = 32;
 }
-
-#region Entity Framework
-
-public sealed class FileConverter()
-    : ValueConverter<File?, string?>(
-        v => JsonSerializer.Serialize(v, PlatformJsonConstants.DefaultInternalJsonOptions),
-        v => v == null ? null : JsonSerializer.Deserialize<File>(v, PlatformJsonConstants.DefaultInternalJsonOptions)
-    );
-
-#endregion

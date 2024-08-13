@@ -2,9 +2,18 @@ using Framework.BuildingBlocks.Domains;
 
 namespace Framework.BuildingBlocks.Primitives;
 
+public static class Range
+{
+    public static Range<T> Create<T>(T from, T to)
+        where T : IComparable<T>
+    {
+        return new Range<T>(from, to);
+    }
+}
+
 [PublicAPI]
 #pragma warning disable CA1036 // Justification: It is a value object and already overrides the equality members.
-public class Range<T> : ValueObject, IComparable<Range<T>>
+public sealed class Range<T> : ValueObject, IComparable<Range<T>>
     where T : IComparable<T>
 {
     private Range() { }
@@ -25,9 +34,9 @@ public class Range<T> : ValueObject, IComparable<Range<T>>
         To = to;
     }
 
-    public T? From { get; protected set; }
+    public T? From { get; private set; }
 
-    public T? To { get; protected set; }
+    public T? To { get; private set; }
 
     #region Has Value
 
@@ -88,6 +97,8 @@ public class Range<T> : ValueObject, IComparable<Range<T>>
 
     /// <summary>Remove the conflict range parts from the current range.</summary>
     /// <param name="other">The range to remove the conflict parts from the current range.</param>
+    /// <param name="addOne"></param>
+    /// <param name="subtractOne"></param>
     /// <returns>Returns the remaining parts of the current range after removing the conflict parts.</returns>
     public IEnumerable<Range<T>> RemoveConflictRangeParts(Range<T> other, Func<T, T> addOne, Func<T, T> subtractOne)
     {

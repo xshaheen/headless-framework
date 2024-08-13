@@ -92,6 +92,28 @@ public static class ReflectionHelper
             : customAttributes;
     }
 
+    public static bool IsNullableOfT(this Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+
+        return Nullable.GetUnderlyingType(type) != null;
+    }
+
+    public static bool IsFlagsEnum<T>()
+    {
+        return IsFlagsEnum(typeof(T));
+    }
+
+    public static bool IsFlagsEnum(this Type type)
+    {
+        ArgumentNullException.ThrowIfNull(type);
+
+        if (!type.IsEnum)
+            return false;
+
+        return type.IsDefined(typeof(FlagsAttribute), inherit: true);
+    }
+
     public static bool IsSubClassOfGeneric(this Type child, Type parent)
     {
         if (child == parent)
