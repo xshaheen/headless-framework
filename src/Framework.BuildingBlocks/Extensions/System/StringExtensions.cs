@@ -553,4 +553,20 @@ public static class StringExtensions
     {
         return string.IsNullOrWhiteSpace(str) ? defaultValue : str;
     }
+
+    [SystemPure, JetBrainsPure]
+    public static string NormalizePath(this string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return path;
+        }
+
+        return Path.DirectorySeparatorChar switch
+        {
+            '\\' => path.Replace('/', Path.DirectorySeparatorChar),
+            '/' => path.Replace('\\', Path.DirectorySeparatorChar),
+            _ => path
+        };
+    }
 }
