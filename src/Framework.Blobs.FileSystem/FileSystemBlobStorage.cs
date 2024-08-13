@@ -1,13 +1,20 @@
 using Framework.Arguments;
 using Framework.Blobs.FileSystem.Internals;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Nito.AsyncEx;
 
 namespace Framework.Blobs.FileSystem;
 
-public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorage
+public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> options) : IBlobStorage
 {
+    private readonly AsyncLock _lock = new();
     private static readonly Lazy<char[]> _InvalidPathChars = new(Path.GetInvalidPathChars);
-    private readonly string _basePath = env.WebRootPath;
+    private readonly string _basePath = options.Value.BaseDirectoryPath;
+
+    private readonly ILogger _logger =
+        options.Value.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
 
     public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
@@ -35,7 +42,7 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var results = blobNames.Select(fileName => _Delete(_GetFilePath(container, fileName))).ToList();
+        var results = blobNames.Select(fileName => _Delete(_BuildPath(container, fileName))).ToList();
 
         return ValueTask.FromResult<IReadOnlyList<bool>>(results);
     }
@@ -71,6 +78,52 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
         return new(savedName, displayName, size);
     }
 
+    public async ValueTask<bool> RenameFileAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrWhiteSpace(blobName);
+        Argument.IsNotNullOrWhiteSpace(newBlobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
+
+        var oldFullPath = _BuildPath(blobContainer, blobName).NormalizePath();
+        var newFullPath = _BuildPath(newBlobContainer, newBlobName).NormalizePath();
+        _logger.LogInformation("Renaming {Path} to {NewPath}", oldFullPath, newFullPath);
+
+        try
+        {
+            using (await _lock.LockAsync(cancellationToken))
+            {
+                var directoryPath = _GetDirectoryPath(newBlobContainer);
+                Directory.CreateDirectory(directoryPath);
+
+                try
+                {
+                    File.Move(oldFullPath, newFullPath);
+                }
+                catch (IOException)
+                {
+                    File.Delete(newFullPath); // Delete the file if it already exists
+                    _logger.LogTrace("Renaming {Path} to {NewPath}", oldFullPath, newFullPath);
+                    File.Move(oldFullPath, newFullPath);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error renaming {Path} to {NewPath}", oldFullPath, newFullPath);
+            return false;
+        }
+
+        return true;
+    }
+
     public ValueTask<bool> ExistsAsync(
         string blobName,
         string[] container,
@@ -78,7 +131,7 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var filePath = _GetFilePath(container, blobName);
+        var filePath = _BuildPath(container, blobName);
         var exists = File.Exists(filePath);
 
         return ValueTask.FromResult(exists);
@@ -91,7 +144,7 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var filePath = _GetFilePath(container, blobName);
+        var filePath = _BuildPath(container, blobName);
         var delete = _Delete(filePath);
 
         return ValueTask.FromResult(delete);
@@ -103,7 +156,7 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
         CancellationToken cancellationToken = default
     )
     {
-        var filePath = _GetFilePath(container, blobName);
+        var filePath = _BuildPath(container, blobName);
 
         return FileStreamExtensions.IoRetryPipeline.ExecuteAsync(
             static async (filePath, token) =>
@@ -121,6 +174,44 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
             filePath,
             cancellationToken
         );
+    }
+
+    public async ValueTask<BlobUploadResult?> CopyFileAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrWhiteSpace(blobName);
+        Argument.IsNotNullOrWhiteSpace(newBlobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
+
+        var blobPath = _BuildPath(blobContainer, blobName);
+        var targetPath = _BuildPath(newBlobContainer, newBlobName);
+
+        _logger.LogInformation("Copying {Path} to {TargetPath}", blobPath, targetPath);
+
+        try
+        {
+            using (await _lock.LockAsync(cancellationToken))
+            {
+                var targetDirectory = _GetDirectoryPath(newBlobContainer);
+                Directory.CreateDirectory(targetDirectory);
+                File.Copy(blobPath, targetPath, true);
+
+                return new(newBlobName, newBlobName, new FileInfo(targetPath).Length);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error copying {Path} to {TargetPath}", blobPath, targetPath);
+
+            return null;
+        }
     }
 
     #region Helpers
@@ -153,7 +244,7 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
         return filePath;
     }
 
-    private string _GetFilePath(string[] container, string fileName)
+    private string _BuildPath(string[] container, string fileName)
     {
         Argument.IsNotNullOrWhiteSpace(fileName);
         Argument.IsNotNullOrEmpty(container);
