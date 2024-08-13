@@ -1,7 +1,8 @@
 ﻿using System.Data;
 using Framework.BuildingBlocks.Domains;
 using Framework.BuildingBlocks.Primitives;
-using Framework.BuildingBlocks.Primitives.Extensions;
+using Framework.Database.EntityFramework.Extensions;
+using Framework.Database.EntityFramework.ValueConverters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -22,14 +23,18 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
 
         configurationBuilder.Properties<decimal?>().HavePrecision(32, 10);
         configurationBuilder.Properties<decimal>().HavePrecision(32, 10);
-        configurationBuilder.Properties<Money>().HavePrecision(32, 10);
         configurationBuilder.Properties<Enum>().HaveMaxLength(100).HaveConversion<string>();
-        configurationBuilder.Properties<Locale>().HaveConversion<LocaleConverter, LocaleComparer>();
+
+        configurationBuilder.Properties<UserId>().HaveConversion<UserIdValueConverter>();
+        configurationBuilder.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
+        configurationBuilder.Properties<Month>().HaveConversion<MonthValueConverter>();
+        configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
         configurationBuilder.Properties<File>().HaveConversion<FileConverter>();
         configurationBuilder.Properties<Image>().HaveConversion<ImageConverter>();
+        configurationBuilder.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
         configurationBuilder
             .Properties<ExtraProperties>()
-            .HaveConversion<ExtraPropertiesConverter, ExtraPropertiesComparer>();
+            .HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

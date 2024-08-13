@@ -12,7 +12,7 @@ public class RangeTests
         var to = new DateOnly(2021, 1, 31);
 
         // when
-        var range = new DateOnlyRange(from, to);
+        var range = new Range<DateOnly>(from, to);
 
         // then
         range.From.Should().Be(from);
@@ -27,7 +27,7 @@ public class RangeTests
         const int to = 1;
 
         // when
-        var action = FluentActions.Invoking(() => new IntNumberRange(from, to));
+        var action = FluentActions.Invoking(() => new Range<int>(from, to));
 
         // then
         action.Should().Throw<ArgumentException>();
@@ -37,20 +37,20 @@ public class RangeTests
 
     #region Value Inclusive Has
 
-    public static readonly TheoryData<IntNumberRange, int, bool> ValueInclusiveHasData =
+    public static readonly TheoryData<Range<int>, int, bool> ValueInclusiveHasData =
         new()
         {
-            { new IntNumberRange(1, 10), 5, true }, // Middle
-            { new IntNumberRange(1, 10), 1, true }, // From Edge
-            { new IntNumberRange(1, 10), 10, true }, // To Edge
-            { new IntNumberRange(1, 10), 0, false }, // Below
-            { new IntNumberRange(1, 10), 11, false }, // Above
+            { new(1, 10), 5, true }, // Middle
+            { new(1, 10), 1, true }, // From Edge
+            { new(1, 10), 10, true }, // To Edge
+            { new(1, 10), 0, false }, // Below
+            { new(1, 10), 11, false }, // Above
         };
 
     [Theory]
     [MemberData(nameof(ValueInclusiveHasData))]
     public void value_inclusive_has_should_return_true_when_value_is_in_range(
-        IntNumberRange range,
+        Range<int> range,
         int value,
         bool expected
     )
@@ -66,20 +66,20 @@ public class RangeTests
 
     #region Exclusive Has
 
-    public static readonly TheoryData<IntNumberRange, int, bool> ValueExclusiveHasData =
+    public static readonly TheoryData<Range<int>, int, bool> ValueExclusiveHasData =
         new()
         {
-            { new IntNumberRange(1, 10), 5, true }, // Middle
-            { new IntNumberRange(1, 10), 1, false }, // From Edge
-            { new IntNumberRange(1, 10), 10, false }, // To Edge
-            { new IntNumberRange(1, 10), 0, false }, // Below
-            { new IntNumberRange(1, 10), 11, false }, // Above
+            { new(1, 10), 5, true }, // Middle
+            { new(1, 10), 1, false }, // From Edge
+            { new(1, 10), 10, false }, // To Edge
+            { new(1, 10), 0, false }, // Below
+            { new(1, 10), 11, false }, // Above
         };
 
     [Theory]
     [MemberData(nameof(ValueExclusiveHasData))]
     public void value_exclusive_has_should_return_true_when_value_is_in_range(
-        IntNumberRange range,
+        Range<int> range,
         int value,
         bool expected
     )
@@ -95,26 +95,22 @@ public class RangeTests
 
     #region Is Overlap
 
-    public static readonly TheoryData<IntNumberRange, IntNumberRange, bool> IsOverlapData =
+    public static readonly TheoryData<Range<int>, Range<int>, bool> IsOverlapData =
         new()
         {
-            { new IntNumberRange(1, 10), new IntNumberRange(5, 15), true }, // Middle
-            { new IntNumberRange(1, 10), new IntNumberRange(1, 10), true }, // Same
-            { new IntNumberRange(1, 10), new IntNumberRange(1, 5), true }, // From Edge
-            { new IntNumberRange(1, 10), new IntNumberRange(5, 10), true }, // To Edge
-            { new IntNumberRange(1, 10), new IntNumberRange(0, 5), true }, // Below
-            { new IntNumberRange(1, 10), new IntNumberRange(5, 11), true }, // Above
-            { new IntNumberRange(1, 10), new IntNumberRange(11, 15), false }, // After
-            { new IntNumberRange(1, 10), new IntNumberRange(15, 20), false }, // Far After
+            { new(1, 10), new(5, 15), true }, // Middle
+            { new(1, 10), new(1, 10), true }, // Same
+            { new(1, 10), new(1, 5), true }, // From Edge
+            { new(1, 10), new(5, 10), true }, // To Edge
+            { new(1, 10), new(0, 5), true }, // Below
+            { new(1, 10), new(5, 11), true }, // Above
+            { new(1, 10), new(11, 15), false }, // After
+            { new(1, 10), new(15, 20), false }, // Far After
         };
 
     [Theory]
     [MemberData(nameof(IsOverlapData))]
-    public void is_overlap_should_return_true_when_ranges_overlap(
-        IntNumberRange range,
-        IntNumberRange other,
-        bool expected
-    )
+    public void is_overlap_should_return_true_when_ranges_overlap(Range<int> range, Range<int> other, bool expected)
     {
         // when
         var result = range.IsOverlap(other);
@@ -155,14 +151,6 @@ public class RangeTests
         // then
         result.Should().BeEquivalentTo(remaining);
     }
-
-    #endregion
-
-    #region Test Types
-
-    public sealed class DateOnlyRange(DateOnly from, DateOnly to) : Range<DateOnly>(from, to);
-
-    public sealed class IntNumberRange(int from, int to) : Range<int>(from, to);
 
     #endregion
 }

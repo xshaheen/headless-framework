@@ -18,3 +18,31 @@ public sealed class PageMetadata
     /// <summary>List of arbitrary tags typically used as metadata to improve search results or associate a custom behavior.</summary>
     public HashSet<string>? Tags { get; init; }
 }
+
+public static class PageMetadataConstants
+{
+    public static class Slugs
+    {
+        public const int MaxLength = 100;
+    }
+
+    public static class MetaTitles
+    {
+        public const int MaxLength = 250;
+    }
+
+    public static class MetaDescriptions
+    {
+        public const int MaxLength = 1000;
+    }
+
+    public static class MetaKeywords
+    {
+        public const int MaxElements = 25;
+    }
+
+    public static class Tags
+    {
+        public const int MaxElements = 25;
+    }
+}

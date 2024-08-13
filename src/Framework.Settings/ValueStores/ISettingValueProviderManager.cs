@@ -1,5 +1,4 @@
-﻿using Framework.Settings.ValueProviders;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.ValueStores;

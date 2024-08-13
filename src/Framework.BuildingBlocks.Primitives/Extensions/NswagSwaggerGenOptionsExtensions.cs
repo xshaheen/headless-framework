@@ -15,12 +15,12 @@ public static class NswagSwaggerGenOptionsExtensions
         params Assembly[] assemblies
     )
     {
-        InvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
+        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
     }
 
     /// <summary>Adds Swagger mappings for all Primitive types to the specified JsonSchemaGeneratorSettings.</summary>
     public static void AddAllPrimitivesSwaggerMappings(this JsonSchemaGeneratorSettings options)
     {
-        InvokeHelper.InvokeInAllPrimitiveAssemblies(_TypeName, _MethodName, options);
+        PrimitiveInvokeHelper.InvokeInAllPrimitiveAssemblies(_TypeName, _MethodName, options);
     }
 }

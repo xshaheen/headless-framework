@@ -1,6 +1,5 @@
 ﻿using System.Text.Json;
 using Framework.BuildingBlocks.Constants;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.BuildingBlocks.Primitives;
 
@@ -26,13 +25,3 @@ public static class ImageConstants
     public const int Md5MaxLength = FileConstants.Md5MaxLength;
     public const int CaptionMaxLength = 1000;
 }
-
-#region Entity Framework
-
-public sealed class ImageConverter()
-    : ValueConverter<Image?, string?>(
-        v => JsonSerializer.Serialize(v, PlatformJsonConstants.DefaultInternalJsonOptions),
-        v => v == null ? null : JsonSerializer.Deserialize<Image>(v, PlatformJsonConstants.DefaultInternalJsonOptions)
-    );
-
-#endregion
