@@ -68,4 +68,16 @@ public static class DateTimeExtensions
     {
         return new(date.Year, date.Month, date.Day, date.Hour, 0, 0, 0);
     }
+
+    [SystemPure, JetBrainsPure]
+    public static long ToUnixTimeSeconds(this DateTime date)
+    {
+        return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeSeconds();
+    }
+
+    [SystemPure, JetBrainsPure]
+    public static long ToUnixTimeMilliseconds(this DateTime date)
+    {
+        return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeMilliseconds();
+    }
 }

@@ -30,4 +30,9 @@ public static class ConcurrentQueueExtensions
             queue.Enqueue(item);
         }
     }
+
+    public static void Clear<T>(this ConcurrentQueue<T> queue)
+    {
+        while (queue.TryDequeue(out _)) { }
+    }
 }

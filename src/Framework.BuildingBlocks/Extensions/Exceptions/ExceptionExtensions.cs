@@ -50,4 +50,23 @@ public static class ExceptionExtensions
 
         return builder.ToString();
     }
+
+    [SystemPure, JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(exception))]
+    public static Exception? GetInnermostException(this Exception? exception)
+    {
+        if (exception == null)
+        {
+            return null;
+        }
+
+        var current = exception;
+
+        while (current.InnerException != null)
+        {
+            current = current.InnerException;
+        }
+
+        return current;
+    }
 }
