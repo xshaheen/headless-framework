@@ -37,6 +37,24 @@ public interface IBlobStorage
     );
 
     [SystemPure, JetBrainsPure]
+    ValueTask<BlobUploadResult?> CopyFileAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    );
+
+    [SystemPure, JetBrainsPure]
+    ValueTask<bool> RenameFileAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    );
+
+    [SystemPure, JetBrainsPure]
     ValueTask<bool> ExistsAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
 
     [SystemPure, JetBrainsPure]
