@@ -9,24 +9,15 @@ namespace Framework.Sms.Infobip;
 public sealed class InfobipSmsSender : ISmsSender
 {
     private readonly string _sender;
-    private readonly Configuration _configuration;
-    private readonly HttpClient _httpClient;
     private readonly ILogger<InfobipSmsSender> _logger;
+    private readonly SmsApi _smsApi;
 
     public InfobipSmsSender(HttpClient httpClient, IOptions<InfobipSettings> options, ILogger<InfobipSmsSender> logger)
     {
         var value = options.Value;
         _sender = value.Sender;
-
-        _configuration = new()
-        {
-            BasePath = value.BasePath,
-            ApiKeyPrefix = value.ApiKeyPrefix,
-            ApiKey = value.ApiKey,
-        };
-
-        _httpClient = httpClient;
         _logger = logger;
+        _smsApi = new SmsApi(httpClient, new Configuration { BasePath = value.BasePath, ApiKey = value.ApiKey, });
     }
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -44,11 +35,10 @@ public sealed class InfobipSmsSender : ISmsSender
         };
 
         var smsRequest = new SmsAdvancedTextualRequest { Messages = [smsMessage] };
-        var sendSmsApi = new SendSmsApi(_httpClient, _configuration);
 
         try
         {
-            var smsResponse = await sendSmsApi.SendSmsMessageAsync(smsRequest, token);
+            var smsResponse = await _smsApi.SendSmsMessageAsync(smsRequest, token);
             _logger.LogInformation("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
 
             return SendSingleSmsResponse.Succeeded();
