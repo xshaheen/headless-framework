@@ -118,6 +118,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error renaming {Path} to {NewPath}", oldFullPath, newFullPath);
+
             return false;
         }
 
@@ -148,32 +149,6 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         var delete = _Delete(filePath);
 
         return ValueTask.FromResult(delete);
-    }
-
-    public ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var filePath = _BuildPath(container, blobName);
-
-        return FileStreamExtensions.IoRetryPipeline.ExecuteAsync(
-            static async (filePath, token) =>
-            {
-                if (!File.Exists(filePath))
-                {
-                    return null;
-                }
-
-                await using var fileStream = File.OpenRead(filePath);
-                var memoryStream = await fileStream.CopyToMemoryStreamAndFlushAsync(token);
-
-                return new BlobDownloadResult(memoryStream!, Path.GetFileName(filePath));
-            },
-            filePath,
-            cancellationToken
-        );
     }
 
     public async ValueTask<BlobUploadResult?> CopyFileAsync(
@@ -214,7 +189,135 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         }
     }
 
+    public ValueTask<BlobDownloadResult?> DownloadAsync(
+        string blobName,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var filePath = _BuildPath(container, blobName);
+
+        return FileStreamExtensions.IoRetryPipeline.ExecuteAsync(
+            static async (filePath, token) =>
+            {
+                if (!File.Exists(filePath))
+                {
+                    return null;
+                }
+
+                await using var fileStream = File.OpenRead(filePath);
+                var memoryStream = await fileStream.CopyToMemoryStreamAndFlushAsync(token);
+
+                return new BlobDownloadResult(memoryStream!, Path.GetFileName(filePath));
+            },
+            filePath,
+            cancellationToken
+        );
+    }
+
+    public async ValueTask<PagedFileListResult> GetPagedListAsync(
+        string[] container,
+        string? searchPattern = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (pageSize <= 0)
+        {
+            return PagedFileListResult.Empty;
+        }
+
+        if (string.IsNullOrEmpty(searchPattern))
+        {
+            searchPattern = "*";
+        }
+
+        searchPattern = searchPattern.NormalizePath();
+
+        var directoryPath = _GetDirectoryPath(container);
+        var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, searchPattern));
+
+        if (!Directory.Exists(completePath))
+        {
+            _logger.LogTrace("Returning empty file list matching {SearchPattern}: Directory Not Found", searchPattern);
+            return PagedFileListResult.Empty;
+        }
+
+        var result = new PagedFileListResult(_ =>
+            Task.FromResult(_GetFiles(directoryPath, searchPattern, 1, pageSize))
+        );
+
+        await result.NextPageAsync();
+
+        return result;
+    }
+
     #region Helpers
+
+    private NextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
+    {
+        var list = new List<BlobSpecification>();
+
+        var pagingLimit = pageSize;
+        var skip = (page - 1) * pagingLimit;
+
+        if (pagingLimit < int.MaxValue)
+        {
+            pagingLimit++;
+        }
+
+        _logger.LogTrace(
+            "Getting file list matching {SearchPattern} Page: {Page}, PageSize: {PageSize}",
+            searchPattern,
+            page,
+            pageSize
+        );
+
+        foreach (
+            var path in Directory
+                .EnumerateFiles(directoryPath, searchPattern, SearchOption.AllDirectories)
+                .Skip(skip)
+                .Take(pagingLimit)
+        )
+        {
+            var info = new FileInfo(path);
+
+            if (!info.Exists)
+            {
+                continue;
+            }
+
+            list.Add(
+                new()
+                {
+                    Path = info.FullName.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
+                    Created = info.CreationTimeUtc,
+                    Modified = info.LastWriteTimeUtc,
+                    Size = info.Length
+                }
+            );
+        }
+
+        var hasMore = false;
+
+        if (list.Count == pagingLimit)
+        {
+            hasMore = true;
+            list.RemoveAt(pagingLimit - 1);
+        }
+
+        return new()
+        {
+            Success = true,
+            HasMore = hasMore,
+            Files = list,
+            NextPageFunc = hasMore
+                ? _ => Task.FromResult(_GetFiles(directoryPath, searchPattern, page + 1, pageSize))
+                : null
+        };
+    }
 
     private static bool _Delete(string filePath)
     {

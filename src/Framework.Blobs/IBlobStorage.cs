@@ -37,6 +37,14 @@ public interface IBlobStorage
     );
 
     [SystemPure, JetBrainsPure]
+    ValueTask<PagedFileListResult> GetPagedListAsync(
+        string[] container,
+        string? searchPattern = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    );
+
+    [SystemPure, JetBrainsPure]
     ValueTask<BlobUploadResult?> CopyFileAsync(
         string blobName,
         string[] blobContainer,
