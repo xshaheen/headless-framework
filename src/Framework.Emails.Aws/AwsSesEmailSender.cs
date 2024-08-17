@@ -1,7 +1,10 @@
+using System.Text;
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Framework.Emails.Contracts;
+using Framework.Emails.Helpers;
 using Microsoft.Extensions.Logging;
+using MimeKit;
 
 namespace Framework.Emails.Aws;
 
@@ -25,7 +28,30 @@ public sealed class AwsSesEmailSender : IEmailSender
         CancellationToken cancellationToken = default
     )
     {
-        var sendEmailRequest = new SendEmailRequest
+        if (request.Attachments.Count == 0)
+        {
+            var simpleRequest = _CreateSimpleEmail(request);
+
+            return await _SendAsync(simpleRequest, cancellationToken);
+        }
+
+        using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
+        using var memoryStream = new MemoryStream();
+        await mimeMessage.WriteToAsync(memoryStream, cancellationToken);
+
+        var rawRequest = new SendEmailRequest
+        {
+            Content = new EmailContent { Raw = new RawMessage { Data = memoryStream, } },
+        };
+
+        return await _SendAsync(rawRequest, cancellationToken);
+    }
+
+    private static SendEmailRequest _CreateSimpleEmail(SendSingleEmailRequest request)
+    {
+        const string charset = "UTF-8";
+
+        return new SendEmailRequest
         {
             FromEmailAddress = request.From.EmailAddress,
             Destination = new Destination
@@ -38,25 +64,31 @@ public sealed class AwsSesEmailSender : IEmailSender
             {
                 Simple = new Message
                 {
-                    Subject = new Content { Charset = "UTF-8", Data = request.Subject },
+                    Subject = new Content { Charset = charset, Data = request.Subject },
                     Body = new Body
                     {
                         Html = string.IsNullOrWhiteSpace(request.MessageHtml)
                             ? default
-                            : new Content { Charset = "UTF-8", Data = request.MessageHtml },
+                            : new Content { Charset = charset, Data = request.MessageHtml },
                         Text = string.IsNullOrWhiteSpace(request.MessageText)
                             ? default
-                            : new Content { Charset = "UTF-8", Data = request.MessageText },
+                            : new Content { Charset = charset, Data = request.MessageText },
                     },
                 },
             },
         };
+    }
 
-        SendEmailResponse sendEmailResponse;
+    private async Task<SendSingleEmailResponse> _SendAsync(
+        SendEmailRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        SendEmailResponse response;
 
         try
         {
-            sendEmailResponse = await _client.SendEmailAsync(sendEmailRequest, cancellationToken);
+            response = await _client.SendEmailAsync(request, cancellationToken);
         }
         catch (Exception ex)
             when (ex
@@ -73,12 +105,12 @@ public sealed class AwsSesEmailSender : IEmailSender
             throw;
         }
 
-        if (sendEmailResponse.HttpStatusCode.IsSuccessStatusCode())
+        if (response.HttpStatusCode.IsSuccessStatusCode())
         {
             return SendSingleEmailResponse.Succeeded();
         }
 
-        _logger.LogError("Failed to send an email {@Request} {@Response}", sendEmailRequest, sendEmailResponse);
+        _logger.LogError("Failed to send an email to with response {@Response}", response);
 
         return SendSingleEmailResponse.Failed("Failed to send an email to the recipient.");
     }

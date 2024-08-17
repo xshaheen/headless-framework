@@ -1,8 +1,8 @@
 using Framework.Emails.Contracts;
-using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
 using MimeKit;
+using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Framework.Emails.Mailkit;
 
@@ -24,41 +24,29 @@ internal sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpSettings> op
 
         message.Subject = request.Subject;
 
-        message.From.Add(
-            new MailboxAddress(
-                name: request.From.DisplayName ?? request.From.EmailAddress,
-                address: request.From.EmailAddress
-            )
+        var fromAddress = new MailboxAddress(
+            name: request.From.DisplayName ?? request.From.EmailAddress,
+            address: request.From.EmailAddress
         );
 
-        foreach (var toAddress in request.Destination.ToAddresses)
+        message.From.Add(fromAddress);
+
+        foreach (var to in request.Destination.ToAddresses)
         {
-            message.To.Add(
-                new MailboxAddress(
-                    name: toAddress.DisplayName ?? toAddress.EmailAddress,
-                    address: toAddress.EmailAddress
-                )
-            );
+            var toAddress = new MailboxAddress(name: to.DisplayName ?? to.EmailAddress, address: to.EmailAddress);
+            message.To.Add(toAddress);
         }
 
-        foreach (var ccAddress in request.Destination.CcAddresses)
+        foreach (var cc in request.Destination.CcAddresses)
         {
-            message.Cc.Add(
-                new MailboxAddress(
-                    name: ccAddress.DisplayName ?? ccAddress.EmailAddress,
-                    address: ccAddress.EmailAddress
-                )
-            );
+            var ccAddress = new MailboxAddress(name: cc.DisplayName ?? cc.EmailAddress, address: cc.EmailAddress);
+            message.Cc.Add(ccAddress);
         }
 
-        foreach (var bccAddress in request.Destination.BccAddresses)
+        foreach (var bcc in request.Destination.BccAddresses)
         {
-            message.Bcc.Add(
-                new MailboxAddress(
-                    name: bccAddress.DisplayName ?? bccAddress.EmailAddress,
-                    address: bccAddress.EmailAddress
-                )
-            );
+            var bccAddress = new MailboxAddress(name: bcc.DisplayName ?? bcc.EmailAddress, address: bcc.EmailAddress);
+            message.Bcc.Add(bccAddress);
         }
 
         var emailBuilder = new BodyBuilder();
@@ -73,10 +61,49 @@ internal sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpSettings> op
             emailBuilder.HtmlBody = request.MessageHtml;
         }
 
+        foreach (var requestAttachment in request.Attachments)
+        {
+            var fileStream = new MemoryStream(requestAttachment.File);
+            fileStream.Seek(0, SeekOrigin.Begin);
+            await emailBuilder.Attachments.AddAsync(requestAttachment.Name, fileStream, cancellationToken);
+        }
+
         message.Body = emailBuilder.ToMessageBody();
 
-        using var client = new SmtpClient();
+        using var client = await _BuildClientAsync(settings, cancellationToken);
+        await client.SendAsync(message, cancellationToken);
+        await client.DisconnectAsync(quit: true, cancellationToken);
 
+        return SendSingleEmailResponse.Succeeded();
+    }
+
+    private static async Task<SmtpClient> _BuildClientAsync(
+        MailkitSmtpSettings settings,
+        CancellationToken cancellationToken
+    )
+    {
+        var client = new SmtpClient();
+
+        try
+        {
+            await _ConfigureClient(client, settings, cancellationToken);
+
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+
+            throw;
+        }
+    }
+
+    private static async Task _ConfigureClient(
+        SmtpClient client,
+        MailkitSmtpSettings settings,
+        CancellationToken cancellationToken
+    )
+    {
         await client.ConnectAsync(
             host: settings.Server,
             port: settings.Port,
@@ -88,10 +115,5 @@ internal sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpSettings> op
         {
             await client.AuthenticateAsync(settings.User, settings.Password, cancellationToken);
         }
-
-        await client.SendAsync(message, cancellationToken);
-        await client.DisconnectAsync(quit: true, cancellationToken);
-
-        return SendSingleEmailResponse.Succeeded();
     }
 }
