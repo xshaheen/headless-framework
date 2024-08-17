@@ -6,10 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MailKit" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\Framework.Emails\Framework.Emails.csproj" />
   </ItemGroup>
 

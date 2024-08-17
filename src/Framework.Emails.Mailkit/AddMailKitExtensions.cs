@@ -12,4 +12,13 @@ public static class AddMailKitExtensions
         builder.Services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(section);
         builder.Services.AddSingleton<IEmailSender, MailkitEmailSender>();
     }
+
+    public static void AddMailKitEmailSender(
+        this IHostApplicationBuilder builder,
+        Action<MailkitSmtpSettings> configure
+    )
+    {
+        builder.Services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(configure);
+        builder.Services.AddSingleton<IEmailSender, MailkitEmailSender>();
+    }
 }

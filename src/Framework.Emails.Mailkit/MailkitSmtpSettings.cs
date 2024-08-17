@@ -3,7 +3,7 @@ using MailKit.Security;
 
 namespace Framework.Emails.Mailkit;
 
-internal sealed class MailkitSmtpSettings
+public sealed class MailkitSmtpSettings
 {
     public required string Server { get; init; }
 
