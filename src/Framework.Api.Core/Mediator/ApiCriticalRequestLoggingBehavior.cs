@@ -6,21 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Api.Core.Mediator;
 
-public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
+public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse>(
+    IRequestContext requestContext,
+    ILogger<ApiCriticalRequestLoggingBehavior<TMessage, TResponse>> logger
+) : IPipelineBehavior<TMessage, TResponse>
     where TMessage : IRequest<TResponse>
 {
-    private readonly IRequestContext _requestContext;
-    private readonly ILogger<ApiCriticalRequestLoggingBehavior<TMessage, TResponse>> _logger;
-
-    public ApiCriticalRequestLoggingBehavior(
-        IRequestContext requestContext,
-        ILogger<ApiCriticalRequestLoggingBehavior<TMessage, TResponse>> logger
-    )
-    {
-        _requestContext = requestContext;
-        _logger = logger;
-    }
-
     public async ValueTask<TResponse> Handle(
         TMessage message,
         MessageHandlerDelegate<TMessage, TResponse> next,
@@ -33,8 +24,9 @@ public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse> : IPi
 
         if (elapsed >= 1.Seconds())
         {
-            _logger.LogMediatorSlowResponse(
-                userId: _requestContext.User.UserId,
+            _LogMediatorSlowResponse(
+                logger,
+                userId: requestContext.User.UserId,
                 elapsed: elapsed,
                 messageName: typeof(TMessage).Name,
                 message: message,
@@ -45,10 +37,9 @@ public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse> : IPi
 
         return response;
     }
-}
 
-file static class LoggerExtensions
-{
+    #region Logger
+
     private static readonly Action<ILogger, string?, TimeSpan, string, object, string, object?, Exception?> _Log =
         LoggerMessage.Define<string?, TimeSpan, string, object, string, object?>(
             LogLevel.Warning,
@@ -56,8 +47,8 @@ file static class LoggerExtensions
             "[Mediator:SlowMessage] {UserId} {Elapsed}ms {MessageName} {@Message} {ResponseName} {@Response}"
         );
 
-    public static void LogMediatorSlowResponse(
-        this ILogger logger,
+    private static void _LogMediatorSlowResponse(
+        ILogger logger,
         string? userId,
         TimeSpan elapsed,
         string messageName,
@@ -68,4 +59,6 @@ file static class LoggerExtensions
     {
         _Log(logger, userId, elapsed, messageName, message, responseName, response, null);
     }
+
+    #endregion
 }

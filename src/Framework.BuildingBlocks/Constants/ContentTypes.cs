@@ -61,9 +61,13 @@ public static class ContentTypes
         public const string Html = "text/html";
 
         public const string Css = "text/css";
+
         public const string Csv = "text/csv";
+
         public const string RichText = "text/richtext";
+
         public const string Sgml = "text/sgml";
+
         public const string Yaml = "text/yaml";
     }
 

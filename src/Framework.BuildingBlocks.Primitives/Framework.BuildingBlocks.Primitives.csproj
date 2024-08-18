@@ -50,7 +50,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Compile Remove="$(CompilerGeneratedFilesOutputPath)/**/*.cs" />
   </ItemGroup>
 
