@@ -48,6 +48,18 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 
     public void OnException(ExceptionContext context)
     {
+        // If the exception is already handled, we don't need to do anything.
+        if (context.ExceptionHandled)
+        {
+            return;
+        }
+
+        // If the exception is not an API exception, we don't need to do anything.
+        if (!context.HttpContext.Request.CanAccept(ContentTypes.Application.Json))
+        {
+            return;
+        }
+
         var type = context.Exception.GetType();
 
         if (_exceptionHandlers.TryGetValue(type, out var handler))

@@ -1,5 +1,6 @@
 using System.Net;
 using Framework.Arguments;
+using Microsoft.Net.Http.Headers;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -18,7 +19,8 @@ public static class HttpRequestExtensions
     {
         Argument.IsNotNull(request);
 
-        return request.Headers.XRequestedWith == _XmlHttpRequest;
+        return string.Equals(request.Query[HeaderNames.XRequestedWith], _XmlHttpRequest, StringComparison.Ordinal)
+            || string.Equals(request.Headers.XRequestedWith, _XmlHttpRequest, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -43,5 +45,13 @@ public static class HttpRequestExtensions
 
         // for in memory TestServer or when dealing with default connection info
         return connection.RemoteIpAddress is null && connection.LocalIpAddress is null;
+    }
+
+    public static bool CanAccept(this HttpRequest request, string contentType)
+    {
+        Argument.IsNotNull(request);
+        Argument.IsNotNull(contentType);
+
+        return request.Headers[HeaderNames.Accept].ToString().Contains(contentType, StringComparison.OrdinalIgnoreCase);
     }
 }

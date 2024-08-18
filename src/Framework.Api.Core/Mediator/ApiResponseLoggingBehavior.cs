@@ -4,25 +4,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Api.Core.Mediator;
 
-public sealed class ApiResponseLoggingBehavior<TMessage, TResponse> : MessagePostProcessor<TMessage, TResponse>
+public sealed class ApiResponseLoggingBehavior<TMessage, TResponse>(
+    IRequestContext requestContext,
+    ILogger<ApiResponseLoggingBehavior<TMessage, TResponse>> logger
+) : MessagePostProcessor<TMessage, TResponse>
     where TMessage : IRequest<TResponse>
 {
-    private readonly IRequestContext _requestContext;
-    private readonly ILogger<ApiResponseLoggingBehavior<TMessage, TResponse>> _logger;
-
-    public ApiResponseLoggingBehavior(
-        IRequestContext requestContext,
-        ILogger<ApiResponseLoggingBehavior<TMessage, TResponse>> logger
-    )
-    {
-        _requestContext = requestContext;
-        _logger = logger;
-    }
-
     protected override ValueTask Handle(TMessage message, TResponse response, CancellationToken cancellationToken)
     {
-        _logger.LogMediatorResponse(
-            userId: _requestContext.User.UserId,
+        _LogMediatorResponse(
+            logger,
+            userId: requestContext.User.UserId,
             messageName: typeof(TMessage).Name,
             message: message,
             responseName: typeof(TResponse).Name,
@@ -31,10 +23,9 @@ public sealed class ApiResponseLoggingBehavior<TMessage, TResponse> : MessagePos
 
         return ValueTask.CompletedTask;
     }
-}
 
-file static class LoggerExtensions
-{
+    #region Logs
+
     private static readonly Action<ILogger, string?, string, object, string, object?, Exception?> _Log =
         LoggerMessage.Define<string?, string, object, string, object?>(
             LogLevel.Debug,
@@ -42,8 +33,8 @@ file static class LoggerExtensions
             "[Mediator:Response] {UserId} {MessageName} {@Message} {ResponseName} {@Response}"
         );
 
-    public static void LogMediatorResponse(
-        this ILogger logger,
+    private static void _LogMediatorResponse(
+        ILogger logger,
         string? userId,
         string messageName,
         object message,
@@ -53,4 +44,6 @@ file static class LoggerExtensions
     {
         _Log(logger, userId, messageName, message, responseName, response, null);
     }
+
+    #endregion
 }

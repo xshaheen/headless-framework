@@ -6,27 +6,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Api.Core.Mediator;
 
-public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse> : MessagePreProcessor<TMessage, TResponse>
+public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse>(
+    IRequestContext requestContext,
+    IEnumerable<IValidator<TMessage>> validators,
+    ILogger<ApiValidationRequestPreProcessor<TMessage, TResponse>> logger
+) : MessagePreProcessor<TMessage, TResponse>
     where TMessage : IMessage
 {
-    private readonly IRequestContext _requestContext;
-    private readonly IEnumerable<IValidator<TMessage>> _validators;
-    private readonly ILogger<ApiValidationRequestPreProcessor<TMessage, TResponse>> _logger;
-
-    public ApiValidationRequestPreProcessor(
-        IRequestContext requestContext,
-        IEnumerable<IValidator<TMessage>> validators,
-        ILogger<ApiValidationRequestPreProcessor<TMessage, TResponse>> logger
-    )
-    {
-        _requestContext = requestContext;
-        _validators = validators;
-        _logger = logger;
-    }
-
     protected override async ValueTask Handle(TMessage message, CancellationToken cancellationToken)
     {
-        if (!_validators.Any())
+        if (!validators.Any())
         {
             return;
         }
@@ -34,7 +23,7 @@ public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse> : Mess
         var validationContext = new ValidationContext<TMessage>(message);
 
         var validationResults = await Task.WhenAll(
-            _validators.Select(v => v.ValidateAsync(validationContext, cancellationToken))
+            validators.Select(v => v.ValidateAsync(validationContext, cancellationToken))
         );
 
         var failures = validationResults
@@ -47,8 +36,9 @@ public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse> : Mess
             return;
         }
 
-        _logger.LogMediatorMessageValidation(
-            userId: _requestContext.User.UserId,
+        _LogMediatorMessageValidation(
+            logger,
+            userId: requestContext.User.UserId,
             messageName: typeof(TMessage).Name,
             message: message,
             failures: failures
@@ -56,10 +46,9 @@ public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse> : Mess
 
         throw new ValidationException(failures);
     }
-}
 
-file static class LoggerExtensions
-{
+    #region Logs
+
     private static readonly Action<
         ILogger,
         string?,
@@ -73,8 +62,8 @@ file static class LoggerExtensions
         "[Mediator:Validation] {UserId} {MessageName} {@Message} {Failures}"
     );
 
-    public static void LogMediatorMessageValidation(
-        this ILogger logger,
+    private static void _LogMediatorMessageValidation(
+        ILogger logger,
         string? userId,
         string messageName,
         object message,
@@ -83,4 +72,6 @@ file static class LoggerExtensions
     {
         _Log(logger, userId, messageName, message, failures, null);
     }
+
+    #endregion
 }

@@ -18,6 +18,10 @@
     <PackageReference Include="IdGen" />
     <PackageReference Include="IPAddressRange" />
     <PackageReference Include="libphonenumber-csharp" />
+    <PackageReference Include="MimeTypes">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="NetEscapades.EnumGenerators" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
