@@ -1,0 +1,23 @@
+@page
+@model V3Model
+@{
+    ViewData["Title"] = "V3";
+}
+
+<pre>@Model.Result</pre>
+
+<form method="POST">
+    <input id="token" name="token" type="text" />
+    <input id="submit" type="submit" value="submit" disabled="disabled" />
+</form>
+
+
+<script>
+    function callback(token) {
+        document.getElementById("token").value = token;
+        document.getElementById("submit").disabled = false;
+    }
+</script>
+
+<recaptcha-script-v3 hide-badge="true" />
+<recaptcha-script-v3-js action="login" callback="callback" />

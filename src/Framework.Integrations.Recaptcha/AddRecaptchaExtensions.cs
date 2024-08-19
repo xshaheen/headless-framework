@@ -1,31 +1,62 @@
-using Framework.Arguments;
-using Microsoft.Extensions.Configuration;
+﻿using Framework.Integrations.Recaptcha.Contracts;
+using Framework.Integrations.Recaptcha.Services;
+using Framework.Integrations.Recaptcha.V2;
+using Framework.Integrations.Recaptcha.V3;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Integrations.Recaptcha;
 
-/// <summary>Extension methods for adding reCAPTCHA services to the DI container.</summary>
-public static class AddRecaptchaExtensions
+public static class ServiceCollectionExtensions
 {
-    /// <summary>Adds services required for using reCAPTCHA.</summary>
-    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
-    /// <param name="section">The configuration section that contains reCAPTCHA settings.</param>
-    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
-    public static IServiceCollection AddRecaptcha(this IServiceCollection services, IConfiguration section)
+    public static IServiceCollection AddReCaptchaV3(
+        this IServiceCollection services,
+        Action<ReCaptchaSettings>? setupAction,
+        Action<HttpClient>? configureClient = null
+    )
     {
-        Argument.IsNotNull(services);
-        Argument.IsNotNull(section);
+        if (setupAction is not null)
+        {
+            services.Configure<ReCaptchaSettings, RecaptchaSettingsValidator>(setupAction, ReCaptchaConstants.V3);
+        }
 
-        services.ConfigureSingleton<RecaptchaSettings, RecaptchaSettingsValidator>(section);
+        if (configureClient is null)
+        {
+            services.AddHttpClient(ReCaptchaConstants.V3).AddStandardResilienceHandler();
+        }
+        else
+        {
+            services.AddHttpClient(ReCaptchaConstants.V3, configureClient).AddStandardResilienceHandler();
+        }
 
-        services
-            .AddSingleton<IRecaptchaV2Service, RecaptchaV2Service>()
-            .AddHttpClient<IRecaptchaV2Service, RecaptchaV2Service>(
-                name: "recaptcha-client",
-                configureClient: client => client.BaseAddress = new Uri("https://www.google.com")
-            )
-            // See: https://devblogs.microsoft.com/dotnet/building-resilient-cloud-services-with-dotnet-8/#standard-resilience-pipeline
-            .AddStandardResilienceHandler();
+        services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
+        services.AddTransient<IReCaptchaSiteVerifyV3, ReCaptchaSiteVerifyV3>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddReCaptchaV2(
+        this IServiceCollection services,
+        Action<ReCaptchaSettings>? setupAction,
+        Action<HttpClient>? configureClient = null
+    )
+    {
+        if (setupAction is not null)
+        {
+            services.Configure<ReCaptchaSettings, RecaptchaSettingsValidator>(setupAction, ReCaptchaConstants.V2);
+        }
+
+        if (configureClient is null)
+        {
+            services.AddHttpClient(ReCaptchaConstants.V2).AddStandardResilienceHandler();
+        }
+        else
+        {
+            services.AddHttpClient(ReCaptchaConstants.V2, configureClient).AddStandardResilienceHandler();
+        }
+
+        services.TryAddTransient<IReCaptchaLanguageCodeProvider, CultureInfoReCaptchaLanguageCodeProvider>();
+        services.AddTransient<IReCaptchaSiteVerifyV2, ReCaptchaSiteVerifyV2>();
 
         return services;
     }

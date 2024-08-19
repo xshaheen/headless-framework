@@ -18,6 +18,7 @@ public static class PlatformJsonConstants
 
     public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
     public static readonly JsonSerializerOptions DefaultInternalJsonOptions = CreateInternalJsonOptions();
+    public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = new() { WriteIndented = true };
 
     public static JsonSerializerOptions CreateWebJsonOptions()
     {

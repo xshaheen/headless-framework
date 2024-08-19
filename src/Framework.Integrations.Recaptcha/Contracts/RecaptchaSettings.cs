@@ -1,23 +1,23 @@
-using FluentValidation;
+﻿using FluentValidation;
+using Framework.FluentValidation;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace Framework.Integrations.Recaptcha;
+namespace Framework.Integrations.Recaptcha.Contracts;
 
-public sealed class RecaptchaSettings
+public sealed class ReCaptchaSettings
 {
-    /// <summary>Google Recaptcha Secret Key.</summary>
-    public required string SecretKey { get; set; }
+    public string VerifyBaseUrl { get; set; } = "https://www.google.com/";
 
-    /// <summary>Google Recaptcha Site Key.</summary>
     public required string SiteKey { get; set; }
+
+    public required string SiteSecret { get; set; }
 }
 
-public sealed class RecaptchaSettingsValidator : AbstractValidator<RecaptchaSettings>
+public sealed class RecaptchaSettingsValidator : AbstractValidator<ReCaptchaSettings>
 {
     public RecaptchaSettingsValidator()
     {
-        RuleFor(x => x.SecretKey).NotEmpty();
+        RuleFor(x => x.VerifyBaseUrl).HttpUrl();
+        RuleFor(x => x.SiteSecret).NotEmpty();
         RuleFor(x => x.SiteKey).NotEmpty();
     }
 }
