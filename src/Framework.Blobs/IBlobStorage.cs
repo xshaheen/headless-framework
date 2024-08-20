@@ -9,14 +9,14 @@ public interface IBlobStorage
     ValueTask CreateContainerAsync(string[] container);
 
     [SystemPure, JetBrainsPure]
-    ValueTask<BlobUploadResult> UploadAsync(
+    ValueTask<bool> UploadAsync(
         BlobUploadRequest blob,
         string[] container,
         CancellationToken cancellationToken = default
     );
 
     [SystemPure, JetBrainsPure]
-    ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
+    ValueTask<IReadOnlyList<bool>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
@@ -45,7 +45,7 @@ public interface IBlobStorage
     );
 
     [SystemPure, JetBrainsPure]
-    ValueTask<BlobUploadResult?> CopyFileAsync(
+    ValueTask<bool> CopyFileAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,

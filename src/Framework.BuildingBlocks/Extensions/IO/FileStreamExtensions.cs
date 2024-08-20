@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using FluentDate;
+using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Helpers;
 using Polly;
 using Polly.Retry;
@@ -30,8 +31,7 @@ public static class FileStreamExtensions
         .AddRetry(IoRetryStrategyOptions)
         .Build();
 
-    [MustUseReturnValue]
-    public static async ValueTask<(string SavedName, string DisplayName, long Size)[]> SaveToLocalFileAsync(
+    public static async ValueTask<Result<Exception>[]> SaveToLocalFileAsync(
         this IEnumerable<(Stream BlobStream, string BlobName)> blobs,
         string directoryPath,
         CancellationToken token = default
@@ -41,13 +41,24 @@ public static class FileStreamExtensions
         Argument.IsNotNullOrEmpty(directoryPath);
 
         Directory.CreateDirectory(directoryPath);
-        var results = blobs.Select(blob => _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token));
+
+        var results = blobs.Select(async blob =>
+        {
+            try
+            {
+                await _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token);
+                return Result<Exception>.Success();
+            }
+            catch (Exception e)
+            {
+                return Result<Exception>.Fail(e);
+            }
+        });
 
         return await Task.WhenAll(results);
     }
 
-    [MustUseReturnValue]
-    public static async ValueTask<(string SavedName, string DisplayName, long Size)> SaveToLocalFileAsync(
+    public static async ValueTask SaveToLocalFileAsync(
         this Stream blobStream,
         string blobName,
         string directoryPath,
@@ -59,29 +70,27 @@ public static class FileStreamExtensions
         Argument.IsNotNullOrWhiteSpace(blobName);
         Directory.CreateDirectory(directoryPath);
 
-        return await _BaseSaveFileAsync(blobStream, blobName, directoryPath, token);
+        await _BaseSaveFileAsync(blobStream, blobName, directoryPath, token);
     }
 
-    [MustUseReturnValue]
-    private static async Task<(string SavedName, string DisplayName, long Size)> _BaseSaveFileAsync(
+    private static async Task _BaseSaveFileAsync(
         Stream blobStream,
-        string blobName,
+        string uniqueSaveName,
         string directoryPath,
         CancellationToken token
     )
     {
-        var (trustedFileNameForDisplay, uniqueSaveName) = FileHelper.GetTrustedFileNames(blobName);
         var filePath = Path.Combine(directoryPath, uniqueSaveName);
-        await IoRetryPipeline.ExecuteAsync(_WriteFileAsync, (filePath, blobStream), token);
+        await IoRetryPipeline.ExecuteAsync(writeFileAsync, (filePath, blobStream), token);
 
-        return (uniqueSaveName, trustedFileNameForDisplay, blobStream.Length);
-    }
+        return;
 
-    private static async ValueTask _WriteFileAsync((string FilePath, Stream BlobStream) state, CancellationToken token)
-    {
-        await using var fileStream = File.Open(state.FilePath, FileMode.Create, FileAccess.Write);
-        await state.BlobStream.CopyToAsync(fileStream, token);
-        await state.BlobStream.FlushAsync(token);
+        static async ValueTask writeFileAsync((string FilePath, Stream BlobStream) state, CancellationToken token)
+        {
+            await using var fileStream = File.Open(state.FilePath, FileMode.Create, FileAccess.Write);
+            await state.BlobStream.CopyToAsync(fileStream, token);
+            await state.BlobStream.FlushAsync(token);
+        }
     }
 
     [SuppressMessage(

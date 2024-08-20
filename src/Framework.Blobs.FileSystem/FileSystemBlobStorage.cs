@@ -16,7 +16,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
     private readonly ILogger _logger =
         options.Value.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
 
-    public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
+    public async ValueTask<IReadOnlyList<bool>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
@@ -58,7 +58,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         return ValueTask.CompletedTask;
     }
 
-    public async ValueTask<BlobUploadResult> UploadAsync(
+    public async ValueTask<bool> UploadAsync(
         BlobUploadRequest blob,
         string[] container,
         CancellationToken cancellationToken = default
