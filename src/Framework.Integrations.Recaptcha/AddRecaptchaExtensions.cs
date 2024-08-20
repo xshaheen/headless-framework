@@ -1,4 +1,6 @@
-﻿using Framework.Integrations.Recaptcha.Contracts;
+﻿global using JetBrainsPure = JetBrains.Annotations.PureAttribute;
+global using SystemPure = System.Diagnostics.Contracts.PureAttribute;
+using Framework.Integrations.Recaptcha.Contracts;
 using Framework.Integrations.Recaptcha.Services;
 using Framework.Integrations.Recaptcha.V2;
 using Framework.Integrations.Recaptcha.V3;
