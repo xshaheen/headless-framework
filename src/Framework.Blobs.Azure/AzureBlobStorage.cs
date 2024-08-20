@@ -81,6 +81,13 @@ public sealed class AzureBlobStorage : IBlobStorage
         return result;
     }
 
+    public ValueTask CreateContainerAsync(string[] container)
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        return _CreateContainerIfNotExistsAsync(container[0]);
+    }
+
     public async ValueTask<BlobUploadResult> UploadAsync(
         BlobUploadRequest blob,
         string[] container,

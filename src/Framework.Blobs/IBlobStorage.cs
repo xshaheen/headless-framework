@@ -6,6 +6,9 @@ using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 public interface IBlobStorage
 {
     [SystemPure, JetBrainsPure]
+    ValueTask CreateContainerAsync(string[] container);
+
+    [SystemPure, JetBrainsPure]
     ValueTask<BlobUploadResult> UploadAsync(
         BlobUploadRequest blob,
         string[] container,

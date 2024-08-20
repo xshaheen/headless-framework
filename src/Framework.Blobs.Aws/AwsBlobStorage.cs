@@ -32,6 +32,13 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
         return result;
     }
 
+    public ValueTask CreateContainerAsync(string[] container)
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        return _CreateBucketIfNotExistsAsync(container[0]);
+    }
+
     public async ValueTask<BlobUploadResult> UploadAsync(
         BlobUploadRequest blob,
         string[] container,

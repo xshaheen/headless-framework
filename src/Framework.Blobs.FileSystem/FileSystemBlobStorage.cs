@@ -40,6 +40,17 @@ public sealed class FileSystemBlobStorage(IWebHostEnvironment env) : IBlobStorag
         return ValueTask.FromResult<IReadOnlyList<bool>>(results);
     }
 
+    public ValueTask CreateContainerAsync(string[] container)
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        var directoryPath = _GetDirectoryPath(container);
+
+        Directory.CreateDirectory(directoryPath);
+
+        return ValueTask.CompletedTask;
+    }
+
     public async ValueTask<BlobUploadResult> UploadAsync(
         BlobUploadRequest blob,
         string[] container,
