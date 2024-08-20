@@ -23,8 +23,9 @@ public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse>(
         var validationContext = new ValidationContext<TMessage>(message);
 
         var validationResults = await Task.WhenAll(
-            validators.Select(v => v.ValidateAsync(validationContext, cancellationToken))
-        );
+                validators.Select(v => v.ValidateAsync(validationContext, cancellationToken))
+            )
+            .WithAggregatedExceptions();
 
         var failures = validationResults
             .SelectMany(result => result.Errors)

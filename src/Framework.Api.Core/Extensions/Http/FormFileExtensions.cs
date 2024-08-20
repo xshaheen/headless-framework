@@ -1,4 +1,5 @@
 using Framework.Arguments;
+using Framework.BuildingBlocks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -10,7 +11,7 @@ public static class FormFileExtensions
     /// <param name="formFile">File to be saved</param>
     /// <param name="directoryPath">The directory to save the file to.</param>
     /// <param name="token"></param>
-    public static async ValueTask<(string SavedName, string DisplayName, long Size)> SaveAsync(
+    public static async ValueTask SaveAsync(
         this IFormFile formFile,
         string directoryPath,
         CancellationToken token = default
@@ -20,10 +21,10 @@ public static class FormFileExtensions
 
         await using var blobStream = formFile.OpenReadStream();
 
-        return await blobStream.SaveToLocalFileAsync(formFile.FileName, directoryPath, token);
+        await blobStream.SaveToLocalFileAsync(formFile.FileName, directoryPath, token);
     }
 
-    public static async ValueTask<(string SavedName, string DisplayName, long Size)[]> SaveAsync(
+    public static async ValueTask<Result<Exception>[]> SaveAsync(
         this IReadOnlyCollection<IFormFile> files,
         string directoryPath,
         CancellationToken token = default
@@ -31,12 +32,19 @@ public static class FormFileExtensions
     {
         var tasks = files.Select(async formFile =>
         {
-            var blobResponse = await formFile.SaveAsync(directoryPath, token);
+            try
+            {
+                await formFile.SaveAsync(directoryPath, token);
 
-            return blobResponse;
+                return Result<Exception>.Success();
+            }
+            catch (Exception ex)
+            {
+                return Result<Exception>.Fail(ex);
+            }
         });
 
-        var result = await Task.WhenAll(tasks);
+        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
 
         return result;
     }

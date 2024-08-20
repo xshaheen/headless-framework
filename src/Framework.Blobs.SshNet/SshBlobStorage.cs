@@ -41,7 +41,8 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
 
         // TODO: Task.WhenAll has exception handling issues and should be replaced with a more robust
         //       solution like Polly and handling exceptions in a more controlled manner.
-        var result = await Task.WhenAll(tasks);
+        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
+        ;
 
         return result;
     }
@@ -56,7 +57,7 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         Argument.IsNotNullOrEmpty(container);
 
         var tasks = blobNames.Select(async fileName => await DeleteAsync(fileName, container, cancellationToken));
-        var result = await Task.WhenAll(tasks);
+        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
 
         return result;
     }

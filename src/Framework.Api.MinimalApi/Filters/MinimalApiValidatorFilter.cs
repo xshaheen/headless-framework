@@ -26,8 +26,9 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
         var validationContext = new ValidationContext<TRequest>(request);
 
         var validationResults = await Task.WhenAll(
-            validators.Select(v => v.ValidateAsync(validationContext, context.HttpContext.RequestAborted))
-        );
+                validators.Select(v => v.ValidateAsync(validationContext, context.HttpContext.RequestAborted))
+            )
+            .WithAggregatedExceptions();
 
         var failures = validationResults
             .Where(x => !x.IsValid)

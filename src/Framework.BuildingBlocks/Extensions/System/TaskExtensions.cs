@@ -27,6 +27,27 @@ public static class TaskExtensions
             .Unwrap();
     }
 
+    // Get a single exception if only one has been thrown;
+    // Get an AggregateException if more than one exception has been thrown collectively by one or more tasks;
+    // Propagate the cancellation status properly (Task.IsCanceled), as something like this would not do that: Task t = Task.WhenAll(...); try { await t; } catch { throw t.Exception; }.
+    // See: https://stackoverflow.com/a/62607500 (modified)
+    public static Task<T> WithAggregatedExceptions<T>(this Task<T> @this)
+    {
+        return @this
+            .ContinueWith<Task<T>>(
+                continuationFunction: task =>
+                    task.IsFaulted
+                    && (task.Exception.InnerExceptions.Count > 1 || task.Exception.InnerException is AggregateException)
+                        ? Task.FromException<T>(task.Exception.Flatten())
+                        : task,
+                cancellationToken: CancellationToken.None,
+                continuationOptions: TaskContinuationOptions.NotOnCanceled
+                    | TaskContinuationOptions.ExecuteSynchronously,
+                scheduler: TaskScheduler.Default
+            )
+            .Unwrap();
+    }
+
     /// <summary>
     /// https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm
     /// </summary>
