@@ -28,8 +28,6 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         configurationBuilder.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
         configurationBuilder.Properties<Month>().HaveConversion<MonthValueConverter>();
         configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
-        configurationBuilder.Properties<File>().HaveConversion<FileConverter>();
-        configurationBuilder.Properties<Image>().HaveConversion<ImageConverter>();
         configurationBuilder.Properties<File>().HaveConversion<FileValueConverter>();
         configurationBuilder.Properties<Image>().HaveConversion<ImageValueConverter>();
         configurationBuilder.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
@@ -72,6 +70,40 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         UpdateConcurrencyStamp(entry);
     }
 
+    protected virtual void ApplyConceptsForAddedEntity(EntityEntry entry)
+    {
+        UpdateConcurrencyStamp(entry);
+    }
+
+    protected virtual void ApplyConceptsForModifiedEntity(EntityEntry entry, bool forceApply = false)
+    {
+        var hasAnyModifiedProperties = entry.Properties.Any(x =>
+            x is { IsModified: true, Metadata.ValueGenerated: ValueGenerated.Never or ValueGenerated.OnAdd }
+        );
+
+        if (forceApply || hasAnyModifiedProperties)
+        {
+            UpdateConcurrencyStamp(entry);
+        }
+    }
+
+    protected virtual void ApplyConceptsForDeletedEntity(EntityEntry entry)
+    {
+        // if (!(entry.Entity is ISoftDelete))
+        // {
+        //     return;
+        // }
+        //
+        // if (IsHardDeleted(entry))
+        // {
+        //     return;
+        // }
+        //
+        // entry.Reload();
+        // ObjectHelper.TrySetProperty(entry.Entity.As<ISoftDelete>(), x => x.IsDeleted, () => true);
+        // SetDeletionAuditProperties(entry);
+    }
+
     protected virtual void UpdateConcurrencyStamp(EntityEntry entry)
     {
         if (entry.Entity is not IHasConcurrencyStamp entity)
@@ -88,6 +120,51 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         {
             entity.ConcurrencyStamp = Guid.NewGuid().ToString();
         }
+    }
+
+    protected virtual EntityEventReport CreateEventReport()
+    {
+        var report = new EntityEventReport();
+
+        foreach (var entry in ChangeTracker.Entries().ToList())
+        {
+            if (entry.Entity is not ILocalMessageEmitter localEmitter)
+            {
+                continue;
+            }
+
+            var localMessages = localEmitter.GetLocalMessages();
+
+            if (localMessages.Count > 0)
+            {
+                report.DomainEvents.AddRange(
+                    localMessages.Select(localMessage => new LocalEventEntry(localEmitter, localMessage))
+                );
+
+                localEmitter.ClearLocalMessages();
+            }
+
+            if (entry.Entity is not IDistributedMessageEmitter distributedEmitter)
+            {
+                continue;
+            }
+
+            var distributedEvents = distributedEmitter.GetDistributedMessages();
+
+            if (distributedEvents.Count > 0)
+            {
+                report.DistributedEvents.AddRange(
+                    distributedEvents.Select(distributedMessage => new DistributedEventEntry(
+                        distributedEmitter,
+                        distributedMessage
+                    ))
+                );
+
+                distributedEmitter.ClearDistributedMessages();
+            }
+        }
+
+        return report;
     }
 
     #region Execute Transaction
@@ -455,4 +532,26 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
     protected abstract void PublishMessages(List<EmitterLocalMessages> emitters);
 
     #endregion
+}
+
+public sealed record LocalEventEntry(ILocalMessageEmitter Emitter, ILocalMessage Message);
+
+public sealed record DistributedEventEntry(IDistributedMessageEmitter Emitter, IDistributedMessage Message);
+
+public sealed class EntityEventReport
+{
+    public List<LocalEventEntry> DomainEvents { get; } = [];
+
+    public List<DistributedEventEntry> DistributedEvents { get; } = [];
+
+    public override string ToString()
+    {
+        return $"[{nameof(EntityEventReport)}] DomainEvents: {DomainEvents.Count}, DistributedEvents: {DistributedEvents.Count}";
+    }
+}
+
+public class AbpEntityChangeOptions
+{
+    /// <summary>Default: true. Publish the EntityUpdatedEvent when any navigation property changes.</summary>
+    public bool PublishEntityUpdatedEventWhenNavigationChanges { get; set; } = true;
 }

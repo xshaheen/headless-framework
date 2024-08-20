@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 // ReSharper disable once CheckNamespace
 namespace Framework.BuildingBlocks;
 
+#pragma warning disable CA2225
 [StructLayout(LayoutKind.Auto)]
 public readonly struct Result<TErrors> : IResult<TErrors>, IEquatable<Result<TErrors>>
 {
@@ -30,9 +31,9 @@ public readonly struct Result<TErrors> : IResult<TErrors>, IEquatable<Result<TEr
 
     public static implicit operator Result<TErrors>(TErrors operand) => new(operand);
 
-    public Result<TErrors> FromTErrors(TErrors operand) => operand;
+    public static Result<TErrors> Fail(TErrors operand) => operand;
 
-    public Result<TErrors> Success() => new();
+    public static Result<TErrors> Success() => new();
 
     public TResult Match<TResult>(Func<TResult> success, Func<TErrors, TResult> failure) =>
         Failed ? failure(Errors) : success();

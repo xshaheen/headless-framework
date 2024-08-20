@@ -6,7 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" />
     <PackageReference Include="AWSSDK.S3" />
   </ItemGroup>

@@ -4,7 +4,8 @@ using System.Diagnostics.CodeAnalysis;
 // ReSharper disable once CheckNamespace
 namespace Framework.BuildingBlocks;
 
-#pragma warning disable CA2225
+#pragma warning disable CA2225 // Operator overloads have named alternates
+
 public readonly struct DataResult<T> : IResult<T, IReadOnlyList<ErrorDescriptor>>, IEquatable<DataResult<T>>
 {
     public DataResult()
@@ -67,7 +68,7 @@ public readonly struct DataResult<T> : IResult<T, IReadOnlyList<ErrorDescriptor>
     public static implicit operator DataResult<T>(T operand) => new() { Succeeded = true, Data = operand };
 
     public static implicit operator DataResult<T>(ErrorDescriptor operand) =>
-        new() { Succeeded = false, Errors = new[] { operand } };
+        new() { Succeeded = false, Errors = [operand] };
 
     public static implicit operator DataResult<T>(ErrorDescriptor[] operand) =>
         new() { Succeeded = false, Errors = operand };

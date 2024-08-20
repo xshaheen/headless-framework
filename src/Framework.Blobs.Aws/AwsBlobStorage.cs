@@ -6,13 +6,11 @@ using Amazon.S3.Util;
 using Flurl;
 using Framework.Arguments;
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.Helpers.IO;
-using Microsoft.AspNetCore.StaticFiles;
 
 namespace Framework.Blobs.Aws;
 
-public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTypeProvider, IClock clock) : IBlobStorage
+public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvider, IClock clock) : IBlobStorage
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedBuckets = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
@@ -57,7 +55,7 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
             BucketName = bucket,
             Key = key,
             InputStream = blob.Stream,
-            ContentType = _GetContentType(blob.FileName),
+            ContentType = mimeTypeProvider.GetMimeType(blob.FileName),
             Headers = { CacheControl = _DefaultCacheControl, },
             Metadata =
             {
@@ -244,7 +242,7 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
         Argument.IsNotNullOrEmpty(container);
 
         var bucket = container[0];
-        var key = Url.Combine(container.Skip(1).Append(blobName).ToArray());
+        var key = Url.Combine([.. container.Skip(1).Append(blobName)]);
 
         return (bucket, key);
     }
@@ -268,13 +266,6 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
         }
 
         return dictionary;
-    }
-
-    private string _GetContentType(string fileName)
-    {
-        return contentTypeProvider.TryGetContentType(fileName, out var contentType)
-            ? contentType
-            : ContentTypes.Application.OctetStream;
     }
 
     #endregion

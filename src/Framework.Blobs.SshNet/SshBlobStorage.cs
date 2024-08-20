@@ -138,6 +138,16 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         }
     }
 
+    public ValueTask<PagedFileListResult> GetPagedListAsync(
+        string[] container,
+        string? searchPattern = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
     public async ValueTask<bool> RenameFileAsync(
         string blobName,
         string[] blobContainer,
