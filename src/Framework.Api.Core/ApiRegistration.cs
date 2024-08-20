@@ -24,29 +24,28 @@ public static class ApiRegistration
 {
     public static readonly FileFormatInspector FileFormatInspector = new(FileFormatLocator.GetFormats());
 
-    public static readonly FileExtensionContentTypeProvider FileExtensionContentTypeProvider =
-        new() { Mappings = { [".liquid"] = ContentTypes.Text.Html, [".md"] = ContentTypes.Text.Html, }, };
-
-    public static void AddApiCore(this WebApplicationBuilder builder)
+    public static void AddFrameworkApiServices(this WebApplicationBuilder builder)
     {
-        builder.Services.AddServerTimingMiddleware();
-        builder.Services.AddCustomStatusCodesRewriterMiddleware();
-        builder.Services.AddRequestCanceledMiddleware();
-
+        builder.Services.AddFrameworkApiConfigurations();
+        builder.Services.AddFrameworkApiResponseCompression();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddResilienceEnricher();
-        builder.Services.AddApiCoreResponseCompression();
-        builder.Services.AddApiCoreConfigurations();
+
+        builder.Services.AddServerTimingMiddleware();
+        builder.Services.AddCustomStatusCodesRewriterMiddleware();
+        builder.Services.AddRequestCanceledMiddleware();
 
         builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
         builder.Services.AddScoped<IWebClientInfoProvider, HttpWebClientInfoProvider>();
         builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
         builder.Services.AddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
         builder.Services.AddScoped<IRequestTime, RequestTime>();
+        builder.Services.AddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
 
         builder.Services.AddSingleton<IFileFormatInspector>(FileFormatInspector);
-        builder.Services.AddSingleton<IContentTypeProvider>(FileExtensionContentTypeProvider);
+        builder.Services.AddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        builder.Services.AddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
         builder.Services.AddSingleton<ICurrentPrincipalAccessor, CurrentPrincipalAccessor>();
         builder.Services.AddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
@@ -62,12 +61,12 @@ public static class ApiRegistration
         builder.Services.AddSingleton<IHashService>(_ => new HashService(iterations: 10000, size: 128));
     }
 
-    public static void UseApiCore(this WebApplication app)
+    public static void UseFrameworkApi(this WebApplication app)
     {
         app.UseSecurityHeaders();
     }
 
-    public static IDisposable AddApiCoreDiagnosticListeners(this WebApplication app)
+    public static IDisposable AddFrameworkApiDiagnosticListeners(this WebApplication app)
     {
         var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
 
@@ -84,7 +83,7 @@ public static class ApiRegistration
         });
     }
 
-    public static void AddApiCoreResponseCompression(this IServiceCollection services)
+    public static void AddFrameworkApiResponseCompression(this IServiceCollection services)
     {
         services
             .AddResponseCompression(options =>
@@ -100,7 +99,7 @@ public static class ApiRegistration
             .Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
     }
 
-    public static void AddApiCoreConfigurations(this IServiceCollection services)
+    public static void AddFrameworkApiConfigurations(this IServiceCollection services)
     {
         /*
          * Configures the Strict-Transport-Security HTTP header on responses. This HTTP header is only relevant if you are
