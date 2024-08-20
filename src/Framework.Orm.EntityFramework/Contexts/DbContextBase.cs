@@ -1,8 +1,7 @@
 ﻿using System.Data;
 using Framework.BuildingBlocks.Domains;
 using Framework.BuildingBlocks.Primitives;
-using Framework.Database.EntityFramework.Extensions;
-using Framework.Database.EntityFramework.ValueConverters;
+using Framework.Orm.EntityFramework.ValueConverters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -31,6 +30,8 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
         configurationBuilder.Properties<File>().HaveConversion<FileConverter>();
         configurationBuilder.Properties<Image>().HaveConversion<ImageConverter>();
+        configurationBuilder.Properties<File>().HaveConversion<FileValueConverter>();
+        configurationBuilder.Properties<Image>().HaveConversion<ImageValueConverter>();
         configurationBuilder.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
         configurationBuilder
             .Properties<ExtraProperties>()

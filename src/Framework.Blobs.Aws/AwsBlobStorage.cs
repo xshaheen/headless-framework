@@ -7,7 +7,6 @@ using Flurl;
 using Framework.Arguments;
 using Framework.BuildingBlocks.Abstractions;
 using Framework.BuildingBlocks.Constants;
-using Framework.BuildingBlocks.Helpers;
 using Framework.BuildingBlocks.Helpers.IO;
 using Microsoft.AspNetCore.StaticFiles;
 
@@ -17,6 +16,13 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedBuckets = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
+
+    public ValueTask CreateContainerAsync(string[] container)
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        return _CreateBucketIfNotExistsAsync(container[0]);
+    }
 
     public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
@@ -31,13 +37,6 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
         var result = await Task.WhenAll(tasks);
 
         return result;
-    }
-
-    public ValueTask CreateContainerAsync(string[] container)
-    {
-        Argument.IsNotNullOrEmpty(container);
-
-        return _CreateBucketIfNotExistsAsync(container[0]);
     }
 
     public async ValueTask<BlobUploadResult> UploadAsync(
@@ -144,6 +143,38 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
         return new(response.ResponseStream, blobName, _ToDictionary(response.Metadata));
     }
 
+    public ValueTask<PagedFileListResult> GetPagedListAsync(
+        string[] container,
+        string? searchPattern = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask<BlobUploadResult?> CopyFileAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
+    public ValueTask<bool> RenameFileAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
     public ValueTask<bool> ExistsAsync(
         string blobName,
         string[] container,
@@ -165,21 +196,30 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IContentTypeProvider contentTyp
             return false;
         }
 
+        GetObjectMetadataResponse? response;
+
         try
         {
-            await s3.GetObjectMetadataAsync(bucket, key, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            if (ex is AmazonS3Exception)
+            response = await s3.GetObjectMetadataAsync(bucket, key, cancellationToken);
+
+            if (response.HttpStatusCode is HttpStatusCode.NotFound)
             {
-#pragma warning disable ERP022
                 return false;
-#pragma warning restore ERP022
+            }
+        }
+        catch (Exception e)
+        {
+            if (e is AmazonS3Exception ex && ex.StatusCode is HttpStatusCode.NotFound)
+            {
+                return false;
             }
 
             throw;
         }
+
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+
+        return true;
 
         return true;
     }
