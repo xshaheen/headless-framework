@@ -2,36 +2,15 @@
 using Framework.BuildingBlocks.Domains;
 using Framework.BuildingBlocks.Primitives;
 using Framework.BuildingBlocks.Primitives.Extensions;
-using Framework.Orm.EntityFramework.Contexts;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using File = Framework.BuildingBlocks.Primitives.File;
 
-namespace Framework.Identity.Storage.EntityFramework;
+namespace Framework.Orm.EntityFramework.Contexts;
 
-public abstract class IdentityDbContextBase<
-    TUser,
-    TRole,
-    TKey,
-    TUserClaim,
-    TUserRole,
-    TUserLogin,
-    TRoleClaim,
-    TUserToken
->(DbContextOptions options)
-    : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>(options)
-    where TUser : IdentityUser<TKey>
-    where TRole : IdentityRole<TKey>
-    where TKey : IEquatable<TKey>
-    where TUserClaim : IdentityUserClaim<TKey>
-    where TUserRole : IdentityUserRole<TKey>
-    where TUserLogin : IdentityUserLogin<TKey>
-    where TRoleClaim : IdentityRoleClaim<TKey>
-    where TUserToken : IdentityUserToken<TKey>
+public abstract class DbContextBase(DbContextOptions options) : DbContext(options)
 {
     protected abstract string DefaultSchema { get; }
 
@@ -53,12 +32,12 @@ public abstract class IdentityDbContextBase<
             .HaveConversion<ExtraPropertiesConverter, ExtraPropertiesComparer>();
     }
 
-    protected override void OnModelCreating(ModelBuilder builder)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        builder.HasDefaultSchema(DefaultSchema);
-        base.OnModelCreating(builder);
+        modelBuilder.HasDefaultSchema(DefaultSchema);
+        base.OnModelCreating(modelBuilder);
 
-        foreach (var entityType in builder.Model.GetEntityTypes())
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             OnModelEntityType(entityType);
         }

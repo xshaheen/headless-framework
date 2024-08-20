@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Audit.EntityFramework.Core" />
+    <PackageReference Include="EFCore.CheckConstraints" />
+    <PackageReference Include="LinqKit.Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.BuildingBlocks.Domains\Framework.BuildingBlocks.Domains.csproj" />
+    <ProjectReference Include="..\Framework.BuildingBlocks.Primitives\Framework.BuildingBlocks.Primitives.csproj" />
+    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" />
+  </ItemGroup>
+
+</Project>
