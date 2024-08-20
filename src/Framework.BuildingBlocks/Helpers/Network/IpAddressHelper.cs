@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.Network;
 
 public static class IpAddressHelper
 {

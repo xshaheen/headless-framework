@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Framework.BuildingBlocks.Constants;
 
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.IO;
 
 [PublicAPI]
 public static partial class FileHelper

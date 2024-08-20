@@ -1,4 +1,5 @@
 using Framework.BuildingBlocks.Helpers;
+using Framework.BuildingBlocks.Helpers.IdGenerators;
 
 namespace Framework.BuildingBlocks.Abstractions;
 

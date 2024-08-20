@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 #pragma warning disable IDE0130
@@ -104,5 +105,28 @@ public static class TypeExtensions
     public static bool IsDefaultValue(this object? obj)
     {
         return obj?.Equals(GetDefaultValue(obj.GetType())) is not false;
+    }
+
+    /// <summary>Checks if given method is an async method.</summary>
+    /// <param name="method">A method to check</param>
+    [MustUseReturnValue]
+    public static bool IsAsync(this MethodInfo method)
+    {
+        Argument.IsNotNull(method);
+
+        return method.ReturnType.IsTaskOrTaskOfT();
+    }
+
+    [MustUseReturnValue]
+    public static bool IsTaskOrTaskOfT(this Type type)
+    {
+        return type == typeof(Task)
+            || (type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>));
+    }
+
+    [MustUseReturnValue]
+    public static bool IsTaskOfT(this Type type)
+    {
+        return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>);
     }
 }

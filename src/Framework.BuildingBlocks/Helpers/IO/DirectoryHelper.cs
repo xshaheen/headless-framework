@@ -1,4 +1,4 @@
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.IO;
 
 /// <summary>A helper class for Directory operations.</summary>
 [PublicAPI]

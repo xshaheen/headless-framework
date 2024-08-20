@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Integrations.Recaptcha;
 
-public static class ServiceCollectionExtensions
+public static class AddRecaptchaExtensions
 {
     public static IServiceCollection AddReCaptchaV3(
         this IServiceCollection services,

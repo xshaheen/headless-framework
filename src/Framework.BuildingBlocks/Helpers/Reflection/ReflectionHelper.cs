@@ -1,6 +1,6 @@
 using System.Reflection;
 
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.Reflection;
 
 [PublicAPI]
 public static class ReflectionHelper

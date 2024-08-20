@@ -5,6 +5,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary><see cref="IServiceCollection"/> extension methods.</summary>
 public static class DependencyInjectionExtensions
 {
+    #region AddIf
+
     /// <summary>
     /// Executes the specified action if the specified <paramref name="condition"/> is <see langword="true"/> which can be
     /// used to conditionally configure the MVC services.
@@ -54,6 +56,10 @@ public static class DependencyInjectionExtensions
 
         return condition ? ifAction(services) : elseAction(services);
     }
+
+    #endregion
+
+    #region Replace
 
     public static bool ReplaceScoped<TService, TImplementation>(this IServiceCollection services)
         where TService : class
@@ -136,6 +142,10 @@ public static class DependencyInjectionExtensions
         services.Add(newServiceDescriptor);
     }
 
+    #endregion
+
+    #region Unregister
+
     public static bool Unregister<TService>(this IServiceCollection services)
     {
         var descriptors = services.Where(d => d.ServiceType == typeof(TService));
@@ -151,4 +161,20 @@ public static class DependencyInjectionExtensions
 
         return unregistered;
     }
+
+    #endregion
+
+    #region IsAdded
+
+    public static bool IsAdded<T>(this IServiceCollection services)
+    {
+        return services.IsAdded(typeof(T));
+    }
+
+    public static bool IsAdded(this IServiceCollection services, Type type)
+    {
+        return services.Any(d => d.ServiceType == type);
+    }
+
+    #endregion
 }

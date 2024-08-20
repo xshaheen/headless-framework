@@ -1,4 +1,4 @@
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.Threading;
 
 /// <summary>
 /// Asynchronous locking based on a string key.
