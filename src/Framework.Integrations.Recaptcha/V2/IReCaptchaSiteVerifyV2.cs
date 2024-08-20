@@ -6,15 +6,20 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Integrations.Recaptcha.V2;
 
-using JetBrainsPure = PureAttribute;
-using SystemPure = System.Diagnostics.Contracts.PureAttribute;
-
+/// <summary>
+/// Verify requests with a user challenge. It has three types of challenges:
+/// <list type="bullet">
+///   <item>Checkbox: Validate requests with "I'm not a robot" checkbox challenge.</item>
+///   <item>Invisible: Validate requests in the background.</item>
+///  <item>Android: Validate requests in your android app.</item>
+/// </list>
+/// </summary>
 public interface IReCaptchaSiteVerifyV2
 {
     /// <summary>Validate Recapture token.</summary>
     /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
     [SystemPure, JetBrainsPure]
-    Task<ReCaptchaSiteVerifyResponse> Verify(ReCaptchaSiteVerifyRequest request);
+    Task<ReCaptchaSiteVerifyV2Response> Verify(ReCaptchaSiteVerifyRequest request);
 }
 
 public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
@@ -37,7 +42,7 @@ public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
         _logger = logger;
     }
 
-    public async Task<ReCaptchaSiteVerifyResponse> Verify(ReCaptchaSiteVerifyRequest request)
+    public async Task<ReCaptchaSiteVerifyV2Response> Verify(ReCaptchaSiteVerifyRequest request)
     {
         List<KeyValuePair<string, string>> formData =
         [
@@ -71,7 +76,7 @@ public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
 
         var response = await JsonSerializer.DeserializeAsync(
             utf8Json: responseStream,
-            jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyResponse
+            jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response
         );
 
         if (response?.Success is not true)

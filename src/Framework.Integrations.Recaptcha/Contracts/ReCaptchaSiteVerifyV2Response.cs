@@ -1,8 +1,9 @@
 ﻿using System.Text.Json.Serialization;
+using Framework.Integrations.Recaptcha.Internals;
 
 namespace Framework.Integrations.Recaptcha.Contracts;
 
-public class ReCaptchaSiteVerifyResponse
+public class ReCaptchaSiteVerifyV2Response
 {
     /// <summary>Whether this request was a valid reCAPTCHA token for your site.</summary>
     [JsonPropertyName("success")]
@@ -20,17 +21,13 @@ public class ReCaptchaSiteVerifyResponse
     [JsonPropertyName("error-codes")]
     public required string[] ErrorCodes { get; init; }
 
-    public static ReCaptchaError? TryConvertErrorCode(string error)
+    public static ReCaptchaError ParseError(string error)
     {
-        return error switch
-        {
-            "bad-request" => ReCaptchaError.BadRequest,
-            "timeout-or-duplicate" => ReCaptchaError.TimeOutOrDuplicate,
-            "invalid-input-response" => ReCaptchaError.InvalidInputResponse,
-            "missing-input-response" => ReCaptchaError.MissingInputResponse,
-            "invalid-input-secret" => ReCaptchaError.InvalidInputSecret,
-            "missing-input-secret" => ReCaptchaError.MissingInputSecret,
-            _ => null,
-        };
+        return error.ToReCaptchaError();
+    }
+
+    public ReCaptchaError[] ParseErrors()
+    {
+        return ErrorCodes.ConvertAll(ParseError);
     }
 }

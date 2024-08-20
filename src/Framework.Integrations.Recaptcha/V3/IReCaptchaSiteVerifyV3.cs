@@ -6,8 +6,15 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Integrations.Recaptcha.V3;
 
+/// <summary>
+/// reCAPTCHA v3 returns a score for each request without user friction. The score is based
+/// on interactions with your site and enables you to take an appropriate action for your site.
+/// </summary>
 public interface IReCaptchaSiteVerifyV3
 {
+    /// <summary>Validate Recapture token.</summary>
+    /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
+    [SystemPure, JetBrainsPure]
     Task<ReCaptchaSiteVerifyV3Response> Verify(ReCaptchaSiteVerifyRequest request);
 }
 
@@ -33,12 +40,16 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
 
     public async Task<ReCaptchaSiteVerifyV3Response> Verify(ReCaptchaSiteVerifyRequest request)
     {
-        IEnumerable<KeyValuePair<string, string?>> formData =
+        List<KeyValuePair<string, string>> formData =
         [
             new("secret", _settings.SiteSecret),
             new("response", request.Response),
-            new("remoteip", request.RemoteIp),
         ];
+
+        if (request.RemoteIp is not null)
+        {
+            formData.Add(new("remoteip", request.RemoteIp));
+        }
 
         using var content = new FormUrlEncodedContent(formData);
         using var httpResponseMessage = await _client.PostAsync(_siteVerifyUri, content);
