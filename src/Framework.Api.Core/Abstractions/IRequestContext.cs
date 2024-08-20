@@ -8,6 +8,9 @@ public interface IRequestContext
     /// <summary>Get user information.</summary>
     ICurrentUser User { get; }
 
+    /// <summary>Get tenant information.</summary>
+    ICurrentTenant Tenant { get; }
+
     /// <summary>Get web client information.</summary>
     IWebClientInfoProvider WebClient { get; }
 
@@ -33,6 +36,7 @@ public interface IRequestContext
 public sealed class HttpRequestContext(
     IHttpContextAccessor accessor,
     ICurrentUser currentUser,
+    ICurrentTenant currentTenant,
     IWebClientInfoProvider webClientInfoProvider,
     IClock clock
 ) : IRequestContext
@@ -41,6 +45,8 @@ public sealed class HttpRequestContext(
         accessor.HttpContext ?? throw new InvalidOperationException("User context is not available");
 
     public ICurrentUser User => currentUser;
+
+    public ICurrentTenant Tenant => currentTenant;
 
     public IWebClientInfoProvider WebClient => webClientInfoProvider;
 

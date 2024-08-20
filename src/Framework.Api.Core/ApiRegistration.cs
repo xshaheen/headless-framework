@@ -37,6 +37,7 @@ public static class ApiRegistration
         builder.Services.AddRequestCanceledMiddleware();
 
         builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
+        builder.Services.AddScoped<ICurrentTenant, NullCurrentTenant>();
         builder.Services.AddScoped<IWebClientInfoProvider, HttpWebClientInfoProvider>();
         builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
         builder.Services.AddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
