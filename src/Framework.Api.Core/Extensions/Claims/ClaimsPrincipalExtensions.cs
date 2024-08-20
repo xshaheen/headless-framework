@@ -94,6 +94,18 @@ public static class ClaimsPrincipalExtensions
         return claimsIdentity;
     }
 
+    public static ClaimsIdentity RemoveAll(this ClaimsIdentity claimsIdentity, string claimType)
+    {
+        Argument.IsNotNull(claimsIdentity);
+
+        foreach (var x in claimsIdentity.FindAll(claimType))
+        {
+            claimsIdentity.RemoveClaim(x);
+        }
+
+        return claimsIdentity;
+    }
+
     public static ClaimsPrincipal AddIdentityIfNotContains(this ClaimsPrincipal principal, ClaimsIdentity identity)
     {
         Argument.IsNotNull(principal);

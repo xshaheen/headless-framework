@@ -59,7 +59,12 @@ public static class ApiRegistration
         builder.Services.AddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
         builder.Services.AddSingleton<IClock, Clock>();
         builder.Services.AddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
-        builder.Services.AddSingleton<IHashService>(_ => new HashService(iterations: 10000, size: 128));
+
+        builder.Services.AddOptions<StringHashSettings, StringHashSettingsValidator>();
+        builder.Services.AddSingleton<IStringHashService, StringHashService>();
+
+        builder.Services.AddOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
+        builder.Services.AddSingleton<IStringEncryptionService, StringEncryptionService>();
     }
 
     public static void UseFrameworkApi(this WebApplication app)
