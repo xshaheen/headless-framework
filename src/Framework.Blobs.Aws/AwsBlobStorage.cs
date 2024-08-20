@@ -32,7 +32,8 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
         Argument.IsNotNullOrEmpty(container);
 
         var tasks = blobs.Select(async file => await UploadAsync(file, container, cancellationToken));
-        var result = await Task.WhenAll(tasks);
+        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
+        ;
 
         return result;
     }

@@ -78,7 +78,8 @@ public sealed class AzureBlobStorage : IBlobStorage
         var tasks = blobs.Select(async blob => await UploadAsync(blob, container, cancellationToken));
         // TODO: Task.WhenAll has exception handling issues and should be replaced with a more robust
         //       solution like Polly and handling exceptions in a more controlled manner.
-        var result = await Task.WhenAll(tasks);
+        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
+        ;
 
         return result;
     }

@@ -55,7 +55,7 @@ public static class FileStreamExtensions
             }
         });
 
-        return await Task.WhenAll(results);
+        return await Task.WhenAll(results).WithAggregatedExceptions();
     }
 
     public static async ValueTask SaveToLocalFileAsync(
