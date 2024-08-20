@@ -11,17 +11,26 @@ public static class AddAzureBlobExtensions
     )
     {
         var config = builder.Configuration.GetSection(configSectionName);
-
         builder.Services.ConfigureSingleton<AzureStorageOptions, AzureStorageOptionsValidator>(config);
-        builder.Services.AddSingleton<IBlobNamingNormalizer, AzureBlobNamingNormalizer>();
-        builder.Services.AddSingleton<IBlobStorage, AzureBlobStorage>();
-
-        // builder.Services.AddAzureClients(factoryBuilder =>
-        // {
-        //     factoryBuilder.AddBlobServiceClient());
-        //     builder.UseCredential(new EnvironmentCredential());
-        // });
+        _AddCoreServices(builder);
 
         return builder;
+    }
+
+    public static IHostApplicationBuilder AddAzureBlobStorage(
+        this IHostApplicationBuilder builder,
+        Action<AzureStorageOptions> configureOptions
+    )
+    {
+        builder.Services.ConfigureSingleton<AzureStorageOptions, AzureStorageOptionsValidator>(configureOptions);
+        _AddCoreServices(builder);
+
+        return builder;
+    }
+
+    private static void _AddCoreServices(IHostApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IBlobNamingNormalizer, AzureBlobNamingNormalizer>();
+        builder.Services.AddSingleton<IBlobStorage, AzureBlobStorage>();
     }
 }

@@ -2,7 +2,6 @@
 using Framework.BuildingBlocks.Domains;
 using Framework.BuildingBlocks.Primitives;
 using Framework.Orm.EntityFramework.Contexts;
-using Framework.Orm.EntityFramework.Extensions;
 using Framework.Orm.EntityFramework.ValueConverters;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -41,9 +40,6 @@ public abstract class IdentityDbContextBase<
         base.ConfigureConventions(configurationBuilder);
 
         configurationBuilder.AddAllPrimitivesValueConvertersMappings();
-
-        configurationBuilder.AddAllPrimitivesValueConvertersMappings();
-
         configurationBuilder.Properties<decimal?>().HavePrecision(32, 10);
         configurationBuilder.Properties<decimal>().HavePrecision(32, 10);
         configurationBuilder.Properties<Enum>().HaveMaxLength(100).HaveConversion<string>();
@@ -52,8 +48,8 @@ public abstract class IdentityDbContextBase<
         configurationBuilder.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
         configurationBuilder.Properties<Month>().HaveConversion<MonthValueConverter>();
         configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
-        configurationBuilder.Properties<File>().HaveConversion<FileConverter>();
-        configurationBuilder.Properties<Image>().HaveConversion<ImageConverter>();
+        configurationBuilder.Properties<File>().HaveConversion<FileValueConverter>();
+        configurationBuilder.Properties<Image>().HaveConversion<ImageValueConverter>();
         configurationBuilder.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
         configurationBuilder
             .Properties<ExtraProperties>()
