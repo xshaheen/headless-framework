@@ -2,6 +2,7 @@
 using Framework.Api.Swagger.Nswag.OperationProcessors;
 using Framework.Api.Swagger.Nswag.SchemaProcessors;
 using Framework.BuildingBlocks.Helpers;
+using Framework.BuildingBlocks.Helpers.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema.Generation;

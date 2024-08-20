@@ -1,4 +1,4 @@
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.Threading;
 
 /// <summary>This class can be used to provide an action when  DisposeAsync method is called.</summary>
 /// <remarks>Creates a new <see cref="AsyncDisposeFunc"/> object.</remarks>

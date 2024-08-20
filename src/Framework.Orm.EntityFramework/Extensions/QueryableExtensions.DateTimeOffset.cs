@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using Framework.Arguments;
 using Framework.BuildingBlocks.Helpers;
+using Framework.BuildingBlocks.Helpers.Linq;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

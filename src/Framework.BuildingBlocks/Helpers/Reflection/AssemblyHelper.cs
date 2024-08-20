@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Runtime.Loader;
 
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.Reflection;
 
 [PublicAPI]
 public static class AssemblyHelper

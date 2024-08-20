@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 
-namespace Framework.BuildingBlocks.Helpers;
+namespace Framework.BuildingBlocks.Helpers.Linq;
 
 public static class PredicateBuilder
 {

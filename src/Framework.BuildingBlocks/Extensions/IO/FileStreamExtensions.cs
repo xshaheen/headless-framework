@@ -4,6 +4,7 @@ using FluentDate;
 using Framework.BuildingBlocks.Helpers;
 using Polly;
 using Polly.Retry;
+using FileHelper = Framework.BuildingBlocks.Helpers.IO.FileHelper;
 using PredicateBuilder = Polly.PredicateBuilder;
 
 #pragma warning disable IDE0130
