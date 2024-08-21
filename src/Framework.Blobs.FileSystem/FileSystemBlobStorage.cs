@@ -353,7 +353,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
                     Path = info.FullName.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
                     Created = info.CreationTimeUtc,
                     Modified = info.LastWriteTimeUtc,
-                    Size = info.Length
+                    Size = info.Length,
                 }
             );
         }
@@ -373,7 +373,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
             Files = list,
             NextPageFunc = hasMore
                 ? _ => Task.FromResult(_GetFiles(directoryPath, searchPattern, page + 1, pageSize))
-                : null
+                : null,
         };
     }
 
