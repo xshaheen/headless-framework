@@ -1,12 +1,13 @@
-﻿using Framework.Arguments;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Text.RegularExpressions;
+using Framework.Arguments;
 using Framework.BuildingBlocks;
-using Framework.BuildingBlocks.Helpers;
-using Framework.BuildingBlocks.Helpers.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Renci.SshNet;
 using Renci.SshNet.Common;
+using Renci.SshNet.Sftp;
 
 namespace Framework.Blobs.SshNet;
 
@@ -22,6 +23,19 @@ public sealed class SshBlobStorage : IBlobStorage
         _client = new SftpClient(connectionInfo);
         _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
     }
+
+    #region Get Client
+
+    public SftpClient GetClient()
+    {
+        _EnsureClientConnected();
+
+        return _client;
+    }
+
+    #endregion
+
+    #region Create Container
 
     public ValueTask CreateContainerAsync(string[] container)
     {
@@ -49,61 +63,11 @@ public sealed class SshBlobStorage : IBlobStorage
         return ValueTask.CompletedTask;
     }
 
-    public SftpClient GetClient()
-    {
-        _EnsureClientConnected();
-
-        return _client;
-    }
-
-    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> blobs,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(blobs);
-        Argument.IsNotNullOrEmpty(container);
-
-        var tasks = blobs.Select(async blob => await UploadAsync(blob, container, cancellationToken));
-
-        // TODO: Task.WhenAll has exception handling issues and should be replaced with a more robust
-        //       solution like Polly and handling exceptions in a more controlled manner.
-        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
-
-        return result;
-    }
-
-    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkDeleteAsync(
-        IReadOnlyCollection<string> blobNames,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(blobNames);
-        Argument.IsNotNullOrEmpty(container);
-
-        var tasks = blobNames.Select(async fileName =>
-        {
-            try
-            {
-                return await DeleteAsync(fileName, container, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e);
-
-                throw;
-            }
-        });
-        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
-
-        return result;
-    }
+    #endregion
 
     #region Upload
 
-    public async ValueTask<bool> UploadAsync(
+    public async ValueTask UploadAsync(
         BlobUploadRequest blob,
         string[] container,
         CancellationToken cancellationToken = default
@@ -128,13 +92,12 @@ public sealed class SshBlobStorage : IBlobStorage
             );
 
             await blob.Stream.CopyToAsync(sftpFileStream, cancellationToken);
-
-            return true;
         }
         catch (SftpPathNotFoundException e)
         {
             _logger.LogDebug(e, "Error saving {Path}: Attempting to create directory", blobPath);
-            _CreateDirectory(blobPath);
+            await CreateContainerAsync(container);
+
             _logger.LogTrace("Saving {Path}", blobPath);
 
             await using var sftpFileStream = await _client.OpenAsync(
@@ -145,9 +108,97 @@ public sealed class SshBlobStorage : IBlobStorage
             );
 
             await blob.Stream.CopyToAsync(sftpFileStream, cancellationToken);
-
-            return true;
         }
+    }
+
+    #endregion
+
+    #region Bulk Upload
+
+    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
+        IReadOnlyCollection<BlobUploadRequest> blobs,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(blobs);
+        Argument.IsNotNullOrEmpty(container);
+
+        var tasks = blobs.Select(async blob =>
+        {
+            try
+            {
+                await UploadAsync(blob, container, cancellationToken);
+                return Result<Exception>.Success();
+            }
+            catch (Exception e)
+            {
+                return Result<Exception>.Fail(e);
+            }
+        });
+
+        return await Task.WhenAll(tasks).WithAggregatedExceptions();
+    }
+
+    #endregion
+
+    #region Delete
+
+    public async ValueTask<bool> DeleteAsync(
+        string blobName,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(blobName);
+        Argument.IsNotNull(container);
+
+        _EnsureClientConnected();
+
+        var blobPath = _BuildBlobPath(container, blobName);
+
+        _logger.LogTrace("Deleting {Path}", blobPath);
+
+        try
+        {
+            await _client.DeleteFileAsync(blobPath, cancellationToken);
+        }
+        catch (SftpPathNotFoundException ex)
+        {
+            _logger.LogError(ex, "Unable to delete {Path}: File not found", blobPath);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    #endregion
+
+    #region Bulk Delete
+
+    public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
+        IReadOnlyCollection<string> blobNames,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(blobNames);
+        Argument.IsNotNullOrEmpty(container);
+
+        var tasks = blobNames.Select(async fileName =>
+        {
+            try
+            {
+                return await DeleteAsync(fileName, container, cancellationToken);
+            }
+            catch (Exception e)
+            {
+                return Result<bool, Exception>.Fail(e);
+            }
+        });
+
+        return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
 
     #endregion
@@ -195,7 +246,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 targetPath
             );
 
-            _CreateDirectory(targetPath);
+            await CreateContainerAsync(newBlobContainer);
             _logger.LogTrace("Renaming {Path} to {NewPath}", blobPath, targetPath);
             await _client.RenameFileAsync(blobPath, targetPath, cancellationToken);
         }
@@ -247,7 +298,9 @@ public sealed class SshBlobStorage : IBlobStorage
 
             await using var stream = blob.Stream;
 
-            return await UploadAsync(new BlobUploadRequest(stream, newBlobName), newBlobContainer, cancellationToken);
+            await UploadAsync(new BlobUploadRequest(stream, newBlobName), newBlobContainer, cancellationToken);
+
+            return true;
         }
         catch (Exception e)
         {
@@ -262,39 +315,6 @@ public sealed class SshBlobStorage : IBlobStorage
 
             return false;
         }
-    }
-
-    #endregion
-
-    #region Delete
-
-    public async ValueTask<bool> DeleteAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
-
-        _EnsureClientConnected();
-
-        var blobPath = _BuildBlobPath(container, blobName);
-
-        _logger.LogTrace("Deleting {Path}", blobPath);
-
-        try
-        {
-            await _client.DeleteFileAsync(blobPath, cancellationToken);
-        }
-        catch (SftpPathNotFoundException ex)
-        {
-            _logger.LogError(ex, "Unable to delete {Path}: File not found", blobPath);
-
-            return false;
-        }
-
-        return true;
     }
 
     #endregion
@@ -356,15 +376,232 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #endregion
 
-    public ValueTask<PagedFileListResult> GetPagedListAsync(
+    #region List
+
+    public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
         string? searchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
-        throw new NotImplementedException();
+        if (pageSize <= 0)
+        {
+            return PagedFileListResult.Empty;
+        }
+
+        var result = new PagedFileListResult(_ => _GetFiles(searchPattern, 1, pageSize, cancellationToken));
+        await result.NextPageAsync().AnyContext();
+
+        return result;
     }
+
+    private async Task<NextPageResult> _GetFiles(
+        string? searchPattern,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken
+    )
+    {
+        var pagingLimit = pageSize;
+        var skip = (page - 1) * pagingLimit;
+
+        if (pagingLimit < int.MaxValue)
+        {
+            pagingLimit++;
+        }
+
+        var list = await _GetFileListAsync(searchPattern, pagingLimit, skip, cancellationToken).AnyContext();
+        var hasMore = false;
+
+        if (list.Count == pagingLimit)
+        {
+            hasMore = true;
+            list.RemoveAt(pagingLimit - 1);
+        }
+
+        return new NextPageResult
+        {
+            Success = true,
+            HasMore = hasMore,
+            Files = list,
+            NextPageFunc = hasMore ? _ => _GetFiles(searchPattern, page + 1, pageSize, cancellationToken) : null,
+        };
+    }
+
+    private async Task<List<BlobSpecification>> _GetFileListAsync(
+        string? searchPattern = null,
+        int? limit = null,
+        int? skip = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (limit is <= 0)
+        {
+            return [];
+        }
+
+        var list = new List<BlobSpecification>();
+        var criteria = _GetRequestCriteria(searchPattern);
+
+        _EnsureClientConnected();
+
+        // NOTE: This could be very expensive the larger the directory structure you have as we aren't efficiently doing paging.
+        var recordsToReturn = limit.HasValue ? (skip.GetValueOrDefault() * limit) + limit : null;
+
+        _logger.LogTrace(
+            "Getting file list recursively matching {Prefix} and {Pattern}...",
+            criteria.Prefix,
+            criteria.Pattern
+        );
+
+        await _GetFileListRecursivelyAsync(criteria.Prefix, criteria.Pattern, list, recordsToReturn, cancellationToken)
+            .AnyContext();
+
+        if (skip.HasValue)
+        {
+            list = list.Skip(skip.Value).ToList();
+        }
+
+        if (limit.HasValue)
+        {
+            list = list.Take(limit.Value).ToList();
+        }
+
+        return list;
+    }
+
+    private async Task _GetFileListRecursivelyAsync(
+        string pathPrefix,
+        Regex? pattern,
+        ICollection<BlobSpecification> list,
+        int? recordsToReturn = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(pathPrefix);
+        Argument.IsNotNull(pattern);
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug("Cancellation requested");
+
+            return;
+        }
+
+        var files = new List<ISftpFile>();
+
+        try
+        {
+            await foreach (var file in _client.ListDirectoryAsync(pathPrefix, cancellationToken).AnyContext())
+            {
+                files.Add(file);
+            }
+        }
+        catch (SftpPathNotFoundException)
+        {
+            _logger.LogDebug("Directory not found with {PathPrefix}", pathPrefix);
+
+            return;
+        }
+
+        foreach (
+            var file in files
+                .Where(f => f.IsRegularFile || f.IsDirectory)
+                .OrderByDescending(f => f.IsRegularFile)
+                .ThenBy(f => f.Name)
+        )
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug("Cancellation requested");
+
+                return;
+            }
+
+            if (recordsToReturn.HasValue && list.Count >= recordsToReturn)
+            {
+                break;
+            }
+
+            // If prefix (current directory) is empty, use current working directory instead of a rooted path.
+            var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : string.Concat(pathPrefix, "/", file.Name);
+
+            if (file.IsDirectory)
+            {
+                if (file.Name is "." or "..")
+                {
+                    continue;
+                }
+
+                await _GetFileListRecursivelyAsync(path, pattern, list, recordsToReturn, cancellationToken)
+                    .AnyContext();
+
+                continue;
+            }
+
+            if (!file.IsRegularFile)
+            {
+                continue;
+            }
+
+            if (pattern is not null && !pattern.IsMatch(path))
+            {
+                _logger.LogTrace("Skipping {Path}: Doesn't match pattern", path);
+
+                continue;
+            }
+
+            list.Add(
+                new BlobSpecification
+                {
+                    Path = path,
+                    Created = file.LastWriteTimeUtc,
+                    Modified = file.LastWriteTimeUtc,
+                    Size = file.Length,
+                }
+            );
+        }
+    }
+
+    private static SearchCriteria _GetRequestCriteria(string? searchPattern)
+    {
+        if (string.IsNullOrEmpty(searchPattern))
+        {
+            return new SearchCriteria { Prefix = string.Empty };
+        }
+
+        var normalizedSearchPattern = _NormalizePath(searchPattern);
+        var wildcardPos = normalizedSearchPattern.IndexOf('*', StringComparison.Ordinal);
+        var hasWildcard = wildcardPos >= 0;
+
+        string prefix;
+        Regex patternRegex;
+
+        if (hasWildcard)
+        {
+            patternRegex = new Regex(
+                $"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?", StringComparison.Ordinal)}$"
+            );
+            var beforeWildcard = normalizedSearchPattern[..wildcardPos];
+            var slashPos = beforeWildcard.LastIndexOf('/');
+            prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
+        }
+        else
+        {
+            patternRegex = new Regex($"^{normalizedSearchPattern}$");
+            var slashPos = normalizedSearchPattern.LastIndexOf('/');
+            prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
+        }
+
+        return new SearchCriteria(prefix, patternRegex);
+    }
+
+    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
+
+    #endregion
+
+    #region Delete Directory
 
     private async Task<int> _DeleteDirectoryAsync(
         string directory,
@@ -405,28 +642,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return count;
     }
 
-    private void _CreateDirectory(string directory)
-    {
-        _logger.LogTrace("Ensuring {Directory} directory exists", directory);
-        var folderSegments = directory.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var currentDirectory = string.Empty;
-
-        foreach (var segment in folderSegments)
-        {
-            // If the current directory is empty, use the current working directory instead of a rooted path.
-            currentDirectory = string.IsNullOrEmpty(currentDirectory)
-                ? segment
-                : string.Concat(currentDirectory, "/", segment);
-
-            if (_client.Exists(currentDirectory))
-            {
-                continue;
-            }
-
-            _logger.LogInformation("Creating {Directory} directory", directory);
-            _client.CreateDirectory(currentDirectory);
-        }
-    }
+    #endregion
 
     #region Build Paths
 
@@ -438,6 +654,12 @@ public sealed class SshBlobStorage : IBlobStorage
     private static string _BuildContainerPath(string[] container)
     {
         return string.Join("/", container);
+    }
+
+    [return: NotNullIfNotNull(nameof(path))]
+    private static string? _NormalizePath(string? path)
+    {
+        return path?.Replace('\\', '/');
     }
 
     #endregion
