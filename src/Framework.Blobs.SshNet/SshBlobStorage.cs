@@ -1,5 +1,7 @@
 ﻿using Framework.Arguments;
+using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Helpers;
+using Framework.BuildingBlocks.Helpers.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -8,7 +10,7 @@ using Renci.SshNet.Common;
 
 namespace Framework.Blobs.SshNet;
 
-public sealed class SshBlobStorage : IBlobStorage, IDisposable
+public sealed class SshBlobStorage : IBlobStorage
 {
     private readonly SftpClient _client;
     private readonly ILogger _logger;
@@ -16,9 +18,35 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
     public SshBlobStorage(IOptions<SshBlobStorageOptions> options)
     {
         var sshOptions = options.Value;
-        var connectionInfo = _CreateConnectionInfo(sshOptions);
+        var connectionInfo = _BuildConnectionInfo(sshOptions);
         _client = new SftpClient(connectionInfo);
         _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
+    }
+
+    public ValueTask CreateContainerAsync(string[] container)
+    {
+        Argument.IsNotNullOrEmpty(container);
+        _logger.LogTrace("Ensuring {Directory} directory exists", (object)container);
+
+        var currentDirectory = string.Empty;
+
+        foreach (var segment in container)
+        {
+            // If the current directory is empty, use the current working directory instead of a rooted path.
+            currentDirectory = string.IsNullOrEmpty(currentDirectory)
+                ? segment
+                : string.Concat(currentDirectory, "/", segment);
+
+            if (_client.Exists(currentDirectory))
+            {
+                continue;
+            }
+
+            _logger.LogInformation("Creating Container segment {Segment}", segment);
+            _client.CreateDirectory(currentDirectory);
+        }
+
+        return ValueTask.CompletedTask;
     }
 
     public SftpClient GetClient()
@@ -28,7 +56,7 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         return _client;
     }
 
-    public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
+    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
@@ -42,12 +70,11 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         // TODO: Task.WhenAll has exception handling issues and should be replaced with a more robust
         //       solution like Polly and handling exceptions in a more controlled manner.
         var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
-        ;
 
         return result;
     }
 
-    public async ValueTask<IReadOnlyList<bool>> BulkDeleteAsync(
+    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkDeleteAsync(
         IReadOnlyCollection<string> blobNames,
         string[] container,
         CancellationToken cancellationToken = default
@@ -56,13 +83,27 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         Argument.IsNotNullOrEmpty(blobNames);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobNames.Select(async fileName => await DeleteAsync(fileName, container, cancellationToken));
+        var tasks = blobNames.Select(async fileName =>
+        {
+            try
+            {
+                return await DeleteAsync(fileName, container, cancellationToken);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+
+                throw;
+            }
+        });
         var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
 
         return result;
     }
 
-    public async ValueTask<BlobUploadResult> UploadAsync(
+    #region Upload
+
+    public async ValueTask<bool> UploadAsync(
         BlobUploadRequest blob,
         string[] container,
         CancellationToken cancellationToken = default
@@ -71,8 +112,7 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         Argument.IsNotNull(blob);
         Argument.IsNotNull(container);
 
-        var (trustedFileNameForDisplay, uniqueSaveName) = FileHelper.GetTrustedFileNames(blob.FileName);
-        var blobPath = _BuildPath(container, uniqueSaveName);
+        var blobPath = _BuildBlobPath(container, blob.FileName);
 
         _logger.LogTrace("Saving {Path}", blobPath);
 
@@ -89,7 +129,7 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
 
             await blob.Stream.CopyToAsync(sftpFileStream, cancellationToken);
 
-            return new(uniqueSaveName, trustedFileNameForDisplay, blob.Stream.Length);
+            return true;
         }
         catch (SftpPathNotFoundException e)
         {
@@ -106,50 +146,15 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
 
             await blob.Stream.CopyToAsync(sftpFileStream, cancellationToken);
 
-            return new(uniqueSaveName, trustedFileNameForDisplay, blob.Stream.Length);
+            return true;
         }
     }
 
-    public async ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+    #endregion
 
-        _EnsureClientConnected();
+    #region Rename
 
-        var blobPath = _BuildPath(container, blobName);
-
-        _logger.LogTrace("Getting file stream for {Path}", blobPath);
-
-        try
-        {
-            var stream = await _client.OpenAsync(blobPath, FileMode.Open, FileAccess.Read, cancellationToken);
-
-            return new(stream, blobName);
-        }
-        catch (SftpPathNotFoundException ex)
-        {
-            _logger.LogError(ex, "Unable to get file stream for {Path}: File Not Found", blobPath);
-
-            return null;
-        }
-    }
-
-    public ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
-        string? searchPattern = null,
-        int pageSize = 100,
-        CancellationToken cancellationToken = default
-    )
-    {
-        throw new NotImplementedException();
-    }
-
-    public async ValueTask<bool> RenameFileAsync(
+    public async ValueTask<bool> RenameAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
@@ -164,11 +169,12 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
 
         _EnsureClientConnected();
 
-        var blobPath = _BuildPath(blobContainer, blobName);
-        var targetPath = _BuildPath(newBlobContainer, newBlobName);
+        var blobPath = _BuildBlobPath(blobContainer, blobName);
+        var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
 
         _logger.LogInformation("Renaming {Path} to {TargetPath}", blobPath, targetPath);
 
+        // If the target path already exists, delete it.
         if (await ExistsAsync(newBlobName, newBlobContainer, cancellationToken))
         {
             _logger.LogDebug("Removing existing {TargetPath} path for rename operation", targetPath);
@@ -203,7 +209,11 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         return true;
     }
 
-    public async ValueTask<BlobUploadResult?> CopyFileAsync(
+    #endregion
+
+    #region Copy
+
+    public async ValueTask<bool> CopyAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
@@ -232,7 +242,7 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
 
             if (blob is null)
             {
-                return null;
+                return false;
             }
 
             await using var stream = blob.Stream;
@@ -250,27 +260,13 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
                 newBlobName
             );
 
-            return null;
+            return false;
         }
     }
 
-    public ValueTask<bool> ExistsAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+    #endregion
 
-        _EnsureClientConnected();
-
-        var blobPath = _BuildPath(container, blobName);
-        _logger.LogTrace("Checking if {Path} exists", blobPath);
-        var exists = _client.Exists(blobPath);
-
-        return ValueTask.FromResult(exists);
-    }
+    #region Delete
 
     public async ValueTask<bool> DeleteAsync(
         string blobName,
@@ -282,7 +278,9 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         Argument.IsNotNull(container);
 
         _EnsureClientConnected();
-        var blobPath = _BuildPath(container, blobName);
+
+        var blobPath = _BuildBlobPath(container, blobName);
+
         _logger.LogTrace("Deleting {Path}", blobPath);
 
         try
@@ -299,29 +297,73 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         return true;
     }
 
-    #region Helpers
+    #endregion
 
-    private void _CreateDirectory(string directory)
+    #region Exists
+
+    public ValueTask<bool> ExistsAsync(
+        string blobName,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
     {
-        _logger.LogTrace("Ensuring {Directory} directory exists", directory);
-        var folderSegments = directory.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var currentDirectory = string.Empty;
+        Argument.IsNotNull(blobName);
+        Argument.IsNotNull(container);
 
-        foreach (var segment in folderSegments)
+        _EnsureClientConnected();
+
+        var blobPath = _BuildBlobPath(container, blobName);
+
+        _logger.LogTrace("Checking if {Path} exists", blobPath);
+
+        var exists = _client.Exists(blobPath);
+
+        return ValueTask.FromResult(exists);
+    }
+
+    #endregion
+
+    #region Downalod
+
+    public async ValueTask<BlobDownloadResult?> DownloadAsync(
+        string blobName,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(blobName);
+        Argument.IsNotNull(container);
+
+        _EnsureClientConnected();
+
+        var blobPath = _BuildBlobPath(container, blobName);
+
+        _logger.LogTrace("Getting file stream for {Path}", blobPath);
+
+        try
         {
-            // If the current directory is empty, use the current working directory instead of a rooted path.
-            currentDirectory = string.IsNullOrEmpty(currentDirectory)
-                ? segment
-                : string.Concat(currentDirectory, "/", segment);
+            var stream = await _client.OpenAsync(blobPath, FileMode.Open, FileAccess.Read, cancellationToken);
 
-            if (_client.Exists(currentDirectory))
-            {
-                continue;
-            }
-
-            _logger.LogInformation("Creating {Directory} directory", directory);
-            _client.CreateDirectory(currentDirectory);
+            return new(stream, blobName);
         }
+        catch (SftpPathNotFoundException ex)
+        {
+            _logger.LogError(ex, "Unable to get file stream for {Path}: File Not Found", blobPath);
+
+            return null;
+        }
+    }
+
+    #endregion
+
+    public ValueTask<PagedFileListResult> GetPagedListAsync(
+        string[] container,
+        string? searchPattern = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
     }
 
     private async Task<int> _DeleteDirectoryAsync(
@@ -363,6 +405,45 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         return count;
     }
 
+    private void _CreateDirectory(string directory)
+    {
+        _logger.LogTrace("Ensuring {Directory} directory exists", directory);
+        var folderSegments = directory.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var currentDirectory = string.Empty;
+
+        foreach (var segment in folderSegments)
+        {
+            // If the current directory is empty, use the current working directory instead of a rooted path.
+            currentDirectory = string.IsNullOrEmpty(currentDirectory)
+                ? segment
+                : string.Concat(currentDirectory, "/", segment);
+
+            if (_client.Exists(currentDirectory))
+            {
+                continue;
+            }
+
+            _logger.LogInformation("Creating {Directory} directory", directory);
+            _client.CreateDirectory(currentDirectory);
+        }
+    }
+
+    #region Build Paths
+
+    private static string _BuildBlobPath(string[] container, string blobName)
+    {
+        return _BuildContainerPath(container) + "/" + blobName;
+    }
+
+    private static string _BuildContainerPath(string[] container)
+    {
+        return string.Join("/", container);
+    }
+
+    #endregion
+
+    #region Build Clients
+
     private void _EnsureClientConnected()
     {
         if (_client.IsConnected)
@@ -382,14 +463,7 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         );
     }
 
-    private static string _BuildPath(string[] container, string uniqueSaveName)
-    {
-        var containerPath = string.Join("/", container.Concat(container));
-
-        return containerPath + "/" + uniqueSaveName;
-    }
-
-    private static ConnectionInfo _CreateConnectionInfo(SshBlobStorageOptions options)
+    private static ConnectionInfo _BuildConnectionInfo(SshBlobStorageOptions options)
     {
         Argument.IsNotNull(options);
 
@@ -447,8 +521,8 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
         var proxyType = options.ProxyType;
 
         if (
-            proxyType == ProxyTypes.None
-            && proxyUri.Scheme != null
+            proxyType is ProxyTypes.None
+            && proxyUri.Scheme is not null
             && proxyUri.Scheme.StartsWith("http", StringComparison.Ordinal)
         )
         {
@@ -467,6 +541,10 @@ public sealed class SshBlobStorage : IBlobStorage, IDisposable
             [.. authenticationMethods]
         );
     }
+
+    #endregion
+
+    #region Dispose
 
     public void Dispose()
     {

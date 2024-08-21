@@ -5,4 +5,8 @@
     <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+  </ItemGroup>
+
 </Project>

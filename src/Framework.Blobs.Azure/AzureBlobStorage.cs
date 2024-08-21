@@ -134,7 +134,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         return new(uniqueSaveName, trustedFileNameForDisplay, blob.Stream.Length);
     }
 
-    public async ValueTask<bool> RenameFileAsync(
+    public async ValueTask<bool> RenameAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,

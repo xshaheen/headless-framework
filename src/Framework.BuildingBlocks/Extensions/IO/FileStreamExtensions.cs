@@ -16,21 +16,6 @@ namespace System.IO;
 [PublicAPI]
 public static class FileStreamExtensions
 {
-    public static readonly RetryStrategyOptions IoRetryStrategyOptions =
-        new()
-        {
-            Name = "BlobToLocalFileRetryPolicy",
-            MaxRetryAttempts = 3,
-            BackoffType = DelayBackoffType.Exponential,
-            UseJitter = false,
-            Delay = 0.5.Seconds(),
-            ShouldHandle = new PredicateBuilder().Handle<IOException>()
-        };
-
-    public static readonly ResiliencePipeline IoRetryPipeline = new ResiliencePipelineBuilder()
-        .AddRetry(IoRetryStrategyOptions)
-        .Build();
-
     public static async ValueTask<Result<Exception>[]> SaveToLocalFileAsync(
         this IEnumerable<(Stream BlobStream, string BlobName)> blobs,
         string directoryPath,
@@ -81,7 +66,7 @@ public static class FileStreamExtensions
     )
     {
         var filePath = Path.Combine(directoryPath, uniqueSaveName);
-        await IoRetryPipeline.ExecuteAsync(writeFileAsync, (filePath, blobStream), token);
+        await FileHelper.IoRetryPipeline.ExecuteAsync(writeFileAsync, (filePath, blobStream), token);
 
         return;
 

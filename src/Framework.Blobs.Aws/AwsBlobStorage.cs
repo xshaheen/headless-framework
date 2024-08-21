@@ -163,7 +163,7 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
         throw new NotImplementedException();
     }
 
-    public ValueTask<bool> RenameFileAsync(
+    public ValueTask<bool> RenameAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
