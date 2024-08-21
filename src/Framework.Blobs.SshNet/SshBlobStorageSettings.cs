@@ -4,7 +4,7 @@ using Renci.SshNet;
 
 namespace Framework.Blobs.SshNet;
 
-public sealed class SshBlobStorageOptions
+public sealed class SshBlobStorageSettings
 {
     public required string ConnectionString { get; set; }
 
@@ -19,9 +19,9 @@ public sealed class SshBlobStorageOptions
     public ILoggerFactory? LoggerFactory { get; set; }
 }
 
-public sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlobStorageOptions>
+public sealed class SshBlobStorageSettingsValidator : AbstractValidator<SshBlobStorageSettings>
 {
-    public SshBlobStorageOptionsValidator()
+    public SshBlobStorageSettingsValidator()
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
         RuleFor(x => x.Proxy).NotEmpty();

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection.Metadata;
 using System.Text.RegularExpressions;
 using Azure;
 using Azure.Core;
@@ -9,11 +10,11 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Flurl;
 using Framework.Arguments;
+using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.Constants;
-using Framework.BuildingBlocks.Helpers;
 using Framework.BuildingBlocks.Helpers.IO;
-using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Blobs.Azure;
@@ -28,20 +29,21 @@ public sealed class AzureBlobStorage : IBlobStorage
     private readonly StorageSharedKeyCredential _keyCredential;
     private readonly BlobServiceClient _serviceClient;
 
-    private readonly IContentTypeProvider _contentTypeProvider;
+    private readonly IMimeTypeProvider _mimeTypeProvider;
     private readonly IClock _clock;
+    private readonly ILogger _logger;
 
     public AzureBlobStorage(
-        IContentTypeProvider contentTypeProvider,
+        IMimeTypeProvider mimeTypeProvider,
         IClock clock,
-        IOptionsSnapshot<AzureStorageOptions> configOptions
+        IOptionsSnapshot<AzureStorageSettings> configOptions
     )
     {
-        _contentTypeProvider = contentTypeProvider;
-        _clock = clock;
+        var settings = configOptions.Value;
 
-        var config = configOptions.Value;
-        _accountUrl = $"https://{config.AccountName}.blob.core.windows.net";
+        _mimeTypeProvider = mimeTypeProvider;
+        _clock = clock;
+        _logger = settings.LoggerFactory?.CreateLogger<AzureBlobStorage>() ?? NullLogger<AzureBlobStorage>.Instance;
 
         _blobClientOptions = new()
         {
@@ -55,52 +57,35 @@ public sealed class AzureBlobStorage : IBlobStorage
             },
         };
 
-        _keyCredential = new(config.AccountName, config.AccountKey);
+        _accountUrl = $"https://{settings.AccountName}.blob.core.windows.net";
+        _keyCredential = new(settings.AccountName, settings.AccountKey);
         _serviceClient = new(new Uri(_accountUrl, UriKind.Absolute), _keyCredential, _blobClientOptions);
     }
 
-    public ValueTask CreateContainerAsync(string[] container)
+    #region Create Container
+
+    public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
 
-        return _CreateContainerIfNotExistsAsync(container[0]);
+        var (_, bucketUrl) = _BuildBucketUrl(container);
+
+        if (_CreatedContainers.ContainsKey(bucketUrl))
+        {
+            return;
+        }
+
+        var containerClient = _GetContainerClient(bucketUrl);
+        await containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob, cancellationToken: cancellationToken);
+
+        _CreatedContainers.TryAdd(bucketUrl, value: true);
     }
 
-    public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> blobs,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(blobs);
-        Argument.IsNotNullOrEmpty(container);
+    #endregion
 
-        var tasks = blobs.Select(async blob => await UploadAsync(blob, container, cancellationToken));
-        // TODO: Task.WhenAll has exception handling issues and should be replaced with a more robust
-        //       solution like Polly and handling exceptions in a more controlled manner.
-        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
-        ;
+    #region Upload
 
-        return result;
-    }
-
-    public async ValueTask<IReadOnlyList<bool>> BulkDeleteAsync(
-        IReadOnlyCollection<string> blobNames,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(blobNames);
-        Argument.IsNotNullOrEmpty(container);
-
-        var batch = _serviceClient.GetBlobBatchClient();
-        var blobUrls = blobNames.Select(blobName => new Uri(_BuildBlobUrl(blobName, container), UriKind.Absolute));
-        var results = await batch.DeleteBlobsAsync(blobUrls, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken);
-
-        return results.ConvertAll(result => !result.IsError);
-    }
-
-    public async ValueTask<BlobUploadResult> UploadAsync(
+    public async ValueTask UploadAsync(
         BlobUploadRequest blob,
         string[] container,
         CancellationToken cancellationToken = default
@@ -109,65 +94,57 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNull(blob);
         Argument.IsNotNull(container);
 
-        var (trustedFileNameForDisplay, uniqueSaveName) = FileHelper.GetTrustedFileNames(blob.FileName);
-        var (_, bucketUrl, blobUrl) = _BuildUrls(uniqueSaveName, container);
+        await CreateContainerAsync(container, cancellationToken);
 
-        await _CreateContainerIfNotExistsAsync(bucketUrl, cancellationToken: cancellationToken);
-
+        var blobUrl = _BuildBlobUrl(blob.FileName, container);
         var blobClient = _GetBlobClient(blobUrl);
 
         var httpHeader = new BlobHttpHeaders
         {
-            ContentType = _GetContentType(uniqueSaveName),
+            ContentType = _mimeTypeProvider.GetMimeType(blob.FileName),
             CacheControl = _DefaultCacheControl,
         };
 
-        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["upload-date"] = _clock.Now.ToString("O"),
-            ["original-name"] = trustedFileNameForDisplay,
-            ["extension"] = Path.GetExtension(uniqueSaveName),
-        };
+        var metadata = blob.Metadata ?? new Dictionary<string, string?>(StringComparer.Ordinal);
+        metadata["upload-date"] = _clock.Now.ToString("O");
+        metadata["extension"] = Path.GetExtension(blob.FileName);
 
         await blobClient.UploadAsync(blob.Stream, httpHeader, metadata, cancellationToken: cancellationToken);
-
-        return new(uniqueSaveName, trustedFileNameForDisplay, blob.Stream.Length);
     }
 
-    public async ValueTask<bool> RenameAsync(
-        string blobName,
-        string[] blobContainer,
-        string newBlobName,
-        string[] newBlobContainer,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobName);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
+    #endregion
 
-        var copyResult = await CopyFileAsync(blobName, blobContainer, newBlobName, newBlobContainer, cancellationToken);
+    #region Bulk Upload
 
-        if (copyResult is null)
-        {
-            return false;
-        }
-    }
-
-    public async ValueTask<bool> ExistsAsync(
-        string blobName,
+    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
+        IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
     )
     {
-        var blobUrl = _BuildBlobUrl(blobName, container);
-        var client = _GetBlobClient(blobUrl);
+        Argument.IsNotNullOrEmpty(blobs);
+        Argument.IsNotNullOrEmpty(container);
 
-        var response = await client.ExistsAsync(cancellationToken);
+        var tasks = blobs.Select(async blob =>
+        {
+            try
+            {
+                await UploadAsync(blob, container, cancellationToken);
 
-        return response.Value;
+                return Result<Exception>.Success();
+            }
+            catch (Exception e)
+            {
+                return Result<Exception>.Fail(e);
+            }
+        });
+
+        return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
+
+    #endregion
+
+    #region Delete
 
     public async ValueTask<bool> DeleteAsync(
         string blobName,
@@ -186,7 +163,31 @@ public sealed class AzureBlobStorage : IBlobStorage
         return response.Value;
     }
 
-    public async ValueTask<BlobUploadResult?> CopyFileAsync(
+    #endregion
+
+    #region Bulk Delete
+
+    public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
+        IReadOnlyCollection<string> blobNames,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(blobNames);
+        Argument.IsNotNullOrEmpty(container);
+
+        var batch = _serviceClient.GetBlobBatchClient();
+        var blobUrls = blobNames.Select(blobName => new Uri(_BuildBlobUrl(blobName, container), UriKind.Absolute));
+        var results = await batch.DeleteBlobsAsync(blobUrls, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken);
+
+        return results.ConvertAll(result => Result<bool, Exception>.Success(!result.IsError));
+    }
+
+    #endregion
+
+    #region Copy
+
+    public async ValueTask<bool> CopyAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
@@ -216,8 +217,68 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         await copyResult.WaitForCompletionAsync(cancellationToken);
 
-        return !copyResult.HasCompleted ? null : new(newBlobName, newBlobName, copyResult.Value);
+        return copyResult.HasCompleted;
     }
+
+    #endregion
+
+    #region Rename
+
+    public async ValueTask<bool> RenameAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobName);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
+
+        var copyResult = await CopyAsync(blobName, blobContainer, newBlobName, newBlobContainer, cancellationToken);
+
+        if (!copyResult)
+        {
+            _logger.LogWarning("Unable to copy {BlobName} to {NewBlobName}", blobName, newBlobName);
+
+            return false;
+        }
+
+        var deleteResult = await DeleteAsync(blobName, blobContainer, cancellationToken);
+
+        if (!deleteResult)
+        {
+            _logger.LogWarning("Unable to delete {BlobName}", blobName);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    #endregion
+
+    #region Exists
+
+    public async ValueTask<bool> ExistsAsync(
+        string blobName,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var blobUrl = _BuildBlobUrl(blobName, container);
+        var client = _GetBlobClient(blobUrl);
+
+        var response = await client.ExistsAsync(cancellationToken);
+
+        return response.Value;
+    }
+
+    #endregion
+
+    #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string blobName,
@@ -241,6 +302,10 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         return new(memoryStream, blobName);
     }
+
+    #endregion
+
+    #region List
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
@@ -298,7 +363,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             Files = list,
             NextPageFunc = hasMore
                 ? _ => _GetFiles(containerClient, searchPattern, page + 1, pageSize, cancellationToken)
-                : null
+                : null,
         };
     }
 
@@ -322,8 +387,7 @@ public sealed class AzureBlobStorage : IBlobStorage
                 ? skip.GetValueOrDefault() + limit!.Value
                 : int.MaxValue;
 
-        var blobs = new List<BlobItem>();
-        string? continuationToken = null;
+        var blobs = new List<BlobSpecification>();
 
         var enumerable = containerClient
             .GetBlobsAsync(
@@ -332,44 +396,46 @@ public sealed class AzureBlobStorage : IBlobStorage
                 prefix: criteria.Prefix,
                 cancellationToken: cancellationToken
             )
-            .AsPages(continuationToken, limit);
+            .AsPages(continuationToken: null, limit);
 
         await foreach (var item in enumerable)
         {
-            continuationToken = item.ContinuationToken;
-            blobs.AddRange(item.Values);
-        }
+            // TODO: use continuation token to fetch more items
 
-        do
-        {
-            var listingResult = await _container
-                .ListBlobsSegmentedAsync(
-                    criteria.Prefix,
-                    true,
-                    BlobListingDetails.Metadata,
-                    limit,
-                    continuationToken,
-                    null,
-                    null,
-                    cancellationToken
-                )
-                .AnyContext();
-
-            continuationToken = listingResult.ContinuationToken;
-
-            foreach (var blob in listingResult.Results.OfType<CloudBlockBlob>())
+            foreach (var blobItem in item.Values)
             {
                 // TODO: Verify if it's possible to create empty folders in storage. If so, don't return them.
-                if (criteria.Pattern != null && !criteria.Pattern.IsMatch(blob.Name))
+                if (criteria.Pattern is not null && !criteria.Pattern.IsMatch(blobItem.Name))
                 {
-                    _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blob.Name);
+                    _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
 
                     continue;
                 }
 
-                blobs.Add(blob);
+                if (blobItem.Properties.ContentLength is > 0)
+                {
+                    var blobSpecification = new BlobSpecification
+                    {
+                        Path = blobItem.Name,
+                        Size = blobItem.Properties.ContentLength.Value,
+                        Created = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
+                        Modified = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
+                    };
+
+                    blobs.Add(blobSpecification);
+                }
             }
-        } while (continuationToken != null && blobs.Count < totalLimit);
+
+            if (blobs.Count >= totalLimit)
+            {
+                break;
+            }
+
+            if (item.ContinuationToken is null)
+            {
+                break;
+            }
+        }
 
         if (skip.HasValue)
         {
@@ -381,10 +447,8 @@ public sealed class AzureBlobStorage : IBlobStorage
             blobs = blobs.Take(limit.Value).ToList();
         }
 
-        return blobs.Select(blob => blob.ToFileInfo()).ToList();
+        return blobs;
     }
-
-    #region Helpers
 
     private static SearchCriteria _GetRequestCriteria(string? searchPattern)
     {
@@ -413,33 +477,11 @@ public sealed class AzureBlobStorage : IBlobStorage
         return new(prefix, patternRegex);
     }
 
-    private async ValueTask _CreateContainerIfNotExistsAsync(
-        string containerUrl,
-        PublicAccessType accessType = PublicAccessType.Blob,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (_CreatedContainers.ContainsKey(containerUrl))
-        {
-            return;
-        }
-
-        var containerClient = _GetContainerClient(containerUrl);
-        await containerClient.CreateIfNotExistsAsync(accessType, cancellationToken: cancellationToken);
-
-        _CreatedContainers.TryAdd(containerUrl, value: true);
-    }
-
-    private string _GetContentType(string fileName)
-    {
-        return _contentTypeProvider.TryGetContentType(fileName, out var contentType)
-            ? contentType
-            : ContentTypes.Application.OctetStream;
-    }
+    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
 
     #endregion
 
-    #region Clients
+    #region Build Clients
 
     private BlobClient _GetBlobClient(string blobUrl)
     {
@@ -490,9 +532,9 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Types
+    #region Dispose
 
-    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
+    public void Dispose() { }
 
     #endregion
 }

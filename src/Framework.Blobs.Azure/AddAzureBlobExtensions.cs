@@ -11,7 +11,7 @@ public static class AddAzureBlobExtensions
     )
     {
         var config = builder.Configuration.GetSection(configSectionName);
-        builder.Services.ConfigureSingleton<AzureStorageOptions, AzureStorageOptionsValidator>(config);
+        builder.Services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(config);
         _AddCoreServices(builder);
 
         return builder;
@@ -19,10 +19,10 @@ public static class AddAzureBlobExtensions
 
     public static IHostApplicationBuilder AddAzureBlobStorage(
         this IHostApplicationBuilder builder,
-        Action<AzureStorageOptions> configureOptions
+        Action<AzureStorageSettings> configureOptions
     )
     {
-        builder.Services.ConfigureSingleton<AzureStorageOptions, AzureStorageOptionsValidator>(configureOptions);
+        builder.Services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(configureOptions);
         _AddCoreServices(builder);
 
         return builder;

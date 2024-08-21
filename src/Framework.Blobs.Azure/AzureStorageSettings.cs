@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Blobs.Azure;
 
-public sealed class AzureStorageOptions
+public sealed class AzureStorageSettings
 {
     public required string AccountName { get; init; }
 
@@ -12,9 +12,9 @@ public sealed class AzureStorageOptions
     public ILoggerFactory? LoggerFactory { get; init; }
 }
 
-public sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorageOptions>
+public sealed class AzureStorageSettingsValidator : AbstractValidator<AzureStorageSettings>
 {
-    public AzureStorageOptionsValidator()
+    public AzureStorageSettingsValidator()
     {
         RuleFor(x => x.AccountName).NotEmpty().MinimumLength(2);
         RuleFor(x => x.AccountKey).NotEmpty().MinimumLength(2);

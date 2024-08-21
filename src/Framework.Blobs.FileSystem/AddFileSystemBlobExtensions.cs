@@ -8,10 +8,10 @@ public static class AddFileSystemBlobExtensions
 {
     public static IHostApplicationBuilder AddFileSystemBlobStorage(
         this IHostApplicationBuilder builder,
-        Action<FileSystemBlobStorageOptions> configure
+        Action<FileSystemBlobStorageSettings> configure
     )
     {
-        builder.Services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(
+        builder.Services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(
             configure
         );
         _AddBaseServices(builder);
@@ -24,7 +24,7 @@ public static class AddFileSystemBlobExtensions
         IConfigurationSection configuration
     )
     {
-        builder.Services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(
+        builder.Services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(
             configuration
         );
         _AddBaseServices(builder);

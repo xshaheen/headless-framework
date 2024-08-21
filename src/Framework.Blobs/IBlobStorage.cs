@@ -5,10 +5,13 @@ namespace Framework.Blobs;
 using JetBrainsPure = PureAttribute;
 using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
+// TODO: Add List
+// TODO: Add Sync versions and use them in the DataProtectionXmlRepository
+
 public interface IBlobStorage : IDisposable
 {
     [SystemPure, JetBrainsPure]
-    ValueTask CreateContainerAsync(string[] container);
+    ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default);
 
     [SystemPure, JetBrainsPure]
     ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
