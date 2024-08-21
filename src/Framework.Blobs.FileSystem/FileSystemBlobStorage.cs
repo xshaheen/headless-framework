@@ -1,5 +1,7 @@
 using Framework.Arguments;
 using Framework.Blobs.FileSystem.Internals;
+using Framework.BuildingBlocks;
+using Framework.BuildingBlocks.Helpers.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -10,13 +12,45 @@ namespace Framework.Blobs.FileSystem;
 public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> options) : IBlobStorage
 {
     private readonly AsyncLock _lock = new();
-    private static readonly Lazy<char[]> _InvalidPathChars = new(Path.GetInvalidPathChars);
     private readonly string _basePath = options.Value.BaseDirectoryPath;
-
     private readonly ILogger _logger =
         options.Value.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
 
-    public async ValueTask<IReadOnlyList<bool>> BulkUploadAsync(
+    #region Create Container
+
+    public ValueTask CreateContainerAsync(string[] container)
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        var directoryPath = _GetDirectoryPath(container);
+
+        Directory.CreateDirectory(directoryPath);
+
+        return ValueTask.CompletedTask;
+    }
+
+    #endregion
+
+    #region Upload
+
+    public async ValueTask UploadAsync(
+        BlobUploadRequest blob,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(blob);
+        Argument.IsNotNullOrEmpty(container);
+
+        var directoryPath = _GetDirectoryPath(container);
+        await blob.Stream.SaveToLocalFileAsync(blob.FileName, directoryPath, cancellationToken);
+    }
+
+    #endregion
+
+    #region Bulk Upload
+
+    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
@@ -31,10 +65,44 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
             .Select(blob => (blob.Stream, blob.FileName))
             .SaveToLocalFileAsync(directoryPath, cancellationToken);
 
-        return result.ConvertAll(x => new BlobUploadResult(x.SavedName, x.DisplayName, x.Size));
+        return result;
     }
 
-    public ValueTask<IReadOnlyList<bool>> BulkDeleteAsync(
+    #endregion
+
+    #region Delete
+
+    public ValueTask<bool> DeleteAsync(
+        string blobName,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var filePath = _BuildBlobPath(container, blobName);
+        var delete = _Delete(filePath);
+
+        return ValueTask.FromResult(delete);
+    }
+
+    private static bool _Delete(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            return false;
+        }
+
+        File.Delete(filePath);
+
+        return true;
+    }
+
+    #endregion
+
+    #region Bulk Delete
+
+    public ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         IReadOnlyCollection<string> blobNames,
         string[] container,
         CancellationToken cancellationToken = default
@@ -42,43 +110,28 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var results = blobNames.Select(fileName => _Delete(_BuildPath(container, fileName))).ToList();
+        IReadOnlyList<Result<bool, Exception>> results = blobNames
+            .Select(fileName =>
+            {
+                try
+                {
+                    return _Delete(_BuildBlobPath(container, fileName));
+                }
+                catch (Exception e)
+                {
+                    return Result<bool, Exception>.Fail(e);
+                }
+            })
+            .ToList();
 
-        return ValueTask.FromResult<IReadOnlyList<bool>>(results);
+        return ValueTask.FromResult(results);
     }
 
-    public ValueTask CreateContainerAsync(string[] container)
-    {
-        Argument.IsNotNullOrEmpty(container);
+    #endregion
 
-        var directoryPath = _GetDirectoryPath(container);
+    #region Rename
 
-        Directory.CreateDirectory(directoryPath);
-
-        return ValueTask.CompletedTask;
-    }
-
-    public async ValueTask<bool> UploadAsync(
-        BlobUploadRequest blob,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(blob);
-        Argument.IsNotNullOrEmpty(container);
-
-        var directoryPath = _GetDirectoryPath(container);
-
-        var (savedName, displayName, size) = await blob.Stream.SaveToLocalFileAsync(
-            directoryPath,
-            blob.FileName,
-            cancellationToken
-        );
-
-        return new(savedName, displayName, size);
-    }
-
-    public async ValueTask<bool> RenameFileAsync(
+    public async ValueTask<bool> RenameAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
@@ -87,21 +140,23 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+
         Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrWhiteSpace(newBlobName);
         Argument.IsNotNullOrEmpty(blobContainer);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        var oldFullPath = _BuildPath(blobContainer, blobName).NormalizePath();
-        var newFullPath = _BuildPath(newBlobContainer, newBlobName).NormalizePath();
+        var oldFullPath = _BuildBlobPath(blobContainer, blobName).NormalizePath();
+        var newFullPath = _BuildBlobPath(newBlobContainer, newBlobName).NormalizePath();
+        var newDirectoryPath = _GetDirectoryPath(newBlobContainer);
+
         _logger.LogInformation("Renaming {Path} to {NewPath}", oldFullPath, newFullPath);
 
         try
         {
             using (await _lock.LockAsync(cancellationToken))
             {
-                var directoryPath = _GetDirectoryPath(newBlobContainer);
-                Directory.CreateDirectory(directoryPath);
+                Directory.CreateDirectory(newDirectoryPath);
 
                 try
                 {
@@ -125,33 +180,11 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         return true;
     }
 
-    public ValueTask<bool> ExistsAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var filePath = _BuildPath(container, blobName);
-        var exists = File.Exists(filePath);
+    #endregion
 
-        return ValueTask.FromResult(exists);
-    }
+    #region Copy
 
-    public ValueTask<bool> DeleteAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var filePath = _BuildPath(container, blobName);
-        var delete = _Delete(filePath);
-
-        return ValueTask.FromResult(delete);
-    }
-
-    public async ValueTask<BlobUploadResult?> CopyFileAsync(
+    public async ValueTask<bool> CopyAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
@@ -165,8 +198,9 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         Argument.IsNotNullOrEmpty(blobContainer);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        var blobPath = _BuildPath(blobContainer, blobName);
-        var targetPath = _BuildPath(newBlobContainer, newBlobName);
+        var blobPath = _BuildBlobPath(blobContainer, blobName);
+        var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
+        var targetDirectory = _GetDirectoryPath(newBlobContainer);
 
         _logger.LogInformation("Copying {Path} to {TargetPath}", blobPath, targetPath);
 
@@ -174,20 +208,41 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         {
             using (await _lock.LockAsync(cancellationToken))
             {
-                var targetDirectory = _GetDirectoryPath(newBlobContainer);
                 Directory.CreateDirectory(targetDirectory);
                 File.Copy(blobPath, targetPath, true);
 
-                return new(newBlobName, newBlobName, new FileInfo(targetPath).Length);
+                return true;
             }
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            _logger.LogError(ex, "Error copying {Path} to {TargetPath}", blobPath, targetPath);
+            _logger.LogError(e, "Error copying {Path} to {TargetPath}", blobPath, targetPath);
 
-            return null;
+            return false;
         }
     }
+
+    #endregion
+
+    #region Exists
+
+    public ValueTask<bool> ExistsAsync(
+        string blobName,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var filePath = _BuildBlobPath(container, blobName);
+        var exists = File.Exists(filePath);
+
+        return ValueTask.FromResult(exists);
+    }
+
+    #endregion
+
+    #region Downaload
 
     public ValueTask<BlobDownloadResult?> DownloadAsync(
         string blobName,
@@ -195,9 +250,9 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         CancellationToken cancellationToken = default
     )
     {
-        var filePath = _BuildPath(container, blobName);
+        var filePath = _BuildBlobPath(container, blobName);
 
-        return FileStreamExtensions.IoRetryPipeline.ExecuteAsync(
+        return FileHelper.IoRetryPipeline.ExecuteAsync(
             static async (filePath, token) =>
             {
                 if (!File.Exists(filePath))
@@ -214,6 +269,10 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
             cancellationToken
         );
     }
+
+    #endregion
+
+    #region List
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
@@ -242,6 +301,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         if (!Directory.Exists(completePath))
         {
             _logger.LogTrace("Returning empty file list matching {SearchPattern}: Directory Not Found", searchPattern);
+
             return PagedFileListResult.Empty;
         }
 
@@ -253,8 +313,6 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
 
         return result;
     }
-
-    #region Helpers
 
     private NextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
     {
@@ -319,23 +377,18 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         };
     }
 
-    private static bool _Delete(string filePath)
+    #endregion
+
+    #region Build Paths
+
+    private string _BuildBlobPath(string[] container, string fileName)
     {
-        var possiblePath = filePath.IndexOfAny(_InvalidPathChars.Value) == -1;
+        Argument.IsNotNullOrWhiteSpace(fileName);
+        Argument.IsNotNullOrEmpty(container);
 
-        if (!possiblePath)
-        {
-            return false;
-        }
+        var filePath = Path.Combine(_basePath, Path.Combine(container), fileName);
 
-        if (!File.Exists(filePath))
-        {
-            return false;
-        }
-
-        File.Delete(filePath);
-
-        return true;
+        return filePath;
     }
 
     private string _GetDirectoryPath(string[] container)
@@ -347,15 +400,11 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         return filePath;
     }
 
-    private string _BuildPath(string[] container, string fileName)
-    {
-        Argument.IsNotNullOrWhiteSpace(fileName);
-        Argument.IsNotNullOrEmpty(container);
+    #endregion
 
-        var filePath = Path.Combine(_basePath, Path.Combine(container), fileName);
+    #region Dispose
 
-        return filePath;
-    }
+    public void Dispose() { }
 
     #endregion
 }

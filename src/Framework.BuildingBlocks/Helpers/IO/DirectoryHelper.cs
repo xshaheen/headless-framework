@@ -1,9 +1,55 @@
+using System.Buffers;
+
 namespace Framework.BuildingBlocks.Helpers.IO;
 
 /// <summary>A helper class for Directory operations.</summary>
 [PublicAPI]
 public static class DirectoryHelper
 {
+    #region Invalid DirectoryName Characters
+
+    public static readonly SearchValues<char> InvalidDirectoryNameChars = SearchValues.Create(
+        [
+            '|',
+            '\0',
+            '\u0001',
+            '\u0002',
+            '\u0003',
+            '\u0004',
+            '\u0005',
+            '\u0006',
+            '\a',
+            '\b',
+            '\t',
+            '\n',
+            '\v',
+            '\f',
+            '\r',
+            '\u000E',
+            '\u000F',
+            '\u0010',
+            '\u0011',
+            '\u0012',
+            '\u0013',
+            '\u0014',
+            '\u0015',
+            '\u0016',
+            '\u0017',
+            '\u0018',
+            '\u0019',
+            '\u001A',
+            '\u001B',
+            '\u001C',
+            '\u001D',
+            '\u001E',
+            '\u001F',
+        ]
+    );
+
+    #endregion
+
+    #region Create If Not Exists
+
     public static void CreateIfNotExists(string directory)
     {
         if (!Directory.Exists(directory))
@@ -11,6 +57,18 @@ public static class DirectoryHelper
             Directory.CreateDirectory(directory);
         }
     }
+
+    public static void CreateIfNotExists(DirectoryInfo directory)
+    {
+        if (!directory.Exists)
+        {
+            directory.Create();
+        }
+    }
+
+    #endregion
+
+    #region Delete If Exists
 
     public static void DeleteIfExists(string directory)
     {
@@ -28,13 +86,9 @@ public static class DirectoryHelper
         }
     }
 
-    public static void CreateIfNotExists(DirectoryInfo directory)
-    {
-        if (!directory.Exists)
-        {
-            directory.Create();
-        }
-    }
+    #endregion
+
+    #region Is Subdirectory Of
 
     public static bool IsSubDirectoryOf(string parentDirectoryPath, string childDirectoryPath)
     {
@@ -58,4 +112,17 @@ public static class DirectoryHelper
 
         return parentOfChild is not null && IsSubDirectoryOf(parentDirectory, parentOfChild);
     }
+
+    #endregion
+
+    #region Is Valid Directory Name
+
+    public static bool IsValidDirectoryName(string directoryName)
+    {
+        Argument.IsNotNull(directoryName);
+
+        return directoryName.All(c => !InvalidDirectoryNameChars.Contains(c));
+    }
+
+    #endregion
 }

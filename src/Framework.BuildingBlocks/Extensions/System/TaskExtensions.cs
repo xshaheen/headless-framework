@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Nito.AsyncEx;
 
 #pragma warning disable IDE0130
@@ -6,10 +8,13 @@ namespace System.Threading.Tasks;
 
 public static class TaskExtensions
 {
-    // Get a single exception if only one has been thrown;
-    // Get an AggregateException if more than one exception has been thrown collectively by one or more tasks;
-    // Propagate the cancellation status properly (Task.IsCanceled), as something like this would not do that: Task t = Task.WhenAll(...); try { await t; } catch { throw t.Exception; }.
-    // See: https://stackoverflow.com/a/62607500 (modified)
+    /// <summary>
+    /// Get a single exception if only one has been thrown;
+    /// Get an AggregateException if more than one exception has been thrown collectively by one or more tasks;
+    /// Propagate the cancellation status properly (Task.IsCanceled), as something like this would not do that:
+    /// Task t = Task.WhenAll(...); try { await t; } catch { throw t.Exception; }.
+    /// See: <a href="https://stackoverflow.com/a/62607500">Stack Overflow</a>
+    /// </summary>
     public static Task WithAggregatedExceptions(this Task @this)
     {
         return @this
@@ -27,10 +32,13 @@ public static class TaskExtensions
             .Unwrap();
     }
 
-    // Get a single exception if only one has been thrown;
-    // Get an AggregateException if more than one exception has been thrown collectively by one or more tasks;
-    // Propagate the cancellation status properly (Task.IsCanceled), as something like this would not do that: Task t = Task.WhenAll(...); try { await t; } catch { throw t.Exception; }.
-    // See: https://stackoverflow.com/a/62607500 (modified)
+    /// <summary>
+    /// Get a single exception if only one has been thrown;
+    /// Get an AggregateException if more than one exception has been thrown collectively by one or more tasks;
+    /// Propagate the cancellation status properly (Task.IsCanceled), as something like this would not do that:
+    /// Task t = Task.WhenAll(...); try { await t; } catch { throw t.Exception; }.
+    /// See: <a href="https://stackoverflow.com/a/62607500">Stack Overflow</a>
+    /// </summary>
     public static Task<T> WithAggregatedExceptions<T>(this Task<T> @this)
     {
         return @this
@@ -48,9 +56,7 @@ public static class TaskExtensions
             .Unwrap();
     }
 
-    /// <summary>
-    /// https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm
-    /// </summary>
+    /// <summary><a href="https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm">Blog post</a></summary>
     public static void Forget(this Task task)
     {
         // Only care about tasks that may fault or are faulted,
@@ -74,5 +80,30 @@ public static class TaskExtensions
                 // Nothing to do here
             }
         }
+    }
+
+    [DebuggerStepThrough]
+    public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task)
+    {
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    [DebuggerStepThrough]
+    public static ConfiguredTaskAwaitable AnyContext(this Task task)
+    {
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    [DebuggerStepThrough]
+    public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this AwaitableDisposable<TResult> task)
+        where TResult : IDisposable
+    {
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    [DebuggerStepThrough]
+    public static ConfiguredCancelableAsyncEnumerable<TResult> AnyContext<TResult>(this IAsyncEnumerable<TResult> task)
+    {
+        return task.ConfigureAwait(continueOnCapturedContext: false);
     }
 }

@@ -1,33 +1,55 @@
+using Framework.BuildingBlocks;
+
 namespace Framework.Blobs;
 
 using JetBrainsPure = PureAttribute;
 using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
-public interface IBlobStorage
+public interface IBlobStorage : IDisposable
 {
     [SystemPure, JetBrainsPure]
     ValueTask CreateContainerAsync(string[] container);
 
     [SystemPure, JetBrainsPure]
-    ValueTask<bool> UploadAsync(
-        BlobUploadRequest blob,
-        string[] container,
-        CancellationToken cancellationToken = default
-    );
-
-    [SystemPure, JetBrainsPure]
-    ValueTask<IReadOnlyList<bool>> BulkUploadAsync(
+    ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
     );
 
     [SystemPure, JetBrainsPure]
-    ValueTask<IReadOnlyList<bool>> BulkDeleteAsync(
+    ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         IReadOnlyCollection<string> blobNames,
         string[] container,
         CancellationToken cancellationToken = default
     );
+
+    [SystemPure, JetBrainsPure]
+    ValueTask UploadAsync(BlobUploadRequest blob, string[] container, CancellationToken cancellationToken = default);
+
+    [SystemPure, JetBrainsPure]
+    ValueTask<bool> DeleteAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
+
+    [SystemPure, JetBrainsPure]
+    ValueTask<bool> CopyAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    );
+
+    [SystemPure, JetBrainsPure]
+    ValueTask<bool> RenameAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    );
+
+    [SystemPure, JetBrainsPure]
+    ValueTask<bool> ExistsAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
 
     [SystemPure, JetBrainsPure]
     ValueTask<BlobDownloadResult?> DownloadAsync(
@@ -43,28 +65,4 @@ public interface IBlobStorage
         int pageSize = 100,
         CancellationToken cancellationToken = default
     );
-
-    [SystemPure, JetBrainsPure]
-    ValueTask<bool> CopyFileAsync(
-        string blobName,
-        string[] blobContainer,
-        string newBlobName,
-        string[] newBlobContainer,
-        CancellationToken cancellationToken = default
-    );
-
-    [SystemPure, JetBrainsPure]
-    ValueTask<bool> RenameFileAsync(
-        string blobName,
-        string[] blobContainer,
-        string newBlobName,
-        string[] newBlobContainer,
-        CancellationToken cancellationToken = default
-    );
-
-    [SystemPure, JetBrainsPure]
-    ValueTask<bool> ExistsAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
-
-    [SystemPure, JetBrainsPure]
-    ValueTask<bool> DeleteAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
 }

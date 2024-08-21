@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 // ReSharper disable once CheckNamespace
 namespace Framework.BuildingBlocks;
 
+#pragma warning disable CA2225 // Operator overloads have named alternates
+#pragma warning disable CA1000 // Do not declare static members on generic types
 [StructLayout(LayoutKind.Auto)]
 public readonly struct Result<TValue, TErrors> : IResult<TValue, TErrors>, IEquatable<Result<TValue, TErrors>>
 {
@@ -38,9 +40,9 @@ public readonly struct Result<TValue, TErrors> : IResult<TValue, TErrors>, IEqua
 
     public static implicit operator Result<TValue, TErrors>(TErrors operand) => new(operand);
 
-    public Result<TValue, TErrors> FromTValue(TValue operand) => operand;
+    public static Result<TValue, TErrors> Success(TValue operand) => operand;
 
-    public Result<TValue, TErrors> FromTErrors(TValue operand) => operand;
+    public static Result<TValue, TErrors> Fail(TErrors operand) => operand;
 
     public TResult Match<TResult>(Func<TValue, TResult> success, Func<TErrors, TResult> failure) =>
         Failed ? failure(Error) : success(Value);

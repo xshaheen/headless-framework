@@ -4,6 +4,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Framework.BuildingBlocks.Constants;
+using Humanizer;
+using Polly;
+using Polly.Retry;
 
 namespace Framework.BuildingBlocks.Helpers.IO;
 
@@ -14,53 +17,74 @@ public static partial class FileHelper
 
     public static readonly SearchValues<char> InvalidFileNameChars = SearchValues.Create(
         [
-            '\"',
+            '"',
             '<',
             '>',
             '|',
-            '\0',
-            (char)1,
-            (char)2,
-            (char)3,
-            (char)4,
-            (char)5,
-            (char)6,
-            (char)7,
-            (char)8,
-            (char)9,
-            (char)10,
-            (char)11,
-            (char)12,
-            (char)13,
-            (char)14,
-            (char)15,
-            (char)16,
-            (char)17,
-            (char)18,
-            (char)19,
-            (char)20,
-            (char)21,
-            (char)22,
-            (char)23,
-            (char)24,
-            (char)25,
-            (char)26,
-            (char)27,
-            (char)28,
-            (char)29,
-            (char)30,
-            (char)31,
+            char.MinValue,
+            '\u0001',
+            '\u0002',
+            '\u0003',
+            '\u0004',
+            '\u0005',
+            '\u0006',
+            '\a',
+            '\b',
+            '\t',
+            '\n',
+            '\v',
+            '\f',
+            '\r',
+            '\u000E',
+            '\u000F',
+            '\u0010',
+            '\u0011',
+            '\u0012',
+            '\u0013',
+            '\u0014',
+            '\u0015',
+            '\u0016',
+            '\u0017',
+            '\u0018',
+            '\u0019',
+            '\u001A',
+            '\u001B',
+            '\u001C',
+            '\u001D',
+            '\u001E',
+            '\u001F',
             ':',
             '*',
             '?',
             '\\',
-            '/'
+            '/',
         ]
     );
 
     #endregion
 
-    /// <summary>Checks and deletes given file if it does exists.</summary>
+    #region Pipeline
+
+    public static readonly RetryStrategyOptions IoRetryStrategyOptions =
+        new()
+        {
+            Name = "BlobToLocalFileRetryPolicy",
+            MaxRetryAttempts = 3,
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = false,
+            Delay = 0.5.Seconds(),
+            ShouldHandle = new PredicateBuilder().Handle<IOException>(),
+        };
+
+    public static readonly ResiliencePipeline IoRetryPipeline = new ResiliencePipelineBuilder()
+        .AddRetry(IoRetryStrategyOptions)
+        .Build();
+
+    #endregion
+
+    #region Delete If Exists
+
+    /// <summary>Checks and deletes given a file if it does exist.</summary>
     /// <param name="filePath">Path of the file</param>
     public static bool DeleteIfExists(string filePath)
     {
@@ -73,6 +97,10 @@ public static partial class FileHelper
 
         return true;
     }
+
+    #endregion
+
+    #region Read Content
 
     /// <summary>Opens a text file, reads content without BOM.</summary>
     /// <param name="path">The file to open for reading.</param>
@@ -154,6 +182,10 @@ public static partial class FileHelper
         return lines.AsArray();
     }
 
+    #endregion
+
+    #region Sanitize File Name
+
     public static (string TrusedDisplayName, string UniqueSaveName) GetTrustedFileNames(
         ReadOnlySpan<char> untrustedBlobName
     )
@@ -171,8 +203,6 @@ public static partial class FileHelper
 
         return (trusedDisplayName, uniqueSaveName);
     }
-
-    #region SanitizeFileName
 
     /// <summary>
     /// Sanitizes the given file name by removing invalid characters and replacing multiple spaces with a single space
@@ -212,10 +242,6 @@ public static partial class FileHelper
 
         return htmlEncoded;
     }
-
-    #endregion
-
-    #region NormalizeFileName
 
     /// <summary>
     /// Normalize file name by:
