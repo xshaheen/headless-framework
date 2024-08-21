@@ -8,10 +8,10 @@ public static class AddFileSystemBlobExtensions
 {
     public static IHostApplicationBuilder AddSshBlobStorage(
         this IHostApplicationBuilder builder,
-        Action<SshBlobStorageOptions> configure
+        Action<SshBlobStorageSettings> configure
     )
     {
-        builder.Services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(configure);
+        builder.Services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(configure);
         _AddBaseServices(builder);
 
         return builder;
@@ -22,7 +22,7 @@ public static class AddFileSystemBlobExtensions
         IConfigurationSection configuration
     )
     {
-        builder.Services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(configuration);
+        builder.Services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(configuration);
         _AddBaseServices(builder);
 
         return builder;

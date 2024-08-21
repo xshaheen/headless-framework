@@ -1,6 +1,7 @@
 ﻿using System.Xml.Linq;
 using Framework.Arguments;
 using Framework.Blobs;
+using Framework.BuildingBlocks.Helpers.IO;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -49,7 +50,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
             _logger.LogTrace("Loading element: {File}", file.Path);
             var downloadResult = await _storage.DownloadAsync(file.Path, _Containers);
 
-            if (downloadResult == null)
+            if (downloadResult is null)
             {
                 _logger.LogWarning("Failed to load element: {File}", file.Path);
 
@@ -71,27 +72,31 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     public void StoreElement(XElement element, string? friendlyName)
     {
         Argument.IsNotNull(element);
+        var fileName = string.IsNullOrEmpty(friendlyName) ? $"{Guid.NewGuid():N}.xml" : $"{friendlyName}.xml";
 
-        _StoreElementAsync(element, friendlyName).GetAwaiter().GetResult();
+        _StoreElementAsync(element, fileName).GetAwaiter().GetResult();
     }
 
-    private Task _StoreElementAsync(XElement element, string? friendlyName)
+    private async Task _StoreElementAsync(XElement element, string fileName)
     {
-        var fileName = string.Concat(
-            !string.IsNullOrEmpty(friendlyName) ? friendlyName : Guid.NewGuid().ToString("N"),
-            ".xml"
-        );
-
         _logger.LogTrace("Saving element: {File}", fileName);
+        await FileHelper.IoRetryPipeline.ExecuteAsync(storeElement, (_storage, element, fileName));
+        _logger.LogTrace("Saved element: {File}", fileName);
 
-        return Run.WithRetriesAsync(async () =>
+        return;
+
+        static async ValueTask storeElement(
+            (IBlobStorage Storage, XElement Element, string FileName) state,
+            CancellationToken abortToken
+        )
         {
+            var (storage, element, fileName) = state;
+
             using var memoryStream = new MemoryStream();
-            element.Save(memoryStream, SaveOptions.DisableFormatting);
+            await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, abortToken);
             memoryStream.Seek(0, SeekOrigin.Begin);
-            // tODO: the upload will override the file name
-            _ = await _storage.UploadAsync(new BlobUploadRequest(memoryStream, fileName), _Containers);
-            _logger.LogTrace("Saved element: {File}", fileName);
-        });
+
+            await storage.UploadAsync(new(memoryStream, fileName), _Containers, abortToken);
+        }
     }
 }

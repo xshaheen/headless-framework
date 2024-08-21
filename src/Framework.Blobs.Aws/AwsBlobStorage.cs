@@ -15,11 +15,11 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
     private static readonly ConcurrentDictionary<string, bool> _CreatedBuckets = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
 
-    public ValueTask CreateContainerAsync(string[] container)
+    public ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
 
-        return _CreateBucketIfNotExistsAsync(container[0]);
+        return _CreateBucketIfNotExistsAsync(container[0], cancellationToken);
     }
 
     public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(

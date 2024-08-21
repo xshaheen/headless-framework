@@ -9,7 +9,7 @@ using Nito.AsyncEx;
 
 namespace Framework.Blobs.FileSystem;
 
-public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> options) : IBlobStorage
+public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings> options) : IBlobStorage
 {
     private readonly AsyncLock _lock = new();
     private readonly string _basePath = options.Value.BaseDirectoryPath;
@@ -18,8 +18,9 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
 
     #region Create Container
 
-    public ValueTask CreateContainerAsync(string[] container)
+    public ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrEmpty(container);
 
         var directoryPath = _GetDirectoryPath(container);
