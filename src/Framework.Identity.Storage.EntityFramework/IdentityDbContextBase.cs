@@ -1,8 +1,8 @@
 ﻿using System.Data;
 using Framework.BuildingBlocks.Domains;
 using Framework.BuildingBlocks.Primitives;
+using Framework.Orm.EntityFramework.Configurations;
 using Framework.Orm.EntityFramework.Contexts;
-using Framework.Orm.EntityFramework.ValueConverters;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;

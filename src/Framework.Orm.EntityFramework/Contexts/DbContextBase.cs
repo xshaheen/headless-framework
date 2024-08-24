@@ -1,7 +1,7 @@
 ﻿using System.Data;
 using Framework.BuildingBlocks.Domains;
 using Framework.BuildingBlocks.Primitives;
-using Framework.Orm.EntityFramework.ValueConverters;
+using Framework.Orm.EntityFramework.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;

@@ -1,7 +1,7 @@
 ﻿using Framework.BuildingBlocks.Abstractions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 public class NormalizeDateTimeValueConverter(IClock clock, ConverterMappingHints? mappingHints = null)
     : ValueConverter<DateTime, DateTime>(x => clock.Normalize(x), x => clock.Normalize(x), mappingHints);

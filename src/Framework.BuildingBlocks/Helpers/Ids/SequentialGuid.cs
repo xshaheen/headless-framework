@@ -1,4 +1,4 @@
-namespace Framework.BuildingBlocks.Helpers.IdGenerators;
+namespace Framework.BuildingBlocks.Helpers.Ids;
 
 /// <summary>Contains methods for creating sequential GUID values.</summary>
 public static class SequentialGuid

@@ -2,7 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 public static class PhoneNumberConfiguration
 {

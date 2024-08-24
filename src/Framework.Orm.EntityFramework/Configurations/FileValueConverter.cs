@@ -3,7 +3,7 @@ using Framework.BuildingBlocks.Constants;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using File = Framework.BuildingBlocks.Primitives.File;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 public sealed class FileValueConverter()
     : ValueConverter<File?, string?>(

@@ -3,7 +3,7 @@ using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.Primitives;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 public sealed class ImageValueConverter()
     : ValueConverter<Image?, string?>(

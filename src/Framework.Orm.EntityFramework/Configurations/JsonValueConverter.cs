@@ -3,7 +3,7 @@ using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.JsonConverters;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 public sealed class JsonValueConverter<TPropertyType> : ValueConverter<TPropertyType, string>
 {
