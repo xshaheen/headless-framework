@@ -1,28 +1,116 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Text.RegularExpressions;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Flurl;
 using Framework.Arguments;
+using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;
 using Framework.BuildingBlocks.Helpers.IO;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Framework.Blobs.Aws;
 
-public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvider, IClock clock) : IBlobStorage
+public sealed class AwsBlobStorage : IBlobStorage
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedBuckets = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
 
-    public ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
+    private readonly IAmazonS3 _s3;
+    private readonly IMimeTypeProvider _mimeTypeProvider;
+    private readonly IClock _clock;
+    private readonly AwsBlobStorageSettings _settings;
+    private readonly ILogger _logger;
+
+    public AwsBlobStorage(
+        IAmazonS3 s3,
+        IMimeTypeProvider mimeTypeProvider,
+        IClock clock,
+        IOptions<AwsBlobStorageSettings> options
+    )
+    {
+        _s3 = s3;
+        _mimeTypeProvider = mimeTypeProvider;
+        _clock = clock;
+        _settings = options.Value;
+
+        _logger =
+            _settings.LoggerFactory?.CreateLogger<AwsBlobStorageSettings>()
+            ?? NullLogger<AwsBlobStorageSettings>.Instance;
+    }
+
+    #region Create Container
+
+    public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
 
-        return _CreateBucketIfNotExistsAsync(container[0], cancellationToken);
+        var bucketName = _BuildBucketName(container);
+
+        if (_CreatedBuckets.ContainsKey(bucketName) || await AmazonS3Util.DoesS3BucketExistV2Async(_s3, bucketName))
+        {
+            return;
+        }
+
+        await _s3.PutBucketAsync(new PutBucketRequest { BucketName = bucketName }, cancellationToken);
+        _CreatedBuckets.TryAdd(bucketName, value: true);
     }
 
-    public async ValueTask<IReadOnlyList<BlobUploadResult>> BulkUploadAsync(
+    #endregion
+
+    #region Upload
+
+    public async ValueTask UploadAsync(
+        BlobUploadRequest blob,
+        string[] container,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(blob);
+
+        await CreateContainerAsync(container, cancellationToken);
+        var (bucket, objectKey) = _BuildObjectKey(blob.FileName, container);
+
+        var request = new PutObjectRequest
+        {
+            BucketName = bucket,
+            Key = objectKey,
+            InputStream = blob.Stream.CanSeek ? blob.Stream : AmazonS3Util.MakeStreamSeekable(blob.Stream),
+            AutoCloseStream = !blob.Stream.CanSeek,
+            AutoResetStreamPosition = false,
+            ContentType = _mimeTypeProvider.GetMimeType(blob.FileName),
+            UseChunkEncoding = _settings.UseChunkEncoding,
+            CannedACL = _settings.CannedAcl,
+            Headers = { CacheControl = _DefaultCacheControl, },
+        };
+
+        if (blob.Metadata is not null)
+        {
+            foreach (var metadata in blob.Metadata)
+            {
+                // Note: MetadataCollection is automatically prefixed with "x-amz-meta-"
+                request.Metadata[metadata.Key] = metadata.Value;
+            }
+        }
+
+        request.Metadata["upload-date"] = _clock.Now.ToString("O");
+        request.Metadata["extension"] = Path.GetExtension(blob.FileName);
+
+        var response = await _s3.PutObjectAsync(request, cancellationToken).AnyContext();
+
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+    }
+
+    #endregion
+
+    #region Bulk Upload
+
+    public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
@@ -31,47 +119,53 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(async file => await UploadAsync(file, container, cancellationToken));
-        var result = await Task.WhenAll(tasks).WithAggregatedExceptions();
-        ;
+        var tasks = blobs.Select(async blob =>
+        {
+            try
+            {
+                await UploadAsync(blob, container, cancellationToken);
 
-        return result;
+                return Result<Exception>.Success();
+            }
+            catch (Exception e)
+            {
+                return Result<Exception>.Fail(e);
+            }
+        });
+
+        return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
 
-    public async ValueTask<BlobUploadResult> UploadAsync(
-        BlobUploadRequest blob,
+    #endregion
+
+    #region Delete
+
+    public async ValueTask<bool> DeleteAsync(
+        string blobName,
         string[] container,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blob);
+        var (bucket, key) = _BuildObjectKey(blobName, container);
 
-        var (trustedFileNameForDisplay, uniqueSaveName) = FileHelper.GetTrustedFileNames(blob.FileName);
-        var (bucket, key) = _GetBucketAndKey(uniqueSaveName, container);
-
-        await _CreateBucketIfNotExistsAsync(bucket, cancellationToken);
-
-        var request = new PutObjectRequest
+        if (!await _ExistsAsync(bucket, key, cancellationToken))
         {
-            BucketName = bucket,
-            Key = key,
-            InputStream = blob.Stream,
-            ContentType = mimeTypeProvider.GetMimeType(blob.FileName),
-            Headers = { CacheControl = _DefaultCacheControl, },
-            Metadata =
-            {
-                ["x-amz-meta-upload-date"] = clock.Now.ToString("O"),
-                ["x-amz-meta-original-name"] = trustedFileNameForDisplay,
-                ["x-amz-meta-extension"] = Path.GetExtension(uniqueSaveName),
-            },
-        };
+            return false;
+        }
 
-        _ = await s3.PutObjectAsync(request, cancellationToken);
+        var request = new DeleteObjectRequest { BucketName = bucket, Key = key, };
+        var response = await _s3.DeleteObjectAsync(request, cancellationToken);
 
-        return new(uniqueSaveName, trustedFileNameForDisplay, blob.Stream.Length);
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+
+        return true;
     }
 
-    public async ValueTask<IReadOnlyList<bool>> BulkDeleteAsync(
+    #endregion
+
+    #region Bulk Delete
+
+    public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         IReadOnlyCollection<string> blobNames,
         string[] container,
         CancellationToken cancellationToken = default
@@ -80,79 +174,62 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
         Argument.IsNotNullOrEmpty(blobNames);
         Argument.IsNotNullOrEmpty(container);
 
-        var (bucket, keyPrefix) = (container[0], Url.Combine(container.Skip(1).ToArray()));
-        var keys = blobNames.Select(blobName => new KeyVersion { Key = Url.Combine(keyPrefix, blobName) }).ToList();
+        var (bucket, keyPrefix) = (container[0], Url.Combine([.. container.Skip(1)]));
 
-        var request = new DeleteObjectsRequest { BucketName = bucket, Objects = keys, };
+        var objectKeys = blobNames
+            .Select(blobName => new KeyVersion { Key = Url.Combine(keyPrefix, blobName) })
+            .ToList();
 
-        var response = await s3.DeleteObjectsAsync(request, cancellationToken);
-
-        return keys.ConvertAll(key =>
+        var request = new DeleteObjectsRequest
         {
-            return response.DeletedObjects.Exists(deletedObject =>
-                string.Equals(deletedObject.Key, key.Key, StringComparison.Ordinal)
-            );
-        });
-    }
+            BucketName = bucket,
+            Objects = objectKeys,
+            Quiet = false,
+        };
 
-    public async ValueTask<bool> DeleteAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var (bucket, key) = _GetBucketAndKey(blobName, container);
+        DeleteObjectsResponse response;
 
-        if (!await _ExistsAsync(bucket, key, cancellationToken))
+        try
         {
-            return false;
+            response = await _s3.DeleteObjectsAsync(request, cancellationToken);
         }
-
-        var request = new DeleteObjectRequest { BucketName = bucket, Key = key, };
-
-        await s3.DeleteObjectAsync(request, cancellationToken);
-
-        return true;
-    }
-
-    public async ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
-        string[] container,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var (bucket, key) = _GetBucketAndKey(blobName, container);
-
-        if (!await _ExistsAsync(bucket, key, cancellationToken))
+        catch (DeleteObjectsException e) // This exception is thrown when some items fail to delete.
         {
-            return null;
-        }
+            var results = new List<Result<bool, Exception>>(blobNames.Count);
 
-        var request = new GetObjectRequest { BucketName = bucket, Key = key, };
+            foreach (var objectKey in objectKeys)
+            {
+                var deleteError = e.Response.DeleteErrors.FirstOrDefault(x => x.Key == objectKey.Key);
 
-        var response = await s3.GetObjectAsync(request, cancellationToken);
+                if (deleteError is not null)
+                {
+                    var exception = new InvalidOperationException(
+                        $"Error deleting item with Code: {deleteError.Code} and Message: {deleteError.Message}"
+                    );
 
-        if (response.HttpStatusCode is HttpStatusCode.NotFound)
-        {
-            return null;
+                    results.Add(Result<bool, Exception>.Fail(exception));
+                }
+                else
+                {
+                    results.Add(Result<bool, Exception>.Success(true));
+                }
+            }
+
+            return results;
         }
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
 
-        return new(response.ResponseStream, blobName, _ToDictionary(response.Metadata));
+        // No exceptions were thrown, so all items were deleted successfully.
+
+        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Success(true));
     }
 
-    public ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
-        string? searchPattern = null,
-        int pageSize = 100,
-        CancellationToken cancellationToken = default
-    )
-    {
-        throw new NotImplementedException();
-    }
+    #endregion
 
-    public ValueTask<BlobUploadResult?> CopyFileAsync(
+    #region Copy
+
+    public async ValueTask<bool> CopyAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
@@ -160,10 +237,33 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
         CancellationToken cancellationToken = default
     )
     {
-        throw new NotImplementedException();
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobName);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
+
+        var (oldBucket, oldKey) = _BuildObjectKey(blobName, blobContainer);
+        var (newBucket, newKey) = _BuildObjectKey(newBlobName, newBlobContainer);
+
+        var request = new CopyObjectRequest
+        {
+            CannedACL = _settings.CannedAcl,
+            SourceBucket = oldBucket,
+            SourceKey = oldKey,
+            DestinationBucket = newBucket,
+            DestinationKey = newBucket,
+        };
+
+        var response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
+
+        return response.HttpStatusCode.IsSuccessStatusCode();
     }
 
-    public ValueTask<bool> RenameAsync(
+    #endregion
+
+    #region Rename
+
+    public async ValueTask<bool> RenameAsync(
         string blobName,
         string[] blobContainer,
         string newBlobName,
@@ -171,8 +271,48 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
         CancellationToken cancellationToken = default
     )
     {
-        throw new NotImplementedException();
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobName);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
+
+        var (oldBucket, oldKey) = _BuildObjectKey(blobName, blobContainer);
+        var (newBucket, newKey) = _BuildObjectKey(newBlobName, newBlobContainer);
+
+        var request = new CopyObjectRequest
+        {
+            CannedACL = _settings.CannedAcl,
+            SourceBucket = oldBucket,
+            SourceKey = oldKey,
+            DestinationBucket = newBucket,
+            DestinationKey = newKey,
+        };
+
+        var response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
+
+        if (!response.HttpStatusCode.IsSuccessStatusCode())
+        {
+            _logger.LogError(
+                "Failed to copy object from {OldBucket}/{OldKey} to {NewBucket}/{NewKey}",
+                oldBucket,
+                oldKey,
+                newBucket,
+                newKey
+            );
+
+            return false;
+        }
+
+        var deleteRequest = new DeleteObjectRequest { BucketName = oldBucket, Key = oldKey };
+
+        var deleteResponse = await _s3.DeleteObjectAsync(deleteRequest, cancellationToken).AnyContext();
+
+        return deleteResponse.HttpStatusCode.IsSuccessStatusCode();
     }
+
+    #endregion
+
+    #region Exists
 
     public ValueTask<bool> ExistsAsync(
         string blobName,
@@ -180,17 +320,15 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
         CancellationToken cancellationToken = default
     )
     {
-        var (bucket, key) = _GetBucketAndKey(blobName, container);
+        var (bucket, key) = _BuildObjectKey(blobName, container);
 
         return _ExistsAsync(bucket, key, cancellationToken);
     }
 
-    #region Helpers
-
     private async ValueTask<bool> _ExistsAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         // Make sure Blob Container exists.
-        if (!await AmazonS3Util.DoesS3BucketExistV2Async(s3, bucket))
+        if (!await AmazonS3Util.DoesS3BucketExistV2Async(_s3, bucket))
         {
             return false;
         }
@@ -199,75 +337,226 @@ public sealed class AwsBlobStorage(IAmazonS3 s3, IMimeTypeProvider mimeTypeProvi
 
         try
         {
-            response = await s3.GetObjectMetadataAsync(bucket, key, cancellationToken);
-
-            if (response.HttpStatusCode is HttpStatusCode.NotFound)
-            {
-                return false;
-            }
+            response = await _s3.GetObjectMetadataAsync(bucket, key, cancellationToken).AnyContext();
         }
-        catch (Exception e)
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
-            if (e is AmazonS3Exception ex && ex.StatusCode is HttpStatusCode.NotFound)
-            {
-                return false;
-            }
+            return false;
+        }
 
-            throw;
+        if (response.HttpStatusCode is HttpStatusCode.NotFound)
+        {
+            return false;
         }
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
 
         return true;
-
-        return true;
     }
 
-    private async ValueTask _CreateBucketIfNotExistsAsync(
-        string bucketName,
+    #endregion
+
+    #region Download
+
+    public async ValueTask<BlobDownloadResult?> DownloadAsync(
+        string blobName,
+        string[] container,
         CancellationToken cancellationToken = default
     )
     {
-        if (_CreatedBuckets.ContainsKey(bucketName) || await AmazonS3Util.DoesS3BucketExistV2Async(s3, bucketName))
+        var (bucket, key) = _BuildObjectKey(blobName, container);
+
+        if (!await _ExistsAsync(bucket, key, cancellationToken))
         {
-            return;
+            return null;
         }
 
-        await s3.PutBucketAsync(new PutBucketRequest { BucketName = bucketName }, cancellationToken);
-        _CreatedBuckets.TryAdd(bucketName, value: true);
+        var request = new GetObjectRequest { BucketName = bucket, Key = key, };
+
+        var response = await _s3.GetObjectAsync(request, cancellationToken);
+
+        if (response.HttpStatusCode is HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        try
+        {
+            response.HttpStatusCode.EnsureSuccessStatusCode();
+        }
+        catch
+        {
+            response.Dispose();
+
+            throw;
+        }
+
+        var stream = new ActionableStream(response.ResponseStream, () => response.Dispose());
+
+        return new(stream, blobName, _ToDictionary(response.Metadata));
     }
 
-    private static (string Bucket, string Key) _GetBucketAndKey(string blobName, IReadOnlyList<string> container)
+    #endregion
+
+    #region Page
+
+    public async ValueTask<PagedFileListResult> GetPagedListAsync(
+        string[] containers,
+        string? searchPattern = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsPositive(pageSize);
+
+        var bucket = _BuildBucketName(containers);
+        var pattern = string.Join("/", containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
+        var criteria = _GetRequestCriteria(pattern);
+        var result = new PagedFileListResult(_ => _GetFiles(bucket, criteria, pageSize, null, cancellationToken));
+        await result.NextPageAsync().AnyContext();
+
+        return result;
+    }
+
+    private async Task<INextPageResult> _GetFiles(
+        string bucket,
+        SearchCriteria criteria,
+        int pageSize,
+        string? continuationToken = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var req = new ListObjectsV2Request
+        {
+            BucketName = bucket,
+            MaxKeys = pageSize,
+            Prefix = criteria.Prefix,
+            ContinuationToken = continuationToken
+        };
+
+        _logger.LogTrace("Getting file list matching {Prefix} and {Pattern}...", criteria.Prefix, criteria.Pattern);
+
+        var response = await _s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
+
+        return new NextPageResult
+        {
+            Success = response.HttpStatusCode.IsSuccessStatusCode(),
+            HasMore = response.IsTruncated,
+            Blobs = _MatchesPattern(response.S3Objects, criteria.Pattern)
+                .Select(_ToBlobSpecification)
+                .Where(spec => !_IsDirectory(spec))
+                .ToList(),
+            NextPageFunc = response.IsTruncated
+                ? _ => _GetFiles(bucket, criteria, pageSize, response.NextContinuationToken, cancellationToken)
+                : null
+        };
+    }
+
+    private static BlobSpecification _ToBlobSpecification(S3Object blob)
+    {
+        return new()
+        {
+            Path = blob.Key,
+            Created = blob.LastModified,
+            Modified = blob.LastModified,
+            Size = blob.Size,
+        };
+    }
+
+    private static bool _IsDirectory(BlobSpecification file)
+    {
+        return file.Size is 0 && file.Path.EndsWith('/');
+    }
+
+    private static IEnumerable<S3Object> _MatchesPattern(IEnumerable<S3Object?> blobs, Regex? pattern)
+    {
+        return blobs.Where(blob =>
+        {
+            var path = blob?.Key;
+
+            return path is not null && (pattern is null || pattern.IsMatch(path));
+        })!;
+    }
+
+    private static SearchCriteria _GetRequestCriteria(string? searchPattern)
+    {
+        if (string.IsNullOrEmpty(searchPattern))
+        {
+            return new();
+        }
+
+        var wildcardPos = searchPattern.IndexOf('*', StringComparison.Ordinal);
+        var hasWildcard = wildcardPos >= 0;
+
+        var prefix = searchPattern;
+        Regex? patternRegex = null;
+
+        if (hasWildcard)
+        {
+            patternRegex = new Regex(
+                $"^{Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal)}$"
+            );
+
+            var slashPos = searchPattern.LastIndexOf('/');
+            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
+        }
+
+        return new SearchCriteria { Prefix = prefix, Pattern = patternRegex };
+    }
+
+    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
+
+    #endregion
+
+    #region Build Urls
+
+    private static (string Bucket, string ObjectKey) _BuildObjectKey(string blobName, IReadOnlyList<string> container)
     {
         Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        var bucket = container[0];
+        var bucket = _BuildBucketName(container);
         var key = Url.Combine([.. container.Skip(1).Append(blobName)]);
 
         return (bucket, key);
     }
 
-    private static Dictionary<string, object?>? _ToDictionary(MetadataCollection responseMetadata)
+    private static string _BuildBucketName(IReadOnlyList<string> container)
     {
-        if (responseMetadata.Count == 0)
+        return container[0];
+    }
+
+    #endregion
+
+    #region Metadata Converters
+
+    private static Dictionary<string, object?>? _ToDictionary(MetadataCollection metadata)
+    {
+        if (metadata.Count == 0)
         {
             return null;
         }
 
-        var dictionary = new Dictionary<string, object?>(responseMetadata.Count);
+        var dictionary = new Dictionary<string, object?>(metadata.Count);
 
-        foreach (var awsMetadataKey in responseMetadata.Keys)
+        foreach (var awsMetadataKey in metadata.Keys)
         {
             var key = awsMetadataKey.StartsWith("x-amz-meta-", StringComparison.Ordinal)
                 ? awsMetadataKey[11..]
                 : awsMetadataKey;
 
-            dictionary[key] = responseMetadata[awsMetadataKey];
+            dictionary[key] = metadata[awsMetadataKey];
         }
 
         return dictionary;
     }
+
+    #endregion
+
+    #region Dispose
+
+    public void Dispose() { }
 
     #endregion
 }

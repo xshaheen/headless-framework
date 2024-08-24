@@ -61,9 +61,18 @@ public interface IBlobStorage : IDisposable
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Get page</summary>
+    /// <param name="containers">Container directory to paginate.</param>
+    /// <param name="searchPattern">
+    /// The search string to match against the names of files in path. This parameter can contain
+    /// a combination of valid literal path and wildcard (* and ?) characters, but it doesn't
+    /// regular expressions.
+    /// </param>
+    /// <param name="pageSize">Size of the page.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     [SystemPure, JetBrainsPure]
     ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
+        string[] containers,
         string? searchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default

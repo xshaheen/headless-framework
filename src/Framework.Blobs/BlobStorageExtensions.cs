@@ -18,7 +18,7 @@ public static class BlobStorageExtensions
 
         do
         {
-            files.AddRange(result.Files);
+            files.AddRange(result.Blobs);
         } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync());
 
         return files;

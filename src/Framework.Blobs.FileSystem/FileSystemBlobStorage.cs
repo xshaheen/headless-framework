@@ -276,18 +276,15 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region List
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
+        string[] containers,
         string? searchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (pageSize <= 0)
-        {
-            return PagedFileListResult.Empty;
-        }
+        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsPositive(pageSize);
 
         if (string.IsNullOrEmpty(searchPattern))
         {
@@ -296,7 +293,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
 
         searchPattern = searchPattern.NormalizePath();
 
-        var directoryPath = _GetDirectoryPath(container);
+        var directoryPath = _GetDirectoryPath(containers);
         var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, searchPattern));
 
         if (!Directory.Exists(completePath))
@@ -315,7 +312,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
         return result;
     }
 
-    private NextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
+    private INextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
     {
         var list = new List<BlobSpecification>();
 
@@ -367,11 +364,11 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
             list.RemoveAt(pagingLimit - 1);
         }
 
-        return new()
+        return new NextPageResult
         {
             Success = true,
             HasMore = hasMore,
-            Files = list,
+            Blobs = list,
             NextPageFunc = hasMore
                 ? _ => Task.FromResult(_GetFiles(directoryPath, searchPattern, page + 1, pageSize))
                 : null,
