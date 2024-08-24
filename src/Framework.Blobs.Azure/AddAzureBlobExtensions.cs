@@ -10,8 +10,8 @@ public static class AddAzureBlobExtensions
         string configSectionName = "Azure:Blobs"
     )
     {
-        var config = builder.Configuration.GetSection(configSectionName);
-        builder.Services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(config);
+        var section = builder.Configuration.GetSection(configSectionName);
+        builder.Services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(section);
         _AddCoreServices(builder);
 
         return builder;

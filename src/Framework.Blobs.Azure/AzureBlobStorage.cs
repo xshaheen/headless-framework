@@ -10,9 +10,9 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Flurl;
 using Framework.Arguments;
+using Framework.Blobs.Azure.Internals;
 using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.Helpers.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -305,106 +305,86 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     #endregion
 
-    #region List
+    #region Page
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
+        string[] containers,
         string? searchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
-        if (pageSize <= 0)
-        {
-            return PagedFileListResult.Empty;
-        }
+        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsExclusiveBetween(pageSize, 1, 5000);
 
-        var (_, containerUrl) = _BuildBucketUrl(container);
-        var containerClient = _GetContainerClient(containerUrl);
+        var containerUrl = Url.Combine(_accountUrl, containers[0]);
+        var client = _GetContainerClient(containerUrl);
+        var pattern = string.Join("/", containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
+        var criteria = _GetRequestCriteria(pattern);
 
-        var result = new PagedFileListResult(_ =>
-            _GetFiles(containerClient, searchPattern, 1, pageSize, cancellationToken)
+        var result = new PagedFileListResult(async _ =>
+            await _GetFiles(client, criteria, pageSize, null, cancellationToken).AnyContext()
         );
 
-        await result.NextPageAsync();
+        await result.NextPageAsync().AnyContext();
 
         return result;
     }
 
-    private async Task<NextPageResult> _GetFiles(
-        BlobContainerClient containerClient,
-        string? searchPattern,
-        int page,
+    private async Task<AzureNextPageResult> _GetFiles(
+        BlobContainerClient client,
+        SearchCriteria criteria,
         int pageSize,
-        CancellationToken cancellationToken
-    )
-    {
-        var pagingLimit = pageSize;
-        var skip = (page - 1) * pagingLimit;
-
-        if (pagingLimit < int.MaxValue)
-        {
-            pagingLimit++;
-        }
-
-        var list = await _GetFileListAsync(containerClient, searchPattern, pagingLimit, skip, cancellationToken);
-        var hasMore = false;
-
-        if (list.Count == pagingLimit)
-        {
-            hasMore = true;
-            list.RemoveAt(pagingLimit - 1);
-        }
-
-        return new NextPageResult
-        {
-            Success = true,
-            HasMore = hasMore,
-            Files = list,
-            NextPageFunc = hasMore
-                ? _ => _GetFiles(containerClient, searchPattern, page + 1, pageSize, cancellationToken)
-                : null,
-        };
-    }
-
-    private async Task<List<BlobSpecification>> _GetFileListAsync(
-        BlobContainerClient containerClient,
-        string? searchPattern = null,
-        int? limit = null,
-        int? skip = null,
+        AzureNextPageResult? previousNextPageResult = null,
         CancellationToken cancellationToken = default
     )
     {
-        if (limit.HasValue)
+        var blobs = new List<BlobSpecification>(previousNextPageResult?.ExtraLoadedBlobs ?? []);
+
+        // If the previous result has more blobs than the page size, then return the result.
+        if (previousNextPageResult is not null)
         {
-            Argument.IsGreaterThan(limit.Value, 0);
+            var remainingBlobsCount = pageSize - blobs.Count;
+
+            if (remainingBlobsCount <= 0)
+            {
+                return new AzureNextPageResult
+                {
+                    Success = true,
+                    HasMore = remainingBlobsCount != 0 || previousNextPageResult.ContinuationToken is not null,
+                    Blobs = blobs.Take(pageSize).ToList(),
+                    ExtraLoadedBlobs = blobs.Skip(pageSize).ToList(),
+                    ContinuationToken = previousNextPageResult.ContinuationToken,
+                    AzureNextPageFunc = currentResult =>
+                        _GetFiles(client, criteria, pageSize, currentResult, cancellationToken),
+                };
+            }
         }
 
-        var criteria = _GetRequestCriteria(searchPattern);
+        var pageSizeToLoad = pageSize - blobs.Count;
+        var continuationToken = previousNextPageResult?.ContinuationToken;
 
-        var totalLimit =
-            limit.GetValueOrDefault(int.MaxValue) < int.MaxValue
-                ? skip.GetValueOrDefault() + limit!.Value
-                : int.MaxValue;
-
-        var blobs = new List<BlobSpecification>();
-
-        var enumerable = containerClient
+        var pages = client
             .GetBlobsAsync(
                 traits: BlobTraits.Metadata,
                 states: BlobStates.None,
                 prefix: criteria.Prefix,
                 cancellationToken: cancellationToken
             )
-            .AsPages(continuationToken: null, limit);
+            .AsPages(continuationToken, pageSizeToLoad);
 
-        await foreach (var item in enumerable)
+        // AsPages parameter pageSizeHint - It's not guaranteed that the value will be respected.
+        // Note that if the listing operation crosses a partition boundary, then the service
+        // will return a continuation token for retrieving the remainder of the results.
+        // For this reason, it is possible that the service will return fewer results than the specified.
+
+        await foreach (var page in pages)
         {
-            // TODO: use continuation token to fetch more items
+            continuationToken = page.ContinuationToken;
 
-            foreach (var blobItem in item.Values)
+            foreach (var blobItem in page.Values)
             {
-                // TODO: Verify if it's possible to create empty folders in storage. If so, don't return them.
+                // Check if the blob name matches the pattern.
                 if (criteria.Pattern is not null && !criteria.Pattern.IsMatch(blobItem.Name))
                 {
                     _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
@@ -412,42 +392,43 @@ public sealed class AzureBlobStorage : IBlobStorage
                     continue;
                 }
 
-                if (blobItem.Properties.ContentLength is > 0)
+                // Skip empty blobs.
+                if (blobItem.Properties.ContentLength is not > 0)
                 {
-                    var blobSpecification = new BlobSpecification
-                    {
-                        Path = blobItem.Name,
-                        Size = blobItem.Properties.ContentLength.Value,
-                        Created = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
-                        Modified = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
-                    };
-
-                    blobs.Add(blobSpecification);
+                    continue;
                 }
+
+                var blobSpecification = new BlobSpecification
+                {
+                    Path = blobItem.Name,
+                    Size = blobItem.Properties.ContentLength.Value,
+                    Created = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
+                    Modified = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
+                };
+
+                blobs.Add(blobSpecification);
             }
 
-            if (blobs.Count >= totalLimit)
+            // If the continuation token is null or the blobs count is greater than or equal to the page size hint, then break.
+            if (page.ContinuationToken is null || blobs.Count >= pageSizeToLoad)
             {
                 break;
             }
-
-            if (item.ContinuationToken is null)
-            {
-                break;
-            }
         }
 
-        if (skip.HasValue)
+        var hasExtraLoadedBlobs = blobs.Count > pageSize;
+
+        return new AzureNextPageResult
         {
-            blobs = blobs.Skip(skip.Value).ToList();
-        }
-
-        if (limit.HasValue)
-        {
-            blobs = blobs.Take(limit.Value).ToList();
-        }
-
-        return blobs;
+            Success = true,
+            HasMore = hasExtraLoadedBlobs,
+            Blobs = blobs.Take(pageSize).ToList(),
+            ExtraLoadedBlobs = hasExtraLoadedBlobs ? blobs.Skip(pageSize).ToList() : Array.Empty<BlobSpecification>(),
+            ContinuationToken = continuationToken,
+            AzureNextPageFunc = hasExtraLoadedBlobs
+                ? currentResult => _GetFiles(client, criteria, pageSize, currentResult, cancellationToken)
+                : null,
+        };
     }
 
     private static SearchCriteria _GetRequestCriteria(string? searchPattern)
@@ -457,21 +438,20 @@ public sealed class AzureBlobStorage : IBlobStorage
             return new();
         }
 
-        var normalizedSearchPattern = _NormalizePath(searchPattern);
-        var wildcardPos = normalizedSearchPattern.IndexOf('*');
+        var wildcardPos = searchPattern.IndexOf('*', StringComparison.Ordinal);
         var hasWildcard = wildcardPos >= 0;
 
-        var prefix = normalizedSearchPattern;
+        var prefix = searchPattern;
         Regex? patternRegex = null;
 
         if (hasWildcard)
         {
             patternRegex = new Regex(
-                $"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?", StringComparison.Ordinal)}$"
+                $"^{Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal)}$"
             );
 
-            var slashPos = normalizedSearchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
+            var slashPos = searchPattern.LastIndexOf('/');
+            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
         }
 
         return new(prefix, patternRegex);
@@ -522,12 +502,6 @@ public sealed class AzureBlobStorage : IBlobStorage
         var bucketUrl = Url.Combine(_accountUrl, containers[0]);
 
         return (bucket, bucketUrl);
-    }
-
-    [return: NotNullIfNotNull(nameof(path))]
-    private static string? _NormalizePath(string? path)
-    {
-        return path?.Replace('\\', '/');
     }
 
     #endregion
