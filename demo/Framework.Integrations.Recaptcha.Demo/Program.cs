@@ -1,18 +1,30 @@
-namespace Framework.Integrations.Recaptcha.Demo;
+using Framework.Integrations.Recaptcha;
 
-public class Program
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddRazorPages();
+
+builder.Services.AddReCaptchaV3(x =>
 {
-    public static void Main(string[] args)
-    {
-        CreateHostBuilder(args).Build().Run();
-    }
+    x.VerifyBaseUrl = "https://recaptcha.google.cn/";
+    x.SiteKey = "6LccrsMUAAAAANSAh_MCplqdS9AJVPihyzmbPqWa";
+    x.SiteSecret = "6LccrsMUAAAAAL91ysT6Nbhk4MnxpHjyJ_pdVLon";
+});
 
-    public static IHostBuilder CreateHostBuilder(string[] args)
-    {
-        return Host.CreateDefaultBuilder(args)
-            .ConfigureWebHostDefaults(webBuilder =>
-            {
-                webBuilder.UseStartup<Startup>();
-            });
-    }
-}
+builder.Services.AddReCaptchaV2(x =>
+{
+    x.VerifyBaseUrl = "https://recaptcha.google.cn/";
+    x.SiteKey = "6LcArsMUAAAAAKCjwCTktI3GRHTj98LdMEI9f9eQ";
+    x.SiteSecret = "6LcArsMUAAAAAO_FBbZghC9aUa1F1rjvcdiOESKd";
+});
+
+var app = builder.Build();
+
+app.UseDeveloperExceptionPage();
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+app.UseAuthorization();
+app.MapRazorPages();
+
+await app.RunAsync();

@@ -12,10 +12,10 @@ public static class ControllerBaseExtensions
     /// </summary>
     /// <param name="controller"></param>
     /// <returns>The proper ActionResult based upon if the user is authenticated.</returns>
-    public static ActionResult ChallengeOrForbid(this ControllerBase controller) =>
-        controller.User?.Identity?.IsAuthenticated ?? false
-            ? (ActionResult)controller.Forbid()
-            : controller.Challenge();
+    public static ActionResult ChallengeOrForbid(this ControllerBase controller)
+    {
+        return controller.User.Identity?.IsAuthenticated ?? false ? controller.Forbid() : controller.Challenge();
+    }
 
     /// <summary>
     /// Returns the proper ActionResult for unauthorized or unauthenticated users
@@ -27,21 +27,22 @@ public static class ControllerBaseExtensions
     /// <param name="controller"></param>
     /// <param name="authenticationSchemes">The authentication schemes to challenge.</param>
     /// <returns>The proper ActionResult based upon if the user is authenticated.</returns>
-    public static ActionResult ChallengeOrForbid(
-        this ControllerBase controller,
-        params string[] authenticationSchemes
-    ) =>
-        controller.User?.Identity?.IsAuthenticated ?? false
-            ? (ActionResult)controller.Forbid(authenticationSchemes)
+    public static ActionResult ChallengeOrForbid(this ControllerBase controller, params string[] authenticationSchemes)
+    {
+        return controller.User.Identity?.IsAuthenticated ?? false
+            ? controller.Forbid(authenticationSchemes)
             : controller.Challenge(authenticationSchemes);
+    }
 
     /// <summary>
     /// Creates <see cref="ObjectResult"/> that produces a <see cref="HttpStatusCode.InternalServerError"/> response.
     /// </summary>
     /// <param name="controller">The <see cref="Controller"/>.</param>
     /// <param name="value">An optional value to set on <see cref="ObjectResult"/>.</param>
-    public static ActionResult InternalServerError(this ControllerBase controller, object? value = null) =>
-        controller.StatusCode((int)HttpStatusCode.InternalServerError, value);
+    public static ActionResult InternalServerError(this ControllerBase controller, object? value = null)
+    {
+        return controller.StatusCode((int)HttpStatusCode.InternalServerError, value);
+    }
 
     /// <summary>
     /// Creates a <see cref="LocalRedirectResult"/> object that redirects to the specified local localUrl.

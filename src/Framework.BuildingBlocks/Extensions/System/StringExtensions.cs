@@ -231,6 +231,18 @@ public static class StringExtensions
         return input;
     }
 
+    [SystemPure, JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(input))]
+    public static string? RemovePostfix(this string? input, char postfix)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return null;
+        }
+
+        return input.EndsWith(postfix) ? input[..^1] : input;
+    }
+
     /// <summary>
     /// Removes first occurrence of the given prefixes from beginning of the given string.
     /// </summary>
@@ -273,6 +285,60 @@ public static class StringExtensions
 
                 return input.Substring(input.Length - len, len);
             }
+        }
+
+        return input;
+    }
+
+    /// <summary>
+    /// Removes first occurrence of the given prefixes from beginning of the given string.
+    /// </summary>
+    /// <param name="input">The string.</param>
+    /// <param name="prefixes">one or more prefix.</param>
+    /// <returns>Modified string or the same string if it has not any of given prefixes</returns>
+    [SystemPure, JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(input))]
+    public static string? RemovePrefix(this string? input, params char[]? prefixes)
+    {
+        if (input.IsNullOrEmpty())
+        {
+            return null;
+        }
+
+        if (prefixes.IsNullOrEmpty())
+        {
+            return input;
+        }
+
+        foreach (var prefix in prefixes)
+        {
+            if (input.StartsWith(prefix))
+            {
+                var len = input.Length - 1;
+
+                return input.Substring(input.Length - len, len);
+            }
+        }
+
+        return input;
+    }
+
+    /// <summary>Removes first occurrence of the given prefix from beginning of the given string.</summary>
+    /// <returns>Modified string or the same string if it has not any of given prefix</returns>
+    [SystemPure, JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(input))]
+    public static string? RemovePrefix(this string? input, char prefix)
+    {
+        if (input.IsNullOrEmpty())
+        {
+            return null;
+        }
+
+        if (input.StartsWith(prefix))
+        {
+            var len = input.Length - 1;
+
+            return input.Substring(input.Length - len, len);
         }
 
         return input;
