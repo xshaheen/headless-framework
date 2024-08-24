@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics.CodeAnalysis;
-using System.Reflection.Metadata;
 using System.Text.RegularExpressions;
 using Azure;
 using Azure.Core;

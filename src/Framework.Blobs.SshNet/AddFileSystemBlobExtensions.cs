@@ -6,31 +6,39 @@ namespace Framework.Blobs.SshNet;
 
 public static class AddFileSystemBlobExtensions
 {
-    public static IHostApplicationBuilder AddSshBlobStorage(
-        this IHostApplicationBuilder builder,
-        Action<SshBlobStorageSettings> configure
+    public static IServiceCollection AddSshBlobStorage(
+        this IServiceCollection services,
+        Action<SshBlobStorageSettings, IServiceProvider> setupAction
     )
     {
-        builder.Services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(configure);
-        _AddBaseServices(builder);
+        services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(setupAction);
+        _AddBaseServices(services);
 
-        return builder;
+        return services;
     }
 
-    public static IHostApplicationBuilder AddSshBlobStorage(
-        this IHostApplicationBuilder builder,
-        IConfigurationSection configuration
+    public static IServiceCollection AddSshBlobStorage(
+        this IServiceCollection services,
+        Action<SshBlobStorageSettings> setupAction
     )
     {
-        builder.Services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(configuration);
-        _AddBaseServices(builder);
+        services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(setupAction);
+        _AddBaseServices(services);
 
-        return builder;
+        return services;
     }
 
-    private static void _AddBaseServices(IHostApplicationBuilder builder)
+    public static IServiceCollection AddSshBlobStorage(this IServiceCollection services, IConfigurationSection config)
     {
-        builder.Services.AddSingleton<IBlobNamingNormalizer, SshBlobNamingNormalizer>();
-        builder.Services.AddSingleton<IBlobStorage, SshBlobStorage>();
+        services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(config);
+        _AddBaseServices(services);
+
+        return services;
+    }
+
+    private static void _AddBaseServices(IServiceCollection services)
+    {
+        services.AddSingleton<IBlobNamingNormalizer, SshBlobNamingNormalizer>();
+        services.AddSingleton<IBlobStorage, SshBlobStorage>();
     }
 }

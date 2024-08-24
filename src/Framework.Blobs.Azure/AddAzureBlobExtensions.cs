@@ -1,36 +1,43 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Blobs.Azure;
 
 public static class AddAzureBlobExtensions
 {
-    public static IHostApplicationBuilder AddAzureBlobStorage(
-        this IHostApplicationBuilder builder,
-        string configSectionName = "Azure:Blobs"
+    public static IServiceCollection AddAzureBlobStorage(
+        this IServiceCollection services,
+        Action<AzureStorageSettings, IServiceProvider> setupAction
     )
     {
-        var section = builder.Configuration.GetSection(configSectionName);
-        builder.Services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(section);
-        _AddCoreServices(builder);
+        services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(setupAction);
+        _AddCoreServices(services);
 
-        return builder;
+        return services;
     }
 
-    public static IHostApplicationBuilder AddAzureBlobStorage(
-        this IHostApplicationBuilder builder,
-        Action<AzureStorageSettings> configureOptions
+    public static IServiceCollection AddAzureBlobStorage(
+        this IServiceCollection services,
+        Action<AzureStorageSettings> setupAction
     )
     {
-        builder.Services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(configureOptions);
-        _AddCoreServices(builder);
+        services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(setupAction);
+        _AddCoreServices(services);
 
-        return builder;
+        return services;
     }
 
-    private static void _AddCoreServices(IHostApplicationBuilder builder)
+    public static IServiceCollection AddAzureBlobStorage(this IServiceCollection services, IConfiguration config)
     {
-        builder.Services.AddSingleton<IBlobNamingNormalizer, AzureBlobNamingNormalizer>();
-        builder.Services.AddSingleton<IBlobStorage, AzureBlobStorage>();
+        services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(config);
+        _AddCoreServices(services);
+
+        return services;
+    }
+
+    private static void _AddCoreServices(IServiceCollection services)
+    {
+        services.AddSingleton<IBlobNamingNormalizer, AzureBlobNamingNormalizer>();
+        services.AddSingleton<IBlobStorage, AzureBlobStorage>();
     }
 }

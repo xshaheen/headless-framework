@@ -18,8 +18,14 @@ public static class AddPushNotificationsExtensions
             section.Get<FirebaseSettings>()
             ?? throw new InvalidOperationException($"{nameof(FirebaseSettings)} is not configured.");
 
-        _LoadFirebase(settings.Json);
         builder.Services.AddSingleton<IPushNotificationService, GoogleCloudMessagingPushNotificationService>();
+        _LoadFirebase(settings.Json);
+    }
+
+    public static void AddPushNotifications(this IHostApplicationBuilder builder, FirebaseSettings settings)
+    {
+        builder.Services.AddSingleton<IPushNotificationService, GoogleCloudMessagingPushNotificationService>();
+        _LoadFirebase(settings.Json);
     }
 
     public static void AddNoopPushNotification(this IHostApplicationBuilder builder)
