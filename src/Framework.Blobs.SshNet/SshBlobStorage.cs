@@ -380,16 +380,14 @@ public sealed class SshBlobStorage : IBlobStorage
     #region List
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] container,
+        string[] containers,
         string? searchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
-        if (pageSize <= 0)
-        {
-            return PagedFileListResult.Empty;
-        }
+        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsPositive(pageSize);
 
         var result = new PagedFileListResult(_ => _GetFiles(searchPattern, 1, pageSize, cancellationToken));
         await result.NextPageAsync().AnyContext();
@@ -397,7 +395,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return result;
     }
 
-    private async Task<NextPageResult> _GetFiles(
+    private async Task<INextPageResult> _GetFiles(
         string? searchPattern,
         int page,
         int pageSize,
@@ -425,7 +423,7 @@ public sealed class SshBlobStorage : IBlobStorage
         {
             Success = true,
             HasMore = hasMore,
-            Files = list,
+            Blobs = list,
             NextPageFunc = hasMore ? _ => _GetFiles(searchPattern, page + 1, pageSize, cancellationToken) : null,
         };
     }
