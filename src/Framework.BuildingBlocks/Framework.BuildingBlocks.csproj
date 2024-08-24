@@ -18,10 +18,7 @@
     <PackageReference Include="IdGen" />
     <PackageReference Include="IPAddressRange" />
     <PackageReference Include="libphonenumber-csharp" />
-    <PackageReference Include="MimeTypes">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <PackageReference Include="morelinq" />
     <PackageReference Include="NetEscapades.EnumGenerators" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
@@ -32,6 +29,13 @@
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
     <PackageReference Include="ZString" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MimeTypes">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
