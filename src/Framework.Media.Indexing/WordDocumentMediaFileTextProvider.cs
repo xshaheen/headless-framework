@@ -12,9 +12,8 @@ public class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
         {
             using var document = WordprocessingDocument.Open(fileStream, false);
 
-            var paragraphs = document.MainDocumentPart?.Document?.Body?.Descendants<Paragraph>();
+            var paragraphs = document.MainDocumentPart?.Document.Body?.Descendants<Paragraph>();
 
-            // ReSharper disable once PossibleMultipleEnumeration
             if (paragraphs is null || !paragraphs.Any())
             {
                 return Task.FromResult(string.Empty);

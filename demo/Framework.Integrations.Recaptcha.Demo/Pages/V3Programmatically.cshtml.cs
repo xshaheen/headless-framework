@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Framework.Integrations.Recaptcha.Demo.Pages;
 
-public class V3ProgrammaticallyModel(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
+public sealed class V3ProgrammaticallyModel(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
 {
     public string? Result { get; set; }
 
