@@ -25,16 +25,10 @@ public static class AddImagingExtensions
 
     public static AddImagingBuilder AddImaging(
         this IServiceCollection services,
-        Action<ImagingOptions, IServiceProvider>? setupAction = null
+        Action<ImagingOptions, IServiceProvider> setupAction
     )
     {
-        var optionsBuilder = services.AddOptions<ImagingOptions, ImagingOptionsValidator>();
-
-        if (setupAction is not null)
-        {
-            optionsBuilder.Configure(setupAction);
-        }
-
+        services.AddOptions<ImagingOptions, ImagingOptionsValidator>().Configure(setupAction);
         services.AddSingleton<IImageResizer, ImageResizer>();
         services.AddSingleton<IImageCompressor, ImageCompressor>();
 

@@ -5,9 +5,9 @@ namespace Framework.Blobs.FileSystem;
 
 public sealed class FileSystemBlobStorageSettings
 {
-    public required string BaseDirectoryPath { get; init; }
+    public required string BaseDirectoryPath { get; set; }
 
-    public ILoggerFactory? LoggerFactory { get; init; }
+    public ILoggerFactory? LoggerFactory { get; set; }
 }
 
 public sealed class FileSystemBlobStorageSettingsValidator : AbstractValidator<FileSystemBlobStorageSettings>

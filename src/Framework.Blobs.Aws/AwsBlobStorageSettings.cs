@@ -9,5 +9,5 @@ public sealed class AwsBlobStorageSettings
 
     public S3CannedACL? CannedAcl { get; set; }
 
-    public ILoggerFactory? LoggerFactory { get; init; }
+    public ILoggerFactory? LoggerFactory { get; set; }
 }
