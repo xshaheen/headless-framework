@@ -91,7 +91,7 @@ public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor httpHttpContextA
 
     private static (bool process, string? result) _ShouldProcessPath(string? path)
     {
-        if (path == null || !Uri.IsWellFormedUriString(path, UriKind.RelativeOrAbsolute))
+        if (path is null || !Uri.IsWellFormedUriString(path, UriKind.RelativeOrAbsolute))
         {
             return (process: false, result: null);
         }

@@ -126,7 +126,7 @@ public sealed class StringExtensionsTests : IDisposable
         "Home.About".RemovePrefix(StringComparison.Ordinal, "Home.").Should().Be("About");
 
         //Ignore case
-        "Https://abp.io".RemovePrefix(StringComparison.OrdinalIgnoreCase, "https://").Should().Be("abp.io");
+        "Https://google.com".RemovePrefix(StringComparison.OrdinalIgnoreCase, "https://").Should().Be("google.com");
     }
 
     [Fact]

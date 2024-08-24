@@ -425,7 +425,7 @@ public static class AsyncEnumerableExtensions
         }
         finally
         {
-            if (enumerator != null)
+            if (enumerator is not null)
             {
                 await enumerator.DisposeAsync().ConfigureAwait(false);
             }
@@ -470,7 +470,7 @@ public static class AsyncEnumerableExtensions
     )
         where T : class
     {
-        return enumerable.WhereAsync(item => item != null, cancellationToken)!;
+        return enumerable.WhereAsync(item => item is not null, cancellationToken)!;
     }
 
     public static IAsyncEnumerable<string> WhereNotNullOrEmpty(

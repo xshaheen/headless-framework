@@ -43,7 +43,7 @@ public sealed class IgnoreAllStringComparer : StringComparer
 
     public override bool Equals(string? x, string? y)
     {
-        if (x == null || y == null)
+        if (x is null || y is null)
         {
             return false;
         }

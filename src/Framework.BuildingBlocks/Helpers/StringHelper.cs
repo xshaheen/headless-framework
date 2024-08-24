@@ -14,7 +14,7 @@ public static class StringHelper
     [return: NotNullIfNotNull(nameof(bytes))]
     public static string? ConvertFromBytesWithoutBom(byte[]? bytes, Encoding? encoding = null)
     {
-        if (bytes == null)
+        if (bytes is null)
         {
             return null;
         }

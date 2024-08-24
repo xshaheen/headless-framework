@@ -219,7 +219,7 @@ public static partial class StringBuilderExtensions
 
     public static StringBuilder AppendInvariant(this StringBuilder sb, Half? value)
     {
-        if (value != null)
+        if (value is not null)
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
 
         return sb;

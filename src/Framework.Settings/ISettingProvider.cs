@@ -24,7 +24,7 @@ public sealed class SettingProvider(
     {
         var setting = await settingDefinitionManager.GetOrNullAsync(name);
 
-        if (setting == null)
+        if (setting is null)
         {
             return null;
         }
@@ -62,7 +62,7 @@ public sealed class SettingProvider(
                 settingDefinitions.Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name)).ToArray()
             );
 
-            var notNullValues = settingValues.Where(x => x.Value != null).ToList();
+            var notNullValues = settingValues.Where(x => x.Value is not null).ToList();
             foreach (var settingValue in notNullValues)
             {
                 var settingDefinition = settingDefinitions.First(x => x.Name == settingValue.Name);
@@ -71,7 +71,7 @@ public sealed class SettingProvider(
                     settingValue.Value = settingEncryptionService.Decrypt(settingDefinition, settingValue.Value);
                 }
 
-                if (result.TryGetValue(settingValue.Name, out var value) && value.Value == null)
+                if (result.TryGetValue(settingValue.Name, out var value) && value.Value is null)
                 {
                     value.Value = settingValue.Value;
                 }

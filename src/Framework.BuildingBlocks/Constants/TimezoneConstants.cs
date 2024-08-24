@@ -17,7 +17,7 @@ public static class TimezoneConstants
     {
         get
         {
-            if (_palestineTimeZone == null)
+            if (_palestineTimeZone is null)
             {
                 lock (_Lock)
                 {
@@ -35,7 +35,7 @@ public static class TimezoneConstants
     {
         get
         {
-            if (_saudiArabiaTimeZone == null)
+            if (_saudiArabiaTimeZone is null)
             {
                 lock (_Lock)
                 {
@@ -53,7 +53,7 @@ public static class TimezoneConstants
     {
         get
         {
-            if (_egyptTimeZone == null)
+            if (_egyptTimeZone is null)
             {
                 lock (_Lock)
                 {

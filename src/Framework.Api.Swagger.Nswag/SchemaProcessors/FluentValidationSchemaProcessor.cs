@@ -31,7 +31,7 @@ public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
             ?? NullLogger.Instance;
         _rules = FluentValidationRule.DefaultRules;
 
-        if (rules == null)
+        if (rules is null)
         {
             return;
         }

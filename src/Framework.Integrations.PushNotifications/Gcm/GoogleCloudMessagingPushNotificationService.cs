@@ -27,7 +27,7 @@ public sealed class GoogleCloudMessagingPushNotificationService : IPushNotificat
         Argument.IsNotNullOrWhiteSpace(body);
 
         if (
-            data != null
+            data is not null
             && (data.ContainsKey("from") || data.ContainsKey("notification") || data.ContainsKey("message_type"))
         )
         {
@@ -77,7 +77,7 @@ public sealed class GoogleCloudMessagingPushNotificationService : IPushNotificat
         Argument.IsNotNullOrWhiteSpace(body);
 
         if (
-            data != null
+            data is not null
             && (data.ContainsKey("from") || data.ContainsKey("notification") || data.ContainsKey("message_type"))
         )
         {
