@@ -1,6 +1,7 @@
 ﻿namespace Framework.BuildingBlocks.Domains;
 
-public static class DomainDataConstants
+public static class DomainConstants
 {
+    public const int IdMaxLength = 41;
     public const int ConcurrencyStampMaxLength = 40;
 }
