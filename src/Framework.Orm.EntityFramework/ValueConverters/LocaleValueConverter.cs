@@ -7,14 +7,20 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Orm.EntityFramework.ValueConverters;
 
 [PublicAPI]
-public sealed class LocaleValueConverter()
-    : ValueConverter<Locale?, string?>(
-        d => JsonSerializer.Serialize(d, PlatformJsonConstants.DefaultInternalJsonOptions),
-        json =>
-            string.IsNullOrEmpty(json) || string.Equals(json, "{}", StringComparison.Ordinal)
-                ? null
-                : JsonSerializer.Deserialize<Locale>(json, PlatformJsonConstants.DefaultInternalJsonOptions)
-    );
+public sealed class LocaleValueConverter() : ValueConverter<Locale?, string?>(x => _Serialize(x), x => _Deserialize(x))
+{
+    private static string _Serialize(Locale? locale)
+    {
+        return JsonSerializer.Serialize(locale, PlatformJsonConstants.DefaultInternalJsonOptions);
+    }
+
+    private static Locale? _Deserialize(string? json)
+    {
+        return string.IsNullOrEmpty(json) || string.Equals(json, "{}", StringComparison.Ordinal)
+            ? null
+            : JsonSerializer.Deserialize<Locale>(json, PlatformJsonConstants.DefaultInternalJsonOptions);
+    }
+}
 
 [PublicAPI]
 public sealed class LocaleValueComparer : ValueComparer<Locale?>
@@ -64,16 +70,21 @@ public sealed class LocaleValueComparer : ValueComparer<Locale?>
         return true;
     }
 
-    private static bool _IsEqual(Dictionary<string, string> inner1, Dictionary<string, string> inner2)
+    private static bool _IsEqual(Dictionary<string, string> map1, Dictionary<string, string> map2)
     {
-        foreach (var value1 in inner1)
+        if (map1.Count != map2.Count)
         {
-            if (!inner2.TryGetValue(value1.Key, out var value2))
+            return false;
+        }
+
+        foreach (var (key1, value1) in map1)
+        {
+            if (!map2.TryGetValue(key1, out var value2))
             {
                 return false;
             }
 
-            if (!value2.Equals(value1.Value, StringComparison.Ordinal))
+            if (!value2.Equals(value1, StringComparison.Ordinal))
             {
                 return false;
             }
