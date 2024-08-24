@@ -5,4 +5,4 @@ namespace Framework.BuildingBlocks.Domains.Events;
 /// See <see cref="EntityCreatedEventData{TEntity}"/>, <see cref="EntityDeletedEventData{TEntity}"/> and <see cref="EntityUpdatedEventData{TEntity}"/> classes.
 /// </summary>
 /// <typeparam name="TEntity">Entity type</typeparam>
-public class EntityChangedEventData<TEntity>(TEntity entity) : EntityEventData<TEntity>(entity);
+public sealed class EntityChangedEventData<TEntity>(TEntity entity) : EntityEventData<TEntity>(entity);

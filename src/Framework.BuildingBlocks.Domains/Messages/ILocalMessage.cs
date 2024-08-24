@@ -1,14 +1,7 @@
 ﻿// ReSharper disable once CheckNamespace
 namespace Framework.BuildingBlocks.Domains;
 
-public interface ILocalMessage
-{
-    string MessageKey { get; }
-
-    string Id { get; }
-
-    DateTimeOffset Timestamp { get; }
-}
+public interface ILocalMessage;
 
 public interface ILocalMessageHandler<in T>
     where T : class, ILocalMessage
