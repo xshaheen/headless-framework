@@ -1,7 +1,8 @@
 ﻿using System.Reflection;
+using Framework.BuildingBlocks.Primitives.Extensions;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
-namespace Framework.BuildingBlocks.Primitives.Extensions;
+namespace Framework.Api.Swagger.Swashbuckle.Extensions;
 
 /// <summary>A static class providing methods to configure Swagger mappings for Primitive types.</summary>
 public static class SwashbuckleSwaggerGenOptionsExtensions
