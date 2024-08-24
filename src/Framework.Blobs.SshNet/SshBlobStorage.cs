@@ -708,7 +708,7 @@ public sealed class SshBlobStorage : IBlobStorage
             authenticationMethods.Add(new PasswordAuthenticationMethod(username, password));
         }
 
-        if (settings.PrivateKey != null)
+        if (settings.PrivateKey is not null)
         {
             authenticationMethods.Add(
                 new PrivateKeyAuthenticationMethod(

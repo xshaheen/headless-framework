@@ -314,8 +314,8 @@ public static class AuditLogCreator
             return true;
         }
 
-        Debug.Assert(change.OriginalValue != null, "change.OriginalValue != null");
-        Debug.Assert(change.NewValue != null, "change.NewValue != null");
+        Debug.Assert(change.OriginalValue is not null, "change.OriginalValue is not null");
+        Debug.Assert(change.NewValue is not null, "change.NewValue is not null");
 
         if (trackedProperty.PropertyType == typeof(decimal) || trackedProperty.PropertyType == typeof(decimal?))
         {
@@ -358,7 +358,7 @@ public static class AuditLogCreator
             var trackedPropertyInfos = entityEntry
                 .Entity.GetType()
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(propertyInfo => propertyInfo.GetCustomAttribute<TrackAttribute>() != null);
+                .Where(propertyInfo => propertyInfo.GetCustomAttribute<TrackAttribute>() is not null);
 
             var storeObject = StoreObjectIdentifier.Table(eventEntry.Table, eventEntry.Schema);
 

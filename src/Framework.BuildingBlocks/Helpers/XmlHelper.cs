@@ -18,7 +18,7 @@ public static class XmlHelper
     /// <summary>XML Encode as is</summary>
     public static async Task<string?> XmlEncodeAsIsAsync(string? str, XmlWriterSettings? settings = null)
     {
-        if (str == null)
+        if (str is null)
         {
             return null;
         }

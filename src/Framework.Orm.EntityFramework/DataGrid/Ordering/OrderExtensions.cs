@@ -6,7 +6,7 @@ public static class OrderExtensions
 {
     public static IOrderedQueryable<T> Order<T>(this IQueryable<T> source, Orders? orders)
     {
-        if (orders == null || orders.Count == 0)
+        if (orders is null || orders.Count == 0)
         {
             return source.Order();
         }

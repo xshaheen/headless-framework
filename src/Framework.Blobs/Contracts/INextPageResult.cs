@@ -38,7 +38,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
     {
         IHasNextPageFunc func = this;
 
-        if (func.NextPageFunc == null)
+        if (func.NextPageFunc is null)
         {
             return false;
         }

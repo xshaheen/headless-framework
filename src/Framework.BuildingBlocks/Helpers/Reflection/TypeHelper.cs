@@ -38,7 +38,7 @@ public static class TypeHelper
 
     public static bool IsFunc<TReturn>(object? obj)
     {
-        return obj != null && obj.GetType() == typeof(Func<TReturn>);
+        return obj is not null && obj.GetType() == typeof(Func<TReturn>);
     }
 
     public static T GetDefaultValue<T>()

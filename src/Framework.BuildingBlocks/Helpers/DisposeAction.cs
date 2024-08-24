@@ -19,7 +19,7 @@ public sealed class DisposeAction<TState>(Action<TState> action, TState paramete
 
     public void Dispose()
     {
-        if (_parameter != null)
+        if (_parameter is not null)
         {
             _action(_parameter);
         }

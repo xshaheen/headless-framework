@@ -87,7 +87,7 @@ public static class ReflectionHelper
             .GetCustomAttributes(inherit)
             .OfType<TAttribute>();
 
-        return declaringTypeCustomAttributes != null
+        return declaringTypeCustomAttributes is not null
             ? customAttributes.Concat(declaringTypeCustomAttributes).Distinct()
             : customAttributes;
     }
@@ -96,7 +96,7 @@ public static class ReflectionHelper
     {
         ArgumentNullException.ThrowIfNull(type);
 
-        return Nullable.GetUnderlyingType(type) != null;
+        return Nullable.GetUnderlyingType(type) is not null;
     }
 
     public static bool IsFlagsEnum<T>()

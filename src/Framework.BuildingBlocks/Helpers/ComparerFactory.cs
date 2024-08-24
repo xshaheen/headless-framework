@@ -32,12 +32,12 @@ file sealed class ComparisonFuncComparer<T>(Func<T, T, bool> func, Func<T, int> 
 {
     public bool Equals(T? x, T? y)
     {
-        if (x == null && y == null)
+        if (x is null && y is null)
         {
             return true;
         }
 
-        if (x == null || y == null)
+        if (x is null || y is null)
         {
             return false;
         }
@@ -67,12 +67,12 @@ file sealed class KeyBasedEqualityComparer<T, TKey>(Func<T, TKey> keyGetter) : I
 {
     public bool Equals(T? x, T? y)
     {
-        if (x == null && y == null)
+        if (x is null && y is null)
         {
             return true;
         }
 
-        if (x == null || y == null)
+        if (x is null || y is null)
         {
             return false;
         }

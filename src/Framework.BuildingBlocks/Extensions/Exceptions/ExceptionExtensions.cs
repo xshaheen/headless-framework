@@ -55,14 +55,14 @@ public static class ExceptionExtensions
     [return: NotNullIfNotNull(nameof(exception))]
     public static Exception? GetInnermostException(this Exception? exception)
     {
-        if (exception == null)
+        if (exception is null)
         {
             return null;
         }
 
         var current = exception;
 
-        while (current.InnerException != null)
+        while (current.InnerException is not null)
         {
             current = current.InnerException;
         }

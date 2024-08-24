@@ -9,7 +9,7 @@ internal static class StringExtensions
             return null;
         }
 
-        if (postFixes == null || postFixes.Length == 0)
+        if (postFixes is null || postFixes.Length == 0)
         {
             return str;
         }

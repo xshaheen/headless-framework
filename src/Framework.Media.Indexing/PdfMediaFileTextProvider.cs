@@ -37,7 +37,7 @@ public class PdfMediaFileTextProvider : IMediaFileTextProvider
         }
         finally
         {
-            if (seekableStream != null)
+            if (seekableStream is not null)
             {
                 await seekableStream.DisposeAsync();
             }

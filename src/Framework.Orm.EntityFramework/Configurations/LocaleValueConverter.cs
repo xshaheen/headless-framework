@@ -34,12 +34,12 @@ public sealed class LocaleValueComparer : ValueComparer<Locale?>
 
     private static bool _IsEqual(Locale? d1, Locale? d2)
     {
-        if (d1 == null && d2 == null)
+        if (d1 is null && d2 is null)
         {
             return true;
         }
 
-        if (d1 == null || d2 == null)
+        if (d1 is null || d2 is null)
         {
             return false;
         }

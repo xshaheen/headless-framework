@@ -26,12 +26,12 @@ public static partial class ProcessExtensions
             UseShellExecute = false,
         };
 
-        if (arguments != null)
+        if (arguments is not null)
         {
             psi.Arguments = arguments;
         }
 
-        if (workingDirectory != null)
+        if (workingDirectory is not null)
         {
             psi.WorkingDirectory = workingDirectory;
         }
@@ -54,12 +54,12 @@ public static partial class ProcessExtensions
             UseShellExecute = false,
         };
 
-        if (arguments != null)
+        if (arguments is not null)
         {
             psi.ArgumentList.AddRange(arguments);
         }
 
-        if (workingDirectory != null)
+        if (workingDirectory is not null)
         {
             psi.WorkingDirectory = workingDirectory;
         }

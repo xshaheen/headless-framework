@@ -9,7 +9,7 @@ public static class CultureHelper
     {
         Argument.IsNotNull(culture);
 
-        return Use(culture: new CultureInfo(culture), uiCulture: uiCulture == null ? null : new CultureInfo(uiCulture));
+        return Use(culture: new CultureInfo(culture), uiCulture: uiCulture is null ? null : new CultureInfo(uiCulture));
     }
 
     public static IDisposable Use(CultureInfo culture, CultureInfo? uiCulture = null)

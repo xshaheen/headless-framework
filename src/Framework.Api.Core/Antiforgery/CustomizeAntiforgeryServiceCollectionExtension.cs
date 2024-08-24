@@ -40,7 +40,7 @@ public static class ServiceCollectionExtensions
         {
             Argument.IsNotNull(options);
 
-            if (options.Cookie.Name == null)
+            if (options.Cookie.Name is null)
             {
                 var applicationId = _dataProtectionOptions.ApplicationDiscriminator ?? string.Empty;
                 options.Cookie.Name = HttpHeaderNames.Antiforgery + "_" + _ComputeCookieName(applicationId);

@@ -16,7 +16,7 @@ public static class ExecutableFinder
 
         IEnumerable<string> searchPaths = path;
 
-        if (workingDirectory != null)
+        if (workingDirectory is not null)
         {
             searchPaths = path.Prepend(workingDirectory);
         }
@@ -25,7 +25,7 @@ public static class ExecutableFinder
         {
             var result = tryFindInDirectory(executableName, searchPath, extensions);
 
-            if (result != null)
+            if (result is not null)
             {
                 return Path.GetFullPath(result);
             }
