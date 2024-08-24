@@ -1,15 +1,18 @@
 using System.Reflection;
 using Asp.Versioning.ApiExplorer;
 using Framework.Api.Core.ApiExplorer;
+using Framework.Api.Swagger.Swashbuckle.Extensions;
 using Framework.Api.Swagger.Swashbuckle.OperationFilters;
 using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.Helpers;
 using Framework.BuildingBlocks.Helpers.Reflection;
+using Framework.BuildingBlocks.Primitives;
 using MicroElements.Swashbuckle.FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using Swashbuckle.AspNetCore.SwaggerUI;
@@ -71,9 +74,13 @@ public static class AddSwashbuckleSwaggerExtensions
             options.OperationFilter<ClaimsOperationFilter>();
             options.OperationFilter<ProblemDetailsOperationFilter>();
 
+            options.AddBuildingBlocksPrimitiveMappings();
+            options.AddAllPrimitivesSwaggerMappings();
+
             options.EnableAnnotations();
             options.SupportNonNullableReferenceTypes();
             options.DescribeAllParametersInCamelCase();
+
             var assembly = Assembly.GetEntryAssembly();
 
             if (assembly is not null)
@@ -93,12 +100,12 @@ public static class AddSwashbuckleSwaggerExtensions
             {
                 if (api.ActionDescriptor is ControllerActionDescriptor controllerActionDescriptor)
                 {
-                    return new[] { controllerActionDescriptor.ControllerName };
+                    return [controllerActionDescriptor.ControllerName];
                 }
 
                 if (api.GroupName is not null)
                 {
-                    return new[] { api.GroupName };
+                    return [api.GroupName];
                 }
 
                 throw new InvalidOperationException("Unable to determine tag for endpoint.");
@@ -108,7 +115,7 @@ public static class AddSwashbuckleSwaggerExtensions
             options.AddSecurityDefinition(_ApiKeyDefinitionName, _CreateApiKeySecurityDefinition());
 
             options.AddSecurityRequirement(
-                new OpenApiSecurityRequirement
+                new()
                 {
                     [_CreateBearerSecurityRequirement()] = Array.Empty<string>(),
                     [_CreateApiKeySecurityRequirement()] = Array.Empty<string>(),
@@ -120,6 +127,100 @@ public static class AddSwashbuckleSwaggerExtensions
 
         return services;
     }
+
+    #region Primitives
+
+    /// <summary>Adds Swagger mappings for specific custom types to ensure proper OpenAPI documentation generation.</summary>
+    /// <param name="options">The SwaggerGenOptions instance to which mappings are added.</param>
+    /// <remarks>
+    /// The method adds Swagger mappings for the following types:
+    /// <see cref="Money" />
+    /// <see cref="Month" />
+    /// <see cref="AccountId" />
+    /// <see cref="UserId" />
+    /// </remarks>
+    public static void AddBuildingBlocksPrimitiveMappings(this SwaggerGenOptions options)
+    {
+        options.MapType<Money>(
+            () =>
+                new OpenApiSchema
+                {
+                    Type = "number",
+                    Format = "decimal",
+                    Title = "Money"
+                }
+        );
+        options.MapType<Money?>(
+            () =>
+                new OpenApiSchema
+                {
+                    Type = "number",
+                    Format = "decimal",
+                    Nullable = true,
+                    Title = "Nullable<Money>"
+                }
+        );
+        options.MapType<Month>(
+            () =>
+                new OpenApiSchema
+                {
+                    Type = "integer",
+                    Format = "int32",
+                    Title = "Month"
+                }
+        );
+        options.MapType<Month?>(
+            () =>
+                new OpenApiSchema
+                {
+                    Type = "integer",
+                    Format = "int32",
+                    Nullable = true,
+                    Title = "Nullable<Month>"
+                }
+        );
+        options.MapType<AccountId>(() => new OpenApiSchema { Type = "string", Title = "AccountId", });
+        options.MapType<UserId>(() => new OpenApiSchema { Type = "string", Title = "UserId", });
+    }
+
+    #endregion
+
+    #region Api Versioning
+
+    private sealed class ConfigureSwashbuckleSwaggerGenApiVersionsOptions(
+        IApiVersionDescriptionProvider apiVersionDescriptionProvider
+    ) : IConfigureOptions<SwaggerGenOptions>
+    {
+        public void Configure(SwaggerGenOptions options)
+        {
+            // Add api versioning to swagger
+            foreach (var apiVersionDescription in apiVersionDescriptionProvider.ApiVersionDescriptions)
+            {
+                options.SwaggerDoc(apiVersionDescription.GroupName, _CreateInfo(apiVersionDescription));
+            }
+        }
+
+        private static OpenApiInfo _CreateInfo(ApiVersionDescription apiVersionDescription)
+        {
+            var openApiInfo = new OpenApiInfo
+            {
+                Version = apiVersionDescription.ApiVersion.ToString(),
+                Title = AssemblyInformation.Entry.Product,
+                Description = SwaggerInformation.ResponsesDescription,
+                Contact = new OpenApiContact { Name = "Zad Digital", Email = "contact@zad.digital", },
+                TermsOfService = new Uri("https://www.zad.digital/terms-of-service"),
+            };
+
+            if (apiVersionDescription.IsDeprecated)
+            {
+                openApiInfo.Description = " This API version has been deprecated.\n" + openApiInfo.Description;
+            }
+
+            return openApiInfo;
+        }
+    }
+
+    #endregion
 
     #region ApiKey
 
@@ -179,37 +280,4 @@ public static class AddSwashbuckleSwaggerExtensions
     }
 
     #endregion
-
-    private sealed class ConfigureSwashbuckleSwaggerGenApiVersionsOptions(
-        IApiVersionDescriptionProvider apiVersionDescriptionProvider
-    ) : IConfigureOptions<SwaggerGenOptions>
-    {
-        public void Configure(SwaggerGenOptions options)
-        {
-            // Add api versioning to swagger
-            foreach (var apiVersionDescription in apiVersionDescriptionProvider.ApiVersionDescriptions)
-            {
-                options.SwaggerDoc(apiVersionDescription.GroupName, _CreateInfo(apiVersionDescription));
-            }
-        }
-
-        private static OpenApiInfo _CreateInfo(ApiVersionDescription apiVersionDescription)
-        {
-            var openApiInfo = new OpenApiInfo
-            {
-                Version = apiVersionDescription.ApiVersion.ToString(),
-                Title = AssemblyInformation.Entry.Product,
-                Description = SwaggerInformation.ResponsesDescription,
-                Contact = new OpenApiContact { Name = "Zad Digital", Email = "contact@zad.digital", },
-                TermsOfService = new Uri("https://www.zad.digital/terms-of-service"),
-            };
-
-            if (apiVersionDescription.IsDeprecated)
-            {
-                openApiInfo.Description = " This API version has been deprecated.\n" + openApiInfo.Description;
-            }
-
-            return openApiInfo;
-        }
-    }
 }

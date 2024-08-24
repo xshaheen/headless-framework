@@ -1,15 +1,19 @@
 ﻿using Framework.Api.Core.ApiExplorer;
+using Framework.Api.Swagger.Nswag.Extensions;
 using Framework.Api.Swagger.Nswag.OperationProcessors;
 using Framework.Api.Swagger.Nswag.SchemaProcessors;
+using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.Helpers;
 using Framework.BuildingBlocks.Helpers.Reflection;
+using Framework.BuildingBlocks.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using NJsonSchema;
 using NJsonSchema.Generation;
+using NJsonSchema.Generation.TypeMappers;
 using NSwag;
 using NSwag.Generation.Processors.Security;
 using Scalar.AspNetCore;
-using Zad.Framework.BuildingBlocks.Primitives.Converters.Extensions;
 
 namespace Framework.Api.Swagger.Nswag;
 
@@ -45,27 +49,19 @@ public static class AddNswagSwaggerExtensions
                 settings.SchemaSettings.DefaultReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
                 settings.SchemaSettings.DefaultDictionaryValueReferenceTypeNullHandling =
                     ReferenceTypeNullHandling.NotNull;
-                settings.SchemaSettings.AddSwaggerPrimitiveMappings();
+
                 settings.SchemaSettings.SchemaProcessors.Add(new FluentValidationSchemaProcessor(serviceProvider));
                 settings.SchemaSettings.SchemaProcessors.Add(new NullabilityAsRequiredSchemaProcessor());
+
                 settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
                 settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
                 settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
 
-                settings.AddSecurity(
-                    "JWT",
-                    [],
-                    new OpenApiSecurityScheme
-                    {
-                        Type = OpenApiSecuritySchemeType.ApiKey,
-                        Name = "Authorization",
-                        In = OpenApiSecurityApiKeyLocation.Header,
-                        Description =
-                            "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
-                    }
-                );
+                settings.AddSecurity(_BearerDefinitionName, [], _GetBearerSecurityDefinition());
+                settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor(_BearerDefinitionName));
 
-                settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor("JWT"));
+                settings.SchemaSettings.AddBuildingBlocksPrimitiveMappings();
+                settings.SchemaSettings.AddAllPrimitivesSwaggerMappings();
             }
         );
 
@@ -101,4 +97,113 @@ public static class AddNswagSwaggerExtensions
 
         return app;
     }
+
+    #region Bearer
+
+    private const string _BearerHeaderName = HttpHeaderNames.Authorization;
+    private const string _BearerDefinitionName = "Bearer";
+
+    private static OpenApiSecurityScheme _GetBearerSecurityDefinition()
+    {
+        return new OpenApiSecurityScheme
+        {
+            Name = _BearerHeaderName,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = OpenApiSecurityApiKeyLocation.Header,
+            Type = OpenApiSecuritySchemeType.Http,
+            Description = """
+                JWT Authorization header using the Bearer scheme.
+                Enter 'Bearer' [space] and then your token in the text input below.
+                Example: 'Bearer <token>'
+                """,
+        };
+    }
+
+    #endregion
+
+    #region Primivites
+
+    /// <summary>Adds Swagger mappings for specific custom types to ensure proper OpenAPI documentation generation.</summary>
+    /// <param name="settings">The JsonSchemaGeneratorSettings instance to which mappings are added.</param>
+    /// <remarks>
+    /// The method adds Swagger mappings for the following types:
+    /// <see cref="Money" />
+    /// <see cref="Month" />
+    /// <see cref="AccountId" />
+    /// <see cref="UserId" />
+    /// </remarks>
+    public static void AddBuildingBlocksPrimitiveMappings(this JsonSchemaGeneratorSettings settings)
+    {
+        settings.TypeMappers.Add(
+            new PrimitiveTypeMapper(
+                typeof(Money),
+                schema =>
+                {
+                    schema.Type = JsonObjectType.Number;
+                    schema.Format = JsonFormatStrings.Decimal;
+                    schema.Title = "Money";
+                }
+            )
+        );
+        settings.TypeMappers.Add(
+            new PrimitiveTypeMapper(
+                typeof(Money?),
+                schema =>
+                {
+                    schema.Type = JsonObjectType.Number;
+                    schema.Format = JsonFormatStrings.Decimal;
+                    schema.IsNullableRaw = true;
+                    schema.Title = "Nullable<Money>";
+                }
+            )
+        );
+        settings.TypeMappers.Add(
+            new PrimitiveTypeMapper(
+                typeof(Month),
+                schema =>
+                {
+                    schema.Type = JsonObjectType.Integer;
+                    schema.Format = JsonFormatStrings.Integer;
+                    schema.Title = "Month";
+                }
+            )
+        );
+        settings.TypeMappers.Add(
+            new PrimitiveTypeMapper(
+                typeof(Month?),
+                schema =>
+                {
+                    schema.Type = JsonObjectType.Integer;
+                    schema.Format = JsonFormatStrings.Integer;
+                    schema.IsNullableRaw = true;
+                    schema.Title = "Nullable<Month>";
+                }
+            )
+        );
+        settings.TypeMappers.Add(
+            new PrimitiveTypeMapper(
+                typeof(AccountId),
+                schema =>
+                {
+                    schema.Type = JsonObjectType.String;
+                    schema.Format = "string";
+                    schema.Title = "AccountId";
+                }
+            )
+        );
+        settings.TypeMappers.Add(
+            new PrimitiveTypeMapper(
+                typeof(UserId),
+                schema =>
+                {
+                    schema.Type = JsonObjectType.String;
+                    schema.Format = "string";
+                    schema.Title = "UserId";
+                }
+            )
+        );
+    }
+
+    #endregion
 }
