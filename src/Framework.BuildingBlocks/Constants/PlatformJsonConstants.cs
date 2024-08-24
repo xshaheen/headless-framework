@@ -8,13 +8,13 @@ namespace Framework.BuildingBlocks.Constants;
 
 public static class PlatformJsonConstants
 {
-    private static readonly IList<JsonConverter> _DefaultConverters = new List<JsonConverter>
-    {
+    private static readonly List<JsonConverter> _DefaultConverters =
+    [
         new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false),
         new GeoJsonConverterFactory(),
         new IpAddressJsonConverter(),
-        new IpAddressRangeJsonConverter()
-    };
+        new IpAddressRangeJsonConverter(),
+    ];
 
     public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
     public static readonly JsonSerializerOptions DefaultInternalJsonOptions = CreateInternalJsonOptions();

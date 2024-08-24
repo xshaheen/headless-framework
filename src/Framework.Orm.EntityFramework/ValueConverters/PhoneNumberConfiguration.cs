@@ -1,0 +1,40 @@
+﻿using Framework.BuildingBlocks.Primitives;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Framework.Orm.EntityFramework.ValueConverters;
+
+public static class PhoneNumberConfiguration
+{
+    public static void OptionalPhoneNumber<TEntity>(
+        this OwnedNavigationBuilder<TEntity, PhoneNumber> navigationBuilder,
+        string prefix = "Phone"
+    )
+        where TEntity : class
+    {
+        navigationBuilder.Property(x => x.CountryCode).HasColumnName(prefix + nameof(PhoneNumber.CountryCode));
+
+        navigationBuilder
+            .Property(x => x.Number)
+            .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength)
+            .HasColumnName(prefix + nameof(PhoneNumber.Number));
+    }
+
+    public static void RequiredPhoneNumber<TEntity>(
+        this OwnedNavigationBuilder<TEntity, PhoneNumber> navigationBuilder,
+        string prefix = "Phone"
+    )
+        where TEntity : class
+    {
+        navigationBuilder
+            .Property(x => x.CountryCode)
+            .IsRequired()
+            .HasColumnName(prefix + nameof(PhoneNumber.CountryCode));
+
+        navigationBuilder
+            .Property(x => x.Number)
+            .IsRequired()
+            .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength)
+            .HasColumnName(prefix + nameof(PhoneNumber.Number));
+    }
+}

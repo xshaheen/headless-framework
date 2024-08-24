@@ -1,12 +1,13 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Framework.BuildingBlocks.JsonConverters;
 
 /// <summary>
-/// https://docs.microsoft.com/en-us/dotnet/standard/serialization/system-text-json-converters-how-to#deserialize-inferred-types-to-object-properties
+/// See <a href="https://docs.microsoft.com/en-us/dotnet/standard/serialization/system-text-json-converters-how-to#deserialize-inferred-types-to-object-properties">Deserialize inferred types to object properties</a>
 /// </summary>
-public class ObjectToInferredTypesConverter : JsonConverter<object?>
+public sealed class ObjectToInferredTypesConverter : JsonConverter<object?>
 {
     public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -18,7 +19,7 @@ public class ObjectToInferredTypesConverter : JsonConverter<object?>
             JsonTokenType.Number => reader.GetDouble(),
             JsonTokenType.String when reader.TryGetDateTime(out var datetime) => datetime,
             JsonTokenType.String => reader.GetString(),
-            _ => JsonDocument.ParseValue(ref reader).RootElement.Clone()
+            _ => JsonSerializer.Deserialize<object?>(ref reader, options)
         };
     }
 
