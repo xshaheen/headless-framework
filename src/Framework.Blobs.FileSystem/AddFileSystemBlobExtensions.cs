@@ -6,35 +6,42 @@ namespace Framework.Blobs.FileSystem;
 
 public static class AddFileSystemBlobExtensions
 {
-    public static IHostApplicationBuilder AddFileSystemBlobStorage(
-        this IHostApplicationBuilder builder,
-        Action<FileSystemBlobStorageSettings> configure
+    public static IServiceCollection AddFileSystemBlobStorage(
+        this IServiceCollection services,
+        Action<FileSystemBlobStorageSettings, IServiceProvider> setupAction
     )
     {
-        builder.Services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(
-            configure
-        );
-        _AddBaseServices(builder);
+        services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(setupAction);
+        _AddBaseServices(services);
 
-        return builder;
+        return services;
     }
 
-    public static IHostApplicationBuilder AddFileSystemBlobStorage(
-        this IHostApplicationBuilder builder,
-        IConfigurationSection configuration
+    public static IServiceCollection AddFileSystemBlobStorage(
+        this IServiceCollection services,
+        Action<FileSystemBlobStorageSettings> setupAction
     )
     {
-        builder.Services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(
-            configuration
-        );
-        _AddBaseServices(builder);
+        services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(setupAction);
+        _AddBaseServices(services);
 
-        return builder;
+        return services;
     }
 
-    private static void _AddBaseServices(IHostApplicationBuilder builder)
+    public static IServiceCollection AddFileSystemBlobStorage(
+        this IServiceCollection services,
+        IConfigurationSection config
+    )
     {
-        builder.Services.AddSingleton<IBlobNamingNormalizer, FileSystemBlobNamingNormalizer>();
-        builder.Services.AddSingleton<IBlobStorage, FileSystemBlobStorage>();
+        services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(config);
+        _AddBaseServices(services);
+
+        return services;
+    }
+
+    private static void _AddBaseServices(IServiceCollection builder)
+    {
+        builder.AddSingleton<IBlobNamingNormalizer, FileSystemBlobNamingNormalizer>();
+        builder.AddSingleton<IBlobStorage, FileSystemBlobStorage>();
     }
 }

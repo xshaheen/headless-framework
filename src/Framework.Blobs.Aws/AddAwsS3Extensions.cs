@@ -20,15 +20,23 @@ public static class AddAwsS3Extensions
     /// // or pass null to use the default AWSOptions registered in the DI container
     /// </code>
     /// </summary>
-    public static IHostApplicationBuilder AddAwsS3BlobStorage(
-        this IHostApplicationBuilder builder,
-        AWSOptions? awsOptions = null
+    public static IServiceCollection AddAwsS3BlobStorage(
+        this IServiceCollection services,
+        AWSOptions? awsOptions = null,
+        Action<AwsBlobStorageSettings>? setupAction = null
     )
     {
-        builder.Services.TryAddAWSService<IAmazonS3>(awsOptions);
-        builder.Services.AddSingleton<IBlobNamingNormalizer, AwsBlobNamingNormalizer>();
-        builder.Services.AddSingleton<IBlobStorage, AwsBlobStorage>();
+        var optionsBuilder = services.AddOptions<AwsBlobStorageSettings>();
 
-        return builder;
+        if (setupAction is not null)
+        {
+            optionsBuilder.Configure(setupAction);
+        }
+
+        services.TryAddAWSService<IAmazonS3>(awsOptions);
+        services.AddSingleton<IBlobNamingNormalizer, AwsBlobNamingNormalizer>();
+        services.AddSingleton<IBlobStorage, AwsBlobStorage>();
+
+        return services;
     }
 }
