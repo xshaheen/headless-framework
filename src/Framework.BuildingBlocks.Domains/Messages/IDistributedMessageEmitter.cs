@@ -3,6 +3,8 @@ namespace Framework.BuildingBlocks.Domains;
 
 public interface IDistributedMessageEmitter
 {
+    void AddMessage(IDistributedMessage e);
+
     /// <summary>Events occurred.</summary>
     IReadOnlyList<IDistributedMessage> GetDistributedMessages();
 

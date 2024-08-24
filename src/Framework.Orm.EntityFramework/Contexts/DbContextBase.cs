@@ -1,10 +1,12 @@
 ﻿using System.Data;
 using Framework.BuildingBlocks.Domains;
+using Framework.BuildingBlocks.Domains.Events;
 using Framework.Orm.EntityFramework.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Orm.EntityFramework.Contexts;
 
@@ -12,125 +14,139 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
 {
     protected abstract string DefaultSchema { get; }
 
-    protected virtual EntityEventReport CreateEventReport()
+    #region Process Saving Entity
+
+    private ProcessBeforeSaveReport _ProcessEntriesBeforeSave()
     {
-        var report = new EntityEventReport();
+        var report = new ProcessBeforeSaveReport();
 
-        foreach (var entry in ChangeTracker.Entries().ToList())
+        foreach (var entry in ChangeTracker.Entries())
         {
-            if (entry.Entity is not ILocalMessageEmitter localEmitter)
-            {
-                continue;
-            }
-
-            var localMessages = localEmitter.GetLocalMessages();
-
-            if (localMessages.Count > 0)
-            {
-                report.DomainEvents.AddRange(
-                    localMessages.Select(localMessage => new LocalEventEntry(localEmitter, localMessage))
-                );
-
-                localEmitter.ClearLocalMessages();
-            }
-
-            if (entry.Entity is not IDistributedMessageEmitter distributedEmitter)
-            {
-                continue;
-            }
-
-            var distributedEvents = distributedEmitter.GetDistributedMessages();
-
-            if (distributedEvents.Count > 0)
-            {
-                report.DistributedEvents.AddRange(
-                    distributedEvents.Select(distributedMessage => new DistributedEventEntry(
-                        distributedEmitter,
-                        distributedMessage
-                    ))
-                );
-
-                distributedEmitter.ClearDistributedMessages();
-            }
+            ProcessEntryBeforeSave(entry);
+            _ProcessMessageEmitters(entry, report);
         }
 
         return report;
     }
 
-    #region Process Saving Entity
-
-    protected virtual void ProcessEntry(EntityEntry entry)
+    protected virtual void ProcessEntryBeforeSave(EntityEntry entry)
     {
-        UpdateConcurrencyStamp(entry);
-    }
-
-    protected virtual void ApplyConceptsForAddedEntity(EntityEntry entry)
-    {
-        UpdateConcurrencyStamp(entry);
-    }
-
-    protected virtual void ApplyConceptsForModifiedEntity(EntityEntry entry, bool forceApply = false)
-    {
-        if (
-            forceApply
-            || entry.Properties.Any(x =>
-                x is { IsModified: true, Metadata.ValueGenerated: ValueGenerated.Never or ValueGenerated.OnAdd }
-            )
-        )
+        switch (entry.State)
         {
-            UpdateConcurrencyStamp(entry);
+            case EntityState.Added:
+            {
+                if (entry.Entity is IHasConcurrencyStamp entity)
+                {
+                    entity.ConcurrencyStamp ??= Guid.NewGuid().ToString("N");
+                }
+
+                _PublishEntityCreatedEvent(entry.Entity);
+
+                break;
+            }
+            case EntityState.Modified:
+            {
+                if (entry.Entity is IHasConcurrencyStamp entity)
+                {
+                    Entry(entity).Property(x => x.ConcurrencyStamp).OriginalValue = entity.ConcurrencyStamp;
+                    entity.ConcurrencyStamp = Guid.NewGuid().ToString("N");
+                }
+
+                var hasModifiedProperties =
+                    entry.Properties.Any(x =>
+                        x is { IsModified: true, Metadata.ValueGenerated: ValueGenerated.Never or ValueGenerated.OnAdd }
+                    ) && entry.Properties.Where(x => x.IsModified).All(x => x.Metadata.IsForeignKey());
+
+                if (hasModifiedProperties)
+                {
+                    _PublishEntityUpdatedEvent(entry.Entity);
+                }
+
+                break;
+            }
+            case EntityState.Deleted:
+            {
+                _PublishEntityDeletedEvent(entry.Entity);
+
+                break;
+            }
         }
     }
 
-    protected virtual void UpdateConcurrencyStamp(EntityEntry entry)
+    private static void _ProcessMessageEmitters(EntityEntry entry, ProcessBeforeSaveReport report)
     {
-        if (entry.Entity is not IHasConcurrencyStamp entity)
+        if (entry.Entity is IDistributedMessageEmitter distributedMessageEmitter)
+        {
+            var messages = distributedMessageEmitter.GetDistributedMessages();
+
+            if (messages.Count > 0)
+            {
+                report.DistributedEmitters.Add(new(distributedMessageEmitter, messages));
+            }
+        }
+
+        if (entry.Entity is ILocalMessageEmitter localMessageEmitter)
+        {
+            var messages = localMessageEmitter.GetLocalMessages();
+
+            if (messages.Count > 0)
+            {
+                report.LocalEmitters.Add(new(localMessageEmitter, messages));
+            }
+        }
+    }
+
+    private static void _PublishEntityCreatedEvent(object entity)
+    {
+        if (entity is not ILocalMessageEmitter localEmitter)
         {
             return;
         }
 
-        var property = Entry(entity).Property(x => x.ConcurrencyStamp);
+        var genericCreatedEventType = typeof(EntityCreatedEventData<>);
+        var createdEventType = genericCreatedEventType.MakeGenericType(entity.GetType());
+        var createdEventMessage = (ILocalMessage)Activator.CreateInstance(createdEventType, entity)!;
+        localEmitter.AddMessage(createdEventMessage);
 
-        if (
-            entity.ConcurrencyStamp is null
-            || string.Equals(property.OriginalValue, property.CurrentValue, StringComparison.Ordinal)
-        )
-        {
-            entity.ConcurrencyStamp = Guid.NewGuid().ToString();
-        }
+        _PublishEntityChangedEvent(entity, localEmitter);
     }
 
-    private (List<EmitterDistributedMessages>, List<EmitterLocalMessages>) _ProcessEntries()
+    private static void _PublishEntityUpdatedEvent(object entity)
     {
-        var emittedDistributedMessages = new List<EmitterDistributedMessages>();
-        var emittedLocalMessages = new List<EmitterLocalMessages>();
-
-        foreach (var entry in ChangeTracker.Entries())
+        if (entity is not ILocalMessageEmitter localEmitter)
         {
-            ProcessEntry(entry);
-
-            if (entry.Entity is IDistributedMessageEmitter distributedMessageEmitter)
-            {
-                var messages = distributedMessageEmitter.GetDistributedMessages();
-
-                if (messages.Count > 0)
-                {
-                    emittedDistributedMessages.Add(new(distributedMessageEmitter, messages));
-                }
-            }
-
-            if (entry.Entity is ILocalMessageEmitter localMessageEmitter)
-            {
-                var messages = localMessageEmitter.GetLocalMessages();
-
-                if (messages.Count > 0)
-                {
-                    emittedLocalMessages.Add(new(localMessageEmitter, messages));
-                }
-            }
+            return;
         }
 
-        return (emittedDistributedMessages, emittedLocalMessages);
+        var genericUpdatedEventType = typeof(EntityUpdatedEventData<>);
+        var updatedEventType = genericUpdatedEventType.MakeGenericType(entity.GetType());
+        var updatedEventMessage = (ILocalMessage)Activator.CreateInstance(updatedEventType, entity)!;
+        localEmitter.AddMessage(updatedEventMessage);
+
+        _PublishEntityChangedEvent(entity, localEmitter);
+    }
+
+    private static void _PublishEntityDeletedEvent(object entity)
+    {
+        if (entity is not ILocalMessageEmitter localEmitter)
+        {
+            return;
+        }
+
+        var genericDeletedEventType = typeof(EntityDeletedEventData<>);
+        var deletedEventType = genericDeletedEventType.MakeGenericType(entity.GetType());
+        var deletedEventMessage = (ILocalMessage)Activator.CreateInstance(deletedEventType, entity)!;
+        localEmitter.AddMessage(deletedEventMessage);
+
+        _PublishEntityChangedEvent(entity, localEmitter);
+    }
+
+    private static void _PublishEntityChangedEvent(object entity, ILocalMessageEmitter localEmitter)
+    {
+        var genericUpdatedEventType = typeof(EntityUpdatedEventData<>);
+        var updatedEventType = genericUpdatedEventType.MakeGenericType(entity.GetType());
+        var updatedEventMessage = (ILocalMessage)Activator.CreateInstance(updatedEventType, entity)!;
+        localEmitter.AddMessage(updatedEventMessage);
     }
 
     #endregion
@@ -142,20 +158,20 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         CancellationToken cancellationToken = new()
     )
     {
-        var (distributedMessagesEmitters, localMessagesEmitters) = _ProcessEntries();
+        var report = _ProcessEntriesBeforeSave();
 
-        if (distributedMessagesEmitters.Count == 0)
+        if (report.DistributedEmitters.Count == 0)
         {
-            await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
+            await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
 
             return await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         if (Database.CurrentTransaction is not null)
         {
-            await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
+            await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
             var result = await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-            await PublishMessagesAsync(distributedMessagesEmitters, Database.CurrentTransaction, cancellationToken);
+            await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
 
             return result;
         }
@@ -169,9 +185,9 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
                     cancellationToken
                 );
 
-                await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
+                await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
                 var result = await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-                await PublishMessagesAsync(distributedMessagesEmitters, transaction, cancellationToken);
+                await PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
 
@@ -181,20 +197,20 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
 
     protected virtual int BaseSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
-        var (distributedMessagesEmitters, localMessagesEmitters) = _ProcessEntries();
+        var report = _ProcessEntriesBeforeSave();
 
-        if (distributedMessagesEmitters.Count == 0)
+        if (report.DistributedEmitters.Count == 0)
         {
-            PublishMessages(localMessagesEmitters);
+            PublishMessages(report.LocalEmitters);
 
             return _CoreSaveChanges(acceptAllChangesOnSuccess);
         }
 
         if (Database.CurrentTransaction is not null)
         {
-            PublishMessages(localMessagesEmitters);
+            PublishMessages(report.LocalEmitters);
             var result = _CoreSaveChanges(acceptAllChangesOnSuccess);
-            PublishMessages(distributedMessagesEmitters, Database.CurrentTransaction);
+            PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
 
             return result;
         }
@@ -205,9 +221,9 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
             {
                 using var transaction = Database.BeginTransaction(IsolationLevel.ReadCommitted);
 
-                PublishMessages(localMessagesEmitters);
+                PublishMessages(report.LocalEmitters);
                 var result = _CoreSaveChanges(acceptAllChangesOnSuccess);
-                PublishMessages(distributedMessagesEmitters, transaction);
+                PublishMessages(report.DistributedEmitters, transaction);
 
                 transaction.Commit();
 
@@ -517,26 +533,4 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
     }
 
     #endregion
-}
-
-public sealed record LocalEventEntry(ILocalMessageEmitter Emitter, ILocalMessage Message);
-
-public sealed record DistributedEventEntry(IDistributedMessageEmitter Emitter, IDistributedMessage Message);
-
-public sealed class EntityEventReport
-{
-    public List<LocalEventEntry> DomainEvents { get; } = [];
-
-    public List<DistributedEventEntry> DistributedEvents { get; } = [];
-
-    public override string ToString()
-    {
-        return $"[{nameof(EntityEventReport)}] DomainEvents: {DomainEvents.Count}, DistributedEvents: {DistributedEvents.Count}";
-    }
-}
-
-public class EntityChangeOptions
-{
-    /// <summary>Default: true. Publish the EntityUpdatedEvent when any navigation property changes.</summary>
-    public bool PublishEntityUpdatedEventWhenNavigationChanges { get; set; } = true;
 }
