@@ -9,6 +9,37 @@ namespace System;
 [PublicAPI]
 public static class TypeExtensions
 {
+    /// <summary>
+    /// Determines whether an instance of this type can be assigned to
+    /// an instance of the <typeparamref name="TTarget"></typeparamref>.
+    ///
+    /// Internally uses <see cref="Type.IsAssignableFrom"/>.
+    /// </summary>
+    /// <typeparam name="TTarget">Target type</typeparam> (as reverse).
+    [MustUseReturnValue]
+    public static bool IsAssignableTo<TTarget>(this Type type)
+    {
+        Argument.IsNotNull(type);
+
+        return type.IsAssignableTo(typeof(TTarget));
+    }
+
+    /// <summary>
+    /// Determines whether an instance of this type can be assigned to
+    /// an instance of the <paramref name="targetType"></paramref>.
+    /// Internally uses <see cref="Type.IsAssignableFrom"/> (as reverse).
+    /// </summary>
+    /// <param name="type">this type</param>
+    /// <param name="targetType">Target type</param>
+    [MustUseReturnValue]
+    public static bool IsAssignableTo(this Type type, Type targetType)
+    {
+        Argument.IsNotNull(type);
+        Argument.IsNotNull(targetType);
+
+        return targetType.IsAssignableFrom(type);
+    }
+
     [MustUseReturnValue]
     public static bool IsNullableValueType(this Type type)
     {
@@ -129,4 +160,56 @@ public static class TypeExtensions
     {
         return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>);
     }
+
+    #region Base Classes
+
+    /// <summary>Gets all base classes of this type.</summary>
+    /// <param name="type">The type to get its base classes.</param>
+    /// <param name="includeObject">True, to include the standard <see cref="object"/> type in the returned array.</param>
+    public static IReadOnlyList<Type> GetBaseClasses(this Type type, bool includeObject = true)
+    {
+        Argument.IsNotNull(type);
+
+        var types = new List<Type>();
+        _AddTypeAndBaseTypesRecursively(types, type.BaseType, includeObject);
+
+        return types;
+    }
+
+    /// <summary>Gets all base classes of this type.</summary>
+    /// <param name="type">The type to get its base classes.</param>
+    /// <param name="stoppingType">A type to stop going to the deeper base classes. This type will be included in the returned array</param>
+    /// <param name="includeObject">True, to include the standard <see cref="object"/> type in the returned array.</param>
+    public static IReadOnlyList<Type> GetBaseClasses(this Type type, Type stoppingType, bool includeObject = true)
+    {
+        Argument.IsNotNull(type);
+
+        var types = new List<Type>();
+        _AddTypeAndBaseTypesRecursively(types, type.BaseType, includeObject, stoppingType);
+
+        return types;
+    }
+
+    private static void _AddTypeAndBaseTypesRecursively(
+        List<Type> types,
+        Type? type,
+        bool includeObject,
+        Type? stoppingType = null
+    )
+    {
+        if (type is null || type == stoppingType)
+        {
+            return;
+        }
+
+        if (!includeObject && type == typeof(object))
+        {
+            return;
+        }
+
+        _AddTypeAndBaseTypesRecursively(types, type.BaseType, includeObject, stoppingType);
+        types.Add(type);
+    }
+
+    #endregion
 }

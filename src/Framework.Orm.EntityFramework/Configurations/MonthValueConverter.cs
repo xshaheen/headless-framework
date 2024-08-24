@@ -1,7 +1,7 @@
 ﻿using Framework.BuildingBlocks.Primitives;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "Month"/></summary>
 public sealed class MonthValueConverter : ValueConverter<Month, int>

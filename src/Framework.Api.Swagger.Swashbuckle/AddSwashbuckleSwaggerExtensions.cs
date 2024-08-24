@@ -179,8 +179,8 @@ public static class AddSwashbuckleSwaggerExtensions
                     Title = "Nullable<Month>"
                 }
         );
-        options.MapType<AccountId>(() => new OpenApiSchema { Type = "string", Title = "AccountId", });
-        options.MapType<UserId>(() => new OpenApiSchema { Type = "string", Title = "UserId", });
+        options.MapType<AccountId>(() => new OpenApiSchema { Type = "string", Title = "AccountId" });
+        options.MapType<UserId>(() => new OpenApiSchema { Type = "string", Title = "UserId" });
     }
 
     #endregion

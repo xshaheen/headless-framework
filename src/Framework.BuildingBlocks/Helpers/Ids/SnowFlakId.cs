@@ -1,6 +1,6 @@
 using IdGen;
 
-namespace Framework.BuildingBlocks.Helpers.IdGenerators;
+namespace Framework.BuildingBlocks.Helpers.Ids;
 
 // Ref: https://github.com/RobThree/IdGen
 // https://github.com/RobThree/IdGen/issues/34

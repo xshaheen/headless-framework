@@ -1,7 +1,7 @@
 ﻿using Framework.BuildingBlocks.Primitives;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "UserId"/></summary>
 public sealed class UserIdValueConverter : ValueConverter<UserId, string>

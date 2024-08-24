@@ -6,7 +6,7 @@ using Framework.BuildingBlocks.Primitives.Extensions;
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>A static class providing methods to configure EF value converts for Primitive types.</summary>
-public static class EntityFrameworkValueConvertersExtensions
+public static class ValueConvertersExtensions
 {
     private const string _TypeName = "AddPrimitivesValueConvertersExtensions";
     private const string _MethodName = "AddPrimitivePropertyConversions";

@@ -6,11 +6,11 @@ using Framework.BuildingBlocks.Primitives;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 [PublicAPI]
 public sealed class ExtraPropertiesValueConverter()
-    : ValueConverter<ExtraProperties?, string?>(x => _Serialize(x), x => _Deserialize(x))
+    : ValueConverter<ExtraProperties, string>(x => _Serialize(x), x => _Deserialize(x))
 {
     private static readonly JsonSerializerOptions _Options = _CreateJsonOptions();
 
@@ -19,11 +19,11 @@ public sealed class ExtraPropertiesValueConverter()
         return JsonSerializer.Serialize(extraProperties, _Options);
     }
 
-    private static ExtraProperties? _Deserialize(string? json)
+    private static ExtraProperties _Deserialize(string? json)
     {
         return string.IsNullOrEmpty(json) || string.Equals(json, "{}", StringComparison.Ordinal)
-            ? null
-            : JsonSerializer.Deserialize<ExtraProperties>(json, _Options);
+            ? []
+            : JsonSerializer.Deserialize<ExtraProperties>(json, _Options) ?? [];
     }
 
     private static JsonSerializerOptions _CreateJsonOptions()

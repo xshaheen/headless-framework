@@ -4,7 +4,7 @@ using Framework.BuildingBlocks.Primitives;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Framework.Orm.EntityFramework.ValueConverters;
+namespace Framework.Orm.EntityFramework.Configurations;
 
 [PublicAPI]
 public sealed class LocaleValueConverter() : ValueConverter<Locale?, string?>(x => _Serialize(x), x => _Deserialize(x))
