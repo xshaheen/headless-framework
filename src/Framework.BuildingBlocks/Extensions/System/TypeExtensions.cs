@@ -9,6 +9,12 @@ namespace System;
 [PublicAPI]
 public static class TypeExtensions
 {
+    [MustUseReturnValue]
+    public static string GetFullNameWithAssemblyName(this Type type)
+    {
+        return type.FullName + ", " + type.Assembly.GetName().Name;
+    }
+
     /// <summary>
     /// Determines whether an instance of this type can be assigned to
     /// an instance of the <typeparamref name="TTarget"></typeparamref>.
