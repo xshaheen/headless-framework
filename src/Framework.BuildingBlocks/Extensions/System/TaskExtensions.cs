@@ -72,26 +72,34 @@ public static class TaskExtensions
         {
             try
             {
+#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
                 // No need to resume on the original SynchronizationContext
                 await task.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
             }
             catch
             {
                 // Nothing to do here
+#pragma warning disable ERP022 // Justification: Its intended to be used.
             }
+#pragma warning restore ERP022
         }
     }
 
     [DebuggerStepThrough]
     public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task)
     {
+#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
         return task.ConfigureAwait(continueOnCapturedContext: false);
+#pragma warning restore VSTHRD003
     }
 
     [DebuggerStepThrough]
     public static ConfiguredTaskAwaitable AnyContext(this Task task)
     {
+#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
         return task.ConfigureAwait(continueOnCapturedContext: false);
+#pragma warning restore VSTHRD003
     }
 
     [DebuggerStepThrough]

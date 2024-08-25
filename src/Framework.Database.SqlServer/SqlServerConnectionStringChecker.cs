@@ -1,9 +1,11 @@
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 
 namespace Framework.Database.SqlServer;
 
 [PublicAPI]
-public sealed class SqlServerConnectionStringChecker : IConnectionStringChecker
+public sealed class SqlServerConnectionStringChecker(ILogger<SqlServerConnectionStringChecker> logger)
+    : IConnectionStringChecker
 {
     public async Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString)
     {
@@ -27,8 +29,10 @@ public sealed class SqlServerConnectionStringChecker : IConnectionStringChecker
 
             return result;
         }
-        catch
+        catch (Exception e)
         {
+            logger.LogWarning(e, "Error checking connection string");
+
             return result;
         }
     }

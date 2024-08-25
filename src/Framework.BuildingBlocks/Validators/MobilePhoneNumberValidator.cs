@@ -23,7 +23,9 @@ public static class MobilePhoneNumberValidator
         }
         catch
         {
+#pragma warning disable ERP022
             return false;
+#pragma warning restore ERP022
         }
 
         return util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
@@ -46,7 +48,9 @@ public static class MobilePhoneNumberValidator
         }
         catch
         {
+#pragma warning disable ERP022
             return false;
+#pragma warning restore ERP022
         }
 
         return util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
@@ -71,7 +75,9 @@ public static class MobilePhoneNumberValidator
         }
         catch
         {
+#pragma warning disable ERP022
             return false;
+#pragma warning restore ERP022
         }
 
         if (!util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE))

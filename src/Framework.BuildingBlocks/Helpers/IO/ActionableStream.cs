@@ -10,10 +10,12 @@ public sealed class ActionableStream(Stream stream, Action disposeAction) : Stre
         {
             disposeAction.Invoke();
         }
+#pragma warning disable ERP022
         catch
         {
             /* ignore if these are already disposed; this is to make sure they are */
         }
+#pragma warning restore ERP022
 
         _stream.Dispose();
 

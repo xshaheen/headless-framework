@@ -2,6 +2,7 @@
 using System.Text.RegularExpressions;
 using Framework.Arguments;
 using Framework.BuildingBlocks;
+using Framework.BuildingBlocks.Constants;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -508,7 +509,7 @@ public sealed class SshBlobStorage : IBlobStorage
             var file in files
                 .Where(f => f.IsRegularFile || f.IsDirectory)
                 .OrderByDescending(f => f.IsRegularFile)
-                .ThenBy(f => f.Name)
+                .ThenBy(f => f.Name, StringComparer.Ordinal)
         )
         {
             if (cancellationToken.IsCancellationRequested)
@@ -579,16 +580,19 @@ public sealed class SshBlobStorage : IBlobStorage
 
         if (hasWildcard)
         {
-            patternRegex = new Regex(
-                $"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?", StringComparison.Ordinal)}$"
-            );
+            var searchRegexText = Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
+            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
             var beforeWildcard = normalizedSearchPattern[..wildcardPos];
             var slashPos = beforeWildcard.LastIndexOf('/');
             prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
         }
         else
         {
-            patternRegex = new Regex($"^{normalizedSearchPattern}$");
+            patternRegex = new Regex(
+                $"^{normalizedSearchPattern}$",
+                RegexOptions.ExplicitCapture,
+                RegexPatterns.MatchTimeout
+            );
             var slashPos = normalizedSearchPattern.LastIndexOf('/');
             prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
         }

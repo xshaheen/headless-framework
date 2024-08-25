@@ -3,7 +3,7 @@ using UglyToad.PdfPig;
 
 namespace Framework.Media.Indexing;
 
-public class PdfMediaFileTextProvider : IMediaFileTextProvider
+public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
 {
     public async Task<string> GetTextAsync(string path, Stream fileStream)
     {

@@ -36,7 +36,7 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
 
     private Dictionary<string, SettingDefinition> _CreateSettingDefinitions()
     {
-        var settings = new Dictionary<string, SettingDefinition>();
+        var settings = new Dictionary<string, SettingDefinition>(StringComparer.Ordinal);
         var context = new SettingDefinitionContext(settings);
 
         using var scope = _serviceProvider.CreateScope();

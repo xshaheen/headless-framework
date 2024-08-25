@@ -13,6 +13,7 @@ public static class Range
 
 [PublicAPI]
 #pragma warning disable CA1036 // Justification: It is a value object and already overrides the equality members.
+#pragma warning disable MA0096 // Justification: It is a value object and already overrides the equality members.
 public sealed class Range<T> : ValueObject, IComparable<Range<T>>
     where T : IComparable<T>
 {
@@ -22,12 +23,14 @@ public sealed class Range<T> : ValueObject, IComparable<Range<T>>
     {
         if (from is null && to is null)
         {
-            throw new ArgumentException("At least one of the values must be provided.");
+            throw new InvalidOperationException("At least one of the values must be provided.");
         }
 
         if (from is not null && to is not null && from.CompareTo(to) > 0)
         {
-            throw new ArgumentException("Value for `From` must be equal to or greater than the value for `To`.");
+            throw new InvalidOperationException(
+                "Value for `From` must be equal to or greater than the value for `To`."
+            );
         }
 
         From = from;

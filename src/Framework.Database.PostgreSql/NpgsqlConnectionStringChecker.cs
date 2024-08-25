@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Framework.Database.PostgreSql;
 
 [PublicAPI]
-public sealed class NpgsqlConnectionStringChecker : IConnectionStringChecker
+public sealed class NpgsqlConnectionStringChecker(ILogger<NpgsqlConnectionStringChecker> logger)
+    : IConnectionStringChecker
 {
     public async Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString)
     {
@@ -28,8 +30,10 @@ public sealed class NpgsqlConnectionStringChecker : IConnectionStringChecker
 
             return result;
         }
-        catch
+        catch (Exception e)
         {
+            logger.LogWarning(e, "Error while checking connection string");
+
             return result;
         }
     }

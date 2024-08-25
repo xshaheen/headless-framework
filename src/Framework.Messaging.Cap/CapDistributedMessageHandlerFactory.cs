@@ -37,7 +37,10 @@ public static class CapDistributedMessageHandlerFactory
             ?? throw new InvalidOperationException($"{nameof(CapEventHandlerSubscribeBase)} Constructor not found");
 
         var baseTriggerHandlerAsyncMethod =
-            baseType.GetMethod(nameof(CapEventHandlerSubscribeBase.TriggerHandlerAsync))
+            baseType.GetMethod(
+                nameof(CapEventHandlerSubscribeBase.TriggerHandlerAsync),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )
             ?? throw new InvalidOperationException(
                 $"{nameof(CapEventHandlerSubscribeBase)} {nameof(CapEventHandlerSubscribeBase.TriggerHandlerAsync)} Method not found"
             );
@@ -50,7 +53,10 @@ public static class CapDistributedMessageHandlerFactory
             ?? throw new InvalidOperationException($"{nameof(CapSubscribeAttribute)} Constructor not found");
 
         var subscribeAttributeGroupProperty =
-            subscribeAttributeType.GetProperty(nameof(CapSubscribeAttribute.Group))
+            subscribeAttributeType.GetProperty(
+                nameof(CapSubscribeAttribute.Group),
+                BindingFlags.Public | BindingFlags.Instance
+            )
             ?? throw new InvalidOperationException(
                 $"{nameof(CapSubscribeAttribute)} {nameof(CapSubscribeAttribute.Group)} Property not found"
             );
@@ -59,8 +65,12 @@ public static class CapDistributedMessageHandlerFactory
         var fromCapAttributeType = typeof(FromCapAttribute);
 
         var fromCapAttributeConstructor =
-            fromCapAttributeType.GetConstructor(Type.EmptyTypes)
-            ?? throw new InvalidOperationException($"{nameof(FromCapAttribute)} Constructor not found");
+            fromCapAttributeType.GetConstructor(
+                BindingFlags.Public | BindingFlags.Instance,
+                binder: null,
+                Type.EmptyTypes,
+                modifiers: null
+            ) ?? throw new InvalidOperationException($"{nameof(FromCapAttribute)} Constructor not found");
 
         // Type
         var convertTypeTokenToRuntimeTypeHandleMethod =

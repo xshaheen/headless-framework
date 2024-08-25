@@ -9,6 +9,7 @@ using Flurl;
 using Framework.Arguments;
 using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.Helpers.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -494,9 +495,8 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         if (hasWildcard)
         {
-            patternRegex = new Regex(
-                $"^{Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal)}$"
-            );
+            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
+            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
 
             var slashPos = searchPattern.LastIndexOf('/');
             prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
@@ -538,7 +538,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             return null;
         }
 
-        var dictionary = new Dictionary<string, object?>(metadata.Count);
+        var dictionary = new Dictionary<string, object?>(metadata.Count, StringComparer.Ordinal);
 
         foreach (var awsMetadataKey in metadata.Keys)
         {

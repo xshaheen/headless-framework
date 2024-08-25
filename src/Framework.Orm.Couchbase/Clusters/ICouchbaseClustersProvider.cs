@@ -18,7 +18,7 @@ public sealed class CouchbaseClustersProvider(
     ICouchbaseTransactionConfigProvider transactionConfigProvider
 ) : ICouchbaseClustersProvider
 {
-    private readonly ConcurrentDictionary<string, AsyncLazy<GetClusterResult>> _clusters = new();
+    private readonly ConcurrentDictionary<string, AsyncLazy<GetClusterResult>> _clusters = new(StringComparer.Ordinal);
 
     public async ValueTask<GetClusterResult> GetClusterAsync(string clusterKey)
     {

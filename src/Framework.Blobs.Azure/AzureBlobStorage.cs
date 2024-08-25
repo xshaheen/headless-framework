@@ -11,13 +11,14 @@ using Framework.Arguments;
 using Framework.Blobs.Azure.Internals;
 using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Constants;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Blobs.Azure;
 
-public sealed class AzureBlobStorage : IBlobStorage
+public sealed partial class AzureBlobStorage : IBlobStorage
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedContainers = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "max-age=7776000, must-revalidate";
@@ -376,7 +377,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         // will return a continuation token for retrieving the remainder of the results.
         // For this reason, it is possible that the service will return fewer results than the specified.
 
-        await foreach (var page in pages)
+        await foreach (var page in pages.WithCancellation(cancellationToken))
         {
             continuationToken = page.ContinuationToken;
 
@@ -444,9 +445,8 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         if (hasWildcard)
         {
-            patternRegex = new Regex(
-                $"^{Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal)}$"
-            );
+            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
+            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
 
             var slashPos = searchPattern.LastIndexOf('/');
             prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
