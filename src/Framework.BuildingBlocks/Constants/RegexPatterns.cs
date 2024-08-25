@@ -5,8 +5,9 @@ namespace Framework.BuildingBlocks.Constants;
 
 public static partial class RegexPatterns
 {
-    private const int _MatchTimeoutMilliseconds = 100;
-    private static readonly TimeSpan _MatchTimeout = _MatchTimeoutMilliseconds.Milliseconds();
+    public const int MatchTimeoutMilliseconds = 100;
+
+    public static readonly TimeSpan MatchTimeout = MatchTimeoutMilliseconds.Milliseconds();
 
     /// <summary>
     ///  ref.: https://html.spec.whatwg.org/multipage/forms.html#valid-e-mail-address (HTML5 living standard, willful violation of RFC 3522)
@@ -14,7 +15,7 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex EmailAddress();
 
@@ -58,7 +59,7 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u08A0–\u08FF]",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex ArabicCharacters();
 
@@ -66,35 +67,35 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"[\u0600-\u06ff]|[\u0750-\u077f]|[\ufb50-\ufbc1]|[\ufbd3-\ufd3f]|[\ufd50-\ufd8f]|[\ufd92-\ufdc7]|[\ufe70-\ufefc]|[\uFDF0-\uFDFD]",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex RtlCharacters();
 
     [GeneratedRegex(
         pattern: @"^[0-9]{14}$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex NationalId();
 
     [GeneratedRegex(
         pattern: @"\s+",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex Spaces();
 
     [GeneratedRegex(
         pattern: "[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD]",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex HiddenChars();
 
     [GeneratedRegex(
         pattern: "^\\s*['\"]+|['\"]+\\s*$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex Quotes();
 
@@ -102,7 +103,7 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex Ip4();
 
@@ -110,7 +111,7 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex Ip6();
 
@@ -118,7 +119,7 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"((^\s*((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))\s*$)|(^\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*$))",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex Ip();
 
@@ -126,7 +127,7 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#()?&//=]*)$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex HttpUrl();
 
@@ -134,7 +135,7 @@ public static partial class RegexPatterns
     [GeneratedRegex(
         pattern: @"^[a-zA-Z0-9][a-zA-Z0-9\- ]{0,10}[a-zA-Z0-9]$",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: _MatchTimeoutMilliseconds
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex ZipCode();
 
@@ -143,7 +144,7 @@ public static partial class RegexPatterns
         new(
             "^[a-zA-Z0-9]([-_.](?![-_.])|[a-zA-Z0-9]){1,28}[a-zA-Z0-9]$",
             RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-            _MatchTimeout
+            MatchTimeout
         );
 
     /// <summary>Represent a slug.</summary>
@@ -154,14 +155,14 @@ public static partial class RegexPatterns
     /// <example>456-hello</example>
     /// <example>456</example>
     public static readonly Regex Slug =
-        new("^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, _MatchTimeout);
+        new("^[a-z0-9]+(?:-[a-z0-9]+)*$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, MatchTimeout);
 
     /// <summary>Represent a URL with optional protocol.</summary>
     public static readonly Regex Url =
         new(
             @"^((https?|ftp|file):\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$",
             RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-            _MatchTimeout
+            MatchTimeout
         );
 
     /// <summary>Represent a file with extension absolute/relative URL.</summary>
@@ -174,19 +175,19 @@ public static partial class RegexPatterns
         new(
             @"((\/|\\|\/\/|https?:\\\\|https?:\/\/)[a-z0-9 _@\-^!#$%&+={}.\/\\\[\]]+)+\.[a-z]+$",
             RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-            _MatchTimeout
+            MatchTimeout
         );
 
     /// <summary>Represent file Name with extension having 3 chars.</summary>
     public static readonly Regex FileNameWithExtension =
-        new(@"^[\w,\s-]+\.[A-Za-z]{3}$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, _MatchTimeout);
+        new(@"^[\w,\s-]+\.[A-Za-z]{3}$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, MatchTimeout);
 
     /// <summary>Represent a YouTube video URL.</summary>
     public static readonly Regex YoutubeVideoUrl =
         new(
             @"^http(?:s?):\/\/(?:www\.)?youtu(?:be\.com\/watch\?v=|\.be\/)([\w\-_]*)(&(amp;)?[\w?=]*)?$",
             RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-            _MatchTimeout
+            MatchTimeout
         );
 
     /// <summary>Represent decimal number.</summary>
@@ -194,23 +195,23 @@ public static partial class RegexPatterns
         new(
             @"^((-?[1-9]+)|[0-9]+)(\.?|\,?)([0-9]*)$",
             RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-            _MatchTimeout
+            MatchTimeout
         );
 
     /// <summary>Represent integer number.</summary>
     public static readonly Regex IntegerNumber =
-        new("^((-?[1-9]+)|[0-9]+)$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, _MatchTimeout);
+        new("^((-?[1-9]+)|[0-9]+)$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, MatchTimeout);
 
     /// <summary>Represent hex number.</summary>
     public static readonly Regex Hex =
-        new("^#?([a-f0-9]{6}|[a-f0-9]{3})$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, _MatchTimeout);
+        new("^#?([a-f0-9]{6}|[a-f0-9]{3})$", RegexOptions.Compiled | RegexOptions.ExplicitCapture, MatchTimeout);
 
     /// <summary>Represent date.</summary>
     public static readonly Regex Date =
         new(
             @"^((((0?[1-9]|[12]\d|3[01])[\.\-\/](0?[13578]|1[02])[\.\-\/]((1[6-9]|[2-9]\d)?\d{2}))|((0?[1-9]|[12]\d|30)[\.\-\/](0?[13456789]|1[012])[\.\-\/]((1[6-9]|[2-9]\d)?\d{2}))|((0?[1-9]|1\d|2[0-8])[\.\-\/]0?2[\.\-\/]((1[6-9]|[2-9]\d)?\d{2}))|(29[\.\-\/]0?2[\.\-\/]((1[6-9]|[2-9]\d)?(0[48]|[2468][048]|[13579][26])|((16|[2468][048]|[3579][26])00)|00)))|(((0[1-9]|[12]\d|3[01])(0[13578]|1[02])((1[6-9]|[2-9]\d)?\d{2}))|((0[1-9]|[12]\d|30)(0[13456789]|1[012])((1[6-9]|[2-9]\d)?\d{2}))|((0[1-9]|1\d|2[0-8])02((1[6-9]|[2-9]\d)?\d{2}))|(2902((1[6-9]|[2-9]\d)?(0[48]|[2468][048]|[13579][26])|((16|[2468][048]|[3579][26])00)|00)))) ?((20|21|22|23|[01]\d|\d)(([:.][0-5]\d){1,2}))?$",
             RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-            _MatchTimeout
+            MatchTimeout
         );
 
     /// <summary>Represent xml/html tag.</summary>
@@ -218,6 +219,6 @@ public static partial class RegexPatterns
         new(
             @"^<(?<1>[a-z1-6]+)([^<]+)*(?:>(.*)<\/\1>| *\/>)$",
             RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-            _MatchTimeout
+            MatchTimeout
         );
 }

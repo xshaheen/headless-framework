@@ -223,7 +223,9 @@ public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
 
             var adapterType = adapter.GetType();
 
+#pragma warning disable REFL017, REFL003 // Justification: Already of type ChildValidatorAdaptor<,>
             var adapterMethod = adapterType.GetMethod(nameof(ChildValidatorAdaptor<object, object>.GetValidator));
+#pragma warning restore REFL017, REFL003
 
             if (adapterMethod is null)
             {

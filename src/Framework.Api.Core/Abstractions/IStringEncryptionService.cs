@@ -67,11 +67,11 @@ public sealed class StringEncryptionOptionsValidator : AbstractValidator<StringE
 
 #region Implementation
 
-#pragma warning disable CA5401 #CA5401: Do not use CreateEncryptor with non-default IV
-#pragma warning disable CA5379 #CA5379: Ensure key derivation function algorithm is sufficiently strong
+#pragma warning disable CA5401 // CA5401: Do not use CreateEncryptor with non-default IV
+#pragma warning disable CA5379 // CA5379: Ensure key derivation function algorithm is sufficiently strong
 public sealed class StringEncryptionService(StringEncryptionSettings settings) : IStringEncryptionService
 {
-    private const int _Iterations = 1000;
+    private const int _Iterations = 100_000;
     private readonly HashAlgorithmName _hashAlgorithm = HashAlgorithmName.SHA256;
 
     public string? Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null)

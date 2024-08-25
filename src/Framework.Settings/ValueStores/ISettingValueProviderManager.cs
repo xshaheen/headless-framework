@@ -29,7 +29,9 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
             .ValueProviders.Select(type => (_serviceProvider.GetRequiredService(type) as ISettingValueProvider)!)
             .ToList();
 
-        var multipleProviders = providers.GroupBy(p => p.Name).FirstOrDefault(x => x.Count() > 1);
+        var multipleProviders = providers
+            .GroupBy(p => p.Name, StringComparer.Ordinal)
+            .FirstOrDefault(x => x.Skip(1).Any());
 
         if (multipleProviders is null)
         {

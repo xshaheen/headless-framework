@@ -33,7 +33,7 @@ public sealed class SettingProvider(
 
         if (setting.Providers.Count != 0)
         {
-            providers = providers.Where(p => setting.Providers.Contains(p.Name));
+            providers = providers.Where(p => setting.Providers.Contains(p.Name, StringComparer.Ordinal));
         }
 
         var value = await _GetOrNullValueFromProvidersAsync(providers, setting);
@@ -48,18 +48,21 @@ public sealed class SettingProvider(
     public async Task<List<SettingValue>> GetAllAsync(string[] names)
     {
         var settingDefinitions = (await settingDefinitionManager.GetAllAsync())
-            .Where(x => names.Contains(x.Name))
+            .Where(x => names.Contains(x.Name, StringComparer.Ordinal))
             .ToList();
 
         var result = settingDefinitions.ToDictionary(
             definition => definition.Name,
-            definition => new SettingValue(definition.Name)
+            definition => new SettingValue(definition.Name),
+            StringComparer.Ordinal
         );
 
         foreach (var provider in Enumerable.Reverse(settingValueProviderManager.Providers))
         {
             var settingValues = await provider.GetAllAsync(
-                settingDefinitions.Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name)).ToArray()
+                settingDefinitions
+                    .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                    .ToArray()
             );
 
             var notNullValues = settingValues.Where(x => x.Value is not null).ToList();

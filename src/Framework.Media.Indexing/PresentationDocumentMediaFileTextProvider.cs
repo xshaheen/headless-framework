@@ -5,45 +5,38 @@ using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Framework.Media.Indexing;
 
-public class PresentationDocumentMediaFileTextProvider : IMediaFileTextProvider
+public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
     public Task<string> GetTextAsync(string path, Stream fileStream)
     {
-        try
-        {
-            using var document = PresentationDocument.Open(fileStream, false);
-            var slideIds = document.PresentationPart?.Presentation.SlideIdList?.ChildElements.Cast<SlideId>();
+        using var document = PresentationDocument.Open(fileStream, false);
+        var slideIds = document.PresentationPart?.Presentation.SlideIdList?.ChildElements.Cast<SlideId>();
 
-            if (slideIds is null || !slideIds.Any())
-            {
-                return Task.FromResult(string.Empty);
-            }
-
-            using var stringBuilder = ZString.CreateStringBuilder();
-
-            foreach (var slideId in slideIds)
-            {
-                var relationshipId = slideId.RelationshipId?.Value;
-
-                if (
-                    relationshipId is null
-                    || document.PresentationPart!.GetPartById(relationshipId) is not SlidePart slidePart
-                )
-                {
-                    continue;
-                }
-
-                var slideText = _GetText(slidePart);
-
-                stringBuilder.AppendLine(slideText);
-            }
-
-            return Task.FromResult(stringBuilder.ToString());
-        }
-        catch
+        if (slideIds is null || !slideIds.Any())
         {
             return Task.FromResult(string.Empty);
         }
+
+        using var stringBuilder = ZString.CreateStringBuilder();
+
+        foreach (var slideId in slideIds)
+        {
+            var relationshipId = slideId.RelationshipId?.Value;
+
+            if (
+                relationshipId is null
+                || document.PresentationPart!.GetPartById(relationshipId) is not SlidePart slidePart
+            )
+            {
+                continue;
+            }
+
+            var slideText = _GetText(slidePart);
+
+            stringBuilder.AppendLine(slideText);
+        }
+
+        return Task.FromResult(stringBuilder.ToString());
     }
 
     private static string _GetText(SlidePart slidePart)

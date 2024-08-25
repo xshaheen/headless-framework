@@ -1,9 +1,11 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace Framework.Database.Sqlite;
 
 [PublicAPI]
-public sealed class SqliteConnectionStringChecker : IConnectionStringChecker
+public sealed class SqliteConnectionStringChecker(ILogger<SqliteConnectionStringChecker> logger)
+    : IConnectionStringChecker
 {
     public async Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString)
     {
@@ -20,8 +22,10 @@ public sealed class SqliteConnectionStringChecker : IConnectionStringChecker
 
             return result;
         }
-        catch (Exception)
+        catch (Exception e)
         {
+            logger.LogWarning(e, "Error while checking connection string");
+
             return result;
         }
     }

@@ -428,7 +428,13 @@ public sealed class CouchbaseManager : ICouchbaseManager
         }
 
         var scopesEnumerable = await bucket.Collections.GetAllScopesAsync();
-        var mapped = scopesEnumerable.ToDictionary(x => x.Name, x => x.Collections.Select(y => y.Name).ToHashSet());
+
+        var mapped = scopesEnumerable.ToDictionary(
+            x => x.Name,
+            x => x.Collections.Select(y => y.Name).ToHashSet(StringComparer.Ordinal),
+            StringComparer.Ordinal
+        );
+
         _scopesCache.TryAdd(key, mapped);
 
         return mapped;

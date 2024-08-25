@@ -11,4 +11,8 @@
     <PackageReference Include="ZString" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+  </ItemGroup>
+
 </Project>
