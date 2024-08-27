@@ -1,6 +1,6 @@
-﻿using Framework.Settings.DefinitionProviders;
+﻿using Framework.Settings.Definitions;
 
-namespace Framework.Settings.ValueStores;
+namespace Framework.Settings.Values;
 
 /// <summary>
 /// The setting value provider is used to get the value of a setting from a specific source (e.g. database, file, etc.).

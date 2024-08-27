@@ -1,4 +1,4 @@
-﻿namespace Framework.Settings.DefinitionProviders;
+﻿namespace Framework.Settings.Definitions;
 
 public interface ISettingDefinitionContext
 {

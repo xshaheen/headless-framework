@@ -1,4 +1,4 @@
-﻿namespace Framework.Settings.DefinitionProviders;
+﻿namespace Framework.Settings.Definitions;
 
 /// <summary>Used to define a setting definition.</summary>
 public interface ISettingDefinitionProvider

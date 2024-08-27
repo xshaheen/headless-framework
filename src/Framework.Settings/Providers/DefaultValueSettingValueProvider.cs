@@ -1,7 +1,7 @@
-﻿using Framework.Settings.DefinitionProviders;
-using Framework.Settings.ValueStores;
+﻿using Framework.Settings.Definitions;
+using Framework.Settings.Values;
 
-namespace Framework.Settings.ValueProviders;
+namespace Framework.Settings.Providers;
 
 /// <summary>Provides setting values from the default value of the setting definition.</summary>
 public sealed class DefaultValueSettingValueProvider(ISettingStore settingStore) : SettingValueProvider(settingStore)

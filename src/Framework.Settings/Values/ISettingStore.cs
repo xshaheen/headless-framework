@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Framework.Settings.ValueStores;
+namespace Framework.Settings.Values;
 
 /// <summary>Represents a store for setting values.</summary>
 public interface ISettingStore

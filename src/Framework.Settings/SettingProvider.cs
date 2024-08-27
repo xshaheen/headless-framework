@@ -1,7 +1,6 @@
-﻿using Framework.Settings.DefinitionProviders;
-using Framework.Settings.DefinitionStores;
+﻿using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
-using Framework.Settings.ValueStores;
+using Framework.Settings.Values;
 
 namespace Framework.Settings;
 
