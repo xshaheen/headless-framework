@@ -1,3 +1,4 @@
+using System.Security.Principal;
 using Framework.Arguments;
 using Framework.BuildingBlocks.Constants;
 using Framework.BuildingBlocks.Primitives;
@@ -27,6 +28,24 @@ public static class ClaimsPrincipalExtensions
         return GetUserId(principal) ?? throw new InvalidOperationException("User id is not found.");
     }
 
+    public static UserId? GetUserId(this IIdentity identity)
+    {
+        var claimsIdentity = identity as ClaimsIdentity;
+        var id = claimsIdentity?.FindFirst(PlatformClaimTypes.UserId)?.Value;
+
+        if (id is null)
+        {
+            return null;
+        }
+
+        return UserId.TryParse(id, CultureInfo.InvariantCulture, out var userId) ? userId : null;
+    }
+
+    public static UserId GetRequiredUserId(this IIdentity identity)
+    {
+        return GetUserId(identity) ?? throw new InvalidOperationException("User id is not found.");
+    }
+
     public static AccountId? GetAccountId(this ClaimsPrincipal? principal)
     {
         var id = principal?.FindFirst(PlatformClaimTypes.AccountId)?.Value;
@@ -42,6 +61,46 @@ public static class ClaimsPrincipalExtensions
     public static AccountId GetRequiredAccountId(this ClaimsPrincipal? principal)
     {
         return GetAccountId(principal) ?? throw new InvalidOperationException("Account id is not found.");
+    }
+
+    public static AccountId? GetAccountId(this IIdentity identity)
+    {
+        var claimsIdentity = identity as ClaimsIdentity;
+        var id = claimsIdentity?.FindFirst(PlatformClaimTypes.AccountId)?.Value;
+
+        if (id is null)
+        {
+            return null;
+        }
+
+        return AccountId.TryParse(id, CultureInfo.InvariantCulture, out var accountId) ? accountId : null;
+    }
+
+    public static AccountId GetRequiredAccountId(this IIdentity identity)
+    {
+        return GetAccountId(identity) ?? throw new InvalidOperationException("Account id is not found.");
+    }
+
+    public static string? GetEditionId(this ClaimsPrincipal? principal)
+    {
+        return principal?.FindFirst(PlatformClaimTypes.EditionId)?.Value;
+    }
+
+    public static string? GetEditionId(this IIdentity identity)
+    {
+        var claimsIdentity = identity as ClaimsIdentity;
+        return claimsIdentity?.FindFirst(PlatformClaimTypes.EditionId)?.Value;
+    }
+
+    public static string? GetTenantId(this ClaimsPrincipal? principal)
+    {
+        return principal?.FindFirst(PlatformClaimTypes.TenantId)?.Value;
+    }
+
+    public static string? GetTenantId(this IIdentity identity)
+    {
+        var claimsIdentity = identity as ClaimsIdentity;
+        return claimsIdentity?.FindFirst(PlatformClaimTypes.TenantId)?.Value;
     }
 
     public static string? GetUserType(this ClaimsPrincipal? principal)

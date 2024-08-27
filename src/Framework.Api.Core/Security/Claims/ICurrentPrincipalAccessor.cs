@@ -39,11 +39,12 @@ public class ThreadCurrentPrincipalAccessor : CurrentPrincipalAccessor
 {
     protected override ClaimsPrincipal GetClaimsPrincipal()
     {
-        return (Thread.CurrentPrincipal as ClaimsPrincipal)!;
+        return Thread.CurrentPrincipal as ClaimsPrincipal
+            ?? throw new InvalidOperationException("Thread.CurrentPrincipal is null or not a ClaimsPrincipal.");
     }
 }
 
-public class HttpContextCurrentPrincipalAccessor(IHttpContextAccessor accessor) : ThreadCurrentPrincipalAccessor
+public sealed class HttpContextCurrentPrincipalAccessor(IHttpContextAccessor accessor) : ThreadCurrentPrincipalAccessor
 {
     protected override ClaimsPrincipal GetClaimsPrincipal()
     {

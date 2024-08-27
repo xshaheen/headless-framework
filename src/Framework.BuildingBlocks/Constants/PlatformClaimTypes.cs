@@ -36,6 +36,8 @@ public static class PlatformClaimTypes
 
     public const string TenantId = "tenant_id";
 
+    public const string EditionId = "edition_id";
+
     /// <summary>Time the End-User's information was last updated. Its value is a JSON number representing the number of seconds from 1970-01-01T0:0:0Z as measured in UTC until the date/time.</summary>
     public const string UpdatedAt = "updated_at";
 
