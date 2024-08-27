@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Options;
 using MoreLinq;
 
-namespace Framework.Settings.ValueStores;
+namespace Framework.Settings.Values;
 
 /// <summary>Manage list of setting value providers.</summary>
 public interface ISettingValueProviderManager

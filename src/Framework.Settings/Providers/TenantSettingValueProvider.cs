@@ -1,8 +1,8 @@
 using Framework.Api.Core.Abstractions;
-using Framework.Settings.DefinitionProviders;
-using Framework.Settings.ValueStores;
+using Framework.Settings.Definitions;
+using Framework.Settings.Values;
 
-namespace Framework.Settings.ValueProviders;
+namespace Framework.Settings.Providers;
 
 public sealed class TenantSettingValueProvider(ISettingStore settingStore, ICurrentTenant currentTenant)
     : SettingValueProvider(settingStore)

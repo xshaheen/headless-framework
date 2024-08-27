@@ -1,5 +1,5 @@
 ﻿using Framework.Api.Core.Abstractions;
-using Framework.Settings.DefinitionProviders;
+using Framework.Settings.Definitions;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Settings.Helpers;

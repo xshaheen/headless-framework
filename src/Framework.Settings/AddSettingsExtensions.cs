@@ -1,9 +1,8 @@
 ﻿using Framework.Api.Core.Abstractions;
-using Framework.Settings.DefinitionProviders;
-using Framework.Settings.DefinitionStores;
+using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
-using Framework.Settings.ValueProviders;
-using Framework.Settings.ValueStores;
+using Framework.Settings.Providers;
+using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -13,15 +12,18 @@ namespace Framework.Settings;
 [PublicAPI]
 public static class AddSettingsExtensions
 {
-    public static IHostApplicationBuilder AddFrameworkSettingsModule(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder AddFrameworkSettings(this IHostApplicationBuilder builder)
     {
         builder.Services._AddSettingEncryption();
-        builder.Services._AddCoreDefinitionsStore();
-        builder.Services._AddCoreSettingValueProvider();
+        builder.Services._AddCoreValueProvider();
+
+        builder.Services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
+        builder.Services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
 
         builder.Services.TryAddTransient<ISettingProvider, SettingProvider>();
+
+        // This is a fallback store, it should be replaced by a real store
         builder.Services.TryAddSingleton<ISettingStore, NullSettingStore>();
-        builder.Services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
 
         return builder;
     }
@@ -58,7 +60,7 @@ public static class AddSettingsExtensions
         services.AddSingleton<ISettingEncryptionService, SettingEncryptionService>();
     }
 
-    private static void _AddCoreSettingValueProvider(this IServiceCollection services)
+    private static void _AddCoreValueProvider(this IServiceCollection services)
     {
         services.Configure<FrameworkSettingOptions>(options =>
         {
@@ -69,12 +71,10 @@ public static class AddSettingsExtensions
             options.ValueProviders.Add<TenantSettingValueProvider>();
             options.ValueProviders.Add<UserSettingValueProvider>();
         });
-    }
 
-    private static void _AddCoreDefinitionsStore(this IServiceCollection services)
-    {
-        services.AddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
-        services.AddSingleton<IDynamicSettingDefinitionStore, NullDynamicSettingDefinitionStore>();
-        services.AddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
+        services.AddSingleton<ISettingValueProvider, DefaultValueSettingValueProvider>();
+        services.AddSingleton<ISettingValueProvider, ConfigurationSettingValueProvider>();
+        services.AddSingleton<ISettingValueProvider, GlobalSettingValueProvider>();
+        services.AddSingleton<ISettingValueProvider, TenantSettingValueProvider>();
     }
 }

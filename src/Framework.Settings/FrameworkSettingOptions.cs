@@ -1,6 +1,6 @@
 ﻿using Framework.BuildingBlocks.Models.Collections;
-using Framework.Settings.DefinitionProviders;
-using Framework.Settings.ValueStores;
+using Framework.Settings.Definitions;
+using Framework.Settings.Values;
 
 namespace Framework.Settings;
 

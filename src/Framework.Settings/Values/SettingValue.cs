@@ -1,4 +1,4 @@
-﻿namespace Framework.Settings.ValueStores;
+﻿namespace Framework.Settings.Values;
 
 public sealed record SettingValue(string Name)
 {

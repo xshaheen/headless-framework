@@ -1,4 +1,4 @@
-﻿namespace Framework.Settings.DefinitionProviders;
+﻿namespace Framework.Settings.Definitions;
 
 [PublicAPI]
 public sealed class SettingDefinition(
@@ -38,22 +38,17 @@ public sealed class SettingDefinition(
     public List<string> Providers { get; } = [];
 
     /// <summary>Can be used to get/set custom properties for this setting definition.</summary>
-    public Dictionary<string, object> Properties { get; } = [];
+    public Dictionary<string, object?> Properties { get; } = [];
 
-    public SettingDefinition WithProperty(string key, object value)
+    /// <summary>Gets/sets a key-value on the <see cref="Properties"/>.</summary>
+    /// <param name="name">Name of the property</param>
+    /// <returns>
+    /// Returns the value in the <see cref="Properties"/> dictionary by given <paramref name="name"/>.
+    /// Returns null if given <paramref name="name"/> is not present in the <see cref="Properties"/> dictionary.
+    /// </returns>
+    public object? this[string name]
     {
-        Properties[key] = value;
-
-        return this;
-    }
-
-    public SettingDefinition WithProviders(params string[] providers)
-    {
-        if (!providers.IsNullOrEmpty())
-        {
-            Providers.AddIfNotContains(providers);
-        }
-
-        return this;
+        get => Properties.GetOrDefault(name);
+        set => Properties[name] = value;
     }
 }
