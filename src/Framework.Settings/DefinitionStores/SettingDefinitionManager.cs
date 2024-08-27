@@ -2,21 +2,23 @@
 
 namespace Framework.Settings.DefinitionStores;
 
+/// <summary>Manage setting definitions.</summary>
 public interface ISettingDefinitionManager
 {
-    Task<SettingDefinition?> GetOrNullAsync(string name);
+    Task<SettingDefinition?> GetOrDefaultAsync(string name);
 
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync();
 }
 
+/// <inheritdoc />
 public sealed class SettingDefinitionManager(
     IStaticSettingDefinitionStore staticStore,
     IDynamicSettingDefinitionStore dynamicStore
 ) : ISettingDefinitionManager
 {
-    public async Task<SettingDefinition?> GetOrNullAsync(string name)
+    public async Task<SettingDefinition?> GetOrDefaultAsync(string name)
     {
-        return await staticStore.GetOrNullAsync(name) ?? await dynamicStore.GetOrNullAsync(name);
+        return await staticStore.GetOrDefaultAsync(name) ?? await dynamicStore.GetOrDefaultAsync(name);
     }
 
     public async Task<IReadOnlyList<SettingDefinition>> GetAllAsync()

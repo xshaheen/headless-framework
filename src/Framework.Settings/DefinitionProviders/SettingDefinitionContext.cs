@@ -2,7 +2,7 @@
 
 public interface ISettingDefinitionContext
 {
-    SettingDefinition? GetOrNull(string name);
+    SettingDefinition? GetOrDefault(string name);
 
     IReadOnlyList<SettingDefinition> GetAll();
 
@@ -11,7 +11,7 @@ public interface ISettingDefinitionContext
 
 public sealed class SettingDefinitionContext(Dictionary<string, SettingDefinition> settings) : ISettingDefinitionContext
 {
-    public SettingDefinition? GetOrNull(string name)
+    public SettingDefinition? GetOrDefault(string name)
     {
         return settings.GetOrDefault(name);
     }

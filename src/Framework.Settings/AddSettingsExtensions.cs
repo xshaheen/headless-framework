@@ -1,8 +1,11 @@
-﻿using Framework.Settings.DefinitionProviders;
+﻿using Framework.Api.Core.Abstractions;
+using Framework.Settings.DefinitionProviders;
 using Framework.Settings.DefinitionStores;
+using Framework.Settings.Helpers;
 using Framework.Settings.ValueProviders;
 using Framework.Settings.ValueStores;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Framework.Settings;
@@ -12,13 +15,13 @@ public static class AddSettingsExtensions
 {
     public static IHostApplicationBuilder AddFrameworkSettingsModule(this IHostApplicationBuilder builder)
     {
+        builder.Services._AddSettingEncryption();
         builder.Services._AddCoreDefinitionsStore();
         builder.Services._AddCoreSettingValueProvider();
 
-        // builder.Services.AddTransient<ISettingEncryptionService, SettingEncryptionService>();
-        builder.Services.AddTransient<ISettingProvider, SettingProvider>();
-        builder.Services.AddSingleton<ISettingStore, NullSettingStore>();
-        builder.Services.AddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
+        builder.Services.TryAddTransient<ISettingProvider, SettingProvider>();
+        builder.Services.TryAddSingleton<ISettingStore, NullSettingStore>();
+        builder.Services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
 
         return builder;
     }
@@ -26,7 +29,7 @@ public static class AddSettingsExtensions
     public static void AddSettingDefinitionProvider<T>(this IServiceCollection services)
         where T : class, ISettingDefinitionProvider
     {
-        services.AddTransient<ISettingDefinitionProvider, T>();
+        services.AddSingleton<ISettingDefinitionProvider, T>();
 
         services.Configure<FrameworkSettingOptions>(options =>
         {
@@ -35,14 +38,24 @@ public static class AddSettingsExtensions
     }
 
     public static void AddSettingValueProvider<T>(this IServiceCollection services)
-        where T : class, ISettingValueProvider, ISettingDefinitionProvider
+        where T : class, ISettingValueProvider
     {
-        services.AddTransient<ISettingDefinitionProvider, T>();
+        services.AddSingleton<ISettingValueProvider, T>();
 
         services.Configure<FrameworkSettingOptions>(options =>
         {
-            options.ValueProviders.Add<T>();
+            if (!options.ValueProviders.Contains<T>())
+            {
+                options.ValueProviders.Add<T>();
+            }
         });
+    }
+
+    private static void _AddSettingEncryption(this IServiceCollection services)
+    {
+        services.AddOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
+        services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
+        services.AddSingleton<ISettingEncryptionService, SettingEncryptionService>();
     }
 
     private static void _AddCoreSettingValueProvider(this IServiceCollection services)
@@ -53,6 +66,7 @@ public static class AddSettingsExtensions
             options.ValueProviders.Add<DefaultValueSettingValueProvider>();
             options.ValueProviders.Add<ConfigurationSettingValueProvider>();
             options.ValueProviders.Add<GlobalSettingValueProvider>();
+            options.ValueProviders.Add<TenantSettingValueProvider>();
             options.ValueProviders.Add<UserSettingValueProvider>();
         });
     }

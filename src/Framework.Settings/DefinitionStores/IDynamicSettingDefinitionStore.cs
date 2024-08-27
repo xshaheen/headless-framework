@@ -2,11 +2,12 @@ using Framework.Settings.DefinitionProviders;
 
 namespace Framework.Settings.DefinitionStores;
 
+/// <summary>Can be implemented to provide the setting definitions from dynamic source.</summary>
 public interface IDynamicSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync();
 
-    Task<SettingDefinition?> GetOrNullAsync(string name);
+    Task<SettingDefinition?> GetOrDefaultAsync(string name);
 }
 
 public sealed class NullDynamicSettingDefinitionStore : IDynamicSettingDefinitionStore
@@ -19,7 +20,7 @@ public sealed class NullDynamicSettingDefinitionStore : IDynamicSettingDefinitio
         IReadOnlyList<SettingDefinition>
     >([]);
 
-    public Task<SettingDefinition?> GetOrNullAsync(string name)
+    public Task<SettingDefinition?> GetOrDefaultAsync(string name)
     {
         return _CachedNullableSettingResult;
     }

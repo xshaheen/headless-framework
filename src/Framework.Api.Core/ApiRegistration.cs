@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Api.Core;
 
@@ -36,35 +37,35 @@ public static class ApiRegistration
         builder.Services.AddCustomStatusCodesRewriterMiddleware();
         builder.Services.AddRequestCanceledMiddleware();
 
-        builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
-        builder.Services.AddScoped<ICurrentTenant, NullCurrentTenant>();
-        builder.Services.AddScoped<IWebClientInfoProvider, HttpWebClientInfoProvider>();
-        builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
-        builder.Services.AddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
-        builder.Services.AddScoped<IRequestTime, RequestTime>();
-        builder.Services.AddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
+        builder.Services.TryAddScoped<ICurrentUser, HttpCurrentUser>();
+        builder.Services.TryAddScoped<ICurrentTenant, NullCurrentTenant>();
+        builder.Services.TryAddScoped<IWebClientInfoProvider, HttpWebClientInfoProvider>();
+        builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
+        builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
+        builder.Services.TryAddScoped<IRequestTime, RequestTime>();
+        builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
 
-        builder.Services.AddSingleton<IFileFormatInspector>(FileFormatInspector);
-        builder.Services.AddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        builder.Services.AddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
+        builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);
+        builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
-        builder.Services.AddSingleton<ICurrentPrincipalAccessor, CurrentPrincipalAccessor>();
-        builder.Services.AddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
-        builder.Services.AddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
-        builder.Services.AddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
-        builder.Services.AddSingleton<IJwtTokenFactory, JwtTokenFactory>();
+        builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, CurrentPrincipalAccessor>();
+        builder.Services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
+        builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
+        builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
+        builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
 
-        builder.Services.AddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-        builder.Services.AddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
-        builder.Services.AddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
-        builder.Services.AddSingleton<IClock, Clock>();
-        builder.Services.AddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
+        builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
+        builder.Services.TryAddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
+        builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
+        builder.Services.TryAddSingleton<IClock, Clock>();
+        builder.Services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
 
         builder.Services.AddOptions<StringHashSettings, StringHashSettingsValidator>();
-        builder.Services.AddSingleton<IStringHashService, StringHashService>();
+        builder.Services.TryAddSingleton<IStringHashService, StringHashService>();
 
         builder.Services.AddOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
-        builder.Services.AddSingleton<IStringEncryptionService, StringEncryptionService>();
+        builder.Services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
     }
 
     public static void UseFrameworkApi(this WebApplication app)

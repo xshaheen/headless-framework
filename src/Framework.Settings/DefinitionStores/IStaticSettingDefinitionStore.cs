@@ -4,13 +4,15 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.DefinitionStores;
 
+/// <summary>Retrieves setting definitions from a service provider and <see cref="FrameworkSettingOptions.DefinitionProviders"/></summary>
 public interface IStaticSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync();
 
-    Task<SettingDefinition?> GetOrNullAsync(string name);
+    Task<SettingDefinition?> GetOrDefaultAsync(string name);
 }
 
+/// <inheritdoc />
 public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
 {
     private readonly IServiceProvider _serviceProvider;
@@ -21,7 +23,7 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
     {
         _serviceProvider = serviceProvider;
         _options = options.Value;
-        _settingDefinitions = new(_CreateSettingDefinitions, true);
+        _settingDefinitions = new(_CreateSettingDefinitions, isThreadSafe: true);
     }
 
     public Task<IReadOnlyList<SettingDefinition>> GetAllAsync()
@@ -29,7 +31,7 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
         return Task.FromResult<IReadOnlyList<SettingDefinition>>(_settingDefinitions.Value.Values.ToImmutableList());
     }
 
-    public Task<SettingDefinition?> GetOrNullAsync(string name)
+    public Task<SettingDefinition?> GetOrDefaultAsync(string name)
     {
         return Task.FromResult(_settingDefinitions.Value.GetOrDefault(name));
     }
@@ -43,10 +45,8 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
 
         foreach (var type in _options.DefinitionProviders)
         {
-            if (scope.ServiceProvider.GetRequiredService(type) is ISettingDefinitionProvider provider)
-            {
-                provider.Define(context);
-            }
+            var provider = (ISettingDefinitionProvider)scope.ServiceProvider.GetRequiredService(type);
+            provider.Define(context);
         }
 
         return settings;

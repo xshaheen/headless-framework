@@ -1,5 +1,6 @@
 ﻿namespace Framework.Settings.DefinitionProviders;
 
+[PublicAPI]
 public sealed class SettingDefinition(
     string name,
     string? defaultValue = null,
@@ -12,6 +13,7 @@ public sealed class SettingDefinition(
     /// <summary>Unique name of the setting.</summary>
     public string Name { get; } = name;
 
+    /// <summary>Display name of the setting.</summary>
     public string DisplayName { get; set; } = displayName ?? name;
 
     /// <summary>Setting description.</summary>
