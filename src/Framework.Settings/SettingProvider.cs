@@ -5,9 +5,10 @@ using Framework.Settings.ValueStores;
 
 namespace Framework.Settings;
 
+/// <summary>Retrieve setting value from <see cref="ISettingValueProvider"/></summary>
 public interface ISettingProvider
 {
-    Task<string?> GetOrNullAsync(string name);
+    Task<string?> GetOrDefaultAsync(string name);
 
     Task<List<SettingValue>> GetAllAsync(string[] names);
 
@@ -20,9 +21,9 @@ public sealed class SettingProvider(
     ISettingEncryptionService settingEncryptionService
 ) : ISettingProvider
 {
-    public async Task<string?> GetOrNullAsync(string name)
+    public async Task<string?> GetOrDefaultAsync(string name)
     {
-        var setting = await settingDefinitionManager.GetOrNullAsync(name);
+        var setting = await settingDefinitionManager.GetOrDefaultAsync(name);
 
         if (setting is null)
         {
@@ -36,7 +37,7 @@ public sealed class SettingProvider(
             providers = providers.Where(p => setting.Providers.Contains(p.Name, StringComparer.Ordinal));
         }
 
-        var value = await _GetOrNullValueFromProvidersAsync(providers, setting);
+        var value = await _GetOrDefaultValueFromProvidersAsync(providers, setting);
         if (value is not null && setting.IsEncrypted)
         {
             value = settingEncryptionService.Decrypt(setting, value);
@@ -98,21 +99,21 @@ public sealed class SettingProvider(
 
         foreach (var setting in settingDefinitions)
         {
-            var value = await GetOrNullAsync(setting.Name);
+            var value = await GetOrDefaultAsync(setting.Name);
             settingValues.Add(new SettingValue(setting.Name, value));
         }
 
         return settingValues;
     }
 
-    private static async Task<string?> _GetOrNullValueFromProvidersAsync(
+    private static async Task<string?> _GetOrDefaultValueFromProvidersAsync(
         IEnumerable<ISettingValueProvider> providers,
         SettingDefinition setting
     )
     {
         foreach (var provider in providers)
         {
-            var value = await provider.GetOrNullAsync(setting);
+            var value = await provider.GetOrDefaultAsync(setting);
 
             if (value is not null)
             {

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Framework.Settings.ValueProviders;
 
+/// <summary>Provides setting values from the <see cref="IConfiguration"/> with prefix <see cref="ConfigurationNamePrefix"/>.</summary>
 public sealed class ConfigurationSettingValueProvider(IConfiguration configuration) : ISettingValueProvider
 {
     public const string ConfigurationNamePrefix = "Settings:";
@@ -11,7 +12,7 @@ public sealed class ConfigurationSettingValueProvider(IConfiguration configurati
 
     public string Name => ProviderName;
 
-    public Task<string?> GetOrNullAsync(SettingDefinition setting)
+    public Task<string?> GetOrDefaultAsync(SettingDefinition setting)
     {
         return Task.FromResult(configuration[ConfigurationNamePrefix + setting.Name]);
     }

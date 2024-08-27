@@ -3,13 +3,14 @@ using Framework.Settings.ValueStores;
 
 namespace Framework.Settings.ValueProviders;
 
+/// <summary>Provides setting values from the default value of the setting definition.</summary>
 public sealed class DefaultValueSettingValueProvider(ISettingStore settingStore) : SettingValueProvider(settingStore)
 {
     public const string ProviderName = "DefaultValue";
 
     public override string Name => ProviderName;
 
-    public override Task<string?> GetOrNullAsync(SettingDefinition setting)
+    public override Task<string?> GetOrDefaultAsync(SettingDefinition setting)
     {
         return Task.FromResult(setting.DefaultValue);
     }
