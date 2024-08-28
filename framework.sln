@@ -157,6 +157,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.SshNet", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.DataProtection", "src\Framework.DataProtection\Framework.DataProtection.csproj", "{035D5235-8CEE-4B55-AE8A-B25EA9E84C4B}"
 EndProject
+ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Permissions", "Permissions", "{16DEFAB5-667D-4D77-AF4A-3FAE2837106D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Permissions", "src\Framework.Permissions\Framework.Permissions.csproj", "{07AAA09E-A478-487D-AC3D-21DB41E577F9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -385,6 +389,10 @@ Global
 		{035D5235-8CEE-4B55-AE8A-B25EA9E84C4B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{035D5235-8CEE-4B55-AE8A-B25EA9E84C4B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{035D5235-8CEE-4B55-AE8A-B25EA9E84C4B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{07AAA09E-A478-487D-AC3D-21DB41E577F9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{07AAA09E-A478-487D-AC3D-21DB41E577F9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{07AAA09E-A478-487D-AC3D-21DB41E577F9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{07AAA09E-A478-487D-AC3D-21DB41E577F9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -445,6 +453,7 @@ Global
 		{7621EE60-E4D5-4E06-94B2-D01C9D35A2CA} = {4681258C-BF42-4688-B619-513EB2658D82}
 		{ED2B6847-51A9-4A4A-AC14-E5FF26913530} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
 		{035D5235-8CEE-4B55-AE8A-B25EA9E84C4B} = {1412395E-3C6D-4C83-A4DF-9082CD69D042}
+		{07AAA09E-A478-487D-AC3D-21DB41E577F9} = {16DEFAB5-667D-4D77-AF4A-3FAE2837106D}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
