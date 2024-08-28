@@ -15,7 +15,7 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
     /// <param name="action">The action used to add to the request execution pipeline.</param>
     /// <returns>The same application builder.</returns>
-    public static IApplicationBuilder UseIf(
+    public static WebApplication UseIf(
         this WebApplication application,
         bool condition,
         Func<WebApplication, WebApplication> action
@@ -45,11 +45,38 @@ public static class ApplicationBuilderHelperExtensions
     /// <param name="elseAction">The action used to add to the request execution pipeline if the condition is
     /// <see langword="false"/>.</param>
     /// <returns>The same application builder.</returns>
-    public static IApplicationBuilder UseIfElse(
+    public static WebApplication UseIfElse(
         this WebApplication application,
         bool condition,
         Func<WebApplication, WebApplication> ifAction,
         Func<WebApplication, WebApplication> elseAction
+    )
+    {
+        Argument.IsNotNull(application);
+        Argument.IsNotNull(ifAction);
+        Argument.IsNotNull(elseAction);
+
+        return condition ? ifAction(application) : elseAction(application);
+    }
+
+    /// <summary>
+    /// Executes the specified <paramref name="ifAction"/> if the specified <paramref name="condition"/> is
+    /// <see langword="true"/>, otherwise executes the <paramref name="elseAction"/>. This can be used to conditionally add to
+    /// the request execution pipeline.
+    /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <param name="condition">If set to <see langword="true"/> the <paramref name="ifAction"/> is executed, otherwise the
+    /// <paramref name="elseAction"/> is executed.</param>
+    /// <param name="ifAction">The action used to add to the request execution pipeline if the condition is
+    /// <see langword="true"/>.</param>
+    /// <param name="elseAction">The action used to add to the request execution pipeline if the condition is
+    /// <see langword="false"/>.</param>
+    /// <returns>The same application builder.</returns>
+    public static T UseIfElse<T>(
+        this WebApplication application,
+        bool condition,
+        Func<WebApplication, T> ifAction,
+        Func<WebApplication, T> elseAction
     )
     {
         Argument.IsNotNull(application);
@@ -102,6 +129,33 @@ public static class ApplicationBuilderHelperExtensions
         bool condition,
         Func<IApplicationBuilder, IApplicationBuilder> ifAction,
         Func<IApplicationBuilder, IApplicationBuilder> elseAction
+    )
+    {
+        Argument.IsNotNull(application);
+        Argument.IsNotNull(ifAction);
+        Argument.IsNotNull(elseAction);
+
+        return condition ? ifAction(application) : elseAction(application);
+    }
+
+    /// <summary>
+    /// Executes the specified <paramref name="ifAction"/> if the specified <paramref name="condition"/> is
+    /// <see langword="true"/>, otherwise executes the <paramref name="elseAction"/>. This can be used to conditionally add to
+    /// the request execution pipeline.
+    /// </summary>
+    /// <param name="application">The application builder.</param>
+    /// <param name="condition">If set to <see langword="true"/> the <paramref name="ifAction"/> is executed, otherwise the
+    /// <paramref name="elseAction"/> is executed.</param>
+    /// <param name="ifAction">The action used to add to the request execution pipeline if the condition is
+    /// <see langword="true"/>.</param>
+    /// <param name="elseAction">The action used to add to the request execution pipeline if the condition is
+    /// <see langword="false"/>.</param>
+    /// <returns>The same application builder.</returns>
+    public static T UseIfElse<T>(
+        this IApplicationBuilder application,
+        bool condition,
+        Func<IApplicationBuilder, T> ifAction,
+        Func<IApplicationBuilder, T> elseAction
     )
     {
         Argument.IsNotNull(application);

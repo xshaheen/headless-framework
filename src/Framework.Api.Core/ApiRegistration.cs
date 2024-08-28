@@ -73,6 +73,24 @@ public static class ApiRegistration
         app.UseSecurityHeaders();
     }
 
+    public static IDisposable AddApiBadRequestDiagnosticListeners(this WebApplication app)
+    {
+        var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
+        var badRequest = new BadRequestDiagnosticAdapter(app.Logger);
+        var badRequestSubscription = diagnosticListener.SubscribeWithAdapter(badRequest);
+
+        return badRequestSubscription;
+    }
+
+    public static IDisposable AddMiddlewareAnalysisDiagnosticListeners(this WebApplication app)
+    {
+        var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
+        var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
+        var middlewareAnalysisSubscription = diagnosticListener.SubscribeWithAdapter(middlewareAnalysis);
+
+        return middlewareAnalysisSubscription;
+    }
+
     public static IDisposable AddFrameworkApiDiagnosticListeners(this WebApplication app)
     {
         var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
