@@ -8,19 +8,19 @@ namespace Framework.Api.Core.Diagnostics;
 [PublicAPI]
 public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
 {
-    [DiagnosticName(DiagnosticSources.MiddlewareAnalysisOnMiddlewareStarting)]
+    [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareStarting)]
     public void OnMiddlewareStarting(HttpContext httpContext, string name, Guid instance, long timestamp)
     {
         Extensions.MiddlewareStarting(logger, timestamp, name, httpContext.Request.Path);
     }
 
-    [DiagnosticName(DiagnosticSources.MiddlewareAnalysisOnMiddlewareFinished)]
+    [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareFinished)]
     public void OnMiddlewareFinished(HttpContext httpContext, string name, Guid instance, long timestamp, long duration)
     {
         Extensions.MiddlewareFinished(logger, timestamp, name, duration, httpContext.Response.StatusCode);
     }
 
-    [DiagnosticName(DiagnosticSources.MiddlewareAnalysisOnMiddlewareException)]
+    [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareException)]
     public void OnMiddlewareException(
         Exception exception,
         HttpContext httpContext,
