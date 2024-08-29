@@ -62,8 +62,13 @@ public static class ConfigurationExtensions
             ?? throw new InvalidOperationException($"Missing configurations {typeof(T).Name}");
     }
 
-    public static T GetRequiredValue<T>(this IConfiguration configuration, string key)
+    public static T GetRequired<T>(
+        this IConfiguration configuration,
+        string key,
+        Action<BinderOptions>? configureOptions = null
+    )
     {
-        return configuration.GetValue<T>(key) ?? throw new InvalidOperationException($"Missing configuration {key}");
+        return configuration.GetSection(key).Get<T>(configureOptions)
+            ?? throw new InvalidOperationException($"Missing configuration {key}");
     }
 }
