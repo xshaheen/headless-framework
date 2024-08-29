@@ -1,12 +1,13 @@
 ﻿using Flurl;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
-namespace Framework.Api.Core.Endpoints;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.AspNetCore.Builder;
 
 public static class EndpointsExtensions
 {
-    public static void RedirectHosts(this WebApplication app, string mainHost, string[] redirectHosts)
+    public static void RedirectHosts(this WebApplication app, string mainHost, string[]? redirectHosts)
     {
         if (redirectHosts is not { Length: > 0 })
         {

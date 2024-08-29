@@ -17,8 +17,8 @@
 
   <ItemGroup Label="Primitives Generator Settings">
     <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
-    <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
     <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
+    <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
     <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />

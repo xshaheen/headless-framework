@@ -35,14 +35,14 @@ public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidatio
     /// Creates a new instance of the <see cref="PrimitiveValidationResult"/> struct with a valid result.
     /// </summary>
     /// <returns>A new instance of the <see cref="PrimitiveValidationResult"/> struct with a valid result.</returns>
-    public static readonly PrimitiveValidationResult Ok = new(true, null);
+    public static readonly PrimitiveValidationResult Ok = new(isValid: true, errorMessage: null);
 
     /// <summary>
     /// Creates a new instance of the <see cref="PrimitiveValidationResult"/> struct with an error result.
     /// </summary>
     /// <param name="error">The error message associated with the result.</param>
     /// <returns>A new instance of the <see cref="PrimitiveValidationResult"/> struct with an error result.</returns>
-    public static PrimitiveValidationResult Error(string error) => new(false, error);
+    public static PrimitiveValidationResult Error(string error) => new(isValid: false, error);
 
     /// <summary>
     /// Implicitly converts a string value to a <see cref="PrimitiveValidationResult"/> with an error result.
@@ -81,5 +81,4 @@ public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidatio
     {
         return !(left == right);
     }
-
 }
