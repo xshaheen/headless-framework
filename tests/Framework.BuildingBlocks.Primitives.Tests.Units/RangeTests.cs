@@ -30,7 +30,7 @@ public class RangeTests
         var action = FluentActions.Invoking(() => new Range<int>(from, to));
 
         // then
-        action.Should().Throw<ArgumentException>();
+        action.Should().Throw<InvalidOperationException>();
     }
 
     #endregion
