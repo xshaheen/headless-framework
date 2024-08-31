@@ -4,7 +4,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <RootNamespace>Primitives.Generator</RootNamespace>
-    <AssemblyName>$(Product).Framework.Primitives.Generator</AssemblyName>
+    <AssemblyName>$(Product).Framework.Generator.Primitives</AssemblyName>
   </PropertyGroup>
 
   <PropertyGroup>

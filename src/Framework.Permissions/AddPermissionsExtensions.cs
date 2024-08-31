@@ -23,6 +23,7 @@ public static class AddPermissionsExtensions
     {
         services.ReplaceSingleton<IPermissionChecker, AlwaysAllowPermissionChecker>();
         services.ReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
+
         services.ReplaceSingleton<
             IMethodInvocationAuthorizationService,
             AlwaysAllowMethodInvocationAuthorizationService
