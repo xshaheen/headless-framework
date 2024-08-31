@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -31,7 +32,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"Argument {_AssertString(paramName)} was not in required format.",
+            message ?? $"Argument {paramName.ToAssertString()} was not in required format.",
             paramName
         );
     }

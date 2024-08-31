@@ -1,15 +1,8 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
+
 namespace Framework.Arguments;
 
 [PublicAPI]
-public static partial class Argument
-{
-    private static string _AssertString(object? obj)
-    {
-        return obj switch
-        {
-            string => $"\"{obj}\"",
-            null => "null",
-            _ => $"<{obj}>",
-        };
-    }
-}
+public static partial class Argument;

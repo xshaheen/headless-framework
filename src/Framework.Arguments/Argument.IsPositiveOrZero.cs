@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -23,7 +24,7 @@ public static partial class Argument
         return argument >= T.Zero
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }
@@ -44,7 +45,7 @@ public static partial class Argument
         return argument >= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }
@@ -60,7 +61,7 @@ public static partial class Argument
         return argument >= 0L
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }
@@ -76,7 +77,7 @@ public static partial class Argument
         return argument >= 0F
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }
@@ -92,7 +93,7 @@ public static partial class Argument
         return argument >= 0D
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }
@@ -108,7 +109,7 @@ public static partial class Argument
         return argument >= 0M
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }
@@ -124,7 +125,7 @@ public static partial class Argument
         return argument >= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }
@@ -140,7 +141,7 @@ public static partial class Argument
         return argument >= TimeSpan.Zero
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be negative.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be negative.",
                 paramName
             );
     }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -32,7 +33,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"The argument {_AssertString(argumentName)} must be the same instance as {_AssertString(targetName)}.",
+                ?? $"The argument {argumentName.ToAssertString()} must be the same instance as {targetName.ToAssertString()}.",
             argumentName
         );
     }
@@ -64,7 +65,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"The argument {_AssertString(argumentName)} must not be the same instance as {_AssertString(targetName)}.",
+                ?? $"The argument {argumentName.ToAssertString()} must not be the same instance as {targetName.ToAssertString()}.",
             argumentName
         );
     }

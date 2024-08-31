@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -28,7 +29,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} cannot contains null elements.",
+            message ?? $"The argument {paramName.ToAssertString()} cannot contains null elements.",
             paramName
         );
     }
@@ -52,7 +53,7 @@ public static partial class Argument
         if (argument.Any(string.IsNullOrEmpty))
         {
             throw new ArgumentException(
-                message ?? $"The argument {_AssertString(paramName)} cannot contains empty elements.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot contains empty elements.",
                 paramName
             );
         }
@@ -79,7 +80,7 @@ public static partial class Argument
         if (argument.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException(
-                message ?? $"The argument {_AssertString(paramName)} cannot contains empty or white space elements.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot contains empty or white space elements.",
                 paramName
             );
         }
