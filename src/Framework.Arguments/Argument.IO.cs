@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -19,7 +20,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            $"Stream {_AssertString(paramName)} ({stream.GetType().Name}) doesn't support reading.",
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support reading.",
             paramName
         );
     }
@@ -38,7 +39,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            $"Stream {_AssertString(paramName)} ({stream.GetType().Name}) doesn't support writing.",
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support writing.",
             paramName
         );
     }
@@ -57,7 +58,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            $"Stream {_AssertString(paramName)} ({stream.GetType().Name}) doesn't support reading.",
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) doesn't support reading.",
             paramName
         );
     }
@@ -79,7 +80,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            $"Stream {_AssertString(paramName)} ({stream.GetType().Name}) is not at the starting position.",
+            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) is not at the starting position.",
             paramName
         );
     }

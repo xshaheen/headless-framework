@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -24,7 +25,7 @@ public static partial class Argument
     {
         return T.IsNaN(argument)
             ? throw new ArgumentException(
-                message ?? $"The argument {_AssertString(paramName)} cannot be NaN.",
+                message ?? $"The argument {paramName.ToAssertString()} cannot be NaN.",
                 paramName
             )
             : argument;
@@ -49,7 +50,7 @@ public static partial class Argument
         return T.IsNaN(argument)
             ? argument
             : throw new ArgumentException(
-                message ?? $"The argument {_AssertString(paramName)} must be a NaN.",
+                message ?? $"The argument {paramName.ToAssertString()} must be a NaN.",
                 paramName
             );
     }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -30,7 +31,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"Expected {_AssertString(paramName)} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
+                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
             paramName
         );
     }
@@ -52,7 +53,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"Expected {_AssertString(paramName)} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
+                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
             paramName
         );
     }
@@ -74,7 +75,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"Expected {_AssertString(paramName)} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
+                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
             paramName
         );
     }
@@ -96,7 +97,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"Expected {_AssertString(paramName)} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
+                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
             paramName
         );
     }
@@ -118,7 +119,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"Expected {_AssertString(paramName)} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
+                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
             paramName
         );
     }
@@ -141,7 +142,7 @@ public static partial class Argument
 
         throw new ArgumentException(
             message
-                ?? $"Expected {_AssertString(paramName)} was out of range to be one of [{validValues.Aggregate("", (p, c) => p + "," + c)}], but found {argument}.",
+                ?? $"Expected {paramName.ToAssertString()} was out of range to be one of [{validValues.Aggregate("", (p, c) => p + "," + c)}], but found {argument}.",
             paramName
         );
     }

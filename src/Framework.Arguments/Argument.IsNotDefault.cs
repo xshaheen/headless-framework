@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -26,7 +27,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument '{_AssertString(paramName)}' must be default.",
+            message ?? $"The argument '{paramName.ToAssertString()}' must be default.",
             paramName
         );
     }
@@ -49,7 +50,7 @@ public static partial class Argument
         if (EqualityComparer<T>.Default.Equals(argument, default))
         {
             throw new ArgumentException(
-                message ?? $"{_AssertString(paramName)} cannot be the default value of {typeof(T).Name}.",
+                message ?? $"{paramName.ToAssertString()} cannot be the default value of {typeof(T).Name}.",
                 paramName
             );
         }
@@ -75,7 +76,7 @@ public static partial class Argument
         if (EqualityComparer<T>.Default.Equals(argument.Value, default))
         {
             throw new ArgumentException(
-                message ?? $"{_AssertString(paramName)} cannot be the default value of {typeof(T).Name}.",
+                message ?? $"{paramName.ToAssertString()} cannot be the default value of {typeof(T).Name}.",
                 paramName
             );
         }

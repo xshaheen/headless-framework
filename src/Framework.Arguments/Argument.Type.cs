@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -27,7 +28,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must be of type {type}.",
+            message ?? $"The argument {paramName.ToAssertString()} must be of type {type}.",
             paramName
         );
     }
@@ -54,7 +55,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must not be of type {type}.",
+            message ?? $"The argument {paramName.ToAssertString()} must not be of type {type}.",
             paramName
         );
     }
@@ -80,7 +81,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must be of type {type}.",
+            message ?? $"The argument {paramName.ToAssertString()} must be of type {type}.",
             paramName
         );
     }
@@ -106,7 +107,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must not be of type {type}.",
+            message ?? $"The argument {paramName.ToAssertString()} must not be of type {type}.",
             paramName
         );
     }
@@ -131,7 +132,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must be assignable to {typeof(T)}.",
+            message ?? $"The argument {paramName.ToAssertString()} must be assignable to {typeof(T)}.",
             paramName
         );
     }
@@ -156,7 +157,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must not be assignable to {typeof(T)}.",
+            message ?? $"The argument {paramName.ToAssertString()} must not be assignable to {typeof(T)}.",
             paramName
         );
     }
@@ -182,7 +183,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must be assignable to {type}.",
+            message ?? $"The argument {paramName.ToAssertString()} must be assignable to {type}.",
             paramName
         );
     }
@@ -208,7 +209,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            message ?? $"The argument {_AssertString(paramName)} must not be assignable to {type}.",
+            message ?? $"The argument {paramName.ToAssertString()} must not be assignable to {type}.",
             paramName
         );
     }

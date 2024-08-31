@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -23,7 +24,10 @@ public static partial class Argument
     )
     {
         return argument is { Count: 0 }
-            ? throw new ArgumentException(message ?? "Required argument " + paramName + " was empty.", paramName)
+            ? throw new ArgumentException(
+                message ?? $"Required argument {paramName.ToAssertString()} was empty.",
+                paramName
+            )
             : argument;
     }
 
@@ -44,7 +48,10 @@ public static partial class Argument
 
         if (!argument.Any())
         {
-            throw new ArgumentException(message ?? "Required argument " + paramName + " was empty.", paramName);
+            throw new ArgumentException(
+                message ?? $"Required argument {paramName.ToAssertString()} was empty.",
+                paramName
+            );
         }
 
         return argument;
@@ -61,7 +68,10 @@ public static partial class Argument
     )
     {
         return argument is { Length: 0 }
-            ? throw new ArgumentException(message ?? "Required argument " + paramName + " was empty.", paramName)
+            ? throw new ArgumentException(
+                message ?? $"Required argument {paramName.ToAssertString()} was empty.",
+                paramName
+            )
             : argument;
     }
 }

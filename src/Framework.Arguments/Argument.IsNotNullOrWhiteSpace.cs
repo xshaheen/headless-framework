@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -29,7 +30,7 @@ public static partial class Argument
         if (_IsWhiteSpace(argument))
         {
             throw new ArgumentException(
-                message ?? $"Required argument {_AssertString(paramName)} was empty.",
+                message ?? $"Required argument {paramName.ToAssertString()} was empty.",
                 paramName
             );
         }

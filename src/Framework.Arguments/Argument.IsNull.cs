@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -21,7 +22,10 @@ public static partial class Argument
     {
         if (argument is not null)
         {
-            throw new ArgumentNullException(paramName, message);
+            throw new ArgumentNullException(
+                paramName,
+                message ?? $"The argument '{paramName.ToAssertString()}' must be null."
+            );
         }
 
         return argument;
@@ -42,6 +46,10 @@ public static partial class Argument
     )
         where T : struct
     {
-        return argument ?? throw new ArgumentNullException(paramName, message);
+        return argument
+            ?? throw new ArgumentNullException(
+                paramName,
+                message ?? $"The argument '{paramName.ToAssertString()}' must be null."
+            );
     }
 }

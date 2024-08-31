@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -31,7 +32,7 @@ public static partial class Argument
 
         throw new ArgumentOutOfRangeException(
             message
-                ?? $"Expected argument {_AssertString(paramName)} to be equal to {expected._ToInvariantString()}, but found {argument._ToInvariantString()}.",
+                ?? $"Expected argument {paramName.ToAssertString()} to be equal to {expected.ToInvariantString()}, but found {argument.ToInvariantString()}.",
             paramName
         );
     }
@@ -60,7 +61,7 @@ public static partial class Argument
 
         throw new ArgumentOutOfRangeException(
             message
-                ?? $"Expected argument {_AssertString(paramName)} to be less than or equal to {expected._ToInvariantString()}.",
+                ?? $"Expected argument {paramName.ToAssertString()} to be less than or equal to {expected.ToInvariantString()}.",
             paramName
         );
     }
@@ -89,7 +90,7 @@ public static partial class Argument
 
         throw new ArgumentOutOfRangeException(
             message
-                ?? $"Expected argument {_AssertString(paramName)} to be greater than or equal to {expected._ToInvariantString()}.",
+                ?? $"Expected argument {paramName.ToAssertString()} to be greater than or equal to {expected.ToInvariantString()}.",
             paramName
         );
     }
@@ -117,7 +118,8 @@ public static partial class Argument
         }
 
         throw new ArgumentOutOfRangeException(
-            message ?? $"Expected argument {_AssertString(paramName)} to be less than {expected._ToInvariantString()}.",
+            message
+                ?? $"Expected argument {paramName.ToAssertString()} to be less than {expected.ToInvariantString()}.",
             paramName
         );
     }
@@ -146,7 +148,7 @@ public static partial class Argument
 
         throw new ArgumentOutOfRangeException(
             message
-                ?? $"Expected argument {_AssertString(paramName)} to be greater than {expected._ToInvariantString()}.",
+                ?? $"Expected argument {paramName.ToAssertString()} to be greater than {expected.ToInvariantString()}.",
             paramName
         );
     }
@@ -162,7 +164,7 @@ public static partial class Argument
     /// <exception cref="ArgumentException">if the <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void ValidRange<T>(
+    public static void Range<T>(
         T minimumValue,
         T maximumValue,
         string? message = null,
@@ -206,7 +208,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        ValidRange(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
+        Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
         return argument.CompareTo(minimumValue) >= 0 && argument.CompareTo(maximumValue) <= 0
             ? argument
@@ -242,7 +244,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        ValidRange(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
+        Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
         return argument.CompareTo(minimumValue) > 0 && argument.CompareTo(maximumValue) < 0
             ? argument
@@ -278,7 +280,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        ValidRange(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
+        Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
         return argument.CompareTo(minimumValue) > 0 && argument.CompareTo(maximumValue) <= 0
             ? argument
@@ -314,7 +316,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        ValidRange(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
+        Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
         return argument.CompareTo(minimumValue) >= 0 && argument.CompareTo(maximumValue) < 0
             ? argument
@@ -351,7 +353,7 @@ public static partial class Argument
     )
         where T : IComparable, IComparable<T>
     {
-        ValidRange(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
+        Range(minimumValue, maximumValue, message: null, minimumValueParamName, maximumValueParamName);
 
         if (!argument.Any(x => x.CompareTo(minimumValue) < 0 || x.CompareTo(maximumValue) > 0))
         {
@@ -367,20 +369,5 @@ public static partial class Argument
         }
 
         throw new ArgumentOutOfRangeException(message);
-    }
-
-    [return: NotNullIfNotNull(nameof(obj))]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static string? _ToInvariantString(this object? obj)
-    {
-        return obj switch
-        {
-            null => null,
-            DateTime dt => dt.ToString("o", CultureInfo.InvariantCulture),
-            DateTimeOffset dto => dto.ToString("o", CultureInfo.InvariantCulture),
-            IConvertible c => c.ToString(CultureInfo.InvariantCulture),
-            IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
-            _ => obj.ToString(),
-        };
     }
 }

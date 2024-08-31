@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Arguments.Internals;
 
 namespace Framework.Arguments;
 
@@ -20,7 +21,12 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        return argument is null ? throw new ArgumentNullException(paramName, message) : argument;
+        return argument is null
+            ? throw new ArgumentNullException(
+                paramName,
+                message ?? $"Required argument {paramName.ToAssertString()} was null."
+            )
+            : argument;
     }
 
     /// <summary>Throws an <see cref="ArgumentNullException" /> if <paramref name="argument" /> is null.</summary>
@@ -38,6 +44,10 @@ public static partial class Argument
     )
         where T : struct
     {
-        return argument ?? throw new ArgumentNullException(paramName, message);
+        return argument
+            ?? throw new ArgumentNullException(
+                paramName,
+                message ?? $"Required argument {paramName.ToAssertString()} was null."
+            );
     }
 }
