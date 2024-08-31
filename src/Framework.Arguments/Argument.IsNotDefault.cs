@@ -82,4 +82,20 @@ public static partial class Argument
 
         return argument;
     }
+
+    /// <inheritdoc cref="IsNotDefault{T}(T,string?,string?)"/>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static T? IsNotDefaultOrNull<T>(
+        T? argument,
+        string? message = null,
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null
+    )
+        where T : struct
+    {
+        IsNotNull(argument, paramName);
+        IsNotDefault(argument, paramName);
+
+        return argument;
+    }
 }

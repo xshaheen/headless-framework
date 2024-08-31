@@ -167,6 +167,42 @@ public static class TypeExtensions
         return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>);
     }
 
+    [MustUseReturnValue]
+    public static bool IsPrimitiveExtended(this Type type, bool includeNullables = true, bool includeEnums = false)
+    {
+        if (isPrimitive(type, includeEnums))
+        {
+            return true;
+        }
+
+        if (includeNullables && IsNullableValueType(type) && type.GenericTypeArguments.Length != 0)
+        {
+            return isPrimitive(type.GenericTypeArguments[0], includeEnums);
+        }
+
+        return false;
+
+        static bool isPrimitive(Type type, bool includeEnums)
+        {
+            if (type.IsPrimitive)
+            {
+                return true;
+            }
+
+            if (includeEnums && type.IsEnum)
+            {
+                return true;
+            }
+
+            return type == typeof(string)
+                || type == typeof(decimal)
+                || type == typeof(DateTime)
+                || type == typeof(DateTimeOffset)
+                || type == typeof(TimeSpan)
+                || type == typeof(Guid);
+        }
+    }
+
     #region Base Classes
 
     /// <summary>Gets all base classes of this type.</summary>

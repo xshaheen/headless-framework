@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Framework.Arguments;
 
 namespace Framework.BuildingBlocks.Primitives;
@@ -25,6 +26,46 @@ public static class HasExtraPropertiesExtensions
     public static bool HasProperty(this IHasExtraProperties source, string name)
     {
         return source.ExtraProperties.ContainsKey(name);
+    }
+
+    public static TProperty? GetProperty<TProperty>(
+        this IHasExtraProperties source,
+        string name,
+        TProperty? defaultValue = default
+    )
+    {
+        var value = source.GetProperty(name);
+        if (value == null)
+        {
+            return defaultValue;
+        }
+
+        if (typeof(TProperty).IsPrimitiveExtended(includeEnums: true))
+        {
+            var conversionType = typeof(TProperty);
+
+            if (conversionType.IsNullableValueType())
+            {
+                conversionType = conversionType.GetGenericArguments()[0];
+            }
+
+            if (conversionType == typeof(Guid))
+            {
+                return (TProperty)
+                    TypeDescriptor.GetConverter(conversionType).ConvertFromInvariantString(value.ToString()!)!;
+            }
+
+            if (conversionType.IsEnum)
+            {
+                return (TProperty)Enum.Parse(conversionType, value.ToString()!);
+            }
+
+            return (TProperty)Convert.ChangeType(value, conversionType, CultureInfo.InvariantCulture);
+        }
+
+        throw new InvalidOperationException(
+            "GetProperty<TProperty> does not support non-primitive types. Use non-generic GetProperty method and handle type casting manually."
+        );
     }
 
     public static object? GetProperty(this IHasExtraProperties source, string name, object? defaultValue = null)
@@ -62,6 +103,14 @@ public static class HasExtraPropertiesExtensions
             property.SetValue(source, source.ExtraProperties[property.Name]);
             source.RemoveProperty(property.Name);
         }
+    }
+
+    public static bool HasSameExtraProperties(this IHasExtraProperties source, IHasExtraProperties other)
+    {
+        Argument.IsNotNull(source);
+        Argument.IsNotNull(other);
+
+        return source.ExtraProperties.HasSameItems(other.ExtraProperties);
     }
 }
 
