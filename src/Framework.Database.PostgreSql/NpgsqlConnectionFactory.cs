@@ -13,9 +13,9 @@ public sealed class NpgsqlConnectionFactory(string connectionString)
 
     public string GetConnectionString() => connectionString;
 
-    public IDbConnection CreateNewConnection() => _OpenConnection();
+    public async ValueTask<IDbConnection> CreateNewConnectionAsync() => await _OpenConnectionAsync();
 
-    public IDbConnection GetOpenConnection()
+    public async ValueTask<IDbConnection> GetOpenConnectionAsync()
     {
         if (_connection is { State: ConnectionState.Open })
         {
@@ -23,15 +23,15 @@ public sealed class NpgsqlConnectionFactory(string connectionString)
         }
 
         _connection?.Dispose();
-        _connection = _OpenConnection();
+        _connection = await _OpenConnectionAsync();
 
         return _connection;
     }
 
-    private NpgsqlConnection _OpenConnection()
+    private async ValueTask<NpgsqlConnection> _OpenConnectionAsync()
     {
         var connection = new NpgsqlConnection(connectionString);
-        connection.Open();
+        await connection.OpenAsync();
 
         return connection;
     }

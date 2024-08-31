@@ -6,7 +6,7 @@ public interface ISqlConnectionFactory
 {
     string GetConnectionString();
 
-    IDbConnection GetOpenConnection();
+    ValueTask<IDbConnection> GetOpenConnectionAsync();
 
-    IDbConnection CreateNewConnection();
+    ValueTask<IDbConnection> CreateNewConnectionAsync();
 }

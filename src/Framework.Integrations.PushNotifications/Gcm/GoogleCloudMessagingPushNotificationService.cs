@@ -6,15 +6,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Integrations.PushNotifications.Gcm;
 
-public sealed class GoogleCloudMessagingPushNotificationService : IPushNotificationService
+public sealed class GoogleCloudMessagingPushNotificationService(
+    ILogger<GoogleCloudMessagingPushNotificationService> logger
+) : IPushNotificationService
 {
-    private readonly ILogger<GoogleCloudMessagingPushNotificationService> _logger;
-
-    public GoogleCloudMessagingPushNotificationService(ILogger<GoogleCloudMessagingPushNotificationService> logger)
-    {
-        _logger = logger;
-    }
-
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
         string title,
@@ -59,7 +54,7 @@ public sealed class GoogleCloudMessagingPushNotificationService : IPushNotificat
         }
         catch (Exception e)
         {
-            _logger.FailedToSendPushNotification(e, clientToken);
+            logger.FailedToSendPushNotification(e, clientToken);
 
             return PushNotificationResponse.Failed(clientToken, e.ToString());
         }
