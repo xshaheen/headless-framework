@@ -2,6 +2,7 @@
 
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class IdValidators
 {
     public static IRuleBuilder<T, Guid> Id<T>(this IRuleBuilder<T, Guid> rule)

@@ -3,6 +3,7 @@ using Framework.FluentValidation.Resources;
 
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class UrlValidators
 {
     public static IRuleBuilder<T, string?> Url<T>(this IRuleBuilder<T, string?> rule)

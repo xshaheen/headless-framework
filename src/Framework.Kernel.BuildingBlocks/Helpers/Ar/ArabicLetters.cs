@@ -1,3 +1,4 @@
+// ReSharper disable IdentifierTypo
 namespace Framework.Kernel.BuildingBlocks.Helpers.Ar;
 
 /// <summary>Arabic letters &amp; classification</summary>

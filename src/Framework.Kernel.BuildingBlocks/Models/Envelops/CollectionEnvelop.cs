@@ -15,7 +15,7 @@ public sealed record CollectionEnvelop<T>(IReadOnlyCollection<T> Items)
 
 public static class CollectionEnvelop
 {
-    public static CollectionEnvelop<T> FromTArray<T>(T[]? operand) => operand;
+    public static CollectionEnvelop<T> FromArray<T>(T[]? operand) => operand;
 
     public static CollectionEnvelop<T> FromHashSet<T>(HashSet<T>? operand) => operand;
 

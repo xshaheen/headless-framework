@@ -4,6 +4,7 @@
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />
+    <PackageVersion Include="AsyncKeyedLock" Version="7.0.1" />
     <PackageVersion Include="Audit.EntityFramework.Core" Version="26.0.1" />
     <PackageVersion Include="AutoBogus" Version="2.13.1" />
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
@@ -30,6 +31,7 @@
     <PackageVersion Include="DeviceId" Version="6.7.0" />
     <PackageVersion Include="DeviceId.Linux" Version="6.4.0" />
     <PackageVersion Include="DeviceId.Windows.Wmi" Version="6.6.0" />
+    <PackageVersion Include="DistributedLock.Core" Version="1.0.7" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.1.0" />
     <PackageVersion Include="DotNetCore.CAP" Version="8.2.0" />
     <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.2.0" />

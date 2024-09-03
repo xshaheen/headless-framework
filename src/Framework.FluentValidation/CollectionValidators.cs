@@ -3,6 +3,7 @@ using Framework.FluentValidation.Resources;
 
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class CollectionValidators
 {
     public static IRuleBuilderOptions<T, IEnumerable<TElement>?> MaximumElements<T, TElement>(

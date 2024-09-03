@@ -5,6 +5,7 @@ using PhoneNumbers;
 
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class PhoneNumberValidators
 {
     private static readonly System.ComponentModel.DataAnnotations.PhoneAttribute _PhoneAttribute = new();
