@@ -4,6 +4,7 @@ using Framework.Kernel.BuildingBlocks.Validators;
 
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class EgyptianNationalIdValidators
 {
     public static IRuleBuilderOptions<T, string?> EgyptianNationalId<T>(this IRuleBuilder<T, string?> builder)

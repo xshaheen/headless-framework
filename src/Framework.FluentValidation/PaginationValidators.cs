@@ -2,6 +2,7 @@ using FluentValidation;
 
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class PaginationValidators
 {
     public static IRuleBuilder<T, int> PageIndex<T>(this IRuleBuilder<T, int> rule)

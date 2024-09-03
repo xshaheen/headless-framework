@@ -4,6 +4,7 @@ using Framework.Kernel.Primitives;
 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
+[PublicAPI]
 public static class FluentValidationExtensions
 {
     public static IRuleBuilderOptions<T, TProperty> WithErrorDescriptor<T, TProperty>(

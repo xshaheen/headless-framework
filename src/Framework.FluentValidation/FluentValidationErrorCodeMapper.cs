@@ -1,5 +1,6 @@
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class FluentValidationErrorCodeMapper
 {
     public static string MapToApplicationErrorCode(string errorCode)
