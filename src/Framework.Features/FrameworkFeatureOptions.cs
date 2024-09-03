@@ -1,6 +1,6 @@
-﻿using Framework.BuildingBlocks.Models.Collections;
-using Framework.Features.Definitions;
+﻿using Framework.Features.Definitions;
 using Framework.Features.Values;
+using Framework.Kernel.Primitives;
 
 namespace Framework.Features;
 

@@ -1,6 +1,6 @@
 using FluentValidation.Results;
 using Framework.Api.Core.Abstractions;
-using Framework.BuildingBlocks;
+using Framework.Kernel.Primitives;
 using Mediator;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;

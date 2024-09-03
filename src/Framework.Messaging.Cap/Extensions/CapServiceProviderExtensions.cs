@@ -2,7 +2,7 @@ using DotNetCore.CAP.Internal;
 using DotNetCore.CAP.Messages;
 using DotNetCore.CAP.Monitoring;
 using DotNetCore.CAP.Persistence;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Domains;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

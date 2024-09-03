@@ -1,4 +1,5 @@
 using FluentValidation;
+using Framework.Kernel.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 

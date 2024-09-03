@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Domains;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Messaging;

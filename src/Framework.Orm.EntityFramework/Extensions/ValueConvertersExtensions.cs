@@ -1,5 +1,5 @@
 using System.Reflection;
-using Framework.BuildingBlocks.Primitives.Extensions;
+using Framework.Kernel.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

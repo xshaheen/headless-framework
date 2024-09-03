@@ -1,5 +1,5 @@
-using Framework.BuildingBlocks.Domains;
-using Framework.BuildingBlocks.Primitives;
+using Framework.Kernel.Domains;
+using Framework.Kernel.Primitives;
 using Framework.Orm.EntityFramework.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;

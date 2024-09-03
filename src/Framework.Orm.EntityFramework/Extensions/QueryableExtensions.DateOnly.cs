@@ -1,8 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
-using Framework.Arguments;
-using Framework.BuildingBlocks.Helpers;
-using Framework.BuildingBlocks.Helpers.Linq;
+using Framework.Kernel.BuildingBlocks.Helpers.Linq;
+using Framework.Kernel.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -27,7 +26,7 @@ public static partial class QueryableExtensions
     )
     {
         Argument.IsNotNull(queryable);
-        Argument.ValidRange(start, end);
+        Argument.Range(start, end);
 
         // Assuming the day of the month is irrelevant (i.e. the diff between 2020.1.1 and 2019.12.31 is one month also)
         var months = ((end.Year - start.Year) * 12) + end.Month - start.Month;

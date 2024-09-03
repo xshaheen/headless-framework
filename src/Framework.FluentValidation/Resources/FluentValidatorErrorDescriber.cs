@@ -1,4 +1,4 @@
-using Framework.BuildingBlocks;
+using Framework.Kernel.Primitives;
 
 namespace Framework.FluentValidation.Resources;
 

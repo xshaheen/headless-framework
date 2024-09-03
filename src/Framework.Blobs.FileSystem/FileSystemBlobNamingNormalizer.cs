@@ -1,6 +1,6 @@
 using System.Text;
-using Framework.BuildingBlocks.Helpers;
-using Framework.BuildingBlocks.Helpers.IO;
+using Framework.Kernel.BuildingBlocks.Helpers.IO;
+using Framework.Kernel.BuildingBlocks.Helpers.System;
 
 namespace Framework.Blobs.FileSystem;
 

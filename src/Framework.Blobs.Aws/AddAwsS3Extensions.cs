@@ -1,7 +1,6 @@
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.S3;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Blobs.Aws;
 

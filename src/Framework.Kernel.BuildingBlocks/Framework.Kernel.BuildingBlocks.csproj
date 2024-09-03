@@ -1,0 +1,67 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ByteSize" />
+    <PackageReference Include="CommunityToolkit.HighPerformance" />
+    <PackageReference Include="DeviceId" />
+    <PackageReference Include="DeviceId.Linux" />
+    <PackageReference Include="DeviceId.Windows.Wmi" />
+    <PackageReference Include="FluentDateTime" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Flurl" />
+    <PackageReference Include="Humanizer.Core" />
+    <PackageReference Include="Humanizer.Core.ar" />
+    <PackageReference Include="IdGen" />
+    <PackageReference Include="IPAddressRange" />
+    <PackageReference Include="libphonenumber-csharp" />
+    <PackageReference Include="morelinq" />
+    <PackageReference Include="NetEscapades.EnumGenerators" />
+    <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
+    <PackageReference Include="Nito.AsyncEx" />
+    <PackageReference Include="Polly.Core" />
+    <PackageReference Include="Polly.RateLimiting" />
+    <PackageReference Include="Snappier" />
+    <PackageReference Include="System.Reactive" />
+    <PackageReference Include="TimeZoneConverter" />
+    <PackageReference Include="ZString" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MimeTypes">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Kernel.Checks\Framework.Kernel.Checks.csproj" />
+    <ProjectReference Include="..\Framework.Generator.Primitives.Abstractions\Framework.Generator.Primitives.Abstractions.csproj" />
+    <ProjectReference Include="..\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" ExcludeAssets="runtime" />
+    <ProjectReference Include="..\Framework.Kernel.Domains\Framework.Kernel.Domains.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup Label="Primitives Generator Settings">
+    <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
+    <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+    <PrimitiveXmlConverters>true</PrimitiveXmlConverters>
+    <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
+    <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
+    <PrimitiveEntityFrameworkValueConverters>false</PrimitiveEntityFrameworkValueConverters>
+  </PropertyGroup>
+
+  <ItemGroup Label="Primitives Generator Settings">
+    <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
+    <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
+    <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
+    <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
+  </ItemGroup>
+
+</Project>

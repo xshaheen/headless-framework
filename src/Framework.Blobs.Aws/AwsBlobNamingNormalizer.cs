@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using Framework.BuildingBlocks.Helpers;
+using Framework.Kernel.BuildingBlocks.Helpers.System;
 using Humanizer;
 
 namespace Framework.Blobs.Aws;

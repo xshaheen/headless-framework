@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using FirebaseAdmin.Messaging;
-using Framework.Arguments;
 using Framework.Integrations.PushNotifications.Internals;
+using Framework.Kernel.Checks;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Integrations.PushNotifications.Gcm;

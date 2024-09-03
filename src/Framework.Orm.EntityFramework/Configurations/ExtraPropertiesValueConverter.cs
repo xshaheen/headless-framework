@@ -1,8 +1,6 @@
 using System.Text.Json;
-using Framework.BuildingBlocks.Constants;
-using Framework.BuildingBlocks.Helpers;
-using Framework.BuildingBlocks.JsonConverters;
-using Framework.BuildingBlocks.Primitives;
+using Framework.Kernel.BuildingBlocks.Helpers.Collections;
+using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 

@@ -2,10 +2,8 @@
 using Framework.Api.Swagger.Nswag.Extensions;
 using Framework.Api.Swagger.Nswag.OperationProcessors;
 using Framework.Api.Swagger.Nswag.SchemaProcessors;
-using Framework.BuildingBlocks.Constants;
-using Framework.BuildingBlocks.Helpers;
-using Framework.BuildingBlocks.Helpers.Reflection;
-using Framework.BuildingBlocks.Primitives;
+using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
+using Framework.Kernel.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema;

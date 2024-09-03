@@ -1,4 +1,4 @@
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Microsoft.AspNetCore.Http;
 
 namespace Framework.Api.Core.Abstractions;

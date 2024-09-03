@@ -1,5 +1,5 @@
 ﻿using System.Reflection;
-using Framework.BuildingBlocks.Primitives.Extensions;
+using Framework.Kernel.Primitives;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Framework.Api.Swagger.Swashbuckle.Extensions;

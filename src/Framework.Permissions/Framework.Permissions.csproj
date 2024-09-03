@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Api.Core\Framework.Api.Core.csproj" />
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
   </ItemGroup>
 
 </Project>

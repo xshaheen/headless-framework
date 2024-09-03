@@ -7,9 +7,9 @@ using Framework.Api.Core.Diagnostics;
 using Framework.Api.Core.Middlewares;
 using Framework.Api.Core.Security.Claims;
 using Framework.Api.Core.Security.Jwt;
-using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.Constants;
-using Framework.BuildingBlocks.Helpers;
+using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Kernel.BuildingBlocks.Helpers.System;
+using Framework.Kernel.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -54,6 +54,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
         builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
+        builder.Services.TryAddSingleton<IJsonSerializer, DefaultWebSystemJsonSerializer>();
 
         builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
         builder.Services.TryAddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
@@ -61,10 +62,10 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IClock, Clock>();
         builder.Services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
 
-        builder.Services.AddOptions<StringHashSettings, StringHashSettingsValidator>();
+        builder.Services.AddSingletonOptions<StringHashSettings, StringHashSettingsValidator>();
         builder.Services.TryAddSingleton<IStringHashService, StringHashService>();
 
-        builder.Services.AddOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
+        builder.Services.AddSingletonOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
         builder.Services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
     }
 

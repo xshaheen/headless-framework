@@ -1,4 +1,4 @@
-using Framework.BuildingBlocks.Constants;
+using Framework.Kernel.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 

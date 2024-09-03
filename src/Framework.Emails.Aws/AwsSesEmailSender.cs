@@ -1,10 +1,8 @@
-using System.Text;
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Framework.Emails.Contracts;
 using Framework.Emails.Helpers;
 using Microsoft.Extensions.Logging;
-using MimeKit;
 
 namespace Framework.Emails.Aws;
 

@@ -1,8 +1,8 @@
-﻿using Framework.BuildingBlocks.Domains;
-using Framework.BuildingBlocks.Primitives;
+﻿using Framework.Kernel.Domains;
+using Framework.Kernel.Primitives;
 using Framework.Orm.EntityFramework.Configurations;
 using Microsoft.EntityFrameworkCore;
-using File = Framework.BuildingBlocks.Primitives.File;
+using File = Framework.Kernel.Primitives.File;
 
 namespace Framework.Orm.EntityFramework.Extensions;
 

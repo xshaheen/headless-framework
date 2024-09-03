@@ -3,7 +3,7 @@ using EasyCaching.Core.Configurations;
 using EasyCaching.InMemory;
 using EasyCaching.Serialization.MemoryPack;
 using EasyCaching.Serialization.SystemTextJson.Configurations;
-using Framework.BuildingBlocks.Constants;
+using Framework.Kernel.Primitives;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

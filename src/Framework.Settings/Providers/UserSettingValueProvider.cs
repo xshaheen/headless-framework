@@ -1,4 +1,4 @@
-﻿using Framework.Api.Core.Abstractions;
+﻿using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Definitions;
 using Framework.Settings.Values;
 

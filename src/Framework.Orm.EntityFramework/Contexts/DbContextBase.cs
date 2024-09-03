@@ -1,12 +1,10 @@
 ﻿using System.Data;
-using Framework.BuildingBlocks.Domains;
-using Framework.BuildingBlocks.Domains.Events;
+using Framework.Kernel.Domains;
 using Framework.Orm.EntityFramework.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Orm.EntityFramework.Contexts;
 

@@ -1,5 +1,5 @@
 using System.Linq.Expressions;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Orm.EntityFramework.DataGrid.Pagination;

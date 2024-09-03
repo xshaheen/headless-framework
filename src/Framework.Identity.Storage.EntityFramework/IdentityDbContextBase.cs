@@ -1,6 +1,6 @@
 ﻿using System.Data;
-using Framework.BuildingBlocks.Domains;
-using Framework.BuildingBlocks.Primitives;
+using Framework.Kernel.Domains;
+using Framework.Kernel.Primitives;
 using Framework.Orm.EntityFramework.Configurations;
 using Framework.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
-using File = Framework.BuildingBlocks.Primitives.File;
+using File = Framework.Kernel.Primitives.File;
 
 namespace Framework.Identity.Storage.EntityFramework;
 

@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Microsoft.AspNetCore.StaticFiles;
 
 namespace Framework.Api.Core.Abstractions;

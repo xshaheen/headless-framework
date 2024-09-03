@@ -1,5 +1,5 @@
 ﻿using System.Security.Claims;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Framework.Permissions.Permissions.Definitions;
 
 namespace Framework.Permissions.Permissions.Values;

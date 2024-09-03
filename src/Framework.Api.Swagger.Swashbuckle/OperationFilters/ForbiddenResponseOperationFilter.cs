@@ -1,5 +1,5 @@
 using Framework.Api.Core.ApiExplorer;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.OpenApi.Models;

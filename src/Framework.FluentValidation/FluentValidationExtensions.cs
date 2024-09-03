@@ -1,4 +1,4 @@
-using Framework.BuildingBlocks;
+using Framework.Kernel.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -11,12 +11,11 @@ public static class FluentValidationExtensions
         ErrorDescriptor errorDescriptor
     )
     {
-        return rule.WithErrorCode(errorDescriptor.Code)
-            .WithMessage(
-                string.IsNullOrWhiteSpace(errorDescriptor.Description)
-                    ? errorDescriptor.Code
-                    : errorDescriptor.Description
-            );
+        var description = string.IsNullOrWhiteSpace(errorDescriptor.Description)
+            ? errorDescriptor.Code
+            : errorDescriptor.Description;
+
+        return rule.WithErrorCode(errorDescriptor.Code).WithMessage(description);
     }
 
     public static Severity ToSeverity(this ValidationSeverity severity)

@@ -1,4 +1,4 @@
-﻿using Framework.Arguments;
+﻿using Framework.Kernel.Checks;
 
 namespace Framework.Permissions.Permissions.Checkers;
 

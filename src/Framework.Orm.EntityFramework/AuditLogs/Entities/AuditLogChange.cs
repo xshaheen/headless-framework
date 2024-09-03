@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
-using Framework.BuildingBlocks.Constants;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Domains;
+using Framework.Kernel.Primitives;
 
 namespace Framework.Orm.EntityFramework.AuditLogs.Entities;
 

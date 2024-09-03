@@ -1,6 +1,6 @@
-﻿using Framework.Api.Core.Abstractions;
-using Framework.Features.Definitions;
+﻿using Framework.Features.Definitions;
 using Framework.Features.Values;
+using Framework.Kernel.BuildingBlocks.Abstractions;
 
 namespace Framework.Features.Providers;
 

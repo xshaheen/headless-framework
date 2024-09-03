@@ -1,5 +1,5 @@
 using System.Reflection;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Swashbuckle.AspNetCore.SwaggerGen;
 

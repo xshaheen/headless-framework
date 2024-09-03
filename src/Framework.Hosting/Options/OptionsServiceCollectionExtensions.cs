@@ -1,6 +1,8 @@
 using FluentValidation;
 using Framework.Hosting.Options;
+using Framework.Kernel.Checks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130
@@ -31,10 +33,44 @@ public static class OptionsServiceCollectionExtensions
     {
         Argument.IsNotNull(services);
 
-        var builder = services
-            .AddSingleton<IValidator<TOptions>, TOptionValidator>()
-            .AddOptions<TOptions>(optionName)
-            .ValidateFluentValidation();
+        services.AddSingleton<IValidator<TOptions>, TOptionValidator>();
+
+        var builder = services.AddOptions<TOptions>(optionName).ValidateFluentValidation();
+
+        if (validation is not null)
+        {
+            builder.Validate(validation);
+        }
+
+        builder.ValidateOnStart();
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
+    /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+    /// </summary>
+    /// <typeparam name="TOption">The type of the options.</typeparam>
+    /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="optionName">The name of the options instance.</param>
+    /// <param name="validation">The validation function.</param>
+    /// <returns>The same services collection.</returns>
+    public static OptionsBuilder<TOption> AddSingletonOptions<TOption, TOptionValidator>(
+        this IServiceCollection services,
+        string? optionName = null,
+        Func<TOption, bool>? validation = null
+    )
+        where TOption : class
+        where TOptionValidator : class, IValidator<TOption>
+    {
+        Argument.IsNotNull(services);
+
+        services.AddSingleton<IValidator<TOption>, TOptionValidator>();
+        services.TryAddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value);
+
+        var builder = services.AddOptions<TOption>(optionName).ValidateFluentValidation();
 
         if (validation is not null)
         {

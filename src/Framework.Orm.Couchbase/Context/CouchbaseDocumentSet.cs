@@ -5,7 +5,7 @@ using Couchbase.KeyValue;
 using Couchbase.KeyValue.RangeScan;
 using Couchbase.Linq;
 using Couchbase.Linq.Extensions;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Domains;
 
 namespace Framework.Orm.Couchbase.Context;
 

@@ -1,4 +1,4 @@
-﻿using Framework.BuildingBlocks.Models.Collections;
+﻿using Framework.Kernel.Primitives;
 using Framework.Settings.Definitions;
 using Framework.Settings.Values;
 

@@ -1,5 +1,5 @@
-﻿using Framework.BuildingBlocks;
-using Framework.BuildingBlocks.Domains;
+﻿using Framework.Kernel.Domains;
+using Framework.Kernel.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

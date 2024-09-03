@@ -1,8 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
-using Framework.Arguments;
-using Framework.BuildingBlocks.Helpers;
-using Framework.BuildingBlocks.Helpers.Linq;
+using Framework.Kernel.BuildingBlocks.Helpers.Linq;
+using Framework.Kernel.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -29,7 +28,7 @@ public static partial class QueryableExtensions
     )
     {
         Argument.IsNotNull(queryable);
-        Argument.ValidRange(start, end);
+        Argument.Range(start, end);
 
         end = end.ToOffset(start.Offset);
 

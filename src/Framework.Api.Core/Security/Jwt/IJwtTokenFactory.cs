@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using System.Text;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 

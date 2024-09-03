@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Framework.BuildingBlocks.Constants;
+using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using File = Framework.BuildingBlocks.Primitives.File;
+using File = Framework.Kernel.Primitives.File;
 
 namespace Framework.Orm.EntityFramework.Configurations;
 
