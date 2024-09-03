@@ -1,7 +1,7 @@
 ﻿using System.Reflection;
 using System.Reflection.Emit;
 using DotNetCore.CAP;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Domains;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Messaging.Cap;

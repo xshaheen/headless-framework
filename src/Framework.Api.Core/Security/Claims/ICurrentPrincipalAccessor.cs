@@ -1,5 +1,5 @@
 ﻿using System.Security.Claims;
-using Framework.BuildingBlocks.Helpers;
+using Framework.Kernel.BuildingBlocks.Helpers.System;
 using Microsoft.AspNetCore.Http;
 
 namespace Framework.Api.Core.Security.Claims;

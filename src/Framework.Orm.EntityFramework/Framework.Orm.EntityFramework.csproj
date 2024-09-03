@@ -15,10 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.BuildingBlocks.Domains\Framework.BuildingBlocks.Domains.csproj" />
-    <ProjectReference Include="..\Framework.BuildingBlocks.Primitives\Framework.BuildingBlocks.Primitives.csproj" />
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Kernel.Domains\Framework.Kernel.Domains.csproj" />
+    <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" />
+    <ProjectReference Include="..\Framework.Settings\Framework.Settings.csproj" />
   </ItemGroup>
 
 </Project>

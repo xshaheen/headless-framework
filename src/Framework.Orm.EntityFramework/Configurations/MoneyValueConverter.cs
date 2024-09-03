@@ -1,4 +1,4 @@
-﻿using Framework.BuildingBlocks.Primitives;
+﻿using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Configurations;

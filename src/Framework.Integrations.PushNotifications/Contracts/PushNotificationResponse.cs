@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

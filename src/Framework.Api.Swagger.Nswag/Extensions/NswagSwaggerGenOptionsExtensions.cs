@@ -1,5 +1,5 @@
 ﻿using System.Reflection;
-using Framework.BuildingBlocks.Primitives.Extensions;
+using Framework.Kernel.Primitives;
 using NJsonSchema.Generation;
 
 namespace Framework.Api.Swagger.Nswag.Extensions;

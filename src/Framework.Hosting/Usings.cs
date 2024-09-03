@@ -1,2 +1,1 @@
-﻿global using Framework.Arguments;
-global using Framework.BuildingBlocks.Constants;
+﻿global using Framework.BuildingBlocks;

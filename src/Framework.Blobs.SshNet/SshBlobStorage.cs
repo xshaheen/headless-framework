@@ -1,8 +1,7 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
-using Framework.Arguments;
-using Framework.BuildingBlocks;
-using Framework.BuildingBlocks.Constants;
+using Framework.Kernel.Checks;
+using Framework.Kernel.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

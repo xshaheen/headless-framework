@@ -1,5 +1,5 @@
 ﻿using DotNetCore.CAP;
-using Framework.BuildingBlocks.Constants;
+using Framework.Kernel.Primitives;
 using Framework.Messaging.Cap.Filters;
 using Microsoft.Extensions.DependencyInjection;
 

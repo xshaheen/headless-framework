@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using Framework.BuildingBlocks.Constants;
 using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
+using Framework.Kernel.Primitives;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;

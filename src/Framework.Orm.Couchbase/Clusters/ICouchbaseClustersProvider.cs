@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using Couchbase;
 using Couchbase.Transactions;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Nito.AsyncEx;
 
 namespace Framework.Orm.Couchbase.Clusters;

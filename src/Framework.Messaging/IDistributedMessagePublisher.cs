@@ -1,4 +1,4 @@
-﻿using Framework.BuildingBlocks.Domains;
+﻿using Framework.Kernel.Domains;
 
 namespace Framework.Messaging;
 

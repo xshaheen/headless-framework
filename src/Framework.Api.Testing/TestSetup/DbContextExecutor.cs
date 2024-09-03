@@ -1,7 +1,7 @@
 using System.Data;
 using System.Linq.Expressions;
 using System.Security.Claims;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Domains;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

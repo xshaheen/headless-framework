@@ -1,11 +1,11 @@
 ﻿using System.Diagnostics;
-using Framework.BuildingBlocks.Constants;
 using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
+using Framework.Kernel.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
+using Image = SixLabors.ImageSharp.Image;
 
 namespace Framework.Imaging.ImageSharp;
 

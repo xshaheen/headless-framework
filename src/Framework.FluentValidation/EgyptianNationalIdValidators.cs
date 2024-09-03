@@ -1,6 +1,6 @@
 using FluentValidation;
-using Framework.BuildingBlocks.Validators;
 using Framework.FluentValidation.Resources;
+using Framework.Kernel.BuildingBlocks.Validators;
 
 namespace Framework.FluentValidation;
 

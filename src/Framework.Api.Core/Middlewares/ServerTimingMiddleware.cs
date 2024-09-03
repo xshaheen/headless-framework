@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Http;
 
 namespace Framework.Api.Core.Middlewares;

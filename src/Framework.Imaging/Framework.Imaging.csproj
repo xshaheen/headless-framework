@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Arguments\Framework.Arguments.csproj" />
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Kernel.Checks\Framework.Kernel.Checks.csproj" />
+    <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 

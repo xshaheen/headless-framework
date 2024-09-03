@@ -1,4 +1,5 @@
-﻿using Framework.BuildingBlocks.Primitives;
+﻿using Framework.Kernel.BuildingBlocks.Models.Primitives;
+using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

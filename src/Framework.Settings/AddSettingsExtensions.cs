@@ -1,4 +1,4 @@
-﻿using Framework.Api.Core.Abstractions;
+﻿using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Providers;
@@ -55,7 +55,7 @@ public static class AddSettingsExtensions
 
     private static void _AddSettingEncryption(this IServiceCollection services)
     {
-        services.AddOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
+        services.AddSingletonOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
         services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
         services.AddSingleton<ISettingEncryptionService, SettingEncryptionService>();
     }

@@ -1,4 +1,4 @@
-﻿using Framework.BuildingBlocks.Models.Collections;
+﻿using Framework.Kernel.Primitives;
 using Framework.Permissions.Permissions.Definitions;
 using Framework.Permissions.Permissions.Values;
 

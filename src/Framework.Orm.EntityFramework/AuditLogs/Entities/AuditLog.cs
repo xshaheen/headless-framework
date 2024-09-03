@@ -1,5 +1,5 @@
-using Framework.Arguments;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Checks;
+using Framework.Kernel.Domains;
 
 namespace Framework.Orm.EntityFramework.AuditLogs.Entities;
 

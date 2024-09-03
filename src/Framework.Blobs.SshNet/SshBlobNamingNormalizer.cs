@@ -1,5 +1,5 @@
 using System.Text;
-using Framework.BuildingBlocks.Helpers.IO;
+using Framework.Kernel.BuildingBlocks.Helpers.IO;
 
 namespace Framework.Blobs.SshNet;
 

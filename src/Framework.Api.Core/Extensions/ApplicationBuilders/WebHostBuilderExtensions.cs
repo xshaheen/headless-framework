@@ -1,4 +1,4 @@
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Hosting;
 
 #pragma warning disable IDE0130

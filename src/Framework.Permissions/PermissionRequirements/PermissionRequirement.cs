@@ -1,4 +1,4 @@
-﻿using Framework.Arguments;
+﻿using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Framework.Permissions.PermissionRequirements;

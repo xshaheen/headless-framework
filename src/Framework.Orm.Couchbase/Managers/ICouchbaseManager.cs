@@ -5,7 +5,7 @@ using Couchbase.Core.Exceptions;
 using Couchbase.KeyValue;
 using Couchbase.Management.Collections;
 using Couchbase.Management.Query;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Framework.Orm.Couchbase.Clusters;
 using Humanizer;
 using Microsoft.Extensions.Logging;

@@ -1,5 +1,5 @@
 ﻿using DotNetCore.CAP;
-using Framework.BuildingBlocks.Domains;
+using Framework.Kernel.Domains;
 
 namespace Framework.Messaging.Cap;
 

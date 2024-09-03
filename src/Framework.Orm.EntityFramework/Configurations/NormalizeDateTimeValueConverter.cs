@@ -1,4 +1,4 @@
-﻿using Framework.BuildingBlocks.Abstractions;
+﻿using Framework.Kernel.BuildingBlocks.Abstractions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Configurations;

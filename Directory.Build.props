@@ -21,6 +21,7 @@
   </PropertyGroup>
 
   <ItemGroup Label="Global usings">
+    <Using Include="System.Collections.Frozen" />
     <Using Include="System.Collections.Immutable" />
     <Using Include="System.Globalization" />
     <Using Include="JetBrains.Annotations" />

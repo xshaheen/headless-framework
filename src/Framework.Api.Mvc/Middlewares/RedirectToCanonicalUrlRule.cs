@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Framework.Api.Mvc.Filters;
-using Framework.Arguments;
+using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Rewrite;

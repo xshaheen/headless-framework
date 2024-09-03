@@ -1,0 +1,155 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
+using System.Text;
+using FluentValidation;
+
+namespace Framework.Kernel.BuildingBlocks.Abstractions;
+
+[PublicAPI]
+public interface IStringEncryptionService
+{
+    /// <summary>Encrypts a text.</summary>
+    /// <param name="plainText">The text in plain format</param>
+    /// <param name="passPhrase">A phrase to use as the encryption key (optional, uses default if not provided)</param>
+    /// <param name="salt">Salt value (optional, uses default if not provided)</param>
+    /// <returns>Encrypted text</returns>
+    [return: NotNullIfNotNull(nameof(plainText))]
+    string? Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null);
+
+    /// <summary>Decrypts a text that is encrypted by the <see cref="Encrypt"/> method.</summary>
+    /// <param name="cipherText">The text in encrypted format</param>
+    /// <param name="passPhrase">A phrase to use as the encryption key (optional, uses default if not provided)</param>
+    /// <param name="salt">Salt value (optional, uses default if not provided)</param>
+    /// <returns>Decrypted text</returns>
+    [return: NotNullIfNotNull(nameof(cipherText))]
+    string? Decrypt(string? cipherText, string? passPhrase = null, byte[]? salt = null);
+}
+
+#region Options
+
+/// <summary>Options used by <see cref="IStringEncryptionService"/>.</summary>
+[PublicAPI]
+public sealed class StringEncryptionSettings
+{
+    /// <summary>This constant is used to determine the key size of the encryption algorithm. Default value: 256.</summary>
+    public int KeySize { get; init; } = 256;
+
+    /// <summary>
+    /// Default password to encrypt/decrypt texts. It's recommended to init to another value for security.
+    /// Default value: "gsKnGZ041HLL4IM8"
+    /// </summary>
+    public string DefaultPassPhrase { get; init; } = "gsKnGZ041HLL4IM8";
+
+    /// <summary>
+    /// This constant string is used as a "salt" value for the PasswordDeriveBytes function calls.
+    /// This size of the IV (in bytes) must = (<see cref="KeySize"/> / 8).  Default <see cref="KeySize"/> is 256,
+    /// so the IV must be 32 bytes long.  Using a 16 character string here gives us 32 bytes when converted to a byte array.
+    /// Default value: jkE49230Tf093b42"u8
+    /// </summary>
+    public byte[] InitVectorBytes { get; init; } = "jkE49230Tf093b42"u8.ToArray();
+
+    /// <summary>Default value: "hgt!16kl"u8</summary>
+    public byte[] DefaultSalt { get; init; } = "hgt!16kl"u8.ToArray();
+}
+
+public sealed class StringEncryptionOptionsValidator : AbstractValidator<StringEncryptionSettings>
+{
+    public StringEncryptionOptionsValidator()
+    {
+        RuleFor(x => x.KeySize).GreaterThan(0);
+        RuleFor(x => x.DefaultPassPhrase).NotEmpty();
+        RuleFor(x => x.InitVectorBytes).NotEmpty().Must((settings, iv) => iv.Length == settings.KeySize / 8);
+        RuleFor(x => x.DefaultSalt).NotEmpty();
+    }
+}
+
+#endregion
+
+#region Implementation
+
+#pragma warning disable CA5401 // CA5401: Do not use CreateEncryptor with non-default IV
+#pragma warning disable CA5379 // CA5379: Ensure key derivation function algorithm is sufficiently strong
+public sealed class StringEncryptionService(StringEncryptionSettings settings) : IStringEncryptionService
+{
+    private const int _Iterations = 100_000;
+    private readonly HashAlgorithmName _hashAlgorithm = HashAlgorithmName.SHA256;
+
+    public string? Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null)
+    {
+        if (plainText is null)
+        {
+            return null;
+        }
+
+        passPhrase ??= settings.DefaultPassPhrase;
+        salt ??= settings.DefaultSalt;
+
+        var plainTextBytes = Encoding.UTF8.GetBytes(plainText);
+
+        using var password = new Rfc2898DeriveBytes(passPhrase, salt, _Iterations, _hashAlgorithm);
+
+        var keyBytes = password.GetBytes(settings.KeySize / 8);
+
+        using var symmetricKey = Aes.Create();
+        symmetricKey.Mode = CipherMode.CBC;
+
+        using var encryptor = symmetricKey.CreateEncryptor(keyBytes, settings.InitVectorBytes);
+        using var memoryStream = new MemoryStream();
+        using var cryptoStream = new CryptoStream(memoryStream, encryptor, CryptoStreamMode.Write);
+        cryptoStream.Write(plainTextBytes, 0, plainTextBytes.Length);
+        cryptoStream.FlushFinalBlock();
+
+        var cipherTextBytes = memoryStream.ToArray();
+
+        return Convert.ToBase64String(cipherTextBytes);
+    }
+
+    public string? Decrypt(string? cipherText, string? passPhrase = null, byte[]? salt = null)
+    {
+        if (string.IsNullOrEmpty(cipherText))
+        {
+            return null;
+        }
+
+        passPhrase ??= settings.DefaultPassPhrase;
+        salt ??= settings.DefaultSalt;
+
+        var cipherTextBytes = Convert.FromBase64String(cipherText);
+
+        using var password = new Rfc2898DeriveBytes(passPhrase, salt, _Iterations, _hashAlgorithm);
+
+        var keyBytes = password.GetBytes(settings.KeySize / 8);
+
+        using var symmetricKey = Aes.Create();
+        symmetricKey.Mode = CipherMode.CBC;
+
+        using var decryptor = symmetricKey.CreateDecryptor(keyBytes, settings.InitVectorBytes);
+        using var memoryStream = new MemoryStream(cipherTextBytes);
+        using var cryptoStream = new CryptoStream(memoryStream, decryptor, CryptoStreamMode.Read);
+
+        var plainTextBytes = new byte[cipherTextBytes.Length];
+        var totalReadCount = 0;
+
+        while (totalReadCount < cipherTextBytes.Length)
+        {
+            var buffer = new byte[cipherTextBytes.Length];
+            var readCount = cryptoStream.Read(buffer, 0, buffer.Length);
+
+            if (readCount == 0)
+            {
+                break;
+            }
+
+            for (var i = 0; i < readCount; i++)
+            {
+                plainTextBytes[i + totalReadCount] = buffer[i];
+            }
+
+            totalReadCount += readCount;
+        }
+
+        return Encoding.UTF8.GetString(plainTextBytes, 0, totalReadCount);
+    }
+}
+
+#endregion

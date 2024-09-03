@@ -1,6 +1,5 @@
 ﻿using System.Text.Json;
-using Framework.BuildingBlocks.Constants;
-using Framework.BuildingBlocks.JsonConverters;
+using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Configurations;

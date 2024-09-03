@@ -24,10 +24,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.BuildingBlocks.Primitives\Framework.BuildingBlocks.Primitives.csproj" />
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
-    <ProjectReference Include="..\Framework.FluentValidation.FormFile\Framework.FluentValidation.FormFile.csproj" />
+    <ProjectReference Include="..\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 
