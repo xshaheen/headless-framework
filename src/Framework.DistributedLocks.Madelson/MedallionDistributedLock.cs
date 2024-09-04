@@ -2,6 +2,7 @@
 
 namespace Framework.DistributedLocks.Madelson;
 
+[PublicAPI]
 public sealed class MedallionDistributedLock(string resource, IDistributedSynchronizationHandle handle)
     : IDistributedLock
 {

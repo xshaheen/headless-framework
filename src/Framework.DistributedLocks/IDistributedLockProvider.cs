@@ -1,5 +1,6 @@
 ﻿namespace Framework.DistributedLocks;
 
+[PublicAPI]
 public interface IDistributedLockProvider
 {
     Task<IDistributedLock?> TryAcquireAsync(
