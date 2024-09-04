@@ -7,17 +7,17 @@ public interface IDistributedLockKeyNormalizer
     string NormalizeKey(string name);
 }
 
-public class DistributedLockKeyNormalizer : IDistributedLockKeyNormalizer
+public sealed class DistributedLockKeyNormalizer : IDistributedLockKeyNormalizer
 {
-    protected DistributedLockOptions Options { get; }
+    private readonly DistributedLockOptions _options;
 
     public DistributedLockKeyNormalizer(IOptions<DistributedLockOptions> options)
     {
-        Options = options.Value;
+        _options = options.Value;
     }
 
-    public virtual string NormalizeKey(string name)
+    public string NormalizeKey(string name)
     {
-        return $"{Options.KeyPrefix}{name}";
+        return $"{_options.KeyPrefix}{name}";
     }
 }
