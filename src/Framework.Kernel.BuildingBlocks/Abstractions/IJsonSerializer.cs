@@ -10,41 +10,15 @@ public interface IJsonSerializer
     T? Deserialize<T>(string json);
 }
 
-public sealed class DefaultWebSystemJsonSerializer : IJsonSerializer
+public sealed class SystemJsonSerializer(JsonSerializerOptions? options = null) : IJsonSerializer
 {
     public string Serialize<T>(T obj)
     {
-        return JsonSerializer.Serialize(obj, PlatformJsonConstants.DefaultWebJsonOptions);
+        return JsonSerializer.Serialize(obj, options ?? PlatformJsonConstants.DefaultWebJsonOptions);
     }
 
     public T? Deserialize<T>(string json)
     {
-        return JsonSerializer.Deserialize<T>(json, PlatformJsonConstants.DefaultWebJsonOptions);
-    }
-}
-
-public sealed class DefaultInternalSystemJsonSerializer : IJsonSerializer
-{
-    public string Serialize<T>(T obj)
-    {
-        return JsonSerializer.Serialize(obj, PlatformJsonConstants.DefaultInternalJsonOptions);
-    }
-
-    public T? Deserialize<T>(string json)
-    {
-        return JsonSerializer.Deserialize<T>(json, PlatformJsonConstants.DefaultInternalJsonOptions);
-    }
-}
-
-public sealed class DefaultPrettySystemJsonSerializer : IJsonSerializer
-{
-    public string Serialize<T>(T obj)
-    {
-        return JsonSerializer.Serialize(obj, PlatformJsonConstants.DefaultPrettyJsonOptions);
-    }
-
-    public T? Deserialize<T>(string json)
-    {
-        return JsonSerializer.Deserialize<T>(json, PlatformJsonConstants.DefaultPrettyJsonOptions);
+        return JsonSerializer.Deserialize<T>(json, options ?? PlatformJsonConstants.DefaultWebJsonOptions);
     }
 }

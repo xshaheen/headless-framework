@@ -65,6 +65,7 @@
     <PackageVersion Include="MailKit" Version="4.7.1.1" />
     <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.4.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
+    <PackageVersion Include="MessagePack" Version="2.5.172" />
     <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="8.0.8" />
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="8.0.8" />
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="8.0.8" />
