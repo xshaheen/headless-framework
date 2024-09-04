@@ -1,0 +1,29 @@
+namespace Framework.Caching;
+
+/// <summary>Cache value.</summary>
+/// <param name="value">Value.</param>
+/// <param name="hasValue">If set to <see langword="true"/> has value.</param>
+public sealed class CacheValue<T>(T? value, bool hasValue)
+{
+    /// <summary>Gets a value indicating whether this <see cref="CacheValue{T}"/> has value.</summary>
+    /// <value><see langword="true"/> if has value; otherwise, <see langword="false"/>.</value>
+    public bool HasValue { get; } = hasValue;
+
+    /// <summary>Gets a value indicating whether this <see cref="CacheValue{T}"/> is null.</summary>
+    /// <value><see langword="true"/> if is null; otherwise, <see langword="false"/>.</value>
+    public bool IsNull => Value is null;
+
+    /// <summary>Gets the value.</summary>
+    /// <value>The value.</value>
+    public T? Value { get; } = value;
+
+    /// <summary>Gets the null.</summary>
+    /// <value>The null.</value>
+    public static CacheValue<T> Null { get; } = new(default, hasValue: true);
+
+    /// <summary>Gets the no value.</summary>
+    /// <value>The no value.</value>
+    public static CacheValue<T> NoValue { get; } = new(default, hasValue: false);
+
+    public override string ToString() => Value?.ToString() ?? "<null>";
+}

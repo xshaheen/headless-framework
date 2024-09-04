@@ -53,31 +53,39 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCacheProvider) :
         await easyCacheProvider.RemoveByPatternAsync(pattern, cancellationToken);
     }
 
-    public async ValueTask<T> GetAsync<T>(string cacheKey, CancellationToken cancellationToken = default)
+    public async ValueTask<CacheValue<T>> GetAsync<T>(string cacheKey, CancellationToken cancellationToken = default)
     {
         var result = await easyCacheProvider.GetAsync<T>(cacheKey, cancellationToken);
 
-        return result.Value;
+        return new(result.Value, result.HasValue);
     }
 
-    public async ValueTask<IDictionary<string, T>> GetAllAsync<T>(
+    public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     )
     {
         var result = await easyCacheProvider.GetAllAsync<T>(cacheKeys, cancellationToken);
 
-        return result.ToDictionary(pair => pair.Key, pair => pair.Value.Value, StringComparer.Ordinal);
+        return result.ToDictionary(
+            pair => pair.Key,
+            pair => new CacheValue<T>(pair.Value.Value, pair.Value.HasValue),
+            StringComparer.Ordinal
+        );
     }
 
-    public async ValueTask<IDictionary<string, T>> GetByPrefixAsync<T>(
+    public async ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
     )
     {
         var result = await easyCacheProvider.GetByPrefixAsync<T>(prefix, cancellationToken);
 
-        return result.ToDictionary(pair => pair.Key, pair => pair.Value.Value, StringComparer.Ordinal);
+        return result.ToDictionary(
+            pair => pair.Key,
+            pair => new CacheValue<T>(pair.Value.Value, pair.Value.HasValue),
+            StringComparer.Ordinal
+        );
     }
 
     public async ValueTask<IEnumerable<string>> GetAllKeysByPrefixAsync(
