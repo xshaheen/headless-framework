@@ -2,7 +2,7 @@ namespace Framework.Caching;
 
 public static class CacheExtensions
 {
-    public static async Task<T> GetOrAddAsync<T>(
+    public static async Task<CacheValue<T>> GetOrAddAsync<T>(
         this ICache cache,
         string key,
         Func<Task<T>> factory,
@@ -10,16 +10,16 @@ public static class CacheExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var value = await cache.GetAsync<T?>(key, cancellationToken);
+        var cacheValue = await cache.GetAsync<T>(key, cancellationToken);
 
-        if (value is not null)
+        if (cacheValue.HasValue)
         {
-            return value;
+            return cacheValue;
         }
 
-        value = await factory();
-        await cache.SetAsync(key, value, expiration, cancellationToken);
+        var value = await factory();
+        await cache.SetAsync(key, cacheValue, expiration, cancellationToken);
 
-        return value;
+        return new(value, hasValue: true);
     }
 }
