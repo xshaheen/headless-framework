@@ -13,9 +13,11 @@ public static class ExceptionExtensions
     /// <summary>Uses <see cref="Capture"/> method to re-throws exception while preserving stack trace.</summary>
     /// <param name="exception">Exception to be re-thrown</param>
     [DoesNotReturn]
-    public static void ReThrow(this Exception exception)
+    public static Exception ReThrow(this Exception exception)
     {
         ExceptionDispatchInfo.Capture(exception).Throw();
+
+        return exception;
     }
 
     [DoesNotReturn]
