@@ -1,9 +1,9 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace Framework.Kernel.Primitives;
+namespace Framework.Serializer.Json.Converters;
 
 public class SingleOrCollectionConverter<TCollection, TItem> : JsonConverter<TCollection>
     where TCollection : class, ICollection<TItem?>, new()
@@ -44,7 +44,7 @@ public class SingleOrCollectionConverter<TCollection, TItem> : JsonConverter<TCo
 
         var item = JsonSerializer.Deserialize<TItem?>(ref reader, options);
 
-        return new TCollection { item };
+        return [item];
     }
 
     public override void Write(Utf8JsonWriter writer, TCollection value, JsonSerializerOptions options)

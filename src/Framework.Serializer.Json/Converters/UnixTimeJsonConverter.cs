@@ -1,24 +1,18 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace Framework.Kernel.Primitives;
+namespace Framework.Serializer.Json.Converters;
 
 public sealed class UnixTimeJsonConverter : JsonConverter<DateTimeOffset>
 {
     public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        long unixTime;
-
-        if (reader.TokenType is JsonTokenType.Number)
-        {
-            unixTime = reader.GetInt64();
-        }
-        else
-        {
-            unixTime = long.Parse(reader.GetString()!, CultureInfo.InvariantCulture);
-        }
+        var unixTime =
+            reader.TokenType is JsonTokenType.Number
+                ? reader.GetInt64()
+                : long.Parse(reader.GetString()!, CultureInfo.InvariantCulture);
 
         return DateTimeOffset.FromUnixTimeSeconds(unixTime);
     }

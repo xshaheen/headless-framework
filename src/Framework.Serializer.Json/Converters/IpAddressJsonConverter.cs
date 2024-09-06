@@ -1,10 +1,10 @@
-﻿using System.Net;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace Framework.Kernel.Primitives;
+namespace Framework.Serializer.Json.Converters;
 
 public sealed class IpAddressJsonConverter : JsonConverter<IPAddress?>
 {

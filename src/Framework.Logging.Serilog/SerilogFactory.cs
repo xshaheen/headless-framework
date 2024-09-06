@@ -2,7 +2,6 @@
 using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using NetTools;
 using Serilog;
 using Serilog.Enrichers.Span;
 using Serilog.Events;
@@ -74,7 +73,6 @@ public static class SerilogFactory
         loggerConfiguration
             .ReadFrom.Configuration(configuration)
             .Destructure.ByTransforming<IPAddress?>(ip => ip?.ToString() ?? "")
-            .Destructure.ByTransforming<IPAddressRange?>(ip => ip?.ToString() ?? "")
             .Enrich.FromLogContext()
             .Enrich.WithSpan()
             .Enrich.WithEnvironmentName()

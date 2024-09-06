@@ -7,6 +7,7 @@ public sealed class SettingDefinition(
     string? displayName = null,
     string? description = null,
     bool isVisibleToClients = false,
+    bool isInherited = true,
     bool isEncrypted = false
 )
 {
@@ -27,6 +28,12 @@ public sealed class SettingDefinition(
     /// to be visible to clients (such as an email server password). Default: false.
     /// </summary>
     public bool IsVisibleToClients { get; set; } = isVisibleToClients;
+
+    /// <summary>
+    /// Is the setting value is inherited from other providers or not. <see langword="true"/>
+    /// means fallbacks to the next provider if the setting value was not set for the requested provider
+    /// </summary>
+    public bool IsInherited { get; init; } = isInherited;
 
     /// <summary>Is this setting stored as encrypted in the data source. Default: False.</summary>
     public bool IsEncrypted { get; set; } = isEncrypted;
