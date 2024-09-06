@@ -8,6 +8,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Flurl;
 using Framework.Blobs.Azure.Internals;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;

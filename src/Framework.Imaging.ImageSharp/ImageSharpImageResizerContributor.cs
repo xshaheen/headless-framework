@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
-using Framework.Kernel.Primitives;
+using Framework.Kernel.BuildingBlocks;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
@@ -90,12 +90,12 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
     {
         return mimeType switch
         {
-            ContentTypes.Image.Jpeg => true,
-            ContentTypes.Image.Png => true,
-            ContentTypes.Image.Gif => true,
-            ContentTypes.Image.Bmp => true,
-            ContentTypes.Image.Tiff => true,
-            ContentTypes.Image.Webp => true,
+            ContentTypes.Images.Jpeg => true,
+            ContentTypes.Images.Png => true,
+            ContentTypes.Images.Gif => true,
+            ContentTypes.Images.Bmp => true,
+            ContentTypes.Images.Tiff => true,
+            ContentTypes.Images.Webp => true,
             _ => false
         };
     }

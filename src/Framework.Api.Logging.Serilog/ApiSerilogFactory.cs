@@ -1,4 +1,4 @@
-﻿using Framework.Kernel.Primitives;
+﻿using Framework.Kernel.BuildingBlocks;
 using Framework.Logging.Serilog;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;

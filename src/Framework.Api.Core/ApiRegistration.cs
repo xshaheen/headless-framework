@@ -7,9 +7,11 @@ using Framework.Api.Core.Diagnostics;
 using Framework.Api.Core.Middlewares;
 using Framework.Api.Core.Security.Claims;
 using Framework.Api.Core.Security.Jwt;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Kernel.BuildingBlocks.Constants;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
-using Framework.Kernel.Primitives;
+using Framework.Serializer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -54,7 +56,12 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
         builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
-        builder.Services.TryAddSingleton<IJsonSerializer, DefaultWebSystemJsonSerializer>();
+
+        builder.Services.TryAddSingleton<IJsonSerializer>(
+            new SystemJsonSerializer(PlatformJsonConstants.DefaultWebJsonOptions)
+        );
+        builder.Services.TryAddSingleton<ITextSerializer>(services => services.GetRequiredService<IJsonSerializer>());
+        builder.Services.TryAddSingleton<ISerializer>(services => services.GetRequiredService<IJsonSerializer>());
 
         builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
         builder.Services.TryAddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
@@ -102,11 +109,14 @@ public static class ApiRegistration
         var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
         var middlewareAnalysisSubscription = diagnosticListener.SubscribeWithAdapter(middlewareAnalysis);
 
-        return new DisposeAction(() =>
-        {
-            badRequestSubscription.Dispose();
-            middlewareAnalysisSubscription.Dispose();
-        });
+        return Disposable.Create(
+            (badRequestSubscription, middlewareAnalysisSubscription),
+            state =>
+            {
+                state.badRequestSubscription.Dispose();
+                state.middlewareAnalysisSubscription.Dispose();
+            }
+        );
     }
 
     public static void AddFrameworkApiResponseCompression(this IServiceCollection services)
@@ -115,7 +125,7 @@ public static class ApiRegistration
             .AddResponseCompression(options =>
             {
                 options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
-                    [ContentTypes.Application.ProblemJson, ContentTypes.Image.SvgXml, ContentTypes.Image.Icon]
+                    [ContentTypes.Applications.ProblemJson, ContentTypes.Images.SvgXml, ContentTypes.Images.Icon]
                 );
 
                 options.Providers.Add<BrotliCompressionProvider>();

@@ -10,3 +10,5 @@ public interface ISerializer
 public interface ITextSerializer : ISerializer;
 
 public interface IBinarySerializer : ISerializer;
+
+public interface IJsonSerializer : ITextSerializer;

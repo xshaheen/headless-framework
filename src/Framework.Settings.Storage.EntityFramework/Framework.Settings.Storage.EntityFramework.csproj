@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+    <RootNamespace>Framework.Settings</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
+    <ProjectReference Include="..\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
+    <ProjectReference Include="..\Framework.Settings\Framework.Settings.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Framework.Kernel.Primitives;
+using Framework.Kernel.BuildingBlocks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 

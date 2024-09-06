@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
-using Framework.Kernel.Primitives;
+using Framework.Kernel.BuildingBlocks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp.Formats;
@@ -83,9 +83,9 @@ public sealed class ImageSharpImageCompressorContributor(
     {
         return format.DefaultMimeType switch
         {
-            ContentTypes.Image.Jpeg => _options.JpegCompressEncoder,
-            ContentTypes.Image.Png => _options.PngCompressEncoder,
-            ContentTypes.Image.Webp => _options.WebpCompressEncoder,
+            ContentTypes.Images.Jpeg => _options.JpegCompressEncoder,
+            ContentTypes.Images.Png => _options.PngCompressEncoder,
+            ContentTypes.Images.Webp => _options.WebpCompressEncoder,
             _ => throw new NotSupportedException($"No encoder available for the given format: {format.Name}"),
         };
     }
@@ -94,9 +94,9 @@ public sealed class ImageSharpImageCompressorContributor(
     {
         return mimeType switch
         {
-            ContentTypes.Image.Jpeg => true,
-            ContentTypes.Image.Png => true,
-            ContentTypes.Image.Webp => true,
+            ContentTypes.Images.Jpeg => true,
+            ContentTypes.Images.Png => true,
+            ContentTypes.Images.Webp => true,
             _ => false
         };
     }

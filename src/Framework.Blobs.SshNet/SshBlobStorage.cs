@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;
 using Microsoft.Extensions.Logging;

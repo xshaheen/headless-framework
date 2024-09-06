@@ -1,6 +1,6 @@
 using System.Text.Json;
+using Framework.Kernel.BuildingBlocks.Constants;
 using Framework.Kernel.Domains;
-using Framework.Kernel.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

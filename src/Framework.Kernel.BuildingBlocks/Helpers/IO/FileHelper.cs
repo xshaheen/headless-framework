@@ -4,7 +4,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
-using Framework.Kernel.Primitives;
 using Humanizer;
 using Polly;
 using Polly.Retry;

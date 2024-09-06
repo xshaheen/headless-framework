@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Framework.Kernel.Primitives;
+using Framework.Kernel.BuildingBlocks.Constants;
 using Snappier;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.IO;
