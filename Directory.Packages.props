@@ -53,11 +53,11 @@
     <PackageVersion Include="FluentValidation" Version="11.9.2" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="11.9.2" />
     <PackageVersion Include="Flurl" Version="4.0.0" />
+    <PackageVersion Include="Foundatio" Version="11.0.2" />
     <PackageVersion Include="Humanizer.Core" Version="2.14.1" />
     <PackageVersion Include="Humanizer.Core.ar" Version="2.14.1" />
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="3.0.0" />
-    <PackageVersion Include="IPAddressRange" Version="6.0.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.2.0" />
     <PackageVersion Include="libphonenumber-csharp" Version="8.13.43" />
     <PackageVersion Include="Linq2Couchbase" Version="2.0.0" />
@@ -92,6 +92,7 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.1" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.9.0" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.0.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
     <PackageVersion Include="Microsoft.OpenApi" Version="1.6.17" />

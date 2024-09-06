@@ -1,24 +1,24 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Definitions;
 
-/// <summary>Retrieves setting definitions from a service provider and <see cref="FrameworkSettingOptions.DefinitionProviders"/></summary>
-public interface ISettingDefinitionManager
+public interface IStaticSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync();
 
     Task<SettingDefinition?> GetOrDefaultAsync(string name);
 }
 
-/// <inheritdoc />
-public sealed class SettingDefinitionManager : ISettingDefinitionManager
+public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly FrameworkSettingOptions _options;
     private readonly Lazy<Dictionary<string, SettingDefinition>> _settingDefinitions;
 
-    public SettingDefinitionManager(IServiceProvider serviceProvider, IOptions<FrameworkSettingOptions> options)
+    public StaticSettingDefinitionStore(IServiceProvider serviceProvider, IOptions<FrameworkSettingOptions> options)
     {
         _serviceProvider = serviceProvider;
         _options = options.Value;

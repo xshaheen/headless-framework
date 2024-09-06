@@ -17,7 +17,6 @@
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="Humanizer.Core.ar" />
     <PackageReference Include="IdGen" />
-    <PackageReference Include="IPAddressRange" />
     <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="morelinq" />
     <PackageReference Include="NetEscapades.EnumGenerators" />

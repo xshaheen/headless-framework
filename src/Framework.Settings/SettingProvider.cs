@@ -22,24 +22,27 @@ public sealed class SettingProvider(
 {
     public async Task<string?> GetOrDefaultAsync(string name)
     {
-        var setting = await settingDefinitionManager.GetOrDefaultAsync(name);
+        var definition = await settingDefinitionManager.GetOrDefaultAsync(name);
 
-        if (setting is null)
+        if (definition is null)
         {
             return null;
         }
 
-        var providers = Enumerable.Reverse(settingValueProviderManager.Providers);
+        var valueProviders = Enumerable.Reverse(settingValueProviderManager.Providers);
 
-        if (setting.Providers.Count != 0)
+        // filter providers by definition allowed providers if present
+        if (definition.Providers.Count != 0)
         {
-            providers = providers.Where(p => setting.Providers.Contains(p.Name, StringComparer.Ordinal));
+            valueProviders = valueProviders.Where(p => definition.Providers.Contains(p.Name, StringComparer.Ordinal));
         }
 
-        var value = await _GetOrDefaultValueFromProvidersAsync(providers, setting);
-        if (value is not null && setting.IsEncrypted)
+        // TODO: How to implement setting.IsInherited?
+        var value = await _FindValueFromValueProvidersAsync(valueProviders, definition);
+
+        if (value is not null && definition.IsEncrypted)
         {
-            value = settingEncryptionService.Decrypt(setting, value);
+            value = settingEncryptionService.Decrypt(definition, value);
         }
 
         return value;
@@ -105,14 +108,14 @@ public sealed class SettingProvider(
         return settingValues;
     }
 
-    private static async Task<string?> _GetOrDefaultValueFromProvidersAsync(
-        IEnumerable<ISettingValueProvider> providers,
-        SettingDefinition setting
+    private static async Task<string?> _FindValueFromValueProvidersAsync(
+        IEnumerable<ISettingValueProvider> valueProviders,
+        SettingDefinition definition
     )
     {
-        foreach (var provider in providers)
+        foreach (var valueProvider in valueProviders)
         {
-            var value = await provider.GetOrDefaultAsync(setting);
+            var value = await valueProvider.GetOrDefaultAsync(definition);
 
             if (value is not null)
             {

@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Framework.Caching;
 
 /// <summary>Cache value.</summary>
@@ -5,17 +7,18 @@ namespace Framework.Caching;
 /// <param name="hasValue">If set to <see langword="true"/> has value.</param>
 public sealed class CacheValue<T>(T? value, bool hasValue)
 {
+    /// <summary>Gets the value.</summary>
+    /// <value>The value.</value>
+    public T? Value { get; } = value;
+
     /// <summary>Gets a value indicating whether this <see cref="CacheValue{T}"/> has value.</summary>
     /// <value><see langword="true"/> if has value; otherwise, <see langword="false"/>.</value>
     public bool HasValue { get; } = hasValue;
 
     /// <summary>Gets a value indicating whether this <see cref="CacheValue{T}"/> is null.</summary>
     /// <value><see langword="true"/> if is null; otherwise, <see langword="false"/>.</value>
+    [MemberNotNullWhen(false, nameof(Value))]
     public bool IsNull => Value is null;
-
-    /// <summary>Gets the value.</summary>
-    /// <value>The value.</value>
-    public T? Value { get; } = value;
 
     /// <summary>Gets the null.</summary>
     /// <value>The null.</value>

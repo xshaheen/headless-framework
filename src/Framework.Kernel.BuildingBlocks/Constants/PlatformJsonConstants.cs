@@ -1,7 +1,9 @@
-﻿using System.Text.Json;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Text.Json;
 using System.Text.Json.Serialization;
-using Framework.Kernel.Primitives;
 using Framework.Serializer;
+using Framework.Serializer.Json.Converters;
 using NetTopologySuite.IO.Converters;
 
 namespace Framework.Kernel.BuildingBlocks.Constants;
@@ -12,7 +14,6 @@ public static class PlatformJsonConstants
     [
         new GeoJsonConverterFactory(),
         new IpAddressJsonConverter(),
-        new IpAddressRangeJsonConverter(),
     ];
 
     public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
