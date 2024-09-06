@@ -10,7 +10,7 @@ public sealed class SystemJsonSerializer(JsonSerializerOptions options) : IJsonS
         return JsonSerializer.Deserialize<T>(data, options);
     }
 
-    public void Serialize(object value, Stream output)
+    public void Serialize<T>(T value, Stream output)
     {
         using var writer = new Utf8JsonWriter(output);
         JsonSerializer.Serialize(writer, value, options);

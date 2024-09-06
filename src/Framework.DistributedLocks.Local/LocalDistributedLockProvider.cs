@@ -5,24 +5,11 @@ using Framework.Kernel.Checks;
 namespace Framework.DistributedLocks.Local;
 
 [PublicAPI]
-public sealed class LocalDistributedLockProvider : IDistributedLockProvider, IDisposable
+public sealed class LocalDistributedLockProvider(IDistributedLockKeyNormalizer distributedLockKeyNormalizer)
+    : IDistributedLockProvider,
+        IDisposable
 {
-    private readonly AsyncKeyedLocker<string> _localSyncObjects =
-        new(
-            options: o =>
-            {
-                o.PoolSize = 20;
-                o.PoolInitialFill = 1;
-            },
-            comparer: StringComparer.Ordinal
-        );
-
-    private readonly IDistributedLockKeyNormalizer _distributedLockKeyNormalizer;
-
-    public LocalDistributedLockProvider(IDistributedLockKeyNormalizer distributedLockKeyNormalizer)
-    {
-        _distributedLockKeyNormalizer = distributedLockKeyNormalizer;
-    }
+    private readonly AsyncKeyedLocker<string> _localSyncObjects = _CreateAsyncKeyedLocker();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public async Task<IDistributedLock?> TryAcquireAsync(
@@ -38,7 +25,7 @@ public sealed class LocalDistributedLockProvider : IDistributedLockProvider, IDi
             Argument.IsPositive(timeout.Value);
         }
 
-        var key = _distributedLockKeyNormalizer.NormalizeKey(resource);
+        var key = distributedLockKeyNormalizer.NormalizeKey(resource);
 
         if (timeout is null)
         {
@@ -69,5 +56,17 @@ public sealed class LocalDistributedLockProvider : IDistributedLockProvider, IDi
     public void Dispose()
     {
         _localSyncObjects.Dispose();
+    }
+
+    private static AsyncKeyedLocker<string> _CreateAsyncKeyedLocker()
+    {
+        return new(
+            options: o =>
+            {
+                o.PoolSize = 20;
+                o.PoolInitialFill = 1;
+            },
+            comparer: StringComparer.Ordinal
+        );
     }
 }

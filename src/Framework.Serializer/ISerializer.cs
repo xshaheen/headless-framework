@@ -4,7 +4,7 @@ public interface ISerializer
 {
     T? Deserialize<T>(Stream data);
 
-    void Serialize(object value, Stream output);
+    void Serialize<T>(T value, Stream output);
 }
 
 public interface ITextSerializer : ISerializer;
