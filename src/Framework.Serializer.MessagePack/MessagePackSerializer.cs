@@ -9,9 +9,9 @@ public sealed class MessagePackSerializer(MessagePackSerializerOptions? options 
     private readonly MessagePackSerializerOptions _options =
         options ?? MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolver.Instance);
 
-    public void Serialize(object value, Stream output)
+    public void Serialize<T>(T value, Stream output)
     {
-        MessagePack.MessagePackSerializer.Serialize(value.GetType(), output, value, _options);
+        MessagePack.MessagePackSerializer.Serialize(output, value, _options);
     }
 
     public T? Deserialize<T>(Stream data)

@@ -2,9 +2,12 @@
 
 ## Framework
 
+- Distributed Lock
+- Messaging
+
 - Settings
 - Features
-- Permissions
+- Permissions (IClaimsTransformation)
 - Couchbase
 - Test 
   - Entity Framework
@@ -13,4 +16,5 @@
 ## Zad
 
 - Aspire
-- Entity Framework
+- Health checks
+- Entity Framework Configuration
