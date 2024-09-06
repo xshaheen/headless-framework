@@ -15,42 +15,50 @@ public static class AddEasyCacheExtensions
     private const string _JsonSerializerName = "json";
     private const string _MemSerializerName = "memory";
 
-    public static IHostApplicationBuilder AddInMemoryEasyCache(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder AddInMemoryEasyCache(
+        this IHostApplicationBuilder builder,
+        Action<CacheOptions> setupAction
+    )
     {
+        builder.Services.ConfigureSingleton(setupAction);
+        builder.Services.AddSingleton(typeof(ICache<>), typeof(Cache<>));
+        builder.Services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, _CreateMemoryCache);
+        builder.Services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, _CreateMemoryCache);
+
+        builder.Services.AddSingleton<ICache>(services =>
+            services.GetRequiredKeyedService<ICache>(CacheConstants.DistributedCacheProvider)
+        );
+
         builder.Services.AddEasyCaching(options =>
         {
             options.WithMemoryPack(_MemSerializerName);
             options._UseInMemory();
         });
-
-        builder.Services.AddSingleton(typeof(ICache<>), typeof(Cache<>));
-        builder.Services.AddKeyedSingleton<ICache>(CacheConstants.MemoryCacheProvider, _CreateMemoryCache);
-        builder.Services.AddKeyedSingleton<ICache>(CacheConstants.DistributedCacheProvider, _CreateMemoryCache);
-
-        builder.Services.AddSingleton<ICache>(services =>
-            services.GetRequiredKeyedService<ICache>(CacheConstants.DistributedCacheProvider)
-        );
 
         return builder;
     }
 
     public static IHostApplicationBuilder AddRedisEasyCache(
         this IHostApplicationBuilder builder,
-        string connectionString,
-        string? keyPrefix = null
+        Action<RedisCacheOptions> setupAction
     )
     {
-        builder.Services.AddEasyCaching(options =>
-        {
-            options.WithMemoryPack(_MemSerializerName);
-            options._UseInMemory();
-            options.WithSystemTextJson(o => PlatformJsonConstants.ConfigureInternalJsonOptions(o), _JsonSerializerName);
-            options._UseRedis(connectionString, keyPrefix);
-        });
+        builder.Services.AddEasyCaching(
+            (provider, options) =>
+            {
+                options.WithMemoryPack(_MemSerializerName);
+                options._UseInMemory();
+                options.WithSystemTextJson(
+                    o => PlatformJsonConstants.ConfigureInternalJsonOptions(o),
+                    _JsonSerializerName
+                );
+                options._UseRedis(provider.GetRequiredService<RedisCacheOptions>());
+            }
+        );
 
         builder.Services.AddSingleton(typeof(ICache<>), typeof(Cache<>));
-        builder.Services.AddKeyedSingleton<ICache>(CacheConstants.MemoryCacheProvider, _CreateMemoryCache);
-        builder.Services.AddKeyedSingleton<ICache>(CacheConstants.DistributedCacheProvider, _CreateRedisCache);
+        builder.Services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, _CreateMemoryCache);
+        builder.Services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, _CreateRedisCache);
 
         builder.Services.AddSingleton<ICache>(services =>
             services.GetRequiredKeyedService<ICache>(CacheConstants.DistributedCacheProvider)
@@ -59,7 +67,7 @@ public static class AddEasyCacheExtensions
         return builder;
     }
 
-    private static EasyCachingCache _CreateRedisCache(IServiceProvider services, object? key)
+    private static ICache _CreateRedisCache(IServiceProvider services, object? key)
     {
         var factory = services.GetRequiredService<IEasyCachingProviderFactory>();
         var cache = factory.GetCachingProvider(CacheConstants.DistributedCacheProvider);
@@ -67,27 +75,30 @@ public static class AddEasyCacheExtensions
         return new EasyCachingCache(cache);
     }
 
-    private static EasyCachingCache _CreateMemoryCache(IServiceProvider services, object? key)
+    private static ICache _CreateMemoryCache(IServiceProvider services, object? key)
     {
         var factory = services.GetRequiredService<IEasyCachingProviderFactory>();
         var cache = factory.GetCachingProvider(CacheConstants.MemoryCacheProvider);
+        var cacheOptions = services.GetRequiredService<CacheOptions>();
 
-        return new EasyCachingCache(cache);
+        return string.IsNullOrEmpty(cacheOptions.KeyPrefix)
+            ? new EasyCachingCache(cache)
+            : new ScopedEasyCachingCache(cache, cacheOptions.KeyPrefix);
     }
 
-    private static void _UseRedis(this EasyCachingOptions options, string connectionString, string? keyPrefix)
+    private static void _UseRedis(this EasyCachingOptions options, RedisCacheOptions cacheOptions)
     {
         options.UseRedis(
             configure: config =>
             {
-                var parts = connectionString.Split(':');
+                var parts = cacheOptions.ConnectionString.Split(':');
                 var host = parts[0];
                 var port = int.Parse(parts[1], CultureInfo.InvariantCulture);
                 config.DBConfig.Endpoints.Add(new ServerEndPoint(host, port));
-                config.DBConfig.Configuration = connectionString;
-                config.DBConfig.KeyPrefix = keyPrefix;
+                config.DBConfig.Configuration = cacheOptions.ConnectionString;
+                config.DBConfig.KeyPrefix = cacheOptions.KeyPrefix;
+                config.DBConfig.Database = cacheOptions.Database;
                 config.DBConfig.AllowAdmin = true;
-                config.DBConfig.Database = 0;
                 config.SerializerName = _JsonSerializerName;
             },
             name: CacheConstants.DistributedCacheProvider
@@ -100,7 +111,7 @@ public static class AddEasyCacheExtensions
             configure: config =>
             {
                 config.SerializerName = _MemSerializerName;
-                config.CacheNulls = false;
+                config.CacheNulls = true;
                 config.EnableLogging = false;
                 // The max random second will be added to cache's expiration, default value is 120
                 config.MaxRdSecond = 120;
