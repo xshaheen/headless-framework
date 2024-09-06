@@ -5,6 +5,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Flurl;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.BuildingBlocks.Helpers.IO;
 using Framework.Kernel.Checks;

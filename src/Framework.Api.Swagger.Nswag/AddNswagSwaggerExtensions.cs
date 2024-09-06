@@ -2,6 +2,7 @@
 using Framework.Api.Swagger.Nswag.Extensions;
 using Framework.Api.Swagger.Nswag.OperationProcessors;
 using Framework.Api.Swagger.Nswag.SchemaProcessors;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 using Framework.Kernel.Primitives;
 using Microsoft.AspNetCore.Builder;

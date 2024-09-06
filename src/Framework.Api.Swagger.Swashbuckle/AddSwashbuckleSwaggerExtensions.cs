@@ -3,6 +3,7 @@ using Asp.Versioning.ApiExplorer;
 using Framework.Api.Core.ApiExplorer;
 using Framework.Api.Swagger.Swashbuckle.Extensions;
 using Framework.Api.Swagger.Swashbuckle.OperationFilters;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 using Framework.Kernel.Primitives;
 using MicroElements.Swashbuckle.FluentValidation.AspNetCore;

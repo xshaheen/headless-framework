@@ -4,6 +4,7 @@ using FluentValidation;
 using Framework.Api.Core.Abstractions;
 using Framework.Api.Core.Resources;
 using Framework.FluentValidation;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -54,7 +55,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
         }
 
         // If the exception is not an API exception, we don't need to do anything.
-        if (!context.HttpContext.Request.CanAccept(ContentTypes.Application.Json))
+        if (!context.HttpContext.Request.CanAccept(ContentTypes.Applications.Json))
         {
             return;
         }
@@ -98,7 +99,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 
         context.Result = new UnprocessableEntityObjectResult(details)
         {
-            ContentTypes = [ContentTypes.Application.ProblemJson, ContentTypes.Application.ProblemXml],
+            ContentTypes = [ContentTypes.Applications.ProblemJson, ContentTypes.Applications.ProblemXml],
         };
 
         context.HttpContext.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";

@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;

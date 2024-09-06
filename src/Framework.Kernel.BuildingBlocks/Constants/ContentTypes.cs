@@ -1,10 +1,10 @@
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace Framework.Kernel.Primitives;
+namespace Framework.Kernel.BuildingBlocks;
 
 public static class ContentTypes
 {
-    public static class Image
+    public static class Images
     {
         /// <summary>Icon content type.</summary>
         public const string Icon = "image/x-icon";
@@ -37,7 +37,7 @@ public static class ContentTypes
         public const string Webp = "image/webp";
     }
 
-    public static class Audio
+    public static class Audios
     {
         public const string Midi = "audio/midi";
         public const string Mp4 = "audio/mp4";
@@ -54,7 +54,7 @@ public static class ContentTypes
         public const string Ac3 = "audio/vnd.dolby.dd-raw";
     }
 
-    public static class Text
+    public static class Texts
     {
         /// <summary>Textual data; Defined in RFC 2046 and RFC 3676.</summary>
         public const string Plain = "text/plain";
@@ -73,7 +73,7 @@ public static class ContentTypes
         public const string Yaml = "text/yaml";
     }
 
-    public static class Video
+    public static class Videos
     {
         public const string Threegpp = "video/3gpp";
         public const string H264 = "video/h264";
@@ -86,7 +86,7 @@ public static class ContentTypes
         public const string Webm = "video/webm";
     }
 
-    public static class Application
+    public static class Applications
     {
         public const string OctetStream = "application/octet-stream";
 

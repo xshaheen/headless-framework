@@ -1,6 +1,6 @@
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace Framework.Kernel.Primitives;
+namespace Framework.Kernel.BuildingBlocks;
 
 /// <summary>
 /// Constants for semantic attribute names outlined by the OpenTelemetry specifications.

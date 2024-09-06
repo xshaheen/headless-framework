@@ -24,13 +24,13 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
         var parent = Principal;
         _currentPrincipal.Value = principal;
 
-        return new DisposeAction<(AsyncLocal<ClaimsPrincipal>, ClaimsPrincipal)>(
+        return Disposable.Create(
+            (_currentPrincipal, parent),
             static state =>
             {
                 var (currentPrincipal, parent) = state;
                 currentPrincipal.Value = parent;
-            },
-            (_currentPrincipal, parent)
+            }
         );
     }
 }

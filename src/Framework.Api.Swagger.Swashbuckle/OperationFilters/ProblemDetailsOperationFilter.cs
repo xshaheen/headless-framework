@@ -1,5 +1,5 @@
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Any;
@@ -199,12 +199,12 @@ public sealed class ProblemDetailsOperationFilter : IOperationFilter
             return;
         }
 
-        if (value.Content.TryGetValue(ContentTypes.Application.ProblemJson, out var problemJsonMediaType))
+        if (value.Content.TryGetValue(ContentTypes.Applications.ProblemJson, out var problemJsonMediaType))
         {
             problemJsonMediaType.Example = problemDetails;
         }
 
-        if (value.Content.TryGetValue(ContentTypes.Application.ProblemXml, out var problemXmlMediaType))
+        if (value.Content.TryGetValue(ContentTypes.Applications.ProblemXml, out var problemXmlMediaType))
         {
             problemXmlMediaType.Example = problemDetails;
         }

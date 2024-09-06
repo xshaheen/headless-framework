@@ -1,5 +1,3 @@
-using Framework.Kernel.Primitives;
-
 namespace Framework.Kernel.BuildingBlocks.Validators;
 
 [PublicAPI]

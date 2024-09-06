@@ -4,7 +4,7 @@ using MessagePack.Resolvers;
 // ReSharper disable once CheckNamespace
 namespace Framework.Serializer;
 
-public sealed class MessagePackSerializer(MessagePackSerializerOptions? options = null) : ISerializer
+public sealed class MessagePackSerializer(MessagePackSerializerOptions? options = null) : IBinarySerializer
 {
     private readonly MessagePackSerializerOptions _options =
         options ?? MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolver.Instance);

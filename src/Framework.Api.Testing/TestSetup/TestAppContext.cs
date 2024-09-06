@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Framework.Kernel.Primitives;
+using Framework.Kernel.BuildingBlocks;
 using MartinCostello.Logging.XUnit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

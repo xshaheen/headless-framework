@@ -1,4 +1,5 @@
 using System.Security.Principal;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;
 

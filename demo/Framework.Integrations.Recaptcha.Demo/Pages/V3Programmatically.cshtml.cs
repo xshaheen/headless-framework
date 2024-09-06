@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
 using Framework.Integrations.Recaptcha.Contracts;
 using Framework.Integrations.Recaptcha.V3;
-using Framework.Kernel.Primitives;
+using Framework.Kernel.BuildingBlocks.Constants;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Framework.Integrations.Recaptcha.Demo.Pages;
