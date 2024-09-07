@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Framework.Kernel.BuildingBlocks.Constants;
@@ -109,6 +110,7 @@ public static class ObjectExtensions
     /// <param name="item">Item to check</param>
     /// <param name="collection">List of items</param>
     /// <typeparam name="T">Type of the items</typeparam>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool In<T>(this T item, IEnumerable<T> collection)
     {
         return collection.Contains(item);
@@ -118,6 +120,7 @@ public static class ObjectExtensions
     /// <param name="item">Item to check</param>
     /// <param name="collection">List of items</param>
     /// <typeparam name="T">Type of the items</typeparam>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool In<T>(this T item, ICollection<T> collection)
     {
         return collection.Contains(item);
@@ -127,6 +130,7 @@ public static class ObjectExtensions
     /// <param name="item">Item to check</param>
     /// <param name="collection">List of items</param>
     /// <typeparam name="T">Type of the items</typeparam>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool In<T>(this T item, params T[] collection)
     {
         return collection.Contains(item);
@@ -135,9 +139,10 @@ public static class ObjectExtensions
     /// <summary>
     /// Used to simplify and beautify casting an object to a type.
     /// </summary>
-    /// <typeparam name="T">Type to be casted</typeparam>
+    /// <typeparam name="T">Type to be cast</typeparam>
     /// <param name="obj">Object to cast</param>
-    /// <returns>Casted object</returns>
+    /// <returns>Cast object</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T As<T>(this object obj)
     {
         return (T)obj;

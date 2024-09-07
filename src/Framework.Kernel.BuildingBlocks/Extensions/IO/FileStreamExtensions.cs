@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
+using System.Text;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;
 using FileHelper = Framework.Kernel.BuildingBlocks.Helpers.IO.FileHelper;
@@ -85,8 +86,14 @@ public static class FileStreamExtensions
     )
     {
         using var md5 = MD5.Create();
-        var hash = await md5.ComputeHashAsync(stream, cancellationToken);
+        var data = await md5.ComputeHashAsync(stream, cancellationToken);
 
-        return Convert.ToBase64String(hash);
+        var sb = new StringBuilder();
+        foreach (var d in data)
+        {
+            sb.Append(d.ToString("X2", CultureInfo.InvariantCulture));
+        }
+
+        return sb.ToString();
     }
 }
