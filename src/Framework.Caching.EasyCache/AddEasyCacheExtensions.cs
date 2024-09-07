@@ -43,6 +43,21 @@ public static class AddEasyCacheExtensions
         Action<RedisCacheOptions> setupAction
     )
     {
+        builder.Services.ConfigureSingleton(setupAction);
+        builder.Services.ConfigureSingleton<CacheOptions>(config =>
+        {
+            var redis = new RedisCacheOptions();
+            setupAction(redis);
+            config.KeyPrefix = redis.KeyPrefix;
+        });
+        builder.Services.AddSingleton(typeof(ICache<>), typeof(Cache<>));
+        builder.Services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, _CreateMemoryCache);
+        builder.Services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, _CreateRedisCache);
+
+        builder.Services.AddSingleton<ICache>(services =>
+            services.GetRequiredKeyedService<ICache>(CacheConstants.DistributedCacheProvider)
+        );
+
         builder.Services.AddEasyCaching(
             (provider, options) =>
             {
@@ -54,14 +69,6 @@ public static class AddEasyCacheExtensions
                 );
                 options._UseRedis(provider.GetRequiredService<RedisCacheOptions>());
             }
-        );
-
-        builder.Services.AddSingleton(typeof(ICache<>), typeof(Cache<>));
-        builder.Services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, _CreateMemoryCache);
-        builder.Services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, _CreateRedisCache);
-
-        builder.Services.AddSingleton<ICache>(services =>
-            services.GetRequiredKeyedService<ICache>(CacheConstants.DistributedCacheProvider)
         );
 
         return builder;

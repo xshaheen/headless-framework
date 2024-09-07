@@ -5,11 +5,11 @@ namespace Framework.Caching.EasyCache;
 public sealed class RedisCacheOptions : CacheOptions
 {
     /// <summary>Gets or sets the connection string for the Redis cache.</summary>
-    public required string ConnectionString { get; set; }
+    public string ConnectionString { get; set; } = default!;
 
     /// <summary>Gets or sets the Redis database index the cache will use.</summary>
     /// <value>The database.</value>
-    public required int Database { get; set; }
+    public int Database { get; set; }
 
     /// <summary>Gets or sets the timeout for any connect operations.</summary>
     /// <value>The connection timeout.</value>

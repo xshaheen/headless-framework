@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using System.Text;
 using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Checks;
@@ -635,5 +636,52 @@ public static class StringExtensions
             '/' => path.Replace('\\', Path.DirectorySeparatorChar),
             _ => path
         };
+    }
+
+    [SuppressMessage(
+        "Security",
+        "CA5351:Do Not Use Broken Cryptographic Algorithms",
+        Justification = "MD5 is used for file integrity check."
+    )]
+    [SystemPure, JetBrainsPure]
+    public static string ToMd5(this string str)
+    {
+        var data = MD5.HashData(Encoding.UTF8.GetBytes(str));
+
+        var sb = new StringBuilder();
+        foreach (var d in data)
+        {
+            sb.Append(d.ToString("X2", CultureInfo.InvariantCulture));
+        }
+
+        return sb.ToString();
+    }
+
+    [SystemPure, JetBrainsPure]
+    public static string ToSha256(this string str)
+    {
+        var data = SHA256.HashData(Encoding.UTF8.GetBytes(str));
+
+        var sb = new StringBuilder();
+        foreach (var d in data)
+        {
+            sb.Append(d.ToString("x2", CultureInfo.InvariantCulture));
+        }
+
+        return sb.ToString();
+    }
+
+    [SystemPure, JetBrainsPure]
+    public static string ToSha512(this string str)
+    {
+        var data = SHA512.HashData(Encoding.UTF8.GetBytes(str));
+
+        var sb = new StringBuilder();
+        foreach (var d in data)
+        {
+            sb.Append(d.ToString("x2", CultureInfo.InvariantCulture));
+        }
+
+        return sb.ToString();
     }
 }

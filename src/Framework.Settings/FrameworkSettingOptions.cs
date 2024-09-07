@@ -9,4 +9,6 @@ public sealed class FrameworkSettingOptions
     public TypeList<ISettingDefinitionProvider> DefinitionProviders { get; } = [];
 
     public TypeList<ISettingValueProvider> ValueProviders { get; } = [];
+
+    public HashSet<string> DeletedSettings { get; } = [];
 }

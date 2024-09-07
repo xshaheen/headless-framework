@@ -305,7 +305,8 @@ dotnet_diagnostic.ma0047.severity = suggestion
 dotnet_diagnostic.ma0006.severity = suggestion
 # MA0016: Prefer returning collection abstraction instead of implementation
 dotnet_diagnostic.ma0016.severity = none
-
+# MA0018 Do not declare static members on generic types (deprecated CA1000 is a replacement for it0)
+dotnet_diagnostic.ma0018.severity = none
 dotnet_diagnostic.AsyncifyInvocation.severity = error
 
 ##########################################
