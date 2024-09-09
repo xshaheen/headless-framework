@@ -13,13 +13,13 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IDistributedMessag
     private List<ILocalMessage>? _localMessages;
     private List<IDistributedMessage>? _distributedMessages;
 
-    public void AddMessage(IDistributedMessage e) => (_distributedMessages ??= []).Add(e);
+    public void AddMessage(IDistributedMessage message) => (_distributedMessages ??= []).Add(message);
 
     public void ClearDistributedMessages() => _distributedMessages?.Clear();
 
     public IReadOnlyList<IDistributedMessage> GetDistributedMessages() => _distributedMessages ?? [];
 
-    public void AddMessage(ILocalMessage e) => (_localMessages ??= []).Add(e);
+    public void AddMessage(ILocalMessage messages) => (_localMessages ??= []).Add(messages);
 
     public IReadOnlyList<ILocalMessage> GetLocalMessages() => _localMessages ?? [];
 
