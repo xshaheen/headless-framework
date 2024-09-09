@@ -1,0 +1,14 @@
+﻿using System.ComponentModel;
+
+// ReSharper disable once CheckNamespace
+namespace Framework.Queueing;
+
+public sealed class EnqueuingEventArgs<T> : CancelEventArgs
+    where T : class
+{
+    public required IQueue<T> Queue { get; init; }
+
+    public required T Data { get; init; }
+
+    public required QueueEntryOptions Options { get; init; }
+}
