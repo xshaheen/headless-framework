@@ -1,0 +1,9 @@
+// ReSharper disable once CheckNamespace
+namespace Framework.Kernel.Domains;
+
+public interface IDistributedMessageHandler<in TMessage>
+    where TMessage : class, IDistributedMessage
+{
+    /// <summary>Handler handles the event by implementing this method.</summary>
+    ValueTask HandleAsync(TMessage message, CancellationToken abortToken = default);
+}

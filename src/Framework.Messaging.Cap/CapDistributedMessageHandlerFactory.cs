@@ -184,10 +184,10 @@ public static class CapDistributedMessageHandlerFactory
 
             var eventName =
                 eventType
-                    .GetProperty(nameof(IDistributedMessage.MessageKey), BindingFlags.Static | BindingFlags.Public)!
+                    .GetProperty(nameof(IDistributedMessage.TypeKey), BindingFlags.Static | BindingFlags.Public)!
                     .GetValue(null)
                 ?? throw new InvalidOperationException(
-                    $"{nameof(IDistributedMessage.MessageKey)} not found in {eventType.Name}"
+                    $"{nameof(IDistributedMessage.TypeKey)} not found in {eventType.Name}"
                 );
 
             var key = ((string)eventName, eventType);
