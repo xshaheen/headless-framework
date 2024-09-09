@@ -1,20 +1,12 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Reflection;
 using Framework.Kernel.Domains;
 using Microsoft.Extensions.DependencyInjection;
 
+// ReSharper disable once CheckNamespace
 namespace Framework.Messaging;
 
-public interface ILocalMessagePublisher
-{
-    void Publish<T>(T message)
-        where T : class, ILocalMessage;
-
-    Task PublishAsync<T>(T message, CancellationToken abortToken = default)
-        where T : class, ILocalMessage;
-}
-
-public sealed class LocalMessagePublisher(IServiceProvider services) : ILocalMessagePublisher
+public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider services) : ILocalMessagePublisher
 {
     private static readonly ConcurrentDictionary<Type, int> _HandlerOrderCache = new();
 
