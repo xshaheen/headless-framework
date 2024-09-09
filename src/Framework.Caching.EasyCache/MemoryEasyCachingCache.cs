@@ -1,8 +1,10 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using EasyCaching.Core;
 
 namespace Framework.Caching.EasyCache;
 
-internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
+internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, string keyPrefix) : ICache
 {
     #region Set
 
@@ -13,6 +15,8 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
         CancellationToken cancellationToken = default
     )
     {
+        cacheKey = keyPrefix + cacheKey;
+
         await easyCache.SetAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
@@ -23,6 +27,8 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
         CancellationToken cancellationToken = default
     )
     {
+        cacheKey = keyPrefix + cacheKey;
+
         return await easyCache.TrySetAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
@@ -32,6 +38,8 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
         CancellationToken cancellationToken = default
     )
     {
+        value = value.ToDictionary(x => keyPrefix + x.Key, x => x.Value, StringComparer.Ordinal);
+
         await easyCache.SetAllAsync(value, expiration, cancellationToken);
     }
 
@@ -41,6 +49,8 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
 
     public async ValueTask<CacheValue<T>> GetAsync<T>(string cacheKey, CancellationToken cancellationToken = default)
     {
+        cacheKey = keyPrefix + cacheKey;
+
         var result = await easyCache.GetAsync<T>(cacheKey, cancellationToken);
 
         return new(result.Value, result.HasValue);
@@ -51,6 +61,8 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
         CancellationToken cancellationToken = default
     )
     {
+        cacheKeys = cacheKeys.Select(x => keyPrefix + x);
+
         var result = await easyCache.GetAllAsync<T>(cacheKeys, cancellationToken);
 
         return result.ToDictionary(
@@ -65,6 +77,8 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
         CancellationToken cancellationToken = default
     )
     {
+        prefix = keyPrefix + prefix;
+
         var result = await easyCache.GetByPrefixAsync<T>(prefix, cancellationToken);
 
         return result.ToDictionary(
@@ -79,21 +93,29 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
         CancellationToken cancellationToken = default
     )
     {
+        prefix = keyPrefix + prefix;
+
         return await easyCache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
     }
 
     public async ValueTask<bool> ExistsAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
+        cacheKey = keyPrefix + cacheKey;
+
         return await easyCache.ExistsAsync(cacheKey, cancellationToken);
     }
 
     public Task<TimeSpan> GetExpirationAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
+        cacheKey = keyPrefix + cacheKey;
+
         return easyCache.GetExpirationAsync(cacheKey, cancellationToken);
     }
 
     public async ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
+        prefix = keyPrefix + prefix;
+
         return await easyCache.GetCountAsync(prefix, cancellationToken);
     }
 
@@ -103,21 +125,29 @@ internal sealed class EasyCachingCache(IEasyCachingProvider easyCache) : ICache
 
     public async ValueTask RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
+        cacheKey = keyPrefix + cacheKey;
+
         await easyCache.RemoveAsync(cacheKey, cancellationToken);
     }
 
     public async ValueTask RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
     {
+        cacheKeys = cacheKeys.Select(x => keyPrefix + x);
+
         await easyCache.RemoveAllAsync(cacheKeys, cancellationToken);
     }
 
     public async ValueTask RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
+        prefix = keyPrefix + prefix;
+
         await easyCache.RemoveByPrefixAsync(prefix, cancellationToken);
     }
 
     public async ValueTask RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
+        pattern = keyPrefix + pattern;
+
         await easyCache.RemoveByPatternAsync(pattern, cancellationToken);
     }
 
