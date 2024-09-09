@@ -28,7 +28,7 @@ public sealed class LocalMessagePublisher(IServiceProvider services) : ILocalMes
         {
             try
             {
-                handler.HandleAsync(message).GetAwaiter().GetResult();
+                handler.HandleAsync(message).WaitAndUnwrapException();
             }
             catch (TargetInvocationException e)
             {

@@ -79,7 +79,7 @@ public static class AddEasyCacheExtensions
         var factory = services.GetRequiredService<IEasyCachingProviderFactory>();
         var cache = factory.GetCachingProvider(CacheConstants.DistributedCacheProvider);
 
-        return new EasyCachingCache(cache);
+        return new RedisEasyCachingCache(cache);
     }
 
     private static ICache _CreateMemoryCache(IServiceProvider services, object? key)
@@ -88,9 +88,7 @@ public static class AddEasyCacheExtensions
         var cache = factory.GetCachingProvider(CacheConstants.MemoryCacheProvider);
         var cacheOptions = services.GetRequiredService<CacheOptions>();
 
-        return string.IsNullOrEmpty(cacheOptions.KeyPrefix)
-            ? new EasyCachingCache(cache)
-            : new ScopedEasyCachingCache(cache, cacheOptions.KeyPrefix);
+        return new MemoryEasyCachingCache(cache, cacheOptions.KeyPrefix);
     }
 
     private static void _UseRedis(this EasyCachingOptions options, RedisCacheOptions cacheOptions)
