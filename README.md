@@ -3,7 +3,9 @@
 ## Framework
 
 - Distributed Lock
-- Messaging
+- Queues
+- Foundatio.Parsers
+- Foundatio.Repositories
 
 - Settings
 - Features
