@@ -1,9 +1,9 @@
 ﻿using DotNetCore.CAP;
 using Framework.Kernel.BuildingBlocks.Constants;
-using Framework.Messaging.Cap.Filters;
+using Framework.Messaging.Filters;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Messaging.Cap;
+namespace Framework.Messaging;
 
 public static class AddCapDistributedMessagingExtensions
 {

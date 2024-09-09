@@ -1,6 +1,6 @@
 ﻿using DotNetCore.CAP.Filter;
 
-namespace Framework.Messaging.Cap.Filters;
+namespace Framework.Messaging.Filters;
 
 /// <summary>
 /// By default, if the consumer throws an OperationCanceledException (including TaskCanceledException),

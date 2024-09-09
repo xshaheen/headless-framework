@@ -1,7 +1,7 @@
 ﻿using DotNetCore.CAP;
 using Framework.Kernel.Domains;
 
-namespace Framework.Messaging.Cap;
+namespace Framework.Messaging;
 
 public sealed class CapDistributedMessagePublisher(ICapPublisher publisher) : IDistributedMessagePublisher
 {

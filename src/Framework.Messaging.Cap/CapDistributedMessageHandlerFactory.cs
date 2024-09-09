@@ -4,7 +4,7 @@ using DotNetCore.CAP;
 using Framework.Kernel.Domains;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Messaging.Cap;
+namespace Framework.Messaging;
 
 using MessageHandlerMap = Dictionary<
     (string MessageName, Type MessageType),
