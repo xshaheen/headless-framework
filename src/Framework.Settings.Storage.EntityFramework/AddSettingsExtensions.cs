@@ -4,6 +4,7 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Providers;
+using Framework.Settings.Repositories;
 using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -19,11 +20,16 @@ public static class AddSettingsExtensions
         builder.Services._AddSettingEncryption();
         builder.Services._AddCoreValueProvider();
 
+        builder.Services.TryAddSingleton<
+            IDynamicSettingDefinitionStoreInMemoryCache,
+            DynamicSettingDefinitionStoreInMemoryCache
+        >();
+
+        builder.Services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
+        builder.Services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
         builder.Services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
         builder.Services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
-
         builder.Services.TryAddTransient<ISettingProvider, SettingProvider>();
-
         // This is a fallback store, it should be replaced by a real store
         builder.Services.TryAddSingleton<ISettingStore, NullSettingStore>();
 
