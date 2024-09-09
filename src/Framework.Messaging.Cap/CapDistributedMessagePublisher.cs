@@ -11,9 +11,14 @@ public sealed class CapDistributedMessagePublisher(ICapPublisher publisher) : ID
         publisher.Publish(name: message.TypeKey, contentObj: message, callbackName: null);
     }
 
-    public Task PublishAsync<T>(T message, CancellationToken abortToken = default)
+    public Task PublishAsync<T>(T message, CancellationToken cancellationToken = default)
         where T : class, IDistributedMessage
     {
-        return publisher.PublishAsync(name: message.TypeKey, contentObj: message, callbackName: null, abortToken);
+        return publisher.PublishAsync(
+            name: message.TypeKey,
+            contentObj: message,
+            callbackName: null,
+            cancellationToken
+        );
     }
 }

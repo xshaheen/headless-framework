@@ -1,0 +1,33 @@
+// ReSharper disable once CheckNamespace
+namespace Framework.Messaging;
+
+[PublicAPI]
+public static class MessageSubscriberExtensions
+{
+    public static Task SubscribeAsync<TPayload>(
+        this IMessageSubscriber subscriber,
+        Func<IMessageSubscribeMedium<TPayload>, Task> handler,
+        CancellationToken cancellationToken = default
+    )
+        where TPayload : class
+    {
+        return subscriber.SubscribeAsync<TPayload>((msg, _) => handler(msg), cancellationToken);
+    }
+
+    public static Task SubscribeAsync<TPayload>(
+        this IMessageSubscriber subscriber,
+        Action<IMessageSubscribeMedium<TPayload>> handler,
+        CancellationToken cancellationToken = default
+    )
+        where TPayload : class
+    {
+        return subscriber.SubscribeAsync<TPayload>(
+            (msg, _) =>
+            {
+                handler(msg);
+                return Task.CompletedTask;
+            },
+            cancellationToken
+        );
+    }
+}
