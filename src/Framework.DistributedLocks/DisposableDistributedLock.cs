@@ -27,20 +27,30 @@ public sealed class DisposableDistributedLock(
 
     public int RenewalCount { get; private set; }
 
-    public async Task RenewAsync(TimeSpan? timout = null)
+    public async Task<bool> RenewAsync(TimeSpan? timout = null)
     {
         if (logger.IsEnabled(LogLevel.Trace))
         {
             logger.LogTrace("Renewing lock {Resource} ({LockId})", Resource, LockId);
         }
 
-        await lockProvider.RenewAsync(Resource, LockId, timout).AnyContext();
+        var result = await lockProvider.RenewAsync(Resource, LockId, timout).AnyContext();
+
+        if (!result)
+        {
+            logger.LogDebug("Unable to renew lock {Resource} ({LockId})", Resource, LockId);
+
+            return false;
+        }
+
         RenewalCount++;
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
             logger.LogDebug("Renewed lock {Resource} ({LockId})", Resource, LockId);
         }
+
+        return true;
     }
 
     public async Task ReleaseAsync()

@@ -26,5 +26,5 @@ public interface IDistributedLock : IAsyncDisposable
     Task ReleaseAsync();
 
     /// <summary>Attempts to renew the lock.</summary>
-    Task RenewAsync(TimeSpan? timout = null);
+    Task<bool> RenewAsync(TimeSpan? timout = null);
 }
