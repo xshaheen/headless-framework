@@ -1,10 +1,14 @@
-﻿namespace Framework.Kernel.BuildingBlocks.Abstractions;
+﻿using System.Diagnostics;
+
+namespace Framework.Kernel.BuildingBlocks.Abstractions;
 
 public interface IClock
 {
     long Ticks { get; }
 
     DateTimeOffset Now { get; }
+
+    long GetTimestamp();
 
     DateTimeOffset Normalize(DateTimeOffset v);
 
@@ -19,10 +23,9 @@ public sealed class Clock : IClock
 
     public DateTimeOffset Now => DateTimeOffset.UtcNow;
 
-    public DateTimeOffset Normalize(DateTimeOffset v)
-    {
-        return v.ToUniversalTime();
-    }
+    public long GetTimestamp() => Stopwatch.GetTimestamp();
+
+    public DateTimeOffset Normalize(DateTimeOffset v) => v.ToUniversalTime();
 
     public DateTime Normalize(DateTime v)
     {
