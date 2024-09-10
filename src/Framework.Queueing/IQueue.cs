@@ -9,37 +9,23 @@ public interface IQueue<T>
 {
     string QueueId { get; }
 
-    #region Events
+    IAsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; }
 
-    AsyncEvent<EnqueuingEventArgs<T>> Enqueuing { get; }
+    IAsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; }
 
-    AsyncEvent<EnqueuedEventArgs<T>> Enqueued { get; }
+    IAsyncEvent<DequeuedEventArgs<T>> Dequeued { get; }
 
-    AsyncEvent<DequeuedEventArgs<T>> Dequeued { get; }
+    IAsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; }
 
-    AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; }
+    IAsyncEvent<CompletedEventArgs<T>> Completed { get; }
 
-    AsyncEvent<CompletedEventArgs<T>> Completed { get; }
-
-    AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
-
-    #endregion
-
-    #region Enqueue
+    IAsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
     Task<string> EnqueueAsync(T data, QueueEntryOptions? options = null);
-
-    #endregion
-
-    #region Dequeue
 
     Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
 
     Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null);
-
-    #endregion
-
-    #region Entry Actions
 
     Task RenewLockAsync(IQueueEntry<T> entry);
 
@@ -47,15 +33,13 @@ public interface IQueue<T>
 
     Task AbandonAsync(IQueueEntry<T> entry);
 
-    #endregion
-
-    #region DeadLetters
-
     Task<IEnumerable<T>> GetDeadLetterItemsAsync(CancellationToken cancellationToken = default);
 
-    #endregion
+    Task<QueueStats> GetQueueStatsAsync();
 
-    #region Start
+    Task DeleteQueueAsync();
+
+    void AttachBehavior(IQueueBehavior<T> behavior);
 
     /// <summary>Asynchronously dequeues entries in the background.</summary>
     /// <param name="handler">Function called on entry dequeued.</param>
@@ -66,12 +50,4 @@ public interface IQueue<T>
         bool autoComplete = false,
         CancellationToken cancellationToken = default
     );
-
-    #endregion
-
-    Task<QueueStats> GetQueueStatsAsync();
-
-    Task DeleteQueueAsync();
-
-    void AttachBehavior(IQueueBehavior<T> behavior);
 }

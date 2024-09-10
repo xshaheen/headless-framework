@@ -2,6 +2,7 @@
 
 namespace Framework.Queueing;
 
+[PublicAPI]
 public static class QueueExtensions
 {
     public static Task StartAsync<T>(

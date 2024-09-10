@@ -11,7 +11,7 @@ public interface IMessageSubscribeMedium<out TPayload>
 
     DateTimeOffset Timestamp { get; }
 
-    Dictionary<string, string> Properties { get; }
+    IDictionary<string, string> Properties { get; }
 
     TPayload Payload { get; }
 }

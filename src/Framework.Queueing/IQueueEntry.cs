@@ -16,7 +16,7 @@ public interface IQueueEntry<out T> : IAsyncDisposable
 
     T Value { get; }
 
-    Dictionary<string, string> Properties { get; }
+    IDictionary<string, string> Properties { get; }
 
     void MarkAbandoned();
 

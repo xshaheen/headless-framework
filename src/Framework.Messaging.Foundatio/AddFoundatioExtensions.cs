@@ -5,9 +5,9 @@ namespace Framework.Messaging;
 [PublicAPI]
 public static class AddFoundatioExtensions
 {
-    public static IServiceCollection AddFoundatioMessageBus(this IServiceCollection services)
+    public static IServiceCollection AddMessageBusFoundatioAdapter(this IServiceCollection services)
     {
-        services.AddSingleton<IMessageBus, FoundatioMessageBus>();
+        services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
         services.AddSingleton<IMessagePublisher>(provider => provider.GetRequiredService<IMessageBus>());
         services.AddSingleton<IMessageSubscriber>(provider => provider.GetRequiredService<IMessageBus>());
 
