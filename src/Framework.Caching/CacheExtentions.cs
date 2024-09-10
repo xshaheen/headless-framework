@@ -18,7 +18,7 @@ public static class CacheExtensions
         }
 
         var value = await factory();
-        await cache.SetAsync(key, cacheValue, expiration, cancellationToken);
+        await cache.UpsertAsync(key, cacheValue, expiration, cancellationToken);
 
         return new(value, hasValue: true);
     }

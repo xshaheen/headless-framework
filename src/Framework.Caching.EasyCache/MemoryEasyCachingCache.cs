@@ -8,7 +8,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
 {
     #region Set
 
-    public async ValueTask SetAsync<T>(
+    public async Task SetAsync<T>(
         string cacheKey,
         T cacheValue,
         TimeSpan expiration,
@@ -20,7 +20,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
         await easyCache.SetAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
-    public async ValueTask<bool> TrySetAsync<T>(
+    public async Task<bool> TrySetAsync<T>(
         string cacheKey,
         T cacheValue,
         TimeSpan expiration,
@@ -32,7 +32,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
         return await easyCache.TrySetAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
-    public async ValueTask SetAllAsync<T>(
+    public async Task SetAllAsync<T>(
         IDictionary<string, T> value,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
@@ -47,7 +47,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
 
     #region Get
 
-    public async ValueTask<CacheValue<T>> GetAsync<T>(string cacheKey, CancellationToken cancellationToken = default)
+    public async Task<CacheValue<T>> GetAsync<T>(string cacheKey, CancellationToken cancellationToken = default)
     {
         cacheKey = keyPrefix + cacheKey;
 
@@ -56,7 +56,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
         return new(result.Value, result.HasValue);
     }
 
-    public async ValueTask<Dictionary<string, CacheValue<T>>> GetAllAsync<T>(
+    public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     )
@@ -72,7 +72,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
         );
     }
 
-    public async ValueTask<Dictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
+    public async Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
     )
@@ -88,7 +88,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
         );
     }
 
-    public async ValueTask<IEnumerable<string>> GetAllKeysByPrefixAsync(
+    public async Task<IEnumerable<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     )
@@ -98,7 +98,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
         return await easyCache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
     }
 
-    public async ValueTask<bool> ExistsAsync(string cacheKey, CancellationToken cancellationToken = default)
+    public async Task<bool> ExistsAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         cacheKey = keyPrefix + cacheKey;
 
@@ -112,7 +112,7 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
         return easyCache.GetExpirationAsync(cacheKey, cancellationToken);
     }
 
-    public async ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    public async Task<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         prefix = keyPrefix + prefix;
 
@@ -123,35 +123,35 @@ internal sealed class MemoryEasyCachingCache(IEasyCachingProvider easyCache, str
 
     #region Remove
 
-    public async ValueTask RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
+    public async Task<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         cacheKey = keyPrefix + cacheKey;
 
         await easyCache.RemoveAsync(cacheKey, cancellationToken);
     }
 
-    public async ValueTask RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    public async Task<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
     {
         cacheKeys = cacheKeys.Select(x => keyPrefix + x);
 
         await easyCache.RemoveAllAsync(cacheKeys, cancellationToken);
     }
 
-    public async ValueTask RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    public async Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
         prefix = keyPrefix + prefix;
 
         await easyCache.RemoveByPrefixAsync(prefix, cancellationToken);
     }
 
-    public async ValueTask RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
+    public async Task<int> RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
         pattern = keyPrefix + pattern;
 
         await easyCache.RemoveByPatternAsync(pattern, cancellationToken);
     }
 
-    public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         await easyCache.FlushAsync(cancellationToken);
     }
