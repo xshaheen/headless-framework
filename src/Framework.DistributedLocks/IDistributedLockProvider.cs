@@ -6,10 +6,25 @@ public interface IDistributedLockProvider
 {
     /// <summary>
     /// Acquires a distributed lock for a specified resource this method will block
-    /// until the lock is acquired or the <paramref name="timeUntilExpires"/> is reached.
-    /// The default <paramref name="timeUntilExpires"/> is 15 minutes.
-    /// To acquire a lock without expiration set it to <see cref="TimeSpan.Zero"/>.
+    /// until the lock is acquired or the <paramref name="acquireTimeout"/> is reached.
     /// </summary>
+    /// <param name="resource">The resource to acquire the lock for.</param>
+    /// <param name="timeUntilExpires">
+    /// The amount of time until the lock expires. The allowed values are:
+    /// <list type="bullet">
+    /// <item><see langword="null"/>: means the default value (20 minutes).</item>
+    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.</item>
+    /// <item>Value greater than 0.</item>
+    /// </list>
+    /// </param>
+    /// <param name="acquireTimeout">
+    /// The amount of time to wait for the lock to be acquired. The allowed values are:
+    /// <list type="bullet">
+    /// <item><see langword="null"/>: means the default value (1 minute).</item>
+    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity wait to aquire</item>
+    /// <item>Value greater than 0.</item>
+    /// </list>
+    /// </param>
     /// <returns>
     /// A task that represents the asynchronous operation.
     /// The task result contains the acquired lock or null if the lock could not be acquired.
@@ -17,7 +32,7 @@ public interface IDistributedLockProvider
     Task<IDistributedLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
+        TimeSpan? acquireTimeout = null
     );
 
     /// <summary>
@@ -27,9 +42,10 @@ public interface IDistributedLockProvider
 
     /// <summary>
     /// Renews a distributed lock for a specified <paramref name="resource"/> by extending
-    /// the expiration time of the lock if it is still held to the <paramref name="lockId"/>.
+    /// the expiration time of the lock if it is still held to the <paramref name="lockId"/>
+    /// and if not .
     /// </summary>
-    Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
+    Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 
     /// <summary>
     /// Releases a distributed lock for a specified <paramref name="resource"/>

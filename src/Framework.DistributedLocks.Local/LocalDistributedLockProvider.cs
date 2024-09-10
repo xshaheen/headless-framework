@@ -20,41 +20,67 @@ public sealed class LocalDistributedLockProvider(
     public async Task<IDistributedLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
+        TimeSpan? acquireTimeout = null
     )
     {
-        timeUntilExpires ??= TimeSpan.FromMinutes(15);
+        timeUntilExpires ??= TimeSpan.FromMinutes(20);
+        acquireTimeout ??= TimeSpan.FromSeconds(30);
 
         Argument.IsNotNullOrWhiteSpace(resource);
-        Argument.IsPositiveOrZero(timeUntilExpires.Value);
+
+        if (timeUntilExpires != Timeout.InfiniteTimeSpan)
+        {
+            Argument.IsPositive(timeUntilExpires.Value);
+        }
 
         var key = resourceNormalizer.Normalize(resource);
-        var lockId = longGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         var timestamp = clock.GetTimestamp();
-        var lockReleaser = await _locks.LockAsync(key, millisecondsTimeout: 0, cancellationToken);
+        IDisposable lockReleaser;
+
+        if (acquireTimeout == Timeout.InfiniteTimeSpan)
+        {
+            lockReleaser = await _locks.LockAsync(key);
+        }
+        else
+        {
+            var timeoutRelease = await _locks.LockAsync(key, acquireTimeout.Value);
+
+            if (timeoutRelease.EnteredSemaphore)
+            {
+                timeoutRelease.Dispose();
+
+                return null;
+            }
+
+            lockReleaser = timeoutRelease;
+        }
+
         var elapsed = TimeSpan.FromTicks(clock.GetTimestamp() - timestamp);
 
-        // Not able to acquire the lock
-        if (lockReleaser.EnteredSemaphore)
+        var lockId = longGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var resourceLock = new ResourceLock(lockId, lockReleaser, timeUntilExpires.Value);
+        // Safe because the resource lock is acquired only by one thread
+        var added = _resources.TryAdd(key, resourceLock);
+
+        if (!added)
         {
-            lockReleaser.Dispose();
+            logger.LogWarning("(Shouldn't happen) The resource lock for the key '{Key}' was not added", key);
+            resourceLock.Dispose();
 
             return null;
         }
 
-        var resourceLock = new ResourceLock(lockId, lockReleaser, timeUntilExpires.Value);
-        _resources.TryAdd(key, resourceLock);
-
         // Expire the lock when the expiration token source is triggered
         resourceLock.ExpireSource.Token.Register(() =>
         {
-            if (!_resources.TryRemove(key, out var value))
-            {
-                return;
-            }
+            // TODO: this expiration can be triggered parallel with the renew of the same lock id
+            // which can make the lock to be released even if it is renewed
 
-            value.Dispose();
+            if (_resources.TryRemove(key, out var value))
+            {
+                value.Dispose();
+            }
         });
 
         return new DisposableDistributedLock(resource, lockId, elapsed, this, clock, logger);
@@ -65,22 +91,35 @@ public sealed class LocalDistributedLockProvider(
         return Task.FromResult(_locks.IsInUse(resource));
     }
 
-    public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+    public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
+        timeUntilExpires ??= TimeSpan.FromMinutes(20);
+
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsPositiveOrZero(timeUntilExpires.Value);
 
-        if (timeUntilExpires is not null)
-        {
-            Argument.IsPositive(timeUntilExpires.Value);
-        }
-
+        // If the lock is not found, then it is already released
         if (!_resources.TryGetValue(resource, out var value))
         {
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
 
-        return Task.CompletedTask;
+        // If the lock id does not match, then it is not the lock that we are looking for
+        if (!string.Equals(value.LockId, lockId, StringComparison.Ordinal))
+        {
+            return Task.FromResult(false);
+        }
+
+        if (value.ExpireSource.IsCancellationRequested)
+        {
+            return Task.FromResult(false);
+        }
+
+        // Renew the lock
+        value.ExpireSource.CancelAfter(value.TimeUntilExpires);
+
+        return Task.FromResult(true);
     }
 
     public Task ReleaseAsync(string resource, string lockId)
@@ -111,6 +150,12 @@ public sealed class LocalDistributedLockProvider(
 
     public void Dispose()
     {
+        foreach (var value in _resources.Values)
+        {
+            value.Dispose();
+        }
+
+        _resources.Clear();
         _locks.Dispose();
     }
 
