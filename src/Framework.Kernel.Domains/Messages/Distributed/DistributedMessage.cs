@@ -11,7 +11,7 @@ public class DistributedMessage<T> : EquatableBase<DistributedMessage<T>>, IDist
 
     public required DateTimeOffset Timestamp { get; init; }
 
-    public Dictionary<string, string> Properties { get; } = new(StringComparer.Ordinal);
+    public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     public required T Payload { get; init; }
 

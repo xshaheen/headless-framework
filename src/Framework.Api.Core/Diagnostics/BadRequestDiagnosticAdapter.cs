@@ -6,15 +6,8 @@ namespace Framework.Api.Core.Diagnostics;
 
 /// <summary>see: https://docs.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/diagnostics</summary>
 [PublicAPI]
-public sealed partial class BadRequestDiagnosticAdapter
+public sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
 {
-    private readonly ILogger _logger;
-
-    public BadRequestDiagnosticAdapter(ILogger logger)
-    {
-        _logger = logger;
-    }
-
     [DiagnosticName(DiagnosticSources.KestrelOnBadRequest)]
     public void OnBadRequest(KeyValuePair<string, object?> value)
     {
@@ -27,7 +20,7 @@ public sealed partial class BadRequestDiagnosticAdapter
 
         if (badRequestFeature is not null)
         {
-            Extensions.BadRequestEvent(_logger, badRequestFeature.Error);
+            Extensions.BadRequestEvent(logger, badRequestFeature.Error);
         }
     }
 

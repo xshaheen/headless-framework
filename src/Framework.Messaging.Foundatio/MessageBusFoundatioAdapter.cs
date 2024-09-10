@@ -4,7 +4,7 @@ using IFrameworkMessageBus = Framework.Messaging.IMessageBus;
 
 namespace Framework.Messaging;
 
-public sealed class FoundatioMessageBus(IFoundatioMessageBus foundatio) : IFrameworkMessageBus
+public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio) : IFrameworkMessageBus
 {
     public Task SubscribeAsync<TPayload>(
         Func<IMessageSubscribeMedium<TPayload>, CancellationToken, Task> handler,

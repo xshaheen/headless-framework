@@ -5,11 +5,12 @@ namespace Framework.Queueing;
 [PublicAPI]
 public sealed class QueueEntryOptions
 {
-    public required string UniqueId { get; set; }
+    public required string UniqueId { get; init; }
 
-    public required string CorrelationId { get; set; }
+    public required string CorrelationId { get; init; }
 
-    public TimeSpan? DeliveryDelay { get; set; }
+    public TimeSpan? DeliveryDelay { get; init; }
 
-    public Dictionary<string, string> Properties { get; } = new(StringComparer.Ordinal);
+    public IDictionary<string, string> Properties { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 }
