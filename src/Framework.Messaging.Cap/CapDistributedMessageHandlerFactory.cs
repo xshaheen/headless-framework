@@ -158,8 +158,8 @@ public static class CapDistributedMessageHandlerFactory
                 handlerMethodIlGenerator.Emit(OpCodes.Ldarg_0); // Load argument 0 (this) to the stack
                 handlerMethodIlGenerator.Emit(OpCodes.Ldfld, fieldBuilder); // Load the field value to the stack
                 handlerMethodIlGenerator.Emit(OpCodes.Ldarg_3); // Load argument 3 (abortToken) to the stack
-                handlerMethodIlGenerator.Emit(OpCodes.Call, baseTriggerHandlerAsyncMethod.MakeGenericMethod(eventType)); // Call the base class method
-                handlerMethodIlGenerator.Emit(OpCodes.Ret); // Return from the method
+                handlerMethodIlGenerator.CallMethod(baseTriggerHandlerAsyncMethod.MakeGenericMethod(eventType)); // Call the base class method
+                handlerMethodIlGenerator.Return();
             }
         }
 
@@ -252,6 +252,14 @@ public static class CapDistributedMessageHandlerFactory
 
             var handlerInstance =
                 (IDistributedMessageHandler<T>)ActivatorUtilities.CreateInstance(serviceProvider, handler);
+
+            foreach (var h in header)
+            {
+                if (h.Value is not null)
+                {
+                    data.Properties[h.Key] = h.Value;
+                }
+            }
 
             await handlerInstance.HandleAsync(data, abortToken);
         }

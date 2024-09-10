@@ -5,6 +5,11 @@ namespace System.Reflection.Emit;
 [PublicAPI]
 public static class IlGeneratorExtensions
 {
+    public static void Return(this ILGenerator generator)
+    {
+        generator.Emit(OpCodes.Ret);
+    }
+
     public static void PushInstance(this ILGenerator generator, Type type)
     {
         generator.Emit(OpCodes.Ldarg_0);
@@ -24,10 +29,5 @@ public static class IlGeneratorExtensions
     public static void CallMethod(this ILGenerator generator, MethodInfo methodInfo)
     {
         generator.Emit(methodInfo.IsFinal || !methodInfo.IsVirtual ? OpCodes.Call : OpCodes.Callvirt, methodInfo);
-    }
-
-    public static void Return(this ILGenerator generator)
-    {
-        generator.Emit(OpCodes.Ret);
     }
 }
