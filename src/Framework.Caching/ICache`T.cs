@@ -66,7 +66,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         CancellationToken cancellationToken = default
     )
     {
-        return cache.SetAsync(cacheKey, cacheValue, expiration, cancellationToken);
+        return cache.UpsertAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
     public ValueTask<bool> TrySetAsync(
@@ -76,7 +76,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         CancellationToken cancellationToken = default
     )
     {
-        return cache.TrySetAsync(cacheKey, cacheValue, expiration, cancellationToken);
+        return cache.TryAddAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
     public ValueTask SetAllAsync(
@@ -85,7 +85,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         CancellationToken cancellationToken = default
     )
     {
-        return cache.SetAllAsync(value, expiration, cancellationToken);
+        return cache.UpsertAllAsync(value, expiration, cancellationToken);
     }
 
     public ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
