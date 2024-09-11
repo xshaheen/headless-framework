@@ -10,7 +10,7 @@ public static partial class Ensure
     [DebuggerStepThrough]
     public static void DebugAssert(
         [DoesNotReturnIf(false)] bool condition,
-        string? detailMessage,
+        string? detailMessage = null,
         [CallerArgumentExpression(nameof(condition))] string? expression = null
     )
     {

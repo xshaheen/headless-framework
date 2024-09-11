@@ -2,36 +2,31 @@ namespace Framework.Caching;
 
 public interface ICache
 {
-    #region Set
+    #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
-    Task<bool> UpsertAsync<T>(
-        string cacheKey,
-        T cacheValue,
-        TimeSpan expiration,
-        CancellationToken cancellationToken = default
-    );
+    Task<bool> UpsertAsync<T>(string key, T value, TimeSpan? expiration, CancellationToken cancellationToken = default);
 
     /// <summary>Upsert all async.</summary>
     Task<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>Tries the add.</summary>
-    /// <returns><see langword="true"/>, if set/add success, <see langword="false"/> if <paramref name="cacheKey"/> already exists.</returns>
-    Task<bool> TryAddAsync<T>(
-        string cacheKey,
-        T cacheValue,
-        TimeSpan expiration,
+    /// <returns><see langword="true"/>, if set/add success, <see langword="false"/> if <paramref name="key"/> already exists.</returns>
+    Task<bool> TryInsertAsync<T>(
+        string key,
+        T value,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<bool> TryReplaceAsync<T>(
         string key,
         T value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
@@ -39,56 +34,56 @@ public interface ICache
         string key,
         T value,
         T expected,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<double> IncrementAsync(
         string key,
         double amount,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<long> IncrementAsync(
         string key,
         long amount,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<double> SetIfHigherAsync(
         string key,
         double value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<long> SetIfHigherAsync(
         string key,
         long value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<double> SetIfLowerAsync(
         string key,
         double value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<long> SetIfLowerAsync(
         string key,
         long value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
@@ -121,7 +116,7 @@ public interface ICache
     Task<bool> ExistsAsync(string cacheKey, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the expiration of specify cache key.</summary>
-    Task<TimeSpan> GetExpirationAsync(string cacheKey, CancellationToken cancellationToken = default);
+    Task<TimeSpan?> GetExpirationAsync(string cacheKey, CancellationToken cancellationToken = default);
 
     Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100);
 
@@ -139,9 +134,6 @@ public interface ICache
 
     /// <summary>Removes cached item by cache key's prefix.</summary>
     Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
-
-    /// <summary>Removes cached items by a cache key pattern.</summary>
-    Task<int> RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default);
 
     Task<long> SetRemoveAsync<T>(
         string key,

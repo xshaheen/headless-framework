@@ -1,11 +1,11 @@
-﻿namespace Framework.DistributedLocks;
+﻿namespace Framework.ResourceLocks;
 
-/// <summary>Provides methods to acquire, release, and manage distributed locks.</summary>
+/// <summary>Provides methods to acquire, release, and manage resource locks.</summary>
 [PublicAPI]
-public interface IDistributedLockProvider
+public interface IResourceLockProvider
 {
     /// <summary>
-    /// Acquires a distributed lock for a specified resource this method will block
+    /// Acquires a resource lock for a specified resource this method will block
     /// until the lock is acquired or the <paramref name="acquireTimeout"/> is reached.
     /// </summary>
     /// <param name="resource">The resource to acquire the lock for.</param>
@@ -29,7 +29,7 @@ public interface IDistributedLockProvider
     /// A task that represents the asynchronous operation.
     /// The task result contains the acquired lock or null if the lock could not be acquired.
     /// </returns>
-    Task<IDistributedLock?> TryAcquireAsync(
+    Task<IResourceLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null
@@ -41,14 +41,14 @@ public interface IDistributedLockProvider
     Task<bool> IsLockedAsync(string resource);
 
     /// <summary>
-    /// Renews a distributed lock for a specified <paramref name="resource"/> by extending
+    /// Renews a resource lock for a specified <paramref name="resource"/> by extending
     /// the expiration time of the lock if it is still held to the <paramref name="lockId"/>
     /// and if not .
     /// </summary>
     Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 
     /// <summary>
-    /// Releases a distributed lock for a specified <paramref name="resource"/>
+    /// Releases a resource lock for a specified <paramref name="resource"/>
     /// if it is acquired by the <paramref name="lockId"/>.
     /// </summary>
     Task ReleaseAsync(string resource, string lockId);

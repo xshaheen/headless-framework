@@ -163,11 +163,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Validations", "Validations"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Storage.EntityFramework", "src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj", "{54F8BF0C-0A21-46AE-B079-D98337B7467C}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DistributedLocks", "DistributedLocks", "{A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ResourceLocks", "ResourceLocks", "{A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.DistributedLocks", "src\Framework.DistributedLocks\Framework.DistributedLocks.csproj", "{9D9123F9-474C-4CFC-8F7D-A22075BCEECD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks", "src\Framework.ResourceLocks\Framework.ResourceLocks.csproj", "{9D9123F9-474C-4CFC-8F7D-A22075BCEECD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.DistributedLocks.Local", "src\Framework.DistributedLocks.Local\Framework.DistributedLocks.Local.csproj", "{9953BFD2-4DAF-426C-9642-20D0ED9F483A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Local", "src\Framework.ResourceLocks.Local\Framework.ResourceLocks.Local.csproj", "{9953BFD2-4DAF-426C-9642-20D0ED9F483A}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Serializers", "Serializers", "{23C60C26-82FF-428D-956D-D504541EB8D2}"
 EndProject
@@ -182,6 +182,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Messaging.Foundatio", "src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj", "{229535B7-8B62-45BE-8DA8-91ED5E08F9F2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Queueing.Foundatio", "src\Framework.Queueing.Foundatio\Framework.Queueing.Foundatio.csproj", "{FD5C768E-E62E-46C4-91FD-643BB3B93761}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Caching.Foundatio", "src\Framework.Caching.Foundatio\Framework.Caching.Foundatio.csproj", "{5EE50445-E25B-4F56-849F-F1F4466A6EEE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Storage", "src\Framework.ResourceLocks.Storage\Framework.ResourceLocks.Storage.csproj", "{C6EE2D73-8607-48C7-96A7-C9349F97C67A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -443,6 +447,14 @@ Global
 		{FD5C768E-E62E-46C4-91FD-643BB3B93761}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FD5C768E-E62E-46C4-91FD-643BB3B93761}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FD5C768E-E62E-46C4-91FD-643BB3B93761}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5EE50445-E25B-4F56-849F-F1F4466A6EEE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5EE50445-E25B-4F56-849F-F1F4466A6EEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5EE50445-E25B-4F56-849F-F1F4466A6EEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5EE50445-E25B-4F56-849F-F1F4466A6EEE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C6EE2D73-8607-48C7-96A7-C9349F97C67A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C6EE2D73-8607-48C7-96A7-C9349F97C67A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C6EE2D73-8607-48C7-96A7-C9349F97C67A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C6EE2D73-8607-48C7-96A7-C9349F97C67A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -511,6 +523,8 @@ Global
 		{94F9A94C-9DC8-4E11-B2DA-3EAA68A0C6A6} = {23C60C26-82FF-428D-956D-D504541EB8D2}
 		{229535B7-8B62-45BE-8DA8-91ED5E08F9F2} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
 		{FD5C768E-E62E-46C4-91FD-643BB3B93761} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
+		{5EE50445-E25B-4F56-849F-F1F4466A6EEE} = {7D1ABA75-9EF8-4E6B-8000-F0A18CBB923F}
+		{C6EE2D73-8607-48C7-96A7-C9349F97C67A} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}

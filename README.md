@@ -2,7 +2,7 @@
 
 ## Framework
 
-- Distributed Lock
+- Resource Lock
 - Queues
 - Foundatio.Parsers
 - Foundatio.Repositories

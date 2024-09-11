@@ -4,20 +4,20 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.DistributedLocks.Local;
+namespace Framework.ResourceLocks.Local;
 
 [PublicAPI]
-public sealed class LocalDistributedLockProvider(
-    IDistributedLockResourceNormalizer resourceNormalizer,
+public sealed class LocalResourceLockProvider(
+    IResourceLockNormalizer lockResourceNormalizer,
     IUniqueLongGenerator longGenerator,
     IClock clock,
-    ILogger<LocalDistributedLockProvider> logger
-) : IDistributedLockProvider, IDisposable
+    ILogger<LocalResourceLockProvider> logger
+) : IResourceLockProvider, IDisposable
 {
     private readonly AsyncKeyedLocker<string> _locks = _CreateAsyncKeyedLocker();
     private readonly ConcurrentDictionary<string, ResourceLock> _resources = new(StringComparer.Ordinal);
 
-    public async Task<IDistributedLock?> TryAcquireAsync(
+    public async Task<IResourceLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null
@@ -33,7 +33,7 @@ public sealed class LocalDistributedLockProvider(
             Argument.IsPositive(timeUntilExpires.Value);
         }
 
-        var key = resourceNormalizer.Normalize(resource);
+        var key = lockResourceNormalizer.NormalizeResource(resource);
 
         var timestamp = clock.GetTimestamp();
         IDisposable lockReleaser;
@@ -83,7 +83,7 @@ public sealed class LocalDistributedLockProvider(
             }
         });
 
-        return new DisposableDistributedLock(resource, lockId, elapsed, this, clock, logger);
+        return new DisposableResourceLock(resource, lockId, elapsed, this, clock, logger);
     }
 
     public Task<bool> IsLockedAsync(string resource)

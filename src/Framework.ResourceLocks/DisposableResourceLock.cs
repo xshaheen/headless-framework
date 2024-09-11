@@ -2,16 +2,16 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 
-namespace Framework.DistributedLocks;
+namespace Framework.ResourceLocks;
 
-public sealed class DisposableDistributedLock(
+public sealed class DisposableResourceLock(
     string resource,
     string lockId,
     TimeSpan timeWaitedForLock,
-    IDistributedLockProvider lockProvider,
+    IResourceLockProvider lockProvider,
     IClock clock,
     ILogger logger
-) : IDistributedLock
+) : IResourceLock
 {
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp = clock.GetTimestamp();
