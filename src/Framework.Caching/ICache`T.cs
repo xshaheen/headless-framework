@@ -2,28 +2,41 @@ namespace Framework.Caching;
 
 public interface ICache<T>
 {
-    #region Set
+    #region Update
 
-    /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
-    ValueTask SetAsync(
+    Task<bool> UpsertAsync(
         string cacheKey,
         T cacheValue,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Tries the set.</summary>
-    /// <returns><see langword="true"/>, if set was tried, <see langword="false"/> otherwise.</returns>
-    ValueTask<bool> TrySetAsync(
-        string cacheKey,
-        T cacheValue,
-        TimeSpan expiration,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>Sets all async.</summary>
-    ValueTask SetAllAsync(
+    Task<int> UpsertAllAsync(
         IDictionary<string, T> value,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<bool> TryAddAsync(
+        string cacheKey,
+        T cacheValue,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<bool> TryReplaceAsync(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default);
+
+    Task<bool> TryReplaceIfEqualAsync(
+        string key,
+        T value,
+        T expected,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<long> SetAddAsync(
+        string key,
+        IEnumerable<T> value,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     );
@@ -32,34 +45,43 @@ public interface ICache<T>
 
     #region Get
 
-    /// <summary>Gets the specified cache key.</summary>
-    ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default);
-
-    /// <summary>Gets all.</summary>
-    ValueTask<Dictionary<string, CacheValue<T>>> GetAllAsync(
+    Task<IDictionary<string, CacheValue<T>>> GetAllAsync(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets the by prefix.</summary>
-    ValueTask<Dictionary<string, CacheValue<T>>> GetByPrefixAsync(
+    Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     );
+
+    Task<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default);
+
+    Task<CacheValue<ICollection<T>>> GetSetAsync(string key, int? pageIndex = null, int pageSize = 100);
 
     #endregion
 
     #region Remove
 
-    /// <summary>Remove the specified cache key.</summary>
-    ValueTask RemoveAsync(string cacheKey, CancellationToken cancellationToken = default);
+    Task<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default);
+
+    Task<bool> RemoveIfEqualAsync(string cacheKey, T expected);
+
+    Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
+
+    Task<long> SetRemoveAsync(
+        string key,
+        IEnumerable<T> value,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    );
 
     #endregion
 }
 
 public sealed class Cache<T>(ICache cache) : ICache<T>
 {
-    public ValueTask SetAsync(
+    public Task<bool> UpsertAsync(
         string cacheKey,
         T cacheValue,
         TimeSpan expiration,
@@ -69,17 +91,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         return cache.UpsertAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
-    public ValueTask<bool> TrySetAsync(
-        string cacheKey,
-        T cacheValue,
-        TimeSpan expiration,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return cache.TryAddAsync(cacheKey, cacheValue, expiration, cancellationToken);
-    }
-
-    public ValueTask SetAllAsync(
+    public Task<int> UpsertAllAsync(
         IDictionary<string, T> value,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
@@ -88,12 +100,48 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         return cache.UpsertAllAsync(value, expiration, cancellationToken);
     }
 
-    public ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
+    public Task<bool> TryAddAsync(
+        string cacheKey,
+        T cacheValue,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
     {
-        return cache.GetAsync<T>(cacheKey, cancellationToken);
+        return cache.TryInsertAsync(cacheKey, cacheValue, expiration, cancellationToken);
     }
 
-    public ValueTask<Dictionary<string, CacheValue<T>>> GetAllAsync(
+    public Task<bool> TryReplaceAsync(
+        string key,
+        T value,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.TryReplaceAsync(key, value, expiration, cancellationToken);
+    }
+
+    public Task<bool> TryReplaceIfEqualAsync(
+        string key,
+        T value,
+        T expected,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.TryReplaceIfEqualAsync(key, value, expected, expiration, cancellationToken);
+    }
+
+    public Task<long> SetAddAsync(
+        string key,
+        IEnumerable<T> value,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.SetAddAsync(key, value, expiration, cancellationToken);
+    }
+
+    public Task<IDictionary<string, CacheValue<T>>> GetAllAsync(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     )
@@ -101,7 +149,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         return cache.GetAllAsync<T>(cacheKeys, cancellationToken);
     }
 
-    public ValueTask<Dictionary<string, CacheValue<T>>> GetByPrefixAsync(
+    public Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     )
@@ -109,8 +157,38 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         return cache.GetByPrefixAsync<T>(prefix, cancellationToken);
     }
 
-    public ValueTask RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
+    public Task<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        return cache.GetAsync<T>(cacheKey, cancellationToken);
+    }
+
+    public Task<CacheValue<ICollection<T>>> GetSetAsync(string key, int? pageIndex = null, int pageSize = 100)
+    {
+        return cache.GetSetAsync<T>(key, pageIndex, pageSize);
+    }
+
+    public Task<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         return cache.RemoveAsync(cacheKey, cancellationToken);
+    }
+
+    public Task<bool> RemoveIfEqualAsync(string cacheKey, T expected)
+    {
+        return cache.RemoveIfEqualAsync(cacheKey, expected);
+    }
+
+    public Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    {
+        return cache.RemoveByPrefixAsync(prefix, cancellationToken);
+    }
+
+    public Task<long> SetRemoveAsync(
+        string key,
+        IEnumerable<T> value,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.SetRemoveAsync(key, value, expiration, cancellationToken);
     }
 }

@@ -41,7 +41,108 @@ public static class Run
             );
     }
 
+    public static void WithRetries(
+        Action callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        resiliencePipeline.Execute(callback);
+    }
+
+    public static TResult WithRetries<TResult>(
+        Func<TResult> callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        return resiliencePipeline.Execute(static callback => callback(), callback);
+    }
+
+    public static async Task WithRetriesAsync(
+        Func<Task> callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        await resiliencePipeline.ExecuteAsync(
+            static async (callback, _) => await callback(),
+            callback,
+            cancellationToken
+        );
+    }
+
     public static async Task<TResult> WithRetriesAsync<TResult>(
+        Func<Task<TResult>> callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        return await resiliencePipeline.ExecuteAsync(
+            static async (callback, _) => await callback(),
+            callback,
+            cancellationToken
+        );
+    }
+
+    public static async Task<TResult> WithRetriesAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        return await resiliencePipeline.ExecuteAsync(
+            static async (callback, token) => await callback(token),
+            callback,
+            cancellationToken
+        );
+    }
+
+    public static ValueTask WithRetriesAsync(
+        Func<ValueTask> callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        return resiliencePipeline.ExecuteAsync(static (callback, _) => callback(), callback, cancellationToken);
+    }
+
+    public static ValueTask<TResult> WithRetriesAsync<TResult>(
+        Func<ValueTask<TResult>> callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        return resiliencePipeline.ExecuteAsync(static (callback, _) => callback(), callback, cancellationToken);
+    }
+
+    public static ValueTask<TResult> WithRetriesAsync<TResult>(
         Func<CancellationToken, ValueTask<TResult>> callback,
         int maxAttempts = 5,
         TimeSpan? retryInterval = null,
@@ -51,10 +152,10 @@ public static class Run
     {
         var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
 
-        return await resiliencePipeline.ExecuteAsync(callback, cancellationToken);
+        return resiliencePipeline.ExecuteAsync(callback, cancellationToken);
     }
 
-    public static async Task<TResult> WithRetriesAsync<TResult, TState>(
+    public static ValueTask<TResult> WithRetriesAsync<TResult, TState>(
         TState state,
         Func<TState, CancellationToken, ValueTask<TResult>> callback,
         int maxAttempts = 5,
@@ -65,7 +166,7 @@ public static class Run
     {
         var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
 
-        return await resiliencePipeline.ExecuteAsync(callback, state, cancellationToken);
+        return resiliencePipeline.ExecuteAsync(callback, state, cancellationToken);
     }
 
     private static ResiliencePipeline _CreateRetryPipeline(

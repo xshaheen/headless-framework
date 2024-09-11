@@ -1,11 +1,11 @@
-namespace Framework.DistributedLocks;
+namespace Framework.ResourceLocks;
 
 /// <summary>
 /// A mutex synchronization primitive which can be used to coordinate access to a resource or critical region of code
 /// across processes or systems. The scope and capabilities of the lock are dependent on the particular implementation
 /// </summary>
 [PublicAPI]
-public interface IDistributedLock : IAsyncDisposable
+public interface IResourceLock : IAsyncDisposable
 {
     /// <summary>A unique identifier for the lock instance.</summary>
     string LockId { get; }

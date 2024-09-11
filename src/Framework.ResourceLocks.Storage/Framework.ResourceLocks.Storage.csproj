@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+    <RootNamespace>Framework.ResourceLocks.Caching</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Messaging\Framework.Messaging.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+  </ItemGroup>
+
+</Project>

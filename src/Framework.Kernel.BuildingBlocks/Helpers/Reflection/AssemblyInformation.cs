@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using Framework.Kernel.Checks;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 
@@ -12,11 +13,9 @@ public sealed record AssemblyInformation(
     string? CommitNumber
 )
 {
-    public static readonly AssemblyInformation Current = new(typeof(AssemblyInformation).Assembly);
-
     public static readonly AssemblyInformation Entry = new(Assembly.GetEntryAssembly()!);
 
-    private AssemblyInformation(Assembly assembly)
+    internal AssemblyInformation(Assembly assembly)
         : this(
             Title: assembly.GetAssemblyTitle(),
             Product: assembly.GetAssemblyProduct(),
