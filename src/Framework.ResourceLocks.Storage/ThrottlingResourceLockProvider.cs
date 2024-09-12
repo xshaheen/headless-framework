@@ -1,10 +1,14 @@
-﻿using System.Diagnostics;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Framework.ResourceLocks.Caching;
 
-public class ThrottlingResourceLockProvider : IResourceLockProvider
+
+
+/*public class ThrottlingResourceLockProvider : IResourceLockProvider
 {
     private readonly IResourceLockStorage _resourceLockStorage;
     private readonly TimeSpan _throttlingPeriod = TimeSpan.FromMinutes(15);
@@ -178,4 +182,4 @@ public class ThrottlingResourceLockProvider : IResourceLockProvider
     {
         return string.Concat(resource, ":", now.Floor(_throttlingPeriod).Ticks);
     }
-}
+}*/

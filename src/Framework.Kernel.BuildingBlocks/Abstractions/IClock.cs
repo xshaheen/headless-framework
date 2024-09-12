@@ -43,3 +43,11 @@ public sealed class Clock : IClock
         };
     }
 }
+
+public static class ClockExtensions
+{
+    public static TimeSpan ElapsedSince(this IClock clock, long startTimestamp)
+    {
+        return TimeSpan.FromTicks(clock.GetTimestamp() - startTimestamp);
+    }
+}

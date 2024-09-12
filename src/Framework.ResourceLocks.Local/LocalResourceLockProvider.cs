@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Collections.Concurrent;
 using AsyncKeyedLock;
 using Framework.Kernel.BuildingBlocks.Abstractions;
@@ -27,24 +29,27 @@ public sealed class LocalResourceLockProvider(
         acquireTimeout ??= TimeSpan.FromSeconds(30);
 
         Argument.IsNotNullOrWhiteSpace(resource);
-
         if (timeUntilExpires != Timeout.InfiniteTimeSpan)
         {
             Argument.IsPositive(timeUntilExpires.Value);
         }
+        if (acquireTimeout != Timeout.InfiniteTimeSpan)
+        {
+            Argument.IsPositive(acquireTimeout.Value);
+        }
 
-        var key = lockResourceNormalizer.NormalizeResource(resource);
+        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
 
         var timestamp = clock.GetTimestamp();
         IDisposable lockReleaser;
 
         if (acquireTimeout == Timeout.InfiniteTimeSpan)
         {
-            lockReleaser = await _locks.LockAsync(key);
+            lockReleaser = await _locks.LockAsync(normalizeResource);
         }
         else
         {
-            var timeoutRelease = await _locks.LockAsync(key, acquireTimeout.Value);
+            var timeoutRelease = await _locks.LockAsync(normalizeResource, acquireTimeout.Value);
 
             if (timeoutRelease.EnteredSemaphore)
             {
@@ -61,11 +66,14 @@ public sealed class LocalResourceLockProvider(
         var lockId = longGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var resourceLock = new ResourceLock(lockId, lockReleaser, timeUntilExpires.Value);
         // Safe because the resource lock is acquired only by one thread
-        var added = _resources.TryAdd(key, resourceLock);
+        var added = _resources.TryAdd(normalizeResource, resourceLock);
 
         if (!added)
         {
-            logger.LogWarning("(Shouldn't happen) The resource lock for the key '{Key}' was not added", key);
+            logger.LogWarning(
+                "(Shouldn't happen) The resource lock for the key '{Key}' was not added",
+                normalizeResource
+            );
             resourceLock.Dispose();
 
             return null;
@@ -77,7 +85,7 @@ public sealed class LocalResourceLockProvider(
             // TODO: this expiration can be triggered parallel with the renew of the same lock id
             // which can make the lock to be released even if it is renewed
 
-            if (_resources.TryRemove(key, out var value))
+            if (_resources.TryRemove(normalizeResource, out var value))
             {
                 value.Dispose();
             }
@@ -88,7 +96,11 @@ public sealed class LocalResourceLockProvider(
 
     public Task<bool> IsLockedAsync(string resource)
     {
-        return Task.FromResult(_locks.IsInUse(resource));
+        Argument.IsNotNullOrWhiteSpace(resource);
+
+        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
+
+        return Task.FromResult(_locks.IsInUse(normalizeResource));
     }
 
     public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
@@ -97,10 +109,14 @@ public sealed class LocalResourceLockProvider(
 
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
-        Argument.IsPositiveOrZero(timeUntilExpires.Value);
+        if (timeUntilExpires != Timeout.InfiniteTimeSpan)
+        {
+            Argument.IsPositive(timeUntilExpires.Value);
+        }
 
+        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
         // If the lock is not found, then it is already released
-        if (!_resources.TryGetValue(resource, out var value))
+        if (!_resources.TryGetValue(normalizeResource, out var value))
         {
             return Task.FromResult(false);
         }
@@ -127,8 +143,9 @@ public sealed class LocalResourceLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
+        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
         // If the lock is not found, then it is already released
-        if (!_resources.TryGetValue(resource, out var value))
+        if (!_resources.TryGetValue(normalizeResource, out var value))
         {
             return Task.CompletedTask;
         }
@@ -140,7 +157,7 @@ public sealed class LocalResourceLockProvider(
         }
 
         // Release the lock
-        if (_resources.TryRemove(resource, out value))
+        if (_resources.TryRemove(normalizeResource, out value))
         {
             value.Dispose();
         }
