@@ -12,7 +12,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Trace,
         Message = "ReleaseAsync Start: {Resource} ({LockId})"
     )]
-    internal static partial void LogReleaseStarted(ILogger logger, string resource, string lockId);
+    public static partial void LogReleaseStarted(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 2,
@@ -20,7 +20,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Released lock: {Resource} ({LockId})"
     )]
-    internal static partial void LogReleaseReleased(ILogger logger, string resource, string lockId);
+    public static partial void LogReleaseReleased(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 3,
@@ -28,13 +28,122 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "Renewing lock {Resource} ({LockId}) for {Duration:g}"
     )]
-    internal static partial void LogRenewingLock(ILogger logger, string resource, string lockId, TimeSpan? duration);
+    public static partial void LogRenewingLock(this ILogger logger, string resource, string lockId, TimeSpan? duration);
 
     [LoggerMessage(
         EventId = 4,
-        EventName = "LockReleased",
+        EventName = "SubscribingToLockReleased",
+        Level = LogLevel.Trace,
+        Message = "Subscribing to cache lock released"
+    )]
+    public static partial void LogSubscribingToLockReleased(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "SubscribedToLockReleased",
+        Level = LogLevel.Trace,
+        Message = "Subscribed to cache lock released"
+    )]
+    public static partial void LogSubscribedToLockReleased(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "GotLockReleasedMessage",
         Level = LogLevel.Trace,
         Message = "Got lock released message: {Resource} ({LockId})"
     )]
-    internal static partial void LogLockReleased(ILogger logger, string resource, string lockId);
+    public static partial void LogGotLockReleasedMessage(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "AttemptingToAcquireLock",
+        Level = LogLevel.Debug,
+        Message = "Attempting to acquire lock {Resource} ({LockId})"
+    )]
+    public static partial void LogAttemptingToAcquireLock(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "ErrorAcquiringLock",
+        Level = LogLevel.Trace,
+        Message = "Error acquiring lock {Resource} ({LockId})"
+    )]
+    public static partial void LogErrorAcquiringLock(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string lockId,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "FailedToAcquireLock",
+        Level = LogLevel.Debug,
+        Message = "Failed to acquire lock {Resource} ({LockId})"
+    )]
+    public static partial void LogFailedToAcquireLock(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "CancellationRequested",
+        Level = LogLevel.Trace,
+        Message = "Cancellation requested while acquiring lock {Resource} ({LockId})"
+    )]
+    public static partial void LogCancellationRequested(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "CancellationRequestedForLock",
+        Level = LogLevel.Trace,
+        Message = "Cancellation requested for lock {Resource} ({LockId}) after {Duration:g}"
+    )]
+    public static partial void LogCancellationRequestedAfter(
+        this ILogger logger,
+        string resource,
+        string lockId,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "DelayBeforeRetry",
+        Level = LogLevel.Trace,
+        Message = "Will wait {Delay:g} before retrying to acquire lock {Resource} ({LockId})"
+    )]
+    public static partial void LogDelayBeforeRetry(this ILogger logger, TimeSpan delay, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 13,
+        EventName = "AcquiredLock",
+        Level = LogLevel.Warning,
+        Message = "Acquired lock {Resource} ({LockId}) after {Duration:g}"
+    )]
+    public static partial void LogLongLockAcquired(
+        this ILogger logger,
+        string resource,
+        string lockId,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "AcquiredLock",
+        Level = LogLevel.Debug,
+        Message = "Acquired lock {Resource} ({LockId}) after {Duration:g}"
+    )]
+    public static partial void LogAcquiredLock(this ILogger logger, string resource, string lockId, TimeSpan duration);
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "FailedToAcquireLockAfter",
+        Level = LogLevel.Warning,
+        Message = "Failed to acquire lock {Resource} ({LockId}) after {Duration:g}"
+    )]
+    public static partial void LogFailedToAcquireLockAfter(
+        this ILogger logger,
+        string resource,
+        string lockId,
+        TimeSpan duration
+    );
 }
