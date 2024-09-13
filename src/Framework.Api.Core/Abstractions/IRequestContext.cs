@@ -58,5 +58,5 @@ public sealed class HttpRequestContext(
 
     public bool IsAvailable => accessor.HttpContext is not null;
 
-    public DateTimeOffset DateStarted { get; } = clock.Now;
+    public DateTimeOffset DateStarted { get; } = clock.UtcNow;
 }

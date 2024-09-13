@@ -1,4 +1,8 @@
-﻿namespace Framework.ResourceLocks;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.ResourceLocks;
 
 /// <summary>Provides methods to acquire, release, and manage resource locks.</summary>
 [PublicAPI]

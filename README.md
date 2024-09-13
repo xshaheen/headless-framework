@@ -3,7 +3,6 @@
 ## Framework
 
 - Resource Lock
-- Queues
 - Foundatio.Parsers
 - Foundatio.Repositories
 
@@ -11,7 +10,9 @@
 - Features
 - Permissions (IClaimsTransformation)
 - Couchbase
-- Test 
+
+## Test 
+  - Use testing containers
   - Entity Framework
   - Blobs
 

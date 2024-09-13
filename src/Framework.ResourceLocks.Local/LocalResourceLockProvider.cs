@@ -5,19 +5,21 @@ using AsyncKeyedLock;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Framework.ResourceLocks.Local;
 
 [PublicAPI]
 public sealed class LocalResourceLockProvider(
-    IResourceLockNormalizer lockResourceNormalizer,
     IUniqueLongGenerator longGenerator,
-    IClock clock,
-    ILogger<LocalResourceLockProvider> logger
+    TimeProvider timeProvider,
+    ILogger<LocalResourceLockProvider> logger,
+    IOptions<ResourceLockOptions> optionsAccessor
 ) : IResourceLockProvider, IDisposable
 {
     private readonly AsyncKeyedLocker<string> _locks = _CreateAsyncKeyedLocker();
     private readonly ConcurrentDictionary<string, ResourceLock> _resources = new(StringComparer.Ordinal);
+    private readonly ResourceLockOptions _options = optionsAccessor.Value;
 
     public async Task<IResourceLock?> TryAcquireAsync(
         string resource,
@@ -38,9 +40,9 @@ public sealed class LocalResourceLockProvider(
             Argument.IsPositive(acquireTimeout.Value);
         }
 
-        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
+        var normalizeResource = _options.KeyPrefix + resource;
 
-        var timestamp = clock.GetTimestamp();
+        var timestamp = timeProvider.GetTimestamp();
         IDisposable lockReleaser;
 
         if (acquireTimeout == Timeout.InfiniteTimeSpan)
@@ -61,7 +63,7 @@ public sealed class LocalResourceLockProvider(
             lockReleaser = timeoutRelease;
         }
 
-        var elapsed = TimeSpan.FromTicks(clock.GetTimestamp() - timestamp);
+        var elapsed = timeProvider.GetElapsedTime(timestamp);
 
         var lockId = longGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var resourceLock = new ResourceLock(lockId, lockReleaser, timeUntilExpires.Value);
@@ -91,14 +93,13 @@ public sealed class LocalResourceLockProvider(
             }
         });
 
-        return new DisposableResourceLock(resource, lockId, elapsed, this, clock, logger);
+        return new DisposableResourceLock(resource, lockId, elapsed, this, logger, timeProvider);
     }
 
     public Task<bool> IsLockedAsync(string resource)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
-
-        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
+        var normalizeResource = _options.KeyPrefix + resource;
 
         return Task.FromResult(_locks.IsInUse(normalizeResource));
     }
@@ -114,7 +115,7 @@ public sealed class LocalResourceLockProvider(
             Argument.IsPositive(timeUntilExpires.Value);
         }
 
-        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
+        var normalizeResource = _options.KeyPrefix + resource;
         // If the lock is not found, then it is already released
         if (!_resources.TryGetValue(normalizeResource, out var value))
         {
@@ -143,7 +144,7 @@ public sealed class LocalResourceLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
-        var normalizeResource = lockResourceNormalizer.NormalizeResource(resource);
+        var normalizeResource = _options.KeyPrefix + resource;
         // If the lock is not found, then it is already released
         if (!_resources.TryGetValue(normalizeResource, out var value))
         {
@@ -193,7 +194,8 @@ public sealed class LocalResourceLockProvider(
 
     private sealed record ResourceLock(string LockId, IDisposable LockReleaser, TimeSpan TimeUntilExpires) : IDisposable
     {
-        public CancellationTokenSource ExpireSource { get; } = new(TimeUntilExpires);
+        public CancellationTokenSource ExpireSource { get; } =
+            TimeUntilExpires == Timeout.InfiniteTimeSpan ? new() : new(TimeUntilExpires);
 
         public void Dispose()
         {
