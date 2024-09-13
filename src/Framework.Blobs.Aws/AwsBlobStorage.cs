@@ -98,7 +98,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             }
         }
 
-        request.Metadata["upload-date"] = _clock.Now.ToString("O");
+        request.Metadata["upload-date"] = _clock.UtcNow.ToString("O");
         request.Metadata["extension"] = Path.GetExtension(blob.FileName);
 
         var response = await _s3.PutObjectAsync(request, cancellationToken).AnyContext();

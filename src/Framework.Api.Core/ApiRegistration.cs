@@ -67,6 +67,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
         builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
         builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IClock, Clock>();
         builder.Services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
 

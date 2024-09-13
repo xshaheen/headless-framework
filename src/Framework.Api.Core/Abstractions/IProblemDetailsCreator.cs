@@ -35,7 +35,7 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             Instance = context.Request.Path.Value ?? "",
             Extensions =
             {
-                ["timestamp"] = clock.Now.ToString("O"),
+                ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
             },
         };
@@ -52,7 +52,7 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             Instance = context.Request.Path.Value ?? "",
             Extensions =
             {
-                ["timestamp"] = clock.Now.ToString("O"),
+                ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
                 ["params"] = new { entity, key },
             },
@@ -71,7 +71,7 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             Instance = context.Request.Path.Value ?? "",
             Extensions =
             {
-                ["timestamp"] = clock.Now.ToString("O"),
+                ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
             },
         };
@@ -92,7 +92,7 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             Extensions =
             {
                 ["errors"] = errorDescriptors,
-                ["timestamp"] = clock.Now.ToString("O"),
+                ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
             },
         };
@@ -110,7 +110,7 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             Extensions =
             {
                 ["errors"] = errorDescriptors,
-                ["timestamp"] = clock.Now.ToString("O"),
+                ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
             },
         };
@@ -127,7 +127,7 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             Instance = context.Request.Path.Value ?? "",
             Extensions =
             {
-                ["timestamp"] = clock.Now.ToString("O"),
+                ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
                 ["stackTrace"] = stackTrace,
             },

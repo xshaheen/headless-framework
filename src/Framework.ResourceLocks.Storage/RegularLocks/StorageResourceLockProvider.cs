@@ -9,20 +9,21 @@ using Framework.Kernel.BuildingBlocks.Helpers.System;
 using Framework.Kernel.Checks;
 using Framework.Messaging;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
-namespace Framework.ResourceLocks.Caching;
+namespace Framework.ResourceLocks.Storage.RegularLocks;
 
 public sealed class StorageResourceLockProvider(
     IResourceLockStorage storage,
-    IResourceLockNormalizer normalizer,
     IMessageBus messageBus,
-    IClock clock,
     IUniqueLongGenerator longGenerator,
-    ILogger<StorageResourceLockProvider> logger
+    TimeProvider timeProvider,
+    ILogger<StorageResourceLockProvider> logger,
+    IOptions<ResourceLockOptions> optionsAccessor
 ) : IResourceLockProvider
 {
-    private readonly IResourceLockStorage _storage = new ScopedResourceLockStorage(storage, normalizer);
+    private readonly IResourceLockStorage _storage = new ScopedResourceLockStorage(storage, optionsAccessor);
     private bool _isSubscribed;
     private readonly AsyncLock _lock = new();
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _resetEvents = new(StringComparer.Ordinal);
@@ -61,7 +62,7 @@ public sealed class StorageResourceLockProvider(
         }
 
         var shouldWait = !acquireTimeoutCts.IsCancellationRequested;
-        var timestamp = clock.GetTimestamp();
+        var timestamp = timeProvider.GetTimestamp();
         var gotLock = false;
 
         try
@@ -74,7 +75,7 @@ public sealed class StorageResourceLockProvider(
                 }
                 catch (Exception e)
                 {
-                    logger.LogErrorAcquiringLock(e, resource, lockId, clock.ElapsedSince(timestamp));
+                    logger.LogErrorAcquiringLock(e, resource, lockId, timeProvider.GetElapsedTime(timestamp));
                 }
 
                 if (gotLock)
@@ -154,7 +155,7 @@ public sealed class StorageResourceLockProvider(
             }
         }
 
-        var timeWaitedForLock = clock.ElapsedSince(timestamp);
+        var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
         _lockWaitTimeHistogram.Record(timeWaitedForLock.TotalMilliseconds);
 
         if (!gotLock)
@@ -182,7 +183,7 @@ public sealed class StorageResourceLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableResourceLock(resource, lockId, timeWaitedForLock, this, clock, logger);
+        return new DisposableResourceLock(resource, lockId, timeWaitedForLock, this, logger, timeProvider);
     }
 
     public async Task<bool> IsLockedAsync(string resource)

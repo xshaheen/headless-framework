@@ -7,5 +7,5 @@ public interface IRequestTime
 
 public sealed class RequestTime(IClock clock) : IRequestTime
 {
-    public DateTimeOffset Now { get; } = clock.Now;
+    public DateTimeOffset Now { get; } = clock.UtcNow;
 }

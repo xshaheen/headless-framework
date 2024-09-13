@@ -105,7 +105,7 @@ public sealed partial class AzureBlobStorage : IBlobStorage
         };
 
         var metadata = blob.Metadata ?? new Dictionary<string, string?>(StringComparer.Ordinal);
-        metadata["upload-date"] = _clock.Now.ToString("O");
+        metadata["upload-date"] = _clock.UtcNow.ToString("O");
         metadata["extension"] = Path.GetExtension(blob.FileName);
 
         await blobClient.UploadAsync(blob.Stream, httpHeader, metadata, cancellationToken: cancellationToken);

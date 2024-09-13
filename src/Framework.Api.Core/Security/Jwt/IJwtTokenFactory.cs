@@ -31,7 +31,7 @@ public sealed class JwtTokenFactory(IClock clock) : IJwtTokenFactory
         TimeSpan? notBefore = null
     )
     {
-        var issuedAt = clock.Now.DateTime;
+        var issuedAt = clock.UtcNow.DateTime;
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {

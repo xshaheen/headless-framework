@@ -47,7 +47,7 @@ public class TestFixtureBase<TEntryPoint> : IAsyncLifetime, IDisposable, ITestOu
                 {
                     var clock = Substitute.For<IClock>();
 
-                    clock.Now.Returns(DateTimeOffset.UtcNow);
+                    clock.UtcNow.Returns(DateTimeOffset.UtcNow);
                     clock.Ticks.Returns(Environment.TickCount64);
 
                     return clock;

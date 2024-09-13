@@ -1,29 +1,47 @@
-﻿using System.Diagnostics;
-
-namespace Framework.Kernel.BuildingBlocks.Abstractions;
+﻿namespace Framework.Kernel.BuildingBlocks.Abstractions;
 
 public interface IClock
 {
+    TimeZoneInfo LocalTimeZone { get; }
+
     long Ticks { get; }
 
-    DateTimeOffset Now { get; }
+    DateTimeOffset UtcNow { get; }
 
     long GetTimestamp();
+
+    TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp);
+
+    TimeSpan GetElapsedTime(long startingTimestamp);
 
     DateTimeOffset Normalize(DateTimeOffset v);
 
     DateTime Normalize(DateTime v);
 }
 
-public sealed class Clock : IClock
+public sealed class Clock(TimeProvider timeProvider) : IClock
 {
     private static DateTimeKind NormalizeKind => DateTimeKind.Utc;
 
+    public TimeZoneInfo LocalTimeZone => timeProvider.LocalTimeZone;
+
     public long Ticks => Environment.TickCount64;
 
-    public DateTimeOffset Now => DateTimeOffset.UtcNow;
+    public DateTimeOffset UtcNow => timeProvider.GetUtcNow();
 
-    public long GetTimestamp() => Stopwatch.GetTimestamp();
+    public DateTimeOffset LocalNow => timeProvider.GetLocalNow();
+
+    public long GetTimestamp() => timeProvider.GetTimestamp();
+
+    public TimeSpan GetElapsedTime(long startingTimestamp, long endingTimestamp)
+    {
+        return timeProvider.GetElapsedTime(startingTimestamp, endingTimestamp);
+    }
+
+    public TimeSpan GetElapsedTime(long startingTimestamp)
+    {
+        return timeProvider.GetElapsedTime(startingTimestamp);
+    }
 
     public DateTimeOffset Normalize(DateTimeOffset v) => v.ToUniversalTime();
 
@@ -41,13 +59,5 @@ public sealed class Clock : IClock
             DateTimeKind.Utc when v.Kind is DateTimeKind.Local => v.ToUniversalTime(),
             _ => DateTime.SpecifyKind(v, NormalizeKind)
         };
-    }
-}
-
-public static class ClockExtensions
-{
-    public static TimeSpan ElapsedSince(this IClock clock, long startTimestamp)
-    {
-        return TimeSpan.FromTicks(clock.GetTimestamp() - startTimestamp);
     }
 }
