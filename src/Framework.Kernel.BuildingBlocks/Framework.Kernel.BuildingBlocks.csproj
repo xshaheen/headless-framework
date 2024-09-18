@@ -17,6 +17,7 @@
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="Humanizer.Core.ar" />
     <PackageReference Include="IdGen" />
+    <PackageReference Include="Jitbit.FastCache" />
     <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="morelinq" />

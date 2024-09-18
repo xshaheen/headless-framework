@@ -3,8 +3,7 @@
 ## Framework
 
 - Resource Lock
-- Foundatio.Parsers
-- Foundatio.Repositories
+- Arabic search index
 
 - Settings
 - Features
