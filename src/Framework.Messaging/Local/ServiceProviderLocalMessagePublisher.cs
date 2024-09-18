@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Framework.Kernel.Domains;
 using Microsoft.Extensions.DependencyInjection;
+using Nito.AsyncEx.Synchronous;
 
 // ReSharper disable once CheckNamespace
 namespace Framework.Messaging;
