@@ -37,11 +37,6 @@
     <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.2.0" />
     <PackageVersion Include="DotNetCore.CAP.OpenTelemetry" Version="8.2.0" />
     <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.2.0" />
-    <PackageVersion Include="EasyCaching.Core" Version="1.9.2" />
-    <PackageVersion Include="EasyCaching.InMemory" Version="1.9.2" />
-    <PackageVersion Include="EasyCaching.Redis" Version="1.9.2" />
-    <PackageVersion Include="EasyCaching.Serialization.MemoryPack" Version="1.9.2" />
-    <PackageVersion Include="EasyCaching.Serialization.SystemTextJson" Version="1.9.2" />
     <PackageVersion Include="EFCore.CheckConstraints" Version="8.0.1" />
     <PackageVersion Include="FileSignatures" Version="5.0.2" />
     <PackageVersion Include="FirebaseAdmin" Version="3.0.0" />
@@ -54,6 +49,7 @@
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="11.9.2" />
     <PackageVersion Include="Flurl" Version="4.0.0" />
     <PackageVersion Include="Foundatio" Version="11.0.2" />
+    <PackageVersion Include="Foundatio.Redis" Version="11.0.2" />
     <PackageVersion Include="Humanizer.Core" Version="2.14.1" />
     <PackageVersion Include="Humanizer.Core.ar" Version="2.14.1" />
     <PackageVersion Include="IdGen" Version="3.0.7" />

@@ -104,30 +104,36 @@ public interface ICache
     );
 
     /// <summary>Gets all keys by prefix.</summary>
-    Task<IEnumerable<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the specified cache key.</summary>
-    Task<CacheValue<T>> GetAsync<T>(string cacheKey, CancellationToken cancellationToken = default);
+    Task<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the count async.</summary>
     Task<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
 
     /// <summary>Check if the key exists in the cache.</summary>
-    Task<bool> ExistsAsync(string cacheKey, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the expiration of specify cache key.</summary>
-    Task<TimeSpan?> GetExpirationAsync(string cacheKey, CancellationToken cancellationToken = default);
+    Task<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default);
 
-    Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100);
+    Task<CacheValue<ICollection<T>>> GetSetAsync<T>(
+        string key,
+        int? pageIndex = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    );
 
     #endregion
 
     #region Remove
 
     /// <summary>Remove the specified cache key.</summary>
-    Task<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default);
+    Task<bool> RemoveAsync(string key, CancellationToken cancellationToken = default);
 
-    Task<bool> RemoveIfEqualAsync<T>(string cacheKey, T expected);
+    /// <summary>Remove only if equal the expected value.</summary>
+    Task<bool> RemoveIfEqualAsync<T>(string key, T expected, CancellationToken cancellationToken = default);
 
     /// <summary>Removes all.</summary>
     Task<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
@@ -135,6 +141,7 @@ public interface ICache
     /// <summary>Removes cached item by cache key's prefix.</summary>
     Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
+    /// <summary>Remove some values from set.</summary>
     Task<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,

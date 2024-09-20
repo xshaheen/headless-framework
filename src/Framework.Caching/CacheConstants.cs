@@ -1,4 +1,4 @@
-﻿namespace Framework.Caching.EasyCache;
+﻿namespace Framework.Caching;
 
 public static class CacheConstants
 {

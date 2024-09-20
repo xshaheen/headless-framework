@@ -2,6 +2,7 @@
 
 using System.Text.Json;
 
+#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Framework.Serializer;
 
@@ -16,5 +17,15 @@ public sealed class SystemJsonSerializer(JsonSerializerOptions options) : IJsonS
     {
         using var writer = new Utf8JsonWriter(output);
         JsonSerializer.Serialize(writer, value, options);
+    }
+
+    public object? Deserialize(Stream data, Type objectType)
+    {
+        return JsonSerializer.Deserialize(data, objectType, options);
+    }
+
+    public void Serialize(object? value, Stream output)
+    {
+        JsonSerializer.Serialize(value, options);
     }
 }
