@@ -1,6 +1,6 @@
 #pragma warning disable IDE0130, CA2225
 // ReSharper disable once CheckNamespace
-namespace Framework.BuildingBlocks;
+namespace Framework.Kernel.Primitives;
 
 public sealed record CollectionEnvelop<T>(IReadOnlyCollection<T> Items)
 {

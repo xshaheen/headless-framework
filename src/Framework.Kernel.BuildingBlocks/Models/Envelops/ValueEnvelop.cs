@@ -1,6 +1,6 @@
 ﻿#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace Framework.BuildingBlocks;
+namespace Framework.Kernel.Primitives;
 
 public sealed record ValueEnvelop<T>(T Data)
 {

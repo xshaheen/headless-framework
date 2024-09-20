@@ -1,3 +1,4 @@
+#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Domains;
 
@@ -12,7 +13,7 @@ public interface IDistributedMessage
     IDictionary<string, string> Properties { get; }
 }
 
-public interface IDistributedMessage<out T>
+public interface IDistributedMessage<out T> : IDistributedMessage
 {
     T Payload { get; }
 }

@@ -2,12 +2,11 @@
 
 ## Framework
 
-- Resource Lock
-- Arabic search index
-
 - Settings
 - Features
 - Permissions (IClaimsTransformation)
+
+- Arabic search string
 - Couchbase
 
 ## Test 
