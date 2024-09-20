@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Framework.Caching</RootNamespace>
+    <AssemblyName>$(Product).$(RootNamespace).Foundatio</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Foundatio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Framework.Kernel.Checks\Framework.Kernel.Checks.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -8,11 +8,14 @@
 
   <ItemGroup>
     <PackageReference Include="Foundatio" />
+    <PackageReference Include="Foundatio.Redis" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Kernel.Checks\Framework.Kernel.Checks.csproj" />
+    <ProjectReference Include="..\Framework.Serializer\Framework.Serializer.csproj" />
   </ItemGroup>
 
 </Project>
