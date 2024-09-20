@@ -1,6 +1,6 @@
 #pragma warning disable CA2225, IDE0130
 // ReSharper disable once CheckNamespace
-namespace Framework.BuildingBlocks;
+namespace Framework.Kernel.Primitives;
 
 public interface IIdEnvelop
 {
