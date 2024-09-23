@@ -24,7 +24,6 @@
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="WireMock.Net" />
     <PackageReference Include="WireMock.Net.FluentAssertions" />
-    <PackageReference Include="WireMock.Net.Testcontainers" />
     <PackageReference Include="WireMock.Net.xUnit" />
   </ItemGroup>
 

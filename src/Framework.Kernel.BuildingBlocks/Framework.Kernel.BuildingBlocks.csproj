@@ -15,7 +15,6 @@
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Flurl" />
     <PackageReference Include="Humanizer.Core" />
-    <PackageReference Include="Humanizer.Core.ar" />
     <PackageReference Include="IdGen" />
     <PackageReference Include="Jitbit.FastCache" />
     <PackageReference Include="libphonenumber-csharp" />
