@@ -181,4 +181,37 @@ public static class DependencyInjectionExtensions
     }
 
     #endregion
+
+    #region Keyed Services
+
+    public static IServiceCollection AddKeyedSingleton<TService>(
+        this IServiceCollection services,
+        object? serviceKey,
+        Func<IServiceProvider, TService> implementationFactory
+    )
+        where TService : class
+    {
+        return services.AddKeyedSingleton<TService>(serviceKey, (provider, _) => implementationFactory(provider));
+    }
+
+    public static IServiceCollection AddKeyedScoped<TService>(
+        this IServiceCollection services,
+        object? serviceKey,
+        Func<IServiceProvider, TService> implementationFactory
+    )
+        where TService : class
+    {
+        return services.AddKeyedScoped<TService>(serviceKey, (provider, _) => implementationFactory(provider));
+    }
+
+    public static IServiceCollection AddKeyedTransient<TService>(
+        this IServiceCollection services,
+        object? serviceKey,
+        Func<IServiceProvider, TService> implementationFactory
+    )
+        where TService : class
+    {
+        return services.AddKeyedTransient<TService>(serviceKey, (provider, _) => implementationFactory(provider));
+    }
+    #endregion
 }
