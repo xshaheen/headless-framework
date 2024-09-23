@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text;
 using Couchbase;
 using Couchbase.Core.Exceptions;
@@ -48,7 +48,7 @@ public enum CreateScopeStatus
 {
     Exist,
     Failed,
-    Success
+    Success,
 }
 
 public sealed class CouchbaseManager : ICouchbaseManager
@@ -350,7 +350,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
             GetAllQueryIndexOptions.Default.CancellationToken(cancellationToken)
         );
 
-        return indexes.Any(index => index.IsPrimary || index.Name == "#primary");
+        return indexes.Any(index => index.IsPrimary || string.Equals(index.Name, "#primary", StringComparison.Ordinal));
     }
 
     private async Task _CreatePrimaryIndexOnCollectionAsync(ICouchbaseCollection collection)
@@ -360,8 +360,8 @@ public sealed class CouchbaseManager : ICouchbaseManager
             {
                 var options = CreatePrimaryQueryIndexOptions
                     .Default.IndexName("#primary")
-                    .IgnoreIfExists(true)
-                    .Deferred(false)
+                    .IgnoreIfExists(ignoreIfExists: true)
+                    .Deferred(deferred: false)
                     .CancellationToken(token);
 
                 await collection.QueryIndexes.CreatePrimaryIndexAsync(options);

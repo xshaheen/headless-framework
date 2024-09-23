@@ -24,11 +24,9 @@ public static class StringExtensions
     [return: NotNullIfNotNull(nameof(input))]
     public static string? TruncateEnd(this string? input, [NonNegativeValue] int maxLength)
     {
-        return input is null
-            ? null
-            : input.Length <= maxLength
-                ? input
-                : input[..maxLength];
+        return input is null ? null
+            : input.Length <= maxLength ? input
+            : input[..maxLength];
     }
 
     /// <summary>
@@ -634,7 +632,7 @@ public static class StringExtensions
         {
             '\\' => path.Replace('/', Path.DirectorySeparatorChar),
             '/' => path.Replace('\\', Path.DirectorySeparatorChar),
-            _ => path
+            _ => path,
         };
     }
 

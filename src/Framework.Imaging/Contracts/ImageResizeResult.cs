@@ -33,8 +33,8 @@ public sealed class ImageStreamResizeResult : ImageProcessResult<ImageResizeCont
                 Content = Argument.IsNotNull(content),
                 MimeType = Argument.IsNotNull(mimeType),
                 Width = Argument.IsPositive(width),
-                Height = Argument.IsPositive(height)
-            }
+                Height = Argument.IsPositive(height),
+            },
         };
     }
 }

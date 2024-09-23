@@ -42,9 +42,8 @@ public sealed class PhoneNumber : ValueObject
 
         return validationResult switch
         {
-            PhoneNumberUtil.ValidationResult.IS_POSSIBLE
-            or PhoneNumberUtil.ValidationResult.IS_POSSIBLE_LOCAL_ONLY
-                => util.Format(maybePhoneNumber, PhoneNumberFormat.INTERNATIONAL),
+            PhoneNumberUtil.ValidationResult.IS_POSSIBLE or PhoneNumberUtil.ValidationResult.IS_POSSIBLE_LOCAL_ONLY =>
+                util.Format(maybePhoneNumber, PhoneNumberFormat.INTERNATIONAL),
             _ => null,
         };
     }
@@ -68,8 +67,10 @@ public sealed class PhoneNumber : ValueObject
 
         return validationResult switch
         {
-            PhoneNumberUtil.ValidationResult.IS_POSSIBLE
-                => util.Format(maybePhoneNumber, PhoneNumberFormat.INTERNATIONAL),
+            PhoneNumberUtil.ValidationResult.IS_POSSIBLE => util.Format(
+                maybePhoneNumber,
+                PhoneNumberFormat.INTERNATIONAL
+            ),
             _ => null,
         };
     }

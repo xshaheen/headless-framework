@@ -32,8 +32,10 @@ public sealed class ObjectExtensionsTests
         "False".To<bool>().Should().Be(false);
         "TrUE".To<bool>().Should().Be(true);
 
-        Assert.Throws<FormatException>(() => "test".To<bool>());
-        Assert.Throws<FormatException>(() => "test".To<int>());
+        var toBool = static () => "test".To<bool>();
+        toBool.Should().ThrowExactly<FormatException>();
+        var toInt = static () => "test".To<int>();
+        toInt.Should().ThrowExactly<FormatException>();
 
         "2260AFEC-BBFD-42D4-A91A-DCB11E09B17F".To<Guid>().Should().Be(new Guid("2260afec-bbfd-42d4-a91a-dcb11e09b17f"));
     }

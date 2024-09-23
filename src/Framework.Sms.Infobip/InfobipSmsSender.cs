@@ -17,7 +17,7 @@ public sealed class InfobipSmsSender : ISmsSender
         var value = options.Value;
         _sender = value.Sender;
         _logger = logger;
-        _smsApi = new SmsApi(httpClient, new Configuration { BasePath = value.BasePath, ApiKey = value.ApiKey, });
+        _smsApi = new SmsApi(httpClient, new Configuration { BasePath = value.BasePath, ApiKey = value.ApiKey });
     }
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(

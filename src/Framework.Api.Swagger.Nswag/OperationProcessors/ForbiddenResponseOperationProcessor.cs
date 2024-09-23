@@ -12,7 +12,7 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
     private const string _ForbiddenStatusCode = "403";
 
     private static readonly OpenApiResponse _ForbiddenResponse =
-        new() { Description = "Forbidden - The user does not have the necessary permissions to access the resource.", };
+        new() { Description = "Forbidden - The user does not have the necessary permissions to access the resource." };
 
     public bool Process(OperationProcessorContext context)
     {

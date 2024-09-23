@@ -36,32 +36,32 @@ public sealed class QueueFoundatioAdapter<T> : IQueue<T>
 
         Enqueued = new FoundatioAsyncEventAdapter<Foundatio.Queues.EnqueuedEventArgs<T>, EnqueuedEventArgs<T>>(
             _foundatio.Enqueued,
-            args => new() { Entry = _MapEntry(args.Entry), Queue = this, },
-            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio, }
+            args => new() { Entry = _MapEntry(args.Entry), Queue = this },
+            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio }
         );
 
         Dequeued = new FoundatioAsyncEventAdapter<Foundatio.Queues.DequeuedEventArgs<T>, DequeuedEventArgs<T>>(
             _foundatio.Dequeued,
-            args => new() { Entry = _MapEntry(args.Entry), Queue = this, },
-            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio, }
+            args => new() { Entry = _MapEntry(args.Entry), Queue = this },
+            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio }
         );
 
         LockRenewed = new FoundatioAsyncEventAdapter<Foundatio.Queues.LockRenewedEventArgs<T>, LockRenewedEventArgs<T>>(
             _foundatio.LockRenewed,
-            args => new() { Entry = _MapEntry(args.Entry), Queue = this, },
-            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio, }
+            args => new() { Entry = _MapEntry(args.Entry), Queue = this },
+            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio }
         );
 
         Completed = new FoundatioAsyncEventAdapter<Foundatio.Queues.CompletedEventArgs<T>, CompletedEventArgs<T>>(
             _foundatio.Completed,
-            args => new() { Entry = _MapEntry(args.Entry), Queue = this, },
-            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio, }
+            args => new() { Entry = _MapEntry(args.Entry), Queue = this },
+            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio }
         );
 
         Abandoned = new FoundatioAsyncEventAdapter<Foundatio.Queues.AbandonedEventArgs<T>, AbandonedEventArgs<T>>(
             _foundatio.Abandoned,
-            args => new() { Entry = _MapEntry(args.Entry), Queue = this, },
-            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio, }
+            args => new() { Entry = _MapEntry(args.Entry), Queue = this },
+            args => new() { Entry = _MapEntry(args.Entry), Queue = _foundatio }
         );
     }
 

@@ -1,4 +1,6 @@
-﻿using System.Collections.ObjectModel;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Collections.ObjectModel;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

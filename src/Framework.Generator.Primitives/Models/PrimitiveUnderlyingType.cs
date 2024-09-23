@@ -64,5 +64,5 @@ internal enum PrimitiveUnderlyingType
     Char,
 
     // Represents another Primitive type.
-    Other
+    Other,
 }

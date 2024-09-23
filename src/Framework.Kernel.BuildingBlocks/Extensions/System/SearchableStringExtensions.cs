@@ -105,13 +105,7 @@ public static class SearchableStringExtensions
     /// </summary>
     private static readonly FrozenDictionary<char, string> _ArabicNormalizations = _CreateArabicNormalizations();
 
-    private static readonly FrozenSet<string> _ArabicStopWords = _CreateArabicStopWords();
-
     private static readonly FrozenSet<char> _ArabicStems = _CreateArabicStems();
-
-    private static readonly char[][] _ArabicPrefixStems = _CreateArabicPrefixStems();
-
-    private static readonly char[][] _ArabicSuffixStems = _CreateArabicSuffixStems();
 
     #region Helpers
 

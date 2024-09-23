@@ -91,7 +91,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
             )
             .ToDictionary(
                 failureGroup => failureGroup.Key,
-                failureGroup => (IReadOnlyList<ErrorDescriptor>)failureGroup.ToArray(),
+                failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
                 StringComparer.Ordinal
             );
 
@@ -127,7 +127,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
         Debug.Assert(exception is not null, nameof(exception) + " is not null");
 
         var details = _problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
-        context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict, };
+        context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict };
         context.ExceptionHandled = true;
     }
 
@@ -141,7 +141,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
             [SharedMessageDescriber.General.ConcurrencyFailure()]
         );
 
-        context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict, };
+        context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict };
         context.ExceptionHandled = true;
     }
 

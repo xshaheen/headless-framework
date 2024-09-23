@@ -20,7 +20,7 @@ public sealed class ObjectToInferredTypesConverter : JsonConverter<object?>
             JsonTokenType.Number => reader.GetDouble(),
             JsonTokenType.String when reader.TryGetDateTimeOffset(out var datetime) => datetime,
             JsonTokenType.String => reader.GetString(),
-            _ => JsonSerializer.Deserialize<object?>(ref reader, options)
+            _ => JsonSerializer.Deserialize<object?>(ref reader, options),
         };
     }
 

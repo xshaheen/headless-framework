@@ -109,11 +109,9 @@ public static class HttpContextExtensions
         {
             var ip = httpContext.Connection.RemoteIpAddress;
 
-            return ip is null
-                ? null
-                : ip.IsIPv4MappedToIPv6
-                    ? ip.MapToIPv4().ToString()
-                    : ip.ToString();
+            return ip is null ? null
+                : ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString()
+                : ip.ToString();
         }
 
         // Is proxy

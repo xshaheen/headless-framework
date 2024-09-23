@@ -36,7 +36,7 @@ public sealed class ProblemDetailsOperationFilter : IOperationFilter
             ["traceId"] = new OpenApiString("00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00"),
             ["errors"] = new OpenApiObject
             {
-                ["exampleProperty1"] = new OpenApiArray { new OpenApiString("The property field is required"), },
+                ["exampleProperty1"] = new OpenApiArray { new OpenApiString("The property field is required") },
             },
         };
 

@@ -15,7 +15,7 @@ public sealed class ClaimsOperationFilter : IOperationFilter
     private static readonly OpenApiSecurityScheme _OAuth2OpenApiSecurityScheme =
         new()
         {
-            Reference = new OpenApiReference { Id = _OAuth2OpenApiReferenceId, Type = ReferenceType.SecurityScheme, },
+            Reference = new OpenApiReference { Id = _OAuth2OpenApiReferenceId, Type = ReferenceType.SecurityScheme },
         };
 
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
@@ -33,10 +33,7 @@ public sealed class ClaimsOperationFilter : IOperationFilter
 
         if (claimTypes.Count != 0)
         {
-            operation.Security = new List<OpenApiSecurityRequirement>
-            {
-                new() { { _OAuth2OpenApiSecurityScheme, claimTypes } },
-            };
+            operation.Security = [new() { { _OAuth2OpenApiSecurityScheme, claimTypes } }];
         }
     }
 }

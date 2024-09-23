@@ -1,4 +1,4 @@
-﻿using Primitives.Generator.Extensions;
+using Primitives.Generator.Extensions;
 using Primitives.Generator.Models;
 
 namespace Primitives.Generator.Helpers;
@@ -7,8 +7,8 @@ namespace Primitives.Generator.Helpers;
 internal static class MethodGeneratorHelper
 {
     /// <summary>TryCreate,TryCreate with error message methods for the specified type, and ValidateOrThrow.</summary>
-    /// <param name="data">The generator data containing type information.</param>
     /// <param name="builder">The source code builder.</param>
+    /// <param name="data">The generator data containing type information.</param>
     internal static void GenerateMandatoryMethods(this SourceCodeBuilder builder, GeneratorData data)
     {
         builder
@@ -111,8 +111,8 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates implicit operators for a specified class.</summary>
-    /// <param name="data">The GeneratorData for the class.</param>
     /// <param name="builder">The SourceCodeBuilder for generating source code.</param>
+    /// <param name="data">The GeneratorData for the class.</param>
     internal static void GenerateImplicitOperators(this SourceCodeBuilder builder, GeneratorData data)
     {
         var primitiveName = data.ClassName;
@@ -220,9 +220,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates comparison operators (&lt;, &lt;=, &gt;, &gt;=) for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="fieldName">The name of the field to compare.</param>
-    /// <param name="builder">The source code builder.</param>
     internal static void GenerateComparisonCode(this SourceCodeBuilder builder, string className, string fieldName)
     {
         builder
@@ -254,9 +254,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates an addition operator for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="fieldName">The name of the field to perform addition on.</param>
-    /// <param name="builder">The source code builder.</param>
     internal static void GenerateAdditionCode(this SourceCodeBuilder builder, string className, string fieldName)
     {
         builder
@@ -267,9 +267,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates a subtraction operator for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="fieldName">The name of the field to perform subtraction on.</param>
-    /// <param name="builder">The source code builder.</param>
     public static void GenerateSubtractionCode(this SourceCodeBuilder builder, string className, string fieldName)
     {
         builder
@@ -280,9 +280,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates a division operator for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="fieldName">The name of the field to perform division on.</param>
-    /// <param name="builder">The source code builder.</param>
     public static void GenerateDivisionCode(this SourceCodeBuilder builder, string className, string fieldName)
     {
         builder
@@ -293,9 +293,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates a multiplication operator for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="fieldName">The name of the field to perform multiplication on.</param>
-    /// <param name="builder">The source code builder.</param>
     public static void GenerateMultiplyCode(this SourceCodeBuilder builder, string className, string fieldName)
     {
         builder
@@ -306,9 +306,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates a modulus operator for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="fieldName">The name of the field to perform modulus on.</param>
-    /// <param name="builder">The source code builder.</param>
     public static void GenerateModulusCode(this SourceCodeBuilder builder, string className, string fieldName)
     {
         builder
@@ -365,8 +365,8 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates Parse and TryParse methods for the specified type.</summary>
-    /// <param name="data">The <see cref="GeneratorData"/> object containing information about the data type.</param>
     /// <param name="builder">The <see cref="SourceCodeBuilder"/> used to build the source code.</param>
+    /// <param name="data">The <see cref="GeneratorData"/> object containing information about the data type.</param>
     /// <remarks>This method generates parsing methods based on the provided data type and serialization format.</remarks>
     public static void GenerateParsable(this SourceCodeBuilder builder, GeneratorData data)
     {
@@ -488,9 +488,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates code for implementing the IComparable interface for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="isValueType">A flag indicating if the type is a value type.</param>
-    /// <param name="builder">The source code builder.</param>
     internal static void GenerateComparableCode(this SourceCodeBuilder builder, string className, bool isValueType)
     {
         builder
@@ -529,9 +529,9 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates equality and inequality operators for the specified type.</summary>
+    /// <param name="builder">The source code builder.</param>
     /// <param name="className">The name of the class.</param>
     /// <param name="isValueType">A flag indicating if the type is a value type.</param>
-    /// <param name="builder">The source code builder.</param>
     public static void GenerateEquatableOperators(this SourceCodeBuilder builder, string className, bool isValueType)
     {
         builder
@@ -593,8 +593,8 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates the necessary methods for implementing the IXmlSerializable interface.</summary>
-    /// <param name="data">The generator data.</param>
     /// <param name="builder">The source code builder.</param>
+    /// <param name="data">The generator data.</param>
     public static void GenerateIXmlSerializableMethods(this SourceCodeBuilder builder, GeneratorData data)
     {
         builder.AppendInheritDoc();
@@ -604,7 +604,7 @@ internal static class MethodGeneratorHelper
         {
             "string" => "ReadElementContentAsString",
             "bool" => "ReadElementContentAsBoolean",
-            _ => $"ReadElementContentAs<{data.PrimitiveTypeFriendlyName}>"
+            _ => $"ReadElementContentAs<{data.PrimitiveTypeFriendlyName}>",
         };
 
         builder.AppendInheritDoc();
@@ -642,8 +642,8 @@ internal static class MethodGeneratorHelper
     }
 
     /// <summary>Generates IConvertible interface methods for the specified type.</summary>
-    /// <param name="data">The generator data containing type information.</param>
     /// <param name="builder">The source code builder.</param>
+    /// <param name="data">The generator data containing type information.</param>
     internal static void GenerateConvertibles(this SourceCodeBuilder builder, GeneratorData data)
     {
         var fieldName = $"({data.UnderlyingType}){data.FieldName}";

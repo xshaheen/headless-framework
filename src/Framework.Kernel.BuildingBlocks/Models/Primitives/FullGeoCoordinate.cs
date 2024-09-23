@@ -1,4 +1,4 @@
-﻿using Framework.Kernel.Checks;
+using Framework.Kernel.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -210,7 +210,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
         {
             if (value is < 0.0 or > 360.0)
             {
-                throw new ArgumentOutOfRangeException(nameof(value), @"Argument `Course` must be in range 0 to 360");
+                throw new ArgumentOutOfRangeException(nameof(value), "Argument `Course` must be in range 0 to 360");
             }
 
             _course = value;

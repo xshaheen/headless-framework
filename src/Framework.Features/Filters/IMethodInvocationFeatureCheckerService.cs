@@ -39,12 +39,12 @@ public sealed class MethodInvocationFeatureCheckerService : IMethodInvocationFea
 
     private static IEnumerable<RequiresFeatureAttribute> _GetRequiredFeatureAttributes(MethodInfo methodInfo)
     {
-        var attributes = methodInfo.GetCustomAttributes(true).OfType<RequiresFeatureAttribute>();
+        var attributes = methodInfo.GetCustomAttributes(inherit: true).OfType<RequiresFeatureAttribute>();
 
         if (methodInfo.IsPublic)
         {
             attributes = attributes.Union(
-                methodInfo.DeclaringType!.GetCustomAttributes(true).OfType<RequiresFeatureAttribute>()
+                methodInfo.DeclaringType!.GetCustomAttributes(inherit: true).OfType<RequiresFeatureAttribute>()
             );
         }
 

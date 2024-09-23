@@ -1,11 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
-#pragma warning disable IDE0130
+#pragma warning disable CA1000 // Do not declare static members on generic types
+#pragma warning disable CA2225 // Operator overloads have named alternates
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Primitives;
 
-#pragma warning disable CA2225
 [StructLayout(LayoutKind.Auto)]
 public readonly struct Result<TErrors> : IResult<TErrors>, IEquatable<Result<TErrors>>
 {

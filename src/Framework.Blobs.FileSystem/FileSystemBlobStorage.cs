@@ -211,7 +211,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
             using (await _lock.LockAsync(cancellationToken))
             {
                 Directory.CreateDirectory(targetDirectory);
-                File.Copy(blobPath, targetPath, true);
+                File.Copy(blobPath, targetPath, overwrite: true);
 
                 return true;
             }

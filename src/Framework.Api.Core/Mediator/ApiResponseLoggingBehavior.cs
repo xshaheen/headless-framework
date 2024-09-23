@@ -42,7 +42,7 @@ public sealed class ApiResponseLoggingBehavior<TMessage, TResponse>(
         object? response
     )
     {
-        _Log(logger, userId, messageName, message, responseName, response, null);
+        _Log(logger, userId, messageName, message, responseName, response, arg7: null);
     }
 
     #endregion

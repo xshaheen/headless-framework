@@ -23,7 +23,7 @@ public static class XmlHelper
             return null;
         }
 
-        settings ??= new XmlWriterSettings { Async = true, ConformanceLevel = ConformanceLevel.Auto, };
+        settings ??= new XmlWriterSettings { Async = true, ConformanceLevel = ConformanceLevel.Auto };
 
         await using var sw = new StringWriter();
         await using var xwr = XmlWriter.Create(sw, settings);

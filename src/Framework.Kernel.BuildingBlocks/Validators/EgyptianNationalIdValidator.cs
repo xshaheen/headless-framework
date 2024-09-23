@@ -64,7 +64,7 @@ public static class EgyptianNationalIdValidator
 
         var governorateKey = nationalId[7..9];
 
-        return GovernorateIdMap.TryGetValue(governorateKey, out _);
+        return GovernorateIdMap.ContainsKey(governorateKey);
     }
 
     private static FrozenDictionary<string, string> _CreateGovernorateIdMap()

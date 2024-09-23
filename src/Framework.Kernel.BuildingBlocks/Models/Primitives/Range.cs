@@ -1,5 +1,5 @@
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable CA1036 // Override methods on comparable types
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 namespace Framework.Kernel.Primitives;
 
 [PublicAPI]
@@ -258,7 +258,7 @@ public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
 
     public static bool operator >(Range<T>? left, Range<T>? right)
     {
-        return left is not null && left.CompareTo(right) > 0;
+        return left?.CompareTo(right) > 0;
     }
 
     public static bool operator >=(Range<T>? left, Range<T>? right)

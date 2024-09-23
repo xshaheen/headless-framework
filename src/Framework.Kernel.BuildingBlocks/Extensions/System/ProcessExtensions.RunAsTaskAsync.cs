@@ -243,7 +243,7 @@ public sealed class ProcessOutputCollection : IReadOnlyList<ProcessOutput>
 public enum ProcessOutputType
 {
     StandardOutput,
-    StandardError
+    StandardError,
 }
 
 #endregion

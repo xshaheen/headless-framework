@@ -57,7 +57,7 @@ public sealed class Clock(TimeProvider timeProvider) : IClock
             DateTimeKind.Unspecified => v,
             DateTimeKind.Local when v.Kind is DateTimeKind.Utc => v.ToLocalTime(),
             DateTimeKind.Utc when v.Kind is DateTimeKind.Local => v.ToUniversalTime(),
-            _ => DateTime.SpecifyKind(v, NormalizeKind)
+            _ => DateTime.SpecifyKind(v, NormalizeKind),
         };
     }
 }

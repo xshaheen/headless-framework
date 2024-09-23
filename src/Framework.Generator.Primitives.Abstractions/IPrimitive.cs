@@ -13,7 +13,8 @@ public interface IPrimitive
 /// This interface serves as a foundation for encapsulating and validating domain-specific values.
 /// </summary>
 /// <typeparam name="T">The type of the primitive value.</typeparam>
-public interface IPrimitive<T> : IPrimitive where T : IEquatable<T>, IComparable, IComparable<T>
+public interface IPrimitive<T> : IPrimitive
+    where T : IEquatable<T>, IComparable, IComparable<T>
 {
     /// <summary>Gets the underlying primitive value of the primitive value.</summary>
     /// <returns>The underlying primitive value of the primitive value.</returns>

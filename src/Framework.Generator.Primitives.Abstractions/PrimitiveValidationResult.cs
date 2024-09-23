@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
 // ReSharper disable once MemberCanBePrivate.Global
 
@@ -63,7 +63,7 @@ public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidatio
     /// <inheritdoc/>
     public bool Equals(PrimitiveValidationResult other)
     {
-        return IsValid == other.IsValid && ErrorMessage == other.ErrorMessage;
+        return IsValid == other.IsValid && string.Equals(ErrorMessage, other.ErrorMessage, StringComparison.Ordinal);
     }
 
     /// <inheritdoc/>

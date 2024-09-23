@@ -34,7 +34,7 @@ public sealed class CequensSmsSender(
             acknowledgement = 0,
             flashing = 0,
             messageText = request.Text,
-            recipients = request.Destination.ToString()
+            recipients = request.Destination.ToString(),
         };
 
         var response = await httpClient.PostAsJsonAsync("sms/v1/messages", apiRequest, token);

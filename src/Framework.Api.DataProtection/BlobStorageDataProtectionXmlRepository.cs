@@ -1,4 +1,4 @@
-﻿using System.Xml.Linq;
+using System.Xml.Linq;
 using Framework.Blobs;
 using Framework.Kernel.BuildingBlocks.Helpers.IO;
 using Framework.Kernel.Checks;
@@ -92,7 +92,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         {
             var (storage, element, fileName) = state;
 
-            using var memoryStream = new MemoryStream();
+            await using var memoryStream = new MemoryStream();
             await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, abortToken);
             memoryStream.Seek(0, SeekOrigin.Begin);
 

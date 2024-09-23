@@ -59,5 +59,5 @@ public enum PushNotificationResponseStatus
 {
     Unregister,
     Success,
-    Failure
+    Failure,
 }

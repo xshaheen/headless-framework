@@ -1,4 +1,4 @@
-﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 
 namespace Primitives.Generator.Helpers;
 
@@ -20,7 +20,7 @@ internal static class DiagnosticHelper
                 DiagnosticSeverity.Info,
                 isEnabledByDefault: true
             ),
-            null
+            location: null
         );
     }
 

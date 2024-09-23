@@ -1,4 +1,4 @@
-﻿namespace Primitives.Generator.Models;
+namespace Primitives.Generator.Models;
 
 /// <summary>Configuration options for controlling code generation of Primitive types.</summary>
 internal sealed record PrimitiveGlobalOptions
@@ -8,7 +8,7 @@ internal sealed record PrimitiveGlobalOptions
     /// The default value is true.
     /// </summary>
     /// <value>
-    ///   <c>true</c> if JSON converters should be generated; otherwise, <c>false</c>.
+    ///   <see langword="true"/> if JSON converters should be generated; otherwise, <see langword="false"/>.
     /// </value>
     public bool GenerateJsonConverters { get; set; } = true;
 
@@ -17,7 +17,7 @@ internal sealed record PrimitiveGlobalOptions
     /// The default value is true.
     /// </summary>
     /// <value>
-    ///   <c>true</c> if type converters should be generated; otherwise, <c>false</c>.
+    ///   <see langword="true"/> if type converters should be generated; otherwise, <see langword="false"/>.
     /// </value>
     public bool GenerateTypeConverters { get; set; } = true;
 
@@ -38,7 +38,7 @@ internal sealed record PrimitiveGlobalOptions
     /// The default value is false.
     /// </summary>
     /// <value>
-    ///   <c>true</c> if XML serialization methods should be generated; otherwise, <c>false</c>.
+    ///   <see langword="true"/> if XML serialization methods should be generated; otherwise, <see langword="false"/>.
     /// </value>
     public bool GenerateXmlConverters { get; set; }
 
@@ -46,7 +46,7 @@ internal sealed record PrimitiveGlobalOptions
     /// Gets or sets a value indicating whether Entity Framework Core value converters should be generated for Primitive types.
     /// </summary>
     /// <value>
-    ///   <c>true</c> if Entity Framework Core value converters should be generated; otherwise, <c>false</c>.
+    ///   <see langword="true"/> if Entity Framework Core value converters should be generated; otherwise, <see langword="false"/>.
     /// </value>
     public bool GenerateEntityFrameworkValueConverters { get; set; }
 }

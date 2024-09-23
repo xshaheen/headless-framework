@@ -97,7 +97,7 @@ public sealed class ImageSharpImageCompressorContributor(
             ContentTypes.Images.Jpeg => true,
             ContentTypes.Images.Png => true,
             ContentTypes.Images.Webp => true,
-            _ => false
+            _ => false,
         };
     }
 }

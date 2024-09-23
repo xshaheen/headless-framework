@@ -55,7 +55,7 @@ public class TestFixtureBase<TEntryPoint> : IAsyncLifetime, IDisposable, ITestOu
             }
         );
 
-        WireMockServer = WireMockServer.Start(new WireMockServerSettings { StartAdminInterface = true, });
+        WireMockServer = WireMockServer.Start(new WireMockServerSettings { StartAdminInterface = true });
     }
 
     /// <summary>This runs before all the test run and Called just after the constructor</summary>

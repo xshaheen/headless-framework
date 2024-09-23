@@ -60,7 +60,7 @@ public static partial class QueryableExtensions
         var query = queryable
             .Where(predicate)
             .Select(propSelector)
-            .Select(date => new { At = date, Month = new DateOnly(date.Year, date.Month, 1), });
+            .Select(date => new { At = date, Month = new DateOnly(date.Year, date.Month, 1) });
 
         var lookup = await query.ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token);
 

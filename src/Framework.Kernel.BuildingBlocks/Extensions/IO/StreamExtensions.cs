@@ -27,7 +27,7 @@ public static class StreamExtensions
             return s.ToArray();
         }
 
-        using var ms = await stream.CreateMemoryStreamAsync(cancellationToken);
+        await using var ms = await stream.CreateMemoryStreamAsync(cancellationToken);
 
         return ms.ToArray();
     }

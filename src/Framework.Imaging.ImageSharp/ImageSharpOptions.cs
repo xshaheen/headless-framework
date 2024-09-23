@@ -23,7 +23,7 @@ public sealed class ImageSharpOptions
         PngCompressEncoder = new PngEncoder
         {
             CompressionLevel = PngCompressionLevel.BestCompression,
-            SkipMetadata = true
+            SkipMetadata = true,
         };
     }
 }

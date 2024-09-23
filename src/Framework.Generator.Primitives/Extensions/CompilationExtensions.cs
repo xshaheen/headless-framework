@@ -198,7 +198,7 @@ internal static class CompilationExtensions
             PrimitiveUnderlyingType.DateTimeOffset => ("string", "date-time"),
             PrimitiveUnderlyingType.TimeSpan => ("integer", "int64"),
 
-            _ => ("string", "")
+            _ => ("string", ""),
         };
     }
 
@@ -238,7 +238,7 @@ internal static class CompilationExtensions
             PrimitiveUnderlyingType.DateOnly => (stringType, "JsonFormatStrings.Date"),
             PrimitiveUnderlyingType.TimeOnly => (stringType, "JsonFormatStrings.Time"),
             PrimitiveUnderlyingType.TimeSpan => (stringType, "JsonFormatStrings.TimeSpan"),
-            PrimitiveUnderlyingType.Other or _ => (stringType, null)
+            PrimitiveUnderlyingType.Other or _ => (stringType, null),
         };
     }
 

@@ -33,5 +33,5 @@ public enum ImageResizeMode
     /// </summary>
     Pad = 6,
 
-    Default = 7
+    Default = 7,
 }

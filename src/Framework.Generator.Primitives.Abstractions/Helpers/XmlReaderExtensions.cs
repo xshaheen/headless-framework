@@ -1,6 +1,7 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Xml;
 
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable UnusedMember.Global
 // ReSharper disable once CheckNamespace
 namespace Primitives;

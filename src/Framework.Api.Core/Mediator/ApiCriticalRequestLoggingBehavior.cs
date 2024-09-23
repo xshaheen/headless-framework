@@ -57,7 +57,7 @@ public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse>(
         object? response
     )
     {
-        _Log(logger, userId, elapsed, messageName, message, responseName, response, null);
+        _Log(logger, userId, elapsed, messageName, message, responseName, response, arg8: null);
     }
 
     #endregion

@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Framework.Api.Core.Security.Claims;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Primitives;
@@ -19,12 +19,16 @@ public sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurre
 
     public Claim? FindClaim(string claimType)
     {
-        return accessor.Principal.Claims.FirstOrDefault(c => c.Type == claimType);
+        return accessor.Principal.Claims.FirstOrDefault(c =>
+            string.Equals(c.Type, claimType, StringComparison.Ordinal)
+        );
     }
 
     public Claim[] FindClaims(string claimType)
     {
-        return accessor.Principal.Claims.Where(c => c.Type == claimType).ToArray();
+        return accessor
+            .Principal.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal))
+            .ToArray();
     }
 
     public Claim[] GetAllClaims()

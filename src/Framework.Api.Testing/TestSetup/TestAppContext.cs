@@ -59,7 +59,7 @@ public sealed class TestAppContext<TEntryPoint> : ITestOutputHelperAccessor, IDi
     {
         return Respawner.CreateAsync(
             connectionString,
-            new RespawnerOptions { TablesToIgnore = [new Table(HistoryRepository.DefaultTableName)], }
+            new RespawnerOptions { TablesToIgnore = [new Table(HistoryRepository.DefaultTableName)] }
         );
     }
 

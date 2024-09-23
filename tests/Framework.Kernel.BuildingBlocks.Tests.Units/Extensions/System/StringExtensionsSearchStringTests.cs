@@ -1,15 +1,10 @@
-﻿using Framework.Kernel.BuildingBlocks.Helpers.Ar;
+using Framework.Kernel.BuildingBlocks.Helpers.Ar;
 
 namespace Tests.Extensions.System;
 
-public sealed class StringExtensionsSearchStringTests
+public sealed class StringExtensionsSearchStringTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public StringExtensionsSearchStringTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
+    private readonly ITestOutputHelper _output = output;
 
     [Theory]
     [InlineData(null)]

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 
 namespace Primitives.Generator.Helpers;
 
@@ -71,11 +71,6 @@ internal sealed class SourceCodeBuilder
     /// <summary>Appends indentation to the current string.</summary>
     /// <param name="count">The number of indentation levels to append. Default is 1.</param>
     public SourceCodeBuilder AppendIndentation(int count = 1)
-    {
-        return Append(count == 1 ? _IndentationString : string.Concat(Enumerable.Repeat(_IndentationString, count)));
-    }
-
-    public SourceCodeBuilder AppendIndentation(string line, int count = 1)
     {
         return Append(count == 1 ? _IndentationString : string.Concat(Enumerable.Repeat(_IndentationString, count)));
     }
@@ -237,6 +232,14 @@ internal sealed class SourceCodeBuilder
     /// <summary>Appends the specified string to the source code if a specified condition is met.</summary>
     /// <param name="condition">A Boolean value indicating whether to append the string.</param>
     /// <param name="line">The string to append if the condition is met.</param>
+    public SourceCodeBuilder AppendIf(bool condition, FormattableString line)
+    {
+        return !condition ? this : Append(line.ToString(CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>Appends the specified string to the source code if a specified condition is met.</summary>
+    /// <param name="condition">A Boolean value indicating whether to append the string.</param>
+    /// <param name="line">The string to append if the condition is met.</param>
     public SourceCodeBuilder AppendIf(bool condition, string line)
     {
         return !condition ? this : Append(line);
@@ -305,7 +308,7 @@ internal sealed class SourceCodeBuilder
     /// <param name="line">The line of text to be appended.</param>
     public SourceCodeBuilder Continue(string? line)
     {
-        return line is null ? this : _InternalAppend(line, false, false);
+        return line is null ? this : _InternalAppend(line, appendNewLine: false, ensureIndentation: false);
     }
 
     /// <summary>Appends a line of text to the source code without adding a newline character if a specified condition is met.</summary>
@@ -320,7 +323,7 @@ internal sealed class SourceCodeBuilder
     /// <param name="line">The line of text to be appended.</param>
     public SourceCodeBuilder ContinueLine(string line)
     {
-        return _InternalAppend(line, true, false);
+        return _InternalAppend(line, appendNewLine: true, ensureIndentation: false);
     }
 
     /// <summary>Appends a line of text to the source code with an option to ensure proper indentation.</summary>
@@ -376,7 +379,7 @@ internal sealed class SourceCodeBuilder
     /// <param name="directive">The preprocessor directive to append.</param>
     public SourceCodeBuilder AppendPreProcessorDirective(string directive)
     {
-        return AppendLine($"#{directive}", false);
+        return AppendLine($"#{directive}", ensureIndentation: false);
     }
 
     /// <summary>Appends the specified line to the source code with an optional indentation and a newline.</summary>
@@ -390,7 +393,7 @@ internal sealed class SourceCodeBuilder
     /// <summary>Inserts a new line in the source code.</summary>
     public SourceCodeBuilder NewLine()
     {
-        return _InternalAppend(string.Empty, true, false);
+        return _InternalAppend(string.Empty, appendNewLine: true, ensureIndentation: false);
     }
 
     /// <summary>Inserts a new line in the source code.</summary>
@@ -398,7 +401,7 @@ internal sealed class SourceCodeBuilder
     {
         for (var i = 0; i < count; i++)
         {
-            _InternalAppend(string.Empty, true, false);
+            _InternalAppend(string.Empty, appendNewLine: true, ensureIndentation: false);
         }
 
         return this;

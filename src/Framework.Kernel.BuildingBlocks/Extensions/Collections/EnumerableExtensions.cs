@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 
-#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 

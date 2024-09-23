@@ -12,7 +12,7 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
         using var document = PresentationDocument.Open(fileStream, false);
         var slideIds = document.PresentationPart?.Presentation.SlideIdList?.ChildElements.Cast<SlideId>();
 
-        if (slideIds is null || !slideIds.Any())
+        if (slideIds?.Any() != true)
         {
             return Task.FromResult(string.Empty);
         }

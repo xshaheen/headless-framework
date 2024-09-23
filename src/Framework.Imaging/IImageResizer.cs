@@ -13,19 +13,13 @@ public interface IImageResizer
     );
 }
 
-public sealed class ImageResizer : IImageResizer
+public sealed class ImageResizer(
+    IEnumerable<IImageResizerContributor> imageResizerContributors,
+    IOptions<ImagingOptions> imageResizeOptions
+) : IImageResizer
 {
-    private readonly IEnumerable<IImageResizerContributor> _resizerContributors;
-    private readonly ImagingOptions _imagingOptions;
-
-    public ImageResizer(
-        IEnumerable<IImageResizerContributor> imageResizerContributors,
-        IOptions<ImagingOptions> imageResizeOptions
-    )
-    {
-        _resizerContributors = imageResizerContributors.Reverse();
-        _imagingOptions = imageResizeOptions.Value;
-    }
+    private readonly IEnumerable<IImageResizerContributor> _resizerContributors = imageResizerContributors.Reverse();
+    private readonly ImagingOptions _imagingOptions = imageResizeOptions.Value;
 
     public async Task<ImageStreamResizeResult> ResizeAsync(
         Stream stream,

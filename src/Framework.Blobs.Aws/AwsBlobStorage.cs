@@ -86,7 +86,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             ContentType = _mimeTypeProvider.GetMimeType(blob.FileName),
             UseChunkEncoding = _settings.UseChunkEncoding,
             CannedACL = _settings.CannedAcl,
-            Headers = { CacheControl = _DefaultCacheControl, },
+            Headers = { CacheControl = _DefaultCacheControl },
         };
 
         if (blob.Metadata is not null)
@@ -153,7 +153,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             return false;
         }
 
-        var request = new DeleteObjectRequest { BucketName = bucket, Key = key, };
+        var request = new DeleteObjectRequest { BucketName = bucket, Key = key };
         var response = await _s3.DeleteObjectAsync(request, cancellationToken);
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
@@ -199,7 +199,9 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             foreach (var objectKey in objectKeys)
             {
-                var deleteError = e.Response.DeleteErrors.FirstOrDefault(x => x.Key == objectKey.Key);
+                var deleteError = e.Response.DeleteErrors.FirstOrDefault(x =>
+                    string.Equals(x.Key, objectKey.Key, StringComparison.Ordinal)
+                );
 
                 if (deleteError is not null)
                 {
@@ -222,7 +224,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         // No exceptions were thrown, so all items were deleted successfully.
 
-        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Success(true));
+        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Success(operand: true));
     }
 
     #endregion
@@ -251,7 +253,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             SourceBucket = oldBucket,
             SourceKey = oldKey,
             DestinationBucket = newBucket,
-            DestinationKey = newBucket,
+            DestinationKey = newKey,
         };
 
         var response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
@@ -371,7 +373,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             return null;
         }
 
-        var request = new GetObjectRequest { BucketName = bucket, Key = key, };
+        var request = new GetObjectRequest { BucketName = bucket, Key = key };
 
         var response = await _s3.GetObjectAsync(request, cancellationToken);
 
@@ -411,7 +413,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsPositive(pageSize);
 
         var bucket = _BuildBucketName(containers);
-        var pattern = string.Join("/", containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
+        var pattern = string.Join('/', containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
         var criteria = _GetRequestCriteria(pattern);
         var result = new PagedFileListResult(_ => _GetFiles(bucket, criteria, pageSize, null, cancellationToken));
         await result.NextPageAsync().AnyContext();
@@ -432,7 +434,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             BucketName = bucket,
             MaxKeys = pageSize,
             Prefix = criteria.Prefix,
-            ContinuationToken = continuationToken
+            ContinuationToken = continuationToken,
         };
 
         _logger.LogTrace("Getting file list matching {Prefix} and {Pattern}...", criteria.Prefix, criteria.Pattern);
@@ -449,7 +451,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 .ToList(),
             NextPageFunc = response.IsTruncated
                 ? _ => _GetFiles(bucket, criteria, pageSize, response.NextContinuationToken, cancellationToken)
-                : null
+                : null,
         };
     }
 
@@ -475,7 +477,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         {
             var path = blob?.Key;
 
-            return path is not null && (pattern is null || pattern.IsMatch(path));
+            return path is not null && (pattern?.IsMatch(path) != false);
         })!;
     }
 

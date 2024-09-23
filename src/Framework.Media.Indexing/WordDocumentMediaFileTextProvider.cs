@@ -8,11 +8,11 @@ public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
     public Task<string> GetTextAsync(string path, Stream fileStream)
     {
-        using var document = WordprocessingDocument.Open(fileStream, false);
+        using var document = WordprocessingDocument.Open(fileStream, isEditable: false);
 
         var paragraphs = document.MainDocumentPart?.Document.Body?.Descendants<Paragraph>();
 
-        if (paragraphs is null || !paragraphs.Any())
+        if (paragraphs?.Any() != true)
         {
             return Task.FromResult(string.Empty);
         }
