@@ -1,4 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
 
 #pragma warning disable IDE0130

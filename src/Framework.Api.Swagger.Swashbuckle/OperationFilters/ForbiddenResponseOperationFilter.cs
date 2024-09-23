@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Framework.Api.Core.ApiExplorer;
 using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Authorization;

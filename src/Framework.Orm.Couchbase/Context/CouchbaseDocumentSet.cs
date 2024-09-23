@@ -1,4 +1,6 @@
-﻿using System.Collections;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Collections;
 using System.Linq.Expressions;
 using Couchbase.Core.Exceptions.KeyValue;
 using Couchbase.KeyValue;

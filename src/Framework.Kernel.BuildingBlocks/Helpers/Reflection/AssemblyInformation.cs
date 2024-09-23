@@ -1,5 +1,6 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Reflection;
-using Framework.Kernel.Checks;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 

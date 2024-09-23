@@ -1,4 +1,6 @@
-﻿namespace Framework.Integrations.Recaptcha.Contracts;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Integrations.Recaptcha.Contracts;
 
 public static class ReCaptchaConstants
 {

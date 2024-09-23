@@ -1,4 +1,6 @@
-﻿namespace Framework.Features.Filters;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Features.Filters;
 
 /// <summary>
 /// This attribute can be used on a class/method to declare that given class/method is available

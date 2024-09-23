@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;

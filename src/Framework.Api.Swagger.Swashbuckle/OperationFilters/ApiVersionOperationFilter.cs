@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text.Json;
 using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;

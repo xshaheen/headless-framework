@@ -1,4 +1,6 @@
-﻿namespace Framework.Kernel.Specifications;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Kernel.Specifications;
 
 /// <summary>Represents that the implemented classes are composite specifications.</summary>
 /// <typeparam name="T">The type of the object to which the specification is applied.</typeparam>

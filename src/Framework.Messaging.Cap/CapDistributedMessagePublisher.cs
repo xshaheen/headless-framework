@@ -1,4 +1,6 @@
-﻿using DotNetCore.CAP;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using DotNetCore.CAP;
 using Framework.Kernel.Domains;
 
 namespace Framework.Messaging;

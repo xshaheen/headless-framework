@@ -1,4 +1,6 @@
-﻿namespace Tests.Extensions.Collections;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Tests.Extensions.Collections;
 
 public sealed class CollectionExtensionsTests
 {

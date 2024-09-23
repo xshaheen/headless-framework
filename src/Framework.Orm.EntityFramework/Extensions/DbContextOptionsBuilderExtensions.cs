@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Framework.Kernel.BuildingBlocks.Helpers.Ids;
 using Framework.Kernel.Checks;
 using Microsoft.EntityFrameworkCore;

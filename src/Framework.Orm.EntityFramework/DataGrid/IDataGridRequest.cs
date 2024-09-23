@@ -1,4 +1,6 @@
-﻿using Framework.Orm.EntityFramework.DataGrid.Ordering;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Orm.EntityFramework.DataGrid.Ordering;
 using Framework.Orm.EntityFramework.DataGrid.Pagination;
 
 namespace Framework.Orm.EntityFramework.DataGrid;

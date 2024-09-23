@@ -1,4 +1,6 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Diagnostics.CodeAnalysis;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

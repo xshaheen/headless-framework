@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Net;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Framework.Api.Mvc.Controllers;

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Primitives;
 
 #pragma warning disable CA1036 // Override methods on comparable types

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 namespace Framework.Queueing.Internals;
 
 internal sealed class FoundatioQueueEntryAdapter<TValue>(IQueueEntry<TValue> entry)

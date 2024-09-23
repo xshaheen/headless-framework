@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text.RegularExpressions;

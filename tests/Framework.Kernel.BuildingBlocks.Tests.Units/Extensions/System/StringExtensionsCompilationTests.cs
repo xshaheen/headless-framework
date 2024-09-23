@@ -1,4 +1,6 @@
-﻿namespace Tests.Extensions.System;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Tests.Extensions.System;
 
 public static class StringExtensionsCompilationTests
 {

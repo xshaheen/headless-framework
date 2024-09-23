@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Net;
 using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;

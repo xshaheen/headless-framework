@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Diagnostics;
 using System.IO.Compression;
 using FileSignatures;
 using FluentValidation;

@@ -1,4 +1,6 @@
-﻿namespace Primitives;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Primitives;
 
 /// <summary>Represents an interface for primitive values.</summary>
 public interface IPrimitive

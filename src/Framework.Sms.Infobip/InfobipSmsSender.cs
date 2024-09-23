@@ -1,4 +1,6 @@
-﻿using Infobip.Api.Client;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Infobip.Api.Client;
 using Infobip.Api.Client.Api;
 using Infobip.Api.Client.Model;
 using Microsoft.Extensions.Logging;

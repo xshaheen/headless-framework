@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 #pragma warning disable CA1036 // Override methods on comparable types
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 namespace Framework.Kernel.Primitives;

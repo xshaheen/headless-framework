@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.Primitives;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Kernel.Primitives;
 using Framework.Settings.Definitions;
 using Framework.Settings.Values;
 

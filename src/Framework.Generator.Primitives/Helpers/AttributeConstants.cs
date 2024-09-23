@@ -1,4 +1,6 @@
-﻿namespace Primitives.Generator.Helpers;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Primitives.Generator.Helpers;
 
 internal static class AttributeConstants
 {

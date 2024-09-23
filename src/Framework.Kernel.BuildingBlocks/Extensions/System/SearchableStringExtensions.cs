@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text;
 using static Framework.Kernel.BuildingBlocks.Helpers.Ar.ArabicLetters;
 
@@ -13,7 +15,8 @@ public static class SearchableStringExtensions
     /// Normalize string to search optimized. Remove any accent from the
     /// string and Convert any digit to english equivalent.
     /// </summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string SearchString(this string? input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -50,7 +53,8 @@ public static class SearchableStringExtensions
     ///     <item><description>Removal of tatweel (stretching character).</description></item>
     /// </list>
     /// </summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     private static string _ToArabicSearchString(this string input)
     {
         var sb = new StringBuilder();

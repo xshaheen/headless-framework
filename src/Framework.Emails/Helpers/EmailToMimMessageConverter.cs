@@ -1,4 +1,6 @@
-﻿using Framework.Emails.Contracts;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Emails.Contracts;
 using MimeKit;
 
 namespace Framework.Emails.Helpers;

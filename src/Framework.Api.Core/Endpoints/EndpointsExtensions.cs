@@ -1,4 +1,6 @@
-﻿using Flurl;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Flurl;
 using Microsoft.AspNetCore.Http;
 
 #pragma warning disable IDE0130

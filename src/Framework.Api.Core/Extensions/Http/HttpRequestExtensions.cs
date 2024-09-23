@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Net;
 using Framework.Kernel.Checks;
 using Microsoft.Net.Http.Headers;

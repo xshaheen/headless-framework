@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.ComponentModel;
 
 // ReSharper disable once CheckNamespace
 namespace Framework.Queueing;

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 namespace Framework.Kernel.BuildingBlocks.Extensions.System;
 
 /// <summary>Extension methods for <see cref="EventHandler"/>.</summary>

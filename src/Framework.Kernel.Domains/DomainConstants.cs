@@ -1,4 +1,6 @@
-﻿namespace Framework.Kernel.Domains;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Kernel.Domains;
 
 public static class DomainConstants
 {

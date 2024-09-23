@@ -1,4 +1,6 @@
-﻿namespace Tests;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Tests;
 
 /// <summary>
 /// The purpose of these is to see there are no unexpected compiler warnings/errors.

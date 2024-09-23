@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 

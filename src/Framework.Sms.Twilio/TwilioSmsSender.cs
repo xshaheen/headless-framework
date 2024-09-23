@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Options;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Microsoft.Extensions.Options;
 using Twilio;
 using Twilio.Rest.Api.V2010.Account;
 using Twilio.Types;

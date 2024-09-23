@@ -1,4 +1,6 @@
-﻿namespace Framework.Integrations.Recaptcha.Services;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Integrations.Recaptcha.Services;
 
 public interface IReCaptchaLanguageCodeProvider
 {

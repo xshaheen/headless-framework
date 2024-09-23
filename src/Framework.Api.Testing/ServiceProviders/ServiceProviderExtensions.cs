@@ -1,4 +1,6 @@
-﻿using System.Net;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Net;
 using System.Security.Claims;
 using Framework.Api.Testing.Helpers;
 using Framework.Kernel.BuildingBlocks.Abstractions;

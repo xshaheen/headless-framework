@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.BuildingBlocks.Abstractions;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Definitions;
 using Framework.Settings.Values;
 

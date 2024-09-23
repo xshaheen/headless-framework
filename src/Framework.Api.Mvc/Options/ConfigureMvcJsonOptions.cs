@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;

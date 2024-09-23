@@ -1,4 +1,6 @@
-﻿namespace Framework.Settings.Definitions;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Settings.Definitions;
 
 public interface ISettingDefinitionContext
 {

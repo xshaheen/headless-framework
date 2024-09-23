@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -7,7 +7,8 @@ namespace System.Collections.Generic;
 [PublicAPI]
 public static class DictionaryExtensions
 {
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static bool DictionaryEqual<TKey, TValue>(
         this IDictionary<TKey, TValue>? first,
         IDictionary<TKey, TValue>? second,
@@ -53,7 +54,8 @@ public static class DictionaryExtensions
     /// <typeparam name="TKey">The type of keys in the <paramref name="dictionary"/>.</typeparam>
     /// <typeparam name="TValue">The type of values in the <paramref name="dictionary"/>.</typeparam>
     /// <returns>The value associated with the specified key, if the key is found; otherwise, the default value for the <typeparamref name="TValue"/> type.</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static TValue? GetOrDefault<TKey, TValue>(this IReadOnlyDictionary<TKey, TValue> dictionary, TKey key)
         where TKey : notnull
     {
@@ -69,7 +71,8 @@ public static class DictionaryExtensions
     /// <typeparam name="TKey">Type of the key</typeparam>
     /// <typeparam name="TValue">Type of the value</typeparam>
     /// <returns>Value if found, default if can not found.</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static TValue GetOrAdd<TKey, TValue>(
         this IDictionary<TKey, TValue> dictionary,
         TKey key,
@@ -94,7 +97,8 @@ public static class DictionaryExtensions
     /// <typeparam name="TKey">Type of the key</typeparam>
     /// <typeparam name="TValue">Type of the value</typeparam>
     /// <returns>Value if found, default if can not found.</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static TValue GetOrAdd<TKey, TValue>(
         this IDictionary<TKey, TValue> dictionary,
         TKey key,

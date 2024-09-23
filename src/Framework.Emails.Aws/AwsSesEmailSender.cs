@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
 using Framework.Emails.Contracts;

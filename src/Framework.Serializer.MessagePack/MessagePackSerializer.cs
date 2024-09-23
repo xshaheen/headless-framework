@@ -1,4 +1,6 @@
-﻿using MessagePack;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using MessagePack;
 using MessagePack.Resolvers;
 
 #pragma warning disable IDE0130

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text;
 using Framework.Kernel.BuildingBlocks.Helpers.IO;
 using Framework.Kernel.BuildingBlocks.Helpers.System;

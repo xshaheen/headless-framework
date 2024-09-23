@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Nuke.Common;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;

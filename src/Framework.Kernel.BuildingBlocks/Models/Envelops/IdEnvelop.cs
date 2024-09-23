@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 #pragma warning disable CA2225, IDE0130
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Primitives;

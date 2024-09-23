@@ -1,4 +1,6 @@
-﻿using Microsoft.CodeAnalysis;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Microsoft.CodeAnalysis;
 using Primitives.Generator.Models;
 
 namespace Primitives.Generator.Extensions;

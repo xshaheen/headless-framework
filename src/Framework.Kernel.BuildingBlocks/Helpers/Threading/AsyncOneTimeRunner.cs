@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Nito.AsyncEx;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.Threading;

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 namespace Framework.Blobs.FileSystem.Internals;
 
 internal static class Helpers

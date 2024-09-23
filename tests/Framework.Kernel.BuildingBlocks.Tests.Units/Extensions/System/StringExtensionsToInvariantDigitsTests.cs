@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.BuildingBlocks.Helpers.System;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Kernel.BuildingBlocks.Helpers.System;
 
 namespace Tests.Extensions.System;
 

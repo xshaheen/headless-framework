@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using FileSignatures;
 using FluentValidation;
 using Framework.FluentValidation.Resources;

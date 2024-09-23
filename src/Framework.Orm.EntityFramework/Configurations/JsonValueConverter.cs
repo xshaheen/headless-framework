@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Text.Json;
 using Framework.Kernel.BuildingBlocks.Constants;
 using Framework.Serializer.Json.Converters;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;

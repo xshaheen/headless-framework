@@ -1,4 +1,6 @@
-﻿using FluentValidation;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using FluentValidation;
 using Framework.FluentValidation.Resources;
 
 namespace Framework.FluentValidation;

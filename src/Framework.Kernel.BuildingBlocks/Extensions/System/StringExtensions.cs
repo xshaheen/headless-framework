@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
@@ -20,7 +22,8 @@ public static class StringExtensions
     /// <paramref name="maxLength"/>; otherwise first <c>n</c> characters of the <paramref name="input" />,
     /// where <c>n</c> is equal to <paramref name="maxLength"/>.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? TruncateEnd(this string? input, [NonNegativeValue] int maxLength)
     {
@@ -42,7 +45,8 @@ public static class StringExtensions
     /// followed by <paramref name="suffix" />, where <c>n</c> is equal to <paramref name="maxLength"/> - length of
     /// <paramref name="suffix"/>.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? TruncateEnd(this string? input, [NonNegativeValue] int maxLength, string suffix)
     {
@@ -79,7 +83,8 @@ public static class StringExtensions
     /// <paramref name="maxLength"/>; otherwise last <c>n</c> characters of the <paramref name="input" />,
     /// where <c>n</c> is equal to <paramref name="maxLength"/>.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? TruncateStart(this string? input, [NonNegativeValue] int maxLength)
     {
@@ -99,7 +104,8 @@ public static class StringExtensions
     /// <see langword="true"/> if the <paramref name="input"/> is <see langword="null"/> or an empty string (""); otherwise, <see langword="false"/>.
     /// </returns>
     /// <seealso cref="string.IsNullOrEmpty" />
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static bool IsNullOrEmpty([NotNullWhen(false)] this string? input)
     {
         return string.IsNullOrEmpty(input);
@@ -113,7 +119,8 @@ public static class StringExtensions
     /// <see langword="true"/> if the value parameter is <see langword="null"/> or <see cref="string.Empty" />, or if <paramref name="input"/> consists exclusively of white-space characters.
     /// </returns>
     /// <seealso cref="string.IsNullOrWhiteSpace" />
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static bool IsNullOrWhiteSpace([NotNullWhen(false)] this string? input)
     {
         return string.IsNullOrWhiteSpace(input);
@@ -127,7 +134,8 @@ public static class StringExtensions
     /// <returns>
     /// <paramref name="input"/> if it is an empty string (""); otherwise, <see langword="null"/>.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? NullIfEmpty(this string? input)
     {
@@ -142,7 +150,8 @@ public static class StringExtensions
     /// <returns>
     /// <paramref name="input"/> if the value parameter is <see langword="null"/> or <see cref="string.Empty" />, or if <paramref name="input"/> consists exclusively of white-space characters; otherwise, <see langword="null"/>.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? NullIfWhiteSpace(this string? input)
     {
@@ -150,7 +159,8 @@ public static class StringExtensions
     }
 
     /// <summary>Converts line endings in the string to <see cref="Environment.NewLine"/>.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string NormalizeLineEndings(this string value)
     {
         return value
@@ -160,14 +170,16 @@ public static class StringExtensions
     }
 
     /// <summary>Uses string.Split method to split given string by <see cref="Environment.NewLine"/>.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string[] SplitToLines(this string input, StringSplitOptions options = StringSplitOptions.None)
     {
         return input.Split(Environment.NewLine, options);
     }
 
     /// <summary>Adds a char to beginning of given string if it does not starts with the char.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string EnsureStartsWith(
         this string input,
         char c,
@@ -178,7 +190,8 @@ public static class StringExtensions
     }
 
     /// <summary>Adds a char to end of given string if it does not ends with the char.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string EnsureEndsWith(
         this string input,
         char c,
@@ -192,7 +205,8 @@ public static class StringExtensions
     /// <param name="input">The string.</param>
     /// <param name="postfixes">one or more postfix.</param>
     /// <returns>Modified string or the same string if it has not any of given postfixes</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePostfix(this string? input, params string[]? postfixes)
     {
@@ -206,7 +220,8 @@ public static class StringExtensions
     /// <param name="comparisonType">String comparison type</param>
     /// <param name="postfixes">one or more postfix.</param>
     /// <returns>Modified string or the same string if it has not any of given postfixes</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePostfix(this string? input, StringComparison comparisonType, params string[]? postfixes)
     {
@@ -231,7 +246,8 @@ public static class StringExtensions
         return input;
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePostfix(this string? input, char postfix)
     {
@@ -249,7 +265,8 @@ public static class StringExtensions
     /// <param name="input">The string.</param>
     /// <param name="prefixes">one or more prefix.</param>
     /// <returns>Modified string or the same string if it has not any of given prefixes</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePrefix(this string? input, params string[]? prefixes)
     {
@@ -263,7 +280,8 @@ public static class StringExtensions
     /// <param name="comparisonType">String comparison type</param>
     /// <param name="prefixes">one or more prefix.</param>
     /// <returns>Modified string or the same string if it has not any of given prefixes</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePrefix(this string? input, StringComparison comparisonType, params string[]? prefixes)
     {
@@ -296,7 +314,8 @@ public static class StringExtensions
     /// <param name="input">The string.</param>
     /// <param name="prefixes">one or more prefix.</param>
     /// <returns>Modified string or the same string if it has not any of given prefixes</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePrefix(this string? input, params char[]? prefixes)
     {
@@ -325,7 +344,8 @@ public static class StringExtensions
 
     /// <summary>Removes first occurrence of the given prefix from beginning of the given string.</summary>
     /// <returns>Modified string or the same string if it has not any of given prefix</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemovePrefix(this string? input, char prefix)
     {
@@ -345,14 +365,16 @@ public static class StringExtensions
     }
 
     /// <summary>Converts given string to a byte array using <see cref="Encoding.UTF8"/> encoding.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static byte[] GetBytes(this string input)
     {
         return input.GetBytes(Encoding.UTF8);
     }
 
     /// <summary>Converts given string to a byte array using the given <paramref name="encoding"/>.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static byte[] GetBytes(this string input, Encoding encoding)
     {
         return encoding.GetBytes(input);
@@ -362,7 +384,8 @@ public static class StringExtensions
     /// Replace a new string applying on it <see cref="string.Replace(string, string)"/>
     /// using <paramref name="replaces"/>.
     /// </summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string Replace(
         this string input,
         IEnumerable<(string oldValue, string newValue)> replaces,
@@ -384,7 +407,8 @@ public static class StringExtensions
     /// <example>"١,٢٨" to "1,28"</example>
     /// <example>"١.٢٨" to "1.28"</example>
     /// <example>"This ١٢٨" to "This 128"</example>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? ToInvariantDigits(this string? input)
     {
@@ -415,7 +439,8 @@ public static class StringExtensions
     /// <example>"١,٢٨" to "1,28"</example>
     /// <example>"١.٢٨" to "1.28"</example>
     /// <example>"This ١٢٨" to "This 128"</example>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string ToInvariantDigits(this IEnumerable<char> input)
     {
         var sb = new StringBuilder();
@@ -436,14 +461,16 @@ public static class StringExtensions
     }
 
     /// <summary>Remove control characters from string.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string RemoveHiddenChars(this string input)
     {
         return RegexPatterns.HiddenChars().Replace(input, replacement: string.Empty);
     }
 
     /// <summary>Strips any single quotes or double quotes from the beginning and end of a string.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string StripQuotes(this string s)
     {
         return RegexPatterns.Quotes().Replace(s, "");
@@ -453,7 +480,8 @@ public static class StringExtensions
     /// Replace a new string applying on it <see cref="string.Replace(char, char)"/>
     /// using <paramref name="replaces"/>.
     /// </summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string Replace(this string input, IEnumerable<(char oldValue, char newValue)> replaces)
     {
         var output = input[..];
@@ -470,7 +498,8 @@ public static class StringExtensions
     /// Returns null if the string is null or empty or white spaces
     /// otherwise return a trim-ed string.
     /// </summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? NullableTrim(this string? input)
     {
@@ -480,7 +509,8 @@ public static class StringExtensions
     /// <summary>
     /// Replace any white space characters [\r\n\t\f\v ] with one white space.
     /// </summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string OneSpace(this string input)
     {
         return RegexPatterns.Spaces().Replace(input, " ");
@@ -493,7 +523,8 @@ public static class StringExtensions
     /// <param name="value">String value to convert</param>
     /// <param name="ignoreCase">Ignore case</param>
     /// <returns>Returns enum object</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static T ToEnum<T>(this string value, bool ignoreCase = true)
         where T : struct
     {
@@ -506,7 +537,8 @@ public static class StringExtensions
     /// <param name="input">source string to be searched</param>
     /// <param name="c">Char to search in <paramref name="input"/></param>
     /// <param name="n">Count of the occurrence</param>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static int NthIndexOf(this string input, char c, int n)
     {
         var count = 0;
@@ -540,7 +572,8 @@ public static class StringExtensions
     /// <returns>
     /// The first position where the two strings differ.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static int Diff(this string s1, string s2)
     {
         var len1 = s1.Length;
@@ -559,7 +592,8 @@ public static class StringExtensions
     }
 
     /// <summary>True if the given string is a valid IPv4 address.</summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static bool IsIp4(this string s)
     {
         // based on https://stackoverflow.com/a/29942932/62600
@@ -584,7 +618,8 @@ public static class StringExtensions
     /// <para>* Remove those accents (and other non-spacing characters).</para>
     /// <para>* Return a new string from the remaining chars.</para>
     /// </remarks>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
     public static string? RemoveAccentCharacters(this string? input)
     {
@@ -605,7 +640,8 @@ public static class StringExtensions
     /// <summary>Check that text not contain non Arabic characters.</summary>
     /// <param name="text">Unicode text</param>
     /// <returns>True if all characters are in Arabic block.</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static bool IsRtlText(this string text)
     {
         return RegexPatterns.RtlCharacters().IsMatch(text);
@@ -614,13 +650,15 @@ public static class StringExtensions
     /// <summary>
     /// Returns the specified default value if the string is null, empty, or consists only of white-space characters.
     /// </summary>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string DefaultIfEmpty(this string? str, string defaultValue)
     {
         return string.IsNullOrWhiteSpace(str) ? defaultValue : str;
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string NormalizePath(this string path)
     {
         if (string.IsNullOrEmpty(path))
@@ -641,7 +679,8 @@ public static class StringExtensions
         "CA5351:Do Not Use Broken Cryptographic Algorithms",
         Justification = "MD5 is used for file integrity check."
     )]
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string ToMd5(this string str)
     {
         var data = MD5.HashData(Encoding.UTF8.GetBytes(str));
@@ -655,7 +694,8 @@ public static class StringExtensions
         return sb.ToString();
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string ToSha256(this string str)
     {
         var data = SHA256.HashData(Encoding.UTF8.GetBytes(str));
@@ -669,7 +709,8 @@ public static class StringExtensions
         return sb.ToString();
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string ToSha512(this string str)
     {
         var data = SHA512.HashData(Encoding.UTF8.GetBytes(str));

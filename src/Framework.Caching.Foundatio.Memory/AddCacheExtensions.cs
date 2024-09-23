@@ -1,4 +1,5 @@
-using Framework.Kernel.BuildingBlocks.Constants;
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

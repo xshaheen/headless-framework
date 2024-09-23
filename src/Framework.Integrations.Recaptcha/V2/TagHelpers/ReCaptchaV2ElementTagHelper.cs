@@ -1,4 +1,6 @@
-﻿using Framework.Integrations.Recaptcha.Contracts;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Integrations.Recaptcha.Contracts;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 

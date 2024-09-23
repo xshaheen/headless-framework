@@ -1,4 +1,6 @@
-﻿namespace Framework.Sms;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Sms;
 
 public interface ISmsSender
 {

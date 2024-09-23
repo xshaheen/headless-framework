@@ -1,4 +1,6 @@
-﻿namespace Primitives.Generator.Models;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Primitives.Generator.Models;
 
 internal sealed class SupportedOperationsAttributeData
 {

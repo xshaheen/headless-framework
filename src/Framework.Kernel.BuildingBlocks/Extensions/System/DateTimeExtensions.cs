@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System;
@@ -6,7 +8,8 @@ namespace System;
 [PublicAPI]
 public static class DateTimeExtensions
 {
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTime ClearTime(this DateTime dateTime)
     {
         return new(dateTime.Year, dateTime.Month, dateTime.Day);
@@ -24,7 +27,8 @@ public static class DateTimeExtensions
     /// a rounded value for ticks — so 10 milliseconds might internally be 9.6 milliseconds. However this information is lost after this method, and
     /// the value would be replaced with 10 milliseconds.
     /// </remarks>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTime TruncateToMilliseconds(this DateTime date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, date.Millisecond);
@@ -37,7 +41,8 @@ public static class DateTimeExtensions
     /// <returns>
     /// An object that is equivalent to <paramref name="date" /> up to second precision, and empty beyond seconds.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTime TruncateToSeconds(this DateTime date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, 0);
@@ -50,7 +55,8 @@ public static class DateTimeExtensions
     /// <returns>
     /// An object that is equivalent to <paramref name="date" /> up to minute precision, and empty beyond minutes.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTime TruncateToMinutes(this DateTime date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, 0, 0);
@@ -63,19 +69,22 @@ public static class DateTimeExtensions
     /// <returns>
     /// An object that is equivalent to <paramref name="date" /> up to hour precision, and empty beyond hours.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTime TruncateToHours(this DateTime date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, 0, 0, 0);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static long ToUnixTimeSeconds(this DateTime date)
     {
         return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeSeconds();
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static long ToUnixTimeMilliseconds(this DateTime date)
     {
         return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeMilliseconds();

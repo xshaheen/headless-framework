@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using TimeZoneConverter;
 
 #pragma warning disable IDE0130

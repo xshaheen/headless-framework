@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Net.Http.Json;
 using Framework.Sms.VictoryLink.Internals;
 using Microsoft.Extensions.Logging;

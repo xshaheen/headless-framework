@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using DeviceId;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.System;
