@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Framework.Caching;
@@ -10,29 +11,45 @@ public static class AddCacheExtensions
 {
     public static IHostApplicationBuilder AddInMemoryCache(
         this IHostApplicationBuilder builder,
-        Action<InMemoryCacheOptions>? setupAction = null
+        Action<InMemoryCacheOptions, IServiceProvider> setupAction,
+        bool isDefault = true
     )
     {
-        if (setupAction is null)
+        builder.Services.ConfigureSingleton(setupAction);
+        _AddCore(builder, isDefault);
+
+        return builder;
+    }
+
+    public static IHostApplicationBuilder AddInMemoryCache(
+        this IHostApplicationBuilder builder,
+        Action<InMemoryCacheOptions> setupAction,
+        bool isDefault = true
+    )
+    {
+        builder.Services.ConfigureSingleton(setupAction);
+        _AddCore(builder, isDefault);
+
+        return builder;
+    }
+
+    private static void _AddCore(IHostApplicationBuilder builder, bool isDefault)
+    {
+        builder.Services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+
+        if (!isDefault)
         {
-            builder.Services.AddSingleton<InMemoryCacheOptions>();
-        }
-        else
-        {
-            builder.Services.ConfigureSingleton(setupAction);
+            builder.Services.AddKeyedSingleton<ICache, InMemoryCachingFoundatioAdapter>(
+                CacheConstants.MemoryCacheProvider
+            );
+
+            return;
         }
 
-        builder.Services.AddSingleton(typeof(ICache<>), typeof(Cache<>));
         builder.Services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
         builder.Services.AddKeyedSingleton(
             CacheConstants.MemoryCacheProvider,
-            (services, _) => services.GetRequiredKeyedService<ICache>(CacheConstants.DistributedCacheProvider)
+            services => services.GetRequiredService<ICache>()
         );
-        builder.Services.AddKeyedSingleton(
-            CacheConstants.DistributedCacheProvider,
-            (services, _) => services.GetRequiredKeyedService<ICache>(CacheConstants.DistributedCacheProvider)
-        );
-
-        return builder;
     }
 }
