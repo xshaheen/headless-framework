@@ -49,11 +49,10 @@ public sealed class SortInfo : IEquatable<SortInfo>
             {
                 SortColumn = parts[0],
                 SortDirection =
-                    parts.Length == 1
-                        ? SortDirection.Ascending
-                        : parts[1].StartsWith("desc", StringComparison.InvariantCultureIgnoreCase)
-                            ? SortDirection.Descending
-                            : SortDirection.Ascending,
+                    parts.Length == 1 ? SortDirection.Ascending
+                    : parts[1].StartsWith("desc", StringComparison.InvariantCultureIgnoreCase)
+                        ? SortDirection.Descending
+                    : SortDirection.Ascending,
             };
 
             retVal.Add(sortInfo);

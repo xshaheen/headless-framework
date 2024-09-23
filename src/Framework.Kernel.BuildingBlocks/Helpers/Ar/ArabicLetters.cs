@@ -223,7 +223,7 @@ public static class ArabicLetters
     public const char Star = '\u06E9';
 
     public static FrozenSet<char> Sun { get; } =
-        new[] { Teh, Theh, Dal, Thal, Reh, Zain, Seen, Sheen, Sad, Dad, Tah, Zah, Lam, Noon, }.ToFrozenSet();
+        new[] { Teh, Theh, Dal, Thal, Reh, Zain, Seen, Sheen, Sad, Dad, Tah, Zah, Lam, Noon }.ToFrozenSet();
 
     public static FrozenSet<char> Moon { get; } =
         new[]
@@ -249,21 +249,21 @@ public static class ArabicLetters
         }.ToFrozenSet();
 
     public static FrozenSet<char> Tashkeel { get; } =
-        new[] { Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun, Shadda, }.ToFrozenSet();
+        new[] { Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun, Shadda }.ToFrozenSet();
 
     public static FrozenSet<char> Harakat { get; } =
-        new[] { Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun, }.ToFrozenSet();
+        new[] { Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun }.ToFrozenSet();
 
     public static FrozenSet<char> Tanwin { get; } = new[] { Fathatan, Dammatan, Kasratan }.ToFrozenSet();
 
     public static FrozenSet<char> Liguatures { get; } =
-        new[] { LamAlef, LamAlefHamzaAbove, LamAlefHamzaBelow, LamAlefMaddaAbove, }.ToFrozenSet();
+        new[] { LamAlef, LamAlefHamzaAbove, LamAlefHamzaBelow, LamAlefMaddaAbove }.ToFrozenSet();
 
     public static FrozenSet<char> Hamzat { get; } =
-        new[] { Hamza, WawHamza, YehHamza, HamzaAbove, HamzaBelow, AlefHamzaAbove, AlefHamzaBelow, }.ToFrozenSet();
+        new[] { Hamza, WawHamza, YehHamza, HamzaAbove, HamzaBelow, AlefHamzaAbove, AlefHamzaBelow }.ToFrozenSet();
 
     public static FrozenSet<char> Alefat { get; } =
-        new[] { Alef, AlefMadda, AlefHamzaAbove, AlefHamzaBelow, AlefWasla, AlefMaksura, SmallAlef, }.ToFrozenSet();
+        new[] { Alef, AlefMadda, AlefHamzaAbove, AlefHamzaBelow, AlefWasla, AlefMaksura, SmallAlef }.ToFrozenSet();
 
     public static FrozenSet<char> WawLike { get; } = new[] { Waw, WawHamza, SmallWaw }.ToFrozenSet();
 

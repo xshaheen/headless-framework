@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Framework.Kernel.Primitives;
 
 namespace Framework.Blobs;
@@ -10,30 +12,36 @@ using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
 public interface IBlobStorage : IDisposable
 {
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default);
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
         CancellationToken cancellationToken = default
     );
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         IReadOnlyCollection<string> blobNames,
         string[] container,
         CancellationToken cancellationToken = default
     );
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask UploadAsync(BlobUploadRequest blob, string[] container, CancellationToken cancellationToken = default);
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<bool> DeleteAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<bool> CopyAsync(
         string blobName,
         string[] blobContainer,
@@ -42,7 +50,8 @@ public interface IBlobStorage : IDisposable
         CancellationToken cancellationToken = default
     );
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<bool> RenameAsync(
         string blobName,
         string[] blobContainer,
@@ -51,10 +60,12 @@ public interface IBlobStorage : IDisposable
         CancellationToken cancellationToken = default
     );
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<bool> ExistsAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<BlobDownloadResult?> DownloadAsync(
         string blobName,
         string[] container,
@@ -70,7 +81,8 @@ public interface IBlobStorage : IDisposable
     /// </param>
     /// <param name="pageSize">Size of the page.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] containers,
         string? searchPattern = null,

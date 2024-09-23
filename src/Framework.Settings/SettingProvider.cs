@@ -1,4 +1,4 @@
-﻿using Framework.Settings.Definitions;
+using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Values;
 
@@ -71,7 +71,9 @@ public sealed class SettingProvider(
             var notNullValues = settingValues.Where(x => x.Value is not null).ToList();
             foreach (var settingValue in notNullValues)
             {
-                var settingDefinition = settingDefinitions.First(x => x.Name == settingValue.Name);
+                var settingDefinition = settingDefinitions.First(x =>
+                    string.Equals(x.Name, settingValue.Name, StringComparison.Ordinal)
+                );
                 if (settingDefinition.IsEncrypted)
                 {
                     settingValue.Value = settingEncryptionService.Decrypt(settingDefinition, settingValue.Value);
@@ -83,7 +85,9 @@ public sealed class SettingProvider(
                 }
             }
 
-            settingDefinitions.RemoveAll(x => notNullValues.Any(v => v.Name == x.Name));
+            settingDefinitions.RemoveAll(x =>
+                notNullValues.Exists(v => string.Equals(v.Name, x.Name, StringComparison.Ordinal))
+            );
 
             if (settingDefinitions.Count == 0)
             {

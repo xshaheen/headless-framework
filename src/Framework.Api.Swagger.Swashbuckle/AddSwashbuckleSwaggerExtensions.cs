@@ -145,7 +145,7 @@ public static class AddSwashbuckleSwaggerExtensions
                 {
                     Type = "number",
                     Format = "decimal",
-                    Title = "Money"
+                    Title = "Money",
                 }
         );
         options.MapType<Money?>(
@@ -155,7 +155,7 @@ public static class AddSwashbuckleSwaggerExtensions
                     Type = "number",
                     Format = "decimal",
                     Nullable = true,
-                    Title = "Nullable<Money>"
+                    Title = "Nullable<Money>",
                 }
         );
         options.MapType<Month>(
@@ -164,7 +164,7 @@ public static class AddSwashbuckleSwaggerExtensions
                 {
                     Type = "integer",
                     Format = "int32",
-                    Title = "Month"
+                    Title = "Month",
                 }
         );
         options.MapType<Month?>(
@@ -174,7 +174,7 @@ public static class AddSwashbuckleSwaggerExtensions
                     Type = "integer",
                     Format = "int32",
                     Nullable = true,
-                    Title = "Nullable<Month>"
+                    Title = "Nullable<Month>",
                 }
         );
         options.MapType<AccountId>(() => new OpenApiSchema { Type = "string", Title = "AccountId" });
@@ -205,7 +205,7 @@ public static class AddSwashbuckleSwaggerExtensions
                 Version = apiVersionDescription.ApiVersion.ToString(),
                 Title = AssemblyInformation.Entry.Product,
                 Description = SwaggerInformation.ResponsesDescription,
-                Contact = new OpenApiContact { Name = "Zad Digital", Email = "contact@zad.digital", },
+                Contact = new OpenApiContact { Name = "Zad Digital", Email = "contact@zad.digital" },
                 TermsOfService = new Uri("https://www.zad.digital/terms-of-service"),
             };
 
@@ -241,7 +241,7 @@ public static class AddSwashbuckleSwaggerExtensions
     {
         return new OpenApiSecurityScheme
         {
-            Reference = new OpenApiReference { Id = _ApiKeyDefinitionName, Type = ReferenceType.SecurityScheme, },
+            Reference = new OpenApiReference { Id = _ApiKeyDefinitionName, Type = ReferenceType.SecurityScheme },
         };
     }
 
@@ -273,7 +273,7 @@ public static class AddSwashbuckleSwaggerExtensions
     {
         return new()
         {
-            Reference = new OpenApiReference { Id = _BearerDefinitionName, Type = ReferenceType.SecurityScheme, },
+            Reference = new OpenApiReference { Id = _BearerDefinitionName, Type = ReferenceType.SecurityScheme },
         };
     }
 

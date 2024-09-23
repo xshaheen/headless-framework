@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 namespace Framework.Kernel.BuildingBlocks.Extensions.System;
@@ -11,7 +11,9 @@ public static partial class StringBuilderExtensions
         ArgumentNullException.ThrowIfNull(stringBuilder);
 
         if (stringBuilder.Length == 0)
+        {
             return false;
+        }
 
         return stringBuilder[0] == prefix;
     }
@@ -23,12 +25,16 @@ public static partial class StringBuilderExtensions
         ArgumentNullException.ThrowIfNull(prefix);
 
         if (stringBuilder.Length < prefix.Length)
+        {
             return false;
+        }
 
         for (var i = 0; i < prefix.Length; i++)
         {
             if (stringBuilder[i] != prefix[i])
+            {
                 return false;
+            }
         }
 
         return true;
@@ -40,7 +46,9 @@ public static partial class StringBuilderExtensions
         ArgumentNullException.ThrowIfNull(stringBuilder);
 
         if (stringBuilder.Length == 0)
+        {
             return false;
+        }
 
         return stringBuilder[^1] == suffix;
     }
@@ -52,12 +60,16 @@ public static partial class StringBuilderExtensions
         ArgumentNullException.ThrowIfNull(suffix);
 
         if (stringBuilder.Length < suffix.Length)
+        {
             return false;
+        }
 
         for (var index = 0; index < suffix.Length; index++)
         {
             if (stringBuilder[stringBuilder.Length - 1 - index] != suffix[suffix.Length - 1 - index])
+            {
                 return false;
+            }
         }
 
         return true;
@@ -70,7 +82,9 @@ public static partial class StringBuilderExtensions
         for (var i = 0; i < stringBuilder.Length; i++)
         {
             if (stringBuilder[i] == trimChar)
+            {
                 continue;
+            }
 
             if (i > 0)
             {
@@ -88,7 +102,9 @@ public static partial class StringBuilderExtensions
         for (var i = stringBuilder.Length - 1; i >= 0; i--)
         {
             if (stringBuilder[i] == trimChar)
+            {
                 continue;
+            }
 
             if (i != stringBuilder.Length - 1)
             {
@@ -115,7 +131,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, byte? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -128,7 +146,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, sbyte? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -141,7 +161,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, short? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -154,7 +176,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, ushort? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -167,7 +191,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, int? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -180,7 +206,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, uint? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -193,7 +221,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, long? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -206,7 +236,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, ulong? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -220,7 +252,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, Half? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -234,7 +268,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, float? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -247,7 +283,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, double? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -260,7 +298,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, decimal? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.GetValueOrDefault().ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -268,17 +308,20 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, FormattableString? value)
     {
         if (value is not null)
+        {
             return sb.Append(value.ToString(CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
 
-    [SuppressMessage("Performance", "MA0028:Optimize StringBuilder usage", Justification = "Performance")]
     public static StringBuilder AppendInvariant<T>(this StringBuilder sb, T? value)
         where T : IFormattable
     {
         if (value is not null)
+        {
             return sb.Append(value.ToString(format: null, CultureInfo.InvariantCulture));
+        }
 
         return sb;
     }
@@ -286,7 +329,9 @@ public static partial class StringBuilderExtensions
     public static StringBuilder AppendInvariant(this StringBuilder sb, object? value)
     {
         if (value is not null)
+        {
             return sb.AppendFormat(CultureInfo.InvariantCulture, "{0}", value);
+        }
 
         return sb;
     }

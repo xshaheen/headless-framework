@@ -69,7 +69,7 @@ internal static class PrimitiveUnderlyingTypeExtensions
             "System.TimeOnly" => PrimitiveUnderlyingType.TimeOnly,
             "System.TimeSpan" => PrimitiveUnderlyingType.TimeSpan,
             "System.DateTimeOffset" => PrimitiveUnderlyingType.DateTimeOffset,
-            _ => PrimitiveUnderlyingType.Other
+            _ => PrimitiveUnderlyingType.Other,
         };
     }
 
@@ -92,7 +92,7 @@ internal static class PrimitiveUnderlyingTypeExtensions
             PrimitiveUnderlyingType.Double => true,
             PrimitiveUnderlyingType.Single => true,
 
-            _ => false
+            _ => false,
         };
     }
 
@@ -109,7 +109,7 @@ internal static class PrimitiveUnderlyingTypeExtensions
             PrimitiveUnderlyingType.DateTimeOffset => true,
             PrimitiveUnderlyingType.TimeSpan => true,
 
-            _ => false
+            _ => false,
         };
     }
 
@@ -124,7 +124,7 @@ internal static class PrimitiveUnderlyingTypeExtensions
             PrimitiveUnderlyingType.Double => true,
             PrimitiveUnderlyingType.Single => true,
 
-            _ => false
+            _ => false,
         };
     }
 
@@ -140,7 +140,7 @@ internal static class PrimitiveUnderlyingTypeExtensions
             PrimitiveUnderlyingType.Int16 => true,
             PrimitiveUnderlyingType.UInt16 => true,
 
-            _ => false
+            _ => false,
         };
     }
 
@@ -173,7 +173,7 @@ internal static class PrimitiveUnderlyingTypeExtensions
             PrimitiveUnderlyingType.TimeOnly => new DateTime(1, 1, 1, 0, 0, 0),
             PrimitiveUnderlyingType.DateTimeOffset => default(DateTimeOffset),
             PrimitiveUnderlyingType.TimeSpan => default(TimeSpan),
-            _ => new DummyValueObject()
+            _ => new DummyValueObject(),
         };
     }
 

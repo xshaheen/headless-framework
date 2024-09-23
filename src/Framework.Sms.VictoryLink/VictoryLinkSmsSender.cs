@@ -1,15 +1,19 @@
-﻿using System.Net.Http.Json;
+using System.Net.Http.Json;
 using Framework.Sms.VictoryLink.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.VictoryLink;
 
-public sealed class VictoryLinkSmsSender : ISmsSender
+public sealed class VictoryLinkSmsSender(
+    HttpClient httpClient,
+    IOptions<VictoryLinkSettings> options,
+    ILogger<VictoryLinkSmsSender> logger
+) : ISmsSender
 {
-    private readonly HttpClient _httpClient;
-    private readonly ILogger<VictoryLinkSmsSender> _logger;
-    private readonly VictoryLinkSettings _settings;
+    private readonly HttpClient _httpClient = httpClient;
+    private readonly ILogger<VictoryLinkSmsSender> _logger = logger;
+    private readonly VictoryLinkSettings _settings = options.Value;
 
     private readonly Uri _uri =
         new("https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS");
@@ -28,17 +32,6 @@ public sealed class VictoryLinkSmsSender : ISmsSender
             { "-100", "Other error" },
         };
 
-    public VictoryLinkSmsSender(
-        HttpClient httpClient,
-        IOptions<VictoryLinkSettings> options,
-        ILogger<VictoryLinkSmsSender> logger
-    )
-    {
-        _httpClient = httpClient;
-        _logger = logger;
-        _settings = options.Value;
-    }
-
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
         CancellationToken token = default
@@ -52,7 +45,7 @@ public sealed class VictoryLinkSmsSender : ISmsSender
             SmsLang = request.Text.IsRtlText() ? "a" : "e",
             SmsSender = _settings.Sender,
             SmsReceiver = request.Destination.Number,
-            SmsId = request.MessageId ?? Guid.NewGuid().ToString()
+            SmsId = request.MessageId ?? Guid.NewGuid().ToString(),
         };
 
         var response = await _httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);

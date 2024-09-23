@@ -1,7 +1,6 @@
-﻿using Primitives;
+using Primitives;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable CA1036 // Override methods on comparable types
 namespace Framework.Kernel.Primitives;
 
 /// <summary>User identifier.</summary>

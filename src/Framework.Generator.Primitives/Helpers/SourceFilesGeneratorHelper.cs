@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
 using Microsoft.CodeAnalysis;
@@ -363,7 +363,7 @@ internal static class SourceFilesGeneratorHelper
             $"Helper class providing methods to configure EntityFrameworkCore ValueConverters for Primitive types of {assemblyName}"
         );
 
-        builder.AppendClass(false, "public static", _ValueConverterExtensionsClassName);
+        builder.AppendClass(isRecord: false, "public static", _ValueConverterExtensionsClassName);
 
         builder.AppendSummary(
             "Adds EntityFrameworkCore ValueConverters for specific custom types to ensure proper mapping to EFCore ORM."
@@ -399,9 +399,9 @@ internal static class SourceFilesGeneratorHelper
 
     /// <summary>Processes the generator data and generates code for a specified class.</summary>
     /// <param name="data">The GeneratorData for the class.</param>
+    /// <param name="context">The SourceProductionContext for reporting diagnostics.</param>
     /// <param name="ctorCode">The constructor code for the class.</param>
     /// <param name="options">The PrimitiveGlobalOptions for the generator.</param>
-    /// <param name="context">The SourceProductionContext for reporting diagnostics.</param>
     internal static void AddPrimateImplementation(
         this SourceProductionContext context,
         GeneratorData data,
@@ -424,7 +424,7 @@ internal static class SourceFilesGeneratorHelper
             "System.Numerics",
             "System.Diagnostics",
             "System.Runtime.CompilerServices",
-            "Primitives"
+            "Primitives",
         };
 
         if (data.ParentSymbols.Count > 0)
@@ -479,7 +479,12 @@ internal static class SourceFilesGeneratorHelper
 
         if (!data.TypeSymbol.IsValueType)
         {
-            builder.AppendClass(false, modifiers, data.ClassName, createInheritedInterfaces(data, data.ClassName));
+            builder.AppendClass(
+                isRecord: false,
+                modifiers,
+                data.ClassName,
+                createInheritedInterfaces(data, data.ClassName)
+            );
         }
         else
         {
@@ -781,8 +786,8 @@ internal static class SourceFilesGeneratorHelper
     }
 
     /// <summary>Generates code for a TypeConverter for the specified type.</summary>
-    /// <param name="data">The generator data containing type information.</param>
     /// <param name="context">The source production context.</param>
+    /// <param name="data">The generator data containing type information.</param>
     internal static void AddTypeConverter(this SourceProductionContext context, GeneratorData data)
     {
         var friendlyName = data.UnderlyingType.ToString();
@@ -851,8 +856,8 @@ internal static class SourceFilesGeneratorHelper
     }
 
     /// <summary>Processes the Entity Framework value converter for the specified generator data and source production context.</summary>
-    /// <param name="data">The generator data.</param>
     /// <param name="context">The source production context.</param>
+    /// <param name="data">The generator data.</param>
     internal static void AddEntityFrameworkValueConverter(this SourceProductionContext context, GeneratorData data)
     {
         var builder = new SourceCodeBuilder();
@@ -875,7 +880,7 @@ internal static class SourceFilesGeneratorHelper
         builder.AppendSummary($"ValueConverter for <see cref = \"{data.ClassName}\"/>");
 
         builder.AppendClass(
-            false,
+            isRecord: false,
             "public sealed",
             converterName,
             $"ValueConverter<{data.ClassName}, {data.PrimitiveTypeFriendlyName}>"
@@ -895,8 +900,8 @@ internal static class SourceFilesGeneratorHelper
     }
 
     /// <summary>Generates code for a JsonConverter for the specified type.</summary>
-    /// <param name="data">The generator data containing type information.</param>
     /// <param name="context">The source production context.</param>
+    /// <param name="data">The generator data containing type information.</param>
     internal static void AddJsonConverter(this SourceProductionContext context, GeneratorData data)
     {
         var builder = new SourceCodeBuilder();
@@ -911,7 +916,7 @@ internal static class SourceFilesGeneratorHelper
                 "System.Text.Json.Serialization",
                 "System.Globalization",
                 "System.Text.Json.Serialization.Metadata",
-                "Primitives"
+                "Primitives",
             ]
         );
 
@@ -922,7 +927,7 @@ internal static class SourceFilesGeneratorHelper
         builder.AppendSummary($"JsonConverter for <see cref = \"{data.ClassName}\"/>");
 
         builder.AppendClass(
-            false,
+            isRecord: false,
             "public sealed",
             data.ClassName + "JsonConverter",
             $"JsonConverter<{data.ClassName}>"

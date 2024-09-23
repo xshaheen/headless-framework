@@ -98,7 +98,7 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
             isAvailableToHost
         )
         {
-            Parent = this
+            Parent = this,
         };
 
         _children.Add(feature);

@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Framework.Kernel.Checks;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.Reflection;
@@ -22,6 +22,6 @@ public sealed record AssemblyInformation(
             Description: assembly.GetAssemblyDescription(),
             Company: assembly.GetAssemblyCompany(),
             Version: assembly.GetAssemblyVersion(),
-            CommitNumber: assembly.GetInformationalVersion()?.Split("+", StringSplitOptions.RemoveEmptyEntries).Last()
+            CommitNumber: assembly.GetInformationalVersion()?.Split("+", StringSplitOptions.RemoveEmptyEntries)[^1]
         ) { }
 }

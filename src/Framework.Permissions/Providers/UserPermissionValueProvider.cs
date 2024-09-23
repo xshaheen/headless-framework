@@ -16,11 +16,10 @@ public sealed class UserPermissionValueProvider(IPermissionStore store) : Permis
     {
         var userId = context.Principal?.GetUserId();
 
-        return userId is null
-            ? PermissionGrantResult.Undefined
+        return userId is null ? PermissionGrantResult.Undefined
             : await PermissionStore.IsGrantedAsync(context.Permission.Name, Name, userId)
                 ? PermissionGrantResult.Granted
-                : PermissionGrantResult.Undefined;
+            : PermissionGrantResult.Undefined;
     }
 
     public override async Task<MultiplePermissionGrantResult> GetResultAsync(PermissionValuesCheckContext context)

@@ -89,5 +89,5 @@ internal sealed record FormatStringToken(string Text, FormatStringTokenType Type
 internal enum FormatStringTokenType
 {
     ConstantText,
-    DynamicValue
+    DynamicValue,
 }

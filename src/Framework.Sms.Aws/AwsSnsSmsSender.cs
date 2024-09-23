@@ -1,26 +1,19 @@
-﻿using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.Aws;
 
-public sealed class AwsSnsSmsSender : ISmsSender
+public sealed class AwsSnsSmsSender(
+    IAmazonSimpleNotificationService client,
+    IOptions<AwsSnsSmsSettings> options,
+    ILogger<AwsSnsSmsSender> logger
+) : ISmsSender
 {
-    private readonly IAmazonSimpleNotificationService _client;
-    private readonly AwsSnsSmsSettings _settings;
-    private readonly ILogger<AwsSnsSmsSender> _logger;
-
-    public AwsSnsSmsSender(
-        IAmazonSimpleNotificationService client,
-        IOptions<AwsSnsSmsSettings> options,
-        ILogger<AwsSnsSmsSender> logger
-    )
-    {
-        _client = client;
-        _settings = options.Value;
-        _logger = logger;
-    }
+    private readonly IAmazonSimpleNotificationService _client = client;
+    private readonly AwsSnsSmsSettings _settings = options.Value;
+    private readonly ILogger<AwsSnsSmsSender> _logger = logger;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -40,14 +33,14 @@ public sealed class AwsSnsSmsSender : ISmsSender
             {
                 "AWS.SNS.SMS.SMSType",
                 new() { StringValue = "Transactional", DataType = "String" }
-            }
+            },
         };
 
         var publishRequest = new PublishRequest
         {
             PhoneNumber = request.Destination.ToString(),
             Message = request.Text,
-            MessageAttributes = attributes
+            MessageAttributes = attributes,
         };
 
         try

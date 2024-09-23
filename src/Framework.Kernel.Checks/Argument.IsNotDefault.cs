@@ -94,8 +94,8 @@ public static partial class Argument
     )
         where T : struct
     {
-        IsNotNull(argument, paramName);
-        IsNotDefault(argument, paramName);
+        IsNotNull(argument, message, paramName);
+        IsNotDefault(argument, message, paramName);
 
         return argument;
     }

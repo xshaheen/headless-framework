@@ -202,7 +202,7 @@ public sealed partial class AzureBlobStorage : IBlobStorage
         var (oldBucket, _, oldBlobUrl) = _BuildUrls(blobName, blobContainer);
         var (newBucket, _, newBlobUrl) = _BuildUrls(newBlobName, newBlobContainer);
 
-        if (oldBucket == newBucket)
+        if (string.Equals(oldBucket, newBucket, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Cannot copy file to the same bucket.");
         }
@@ -318,11 +318,11 @@ public sealed partial class AzureBlobStorage : IBlobStorage
 
         var containerUrl = Url.Combine(_accountUrl, containers[0]);
         var client = _GetContainerClient(containerUrl);
-        var pattern = string.Join("/", containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
+        var pattern = string.Join('/', containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
         var criteria = _GetRequestCriteria(pattern);
 
         var result = new PagedFileListResult(async _ =>
-            await _GetFiles(client, criteria, pageSize, null, cancellationToken).AnyContext()
+            await _GetFiles(client, criteria, pageSize, previousNextPageResult: null, cancellationToken).AnyContext()
         );
 
         await result.NextPageAsync().AnyContext();
@@ -384,7 +384,7 @@ public sealed partial class AzureBlobStorage : IBlobStorage
             foreach (var blobItem in page.Values)
             {
                 // Check if the blob name matches the pattern.
-                if (criteria.Pattern is not null && !criteria.Pattern.IsMatch(blobItem.Name))
+                if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
                 {
                     _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
 

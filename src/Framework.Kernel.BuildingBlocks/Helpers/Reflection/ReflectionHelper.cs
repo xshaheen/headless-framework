@@ -108,7 +108,9 @@ public static class ReflectionHelper
         ArgumentNullException.ThrowIfNull(type);
 
         if (!type.IsEnum)
+        {
             return false;
+        }
 
         return type.IsDefined(typeof(FlagsAttribute), inherit: true);
     }

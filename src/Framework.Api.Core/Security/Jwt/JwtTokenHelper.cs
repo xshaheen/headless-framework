@@ -11,6 +11,6 @@ public static class JwtTokenHelper
         JsonWebTokenHandler.DefaultMapInboundClaims = false;
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
-        return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false, };
+        return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
     }
 }

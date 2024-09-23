@@ -1,4 +1,4 @@
-﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Primitives.Generator.Extensions;
 using Primitives.Generator.Helpers;
 using Primitives.Generator.Models;
@@ -10,9 +10,9 @@ internal static class Executor
 {
     /// <summary>Executes the generation of primitives based on the provided parameters.</summary>
     /// <param name="typesToGenerate">The list of primitives to generate.</param>
+    /// <param name="context">The source production context.</param>
     /// <param name="assemblyName">The name of the assembly.</param>
     /// <param name="globalOptions">The global options for primitive generation.</param>
-    /// <param name="context">The source production context.</param>
     internal static void Execute(
         in SourceProductionContext context,
         in ImmutableArray<INamedTypeSymbol?> typesToGenerate,
@@ -172,7 +172,7 @@ internal static class Executor
             Namespace = typeSymbol.ContainingNamespace.ToDisplayString(),
             GenerateImplicitOperators = true,
             ParentSymbols = parentSymbols,
-            GenerateConvertibles = underlyingType != PrimitiveUnderlyingType.Guid
+            GenerateConvertibles = underlyingType != PrimitiveUnderlyingType.Guid,
         };
 
         var attributes = typeSymbol.GetAttributes();
@@ -253,7 +253,7 @@ internal static class Executor
         generatorData.GenerateParsable = !typeSymbol.ImplementsInterface("System.IParsable");
 
         generatorData.GenerateComparison =
-            (isNumeric || (underlyingType == PrimitiveUnderlyingType.Char || underlyingType.IsDateOrTime()))
+            (isNumeric || underlyingType == PrimitiveUnderlyingType.Char || underlyingType.IsDateOrTime())
             && !typeSymbol.ImplementsInterface("System.Numerics.IComparisonOperators");
 
         generatorData.GenerateSpanFormattable =
@@ -347,7 +347,7 @@ internal static class Executor
                 Subtraction = attribute.Subtraction && parentAttribute.Subtraction,
                 Multiplication = attribute.Multiplication && parentAttribute.Multiplication,
                 Division = attribute.Division && parentAttribute.Division,
-                Modulus = attribute.Modulus && parentAttribute.Modulus
+                Modulus = attribute.Modulus && parentAttribute.Modulus,
             };
         }
     }
@@ -367,7 +367,7 @@ internal static class Executor
             Subtraction = @default,
             Multiplication = @default,
             Division = @default,
-            Modulus = @default
+            Modulus = @default,
         };
 
         static bool defaultAttributeValue(PrimitiveUnderlyingType underlyingType)
@@ -385,7 +385,7 @@ internal static class Executor
                 PrimitiveUnderlyingType.Decimal => true,
                 PrimitiveUnderlyingType.Double => true,
                 PrimitiveUnderlyingType.Single => true,
-                _ => true
+                _ => true,
             };
         }
     }
@@ -406,7 +406,7 @@ internal static class Executor
                 nameof(SupportedOperationsAttributeData.Multiplication)
             ),
             Division = createAttributeValue(attributeData, nameof(SupportedOperationsAttributeData.Division)),
-            Modulus = createAttributeValue(attributeData, nameof(SupportedOperationsAttributeData.Modulus))
+            Modulus = createAttributeValue(attributeData, nameof(SupportedOperationsAttributeData.Modulus)),
         };
 
         static bool createAttributeValue(AttributeData? parentAttributeData, string property)

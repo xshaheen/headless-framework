@@ -1,6 +1,6 @@
-﻿// ReSharper disable UnusedMember.Global
+// ReSharper disable UnusedMember.Global
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
-
 namespace Primitives;
 
 /// <summary>

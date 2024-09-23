@@ -54,6 +54,7 @@ insert_final_newline = true
 
 # .NET
 [*.{cs, csx, cake, vb, vbx}]
+file_header_template=Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 insert_final_newline = true
 
 # Batch Files
@@ -149,7 +150,7 @@ dotnet_diagnostic.ca1707.severity = warning
 # CA1708: Identifiers should differ by more than case
 dotnet_diagnostic.ca1708.severity = warning
 # CA1711: Identifiers should not have incorrect suffix
-dotnet_diagnostic.ca1711.severity = suggestion
+dotnet_diagnostic.ca1711.severity = none
 # CA1715: Identifiers should have correct prefix
 dotnet_diagnostic.ca1715.severity = warning
 # CA1712: Do not prefix enum values with type name
@@ -249,6 +250,8 @@ dotnet_diagnostic.asyncfixer04.severity = error
 dotnet_diagnostic.vsthrd110.severity = error
 # VSTHRD002: Avoid problematic synchronous waits
 dotnet_diagnostic.vsthrd002.severity = none
+# MA0041: Make property static (deprecated, use CA1822 instead)
+dotnet_diagnostic.ma0041.severity = suggestion
 # MA0045: Do not use blocking call (make method async)
 dotnet_diagnostic.ma0045.severity = suggestion
 # MA0097: A class that implements IComparable<T> or IComparable should override comparison operators. Justification: .NET has CA1036
@@ -340,7 +343,7 @@ dotnet_style_prefer_inferred_tuple_names = true:warning
 dotnet_style_prefer_inferred_anonymous_type_member_names = true:warning
 dotnet_style_prefer_auto_properties = true:warning
 dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
-dotnet_style_prefer_conditional_expression_over_return = true:silent
+dotnet_style_prefer_conditional_expression_over_return = true:none
 dotnet_style_prefer_compound_assignment = true:warning
 dotnet_style_prefer_simplified_interpolation = true:warning
 dotnet_style_prefer_simplified_boolean_expressions = true:warning
@@ -409,8 +412,6 @@ dotnet_style_prefer_collection_expression = true:suggestion
 dotnet_style_object_initializer = true:warning
 dotnet_style_prefer_simplified_boolean_expressions = true:warning
 dotnet_style_collection_initializer = true:warning
-dotnet_style_prefer_conditional_expression_over_return = true:suggestion
-dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
 dotnet_style_prefer_inferred_tuple_names = true:warning
 dotnet_style_explicit_tuple_names = true:warning
 dotnet_diagnostic.ide0033.severity = warning

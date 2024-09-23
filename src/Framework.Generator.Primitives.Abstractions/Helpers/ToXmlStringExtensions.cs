@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Xml;
 
 // ReSharper disable StringLiteralTypo
@@ -60,7 +60,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this byte value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -71,7 +71,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this sbyte value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this short value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -93,7 +93,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this ushort value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -104,7 +104,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this int value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -115,7 +115,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this uint value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -126,7 +126,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this long value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -137,7 +137,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this ulong value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -148,7 +148,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this float value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -159,7 +159,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this double value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>
@@ -170,7 +170,7 @@ public static class ToXmlStringExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string ToXmlString(this decimal value)
     {
-        return value.ToString(null, NumberFormatInfo.InvariantInfo);
+        return value.ToString(format: null, NumberFormatInfo.InvariantInfo);
     }
 
     /// <summary>

@@ -194,11 +194,9 @@ public sealed class StorageThrottlingResourceLockProvider(
 
     private static TimeSpan? _NormalizeAcquireTimeout(TimeSpan? acquireTimeout)
     {
-        return acquireTimeout is null
-            ? TimeSpan.FromSeconds(30)
-            : acquireTimeout == Timeout.InfiniteTimeSpan
-                ? null
-                : Argument.IsPositive(acquireTimeout.Value);
+        return acquireTimeout is null ? TimeSpan.FromSeconds(30)
+            : acquireTimeout == Timeout.InfiniteTimeSpan ? null
+            : Argument.IsPositive(acquireTimeout.Value);
     }
 
     #endregion

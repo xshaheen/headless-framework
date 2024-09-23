@@ -34,12 +34,12 @@ public sealed class AwsSesEmailSender : IEmailSender
         }
 
         using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken);
-        using var memoryStream = new MemoryStream();
+        await using var memoryStream = new MemoryStream();
         await mimeMessage.WriteToAsync(memoryStream, cancellationToken);
 
         var rawRequest = new SendEmailRequest
         {
-            Content = new EmailContent { Raw = new RawMessage { Data = memoryStream, } },
+            Content = new EmailContent { Raw = new RawMessage { Data = memoryStream } },
         };
 
         return await _SendAsync(rawRequest, cancellationToken);

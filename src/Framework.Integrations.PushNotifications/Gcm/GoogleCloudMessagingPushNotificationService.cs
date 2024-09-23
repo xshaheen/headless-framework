@@ -33,9 +33,9 @@ public sealed class GoogleCloudMessagingPushNotificationService(
         {
             Token = clientToken,
             Data = data,
-            Notification = new Notification { Title = title, Body = body, },
-            Android = new AndroidConfig { Priority = Priority.High, },
-            Apns = new ApnsConfig { Aps = new Aps { Badge = 1, }, },
+            Notification = new Notification { Title = title, Body = body },
+            Android = new AndroidConfig { Priority = Priority.High },
+            Apns = new ApnsConfig { Aps = new Aps { Badge = 1 } },
         };
 
         try
@@ -82,9 +82,9 @@ public sealed class GoogleCloudMessagingPushNotificationService(
         var message = new MulticastMessage
         {
             Tokens = clientTokens,
-            Notification = new Notification { Title = title, Body = body, },
-            Android = new AndroidConfig { Priority = Priority.High, },
-            Apns = new ApnsConfig { Aps = new Aps { Badge = 1, }, },
+            Notification = new Notification { Title = title, Body = body },
+            Android = new AndroidConfig { Priority = Priority.High },
+            Apns = new ApnsConfig { Aps = new Aps { Badge = 1 } },
         };
 
         var batchResponse = await FirebaseMessaging.DefaultInstance.SendEachForMulticastAsync(message);

@@ -82,7 +82,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
             ImageResizeMode.Max => ResizeMode.Max,
             ImageResizeMode.Crop => ResizeMode.Crop,
             ImageResizeMode.Pad => ResizeMode.Pad,
-            _ => throw new InvalidOperationException($"Unknown {nameof(ImageResizeMode)}={mode}")
+            _ => throw new InvalidOperationException($"Unknown {nameof(ImageResizeMode)}={mode}"),
         };
     }
 
@@ -96,7 +96,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
             ContentTypes.Images.Bmp => true,
             ContentTypes.Images.Tiff => true,
             ContentTypes.Images.Webp => true,
-            _ => false
+            _ => false,
         };
     }
 

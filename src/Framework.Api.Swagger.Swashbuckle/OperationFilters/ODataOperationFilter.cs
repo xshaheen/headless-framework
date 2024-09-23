@@ -10,7 +10,7 @@ public sealed class ODataOperationFilter : IOperationFilter
 {
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {
-        operation.Parameters ??= new List<OpenApiParameter>();
+        operation.Parameters ??= [];
 
         if (context.ApiDescription.ActionDescriptor is not ControllerActionDescriptor descriptor)
         {

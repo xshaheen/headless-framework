@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 
 namespace Framework.Orm.EntityFramework.DataGrid.Ordering;
 
@@ -125,7 +125,7 @@ public static class OrderExtensions
                     Expression.Call(
                         typeof(Queryable),
                         methodName,
-                        new[] { typeof(T), body.Type },
+                        [typeof(T), body.Type],
                         source.Expression,
                         Expression.Lambda(body, parameterExpression)
                     )

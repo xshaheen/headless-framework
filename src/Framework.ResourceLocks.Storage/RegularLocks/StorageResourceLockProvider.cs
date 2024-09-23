@@ -265,29 +265,23 @@ public sealed class StorageResourceLockProvider(
     /// <summary>Delay a minimum of 50ms and a maximum of 3 seconds</summary>
     private static TimeSpan _DelayAmount(TimeSpan expiration)
     {
-        return expiration < TimeSpan.FromMilliseconds(50)
-            ? TimeSpan.FromMilliseconds(50)
-            : expiration > TimeSpan.FromSeconds(3)
-                ? TimeSpan.FromSeconds(3)
-                : expiration;
+        return expiration < TimeSpan.FromMilliseconds(50) ? TimeSpan.FromMilliseconds(50)
+            : expiration > TimeSpan.FromSeconds(3) ? TimeSpan.FromSeconds(3)
+            : expiration;
     }
 
     private static TimeSpan? _NormalizeTimeUntilExpires(TimeSpan? timeUntilExpires)
     {
-        return timeUntilExpires is null
-            ? TimeSpan.FromMinutes(20)
-            : timeUntilExpires == Timeout.InfiniteTimeSpan
-                ? null
-                : Argument.IsPositive(timeUntilExpires.Value);
+        return timeUntilExpires is null ? TimeSpan.FromMinutes(20)
+            : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
+            : Argument.IsPositive(timeUntilExpires.Value);
     }
 
     private static TimeSpan? _NormalizeAcquireTimeout(TimeSpan? acquireTimeout)
     {
-        return acquireTimeout is null
-            ? TimeSpan.FromSeconds(30)
-            : acquireTimeout == Timeout.InfiniteTimeSpan
-                ? null
-                : Argument.IsPositive(acquireTimeout.Value);
+        return acquireTimeout is null ? TimeSpan.FromSeconds(30)
+            : acquireTimeout == Timeout.InfiniteTimeSpan ? null
+            : Argument.IsPositive(acquireTimeout.Value);
     }
 
     private sealed class ResetEventWithRefCount

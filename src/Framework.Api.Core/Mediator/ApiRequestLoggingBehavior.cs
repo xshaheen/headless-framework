@@ -32,7 +32,7 @@ public sealed class ApiRequestLoggingBehavior<TMessage, TResponse>(
 
     private static void _LogMediatorMessage(ILogger logger, string? userId, string messageName, object message)
     {
-        _Log(logger, userId, messageName, message, null);
+        _Log(logger, userId, messageName, message, arg5: null);
     }
 
     #endregion

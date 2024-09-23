@@ -37,11 +37,9 @@ public static class TypeExtensions
     [MustUseReturnValue]
     public static Type MakeNullable(this Type type, bool nullable = true)
     {
-        return type.IsNullableType() == nullable
-            ? type
-            : nullable
-                ? typeof(Nullable<>).MakeGenericType(type)
-                : type.UnwrapNullableType();
+        return type.IsNullableType() == nullable ? type
+            : nullable ? typeof(Nullable<>).MakeGenericType(type)
+            : type.UnwrapNullableType();
     }
 
     [MustUseReturnValue]
@@ -178,7 +176,6 @@ public static class TypeExtensions
     #endregion
 
     #region Assignable
-
 
     /// <summary>
     /// Determines whether an instance of this type can be assigned to

@@ -1,4 +1,4 @@
-﻿using Framework.Kernel.Checks;
+using Framework.Kernel.Checks;
 
 namespace Framework.Permissions.Permissions.Definitions;
 
@@ -65,14 +65,11 @@ public sealed class PermissionDefinitionContext(IServiceProvider serviceProvider
     {
         var group = GetGroupOrNull(name);
 
-        if (group is null)
-        {
-            throw new InvalidOperationException(
+        return group is null
+            ? throw new InvalidOperationException(
                 $"Could not find a permission definition group with the given name: {name}"
-            );
-        }
-
-        return group;
+            )
+            : group;
     }
 
     public PermissionGroupDefinition? GetGroupOrNull(string name)

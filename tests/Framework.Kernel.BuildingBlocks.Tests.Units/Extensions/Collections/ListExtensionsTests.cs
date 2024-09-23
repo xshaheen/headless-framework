@@ -1,4 +1,4 @@
-﻿namespace Tests.Extensions.Collections;
+namespace Tests.Extensions.Collections;
 
 public sealed class ListExtensionsTests
 {
@@ -8,12 +8,12 @@ public sealed class ListExtensionsTests
         var list = Enumerable.Range(1, 3).ToList();
         list.InsertRange(1, [7, 8, 9]);
 
-        list[0].Should().Be(1);
-        list[1].Should().Be(7);
-        list[2].Should().Be(8);
-        list[3].Should().Be(9);
-        list[4].Should().Be(2);
-        list[5].Should().Be(3);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 7);
+        list.Should().HaveElementAt(2, 8);
+        list.Should().HaveElementAt(3, 9);
+        list.Should().HaveElementAt(4, 2);
+        list.Should().HaveElementAt(5, 3);
     }
 
     [Fact]
@@ -23,20 +23,20 @@ public sealed class ListExtensionsTests
 
         list.InsertAfter(2, 42);
 
-        list.Count.Should().Be(4);
-        list[0].Should().Be(1);
-        list[1].Should().Be(2);
-        list[2].Should().Be(42);
-        list[3].Should().Be(3);
+        list.Should().HaveCount(4);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 2);
+        list.Should().HaveElementAt(2, 42);
+        list.Should().HaveElementAt(3, 3);
 
         list.InsertAfter(3, 43);
 
-        list.Count.Should().Be(5);
-        list[0].Should().Be(1);
-        list[1].Should().Be(2);
-        list[2].Should().Be(42);
-        list[3].Should().Be(3);
-        list[4].Should().Be(43);
+        list.Should().HaveCount(5);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 2);
+        list.Should().HaveElementAt(2, 42);
+        list.Should().HaveElementAt(3, 3);
+        list.Should().HaveElementAt(4, 43);
     }
 
     [Fact]
@@ -46,20 +46,20 @@ public sealed class ListExtensionsTests
 
         list.InsertAfter(i => i == 2, 42);
 
-        list.Count.Should().Be(4);
-        list[0].Should().Be(1);
-        list[1].Should().Be(2);
-        list[2].Should().Be(42);
-        list[3].Should().Be(3);
+        list.Should().HaveCount(4);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 2);
+        list.Should().HaveElementAt(2, 42);
+        list.Should().HaveElementAt(3, 3);
 
         list.InsertAfter(i => i == 3, 43);
 
-        list.Count.Should().Be(5);
-        list[0].Should().Be(1);
-        list[1].Should().Be(2);
-        list[2].Should().Be(42);
-        list[3].Should().Be(3);
-        list[4].Should().Be(43);
+        list.Should().HaveCount(5);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 2);
+        list.Should().HaveElementAt(2, 42);
+        list.Should().HaveElementAt(3, 3);
+        list.Should().HaveElementAt(4, 43);
     }
 
     [Fact]
@@ -69,11 +69,11 @@ public sealed class ListExtensionsTests
 
         list.InsertAfter(i => i == 999, 42);
 
-        list.Count.Should().Be(4);
-        list[0].Should().Be(42);
-        list[1].Should().Be(1);
-        list[2].Should().Be(2);
-        list[3].Should().Be(3);
+        list.Should().HaveCount(4);
+        list.Should().HaveElementAt(0, 42);
+        list.Should().HaveElementAt(1, 1);
+        list.Should().HaveElementAt(2, 2);
+        list.Should().HaveElementAt(3, 3);
     }
 
     [Fact]
@@ -83,20 +83,20 @@ public sealed class ListExtensionsTests
 
         list.InsertBefore(2, 42);
 
-        list.Count.Should().Be(4);
-        list[0].Should().Be(1);
-        list[1].Should().Be(42);
-        list[2].Should().Be(2);
-        list[3].Should().Be(3);
+        list.Should().HaveCount(4);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 42);
+        list.Should().HaveElementAt(2, 2);
+        list.Should().HaveElementAt(3, 3);
 
         list.InsertBefore(1, 43);
 
-        list.Count.Should().Be(5);
-        list[0].Should().Be(43);
-        list[1].Should().Be(1);
-        list[2].Should().Be(42);
-        list[3].Should().Be(2);
-        list[4].Should().Be(3);
+        list.Should().HaveCount(5);
+        list.Should().HaveElementAt(0, 43);
+        list.Should().HaveElementAt(1, 1);
+        list.Should().HaveElementAt(2, 42);
+        list.Should().HaveElementAt(3, 2);
+        list.Should().HaveElementAt(4, 3);
     }
 
     [Fact]
@@ -106,20 +106,20 @@ public sealed class ListExtensionsTests
 
         list.InsertBefore(i => i == 2, 42);
 
-        list.Count.Should().Be(4);
-        list[0].Should().Be(1);
-        list[1].Should().Be(42);
-        list[2].Should().Be(2);
-        list[3].Should().Be(3);
+        list.Should().HaveCount(4);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 42);
+        list.Should().HaveElementAt(2, 2);
+        list.Should().HaveElementAt(3, 3);
 
         list.InsertBefore(i => i == 1, 43);
 
-        list.Count.Should().Be(5);
-        list[0].Should().Be(43);
-        list[1].Should().Be(1);
-        list[2].Should().Be(42);
-        list[3].Should().Be(2);
-        list[4].Should().Be(3);
+        list.Should().HaveCount(5);
+        list.Should().HaveElementAt(0, 43);
+        list.Should().HaveElementAt(1, 1);
+        list.Should().HaveElementAt(2, 42);
+        list.Should().HaveElementAt(3, 2);
+        list.Should().HaveElementAt(4, 3);
     }
 
     [Fact]
@@ -129,9 +129,9 @@ public sealed class ListExtensionsTests
 
         list.ReplaceWhile(i => i >= 2, 42);
 
-        list[0].Should().Be(1);
-        list[1].Should().Be(42);
-        list[2].Should().Be(42);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 42);
+        list.Should().HaveElementAt(2, 42);
     }
 
     [Fact]
@@ -141,9 +141,9 @@ public sealed class ListExtensionsTests
 
         list.ReplaceWhile(i => i >= 2, i => i + 1);
 
-        list[0].Should().Be(1);
-        list[1].Should().Be(3);
-        list[2].Should().Be(4);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 3);
+        list.Should().HaveElementAt(2, 4);
     }
 
     [Fact]
@@ -153,9 +153,9 @@ public sealed class ListExtensionsTests
 
         list.ReplaceFirst(i => i >= 2, 42);
 
-        list[0].Should().Be(1);
-        list[1].Should().Be(42);
-        list[2].Should().Be(3);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 42);
+        list.Should().HaveElementAt(2, 3);
     }
 
     [Fact]
@@ -165,9 +165,9 @@ public sealed class ListExtensionsTests
 
         list.ReplaceFirst(i => i >= 2, i => i + 1);
 
-        list[0].Should().Be(1);
-        list[1].Should().Be(3);
-        list[2].Should().Be(3);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 3);
+        list.Should().HaveElementAt(2, 3);
     }
 
     [Fact]
@@ -177,8 +177,8 @@ public sealed class ListExtensionsTests
 
         list.ReplaceFirst(2, 42);
 
-        list[0].Should().Be(1);
-        list[1].Should().Be(42);
-        list[2].Should().Be(3);
+        list.Should().HaveElementAt(0, 1);
+        list.Should().HaveElementAt(1, 42);
+        list.Should().HaveElementAt(2, 3);
     }
 }

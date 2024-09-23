@@ -37,7 +37,7 @@ public static class AddPushNotificationsExtensions
     {
         if (FirebaseApp.DefaultInstance is null)
         {
-            FirebaseApp.Create(new AppOptions { Credential = GoogleCredential.FromJson(json), });
+            FirebaseApp.Create(new AppOptions { Credential = GoogleCredential.FromJson(json) });
         }
     }
 }

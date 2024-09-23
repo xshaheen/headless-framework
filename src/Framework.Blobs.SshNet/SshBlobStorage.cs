@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Checks;
@@ -525,7 +525,7 @@ public sealed class SshBlobStorage : IBlobStorage
             }
 
             // If prefix (current directory) is empty, use current working directory instead of a rooted path.
-            var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : string.Concat(pathPrefix, "/", file.Name);
+            var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : $"{pathPrefix}/{file.Name}";
 
             if (file.IsDirectory)
             {
@@ -545,7 +545,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 continue;
             }
 
-            if (pattern is not null && !pattern.IsMatch(path))
+            if (pattern?.IsMatch(path) == false)
             {
                 _logger.LogTrace("Skipping {Path}: Doesn't match pattern", path);
 
@@ -656,7 +656,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     private static string _BuildContainerPath(string[] container)
     {
-        return string.Join("/", container);
+        return string.Join('/', container);
     }
 
     [return: NotNullIfNotNull(nameof(path))]
@@ -701,7 +701,7 @@ public sealed class SshBlobStorage : IBlobStorage
         }
 
         var userParts = uri.UserInfo.Split(':', StringSplitOptions.RemoveEmptyEntries);
-        var username = Uri.UnescapeDataString(userParts.First());
+        var username = Uri.UnescapeDataString(userParts[0]);
         var password = Uri.UnescapeDataString(userParts.Length > 1 ? userParts[1] : string.Empty);
         var port = uri.Port > 0 ? uri.Port : 22;
 
@@ -741,16 +741,12 @@ public sealed class SshBlobStorage : IBlobStorage
         }
 
         var proxyParts = proxyUri.UserInfo.Split(':', StringSplitOptions.RemoveEmptyEntries);
-        var proxyUsername = proxyParts.First();
+        var proxyUsername = proxyParts[0];
         var proxyPassword = proxyParts.Length > 1 ? proxyParts[1] : null;
 
         var proxyType = settings.ProxyType;
 
-        if (
-            proxyType is ProxyTypes.None
-            && proxyUri.Scheme is not null
-            && proxyUri.Scheme.StartsWith("http", StringComparison.Ordinal)
-        )
+        if (proxyType is ProxyTypes.None && proxyUri.Scheme?.StartsWith("http", StringComparison.Ordinal) == true)
         {
             proxyType = ProxyTypes.Http;
         }

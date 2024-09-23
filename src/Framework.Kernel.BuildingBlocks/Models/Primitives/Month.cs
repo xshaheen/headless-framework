@@ -1,7 +1,6 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Primitives;
 
-#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Primitives;
 

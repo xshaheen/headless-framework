@@ -171,7 +171,7 @@ public enum ProcessObservedOutputType
 {
     StandardOutput,
     StandardError,
-    ExitCode
+    ExitCode,
 }
 
 #endregion

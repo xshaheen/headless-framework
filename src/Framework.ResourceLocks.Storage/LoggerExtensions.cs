@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Microsoft.Extensions.Logging;
 
@@ -66,7 +66,7 @@ internal static partial class LoggerExtensions
         EventId = 8,
         EventName = "ErrorAcquiringLock",
         Level = LogLevel.Trace,
-        Message = "Error acquiring lock {Resource} ({LockId})"
+        Message = "Error acquiring lock {Resource} ({LockId}) after {Duration:g}"
     )]
     public static partial void LogErrorAcquiringLock(
         this ILogger logger,
@@ -115,7 +115,7 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 13,
-        EventName = "AcquiredLock",
+        EventName = "LongLockAcquired",
         Level = LogLevel.Warning,
         Message = "Acquired lock {Resource} ({LockId}) after {Duration:g}"
     )]

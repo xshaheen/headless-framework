@@ -34,5 +34,5 @@ public enum PermissionGrantResult
 {
     Undefined,
     Granted,
-    Prohibited
+    Prohibited,
 }

@@ -3,16 +3,9 @@ using Framework.Kernel.BuildingBlocks.Helpers.System;
 
 namespace Tests.Extensions.System;
 
-public sealed class StringExtensionsTests : IDisposable
+public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposable
 {
-    private readonly ITestOutputHelper _output;
-    private readonly IDisposable _cultureScope;
-
-    public StringExtensionsTests(ITestOutputHelper output)
-    {
-        _output = output;
-        _cultureScope = CultureHelper.Use("en-US");
-    }
+    private readonly IDisposable _cultureScope = CultureHelper.Use("en-US");
 
     public void Dispose()
     {
@@ -58,7 +51,7 @@ public sealed class StringExtensionsTests : IDisposable
         var normalized = str.NormalizeLineEndings();
         var lines = normalized.SplitToLines();
 
-        lines.Length.Should().Be(4);
+        lines.Should().HaveCount(4);
     }
 
     [Fact]
@@ -247,8 +240,8 @@ public sealed class StringExtensionsTests : IDisposable
         // act
         var result = value.RemoveAccentCharacters();
 
-        _output.WriteLine($"result   =>{result}");
-        _output.WriteLine($"expected =>{expected}");
+        output.WriteLine($"result   =>{result}");
+        output.WriteLine($"expected =>{expected}");
 
         // assert
         result.Should().Be(expected);

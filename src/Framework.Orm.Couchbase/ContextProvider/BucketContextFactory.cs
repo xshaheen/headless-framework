@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -64,7 +64,7 @@ public static class BucketContextFactory
     }
 
     /// <summary>
-    /// - The code is taken from the Couchbase Linq library and modified to work with our CouchbaseDocumentSet.
+    /// The code is taken from the Couchbase Linq library and modified to work with our CouchbaseDocumentSet.
     ///
     /// Compiles an action which will initialize the CouchbaseBucketContext properties. This use a compiled action
     /// instead of reflection here for speed. This executes once the first time a given type is used,
@@ -81,7 +81,7 @@ public static class BucketContextFactory
 
         var dynMethod = new DynamicMethod("Initialize", null, initializeArgumentTypes)
         {
-            InitLocals = false // Don't need this, minor perf improvement
+            InitLocals = false, // Don't need this, minor perf improvement
         };
 
         // Emit the IL to set each property on the context

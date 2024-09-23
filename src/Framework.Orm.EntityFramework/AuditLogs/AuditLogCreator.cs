@@ -120,25 +120,21 @@ public static class AuditLogCreator
 
                         var changes = collectionEventEntry.Action switch
                         {
-                            "Insert"
-                            or "Delete"
-                                => _GetValues(
-                                    collectionEventEntry,
-                                    allEntries,
-                                    newPrimitiveParent,
-                                    newNavigationParent
-                                ),
-                            "Update"
-                                => _GetChanges(
-                                    collectionEventEntry,
-                                    allEntries,
-                                    newPrimitiveParent,
-                                    newNavigationParent
-                                ),
-                            _
-                                => throw new InvalidOperationException(
-                                    $"Unknown collection event action: {collectionEventEntry.Action}"
-                                ),
+                            "Insert" or "Delete" => _GetValues(
+                                collectionEventEntry,
+                                allEntries,
+                                newPrimitiveParent,
+                                newNavigationParent
+                            ),
+                            "Update" => _GetChanges(
+                                collectionEventEntry,
+                                allEntries,
+                                newPrimitiveParent,
+                                newNavigationParent
+                            ),
+                            _ => throw new InvalidOperationException(
+                                $"Unknown collection event action: {collectionEventEntry.Action}"
+                            ),
                         };
 
                         collectionsAuditLogChanges.AddRange(changes);
@@ -480,7 +476,7 @@ public static class AuditLogCreator
     {
         Primitive,
         Reference,
-        Collection
+        Collection,
     }
 
     #endregion
