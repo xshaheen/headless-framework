@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using FluentValidation.Results;
 using Framework.Api.Core.Abstractions;
 using Framework.Kernel.Primitives;

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Framework.Api.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;

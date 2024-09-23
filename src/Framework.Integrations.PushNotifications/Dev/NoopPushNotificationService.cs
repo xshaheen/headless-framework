@@ -1,4 +1,6 @@
-﻿namespace Framework.Integrations.PushNotifications.Dev;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Integrations.PushNotifications.Dev;
 
 public sealed class NoopPushNotificationService : IPushNotificationService
 {

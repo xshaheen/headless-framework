@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Audit.Core;
 using Audit.Core.Providers;
 using Audit.EntityFramework;

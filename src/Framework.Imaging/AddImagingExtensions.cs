@@ -1,4 +1,6 @@
-﻿using Framework.Imaging.Contracts;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Imaging.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Imaging;

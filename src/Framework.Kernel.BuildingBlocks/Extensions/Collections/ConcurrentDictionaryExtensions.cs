@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Framework.Kernel.Checks;
 
 #pragma warning disable IDE0130
@@ -13,7 +15,8 @@ public static class ConcurrentDictionaryExtensions
     /// <typeparam name="TKey">The type of keys in the <paramref name="dictionary"/>.</typeparam>
     /// <typeparam name="TValue">The type of values in the <paramref name="dictionary"/>.</typeparam>
     /// <returns>The value associated with the specified key, if the key is found; otherwise, the default value for the <typeparamref name="TValue"/> type.</returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static TValue? GetOrDefault<TKey, TValue>(this ConcurrentDictionary<TKey, TValue> dictionary, TKey key)
         where TKey : notnull
     {

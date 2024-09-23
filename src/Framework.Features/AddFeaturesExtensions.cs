@@ -1,4 +1,6 @@
-﻿using Framework.Features.Checkers;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Features.Checkers;
 using Framework.Features.Definitions;
 using Framework.Features.Filters;
 using Framework.Features.Providers;

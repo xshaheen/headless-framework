@@ -1,4 +1,6 @@
-﻿using FluentValidation;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 

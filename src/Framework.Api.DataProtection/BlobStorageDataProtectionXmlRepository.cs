@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Xml.Linq;
 using Framework.Blobs;
 using Framework.Kernel.BuildingBlocks.Helpers.IO;

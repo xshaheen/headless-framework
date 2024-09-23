@@ -1,4 +1,6 @@
-﻿global using JetBrainsPure = JetBrains.Annotations.PureAttribute;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+global using JetBrainsPure = JetBrains.Annotations.PureAttribute;
 global using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 using Framework.Integrations.Recaptcha.Contracts;
 using Framework.Integrations.Recaptcha.Services;

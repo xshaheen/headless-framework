@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Runtime.CompilerServices;
 using Framework.Kernel.BuildingBlocks;
 
@@ -9,50 +11,58 @@ namespace System;
 [PublicAPI]
 public static class DateTimeOffsetExtensions
 {
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset ToEgyptTimeZone(this DateTimeOffset dateTimeOffset)
     {
         return dateTimeOffset.ToTimezone(TimezoneConstants.EgyptTimeZone);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset ToPalestineTimeZone(this DateTimeOffset dateTimeOffset)
     {
         return dateTimeOffset.ToTimezone(TimezoneConstants.PalestineTimeZone);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset ToSaudiArabiaTimeZone(this DateTimeOffset dateTimeOffset)
     {
         return dateTimeOffset.ToTimezone(TimezoneConstants.SaudiArabiaTimeZone);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static DateTimeOffset ToTimezone(this DateTimeOffset dateTimeOffset, TimeZoneInfo timezone)
     {
         return TimeZoneInfo.ConvertTime(dateTimeOffset, timezone);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset ClearTime(this DateTimeOffset dateTime)
     {
         return new(dateTime.Year, dateTime.Month, dateTime.Day, 0, 0, 0, dateTime.Offset);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset GetStartOfDay(this DateTimeOffset dateTimeOffset, TimeSpan offset)
     {
         return dateTimeOffset.ToOffset(offset).ClearTime();
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset GetEndOfDay(this DateTimeOffset dateTimeOffset, TimeSpan offset)
     {
         return dateTimeOffset.GetStartOfDay(offset).AddDays(1).AddMilliseconds(-1);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset GetStartOfMonth(this DateTimeOffset dateTime, TimeSpan offset)
     {
         var d = dateTime.ToOffset(offset);
@@ -60,7 +70,8 @@ public static class DateTimeOffsetExtensions
         return new DateTimeOffset(d.Year, d.Month, 1, 0, 0, 0, d.Offset);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset GetEndOfMonth(this DateTimeOffset dateTime, TimeSpan offset)
     {
         var d = dateTime.ToOffset(offset);
@@ -70,7 +81,8 @@ public static class DateTimeOffsetExtensions
         return endOfMonthDay.GetEndOfDay(offset);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset GetStartOfYear(this DateTimeOffset dateTime, TimeSpan offset)
     {
         var d = dateTime.ToOffset(offset);
@@ -78,7 +90,8 @@ public static class DateTimeOffsetExtensions
         return new DateTimeOffset(d.Year, 1, 1, 0, 0, 0, d.Offset);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset GetEndOfYear(this DateTimeOffset dateTime, TimeSpan offset)
     {
         var d = dateTime.ToOffset(offset);
@@ -99,7 +112,8 @@ public static class DateTimeOffsetExtensions
     /// a rounded value for ticks — so 10 milliseconds might internally be 9.6 milliseconds. However this information is lost after this method, and
     /// the value would be replaced with 10 milliseconds.
     /// </remarks>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset TruncateToMilliseconds(this DateTimeOffset date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, date.Millisecond, date.Offset);
@@ -112,7 +126,8 @@ public static class DateTimeOffsetExtensions
     /// <returns>
     /// An object that is equivalent to <paramref name="date" /> up to second precision, and empty beyond seconds.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset TruncateToSeconds(this DateTimeOffset date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, date.Second, 0, date.Offset);
@@ -125,7 +140,8 @@ public static class DateTimeOffsetExtensions
     /// <returns>
     /// An object that is equivalent to <paramref name="date" /> up to minute precision, and empty beyond minutes.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset TruncateToMinutes(this DateTimeOffset date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, date.Minute, 0, 0, date.Offset);
@@ -138,7 +154,8 @@ public static class DateTimeOffsetExtensions
     /// <returns>
     /// An object that is equivalent to <paramref name="date" /> up to hour precision, and empty beyond hours.
     /// </returns>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static DateTimeOffset TruncateToHours(this DateTimeOffset date)
     {
         return new(date.Year, date.Month, date.Day, date.Hour, 0, 0, 0, date.Offset);

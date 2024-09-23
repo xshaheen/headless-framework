@@ -1,4 +1,6 @@
-﻿namespace Framework.Orm.Couchbase.Context;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Orm.Couchbase.Context;
 
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Property)]

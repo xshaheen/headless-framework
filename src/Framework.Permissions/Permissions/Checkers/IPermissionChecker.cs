@@ -1,4 +1,6 @@
-﻿using System.Security.Claims;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Security.Claims;
 
 namespace Framework.Permissions.Permissions.Checkers;
 

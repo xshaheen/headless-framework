@@ -1,4 +1,6 @@
-﻿using Framework.Settings.Definitions;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Settings.Definitions;
 using Framework.Settings.Values;
 using Microsoft.Extensions.Configuration;
 

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using FluentValidation;
 
 namespace Framework.Sms.Aws;

@@ -1,4 +1,6 @@
-﻿namespace Framework.Kernel.BuildingBlocks.Models.Primitives;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Kernel.BuildingBlocks.Models.Primitives;
 
 public static class FileConstants
 {

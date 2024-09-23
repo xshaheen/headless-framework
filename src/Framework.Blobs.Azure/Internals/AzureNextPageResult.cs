@@ -1,4 +1,6 @@
-﻿namespace Framework.Blobs.Azure.Internals;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Blobs.Azure.Internals;
 
 public sealed class AzureNextPageResult : INextPageResult
 {

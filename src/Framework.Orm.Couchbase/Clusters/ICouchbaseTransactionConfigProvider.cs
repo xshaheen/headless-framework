@@ -1,4 +1,6 @@
-﻿using Couchbase.Transactions.Config;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Couchbase.Transactions.Config;
 
 namespace Framework.Orm.Couchbase.Clusters;
 

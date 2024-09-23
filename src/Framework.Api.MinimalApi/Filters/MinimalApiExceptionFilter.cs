@@ -1,4 +1,6 @@
-﻿using System.Text.RegularExpressions;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Text.RegularExpressions;
 using FluentValidation;
 using Framework.Api.Core.Abstractions;
 using Framework.Api.Core.Resources;

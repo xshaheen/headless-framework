@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 
@@ -8,7 +10,8 @@ namespace System;
 [PublicAPI]
 public static class EnumExtensions
 {
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string GetDisplayName(this Enum? value)
     {
         if (value is null)
@@ -21,7 +24,8 @@ public static class EnumExtensions
         return attribute is null ? value.ToString() : attribute.Name ?? value.ToString();
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string GetDescription(this Enum? value)
     {
         if (value is null)
@@ -34,7 +38,8 @@ public static class EnumExtensions
         return attribute is null ? value.ToString() : attribute.Description;
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     private static T? _GetFirstAttributeOrDefault<T>(Enum? value)
         where T : Attribute
     {

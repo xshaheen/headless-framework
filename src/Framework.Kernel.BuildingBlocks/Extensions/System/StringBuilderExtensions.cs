@@ -1,11 +1,13 @@
-using System.Diagnostics.CodeAnalysis;
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text;
 
 namespace Framework.Kernel.BuildingBlocks.Extensions.System;
 
 public static partial class StringBuilderExtensions
 {
-    [JetBrainsPure, SystemPure]
+    [JetBrainsPure]
+    [SystemPure]
     public static bool StartsWith(this StringBuilder stringBuilder, char prefix)
     {
         ArgumentNullException.ThrowIfNull(stringBuilder);
@@ -18,7 +20,8 @@ public static partial class StringBuilderExtensions
         return stringBuilder[0] == prefix;
     }
 
-    [JetBrainsPure, SystemPure]
+    [JetBrainsPure]
+    [SystemPure]
     public static bool StartsWith(this StringBuilder stringBuilder, string prefix)
     {
         ArgumentNullException.ThrowIfNull(stringBuilder);
@@ -40,7 +43,8 @@ public static partial class StringBuilderExtensions
         return true;
     }
 
-    [JetBrainsPure, SystemPure]
+    [JetBrainsPure]
+    [SystemPure]
     public static bool EndsWith(this StringBuilder stringBuilder, char suffix)
     {
         ArgumentNullException.ThrowIfNull(stringBuilder);
@@ -53,7 +57,8 @@ public static partial class StringBuilderExtensions
         return stringBuilder[^1] == suffix;
     }
 
-    [JetBrainsPure, SystemPure]
+    [JetBrainsPure]
+    [SystemPure]
     public static bool EndsWith(this StringBuilder stringBuilder, string suffix)
     {
         ArgumentNullException.ThrowIfNull(stringBuilder);

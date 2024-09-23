@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 namespace Primitives.Generator.Models;
 
 /// <summary>Configuration options for controlling code generation of Primitive types.</summary>

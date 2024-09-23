@@ -1,4 +1,6 @@
-﻿namespace Framework.Media.Indexing;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Media.Indexing;
 
 /// <summary>
 /// Service for producing the textual representation of a media file, e.g. the text contained in a PDF document.

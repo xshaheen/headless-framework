@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.BuildingBlocks.Models.Primitives;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Kernel.BuildingBlocks.Models.Primitives;
 using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;

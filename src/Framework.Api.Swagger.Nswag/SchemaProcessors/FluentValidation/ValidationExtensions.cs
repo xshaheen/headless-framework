@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using FluentValidation;
 using FluentValidation.Validators;
 using Framework.Api.Swagger.Nswag.SchemaProcessors.FluentValidation.Models;

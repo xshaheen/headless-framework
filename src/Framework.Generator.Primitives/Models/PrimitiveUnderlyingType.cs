@@ -1,4 +1,6 @@
-﻿namespace Primitives.Generator.Models;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Primitives.Generator.Models;
 
 /// <summary>Enumerates the possible types of Primitive values.</summary>
 internal enum PrimitiveUnderlyingType

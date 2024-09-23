@@ -1,4 +1,6 @@
-﻿using Framework.Permissions.Permissions.Checkers;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Permissions.Permissions.Checkers;
 using Framework.Permissions.Permissions.Values;
 using Framework.Permissions.Testing;
 using Microsoft.AspNetCore.Authorization;

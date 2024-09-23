@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.BuildingBlocks;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Kernel.BuildingBlocks;
 using Framework.Logging.Serilog;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;

@@ -1,4 +1,6 @@
-﻿namespace Framework.Settings.Definitions;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Settings.Definitions;
 
 /// <summary>Used to define a setting definition.</summary>
 public interface ISettingDefinitionProvider

@@ -1,4 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Collections.Concurrent;
 using Couchbase;
 using Couchbase.Transactions;
 using Framework.Kernel.Checks;

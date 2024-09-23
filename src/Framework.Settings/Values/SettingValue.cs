@@ -1,4 +1,6 @@
-﻿namespace Framework.Settings.Values;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Settings.Values;
 
 public sealed record SettingValue(string Name)
 {

@@ -1,4 +1,6 @@
-﻿using System.Collections;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Collections;
 using System.Reflection;
 
 #pragma warning disable IDE0130

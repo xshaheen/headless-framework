@@ -1,4 +1,6 @@
-﻿using System.Data;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Data;
 using Framework.Kernel.Domains;
 using Framework.Orm.EntityFramework.Extensions;
 using Microsoft.EntityFrameworkCore;

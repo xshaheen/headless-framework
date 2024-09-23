@@ -1,4 +1,6 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using Framework.Integrations.Recaptcha.Internals;
 

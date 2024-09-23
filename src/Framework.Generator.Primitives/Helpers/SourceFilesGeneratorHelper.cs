@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Text;
 using System.Xml;
 using System.Xml.Serialization;

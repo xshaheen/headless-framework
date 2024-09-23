@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Foundatio.Messaging;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
 using IFrameworkMessageBus = Framework.Messaging.IMessageBus;

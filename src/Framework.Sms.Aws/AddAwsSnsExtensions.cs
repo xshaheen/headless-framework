@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleNotificationService;
 using Microsoft.Extensions.DependencyInjection;

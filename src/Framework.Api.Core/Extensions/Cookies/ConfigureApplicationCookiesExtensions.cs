@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Framework.Kernel.BuildingBlocks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;

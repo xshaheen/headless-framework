@@ -1,4 +1,6 @@
-﻿// ReSharper disable UnusedMember.Global
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+// ReSharper disable UnusedMember.Global
 // ReSharper disable once CheckNamespace
 
 namespace Primitives;

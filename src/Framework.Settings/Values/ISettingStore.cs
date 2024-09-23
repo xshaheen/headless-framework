@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Framework.Settings.Values;

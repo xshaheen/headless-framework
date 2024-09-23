@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.OData.Query;
 using Microsoft.OpenApi.Models;

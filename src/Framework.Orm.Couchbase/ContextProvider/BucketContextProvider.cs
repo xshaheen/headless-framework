@@ -1,4 +1,6 @@
-﻿using Framework.Orm.Couchbase.Clusters;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Orm.Couchbase.Clusters;
 using Framework.Orm.Couchbase.Context;
 
 namespace Framework.Orm.Couchbase.ContextProvider;

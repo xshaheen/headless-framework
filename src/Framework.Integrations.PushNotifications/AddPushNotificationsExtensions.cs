@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using FirebaseAdmin;
 using Framework.Integrations.PushNotifications.Dev;
 using Framework.Integrations.PushNotifications.Gcm;

@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Framework.Serializer.Json.Converters;

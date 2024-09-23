@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Text.Json;
 using Framework.Integrations.Recaptcha.Contracts;
 using Framework.Integrations.Recaptcha.Internals;
 using Microsoft.Extensions.Logging;
@@ -18,7 +20,8 @@ public interface IReCaptchaSiteVerifyV2
 {
     /// <summary>Validate Recapture token.</summary>
     /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     Task<ReCaptchaSiteVerifyV2Response> Verify(ReCaptchaSiteVerifyRequest request);
 }
 

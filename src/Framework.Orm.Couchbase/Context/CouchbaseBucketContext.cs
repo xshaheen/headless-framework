@@ -1,4 +1,6 @@
-﻿using System.Reflection;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Reflection;
 using Couchbase;
 using Couchbase.Linq;
 using Couchbase.Transactions;

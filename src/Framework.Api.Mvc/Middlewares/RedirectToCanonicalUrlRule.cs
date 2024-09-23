@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Diagnostics.CodeAnalysis;
 using Framework.Api.Mvc.Filters;
 using Framework.Kernel.Checks;

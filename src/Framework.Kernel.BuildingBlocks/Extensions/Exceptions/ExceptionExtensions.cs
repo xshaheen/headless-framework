@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using System.Text;
@@ -26,7 +28,8 @@ public static class ExceptionExtensions
         throw new ConflictException(ex.ExpandExceptionMessage(), ex);
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     public static string ExpandExceptionMessage(this Exception ex)
     {
         const int maxDepthLevel = 5;
@@ -53,7 +56,8 @@ public static class ExceptionExtensions
         return builder.ToString();
     }
 
-    [SystemPure, JetBrainsPure]
+    [SystemPure]
+    [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(exception))]
     public static Exception? GetInnermostException(this Exception? exception)
     {

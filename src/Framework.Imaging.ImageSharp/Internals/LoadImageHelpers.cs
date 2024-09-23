@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 
 namespace Framework.Imaging.ImageSharp.Internals;

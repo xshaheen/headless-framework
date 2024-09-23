@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using Framework.Kernel.Checks;
 
 #pragma warning disable IDE0130
@@ -160,7 +162,7 @@ public static class ListExtensions
     {
         for (var i = 0; i < source.Count; i++)
         {
-            T item = source[i];
+            var item = source[i];
 
             if (selector(item))
             {

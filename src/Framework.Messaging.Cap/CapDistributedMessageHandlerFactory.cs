@@ -1,4 +1,6 @@
-﻿using System.Reflection;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Reflection;
 using System.Reflection.Emit;
 using DotNetCore.CAP;
 using Framework.Kernel.Domains;

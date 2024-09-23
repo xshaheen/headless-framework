@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using System.Text.Json;
 using Framework.Integrations.Recaptcha.Contracts;
 using Framework.Integrations.Recaptcha.V2;
 using Framework.Kernel.BuildingBlocks.Constants;

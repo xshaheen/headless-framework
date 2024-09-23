@@ -1,4 +1,6 @@
-﻿using Framework.Api.Core.Resources;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Api.Core.Resources;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;
 

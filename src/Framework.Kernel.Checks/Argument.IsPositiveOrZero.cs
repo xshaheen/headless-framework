@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;

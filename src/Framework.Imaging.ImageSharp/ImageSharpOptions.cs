@@ -1,4 +1,6 @@
-﻿using SixLabors.ImageSharp.Formats;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Webp;
