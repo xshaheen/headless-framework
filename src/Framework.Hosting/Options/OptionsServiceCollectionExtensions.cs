@@ -84,6 +84,37 @@ public static class OptionsServiceCollectionExtensions
         return builder;
     }
 
+    /// <summary>
+    /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
+    /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+    /// </summary>
+    /// <typeparam name="TOption">The type of the options.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="optionName">The name of the options instance.</param>
+    /// <param name="validation">The validation function.</param>
+    /// <returns>The same services collection.</returns>
+    public static OptionsBuilder<TOption> AddSingletonOptions<TOption>(
+        this IServiceCollection services,
+        string? optionName = null,
+        Func<TOption, bool>? validation = null
+    )
+        where TOption : class
+    {
+        Argument.IsNotNull(services);
+
+        services.TryAddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value);
+
+        var builder = services.AddOptions<TOption>(optionName);
+
+        if (validation is not null)
+        {
+            builder.Validate(validation);
+            builder.ValidateOnStart();
+        }
+
+        return builder;
+    }
+
     #endregion
 
     #region Configure Singleton

@@ -12,7 +12,9 @@ namespace Framework.Api.Core.Abstractions;
 public interface IProblemDetailsCreator
 {
     ProblemDetails EndpointNotFound(HttpContext context);
+
     ProblemDetails EntityNotFound(HttpContext context, string entity, string key);
+
     ProblemDetails MalformedSyntax(HttpContext context);
 
     ProblemDetails UnprocessableEntity(
@@ -21,10 +23,12 @@ public interface IProblemDetailsCreator
     );
 
     ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errorDescriptors);
+
     ProblemDetails InternalError(HttpContext context, string stackTrace);
 }
 
-public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
+public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInformationAccessor, IClock clock)
+    : IProblemDetailsCreator
 {
     public ProblemDetails EndpointNotFound(HttpContext context)
     {
@@ -39,6 +43,8 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             {
                 ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
+                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
+                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
             },
         };
     }
@@ -57,6 +63,8 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
                 ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
                 ["params"] = new { entity, key },
+                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
+                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
             },
         };
     }
@@ -75,6 +83,8 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
             {
                 ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
+                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
+                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
             },
         };
     }
@@ -96,6 +106,8 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
                 ["errors"] = errorDescriptors,
                 ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
+                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
+                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
             },
         };
     }
@@ -114,6 +126,8 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
                 ["errors"] = errorDescriptors,
                 ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
+                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
+                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
             },
         };
     }
@@ -132,6 +146,8 @@ public sealed class ProblemDetailsCreator(IClock clock) : IProblemDetailsCreator
                 ["timestamp"] = clock.UtcNow.ToString("O"),
                 ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
                 ["stackTrace"] = stackTrace,
+                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
+                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
             },
         };
     }

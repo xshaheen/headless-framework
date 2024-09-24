@@ -23,11 +23,19 @@ public static class AddCacheExtensions
 
     public static IHostApplicationBuilder AddInMemoryCache(
         this IHostApplicationBuilder builder,
-        Action<InMemoryCacheOptions> setupAction,
+        Action<InMemoryCacheOptions>? setupAction,
         bool isDefault = true
     )
     {
-        builder.Services.ConfigureSingleton(setupAction);
+        if (setupAction is null)
+        {
+            builder.Services.AddSingletonOptions<InMemoryCacheOptions>();
+        }
+        else
+        {
+            builder.Services.ConfigureSingleton(setupAction);
+        }
+
         _AddCore(builder, isDefault);
 
         return builder;

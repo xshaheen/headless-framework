@@ -31,6 +31,35 @@ public static class ConfigurationExtensions
             ?? throw new InvalidOperationException($"Connection string '{name}' not found.");
     }
 
+    public static T GetRequired<T>(this IConfiguration configuration, Action<BinderOptions>? configureOptions = null)
+    {
+        return configuration.Get<T>(configureOptions)
+            ?? throw new InvalidOperationException($"Missing configurations {typeof(T).Name}");
+    }
+
+    public static T GetRequired<T>(
+        this IConfiguration configuration,
+        string key,
+        Action<BinderOptions>? configureOptions = null
+    )
+    {
+        var section = configuration.GetSection(key);
+
+        return GetRequired<T>(section, configureOptions);
+    }
+
+    public static TOption GetRequired<TOption, TValidator>(
+        this IConfiguration configuration,
+        string key,
+        Action<BinderOptions>? configureOptions = null
+    )
+        where TValidator : class, IValidator<TOption>, new()
+    {
+        var section = configuration.GetSection(key);
+
+        return GetRequired<TOption, TValidator>(section, configureOptions);
+    }
+
     public static TOption GetRequired<TOption, TValidator>(
         this IConfiguration configuration,
         Action<BinderOptions>? configureOptions = null
@@ -56,21 +85,5 @@ public static class ConfigurationExtensions
         }
 
         throw new InvalidOperationException(errors.ToString());
-    }
-
-    public static T GetRequired<T>(this IConfiguration configuration, Action<BinderOptions>? configureOptions = null)
-    {
-        return configuration.Get<T>(configureOptions)
-            ?? throw new InvalidOperationException($"Missing configurations {typeof(T).Name}");
-    }
-
-    public static T GetRequired<T>(
-        this IConfiguration configuration,
-        string key,
-        Action<BinderOptions>? configureOptions = null
-    )
-    {
-        return configuration.GetSection(key).Get<T>(configureOptions)
-            ?? throw new InvalidOperationException($"Missing configuration {key}");
     }
 }
