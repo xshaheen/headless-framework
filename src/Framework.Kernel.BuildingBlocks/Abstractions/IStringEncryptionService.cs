@@ -38,19 +38,18 @@ public sealed class StringEncryptionSettings
 
     /// <summary>
     /// Default password to encrypt/decrypt texts. It's recommended to init to another value for security.
-    /// Default value: "gsKnGZ041HLL4IM8"
+    /// Default value: "SHAHkLaXNOGZ044IM8"
     /// </summary>
-    public string DefaultPassPhrase { get; init; } = "gsKnGZ041HLL4IM8";
+    public string DefaultPassPhrase { get; init; } = "SHAHkLaXNOGZ044IM8";
 
     /// <summary>
     /// This constant string is used as a "salt" value for the PasswordDeriveBytes function calls.
-    /// This size of the IV (in bytes) must = (<see cref="KeySize"/> / 8).  Default <see cref="KeySize"/> is 256,
-    /// so the IV must be 32 bytes long.  Using a 16 character string here gives us 32 bytes when converted to a byte array.
-    /// Default value: jkE49230Tf093b42"u8
+    /// This size of the IV (in bytes) must = (<see cref="KeySize"/> / 16).  Default <see cref="KeySize"/> is 256,
+    /// so the IV must be 16 bytes long. Default value: shE49230Tf093b42
     /// </summary>
-    public byte[] InitVectorBytes { get; init; } = "jkE49230Tf093b42"u8.ToArray();
+    public byte[] InitVectorBytes { get; init; } = "shE49230Tf093b42"u8.ToArray();
 
-    /// <summary>Default value: "hgt!16kl"u8</summary>
+    /// <summary>Default value: "hgt!16kl"</summary>
     public byte[] DefaultSalt { get; init; } = "hgt!16kl"u8.ToArray();
 }
 
@@ -60,7 +59,7 @@ public sealed class StringEncryptionOptionsValidator : AbstractValidator<StringE
     {
         RuleFor(x => x.KeySize).GreaterThan(0);
         RuleFor(x => x.DefaultPassPhrase).NotEmpty();
-        RuleFor(x => x.InitVectorBytes).NotEmpty().Must((settings, iv) => iv.Length == settings.KeySize / 8);
+        RuleFor(x => x.InitVectorBytes).NotEmpty().Must((settings, iv) => iv.Length == settings.KeySize / 16);
         RuleFor(x => x.DefaultSalt).NotEmpty();
     }
 }
