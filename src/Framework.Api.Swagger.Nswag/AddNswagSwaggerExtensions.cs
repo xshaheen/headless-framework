@@ -74,7 +74,7 @@ public static class AddNswagSwaggerExtensions
         app.MapScalarApiReference(b =>
         {
             b.DarkMode = true;
-            b.EndpointPathPrefix = "/scalar";
+            b.EndpointPathPrefix = "/scalar/{documentName}";
         });
 
         app.UseSwaggerUi(config =>
