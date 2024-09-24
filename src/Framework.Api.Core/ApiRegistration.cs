@@ -53,7 +53,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
         builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
-        builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, CurrentPrincipalAccessor>();
+        builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
         builder.Services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
