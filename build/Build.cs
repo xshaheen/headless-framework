@@ -137,7 +137,7 @@ file sealed class Build : NukeBuild
                 {
                     DotNetPack(settings =>
                         settings
-                            .SetProject(Solution)
+                            .SetProject(SourceDirectory)
                             .SetConfiguration(Configuration)
                             .EnableNoBuild()
                             .EnableNoRestore()

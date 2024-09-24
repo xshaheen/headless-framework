@@ -56,9 +56,10 @@ public static class OptionsBuilderFluentValidationExtensions
 
             if (!validationResult.IsValid)
             {
+                var optionTypeName = typeof(TOptions).Name;
                 foreach (var error in validationResult.Errors)
                 {
-                    builder.AddError(error.ErrorMessage, error.PropertyName);
+                    builder.AddError(error.ErrorMessage, $"{optionTypeName}.{error.PropertyName}");
                 }
             }
 
