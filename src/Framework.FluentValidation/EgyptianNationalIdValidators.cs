@@ -12,8 +12,8 @@ public static class EgyptianNationalIdValidators
     public static IRuleBuilderOptions<T, string?> EgyptianNationalId<T>(this IRuleBuilder<T, string?> builder)
     {
         return builder
-            .Length(11)
-            .Must(EgyptianNationalIdValidator.IsValid)
+            .Length(14)
+            .Must(value => value is null || EgyptianNationalIdValidator.IsValid(value))
             .WithErrorDescriptor(FluentValidatorErrorDescriber.NationalIds.InvalidEgyptianNationalId());
     }
 }
