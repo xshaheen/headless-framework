@@ -29,7 +29,7 @@ public static class CapDistributedMessageHandlerFactory
         return Create(types);
     }
 
-    public static Type Create(IReadOnlyCollection<Type> messageHandlerTypes)
+    public static Type Create(IReadOnlyCollection<TypeInfo> messageHandlerTypes)
     {
         // Base Type
         var baseType = typeof(CapEventHandlerSubscribeBase);
@@ -215,12 +215,12 @@ public static class CapDistributedMessageHandlerFactory
 
     #region Get Handlers In Assemblies
 
-    private static Type[] _GetEventHandlerTypesInAssemblies(IEnumerable<Assembly> assemblies)
+    private static TypeInfo[] _GetEventHandlerTypesInAssemblies(IEnumerable<Assembly> assemblies)
     {
         var types = assemblies
-            .SelectMany(assembly => assembly.GetTypes())
+            .SelectMany(assembly => assembly.GetConstructibleDefinedTypes())
             .Where(type =>
-                type is { IsClass: true, IsAbstract: false }
+                type is { IsClass: true }
                 && type.GetInterfaces()
                     .Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDistributedMessageHandler<>))
             )

@@ -59,7 +59,7 @@ public sealed class CouchbaseCollectionsAssemblyReader(IServiceProvider serviceP
 
     public IEnumerable<ScopeCollection> ReadCollections(IEnumerable<Assembly> assemblies)
     {
-        var modulesTypes = assemblies.SelectMany(assembly => assembly.GetTypes());
+        var modulesTypes = assemblies.SelectMany(assembly => assembly.GetConstructibleDefinedTypes());
 
         var collectionAttributeType = typeof(CollectionAttribute);
         var collectionProviderType = typeof(INamedCollectionProvider);
