@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Framework.Kernel.Checks;
@@ -12,6 +13,50 @@ namespace System;
 [PublicAPI]
 public static class TypeExtensions
 {
+    [RequiresUnreferencedCode("Gets types from the given assembly - unsafe for trimming")]
+    [MustUseReturnValue]
+    public static IEnumerable<Type> GetConstructibleTypes(this Assembly assembly)
+    {
+        return assembly.GetLoadableTypes().Where(t => t is { IsAbstract: false, IsGenericTypeDefinition: false });
+    }
+
+    [RequiresUnreferencedCode("Gets types from the given assembly - unsafe for trimming")]
+    [MustUseReturnValue]
+    public static Type[] GetLoadableTypes(this Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t is not null).ToArray()!;
+        }
+    }
+
+    [RequiresUnreferencedCode("Gets types from the given assembly - unsafe for trimming")]
+    [MustUseReturnValue]
+    public static IEnumerable<TypeInfo> GetConstructibleDefinedTypes(this Assembly assembly)
+    {
+        return assembly
+            .GetLoadableDefinedTypes()
+            .Where(t => t is { IsAbstract: false, IsGenericTypeDefinition: false });
+    }
+
+    [RequiresUnreferencedCode("Gets types from the given assembly - unsafe for trimming")]
+    [MustUseReturnValue]
+    public static IEnumerable<TypeInfo> GetLoadableDefinedTypes(this Assembly assembly)
+    {
+        try
+        {
+            return assembly.DefinedTypes;
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t != null).Select(IntrospectionExtensions.GetTypeInfo!);
+        }
+    }
+
     [MustUseReturnValue]
     public static string GetFullNameWithAssemblyName(this Type type)
     {

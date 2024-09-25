@@ -96,7 +96,7 @@ public static class TypeHelper
             try
             {
                 var values = assembly
-                    .GetTypes()
+                    .GetLoadableDefinedTypes()
                     .Where(type =>
                         type is { IsClass: true, IsNotPublic: false, IsAbstract: false }
                         && typeof(TAction).IsAssignableFrom(type)
