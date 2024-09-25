@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Framework.FluentValidation.Resources;
+using MoreLinq.Extensions;
 
 namespace Framework.FluentValidation;
 
@@ -76,9 +77,9 @@ public static class CollectionValidators
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.MinimumElementsValidator());
     }
 
-    public static IRuleBuilderOptions<T, IEnumerable<TElement>?> UniqueElements<T, TElement, TKey>(
+    public static IRuleBuilderOptions<T, IEnumerable<TElement>?> UniqueElements<T, TElement>(
         this IRuleBuilder<T, IEnumerable<TElement>?> builder,
-        Func<TElement, TKey> keySelector
+        IEqualityComparer<TElement>? comparer = null
     )
     {
         return builder
@@ -90,14 +91,51 @@ public static class CollectionValidators
                         return true;
                     }
 
-                    var duplicates = list.GroupBy(keySelector)
-                        .Where(elements => elements.Skip(1).Any())
-                        .Select(elements => elements.Key)
-                        .ToList();
+                    // ReSharper disable once PossibleMultipleEnumeration
+                    var count = list.TryGetNonEnumeratedCount(out var length) ? length : list.Count();
 
-                    context.MessageFormatter.AppendArgument("TotalDuplicates", duplicates.Count);
+                    var hashSet = new HashSet<TElement>(count, comparer);
+                    // ReSharper disable once PossibleMultipleEnumeration
+                    var hasDuplicates = list.Any(element => !hashSet.Add(element));
 
-                    return duplicates.Count == 0;
+                    if (!hasDuplicates)
+                    {
+                        return true;
+                    }
+
+                    context.MessageFormatter.AppendArgument("TotalDuplicates", count - hashSet.Count);
+
+                    return false;
+                }
+            )
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
+    }
+
+    public static IRuleBuilderOptions<T, IEnumerable<TElement>?> UniqueElements<T, TElement, TKey>(
+        this IRuleBuilder<T, IEnumerable<TElement>?> builder,
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? comparer = null
+    )
+    {
+        return builder
+            .Must(
+                (_, list, context) =>
+                {
+                    if (list is null)
+                    {
+                        return true;
+                    }
+
+                    var duplicatesCount = list.GroupBy(keySelector, comparer).Count(elements => elements.AtLeast(2));
+
+                    if (duplicatesCount == 0)
+                    {
+                        return true;
+                    }
+
+                    context.MessageFormatter.AppendArgument("TotalDuplicates", duplicatesCount);
+
+                    return false;
                 }
             )
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Collections.UniqueElementsValidator());
