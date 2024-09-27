@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks.Constants;
 using Snappier;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.IO;
@@ -11,7 +10,7 @@ public static class SnappyCompressor
 {
     public static ReadOnlyMemory<byte> Compress<T>(T? result, JsonSerializerOptions? options = null)
     {
-        options ??= PlatformJsonConstants.DefaultInternalJsonOptions;
+        options ??= FrameworkJsonConstants.DefaultInternalJsonOptions;
         var serializedBytes = JsonSerializer.SerializeToUtf8Bytes(result, options);
         var compressedMemory = Snappy.CompressToMemory(serializedBytes);
 
@@ -21,7 +20,7 @@ public static class SnappyCompressor
     public static T? Decompress<T>(ReadOnlyMemory<byte> compressed, JsonSerializerOptions? options = null)
     {
         var bytes = Snappy.DecompressToMemory(compressed.Span);
-        options ??= PlatformJsonConstants.DefaultInternalJsonOptions;
+        options ??= FrameworkJsonConstants.DefaultInternalJsonOptions;
         var result = JsonSerializer.Deserialize<T>(bytes.Memory.Span, options);
 
         return result;

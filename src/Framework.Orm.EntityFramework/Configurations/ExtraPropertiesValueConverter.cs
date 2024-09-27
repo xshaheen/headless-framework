@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks.Constants;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Helpers.Collections;
 using Framework.Kernel.Primitives;
 using Framework.Serializer.Json.Converters;
@@ -32,7 +32,7 @@ public sealed class ExtraPropertiesValueConverter()
     {
         var option = new JsonSerializerOptions();
 
-        PlatformJsonConstants.ConfigureInternalJsonOptions(option);
+        FrameworkJsonConstants.ConfigureInternalJsonOptions(option);
         option.Converters.Add(new ObjectToInferredTypesConverter());
 
         return option;

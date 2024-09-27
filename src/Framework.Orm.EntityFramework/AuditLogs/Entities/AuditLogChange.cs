@@ -2,7 +2,7 @@
 
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks.Constants;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Domains;
 
 namespace Framework.Orm.EntityFramework.AuditLogs.Entities;
@@ -49,7 +49,7 @@ public sealed class AuditLogChange : Entity<long>
             ParentEntityType = parentEntityType,
             Action = action,
             ChangesMap = change,
-            Changes = JsonSerializer.Serialize(change, PlatformJsonConstants.DefaultWebJsonOptions),
+            Changes = JsonSerializer.Serialize(change, FrameworkJsonConstants.DefaultWebJsonOptions),
         };
     }
 }
