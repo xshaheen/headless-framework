@@ -89,16 +89,16 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
         static async ValueTask storeElement(
             (IBlobStorage Storage, XElement Element, string FileName) state,
-            CancellationToken abortToken
+            CancellationToken cancellationToken
         )
         {
             var (storage, element, fileName) = state;
 
             await using var memoryStream = new MemoryStream();
-            await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, abortToken);
+            await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, cancellationToken);
             memoryStream.Seek(0, SeekOrigin.Begin);
 
-            await storage.UploadAsync(new(memoryStream, fileName), _Containers, abortToken);
+            await storage.UploadAsync(new(memoryStream, fileName), _Containers, cancellationToken);
         }
     }
 }
