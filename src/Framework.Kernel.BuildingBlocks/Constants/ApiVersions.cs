@@ -4,7 +4,8 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.BuildingBlocks;
 
-public sealed class ApiVersions
+[PublicAPI]
+public static class ApiVersions
 {
     public const string V1 = "1.0";
     public const string V2 = "2.0";

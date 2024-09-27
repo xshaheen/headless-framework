@@ -1,0 +1,27 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Kernel.Domains;
+using Microsoft.EntityFrameworkCore.Metadata;
+
+namespace Framework.Orm.EntityFramework.Extensions;
+
+public static class MutableEntityTypeExtensions
+{
+    public static void ConfigureFrameworkValueGenerated(this IMutableEntityType entityType)
+    {
+        if (entityType.ClrType.IsAssignableTo(typeof(IEntity<long>)))
+        {
+            entityType.GetProperty(nameof(IEntity<long>.Id)).ValueGenerated = ValueGenerated.Never;
+        }
+
+        if (entityType.ClrType.IsAssignableTo(typeof(IEntity<string>)))
+        {
+            entityType.GetProperty(nameof(IEntity<string>.Id)).ValueGenerated = ValueGenerated.Never;
+        }
+
+        if (entityType.ClrType.IsAssignableTo(typeof(IEntity<Guid>)))
+        {
+            entityType.GetProperty(nameof(IEntity<Guid>.Id)).ValueGenerated = ValueGenerated.Never;
+        }
+    }
+}
