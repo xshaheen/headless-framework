@@ -1,17 +1,12 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Data;
-using Framework.Kernel.Domains;
-using Framework.Kernel.Primitives;
-using Framework.Orm.EntityFramework.Configurations;
 using Framework.Orm.EntityFramework.Contexts;
+using Framework.Orm.EntityFramework.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
-using File = Framework.Kernel.Primitives.File;
 
 namespace Framework.Identity.Storage.EntityFramework;
 
@@ -37,78 +32,159 @@ public abstract class IdentityDbContextBase<
 {
     protected abstract string DefaultSchema { get; }
 
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    #region Core Save Changes
+
+    protected virtual async Task<int> CoreSaveChangesAsync(
+        bool acceptAllChangesOnSuccess = true,
+        CancellationToken cancellationToken = default
+    )
     {
-        base.ConfigureConventions(configurationBuilder);
+        var report = this.ProcessEntriesMessagesBeforeSave();
 
-        configurationBuilder.AddAllPrimitivesValueConvertersMappings();
-        configurationBuilder.Properties<decimal?>().HavePrecision(32, 10);
-        configurationBuilder.Properties<decimal>().HavePrecision(32, 10);
-        configurationBuilder.Properties<Enum>().HaveMaxLength(100).HaveConversion<string>();
+        if (report.DistributedEmitters.Count == 0)
+        {
+            await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
 
-        configurationBuilder.Properties<UserId>().HaveConversion<UserIdValueConverter>();
-        configurationBuilder.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
-        configurationBuilder.Properties<Month>().HaveConversion<MonthValueConverter>();
-        configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
-        configurationBuilder.Properties<File>().HaveConversion<FileValueConverter>();
-        configurationBuilder.Properties<Image>().HaveConversion<ImageValueConverter>();
-        configurationBuilder.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
-        configurationBuilder
-            .Properties<ExtraProperties>()
-            .HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
+            return await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
+        if (Database.CurrentTransaction is not null)
+        {
+            await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
+            var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
+
+            return result;
+        }
+
+        return await Database
+            .CreateExecutionStrategy()
+            .ExecuteAsync(
+                (this, report, acceptAllChangesOnSuccess, cancellationToken),
+                static async state =>
+                {
+                    var (context, report, acceptAllChangesOnSuccess, cancellationToken) = state;
+                    await using var transaction = await context.Database.BeginTransactionAsync(
+                        IsolationLevel.ReadCommitted,
+                        cancellationToken
+                    );
+
+                    await context.PublishMessagesAsync(report.LocalEmitters, cancellationToken);
+                    var result = await context._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+                    await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
+
+                    await transaction.CommitAsync(cancellationToken);
+
+                    return result;
+                }
+            );
     }
 
-    protected override void OnModelCreating(ModelBuilder builder)
+    protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
-        builder.HasDefaultSchema(DefaultSchema);
-        base.OnModelCreating(builder);
+        var report = this.ProcessEntriesMessagesBeforeSave();
 
-        foreach (var entityType in builder.Model.GetEntityTypes())
+        if (report.DistributedEmitters.Count == 0)
         {
-            OnModelEntityType(entityType);
+            PublishMessages(report.LocalEmitters);
+
+            return _BaseSaveChanges(acceptAllChangesOnSuccess);
         }
+
+        if (Database.CurrentTransaction is not null)
+        {
+            PublishMessages(report.LocalEmitters);
+            var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+            PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
+
+            return result;
+        }
+
+        return Database
+            .CreateExecutionStrategy()
+            .Execute(
+                (this, report, acceptAllChangesOnSuccess),
+                static state =>
+                {
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
+                    var (context, report, acceptAllChangesOnSuccess) = state;
+
+                    using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
+
+                    context.PublishMessages(report.LocalEmitters);
+                    var result = context._BaseSaveChanges(acceptAllChangesOnSuccess);
+                    context.PublishMessages(report.DistributedEmitters, transaction);
+
+                    transaction.Commit();
+
+                    return result;
+#pragma warning restore MA0045
+                }
+            );
     }
 
-    protected virtual void OnModelEntityType(IMutableEntityType entityType)
+    #endregion
+
+    #region Overrides Save Changes
+
+    public override int SaveChanges()
     {
-        if (entityType.ClrType.IsAssignableTo(typeof(IEntity<long>)))
-        {
-            entityType.GetProperty(nameof(IEntity<long>.Id)).ValueGenerated = ValueGenerated.Never;
-        }
-
-        if (entityType.ClrType.IsAssignableTo(typeof(IEntity<Guid>)))
-        {
-            entityType.GetProperty(nameof(IEntity<Guid>.Id)).ValueGenerated = ValueGenerated.Never;
-        }
-
-        if (entityType.ClrType.IsAssignableTo(typeof(IEntity<string>)))
-        {
-            entityType.GetProperty(nameof(IEntity<string>.Id)).ValueGenerated = ValueGenerated.Never;
-        }
+        return CoreSaveChanges();
     }
 
-    protected virtual void ProcessEntry(EntityEntry entry)
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        UpdateConcurrencyStamp(entry);
+        return CoreSaveChanges(acceptAllChangesOnSuccess);
     }
 
-    protected virtual void UpdateConcurrencyStamp(EntityEntry entry)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = new())
     {
-        if (entry.Entity is not IHasConcurrencyStamp entity)
-        {
-            return;
-        }
-
-        var property = Entry(entity).Property(x => x.ConcurrencyStamp);
-
-        if (
-            entity.ConcurrencyStamp is null
-            || string.Equals(property.OriginalValue, property.CurrentValue, StringComparison.Ordinal)
-        )
-        {
-            entity.ConcurrencyStamp = Guid.NewGuid().ToString();
-        }
+        return CoreSaveChangesAsync(cancellationToken: cancellationToken);
     }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = new()
+    )
+    {
+        return CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private Task<int> _BaseSaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
+    {
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private int _BaseSaveChanges(bool acceptAllChangesOnSuccess)
+    {
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+#pragma warning restore MA0045
+    }
+
+    #endregion
+
+    #region Publish Messages
+
+    protected abstract Task PublishMessagesAsync(
+        List<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction,
+        CancellationToken cancellationToken
+    );
+
+    protected abstract void PublishMessages(
+        List<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction
+    );
+
+    protected abstract Task PublishMessagesAsync(
+        List<EmitterLocalMessages> emitters,
+        CancellationToken cancellationToken
+    );
+
+    protected abstract void PublishMessages(List<EmitterLocalMessages> emitters);
+
+    #endregion
 
     #region Execute Transaction
 
@@ -302,177 +378,31 @@ public abstract class IdentityDbContextBase<
 
     #endregion
 
-    #region Public Save Changes Overrides
+    #region Configure Conventions
 
-    public override int SaveChanges()
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
-        return BaseSaveChanges();
-    }
-
-    public override int SaveChanges(bool acceptAllChangesOnSuccess)
-    {
-        return BaseSaveChanges(acceptAllChangesOnSuccess);
-    }
-
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = new())
-    {
-        return BaseSaveChangesAsync(cancellationToken: cancellationToken);
-    }
-
-    public override Task<int> SaveChangesAsync(
-        bool acceptAllChangesOnSuccess,
-        CancellationToken cancellationToken = new()
-    )
-    {
-        return BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        base.ConfigureConventions(configurationBuilder);
+        configurationBuilder.AddAllPrimitivesValueConvertersMappings();
+        configurationBuilder.AddBuildingBlocksPrimitivesConvertersMappings();
     }
 
     #endregion
 
-    #region Base Save Changes Implementations
+    #region Model Creating
 
-    protected virtual async Task<int> BaseSaveChangesAsync(
-        bool acceptAllChangesOnSuccess = true,
-        CancellationToken cancellationToken = new()
-    )
+    protected override void OnModelCreating(ModelBuilder builder)
     {
-        var (distributedMessagesEmitters, localMessagesEmitters) = _ProcessEntries();
+        builder.HasDefaultSchema(DefaultSchema);
 
-        if (distributedMessagesEmitters.Count == 0)
+        base.OnModelCreating(builder);
+
+        foreach (var entityType in builder.Model.GetEntityTypes())
         {
-            await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
-
-            return await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            entityType.ConfigureFrameworkValueGenerated();
+            builder.Entity(entityType.ClrType).ConfigureFrameworkConvention();
         }
-
-        if (Database.CurrentTransaction is not null)
-        {
-            await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
-            var result = await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-            await PublishMessagesAsync(distributedMessagesEmitters, Database.CurrentTransaction, cancellationToken);
-
-            return result;
-        }
-
-        return await Database
-            .CreateExecutionStrategy()
-            .ExecuteAsync(async () =>
-            {
-                await using var transaction = await Database.BeginTransactionAsync(
-                    IsolationLevel.ReadCommitted,
-                    cancellationToken
-                );
-
-                await PublishMessagesAsync(localMessagesEmitters, cancellationToken);
-                var result = await _CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-                await PublishMessagesAsync(distributedMessagesEmitters, transaction, cancellationToken);
-
-                await transaction.CommitAsync(cancellationToken);
-
-                return result;
-            });
     }
-
-    protected virtual int BaseSaveChanges(bool acceptAllChangesOnSuccess = true)
-    {
-        var (distributedMessagesEmitters, localMessagesEmitters) = _ProcessEntries();
-
-        if (distributedMessagesEmitters.Count == 0)
-        {
-            PublishMessages(localMessagesEmitters);
-
-            return _CoreSaveChanges(acceptAllChangesOnSuccess);
-        }
-
-        if (Database.CurrentTransaction is not null)
-        {
-            PublishMessages(localMessagesEmitters);
-            var result = _CoreSaveChanges(acceptAllChangesOnSuccess);
-            PublishMessages(distributedMessagesEmitters, Database.CurrentTransaction);
-
-            return result;
-        }
-
-        return Database
-            .CreateExecutionStrategy()
-            .Execute(() =>
-            {
-                using var transaction = Database.BeginTransaction(IsolationLevel.ReadCommitted);
-
-                PublishMessages(localMessagesEmitters);
-                var result = _CoreSaveChanges(acceptAllChangesOnSuccess);
-                PublishMessages(distributedMessagesEmitters, transaction);
-
-                transaction.Commit();
-
-                return result;
-            });
-    }
-
-    private Task<int> _CoreSaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
-    {
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-    }
-
-    private int _CoreSaveChanges(bool acceptAllChangesOnSuccess)
-    {
-        return base.SaveChanges(acceptAllChangesOnSuccess);
-    }
-
-    #endregion
-
-    #region Messages
-
-    private (List<EmitterDistributedMessages>, List<EmitterLocalMessages>) _ProcessEntries()
-    {
-        var emittedDistributedMessages = new List<EmitterDistributedMessages>();
-        var emittedLocalMessages = new List<EmitterLocalMessages>();
-
-        foreach (var entry in ChangeTracker.Entries())
-        {
-            ProcessEntry(entry);
-
-            if (entry.Entity is IDistributedMessageEmitter distributedMessageEmitter)
-            {
-                var messages = distributedMessageEmitter.GetDistributedMessages();
-
-                if (messages.Count > 0)
-                {
-                    emittedDistributedMessages.Add(new(distributedMessageEmitter, messages));
-                }
-            }
-
-            if (entry.Entity is ILocalMessageEmitter localMessageEmitter)
-            {
-                var messages = localMessageEmitter.GetLocalMessages();
-
-                if (messages.Count > 0)
-                {
-                    emittedLocalMessages.Add(new(localMessageEmitter, messages));
-                }
-            }
-        }
-
-        return (emittedDistributedMessages, emittedLocalMessages);
-    }
-
-    protected abstract Task PublishMessagesAsync(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    );
-
-    protected abstract void PublishMessages(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction
-    );
-
-    protected abstract Task PublishMessagesAsync(
-        List<EmitterLocalMessages> emitters,
-        CancellationToken cancellationToken
-    );
-
-    protected abstract void PublishMessages(List<EmitterLocalMessages> emitters);
 
     #endregion
 }
