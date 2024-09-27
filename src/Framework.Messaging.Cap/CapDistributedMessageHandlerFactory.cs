@@ -246,7 +246,7 @@ public static class CapDistributedMessageHandlerFactory
             T data,
             CapHeader header,
             Type handler,
-            CancellationToken abortToken = default
+            CancellationToken cancellationToken = default
         )
             where T : class, IDistributedMessage
         {
@@ -263,7 +263,7 @@ public static class CapDistributedMessageHandlerFactory
                 }
             }
 
-            await handlerInstance.HandleAsync(data, abortToken);
+            await handlerInstance.HandleAsync(data, cancellationToken);
         }
     }
 
@@ -282,9 +282,10 @@ public static class CapDistributedMessageHandlerFactory
         }
 
         [CapSubscribe(name: "SomeEvent", isPartial: false, Group = "SomeMessageHandler")]
-        public ValueTask WireSomeMessageHandlerAsync(SomeMessage message, [FromCap] CapHeader header, CancellationToken abortToken)
+        public ValueTask WireSomeMessageHandlerAsync(SomeMessage message, [FromCap] CapHeader header, CancellationToken cancellationToken)
+
         {
-            return TriggerHandlerAsync(message, header, _someMessageHandler, abortToken);
+            return TriggerHandlerAsync(message, header, _someMessageHandler, cancellationToken);
         }
     }
      */

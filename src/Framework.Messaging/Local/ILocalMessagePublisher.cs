@@ -11,6 +11,6 @@ public interface ILocalMessagePublisher
     void Publish<T>(T message)
         where T : class, ILocalMessage;
 
-    Task PublishAsync<T>(T message, CancellationToken abortToken = default)
+    Task PublishAsync<T>(T message, CancellationToken cancellationToken = default)
         where T : class, ILocalMessage;
 }

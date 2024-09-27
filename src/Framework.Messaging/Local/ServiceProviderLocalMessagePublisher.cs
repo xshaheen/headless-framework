@@ -42,7 +42,7 @@ public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider servic
         }
     }
 
-    public async Task PublishAsync<T>(T message, CancellationToken abortToken = default)
+    public async Task PublishAsync<T>(T message, CancellationToken cancellationToken = default)
         where T : class, ILocalMessage
     {
         var handlers = services.GetServices<ILocalMessageHandler<T>>();
@@ -52,7 +52,7 @@ public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider servic
         {
             try
             {
-                await handler.HandleAsync(message, abortToken);
+                await handler.HandleAsync(message, cancellationToken);
             }
             catch (TargetInvocationException e)
             {
