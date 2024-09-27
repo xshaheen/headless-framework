@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks.Constants;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Domains;
 
 #pragma warning disable IDE0130
@@ -15,12 +15,12 @@ public static class CapMessageExtensions
     {
         var content = JsonSerializer.Deserialize<JsonElement>(
             message.Content!,
-            PlatformJsonConstants.DefaultInternalJsonOptions
+            FrameworkJsonConstants.DefaultInternalJsonOptions
         );
 
         var payload = content
             .GetProperty("value")
-            .Deserialize<DistributedMessage<TPayload>>(PlatformJsonConstants.DefaultInternalJsonOptions);
+            .Deserialize<DistributedMessage<TPayload>>(FrameworkJsonConstants.DefaultInternalJsonOptions);
 
         return payload!;
     }
@@ -29,11 +29,11 @@ public static class CapMessageExtensions
     {
         var content = JsonSerializer.Deserialize<JsonElement>(
             message.Content!,
-            PlatformJsonConstants.DefaultInternalJsonOptions
+            FrameworkJsonConstants.DefaultInternalJsonOptions
         );
         var payload = content
             .GetProperty("value")
-            .Deserialize<TValue>(PlatformJsonConstants.DefaultInternalJsonOptions);
+            .Deserialize<TValue>(FrameworkJsonConstants.DefaultInternalJsonOptions);
 
         return payload!;
     }

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks.Constants;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -13,14 +13,14 @@ public sealed class LocaleValueConverter() : ValueConverter<Locale?, string?>(x 
 {
     private static string _Serialize(Locale? locale)
     {
-        return JsonSerializer.Serialize(locale, PlatformJsonConstants.DefaultInternalJsonOptions);
+        return JsonSerializer.Serialize(locale, FrameworkJsonConstants.DefaultInternalJsonOptions);
     }
 
     private static Locale? _Deserialize(string? json)
     {
         return string.IsNullOrEmpty(json) || string.Equals(json, "{}", StringComparison.Ordinal)
             ? null
-            : JsonSerializer.Deserialize<Locale>(json, PlatformJsonConstants.DefaultInternalJsonOptions);
+            : JsonSerializer.Deserialize<Locale>(json, FrameworkJsonConstants.DefaultInternalJsonOptions);
     }
 }
 

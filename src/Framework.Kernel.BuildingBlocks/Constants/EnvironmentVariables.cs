@@ -4,7 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.BuildingBlocks;
 
-public static class PlatformEnvironmentVariables
+public static class EnvironmentVariables
 {
     public const string Hostname = "HOSTNAME";
     public const string Environment = "Environment";

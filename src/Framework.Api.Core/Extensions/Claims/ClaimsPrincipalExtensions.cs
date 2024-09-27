@@ -15,7 +15,7 @@ public static class ClaimsPrincipalExtensions
 {
     public static UserId? GetUserId(this ClaimsPrincipal? principal)
     {
-        var id = principal?.FindFirst(PlatformClaimTypes.UserId)?.Value;
+        var id = principal?.FindFirst(FrameworkClaimTypes.UserId)?.Value;
 
         if (id is null)
         {
@@ -33,7 +33,7 @@ public static class ClaimsPrincipalExtensions
     public static UserId? GetUserId(this IIdentity identity)
     {
         var claimsIdentity = identity as ClaimsIdentity;
-        var id = claimsIdentity?.FindFirst(PlatformClaimTypes.UserId)?.Value;
+        var id = claimsIdentity?.FindFirst(FrameworkClaimTypes.UserId)?.Value;
 
         if (id is null)
         {
@@ -50,7 +50,7 @@ public static class ClaimsPrincipalExtensions
 
     public static AccountId? GetAccountId(this ClaimsPrincipal? principal)
     {
-        var id = principal?.FindFirst(PlatformClaimTypes.AccountId)?.Value;
+        var id = principal?.FindFirst(FrameworkClaimTypes.AccountId)?.Value;
 
         if (id is null)
         {
@@ -68,7 +68,7 @@ public static class ClaimsPrincipalExtensions
     public static AccountId? GetAccountId(this IIdentity identity)
     {
         var claimsIdentity = identity as ClaimsIdentity;
-        var id = claimsIdentity?.FindFirst(PlatformClaimTypes.AccountId)?.Value;
+        var id = claimsIdentity?.FindFirst(FrameworkClaimTypes.AccountId)?.Value;
 
         if (id is null)
         {
@@ -85,29 +85,29 @@ public static class ClaimsPrincipalExtensions
 
     public static string? GetEditionId(this ClaimsPrincipal? principal)
     {
-        return principal?.FindFirst(PlatformClaimTypes.EditionId)?.Value;
+        return principal?.FindFirst(FrameworkClaimTypes.EditionId)?.Value;
     }
 
     public static string? GetEditionId(this IIdentity identity)
     {
         var claimsIdentity = identity as ClaimsIdentity;
-        return claimsIdentity?.FindFirst(PlatformClaimTypes.EditionId)?.Value;
+        return claimsIdentity?.FindFirst(FrameworkClaimTypes.EditionId)?.Value;
     }
 
     public static string? GetTenantId(this ClaimsPrincipal? principal)
     {
-        return principal?.FindFirst(PlatformClaimTypes.TenantId)?.Value;
+        return principal?.FindFirst(FrameworkClaimTypes.TenantId)?.Value;
     }
 
     public static string? GetTenantId(this IIdentity identity)
     {
         var claimsIdentity = identity as ClaimsIdentity;
-        return claimsIdentity?.FindFirst(PlatformClaimTypes.TenantId)?.Value;
+        return claimsIdentity?.FindFirst(FrameworkClaimTypes.TenantId)?.Value;
     }
 
     public static string? GetUserType(this ClaimsPrincipal? principal)
     {
-        return principal?.FindFirst(PlatformClaimTypes.AccountType)?.Value;
+        return principal?.FindFirst(FrameworkClaimTypes.AccountType)?.Value;
     }
 
     public static bool IsSignedIn(this ClaimsPrincipal principal, string authenticationScheme)
@@ -122,7 +122,7 @@ public static class ClaimsPrincipalExtensions
     public static IReadOnlyList<string> GetRoles(this ClaimsPrincipal principal)
     {
         var roles = principal
-            .Claims.Where(claim => string.Equals(claim.Type, PlatformClaimTypes.Roles, StringComparison.Ordinal))
+            .Claims.Where(claim => string.Equals(claim.Type, FrameworkClaimTypes.Roles, StringComparison.Ordinal))
             .Select(claim => claim.Value)
             .ToList();
 

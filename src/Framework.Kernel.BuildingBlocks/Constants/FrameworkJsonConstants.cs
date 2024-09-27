@@ -6,9 +6,11 @@ using Framework.Serializer;
 using Framework.Serializer.Json.Converters;
 using NetTopologySuite.IO.Converters;
 
-namespace Framework.Kernel.BuildingBlocks.Constants;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Kernel.BuildingBlocks;
 
-public static class PlatformJsonConstants
+public static class FrameworkJsonConstants
 {
     private static readonly List<JsonConverter> _DefaultConverters =
     [

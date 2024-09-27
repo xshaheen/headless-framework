@@ -6,7 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks.Constants;
+using Framework.Kernel.BuildingBlocks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -23,7 +23,7 @@ public static class ObjectExtensions
     /// <returns>The JSON string representation of the value.</returns>
     public static string ToJson(this object obj, JsonSerializerOptions? options = null)
     {
-        return JsonSerializer.Serialize(obj, options ?? PlatformJsonConstants.DefaultInternalJsonOptions);
+        return JsonSerializer.Serialize(obj, options ?? FrameworkJsonConstants.DefaultInternalJsonOptions);
     }
 
     /// <summary>
@@ -191,7 +191,7 @@ public static class ObjectExtensions
 
         if (obj is JsonElement element)
         {
-            return element.Deserialize<T>(PlatformJsonConstants.DefaultInternalJsonOptions);
+            return element.Deserialize<T>(FrameworkJsonConstants.DefaultInternalJsonOptions);
         }
 
         return (T)obj;

@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using DotNetCore.CAP;
-using Framework.Kernel.BuildingBlocks.Constants;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Messaging.Filters;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,7 +22,7 @@ public static class AddCapDistributedMessagingExtensions
             capOptions.FailedMessageExpiredAfter = 30 * 24 * 3600; // 30 days
             capOptions.SucceedMessageExpiredAfter = 5 * 24 * 3600; // 30 days
             capOptions.CollectorCleaningInterval = 5 * 60; // 5 minutes
-            PlatformJsonConstants.ConfigureInternalJsonOptions(capOptions.JsonSerializerOptions);
+            FrameworkJsonConstants.ConfigureInternalJsonOptions(capOptions.JsonSerializerOptions);
             setupAction.Invoke(capOptions);
         });
 

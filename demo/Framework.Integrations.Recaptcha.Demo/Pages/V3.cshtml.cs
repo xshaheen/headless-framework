@@ -3,7 +3,7 @@
 using System.Text.Json;
 using Framework.Integrations.Recaptcha.Contracts;
 using Framework.Integrations.Recaptcha.V3;
-using Framework.Kernel.BuildingBlocks.Constants;
+using Framework.Kernel.BuildingBlocks;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Framework.Integrations.Recaptcha.Demo.Pages;
@@ -22,6 +22,6 @@ public sealed class V3Model(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
 
         var response = await siteVerify.Verify(request);
 
-        Result = JsonSerializer.Serialize(response, PlatformJsonConstants.DefaultPrettyJsonOptions);
+        Result = JsonSerializer.Serialize(response, FrameworkJsonConstants.DefaultPrettyJsonOptions);
     }
 }

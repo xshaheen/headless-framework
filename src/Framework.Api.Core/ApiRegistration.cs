@@ -11,7 +11,6 @@ using Framework.Api.Core.Security.Claims;
 using Framework.Api.Core.Security.Jwt;
 using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.BuildingBlocks.Constants;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
 using Framework.Serializer;
 using Microsoft.AspNetCore.Builder;
@@ -25,6 +24,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Api.Core;
 
+[PublicAPI]
 public static class ApiRegistration
 {
     public static readonly FileFormatInspector FileFormatInspector = new(FileFormatLocator.GetFormats());
@@ -60,7 +60,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
 
         builder.Services.TryAddSingleton<IJsonSerializer>(
-            new SystemJsonSerializer(PlatformJsonConstants.DefaultWebJsonOptions)
+            new SystemJsonSerializer(FrameworkJsonConstants.DefaultWebJsonOptions)
         );
         builder.Services.TryAddSingleton<ITextSerializer>(services => services.GetRequiredService<IJsonSerializer>());
         builder.Services.TryAddSingleton<ISerializer>(services => services.GetRequiredService<IJsonSerializer>());

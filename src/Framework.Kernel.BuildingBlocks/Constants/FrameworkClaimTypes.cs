@@ -4,11 +4,11 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.BuildingBlocks;
 
-public static class PlatformClaimTypes
+public static class FrameworkClaimTypes
 {
-    public const string UserId = "user_id";
-
     public const string AccountId = JwtClaimTypes.Subject;
+
+    public const string UserId = "user_id";
 
     public const string AccountType = "account_type";
 
