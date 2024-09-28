@@ -35,4 +35,19 @@ public static class AssemblyExtensions
     {
         return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
     }
+
+    public static bool HsSystemAssemblyName(this Assembly assembly)
+    {
+        return assembly.FullName is not null
+            && (
+                assembly.FullName.StartsWith("System.", StringComparison.Ordinal)
+                || assembly.FullName.StartsWith("Microsoft.", StringComparison.Ordinal)
+            );
+    }
+
+    public static bool HsSystemAssemblyName(this AssemblyName assemblyName)
+    {
+        return assemblyName.FullName.StartsWith("System.", StringComparison.Ordinal)
+            || assemblyName.FullName.StartsWith("Microsoft.", StringComparison.Ordinal);
+    }
 }
