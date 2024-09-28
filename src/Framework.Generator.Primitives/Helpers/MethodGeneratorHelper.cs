@@ -340,7 +340,7 @@ internal static class MethodGeneratorHelper
             .NewLine();
         builder
             .AppendSummary("Gets the substring by specified range.")
-            .AppendLine("public string this[Range range]")
+            .AppendLine("public string this[System.Range range]")
             .OpenBracket()
             .AppendLine("get => _value[range];")
             .CloseBracket()
