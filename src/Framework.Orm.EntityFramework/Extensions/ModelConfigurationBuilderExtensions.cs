@@ -10,23 +10,18 @@ namespace Framework.Orm.EntityFramework.Extensions;
 
 public static class ModelConfigurationBuilderExtensions
 {
-    public static void AddBuildingBlocksPrimitivesConvertersMappings(
-        this ModelConfigurationBuilder configurationBuilder
-    )
+    public static void AddBuildingBlocksPrimitivesConvertersMappings(this ModelConfigurationBuilder b)
     {
-        configurationBuilder.Properties<decimal?>().HavePrecision(32, 10);
-        configurationBuilder.Properties<decimal>().HavePrecision(32, 10);
-        configurationBuilder.Properties<Enum>().HaveMaxLength(DomainConstants.EnumMaxLength).HaveConversion<string>();
-
-        configurationBuilder.Properties<UserId>().HaveConversion<UserIdValueConverter>();
-        configurationBuilder.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
-        configurationBuilder.Properties<Month>().HaveConversion<MonthValueConverter>();
-        configurationBuilder.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
-        configurationBuilder.Properties<File>().HaveConversion<FileValueConverter>();
-        configurationBuilder.Properties<Image>().HaveConversion<ImageValueConverter>();
-        configurationBuilder.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
-        configurationBuilder
-            .Properties<ExtraProperties>()
-            .HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
+        b.Properties<decimal?>().HavePrecision(32, 10);
+        b.Properties<decimal>().HavePrecision(32, 10);
+        b.Properties<Enum>().HaveMaxLength(DomainConstants.EnumMaxLength).HaveConversion<string>();
+        b.Properties<Month>().HaveConversion<MonthValueConverter>();
+        b.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
+        b.Properties<UserId>().HaveConversion<UserIdValueConverter>();
+        b.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
+        b.Properties<File>().HaveConversion<FileValueConverter>();
+        b.Properties<Image>().HaveConversion<ImageValueConverter>();
+        b.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
+        b.Properties<ExtraProperties>().HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
     }
 }
