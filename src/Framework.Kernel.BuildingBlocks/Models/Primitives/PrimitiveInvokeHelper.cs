@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Reflection;
-using Framework.Generator.Primitives;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
@@ -9,45 +8,8 @@ namespace Framework.Kernel.Primitives;
 
 public static class PrimitiveInvokeHelper
 {
-    public static void InvokeInAllPrimitiveAssemblies(string typeName, string methodName, object methodParameter)
-    {
-        var loadedAssemblies = new HashSet<string>(
-            AppDomain.CurrentDomain.GetAssemblies().Where(a => _IsSystemAssembly(a.FullName)).Select(a => a.FullName!),
-            StringComparer.Ordinal
-        );
-
-        var assembliesToCheck = new Queue<Assembly>(AppDomain.CurrentDomain.GetAssemblies());
-        var processedPrimitiveAssemblies = new HashSet<Assembly>();
-
-        while (assembliesToCheck.Count > 0)
-        {
-            var assembly = assembliesToCheck.Dequeue();
-
-            if (
-                !processedPrimitiveAssemblies.Contains(assembly)
-                && assembly.GetCustomAttribute<PrimitiveAssemblyAttribute>() is not null
-            )
-            {
-                _ProcessAssembly(assembly, typeName, methodName, methodParameter);
-                processedPrimitiveAssemblies.Add(assembly);
-            }
-
-            foreach (var reference in assembly.GetReferencedAssemblies())
-            {
-                if (loadedAssemblies.Contains(reference.FullName) || _IsSystemAssembly(reference.FullName))
-                {
-                    continue;
-                }
-
-                var loadedAssembly = Assembly.Load(reference);
-                assembliesToCheck.Enqueue(loadedAssembly);
-                loadedAssemblies.Add(reference.FullName);
-            }
-        }
-    }
-
     public static void InvokeInAssemblies(
-        Assembly[] assemblies,
+        IEnumerable<Assembly> assemblies,
         string typeName,
         string methodName,
         object methodParameter
@@ -76,11 +38,5 @@ public static class PrimitiveInvokeHelper
         {
             method?.Invoke(null, [extensionsParameter]);
         }
-    }
-
-    private static bool _IsSystemAssembly(string? assemblyFullName)
-    {
-        return assemblyFullName?.StartsWith("System.", StringComparison.Ordinal) != false
-            || assemblyFullName.StartsWith("Microsoft.", StringComparison.Ordinal);
     }
 }

@@ -362,7 +362,6 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        configurationBuilder.AddAllPrimitivesValueConvertersMappings();
         configurationBuilder.AddBuildingBlocksPrimitivesConvertersMappings();
     }
 

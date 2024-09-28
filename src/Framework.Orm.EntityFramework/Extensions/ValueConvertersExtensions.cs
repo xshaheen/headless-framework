@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Reflection;
+using Framework.Generator.Primitives;
+using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 using Framework.Kernel.Primitives;
 
 #pragma warning disable IDE0130
@@ -23,8 +25,22 @@ public static class ValueConvertersExtensions
     }
 
     /// <summary>Adds Value converters for all Primitive types to the specified ModelConfigurationBuilder.</summary>
-    public static void AddAllPrimitivesValueConvertersMappings(this ModelConfigurationBuilder configurationBuilder)
+    public static void AddAllPrimitivesValueConvertersMappings(this ModelConfigurationBuilder builder)
     {
-        PrimitiveInvokeHelper.InvokeInAllPrimitiveAssemblies(_TypeName, _MethodName, configurationBuilder);
+        var assemblies = AssemblyHelper.GetCurrentAssemblies(
+            acceptPredicate: assembly => assembly.GetCustomAttribute<PrimitiveAssemblyAttribute>() is not null,
+            excludePredicate: AssemblyHelper.IsSystemAssemblyName
+        );
+
+        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, builder);
+    }
+
+    /// <summary>Adds Value converters for all Primitive types to the specified ModelConfigurationBuilder.</summary>
+    public static void AddAllPrimitivesValueConvertersMappings(
+        this ModelConfigurationBuilder builder,
+        IEnumerable<Assembly> assemblies
+    )
+    {
+        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, builder);
     }
 }

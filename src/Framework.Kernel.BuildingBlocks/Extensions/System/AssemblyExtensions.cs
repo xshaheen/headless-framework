@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.Reflection;
@@ -36,18 +38,13 @@ public static class AssemblyExtensions
         return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
     }
 
-    public static bool HsSystemAssemblyName(this Assembly assembly)
+    public static bool IsSystemAssemblyName(this Assembly assembly)
     {
-        return assembly.FullName is not null
-            && (
-                assembly.FullName.StartsWith("System.", StringComparison.Ordinal)
-                || assembly.FullName.StartsWith("Microsoft.", StringComparison.Ordinal)
-            );
+        return AssemblyHelper.IsSystemAssemblyName(assembly.FullName);
     }
 
-    public static bool HsSystemAssemblyName(this AssemblyName assemblyName)
+    public static bool IsSystemAssemblyName(this AssemblyName assemblyName)
     {
-        return assemblyName.FullName.StartsWith("System.", StringComparison.Ordinal)
-            || assemblyName.FullName.StartsWith("Microsoft.", StringComparison.Ordinal);
+        return AssemblyHelper.IsSystemAssemblyName(assemblyName.FullName);
     }
 }

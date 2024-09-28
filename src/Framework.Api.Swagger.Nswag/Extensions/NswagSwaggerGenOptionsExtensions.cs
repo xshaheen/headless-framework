@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Reflection;
+using Framework.Generator.Primitives;
+using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
 using Framework.Kernel.Primitives;
 using NJsonSchema.Generation;
 
@@ -24,6 +26,20 @@ public static class NswagSwaggerGenOptionsExtensions
     /// <summary>Adds Swagger mappings for all Primitive types to the specified JsonSchemaGeneratorSettings.</summary>
     public static void AddAllPrimitivesSwaggerMappings(this JsonSchemaGeneratorSettings options)
     {
-        PrimitiveInvokeHelper.InvokeInAllPrimitiveAssemblies(_TypeName, _MethodName, options);
+        var assemblies = AssemblyHelper.GetCurrentAssemblies(
+            acceptPredicate: assembly => assembly.GetCustomAttribute<PrimitiveAssemblyAttribute>() is not null,
+            excludePredicate: AssemblyHelper.IsSystemAssemblyName
+        );
+
+        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
+    }
+
+    /// <summary>Adds Swagger mappings for all Primitive types to the specified JsonSchemaGeneratorSettings.</summary>
+    public static void AddAllPrimitivesSwaggerMappings(
+        this JsonSchemaGeneratorSettings options,
+        IEnumerable<Assembly> assemblies
+    )
+    {
+        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
     }
 }

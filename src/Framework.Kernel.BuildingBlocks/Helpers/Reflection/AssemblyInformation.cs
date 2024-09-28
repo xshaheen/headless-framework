@@ -23,6 +23,6 @@ public sealed record AssemblyInformation(
             Description: assembly.GetAssemblyDescription(),
             Company: assembly.GetAssemblyCompany(),
             Version: assembly.GetAssemblyVersion(),
-            CommitNumber: assembly.GetInformationalVersion()?.Split("+", StringSplitOptions.RemoveEmptyEntries)[^1]
+            CommitNumber: assembly.GetCommitVersion()?.Split("+", StringSplitOptions.RemoveEmptyEntries)[^1]
         ) { }
 }

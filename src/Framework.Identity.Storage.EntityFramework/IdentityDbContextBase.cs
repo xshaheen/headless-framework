@@ -383,7 +383,6 @@ public abstract class IdentityDbContextBase<
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        configurationBuilder.AddAllPrimitivesValueConvertersMappings();
         configurationBuilder.AddBuildingBlocksPrimitivesConvertersMappings();
     }
 
