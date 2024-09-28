@@ -6,4 +6,4 @@ namespace Framework.Kernel.Domains;
 
 public interface IValueObject;
 
-public abstract class ValueObject : EquatableBase<ValueObject>, IValueObject;
+public abstract class ValueObject : EqualityBase<ValueObject>, IValueObject;
