@@ -2,7 +2,7 @@
 
 using Microsoft.CodeAnalysis;
 
-namespace Primitives.Generator.Models;
+namespace Framework.Generator.Primitives.Models;
 
 /// <summary>Represents data used by the code generator for generating Primitive types.</summary>
 internal sealed class GeneratorData

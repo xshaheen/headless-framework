@@ -3,7 +3,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace Primitives.Generator.Extensions;
+namespace Framework.Generator.Primitives.Extensions;
 
 /// <summary>
 /// A collection of extension methods for working with Roslyn syntax and symbols.

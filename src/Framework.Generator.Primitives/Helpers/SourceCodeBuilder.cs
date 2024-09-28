@@ -2,7 +2,7 @@
 
 using System.Text;
 
-namespace Primitives.Generator.Helpers;
+namespace Framework.Generator.Primitives.Helpers;
 
 /// <summary>
 /// A utility class for building source code with proper indentation.

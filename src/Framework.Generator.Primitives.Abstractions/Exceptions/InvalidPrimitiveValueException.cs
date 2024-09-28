@@ -4,7 +4,7 @@ using System.ComponentModel;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
-namespace Primitives;
+namespace Framework.Generator.Primitives;
 
 /// <summary>
 /// Represents an exception thrown when a value does not conform to the constraints or rules

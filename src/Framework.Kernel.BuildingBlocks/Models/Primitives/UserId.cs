@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Primitives;
+using Framework.Generator.Primitives;
 
-#pragma warning disable CA1036 // Override methods on comparable types
+#pragma warning disable CA1036  // Override methods on comparable types
+#pragma warning disable IDE0130 // Namespace does not match folder structure
+// ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Primitives;
 
 /// <summary>User identifier.</summary>

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-namespace Primitives.Generator.Models;
+namespace Framework.Generator.Primitives.Models;
 
 /// <summary>Configuration options for controlling code generation of Primitive types.</summary>
 internal sealed record PrimitiveGlobalOptions

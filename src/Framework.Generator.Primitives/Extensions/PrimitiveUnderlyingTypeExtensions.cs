@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
-using Primitives.Generator.Models;
 
-namespace Primitives.Generator.Extensions;
+namespace Framework.Generator.Primitives.Extensions;
 
 /// <summary>Extension methods for getting the underlying type of primitive.</summary>
 internal static class PrimitiveUnderlyingTypeExtensions

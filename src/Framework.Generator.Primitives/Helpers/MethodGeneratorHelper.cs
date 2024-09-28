@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Primitives.Generator.Extensions;
-using Primitives.Generator.Models;
+using Framework.Generator.Primitives.Extensions;
+using Framework.Generator.Primitives.Models;
 
-namespace Primitives.Generator.Helpers;
+namespace Framework.Generator.Primitives.Helpers;
 
 /// <summary>A helper class providing methods for generating code related to Swagger, TypeConverter, JsonConverter, and other operations.</summary>
 internal static class MethodGeneratorHelper
@@ -318,6 +318,52 @@ internal static class MethodGeneratorHelper
             .AppendMethodImplAggressiveInliningAttribute()
             .Append($"public static {className} operator %({className} left, {className} right)")
             .AppendLine($" => new(left.{fieldName} % right.{fieldName});");
+    }
+
+    /// <summary>Generates string methods</summary>
+    /// <param name="builder">The source code builder.</param>
+    public static void GenerateStringMethods(this SourceCodeBuilder builder)
+    {
+        builder
+            .AppendSummary("Gets the character at the specified index.")
+            .AppendLine("public char this[int i]")
+            .OpenBracket()
+            .AppendLine("get => _value[i];")
+            .CloseBracket()
+            .NewLine();
+        builder
+            .AppendSummary("Gets the character at the specified index.")
+            .AppendLine("public char this[Index index]")
+            .OpenBracket()
+            .AppendLine("get => _value[index];")
+            .CloseBracket()
+            .NewLine();
+        builder
+            .AppendSummary("Gets the substring by specified range.")
+            .AppendLine("public string this[Range range]")
+            .OpenBracket()
+            .AppendLine("get => _value[range];")
+            .CloseBracket()
+            .NewLine();
+        builder
+            .AppendSummary("Gets the number of characters.")
+            .AppendSummaryBlock("return", "The number of characters in underlying string value.")
+            .AppendLine("public int Length => _value.Length;")
+            .NewLine();
+        builder
+            .AppendSummary("Returns a substring of this string.")
+            .AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]")
+            .AppendLine("public string Substring(int startIndex, int length) => _value.Substring(startIndex, length);")
+            .NewLine();
+        builder
+            .AppendSummary("Returns a substring of this string.")
+            .AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]")
+            .AppendLine("public string Substring(int startIndex) => _value.Substring(startIndex);")
+            .NewLine();
+        builder
+            .AppendSummary("Returns the entire string as an array of characters.")
+            .AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]")
+            .AppendLine("public char[] ToCharArray() => _value.ToCharArray();");
     }
 
     /// <summary>Generates methods required for implementing ISpanFormattable for the specified type.</summary>

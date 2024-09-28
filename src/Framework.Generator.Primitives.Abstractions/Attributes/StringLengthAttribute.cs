@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
-
-namespace Primitives;
+namespace Framework.Generator.Primitives;
 
 /// <summary>Validation attribute to assert a string property, field or parameter does not exceed a maximum length</summary>
 /// <param name="minimumLength">The minimum length allowed for the string.</param>

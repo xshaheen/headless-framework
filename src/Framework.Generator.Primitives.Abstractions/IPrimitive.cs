@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-namespace Primitives;
+namespace Framework.Generator.Primitives;
 
 /// <summary>Represents an interface for primitive values.</summary>
 public interface IPrimitive

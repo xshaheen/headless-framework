@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Generator.Primitives.Extensions;
+using Framework.Generator.Primitives.Helpers;
+using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
-using Primitives.Generator.Extensions;
-using Primitives.Generator.Helpers;
-using Primitives.Generator.Models;
 
-namespace Primitives.Generator;
+namespace Framework.Generator.Primitives;
 
 /// <summary>A static class responsible for executing the generation of code for primitive types.</summary>
 internal static class Executor
@@ -182,7 +182,7 @@ internal static class Executor
         var attributeData = attributes.FirstOrDefault(x =>
             string.Equals(
                 x.AttributeClass?.ToDisplayString(),
-                AttributeConstants.SupportedOperationsAttributeFullName,
+                AbstractionConstants.SupportedOperationsAttributeFullName,
                 StringComparison.Ordinal
             )
         );
@@ -190,7 +190,7 @@ internal static class Executor
         var serializationAttribute = attributes.FirstOrDefault(x =>
             string.Equals(
                 x.AttributeClass?.ToDisplayString(),
-                AttributeConstants.SerializationFormatAttributeFullName,
+                AbstractionConstants.SerializationFormatAttributeFullName,
                 StringComparison.Ordinal
             )
         );
@@ -301,7 +301,7 @@ internal static class Executor
                 .FirstOrDefault(x =>
                     string.Equals(
                         x.AttributeClass?.ToDisplayString(),
-                        AttributeConstants.SupportedOperationsAttributeFullName,
+                        AbstractionConstants.SupportedOperationsAttributeFullName,
                         StringComparison.Ordinal
                     )
                 );
@@ -512,7 +512,7 @@ internal static class Executor
 
         builder.Append($"public {type.Name}({underlyingTypeName} value) : this(value, true) {{ }}").NewLine(2);
 
-        builder.AppendLine($"private {type.Name}({underlyingTypeName} value, bool validate) ").OpenBracket();
+        builder.AppendLine($"private {type.Name}({underlyingTypeName} value, bool validate)").OpenBracket();
         builder.AppendLine("if (validate)").OpenBracket();
 
         if (data.UnderlyingType == PrimitiveUnderlyingType.String)
@@ -561,7 +561,7 @@ internal static class Executor
             .FirstOrDefault(x =>
                 string.Equals(
                     x.AttributeClass?.ToDisplayString(),
-                    AttributeConstants.StringLengthAttributeFullName,
+                    AbstractionConstants.StringLengthAttributeFullName,
                     StringComparison.Ordinal
                 )
             );
