@@ -3,11 +3,11 @@
 using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
+using Framework.Generator.Primitives.Extensions;
+using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
-using Primitives.Generator.Extensions;
-using Primitives.Generator.Models;
 
-namespace Primitives.Generator.Helpers;
+namespace Framework.Generator.Primitives.Helpers;
 
 internal static class SourceFilesGeneratorHelper
 {
@@ -44,12 +44,12 @@ internal static class SourceFilesGeneratorHelper
         usings.Add("Swashbuckle.AspNetCore.SwaggerGen");
         usings.Add("Microsoft.OpenApi.Models");
         usings.Add("Microsoft.OpenApi.Any");
-        usings.Add("Primitives");
+        usings.Add(AbstractionConstants.Namespace);
         builder.AppendUsings(usings);
 
         if (addAssemblyAttribute)
         {
-            builder.AppendLine("[assembly: Primitives.PrimitiveAssemblyAttribute]");
+            builder.AppendLine($"[assembly: {AbstractionConstants.PrimitiveAssemblyAttributeFullName}]");
         }
 
         var ns = string.Join(".", assemblyName.Split('.').Select(s => char.IsDigit(s[0]) ? '_' + s : s));
@@ -194,12 +194,12 @@ internal static class SourceFilesGeneratorHelper
         usings.Add("NJsonSchema.Generation.TypeMappers");
         usings.Add("Microsoft.OpenApi.Models");
         usings.Add("Microsoft.OpenApi.Any");
-        usings.Add("Primitives");
+        usings.Add(AbstractionConstants.Namespace);
         builder.AppendUsings(usings);
 
         if (addAssemblyAttribute)
         {
-            builder.AppendLine("[assembly: Primitives.PrimitiveAssemblyAttribute]");
+            builder.AppendLine($"[assembly: {AbstractionConstants.PrimitiveAssemblyAttributeFullName}]");
         }
 
         var ns = string.Join(".", assemblyName.Split('.').Select(s => char.IsDigit(s[0]) ? '_' + s : s));
@@ -354,7 +354,7 @@ internal static class SourceFilesGeneratorHelper
 
         if (addAssemblyAttribute)
         {
-            builder.AppendLine("[assembly: Primitives.PrimitiveAssemblyAttribute]");
+            builder.AppendLine($"[assembly: {AbstractionConstants.PrimitiveAssemblyAttributeFullName}]");
         }
 
         var ns = string.Join(".", assemblyName.Split('.').Select(s => char.IsDigit(s[0]) ? '_' + s : s));
@@ -426,7 +426,7 @@ internal static class SourceFilesGeneratorHelper
             "System.Numerics",
             "System.Diagnostics",
             "System.Runtime.CompilerServices",
-            "Primitives",
+            AbstractionConstants.Namespace,
         };
 
         if (data.ParentSymbols.Count > 0)
@@ -522,6 +522,12 @@ internal static class SourceFilesGeneratorHelper
         }
 
         builder.GenerateMandatoryMethods(data);
+
+        if (string.Equals(data.PrimitiveTypeFriendlyName, "string", StringComparison.Ordinal))
+        {
+            builder.NewLine();
+            builder.GenerateStringMethods();
+        }
 
         builder.NewLine();
         builder.AppendRegion("IEquatable Implementation");
@@ -797,7 +803,9 @@ internal static class SourceFilesGeneratorHelper
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings([data.Namespace, "System", "System.ComponentModel", "System.Globalization", "Primitives"]);
+        builder.AppendUsings(
+            [data.Namespace, "System", "System.ComponentModel", "System.Globalization", AbstractionConstants.Namespace]
+        );
         builder.AppendNamespace(data.Namespace + ".Converters");
         builder.AppendSummary($"TypeConverter for <see cref = \"{data.ClassName}\"/>");
 
@@ -874,7 +882,7 @@ internal static class SourceFilesGeneratorHelper
                 data.PrimitiveTypeSymbol.ContainingNamespace.ToDisplayString(),
                 "Microsoft.EntityFrameworkCore",
                 "Microsoft.EntityFrameworkCore.Storage.ValueConversion",
-                "Primitives",
+                AbstractionConstants.Namespace,
             ]
         );
 
@@ -918,7 +926,7 @@ internal static class SourceFilesGeneratorHelper
                 "System.Text.Json.Serialization",
                 "System.Globalization",
                 "System.Text.Json.Serialization.Metadata",
-                "Primitives",
+                AbstractionConstants.Namespace,
             ]
         );
 

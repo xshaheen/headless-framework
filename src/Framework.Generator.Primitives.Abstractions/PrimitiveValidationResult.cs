@@ -2,10 +2,9 @@
 
 using System.Diagnostics.CodeAnalysis;
 
+namespace Framework.Generator.Primitives;
+
 // ReSharper disable once MemberCanBePrivate.Global
-
-namespace Primitives;
-
 /// <summary>
 /// DomainPrimitive validation result.
 /// </summary>

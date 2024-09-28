@@ -2,11 +2,12 @@
 
 using System.Runtime.CompilerServices;
 using System.Text;
+using Framework.Generator.Primitives.Helpers;
+using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Primitives.Generator.Models;
 
-namespace Primitives.Generator.Extensions;
+namespace Framework.Generator.Primitives.Extensions;
 
 /// <summary>Extension methods for working with Roslyn's Compilation and related types.</summary>
 internal static class CompilationExtensions
@@ -16,8 +17,12 @@ internal static class CompilationExtensions
     /// <returns>True if the type implements the IPrimitive interface; otherwise, false.</returns>
     public static bool IsImplementIPrimitive(this INamedTypeSymbol x)
     {
-        return x is { IsGenericType: true, Name: "IPrimitive" }
-            && string.Equals(x.ContainingNamespace.ToDisplayString(), "Primitives", StringComparison.Ordinal);
+        return x is { IsGenericType: true, Name: AbstractionConstants.Interface }
+            && string.Equals(
+                x.ContainingNamespace.ToDisplayString(),
+                AbstractionConstants.Namespace,
+                StringComparison.Ordinal
+            );
     }
 
     /// <summary>

@@ -5,9 +5,9 @@ using System.Xml;
 
 // ReSharper disable StringLiteralTypo
 // ReSharper disable CommentTypo
-// ReSharper disable UnusedMember.Global
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
-namespace Primitives;
+namespace Framework.Generator.Primitives;
 
 /// <summary>Provides extension methods for converting various data types to their XML string representations.</summary>
 public static class ToXmlStringExtensions

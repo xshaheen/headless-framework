@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Generator.Primitives.Extensions;
+using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Primitives.Generator.Extensions;
-using Primitives.Generator.Models;
 
-namespace Primitives.Generator;
+namespace Framework.Generator.Primitives;
 
 /// <summary>
 /// A custom source code generator responsible for generating code for primitive types

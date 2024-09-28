@@ -2,22 +2,22 @@
 
 using Microsoft.CodeAnalysis;
 
-namespace Primitives.Generator.Helpers;
+namespace Framework.Generator.Primitives.Helpers;
 
 /// <summary>A utility class for generating diagnostic messages related to primitives and code generation.</summary>
 internal static class DiagnosticHelper
 {
-    private const string _Category = "Primitives.Generator";
+    private const string _Category = AbstractionConstants.Namespace;
 
-    /// <summary>Creates a diagnostic indicating that the Primitives.Generator has started.</summary>
+    /// <summary>Creates a diagnostic indicating that the primitives generator has started.</summary>
     /// <returns>The created diagnostic.</returns>
     internal static Diagnostic GeneratorStarted()
     {
         return Diagnostic.Create(
             new DiagnosticDescriptor(
                 "AL0000",
-                "Primitives.Generator started",
-                "Primitives.Generator started",
+                "Framework.Generator.Primitives started",
+                "Framework.Generator.Primitives started",
                 _Category,
                 DiagnosticSeverity.Info,
                 isEnabledByDefault: true
@@ -74,8 +74,8 @@ internal static class DiagnosticHelper
         return Diagnostic.Create(
             new DiagnosticDescriptor(
                 "AL1001",
-                "Primitive type must be a Numeric type, Date type or string type to use DomainPrimitivesGenerator",
-                "Primitive type must be a Numeric type, Date type or string type to use DomainPrimitivesGenerator",
+                "Primitive type must be a Numeric type, Date type or string type to use PrimitivesGenerator",
+                "Primitive type must be a Numeric type, Date type or string type to use PrimitivesGenerator",
                 _Category,
                 DiagnosticSeverity.Error,
                 isEnabledByDefault: true
@@ -93,7 +93,7 @@ internal static class DiagnosticHelper
         return Diagnostic.Create(
             new DiagnosticDescriptor(
                 "AL1012",
-                $"{AttributeConstants.SerializationFormatAttribute} can only be used with  Date types",
+                $"{AbstractionConstants.SerializationFormatAttribute} can only be used with  Date types",
                 "Type {0} cannot have SerializationFormatAttribute as it's not a date type",
                 _Category,
                 DiagnosticSeverity.Error,
@@ -113,7 +113,7 @@ internal static class DiagnosticHelper
         return Diagnostic.Create(
             new DiagnosticDescriptor(
                 "AL1012",
-                $"{AttributeConstants.SupportedOperationsAttribute} can only be used with Operational Numeric types",
+                $"{AbstractionConstants.SupportedOperationsAttribute} can only be used with Operational Numeric types",
                 "Type {0} cannot have SupportedOperationsAttribute as it's not an operational numeric type",
                 _Category,
                 DiagnosticSeverity.Error,

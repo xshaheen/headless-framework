@@ -3,10 +3,10 @@
 using System.Runtime.CompilerServices;
 using System.Xml;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable UnusedMember.Global
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
-namespace Primitives;
+namespace Framework.Generator.Primitives;
 
 /// <summary>
 /// Provides extension methods for XmlReader and XmlWriter to simplify reading and writing of certain data types.

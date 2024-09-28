@@ -5,10 +5,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
-// ReSharper disable UnusedMember.Global
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
-namespace Primitives;
+namespace Framework.Generator.Primitives;
 
 /// <summary>
 /// Provides a set of static methods for retrieving JSON converters for various data types.
