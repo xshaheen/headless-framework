@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.Reflection;
 using DotNetCore.CAP;
 using Framework.Kernel.Domains;
 
@@ -10,17 +11,25 @@ public sealed class CapDistributedMessagePublisher(ICapPublisher publisher) : ID
     public void Publish<T>(T message)
         where T : class, IDistributedMessage
     {
-        publisher.Publish(name: message.TypeKey, contentObj: message, callbackName: null);
+        publisher.Publish(name: _GetMessageName(typeof(T)), contentObj: message, callbackName: null);
     }
 
     public Task PublishAsync<T>(T message, CancellationToken cancellationToken = default)
         where T : class, IDistributedMessage
     {
         return publisher.PublishAsync(
-            name: message.TypeKey,
+            name: _GetMessageName(typeof(T)),
             contentObj: message,
             callbackName: null,
             cancellationToken
         );
+    }
+
+    private static string _GetMessageName(Type type)
+    {
+        return type.GetCustomAttribute<DistributedMessageAttribute>()?.MessageName
+            ?? throw new InvalidOperationException(
+                "Message name is not defined. Please use DistributedMessageAttribute to define the message name."
+            );
     }
 }

@@ -8,8 +8,6 @@ public interface IDistributedMessage
 {
     string UniqueId { get; }
 
-    string TypeKey { get; }
-
     DateTimeOffset Timestamp { get; }
 
     IDictionary<string, string> Properties { get; }

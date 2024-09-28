@@ -6,10 +6,7 @@ namespace Framework.Kernel.Domains;
 
 [PublicAPI]
 public class DistributedMessage<T> : EquatableBase<DistributedMessage<T>>, IDistributedMessage<T>
-    where T : IDistributedMessagePayload
 {
-    public string TypeKey => T.TypeKey;
-
     public required string UniqueId { get; init; }
 
     public required DateTimeOffset Timestamp { get; init; }
@@ -22,9 +19,4 @@ public class DistributedMessage<T> : EquatableBase<DistributedMessage<T>>, IDist
     {
         yield return UniqueId;
     }
-}
-
-public interface IDistributedMessagePayload
-{
-    static abstract string TypeKey { get; }
 }
