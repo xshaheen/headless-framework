@@ -18,7 +18,6 @@ public static class CapServiceProviderExtensions
         MessageType type = MessageType.Publish,
         string? status = nameof(StatusName.Succeeded)
     )
-        where TPayload : IDistributedMessagePayload
     {
         var message = await provider.GetMessageAsync(name, type, status);
 

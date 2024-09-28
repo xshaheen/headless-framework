@@ -24,7 +24,7 @@ public static class CapDistributedMessageHandlerFactory
             .CurrentDomain.GetAssemblies()
             .Where(assembly => assembly.FullName is not null && !_IsSystemAssembly(assembly.FullName));
 
-        var types = _GetEventHandlerTypesInAssemblies(assemblies);
+        var types = _GetMessageHandlerTypesInAssemblies(assemblies);
 
         return Create(types);
     }
@@ -32,19 +32,19 @@ public static class CapDistributedMessageHandlerFactory
     public static Type Create(IReadOnlyCollection<TypeInfo> messageHandlerTypes)
     {
         // Base Type
-        var baseType = typeof(CapEventHandlerSubscribeBase);
+        var baseType = typeof(CapMessageHandlerSubscribeBase);
 
         var baseTypeConstructor =
             baseType.GetConstructor([typeof(IServiceProvider)])
-            ?? throw new InvalidOperationException($"{nameof(CapEventHandlerSubscribeBase)} Constructor not found");
+            ?? throw new InvalidOperationException($"{nameof(CapMessageHandlerSubscribeBase)} Constructor not found");
 
         var baseTriggerHandlerAsyncMethod =
             baseType.GetMethod(
-                nameof(CapEventHandlerSubscribeBase.TriggerHandlerAsync),
+                nameof(CapMessageHandlerSubscribeBase.TriggerHandlerAsync),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )
             ?? throw new InvalidOperationException(
-                $"{nameof(CapEventHandlerSubscribeBase)} {nameof(CapEventHandlerSubscribeBase.TriggerHandlerAsync)} Method not found"
+                $"{nameof(CapMessageHandlerSubscribeBase)} {nameof(CapMessageHandlerSubscribeBase.TriggerHandlerAsync)} Method not found"
             );
 
         // Subscribe Attribute
@@ -110,13 +110,13 @@ public static class CapDistributedMessageHandlerFactory
         constructorIlGenerator.Emit(OpCodes.Call, baseTypeConstructor); // Call the base constructor
 
         // 3. Add subscribe methods
-        foreach (var ((eventName, eventType), list) in _GetHandlersInformation(messageHandlerTypes))
+        foreach (var ((messageName, messageType), list) in _GetHandlersInformation(messageHandlerTypes))
         {
             foreach (var (handlerType, methodName, groupName) in list)
             {
                 // 3.1 Add the field for the handler type
                 var fieldBuilder = typeBuilder.DefineField(
-                    fieldName: $"_{eventType.Name}Handler",
+                    fieldName: $"_{messageType.Name}Handler",
                     type: typeof(Type),
                     attributes: FieldAttributes.Private | FieldAttributes.InitOnly
                 );
@@ -127,13 +127,13 @@ public static class CapDistributedMessageHandlerFactory
                 constructorIlGenerator.Emit(OpCodes.Call, convertTypeTokenToRuntimeTypeHandleMethod); // Call the method to convert the metadata token to a runtime type handle
                 constructorIlGenerator.Emit(OpCodes.Stfld, fieldBuilder); // Store the value of the field in the object
 
-                // 3.3 Define the method (Handle a duplicated event handler name)
+                // 3.3 Define the method (Handle a duplicated message handler name)
 
                 var handlerMethodBuilder = typeBuilder.DefineMethod(
                     name: methodName,
                     attributes: MethodAttributes.Public | MethodAttributes.HideBySig,
                     returnType: typeof(ValueTask),
-                    parameterTypes: [eventType, typeof(CapHeader), typeof(CancellationToken)]
+                    parameterTypes: [messageType, typeof(CapHeader), typeof(CancellationToken)]
                 );
 
                 // Add the FromCap attribute to the header parameter to inject the CapHeader
@@ -144,7 +144,7 @@ public static class CapDistributedMessageHandlerFactory
                 // 3.4 Define the attribute & Set group property
                 var customAttributeBuilder = new CustomAttributeBuilder(
                     con: subscribeAttributeConstructor,
-                    constructorArgs: [eventName, false],
+                    constructorArgs: [messageName, false],
                     namedProperties: [subscribeAttributeGroupProperty],
                     propertyValues: [groupName]
                 );
@@ -160,7 +160,7 @@ public static class CapDistributedMessageHandlerFactory
                 handlerMethodIlGenerator.Emit(OpCodes.Ldarg_0); // Load argument 0 (this) to the stack
                 handlerMethodIlGenerator.Emit(OpCodes.Ldfld, fieldBuilder); // Load the field value to the stack
                 handlerMethodIlGenerator.Emit(OpCodes.Ldarg_3); // Load argument 3 (abortToken) to the stack
-                handlerMethodIlGenerator.CallMethod(baseTriggerHandlerAsyncMethod.MakeGenericMethod(eventType)); // Call the base class method
+                handlerMethodIlGenerator.CallMethod(baseTriggerHandlerAsyncMethod.MakeGenericMethod(messageType)); // Call the base class method
                 handlerMethodIlGenerator.Return();
             }
         }
@@ -179,20 +179,18 @@ public static class CapDistributedMessageHandlerFactory
 
         foreach (var handlerType in handlerTypes)
         {
-            var eventType = handlerType
+            var messageType = handlerType
                 .GetInterfaces()
                 .First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDistributedMessageHandler<>))
                 .GetGenericArguments()[0];
 
-            var eventName =
-                eventType
-                    .GetProperty(nameof(IDistributedMessage.TypeKey), BindingFlags.Static | BindingFlags.Public)!
-                    .GetValue(null)
+            var messageName =
+                messageType.GetCustomAttribute<DistributedMessageAttribute>()?.MessageName
                 ?? throw new InvalidOperationException(
-                    $"{nameof(IDistributedMessage.TypeKey)} not found in {eventType.Name}"
+                    $"The message type {messageType.Name} does not have a {nameof(DistributedMessageAttribute)} attribute"
                 );
 
-            var key = ((string)eventName, eventType);
+            var key = (messageName, messageType);
 
             if (!map.TryGetValue(key, out var handlers))
             {
@@ -215,7 +213,7 @@ public static class CapDistributedMessageHandlerFactory
 
     #region Get Handlers In Assemblies
 
-    private static TypeInfo[] _GetEventHandlerTypesInAssemblies(IEnumerable<Assembly> assemblies)
+    private static TypeInfo[] _GetMessageHandlerTypesInAssemblies(IEnumerable<Assembly> assemblies)
     {
         var types = assemblies
             .SelectMany(assembly => assembly.GetConstructibleDefinedTypes())
@@ -240,7 +238,7 @@ public static class CapDistributedMessageHandlerFactory
     #region Base Class
 
     [UsedImplicitly]
-    public class CapEventHandlerSubscribeBase(IServiceProvider serviceProvider) : ICapSubscribe
+    public class CapMessageHandlerSubscribeBase(IServiceProvider serviceProvider) : ICapSubscribe
     {
         public async ValueTask TriggerHandlerAsync<T>(
             T data,
@@ -272,7 +270,7 @@ public static class CapDistributedMessageHandlerFactory
     #region Generated Code Example
 
     /*
-    internal sealed class DistributedMessageHandlerCapWrapperDynamicType : CapEventHandlerSubscribeBase
+    internal sealed class DistributedMessageHandlerCapWrapperDynamicType : CapMessageHandlerSubscribeBase
     {
         private readonly Type _someMessageHandler;
 
@@ -281,7 +279,7 @@ public static class CapDistributedMessageHandlerFactory
             _someMessageHandler = typeof(SomeMessageHandler);
         }
 
-        [CapSubscribe(name: "SomeEvent", isPartial: false, Group = "SomeMessageHandler")]
+        [CapSubscribe(name: "SomeMessage", isPartial: false, Group = "SomeMessageHandler")]
         public ValueTask WireSomeMessageHandlerAsync(SomeMessage message, [FromCap] CapHeader header, CancellationToken cancellationToken)
 
         {

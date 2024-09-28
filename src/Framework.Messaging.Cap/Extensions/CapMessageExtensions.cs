@@ -11,7 +11,6 @@ namespace DotNetCore.CAP.Monitoring;
 public static class CapMessageExtensions
 {
     public static DistributedMessage<TPayload> GetPayloadMessage<TPayload>(this MessageDto message)
-        where TPayload : IDistributedMessagePayload
     {
         var content = JsonSerializer.Deserialize<JsonElement>(
             message.Content!,
