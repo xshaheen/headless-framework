@@ -85,10 +85,8 @@ public static class TypeHelper
         return Nullable.GetUnderlyingType(type) ?? type;
     }
 
-    public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly>? assemblies = null)
+    public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly> assemblies)
     {
-        assemblies ??= AppDomain.CurrentDomain.GetAssemblies();
-
         var types = new List<Type>();
 
         foreach (var assembly in assemblies)
