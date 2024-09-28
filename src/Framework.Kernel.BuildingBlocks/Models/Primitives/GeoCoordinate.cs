@@ -6,8 +6,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Primitives;
 
-[ComplexType]
 [PublicAPI]
+[ComplexType]
 public sealed class GeoCoordinate : IEquatable<GeoCoordinate>
 {
     public required double Latitude { get; init; }

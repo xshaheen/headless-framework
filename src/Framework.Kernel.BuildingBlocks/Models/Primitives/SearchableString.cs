@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Framework.Kernel.Domains;
@@ -9,12 +10,13 @@ using Framework.Kernel.Domains;
 namespace Framework.Kernel.Primitives;
 
 [PublicAPI]
+[ComplexType]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public sealed class NormalizedString : ValueObject
+public sealed class SearchableString : ValueObject
 {
     private string? _value;
 
-    public NormalizedString(string value)
+    public SearchableString(string value)
     {
         Value = value.Trim();
     }
@@ -38,16 +40,16 @@ public sealed class NormalizedString : ValueObject
 
     public override string ToString() => Value;
 
-    public NormalizedString ToNormalizedString() => new(Value);
+    public SearchableString ToSearchableString() => new(Value);
 
-    public static NormalizedString FromString(string value) => value;
+    public static SearchableString FromString(string value) => value;
 
     [return: NotNullIfNotNull(nameof(value))]
     public static string? Normalize(string? value) => value?.Trim().SearchString();
 
     [return: NotNullIfNotNull(nameof(value))]
-    public static implicit operator string?(NormalizedString? value) => value?.Value;
+    public static implicit operator string?(SearchableString? value) => value?.Value;
 
     [return: NotNullIfNotNull(nameof(value))]
-    public static implicit operator NormalizedString?(string? value) => value is null ? null : new(value);
+    public static implicit operator SearchableString?(string? value) => value is null ? null : new(value);
 }
