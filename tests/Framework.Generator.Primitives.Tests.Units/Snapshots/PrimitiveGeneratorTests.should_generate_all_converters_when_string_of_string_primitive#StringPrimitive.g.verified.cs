@@ -125,7 +125,7 @@ public partial class StringPrimitive : IEquatable<StringPrimitive>
     }
 
     /// <summary>Gets the substring by specified range.</summary>
-    public string this[Range range]
+    public string this[System.Range range]
     {
         get => _value[range];
     }
