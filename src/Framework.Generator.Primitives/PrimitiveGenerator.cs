@@ -8,6 +8,8 @@ using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Framework.Generator.Primitives;
 
+/* This is based on https://github.com/altasoft/DomainPrimitives */
+
 /// <summary>
 /// A custom source code generator responsible for generating code for primitive types
 /// based on their declarations in the source code.

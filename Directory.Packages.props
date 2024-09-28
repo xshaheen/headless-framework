@@ -153,6 +153,8 @@
     <PackageVersion Include="TimeZoneConverter" Version="6.1.0" />
     <PackageVersion Include="Twilio" Version="6.2.4" />
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.0.2" />
+    <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
+    <PackageVersion Include="Verify.Xunit" Version="26.6.0" />
     <PackageVersion Include="WireMock.Net" Version="1.6.3" />
     <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.3" />
     <PackageVersion Include="WireMock.Net.xUnit" Version="1.6.3" />
