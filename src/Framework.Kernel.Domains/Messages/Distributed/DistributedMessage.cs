@@ -5,7 +5,7 @@
 namespace Framework.Kernel.Domains;
 
 [PublicAPI]
-public class DistributedMessage<T> : EquatableBase<DistributedMessage<T>>, IDistributedMessage<T>
+public class DistributedMessage<T> : EqualityBase<DistributedMessage<T>>, IDistributedMessage<T>
 {
     public required string UniqueId { get; init; }
 

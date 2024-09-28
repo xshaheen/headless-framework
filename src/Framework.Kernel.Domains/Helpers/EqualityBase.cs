@@ -4,10 +4,10 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Domains;
 
-public abstract class EquatableBase<T> : IEquatable<EquatableBase<T>>
-    where T : EquatableBase<T>
+public abstract class EqualityBase<T> : IEquatable<EqualityBase<T>>
+    where T : EqualityBase<T>
 {
-    public bool Equals(EquatableBase<T>? other)
+    public bool Equals(EqualityBase<T>? other)
     {
         if (other is null)
         {
@@ -22,19 +22,19 @@ public abstract class EquatableBase<T> : IEquatable<EquatableBase<T>>
         return GetType() == other.GetType() && EqualityComponents().SequenceEqual(other.EqualityComponents());
     }
 
-    public static bool operator ==(EquatableBase<T>? left, EquatableBase<T>? right)
+    public static bool operator ==(EqualityBase<T>? left, EqualityBase<T>? right)
     {
         return !(left is null ^ right is null) && left?.Equals(right) != false;
     }
 
-    public static bool operator !=(EquatableBase<T>? left, EquatableBase<T>? right)
+    public static bool operator !=(EqualityBase<T>? left, EqualityBase<T>? right)
     {
         return !(left == right);
     }
 
     public sealed override bool Equals(object? obj)
     {
-        return Equals(obj as EquatableBase<T>);
+        return Equals(obj as EqualityBase<T>);
     }
 
     public sealed override int GetHashCode()

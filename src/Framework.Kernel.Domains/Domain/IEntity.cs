@@ -14,7 +14,7 @@ public interface IEntity
 }
 
 /// <inheritdoc cref="IEntity"/>
-public abstract class Entity : EquatableBase<Entity>, IEntity
+public abstract class Entity : EqualityBase<Entity>, IEntity
 {
     public abstract IReadOnlyList<object> GetKeys();
 
