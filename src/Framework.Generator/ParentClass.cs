@@ -1,0 +1,14 @@
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+namespace Framework.Generator;
+
+public sealed class ParentClass(string keyword, string name, string constraints, ParentClass? child)
+{
+    public ParentClass? Child { get; } = child;
+
+    public string Keyword { get; } = keyword;
+
+    public string Name { get; } = name;
+
+    public string Constraints { get; } = constraints;
+}

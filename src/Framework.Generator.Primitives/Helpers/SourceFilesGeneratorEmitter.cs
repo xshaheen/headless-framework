@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis;
 
 namespace Framework.Generator.Primitives.Helpers;
 
-internal static class SourceFilesGeneratorHelper
+internal static class SourceFilesGeneratorEmitter
 {
     private const string _SwashbuckleSwaggerExtensionsClassName = "AddSwashbuckleSwaggerPrimitivesMappingsExtensions";
     private const string _SwashbuckleAddPrimitivesMethodName = "AddSwaggerPrimitiveMappings";

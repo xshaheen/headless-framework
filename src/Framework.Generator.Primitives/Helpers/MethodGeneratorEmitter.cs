@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Generator.Primitives.Extensions;
 using Framework.Generator.Primitives.Models;
 
 namespace Framework.Generator.Primitives.Helpers;
 
 /// <summary>A helper class providing methods for generating code related to Swagger, TypeConverter, JsonConverter, and other operations.</summary>
-internal static class MethodGeneratorHelper
+internal static class MethodGeneratorEmitter
 {
     /// <summary>TryCreate,TryCreate with error message methods for the specified type, and ValidateOrThrow.</summary>
     /// <param name="builder">The source code builder.</param>

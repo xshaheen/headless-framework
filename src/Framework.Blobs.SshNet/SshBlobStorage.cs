@@ -748,7 +748,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var proxyType = settings.ProxyType;
 
-        if (proxyType is ProxyTypes.None && proxyUri.Scheme?.StartsWith("http", StringComparison.Ordinal) == true)
+        if (proxyType is ProxyTypes.None && proxyUri.Scheme.StartsWith("http", StringComparison.Ordinal))
         {
             proxyType = ProxyTypes.Http;
         }

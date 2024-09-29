@@ -2,12 +2,10 @@
 
 using System.Text;
 
-namespace Framework.Generator.Primitives.Helpers;
+namespace Framework.Generator;
 
-/// <summary>
-/// A utility class for building source code with proper indentation.
-/// </summary>
-internal sealed class SourceCodeBuilder
+/// <summary>A utility class for building source code with proper indentation.</summary>
+public sealed class SourceCodeBuilder
 {
     private const string _SourceHeader1 = """
         //------------------------------------------------------------------------------
@@ -45,10 +43,10 @@ internal sealed class SourceCodeBuilder
     }
 
     /// <summary>Represents a new line character sequence.</summary>
-    internal static readonly string PlainNewLine = new StringBuilder(2).AppendLine().ToString();
+    public static readonly string PlainNewLine = new StringBuilder(2).AppendLine().ToString();
 
     /// <summary>Represents the length of a new line character sequence.</summary>
-    internal static readonly int NewLineLength = PlainNewLine.Length;
+    public static readonly int NewLineLength = PlainNewLine.Length;
 
     /// <summary>Returns the length of the new line character(s) used in the current environment.</summary>
     /// <returns>The length of the new line character(s).</returns>

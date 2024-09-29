@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- Indicates that this project is a Roslyn component -->
     <IsRoslynComponent>true</IsRoslynComponent>
     <!-- This ensures the output of this project is treated as an analyzer by projects that reference it -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
@@ -20,12 +21,16 @@
   </PropertyGroup>
 
   <ItemGroup Label="Testing">
-    <InternalsVisibleTo Include="Framework.Generator.Primitives.Tests.Units" />
+    <InternalsVisibleTo Include="Framework.Generator.Primitives.Tests.Units"  />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Label="Generator dependencies">
+    <ProjectReference Include="..\Framework.Generator\Framework.Generator.csproj" PrivateAssets="all" OutputItemType="Analyzer" />
   </ItemGroup>
 
   <ItemGroup>
