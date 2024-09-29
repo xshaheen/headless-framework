@@ -535,6 +535,34 @@ public sealed class PrimitiveGeneratorTests
         return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(11), _generateAllOptions);
     }
 
+    [Fact]
+    public Task should_generate_all_converters_when_nested_namespace_primitive()
+    {
+        const string source = """
+            using System;
+            using Framework.Generator.Primitives;
+
+            namespace Framework.Primitives
+            {
+                namespace Outer
+                {
+                    namespace Nested
+                    {
+                        public readonly partial struct IntPrimitive : IPrimitive<int>
+                        {
+                            public static PrimitiveValidationResult Validate(int value)
+                            {
+                                return value < 10 || value > 20 ? "Invalid Value" : PrimitiveValidationResult.Ok;
+                            }
+                        }
+                    }
+                }
+            }
+            """;
+
+        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+    }
+
     private static class TestHelper
     {
         internal static Task Verify(

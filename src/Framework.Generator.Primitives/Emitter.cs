@@ -8,7 +8,7 @@ using Microsoft.CodeAnalysis;
 namespace Framework.Generator.Primitives;
 
 /// <summary>A static class responsible for executing the generation of code for primitive types.</summary>
-internal static class Executor
+internal static class Emitter
 {
     /// <summary>Executes the generation of primitives based on the provided parameters.</summary>
     /// <param name="typesToGenerate">The list of primitives to generate.</param>
@@ -22,6 +22,8 @@ internal static class Executor
         in PrimitiveGlobalOptions globalOptions
     )
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
         if (typesToGenerate.IsDefaultOrEmpty)
         {
             return;
@@ -38,6 +40,8 @@ internal static class Executor
         {
             foreach (var typeSymbol in typesToGenerate)
             {
+                context.CancellationToken.ThrowIfCancellationRequested();
+
                 if (typeSymbol is null) // Will never happen
                 {
                     continue;
@@ -133,10 +137,10 @@ internal static class Executor
     /// <summary>Creates generator data for a specified class symbol.</summary>
     /// <returns>The GeneratorData for the class or null if not applicable.</returns>
     private static GeneratorData? _CreateGeneratorData(
-        SourceProductionContext context,
-        INamedTypeSymbol typeSymbol,
-        PrimitiveGlobalOptions globalOptions,
-        Dictionary<INamedTypeSymbol, SupportedOperationsAttributeData> cachedOperationsAttributes
+        in SourceProductionContext context,
+        in INamedTypeSymbol typeSymbol,
+        in PrimitiveGlobalOptions globalOptions,
+        in Dictionary<INamedTypeSymbol, SupportedOperationsAttributeData> cachedOperationsAttributes
     )
     {
         var interfaceType = typeSymbol.AllInterfaces.First(x => x.IsImplementIPrimitive());
@@ -276,10 +280,10 @@ internal static class Executor
     /// </summary>
     /// <returns>The combined SupportedOperationsAttributeData for the class and its inherited types.</returns>
     private static SupportedOperationsAttributeData _GetSupportedOperationsAttributeData(
-        INamedTypeSymbol @class,
-        PrimitiveUnderlyingType underlyingType,
-        List<INamedTypeSymbol> parentSymbols,
-        Dictionary<INamedTypeSymbol, SupportedOperationsAttributeData> cachedOperationsAttributes
+        in INamedTypeSymbol @class,
+        in PrimitiveUnderlyingType underlyingType,
+        in List<INamedTypeSymbol> parentSymbols,
+        in Dictionary<INamedTypeSymbol, SupportedOperationsAttributeData> cachedOperationsAttributes
     )
     {
         return createCombinedAttribute(@class, underlyingType, parentSymbols.Count, cachedOperationsAttributes);
@@ -359,7 +363,7 @@ internal static class Executor
     /// </summary>
     /// <param name="underlyingType">The NumericType for which to determine default attribute values.</param>
     /// <returns>The default SupportedOperationsAttributeData with attributes set based on the NumericType.</returns>
-    private static SupportedOperationsAttributeData _GetDefaultAttributeData(PrimitiveUnderlyingType underlyingType)
+    private static SupportedOperationsAttributeData _GetDefaultAttributeData(in PrimitiveUnderlyingType underlyingType)
     {
         var @default = defaultAttributeValue(underlyingType);
 
@@ -397,7 +401,7 @@ internal static class Executor
     /// </summary>
     /// <param name="attributeData">The AttributeData from which to create the SupportedOperationsAttributeData.</param>
     /// <returns>The SupportedOperationsAttributeData with attributes based on the provided AttributeData.</returns>
-    private static SupportedOperationsAttributeData _GetAttributeFromData(AttributeData attributeData)
+    private static SupportedOperationsAttributeData _GetAttributeFromData(in AttributeData attributeData)
     {
         return new SupportedOperationsAttributeData
         {
@@ -428,9 +432,9 @@ internal static class Executor
     /// <param name="context">The SourceProductionContext for reporting diagnostics.</param>
     /// <returns>True if the code generation process was successful, otherwise, false.</returns>
     private static bool _ProcessType(
-        GeneratorData data,
-        PrimitiveGlobalOptions options,
-        SourceProductionContext context
+        in GeneratorData data,
+        in PrimitiveGlobalOptions options,
+        in SourceProductionContext context
     )
     {
         var builder = new SourceCodeBuilder();
@@ -452,9 +456,9 @@ internal static class Executor
     /// <param name="context">The SourceProductionContext for reporting diagnostics.</param>
     /// <returns>A boolean indicating whether the constructor processing was successful.</returns>
     private static bool _ProcessConstructor(
-        GeneratorData data,
-        SourceCodeBuilder builder,
-        SourceProductionContext context
+        in GeneratorData data,
+        in SourceCodeBuilder builder,
+        in SourceProductionContext context
     )
     {
         var type = data.TypeSymbol;
@@ -551,9 +555,9 @@ internal static class Executor
     }
 
     private static void _AddStringLengthAttributeValidation(
-        ISymbol domainPrimitiveType,
-        GeneratorData data,
-        SourceCodeBuilder sb
+        in ISymbol domainPrimitiveType,
+        in GeneratorData data,
+        in SourceCodeBuilder sb
     )
     {
         var attr = domainPrimitiveType
