@@ -18,6 +18,8 @@
     <DevelopmentDependency>true</DevelopmentDependency>
     <!-- Prevent analyzer/generator authors from using banned APIs -->
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- This is required to allow copying all the dependencies to bin directory which can be copied after to nuget package based on nuspec -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup Label="Testing">
