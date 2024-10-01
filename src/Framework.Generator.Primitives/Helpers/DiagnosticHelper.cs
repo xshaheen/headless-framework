@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Generator.Primitives.Shared;
 using Microsoft.CodeAnalysis;
 
 namespace Framework.Generator.Primitives.Helpers;

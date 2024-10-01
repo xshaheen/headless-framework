@@ -5,6 +5,7 @@ using System.Xml;
 using System.Xml.Serialization;
 using Framework.Generator.Primitives.Extensions;
 using Framework.Generator.Primitives.Models;
+using Framework.Generator.Primitives.Shared;
 using Microsoft.CodeAnalysis;
 
 namespace Framework.Generator.Primitives.Helpers;

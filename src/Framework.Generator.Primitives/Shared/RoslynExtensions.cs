@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace Framework.Generator;
+namespace Framework.Generator.Primitives.Shared;
 
 /// <summary>
 /// A collection of extension methods for working with Roslyn syntax and symbols.

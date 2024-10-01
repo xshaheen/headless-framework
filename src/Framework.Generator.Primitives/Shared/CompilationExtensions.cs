@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace Framework.Generator;
+namespace Framework.Generator.Primitives.Shared;
 
 /// <summary>Extension methods for working with Roslyn's Compilation and related types.</summary>
 public static class CompilationExtensions
