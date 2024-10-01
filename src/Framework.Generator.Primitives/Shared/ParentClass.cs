@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-namespace Framework.Generator;
+namespace Framework.Generator.Primitives.Shared;
 
 public sealed class ParentClass(string keyword, string name, string constraints, ParentClass? child)
 {

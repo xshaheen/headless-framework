@@ -18,8 +18,6 @@
     <DevelopmentDependency>true</DevelopmentDependency>
     <!-- Prevent analyzer/generator authors from using banned APIs -->
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <!-- This is required to allow copying all the dependencies to bin directory which can be copied after to nuget package based on nuspec -->
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup Label="Testing">
@@ -29,10 +27,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup Label="Generator dependencies">
-    <ProjectReference Include="..\Framework.Generator\Framework.Generator.csproj" PrivateAssets="all" OutputItemType="Analyzer" />
   </ItemGroup>
 
   <ItemGroup>

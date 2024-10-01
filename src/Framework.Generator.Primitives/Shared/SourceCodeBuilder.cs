@@ -2,7 +2,7 @@
 
 using System.Text;
 
-namespace Framework.Generator;
+namespace Framework.Generator.Primitives.Shared;
 
 /// <summary>A utility class for building source code with proper indentation.</summary>
 public sealed class SourceCodeBuilder

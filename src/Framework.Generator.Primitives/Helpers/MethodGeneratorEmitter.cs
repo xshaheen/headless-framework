@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Generator.Primitives.Models;
+using Framework.Generator.Primitives.Shared;
 
 namespace Framework.Generator.Primitives.Helpers;
 
