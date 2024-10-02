@@ -1,5 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
-
+using System.Linq.Expressions;
 using Framework.Kernel.BuildingBlocks.Models.Primitives;
 using Framework.Kernel.Primitives;
 using Microsoft.EntityFrameworkCore;
@@ -9,35 +8,108 @@ namespace Framework.Orm.EntityFramework.Configurations;
 
 public static class PhoneNumberConfiguration
 {
-    public static void OptionalPhoneNumber<TEntity>(
-        this OwnedNavigationBuilder<TEntity, PhoneNumber> navigationBuilder,
-        string prefix = "Phone"
+    public static void HasComplexPhoneNumber<TEntity>(
+        this EntityTypeBuilder<TEntity> builder,
+        Expression<Func<TEntity, PhoneNumber?>> propertyExpression,
+        bool isRequired = true,
+        string codeColumnName = "PhoneCountryCode",
+        string phoneColumnName = "PhoneNumber"
     )
         where TEntity : class
     {
-        navigationBuilder.Property(x => x.CountryCode).HasColumnName(prefix + nameof(PhoneNumber.CountryCode));
+        builder.ComplexProperty(
+            propertyExpression,
+            b =>
+            {
+                b.Property(x => x!.CountryCode)
+                    .IsRequired(isRequired)
+                    .HasColumnName(codeColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Codes.MaxLength);
 
-        navigationBuilder
-            .Property(x => x.Number)
-            .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength)
-            .HasColumnName(prefix + nameof(PhoneNumber.Number));
+                b.Property(x => x!.Number)
+                    .IsRequired(isRequired)
+                    .HasColumnName(phoneColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength);
+            }
+        );
     }
 
-    public static void RequiredPhoneNumber<TEntity>(
-        this OwnedNavigationBuilder<TEntity, PhoneNumber> navigationBuilder,
-        string prefix = "Phone"
+    public static void HasComplexPhoneNumber<TEntity>(
+        this EntityTypeBuilder<TEntity> builder,
+        string propertyName,
+        bool isRequired = true,
+        string codeColumnName = "PhoneCountryCode",
+        string phoneColumnName = "PhoneNumber"
     )
         where TEntity : class
     {
-        navigationBuilder
-            .Property(x => x.CountryCode)
-            .IsRequired()
-            .HasColumnName(prefix + nameof(PhoneNumber.CountryCode));
+        builder.ComplexProperty(
+            propertyName,
+            b =>
+            {
+                b.Property(nameof(PhoneNumber.CountryCode))
+                    .IsRequired(isRequired)
+                    .HasColumnName(codeColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Codes.MaxLength);
 
-        navigationBuilder
-            .Property(x => x.Number)
-            .IsRequired()
-            .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength)
-            .HasColumnName(prefix + nameof(PhoneNumber.Number));
+                b.Property(nameof(PhoneNumber.Number))
+                    .IsRequired(isRequired)
+                    .HasColumnName(phoneColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength);
+            }
+        );
+    }
+
+    public static void OwnsPhoneNumber<TEntity>(
+        this EntityTypeBuilder<TEntity> builder,
+        Expression<Func<TEntity, PhoneNumber?>> propertyExpression,
+        bool isRequired = true,
+        string codeColumnName = "PhoneCountryCode",
+        string phoneColumnName = "PhoneNumber"
+    )
+        where TEntity : class
+    {
+        builder.OwnsOne(
+            propertyExpression,
+            b =>
+            {
+                b.Property(x => x.CountryCode)
+                    .IsRequired(isRequired)
+                    .HasColumnName(codeColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Codes.MaxLength);
+
+                b.Property(x => x.Number)
+                    .IsRequired(isRequired)
+                    .HasColumnName(phoneColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength);
+            }
+        );
+    }
+
+    public static void OwnsPhoneNumber(
+        this EntityTypeBuilder builder,
+        Type entityType,
+        string propertyName,
+        bool isRequired = true,
+        string codeColumnName = "PhoneCountryCode",
+        string phoneColumnName = "PhoneNumber"
+    )
+    {
+        builder.OwnsOne(
+            entityType,
+            propertyName,
+            b =>
+            {
+                b.Property(nameof(PhoneNumber.CountryCode))
+                    .IsRequired(isRequired)
+                    .HasColumnName(codeColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Codes.MaxLength);
+
+                b.Property(nameof(PhoneNumber.Number))
+                    .IsRequired(isRequired)
+                    .HasColumnName(phoneColumnName)
+                    .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength);
+            }
+        );
     }
 }

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Data;
+using Framework.Kernel.Primitives;
 using Framework.Orm.EntityFramework.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -372,14 +373,7 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(DefaultSchema);
-
         base.OnModelCreating(modelBuilder);
-
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            entityType.ConfigureFrameworkValueGenerated();
-            modelBuilder.Entity(entityType.ClrType).ConfigureFrameworkConvention();
-        }
     }
 
     #endregion

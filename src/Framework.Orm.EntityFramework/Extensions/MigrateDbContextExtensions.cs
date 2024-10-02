@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+[PublicAPI]
 public static class MigrateDbContextExtensions
 {
     public static async Task MigrateDbContextAsync<TContext>(

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Diagnostics;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
@@ -8,6 +9,7 @@ namespace Framework.Kernel.Primitives;
 
 [PublicAPI]
 [ComplexType]
+[DebuggerDisplay("{" + nameof(DisplayName) + "}")]
 public class File
 {
     /// <summary>Unique identifier for the file.</summary>
