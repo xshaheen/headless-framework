@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
 using Framework.Kernel.BuildingBlocks.Helpers.Normalizers;
 using Framework.Kernel.Domains;
@@ -11,6 +12,7 @@ using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;
 namespace Framework.Kernel.Primitives;
 
 [PublicAPI]
+[ComplexType]
 public sealed class PhoneNumber : ValueObject
 {
     private PhoneNumber() { }

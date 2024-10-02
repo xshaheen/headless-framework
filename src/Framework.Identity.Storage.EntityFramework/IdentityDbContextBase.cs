@@ -393,14 +393,7 @@ public abstract class IdentityDbContextBase<
     protected override void OnModelCreating(ModelBuilder builder)
     {
         builder.HasDefaultSchema(DefaultSchema);
-
         base.OnModelCreating(builder);
-
-        foreach (var entityType in builder.Model.GetEntityTypes())
-        {
-            entityType.ConfigureFrameworkValueGenerated();
-            builder.Entity(entityType.ClrType).ConfigureFrameworkConvention();
-        }
     }
 
     #endregion
