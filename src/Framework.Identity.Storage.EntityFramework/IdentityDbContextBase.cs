@@ -2,7 +2,6 @@
 
 using System.Data;
 using Framework.Orm.EntityFramework.Contexts;
-using Framework.Orm.EntityFramework.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;

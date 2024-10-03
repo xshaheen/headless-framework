@@ -2,12 +2,13 @@
 
 using Framework.Kernel.BuildingBlocks.Helpers.Ids;
 using Framework.Kernel.Checks;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 
-namespace Framework.Orm.EntityFramework.Extensions;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 public static class DbContextOptionsBuilderExtensions
 {
