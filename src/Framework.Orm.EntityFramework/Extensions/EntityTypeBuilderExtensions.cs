@@ -54,14 +54,14 @@ public static class EntityTypeBuilderExtensions
 
     public static void TryConfigureCreateAudit(this EntityTypeBuilder builder, bool isRequired = false)
     {
-        const string dateCreatedName = nameof(ICreateAudit.DateCreated);
-        const string createdByIdName = nameof(ICreateAudit<string>.CreatedById);
-        const string createdByName = nameof(ICreateAudit<string, object>.CreatedBy);
-
         if (!builder.Metadata.ClrType.IsAssignableTo<ICreateAudit>())
         {
             return;
         }
+
+        const string dateCreatedName = nameof(ICreateAudit.DateCreated);
+        const string createdByIdName = nameof(ICreateAudit<string>.CreatedById);
+        const string createdByName = nameof(ICreateAudit<string, object>.CreatedBy);
 
         builder.Property(dateCreatedName).IsRequired().HasColumnName(dateCreatedName);
 
@@ -110,16 +110,16 @@ public static class EntityTypeBuilderExtensions
 
     public static void TryConfigureUpdateAudit(this EntityTypeBuilder builder)
     {
-        const string dateUpdatedName = nameof(IUpdateAudit.DateUpdated);
-        const string updatedByIdName = nameof(IUpdateAudit<string>.UpdatedById);
-        const string updatedByName = nameof(IUpdateAudit<string, object>.UpdatedBy);
-
         if (!builder.Metadata.ClrType.IsAssignableTo<IUpdateAudit>())
         {
             return;
         }
 
-        builder.Property(dateUpdatedName).IsRequired().HasColumnName(dateUpdatedName);
+        const string dateUpdatedName = nameof(IUpdateAudit.DateUpdated);
+        const string updatedByIdName = nameof(IUpdateAudit<string>.UpdatedById);
+        const string updatedByName = nameof(IUpdateAudit<string, object>.UpdatedBy);
+
+        builder.Property(dateUpdatedName).IsRequired(false).HasColumnName(dateUpdatedName);
 
         if (
             builder
@@ -182,6 +182,11 @@ public static class EntityTypeBuilderExtensions
 
     public static void TryConfigureDeleteAudit(this EntityTypeBuilder builder)
     {
+        if (!builder.Metadata.ClrType.IsAssignableTo<IDeleteAudit>())
+        {
+            return;
+        }
+
         const string isDeletedName = nameof(IDeleteAudit.IsDeleted);
         const string dateDeletedName = nameof(IDeleteAudit.DateDeleted);
         const string dateRestoredName = nameof(IDeleteAudit.DateRestored);
@@ -189,11 +194,6 @@ public static class EntityTypeBuilderExtensions
         const string restoredByIdName = nameof(IDeleteAudit<string>.RestoredById);
         const string deletedByName = nameof(IDeleteAudit<string, object>.DeletedBy);
         const string restoredByName = nameof(IDeleteAudit<string, object>.RestoredBy);
-
-        if (!builder.Metadata.ClrType.IsAssignableTo<IDeleteAudit>())
-        {
-            return;
-        }
 
         builder.Property(isDeletedName).IsRequired().HasDefaultValue(false).HasColumnName(isDeletedName);
         builder.Property(dateDeletedName).IsRequired(false).HasColumnName(dateDeletedName);
@@ -279,6 +279,11 @@ public static class EntityTypeBuilderExtensions
 
     public static void TryConfigureSuspendAudit(this EntityTypeBuilder builder)
     {
+        if (!builder.Metadata.ClrType.IsAssignableTo<ISuspendAudit>())
+        {
+            return;
+        }
+
         const string isSuspended = nameof(ISuspendAudit.IsSuspended);
         const string dateSuspendedName = nameof(ISuspendAudit.DateSuspended);
         const string dateRestoredName = nameof(ISuspendAudit.DateRestored);
@@ -286,11 +291,6 @@ public static class EntityTypeBuilderExtensions
         const string restoredByIdName = nameof(ISuspendAudit<string>.RestoredById);
         const string suspendedByName = nameof(ISuspendAudit<string, object>.SuspendedBy);
         const string restoredByName = nameof(ISuspendAudit<string, object>.RestoredBy);
-
-        if (!builder.Metadata.ClrType.IsAssignableTo<ISuspendAudit>())
-        {
-            return;
-        }
 
         builder.Property(isSuspended).IsRequired().HasDefaultValue(false).HasColumnName(isSuspended);
         builder.Property(dateSuspendedName).IsRequired(false).HasColumnName(dateSuspendedName);
@@ -381,15 +381,13 @@ public static class EntityTypeBuilderExtensions
 
     public static void TryConfigureExtraProperties(this EntityTypeBuilder b)
     {
-        if (!b.Metadata.ClrType.IsAssignableTo<IHasExtraProperties>())
+        if (b.Metadata.ClrType.IsAssignableTo<IHasExtraProperties>())
         {
-            return;
+            b.Property<ExtraProperties>(nameof(IHasExtraProperties.ExtraProperties))
+                .HasColumnName(nameof(IHasExtraProperties.ExtraProperties))
+                .HasConversion(new ExtraPropertiesValueConverter())
+                .Metadata.SetValueComparer(new ExtraPropertiesValueComparer());
         }
-
-        b.Property<ExtraProperties>(nameof(IHasExtraProperties.ExtraProperties))
-            .HasColumnName(nameof(IHasExtraProperties.ExtraProperties))
-            .HasConversion(new ExtraPropertiesValueConverter())
-            .Metadata.SetValueComparer(new ExtraPropertiesValueComparer());
     }
 
     public static void ConfigureExtraProperties<T>(this EntityTypeBuilder<T> b)
