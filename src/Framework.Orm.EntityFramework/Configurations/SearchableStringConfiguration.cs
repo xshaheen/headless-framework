@@ -2,10 +2,11 @@
 
 using System.Linq.Expressions;
 using Framework.Kernel.Primitives;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Framework.Orm.EntityFramework.Configurations;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 public static class SearchableStringConfiguration
 {
