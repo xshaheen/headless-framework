@@ -2,12 +2,11 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCor;
+namespace Microsoft.EntityFrameworkCore;
 
 public static class ModelBuilderExtensions
 {

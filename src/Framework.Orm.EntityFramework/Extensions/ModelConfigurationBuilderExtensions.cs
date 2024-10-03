@@ -3,10 +3,11 @@
 using Framework.Kernel.Domains;
 using Framework.Kernel.Primitives;
 using Framework.Orm.EntityFramework.Configurations;
-using Microsoft.EntityFrameworkCore;
 using File = Framework.Kernel.Primitives.File;
 
-namespace Framework.Orm.EntityFramework.Extensions;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 public static class ModelConfigurationBuilderExtensions
 {

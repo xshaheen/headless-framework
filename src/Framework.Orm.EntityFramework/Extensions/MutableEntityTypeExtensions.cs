@@ -3,7 +3,9 @@
 using Framework.Kernel.Domains;
 using Microsoft.EntityFrameworkCore.Metadata;
 
-namespace Framework.Orm.EntityFramework.Extensions;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.EntityFrameworkCore;
 
 public static class MutableEntityTypeExtensions
 {
