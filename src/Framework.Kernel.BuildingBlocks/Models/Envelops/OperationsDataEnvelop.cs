@@ -4,9 +4,4 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Kernel.Primitives;
 
-public sealed record DataEnvelop<T>(T Data)
-{
-    public static implicit operator DataEnvelop<T>(T operand) => new(operand);
-
-    public DataEnvelop<T> FromT() => this;
-}
+public sealed record OperationsDataEnvelop<T>(T Data, List<OperationDescriptor>? Operations = null);
