@@ -86,10 +86,10 @@ public sealed class ApiExtraInformationOperationProcessor : IOperationProcessor
 
             if (parameter.Schema.Default is null && description.DefaultValue is not null)
             {
-                parameter.Schema.Default = JsonSerializer.Serialize(
-                    description.DefaultValue,
-                    description.ModelMetadata.ModelType
-                );
+                parameter.Schema.Default =
+                    description.DefaultValue is string
+                        ? description.DefaultValue
+                        : JsonSerializer.Serialize(description.DefaultValue, description.ModelMetadata.ModelType);
             }
 
             parameter.IsRequired |= description.IsRequired;

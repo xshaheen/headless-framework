@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Api.Core.ApiExplorer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using NSwag;
 using NSwag.Generation.AspNetCore;
@@ -12,12 +13,7 @@ namespace Framework.Api.Swagger.Nswag.OperationProcessors;
 public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
 {
     private const string _UnauthorizedStatusCode = "401";
-
-    private static readonly OpenApiResponse _UnauthorizedResponse =
-        new()
-        {
-            Description = "Unauthorized - The user has not supplied the necessary credentials to access the resource.",
-        };
+    private static readonly OpenApiResponse _UnauthorizedResponse = _CreateUnauthorizedResponse();
 
     public bool Process(OperationProcessorContext context)
     {
@@ -26,23 +22,39 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
             return false;
         }
 
-        _Process(ctx);
+        var responses = ctx.OperationDescription.Operation.Responses;
 
-        return true;
-    }
+        if (responses.ContainsKey(_UnauthorizedStatusCode))
+        {
+            return false;
+        }
 
-    private static void _Process(AspNetCoreOperationProcessorContext context)
-    {
-        var operation = context.OperationDescription.Operation;
-        var filterDescriptors = context.ApiDescription.ActionDescriptor.FilterDescriptors;
-        var authorizationRequirements = filterDescriptors.GetPolicyRequirements();
+        var actionDescriptor = ctx.ApiDescription.ActionDescriptor;
+        var authorizationRequirements = actionDescriptor.FilterDescriptors.GetPolicyRequirements();
+
+        if (actionDescriptor.EndpointMetadata.OfType<AllowAnonymousAttribute>().Any())
+        {
+            return false;
+        }
 
         if (
-            !operation.Responses.ContainsKey(_UnauthorizedStatusCode)
-            && authorizationRequirements.OfType<DenyAnonymousAuthorizationRequirement>().Any()
+            authorizationRequirements.OfType<DenyAnonymousAuthorizationRequirement>().Any()
+            || actionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().Any()
         )
         {
-            operation.Responses.Add(_UnauthorizedStatusCode, _UnauthorizedResponse);
+            responses.Add(_UnauthorizedStatusCode, _UnauthorizedResponse);
+
+            return true;
         }
+
+        return false;
+    }
+
+    private static OpenApiResponse _CreateUnauthorizedResponse()
+    {
+        return new()
+        {
+            Description = "Unauthorized - The user has not supplied the necessary credentials to access the resource.",
+        };
     }
 }
