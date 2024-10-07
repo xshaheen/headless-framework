@@ -98,6 +98,9 @@ internal static class TestHelpers
                     case "build_property.PrimitiveEntityFrameworkValueConverters":
                         value = options.GenerateEntityFrameworkValueConverters.ToString();
                         return true;
+                    case "build_property.PrimitiveDapperConverters":
+                        value = options.GenerateDapperConverters.ToString();
+                        return true;
                     default:
                         value = null;
                         return false;

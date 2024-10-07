@@ -9,6 +9,8 @@ namespace Tests;
 
 public sealed class PrimitiveGeneratorTests
 {
+    private const int _GenerateAllFileCounts = 8;
+
     private readonly PrimitiveGlobalOptions _generateAllOptions =
         new()
         {
@@ -18,6 +20,7 @@ public sealed class PrimitiveGeneratorTests
             GenerateNswagSwaggerConverters = true, // generate 1 files
             GenerateXmlConverters = true, // generate methods for XML serialization
             GenerateEntityFrameworkValueConverters = true, // generate 2 files
+            GenerateDapperConverters = true, // generate 2 files
         };
 
     [Fact]
@@ -38,7 +41,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -59,7 +66,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -80,7 +91,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -101,7 +116,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -122,7 +141,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -145,7 +168,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -168,7 +195,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -191,7 +222,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -214,7 +249,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -237,7 +276,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -260,7 +303,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -282,7 +329,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -304,7 +355,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -326,7 +381,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -348,7 +407,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -370,7 +433,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -392,7 +459,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -421,7 +492,11 @@ public sealed class PrimitiveGeneratorTests
 
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -443,7 +518,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -466,7 +545,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     [Fact]
@@ -560,7 +643,11 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(source, generated => generated.Files.Should().HaveCount(7), _generateAllOptions);
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().HaveCount(_GenerateAllFileCounts),
+            _generateAllOptions
+        );
     }
 
     private static class TestHelper

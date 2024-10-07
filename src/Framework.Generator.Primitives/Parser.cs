@@ -118,6 +118,14 @@ internal static class Parser
             result.GenerateEntityFrameworkValueConverters = generateEntityFrameworkValueConverters;
         }
 
+        if (
+            a.GlobalOptions.TryGetValue("build_property.PrimitiveDapperConverters", out value)
+            && bool.TryParse(value, out var generateDapperConverters)
+        )
+        {
+            result.GenerateDapperConverters = generateDapperConverters;
+        }
+
         return result;
     }
 }

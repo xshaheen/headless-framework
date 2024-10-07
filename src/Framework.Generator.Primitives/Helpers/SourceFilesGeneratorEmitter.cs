@@ -329,7 +329,7 @@ internal static class SourceFilesGeneratorEmitter
     /// <param name="addAssemblyAttribute">if assembly attribute should be added</param>
     /// <param name="assemblyName">The name of the assembly.</param>
     /// <param name="types">The list of named type symbols.</param>
-    internal static void AddValueConvertersHelper(
+    internal static void AddEntityFrameworkValueConvertersHelper(
         this SourceProductionContext context,
         bool addAssemblyAttribute,
         string assemblyName,
@@ -908,6 +908,61 @@ internal static class SourceFilesGeneratorEmitter
         builder.CloseBracket();
 
         context.AddSource($"{converterName}.g.cs", builder.ToString());
+    }
+
+    /// <summary>Processes the Dapper converter for the specified generator data and source production context.</summary>
+    /// <param name="context">The source production context.</param>
+    /// <param name="data">The generator data.</param>
+    internal static void AddDapperTypeHandlerConverter(this SourceProductionContext context, GeneratorData data)
+    {
+        var builder = new SourceCodeBuilder();
+
+        builder.AppendSourceHeader("Primitives Generator");
+
+        var typeHandlerName = data.ClassName + "DapperTypeHandler";
+
+        builder.AppendUsings(
+            [
+                data.Namespace,
+                data.PrimitiveTypeSymbol.ContainingNamespace.ToDisplayString(),
+                AbstractionConstants.Namespace,
+            ]
+        );
+
+        builder.AppendNamespace(data.Namespace + ".Converters");
+        builder.AppendSummary($"Dapper TypeHandler for <see cref = \"{data.ClassName}\"/>");
+
+        builder.AppendClass(
+            isRecord: false,
+            "public sealed",
+            typeHandlerName,
+            $"global::Dapper.SqlMapper.TypeHandler<{data.ClassName}>"
+        );
+
+        // override SetValue method
+        builder
+            .AppendLine(
+                $"public override void SetValue(global::System.Data.IDbDataParameter parameter, {data.ClassName} value)"
+            )
+            .OpenBracket()
+            .AppendLine("parameter.Value = value.GetUnderlyingPrimitiveType();")
+            .CloseBracket()
+            .NewLine();
+
+        // override Parse method
+        builder.AppendLine($"public override {data.ClassName} Parse(object value)").OpenBracket();
+        /*
+           return value switch
+           {
+               global::System.Guid guidValue => new GuidPrimitive(guidValue),
+               string stringValue when !string.IsNullOrEmpty(stringValue) && global::System.Guid.TryParse(stringValue, out var result) => new GuidPrimitive(result),
+               _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to GuidPrimitive"),
+           };
+         */
+        builder.CloseBracket().NewLine();
+        builder.CloseBracket();
+
+        context.AddSource($"{typeHandlerName}.g.cs", builder.ToString());
     }
 
     /// <summary>Generates code for a JsonConverter for the specified type.</summary>

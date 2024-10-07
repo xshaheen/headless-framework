@@ -51,4 +51,12 @@ internal sealed record PrimitiveGlobalOptions
     ///   <see langword="true"/> if Entity Framework Core value converters should be generated; otherwise, <see langword="false"/>.
     /// </value>
     public bool GenerateEntityFrameworkValueConverters { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether Dapper converters should be generated for Primitive types.
+    /// </summary>
+    /// <value>
+    ///   <see langword="true"/> if Dapper converters should be generated; otherwise, <see langword="false"/>.
+    /// </value>
+    public bool GenerateDapperConverters { get; set; }
 }

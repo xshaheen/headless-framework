@@ -7,6 +7,7 @@
 		<CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
 		<CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
+    <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
 	</ItemGroup>
 
 </Project>

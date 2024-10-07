@@ -32,6 +32,7 @@ internal static class Emitter
 
         var swaggerTypes = new List<GeneratorData>(typesToGenerate.Length);
         var efValueConverterTypes = new List<INamedTypeSymbol>(typesToGenerate.Length);
+        var dapperConverterTypes = new List<INamedTypeSymbol>(typesToGenerate.Length);
 
         var cachedOperationsAttributes = new Dictionary<INamedTypeSymbol, SupportedOperationsAttributeData>(
             SymbolEqualityComparer.Default
@@ -107,6 +108,13 @@ internal static class Emitter
                     context.AddEntityFrameworkValueConverter(generatorData);
                 }
 
+                if (globalOptions.GenerateDapperConverters)
+                {
+                    dapperConverterTypes.Add(generatorData.TypeSymbol);
+
+                    context.AddDapperTypeHandlerConverter(generatorData);
+                }
+
                 if (globalOptions.GenerateSwashbuckleSwaggerConverters || globalOptions.GenerateNswagSwaggerConverters)
                 {
                     swaggerTypes.Add(generatorData);
@@ -127,7 +135,11 @@ internal static class Emitter
                 );
             }
 
-            context.AddValueConvertersHelper(swaggerTypes.Count == 0, assemblyName, efValueConverterTypes);
+            context.AddEntityFrameworkValueConvertersHelper(
+                swaggerTypes.Count == 0,
+                assemblyName,
+                efValueConverterTypes
+            );
         }
         catch (Exception ex)
         {

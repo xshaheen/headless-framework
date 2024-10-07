@@ -54,6 +54,7 @@
     <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
     <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
     <PrimitiveEntityFrameworkValueConverters>false</PrimitiveEntityFrameworkValueConverters>
+    <PrimitiveDapperConverters>false</PrimitiveDapperConverters>
   </PropertyGroup>
 
   <ItemGroup Label="Primitives Generator Settings">
@@ -63,6 +64,7 @@
     <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
+    <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
   </ItemGroup>
 
 </Project>
