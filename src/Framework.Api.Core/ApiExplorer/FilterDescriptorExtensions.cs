@@ -11,19 +11,19 @@ namespace Framework.Api.Core.ApiExplorer;
 public static class FilterDescriptorExtensions
 {
     /// <summary>Gets the authorization policy requirements.</summary>
-    /// <param name="filterDescriptors">The filter descriptors.</param>
+    /// <param name="mvcFilterDescriptors">The filter descriptors.</param>
     /// <returns>A collection of authorization policy requirements.</returns>
     public static IReadOnlyList<IAuthorizationRequirement> GetPolicyRequirements(
-        this IList<FilterDescriptor> filterDescriptors
+        this IList<FilterDescriptor> mvcFilterDescriptors
     )
     {
-        Argument.IsNotNull(filterDescriptors);
+        Argument.IsNotNull(mvcFilterDescriptors);
 
         var policyRequirements = new List<IAuthorizationRequirement>();
 
-        for (var i = filterDescriptors.Count - 1; i >= 0; --i)
+        for (var i = mvcFilterDescriptors.Count - 1; i >= 0; --i)
         {
-            var filterDescriptor = filterDescriptors[i];
+            var filterDescriptor = mvcFilterDescriptors[i];
 
             if (filterDescriptor.Filter is AllowAnonymousFilter)
             {

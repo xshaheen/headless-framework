@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Api.Core.ApiExplorer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using NSwag;
 using NSwag.Generation.AspNetCore;
@@ -12,9 +13,7 @@ namespace Framework.Api.Swagger.Nswag.OperationProcessors;
 public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
 {
     private const string _ForbiddenStatusCode = "403";
-
-    private static readonly OpenApiResponse _ForbiddenResponse =
-        new() { Description = "Forbidden - The user does not have the necessary permissions to access the resource." };
+    private static readonly OpenApiResponse _ForbiddenResponse = _CreateForbiddenResponse();
 
     public bool Process(OperationProcessorContext context)
     {
@@ -23,20 +22,19 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
             return false;
         }
 
-        _Process(ctx);
+        var responses = ctx.OperationDescription.Operation.Responses;
 
-        return true;
-    }
+        if (responses.ContainsKey(_ForbiddenStatusCode))
+        {
+            return false;
+        }
 
-    private static void _Process(AspNetCoreOperationProcessorContext context)
-    {
-        var operation = context.OperationDescription.Operation;
-        var filterDescriptors = context.ApiDescription.ActionDescriptor.FilterDescriptors;
-        var authorizationRequirements = filterDescriptors.GetPolicyRequirements();
+        var actionDescriptor = ctx.ApiDescription.ActionDescriptor;
+        var authorizationRequirements = actionDescriptor.FilterDescriptors.GetPolicyRequirements();
+        var authorizeAttribute = actionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().FirstOrDefault();
 
         if (
-            !operation.Responses.ContainsKey(_ForbiddenStatusCode)
-            && authorizationRequirements.Any(requirement =>
+            authorizationRequirements.Any(requirement =>
                 requirement
                     is ClaimsAuthorizationRequirement
                         or NameAuthorizationRequirement
@@ -44,9 +42,23 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
                         or RolesAuthorizationRequirement
                         or AssertionRequirement
             )
+            || authorizeAttribute?.Roles is not null
+            || authorizeAttribute?.Policy is not null
         )
         {
-            operation.Responses.Add(_ForbiddenStatusCode, _ForbiddenResponse);
+            responses.Add(_ForbiddenStatusCode, _ForbiddenResponse);
+
+            return true;
         }
+
+        return false;
+    }
+
+    private static OpenApiResponse _CreateForbiddenResponse()
+    {
+        return new()
+        {
+            Description = "Forbidden - The user does not have the necessary permissions to access the resource.",
+        };
     }
 }
