@@ -1,6 +1,7 @@
 using Framework.Caching;
-using Framework.DistributedLocks;
+using Framework.ResourceLocks;
 using Framework.Settings.Definitions;
+using Framework.Settings.Models;
 using Framework.Settings.Options;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
@@ -12,21 +13,21 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
     private readonly ISettingDefinitionRecordRepository _settingRepository;
     private readonly IDynamicSettingDefinitionStoreInMemoryCache _storeCache;
     private readonly ICache _distributedCache;
-    private readonly IDistributedLockProvider _distributedLockProvider;
+    private readonly IResourceLockProvider _resourceLockProvider;
     private readonly SettingManagementOptions _settingManagementOptions;
 
     public DynamicSettingDefinitionStore(
         ISettingDefinitionRecordRepository textSettingRepository,
         IDynamicSettingDefinitionStoreInMemoryCache storeCache,
         ICache distributedCache,
-        IDistributedLockProvider distributedLockProvider,
+        IResourceLockProvider resourceLockProvider,
         IOptions<SettingManagementOptions> settingManagementOptions
     )
     {
         _settingRepository = textSettingRepository;
         _storeCache = storeCache;
         _distributedCache = distributedCache;
-        _distributedLockProvider = distributedLockProvider;
+        _resourceLockProvider = resourceLockProvider;
         _settingManagementOptions = settingManagementOptions.Value;
     }
 
@@ -101,7 +102,7 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
             return stampInDistributedCache.Value;
         }
 
-        await using var commonLockHandle = await _distributedLockProvider.TryAcquireAsync(
+        await using var commonLockHandle = await _resourceLockProvider.TryAcquireAsync(
             _GetCommonDistributedLockKey(),
             TimeSpan.FromMinutes(2)
         );
@@ -122,7 +123,7 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
 
         var newStamp = Guid.NewGuid().ToString();
 
-        await _distributedCache.SetAsync(cacheKey, newStamp, TimeSpan.FromDays(30));
+        await _distributedCache.UpsertAsync(cacheKey, newStamp, TimeSpan.FromDays(30));
 
         return newStamp;
     }

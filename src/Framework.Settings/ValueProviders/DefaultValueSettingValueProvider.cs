@@ -1,23 +1,23 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Settings.Definitions;
+using Framework.Settings.Models;
 using Framework.Settings.Values;
 
-namespace Framework.Settings.Providers;
+namespace Framework.Settings.ValueProviders;
 
 /// <summary>Provides setting values from the default value of the setting definition.</summary>
-public sealed class DefaultValueSettingValueProvider(ISettingStore settingStore) : SettingValueProvider(settingStore)
+public sealed class DefaultValueSettingValueProvider : ISettingValueProvider
 {
     public const string ProviderName = "DefaultValue";
 
-    public override string Name => ProviderName;
+    public string Name => ProviderName;
 
-    public override Task<string?> GetOrDefaultAsync(SettingDefinition setting)
+    public Task<string?> GetOrDefaultAsync(SettingDefinition setting)
     {
         return Task.FromResult(setting.DefaultValue);
     }
 
-    public override Task<List<SettingValue>> GetAllAsync(SettingDefinition[] settings)
+    public Task<List<SettingValue>> GetAllAsync(SettingDefinition[] settings)
     {
         var settingValues = settings.Select(x => new SettingValue(x.Name, x.DefaultValue)).ToList();
 

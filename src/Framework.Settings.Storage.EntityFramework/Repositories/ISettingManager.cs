@@ -1,8 +1,9 @@
 ﻿using Framework.Kernel.Checks;
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
+using Framework.Settings.Models;
 using Framework.Settings.Options;
-using Framework.Settings.Providers;
+using Framework.Settings.ValueProviders;
 using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

@@ -2,8 +2,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Framework.Caching;
-using Framework.DistributedLocks;
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.ResourceLocks;
 using Framework.Serializer.Json.Modifiers;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
@@ -21,7 +21,7 @@ public sealed class StaticSettingSaver(
     ISettingDefinitionRecordRepository settingRepository,
     ISettingDefinitionSerializer settingSerializer,
     ICache cache,
-    IDistributedLockProvider distributedLockProvider,
+    IResourceLockProvider resourceLockProvider,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor applicationInfoAccessor,
     ICancellationTokenProvider cancellationTokenProvider,
@@ -35,7 +35,7 @@ public sealed class StaticSettingSaver(
 
     public async Task SaveAsync()
     {
-        await using var applicationLockHandle = await distributedLockProvider.TryAcquireAsync(
+        await using var applicationLockHandle = await resourceLockProvider.TryAcquireAsync(
             _GetApplicationDistributedLockKey()
         );
 
@@ -57,7 +57,7 @@ public sealed class StaticSettingSaver(
         }
 
         await using (
-            var commonLockHandle = await distributedLockProvider.TryAcquireAsync(
+            var commonLockHandle = await resourceLockProvider.TryAcquireAsync(
                 _GetCommonDistributedLockKey(),
                 TimeSpan.FromMinutes(5)
             )
@@ -77,7 +77,7 @@ public sealed class StaticSettingSaver(
 
                     if (hasChangesInSettings)
                     {
-                        await cache.SetAsync(
+                        await cache.UpsertAsync(
                             _GetCommonStampCacheKey(),
                             guidGenerator.Create().ToString(),
                             TimeSpan.FromDays(30),
@@ -105,7 +105,7 @@ public sealed class StaticSettingSaver(
             }
         }
 
-        await cache.SetAsync(cacheKey, currentHash, TimeSpan.FromDays(30), cancellationTokenProvider.Token);
+        await cache.UpsertAsync(cacheKey, currentHash, TimeSpan.FromDays(30), cancellationTokenProvider.Token);
     }
 
     #region Helpers
@@ -177,9 +177,9 @@ public sealed class StaticSettingSaver(
             {
                 Modifiers =
                 {
-                    JsonPropertiesModifiers<SettingDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id)
-                }
-            }
+                    JsonPropertiesModifiers<SettingDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
+                },
+            },
         };
 
     private string _CalculateHash(List<SettingDefinitionRecord> settingRecords, IEnumerable<string> deletedSettings)

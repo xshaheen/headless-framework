@@ -1,5 +1,6 @@
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
+using Framework.Settings.Models;
 
 namespace Framework.Settings.Repositories;
 

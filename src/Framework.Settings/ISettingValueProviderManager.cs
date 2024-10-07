@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MoreLinq;
 
-namespace Framework.Settings.Values;
+namespace Framework.Settings;
 
 /// <summary>Manage list of setting value providers.</summary>
 public interface ISettingValueProviderManager

@@ -1,8 +1,9 @@
-﻿using Framework.Settings.Values;
+﻿using Framework.Settings.Models;
+using Framework.Settings.Values;
 
 namespace Framework.Settings.Repositories;
 
-public sealed class SettingStore(ISettingManagementStore store) : ISettingStore
+public sealed class SettingValueStore(ISettingManagementStore store) : ISettingValueStore
 {
     public Task<string?> GetOrDefaultAsync(string name, string? providerName, string? providerKey)
     {
