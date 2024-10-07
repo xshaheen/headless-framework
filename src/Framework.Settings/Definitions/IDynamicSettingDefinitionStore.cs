@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Settings.Models;
+
 namespace Framework.Settings.Definitions;
 
+/// <summary>Store for setting definitions that are defined dynamically from an external source like a database.</summary>
 public interface IDynamicSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync();

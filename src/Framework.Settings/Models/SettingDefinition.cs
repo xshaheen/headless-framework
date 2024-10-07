@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-namespace Framework.Settings.Definitions;
+namespace Framework.Settings.Models;
 
 [PublicAPI]
 public sealed class SettingDefinition(

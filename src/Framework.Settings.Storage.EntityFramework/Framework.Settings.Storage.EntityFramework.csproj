@@ -8,8 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
-    <ProjectReference Include="..\Framework.DistributedLocks\Framework.DistributedLocks.csproj" />
-    <ProjectReference Include="..\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
     <ProjectReference Include="..\Framework.Settings\Framework.Settings.csproj" />
   </ItemGroup>
 

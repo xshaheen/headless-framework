@@ -2,6 +2,7 @@
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Definitions;
+using Framework.Settings.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Settings.Helpers;

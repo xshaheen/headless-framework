@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Definitions;
 
+/// <summary>Store for setting definitions that are defined statically in memory.</summary>
 public interface IStaticSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync();
@@ -27,12 +29,16 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
 
     public Task<IReadOnlyList<SettingDefinition>> GetAllAsync()
     {
-        return Task.FromResult<IReadOnlyList<SettingDefinition>>(_settingDefinitions.Value.Values.ToImmutableList());
+        var settingDefinitions = _settingDefinitions.Value.Values.ToImmutableList();
+
+        return Task.FromResult<IReadOnlyList<SettingDefinition>>(settingDefinitions);
     }
 
     public Task<SettingDefinition?> GetOrDefaultAsync(string name)
     {
-        return Task.FromResult(_settingDefinitions.Value.GetOrDefault(name));
+        var settingDefinition = _settingDefinitions.Value.GetOrDefault(name);
+
+        return Task.FromResult(settingDefinition);
     }
 
     private Dictionary<string, SettingDefinition> _CreateSettingDefinitions()
@@ -40,7 +46,9 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
         var settings = new Dictionary<string, SettingDefinition>(StringComparer.Ordinal);
         var context = new SettingDefinitionContext(settings);
 
+#pragma warning disable MA0045
         using var scope = _serviceProvider.CreateScope();
+#pragma warning restore MA0045
 
         foreach (var type in _options.DefinitionProviders)
         {

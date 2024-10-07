@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Checks;
+using Framework.Settings.Models;
 
 namespace Framework.Settings.Definitions;
 
@@ -28,12 +29,10 @@ public sealed class SettingDefinitionManager(
     {
         var staticSettings = await staticStore.GetAllAsync();
         var staticSettingNames = staticSettings.Select(p => p.Name).ToImmutableHashSet();
-
+        // We prefer static settings over dynamics
         var dynamicSettings = await dynamicStore.GetAllAsync();
+        var uniqueDynamicSettings = dynamicSettings.Where(d => !staticSettingNames.Contains(d.Name));
 
-        /* We prefer static settings over dynamics */
-        return staticSettings
-            .Concat(dynamicSettings.Where(d => !staticSettingNames.Contains(d.Name)))
-            .ToImmutableList();
+        return staticSettings.Concat(uniqueDynamicSettings).ToImmutableList();
     }
 }

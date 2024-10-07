@@ -1,10 +1,10 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Settings.Definitions;
+using Framework.Settings.Models;
 using Framework.Settings.Values;
 using Microsoft.Extensions.Configuration;
 
-namespace Framework.Settings.Providers;
+namespace Framework.Settings.ValueProviders;
 
 /// <summary>Provides setting values from the <see cref="IConfiguration"/> with prefix <see cref="ConfigurationNamePrefix"/>.</summary>
 public sealed class ConfigurationSettingValueProvider(IConfiguration configuration) : ISettingValueProvider

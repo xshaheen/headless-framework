@@ -3,6 +3,7 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
+using Framework.Settings.Models;
 using Framework.Settings.Values;
 using Humanizer;
 
@@ -48,7 +49,7 @@ public sealed class SettingManagementStore(
             await settingRecordRepository.UpdateAsync(setting);
         }
 
-        await cache.SetAsync(
+        await cache.UpsertAsync(
             _CalculateCacheKey(name, providerName, providerKey),
             new SettingCacheItem(setting.Value),
             5.Hours()
@@ -127,7 +128,7 @@ public sealed class SettingManagementStore(
             cacheItems[cacheKey] = new SettingCacheItem(settingValue);
         }
 
-        await cache.SetAllAsync(cacheItems, 5.Hours());
+        await cache.UpsertAllAsync(cacheItems, 5.Hours());
 
         return cacheItems;
     }
@@ -161,7 +162,7 @@ public sealed class SettingManagementStore(
             }
         }
 
-        await cache.SetAllAsync(cacheItems, 5.Hours());
+        await cache.UpsertAllAsync(cacheItems, 5.Hours());
     }
 
     private async Task<Dictionary<string, SettingCacheItem>> _GetCacheItemsAsync(
@@ -182,7 +183,7 @@ public sealed class SettingManagementStore(
             );
         }
 
-        // Some cache items are not found in the cache, get them from the database
+        // Some cache items aren't found in the cache, get them from the database
         var notCacheKeys = cacheItems.Where(x => !x.Value.HasValue).Select(x => x.Key).ToList();
         var newCacheItems = await _SetCacheItemsAsync(providerName, providerKey, notCacheKeys);
 
