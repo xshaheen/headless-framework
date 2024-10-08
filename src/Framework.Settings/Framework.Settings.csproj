@@ -9,8 +9,4 @@
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Values\" />
-  </ItemGroup>
-
 </Project>

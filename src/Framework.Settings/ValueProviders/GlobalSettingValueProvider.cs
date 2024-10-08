@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Settings.Models;
-using Framework.Settings.Values;
 
 namespace Framework.Settings.ValueProviders;
 

@@ -1,11 +1,10 @@
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
 using Framework.Kernel.Primitives;
-using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.Serializers;
 
 public interface ISettingDefinitionSerializer
 {

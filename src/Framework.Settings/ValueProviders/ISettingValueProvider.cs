@@ -2,7 +2,7 @@
 
 using Framework.Settings.Models;
 
-namespace Framework.Settings;
+namespace Framework.Settings.ValueProviders;
 
 /// <summary>
 /// The setting value provider is used to get the value of a setting from a specific source (e.g. database, file, etc.).
