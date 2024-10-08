@@ -4,18 +4,18 @@ using Framework.Kernel.Primitives;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
 
-namespace Framework.Settings.Serializers;
+namespace Framework.Settings.Definitions;
 
 public interface ISettingDefinitionSerializer
 {
-    Task<SettingDefinitionRecord> SerializeAsync(SettingDefinition setting);
+    SettingDefinitionRecord Serialize(SettingDefinition setting);
 
-    Task<List<SettingDefinitionRecord>> SerializeAsync(IEnumerable<SettingDefinition> settings);
+    List<SettingDefinitionRecord> Serialize(IEnumerable<SettingDefinition> settings);
 }
 
 public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : ISettingDefinitionSerializer
 {
-    public Task<SettingDefinitionRecord> SerializeAsync(SettingDefinition setting)
+    public SettingDefinitionRecord Serialize(SettingDefinition setting)
     {
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
@@ -36,19 +36,13 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 record.SetProperty(property.Key, property.Value);
             }
 
-            return Task.FromResult(record);
+            return record;
         }
     }
 
-    public async Task<List<SettingDefinitionRecord>> SerializeAsync(IEnumerable<SettingDefinition> settings)
+    public List<SettingDefinitionRecord> Serialize(IEnumerable<SettingDefinition> settings)
     {
-        var records = new List<SettingDefinitionRecord>();
-        foreach (var setting in settings)
-        {
-            records.Add(await SerializeAsync(setting));
-        }
-
-        return records;
+        return settings.Select(Serialize).ToList();
     }
 
     private static string? _SerializeProviders(ICollection<string> providers)

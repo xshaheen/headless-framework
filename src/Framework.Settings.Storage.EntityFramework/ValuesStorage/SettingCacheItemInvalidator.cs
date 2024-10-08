@@ -2,7 +2,7 @@
 using Framework.Kernel.Domains;
 using Framework.Settings.Entities;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.ValuesStorage;
 
 public sealed class SettingCacheItemInvalidator(ICache<SettingCacheItem> cache)
     : ILocalMessageHandler<EntityChangedEventData<SettingRecord>>
