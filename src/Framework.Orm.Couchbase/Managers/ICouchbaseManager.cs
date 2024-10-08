@@ -1,6 +1,5 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
-
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using Couchbase;
 using Couchbase.Core.Exceptions;
@@ -67,7 +66,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         var retryStrategyOptions = new RetryStrategyOptions
         {
             Name = "StormCouchbaseManager.Retry",
-            BackoffType = DelayBackoffType.Exponential,
+            BackoffType = DelayBackoffType.Linear,
             Delay = 0.5.Seconds(),
             UseJitter = true,
             ShouldHandle = new PredicateBuilder().Handle<Exception>(e =>
@@ -76,6 +75,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
                         and not TaskCanceledException
                         and not IndexExistsException
                         and not CollectionExistsException
+                        and not ScopeExistsException
             ),
         };
 
@@ -94,23 +94,26 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNull(clusterKey);
         Argument.IsNotNull(bucketName);
 
+        var timestamp = Stopwatch.GetTimestamp();
         var (cluster, _) = await _clustersProvider.GetClusterAsync(clusterKey);
 
-        _logger.LogInformation(
-            "Cluster {ClusterKey} > Bucket {BucketName} > Try to build deferred indexes",
-            clusterKey,
-            bucketName
+        await _retryPipeline.ExecuteAsync(
+            static async (state, token) =>
+            {
+                await state.cluster.QueryIndexes.BuildDeferredIndexesAsync(
+                    state.bucketName,
+                    options => options.CancellationToken(token)
+                );
+            },
+            (cluster, bucketName),
+            cancellationToken
         );
 
-        await cluster.QueryIndexes.BuildDeferredIndexesAsync(
+        _logger.LogInformation(
+            "Cluster {ClusterKey} > Bucket {BucketName} > Build deferred indexes SUCCESS took {Elapsed}",
+            clusterKey,
             bucketName,
-            options => options.CancellationToken(cancellationToken)
-        );
-
-        _logger.LogInformation(
-            "Cluster {ClusterKey} > Bucket {BucketName} > Build deferred indexes success",
-            clusterKey,
-            bucketName
+            Stopwatch.GetElapsedTime(timestamp)
         );
     }
 
@@ -149,29 +152,44 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
         try
         {
-            await bucket.Collections.CreateScopeAsync(scopeName);
+            return await _retryPipeline.ExecuteAsync(
+                static async (state, token) =>
+                {
+                    var (@this, clusterKey, scopeName, bucket) = state;
 
-            _ClearScopesCache(clusterKey, bucketName);
+                    try
+                    {
+                        await bucket.Collections.CreateScopeAsync(
+                            scopeName,
+                            options => options.CancellationToken(token)
+                        );
 
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success",
-                clusterKey,
-                bucketName,
-                scopeName
+                        @this._ClearScopesCache(clusterKey, bucket.Name);
+
+                        @this._logger.LogInformation(
+                            "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success",
+                            clusterKey,
+                            bucket.Name,
+                            scopeName
+                        );
+
+                        return CreateScopeStatus.Success;
+                    }
+                    catch (ScopeExistsException)
+                    {
+                        @this._logger.LogInformation(
+                            "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success (exist)",
+                            clusterKey,
+                            bucket.Name,
+                            scopeName
+                        );
+
+                        return CreateScopeStatus.Success;
+                    }
+                },
+                (this, clusterKey, scopeName, bucket),
+                cancellationToken
             );
-
-            return CreateScopeStatus.Success;
-        }
-        catch (ScopeExistsException)
-        {
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success (exist)",
-                clusterKey,
-                bucketName,
-                scopeName
-            );
-
-            return CreateScopeStatus.Success;
         }
         catch (Exception e)
         {
@@ -200,90 +218,102 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNull(scopeName);
         Argument.IsNotEmpty(collections);
 
+        var timestamp = Stopwatch.GetTimestamp();
         var bucket = await _GetBucketAsync(clusterKey, bucketName);
         var (scope, scopeCollections) = await _GetScopeAsync(clusterKey, bucket, scopeName);
 
-        foreach (var collectionName in collections)
-        {
-            if (!scopeCollections.Contains(collectionName))
+        await Parallel.ForEachAsync(
+            collections,
+            cancellationToken,
+            async (collectionName, token) =>
             {
-                _logger.LogInformation(
-                    "Cluster {ClusterKey} > Bucket {BucketName} > Try to create collection {ScopeName}.{CollectionName}",
-                    clusterKey,
-                    bucket.Name,
-                    scope.Name,
-                    collectionName
-                );
-
-                await _CreateCollectionAsync(bucket, scope, collectionName, cancellationToken);
-
-                _logger.LogInformation(
-                    "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} success",
-                    clusterKey,
-                    bucket.Name,
-                    scope.Name,
-                    collectionName
-                );
-
-                await createPrimaryIndex(await scope.CollectionAsync(collectionName));
-            }
-            else
-            {
-                var collection = await scope.CollectionAsync(collectionName);
-
-                if (!await _HasPrimaryIndexAsync(collection, cancellationToken))
+                if (scopeCollections.Contains(collectionName))
                 {
-                    await createPrimaryIndex(collection);
+                    var collection = await scope.CollectionAsync(collectionName);
+
+                    if (!await _HasPrimaryIndexAsync(collection, token))
+                    {
+                        await _CreatePrimaryIndexOnCollectionAsync(clusterKey, collection);
+                    }
+
+                    return;
                 }
+
+                await _CreateCollectionAsync(clusterKey, bucket, scope, collectionName, token);
+                await Task.Delay(50.Milliseconds(), token);
+                await _CreatePrimaryIndexOnCollectionAsync(clusterKey, await scope.CollectionAsync(collectionName));
             }
-        }
+        );
 
-        return;
+        var elapsed = Stopwatch.GetElapsedTime(timestamp);
 
-        async Task createPrimaryIndex(ICouchbaseCollection collection)
-        {
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} success",
-                clusterKey,
-                bucket.Name,
-                scope.Name,
-                collection.Name
-            );
-
-            await _CreatePrimaryIndexOnCollectionAsync(collection);
-
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create primary index on collection {ScopeName}.{CollectionName} success",
-                clusterKey,
-                bucket.Name,
-                scope.Name,
-                collection.Name
-            );
-        }
+        _logger.LogInformation(
+            "Cluster {ClusterKey} > Bucket {BucketName} > Create ALL COLLECTIONS in scope {ScopeName} SUCCESS took {Elapsed}",
+            clusterKey,
+            bucketName,
+            scopeName,
+            elapsed
+        );
     }
 
     private async Task _CreateCollectionAsync(
+        string clusterKey,
         IBucket bucket,
         IScope scope,
         string collectionName,
-        CancellationToken cancellationToken
+        CancellationToken token
     )
     {
-        await _retryPipeline.ExecuteAsync(
-            static async (state, token) =>
-            {
-                var (bucket, scope, collectionName) = state;
+        var timestamp = Stopwatch.GetTimestamp();
 
-                await bucket.Collections.CreateCollectionAsync(
-                    scope.Name,
-                    collectionName,
-                    CreateCollectionSettings.Default,
-                    CreateCollectionOptions.Default.CancellationToken(token)
-                );
-            },
-            (bucket, scope, collectionName),
-            cancellationToken
-        );
+        try
+        {
+            await _retryPipeline.ExecuteAsync(
+                static async (state, token) =>
+                {
+                    var (bucket, scope, collectionName) = state;
+
+                    try
+                    {
+                        await bucket.Collections.CreateCollectionAsync(
+                            scope.Name,
+                            collectionName,
+                            CreateCollectionSettings.Default,
+                            CreateCollectionOptions.Default.CancellationToken(token)
+                        );
+                    }
+                    catch (CollectionExistsException)
+                    {
+                        // Ignore if a collection already exists it's same as success
+                    }
+                },
+                (bucket, scope, collectionName),
+                token
+            );
+
+            _logger.LogInformation(
+                "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}",
+                clusterKey,
+                bucket.Name,
+                scope.Name,
+                collectionName,
+                Stopwatch.GetElapsedTime(timestamp)
+            );
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(
+                e,
+                "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} FAILED took {Elapsed}",
+                clusterKey,
+                bucket.Name,
+                scope.Name,
+                collectionName,
+                Stopwatch.GetElapsedTime(timestamp)
+            );
+
+            throw;
+        }
     }
 
     public async Task CreateSecondaryIndexAsync(
@@ -302,43 +332,55 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNull(indexName);
         Argument.IsNotNullOrEmpty(fields);
 
+        var timestamp = Stopwatch.GetTimestamp();
         var bucket = await _GetBucketAsync(clusterKey, bucketName);
         var scope = await bucket.ScopeAsync(scopeName);
         var collection = await scope.CollectionAsync(collectionName);
 
-        _logger.LogInformation(
-            "Cluster {ClusterKey} > Bucket {BucketName} > Collection {ScopeName}.{CollectionName} > Try to create secondary index {IndexName}",
-            clusterKey,
-            bucketName,
-            scopeName,
-            collectionName,
-            indexName
-        );
+        try
+        {
+            await _retryPipeline.ExecuteAsync(
+                static async (state, token) =>
+                {
+                    var (collection, indexName, fields) = state;
 
-        await _retryPipeline.ExecuteAsync(
-            static async (state, token) =>
-            {
-                var (collection, indexName, fields) = state;
+                    var options = CreateQueryIndexOptions
+                        .Default.IgnoreIfExists(true)
+                        .Deferred(false)
+                        .Timeout(5.Seconds())
+                        .CancellationToken(token);
 
-                var options = CreateQueryIndexOptions
-                    .Default.IgnoreIfExists(true)
-                    .Deferred(false)
-                    .CancellationToken(token);
+                    await collection.QueryIndexes.CreateIndexAsync(indexName, fields, options);
+                },
+                (collection, indexName, fields),
+                cancellationToken
+            );
 
-                await collection.QueryIndexes.CreateIndexAsync(indexName, fields, options);
-            },
-            (collection, indexName, fields),
-            cancellationToken
-        );
+            _logger.LogInformation(
+                "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} SUCCESS took {Elapsed}",
+                clusterKey,
+                bucketName,
+                scopeName,
+                collectionName,
+                indexName,
+                Stopwatch.GetElapsedTime(timestamp)
+            );
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(
+                e,
+                "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} FAILED took {Elapsed}",
+                clusterKey,
+                collection.Scope.Bucket.Name,
+                collection.Scope.Name,
+                collection.Name,
+                indexName,
+                Stopwatch.GetElapsedTime(timestamp)
+            );
 
-        _logger.LogInformation(
-            "Cluster {ClusterKey} > Bucket {BucketName} > Collection {ScopeName}.{CollectionName} > Create secondary index {IndexName} success",
-            clusterKey,
-            bucketName,
-            scopeName,
-            collectionName,
-            indexName
-        );
+            throw;
+        }
     }
 
     #region Primary Index Helpers
@@ -352,24 +394,53 @@ public sealed class CouchbaseManager : ICouchbaseManager
             GetAllQueryIndexOptions.Default.CancellationToken(cancellationToken)
         );
 
-        return indexes.Any(index => index.IsPrimary || string.Equals(index.Name, "#primary", StringComparison.Ordinal));
+        return indexes.Any(index => index.IsPrimary || index.Name == "#primary");
     }
 
-    private async Task _CreatePrimaryIndexOnCollectionAsync(ICouchbaseCollection collection)
+    private async Task _CreatePrimaryIndexOnCollectionAsync(string clusterKey, ICouchbaseCollection collection)
     {
-        await _retryPipeline.ExecuteAsync(
-            static async (collection, token) =>
-            {
-                var options = CreatePrimaryQueryIndexOptions
-                    .Default.IndexName("#primary")
-                    .IgnoreIfExists(ignoreIfExists: true)
-                    .Deferred(deferred: false)
-                    .CancellationToken(token);
+        var timestamp = Stopwatch.GetTimestamp();
 
-                await collection.QueryIndexes.CreatePrimaryIndexAsync(options);
-            },
-            collection
-        );
+        try
+        {
+            await _retryPipeline.ExecuteAsync(
+                static async (collection, token) =>
+                {
+                    var options = CreatePrimaryQueryIndexOptions
+                        .Default.IndexName("#primary")
+                        .IgnoreIfExists(true)
+                        .Timeout(5.Seconds())
+                        .Deferred(false)
+                        .CancellationToken(token);
+
+                    await collection.QueryIndexes.CreatePrimaryIndexAsync(options);
+                },
+                collection
+            );
+
+            _logger.LogInformation(
+                "Cluster {ClusterKey} > Bucket {BucketName} > Create primary index on collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}",
+                clusterKey,
+                collection.Scope.Bucket.Name,
+                collection.Scope.Name,
+                collection.Name,
+                Stopwatch.GetElapsedTime(timestamp)
+            );
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(
+                e,
+                "Cluster {ClusterKey} > Bucket {BucketName} > Failed to create primary index on collection {ScopeName}.{CollectionName} FAILED took {Elapsed}",
+                clusterKey,
+                collection.Scope.Bucket.Name,
+                collection.Scope.Name,
+                collection.Name,
+                Stopwatch.GetElapsedTime(timestamp)
+            );
+
+            throw;
+        }
     }
 
     #endregion
@@ -430,7 +501,6 @@ public sealed class CouchbaseManager : ICouchbaseManager
         }
 
         var scopesEnumerable = await bucket.Collections.GetAllScopesAsync();
-
         var mapped = scopesEnumerable.ToDictionary(
             x => x.Name,
             x => x.Collections.Select(y => y.Name).ToHashSet(StringComparer.Ordinal),

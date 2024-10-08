@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Orm.Couchbase.Context;
 
-[PublicAPI]
 public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, ILogger<CouchbaseBucketContext> logger)
     : BucketContext(bucket)
 {
