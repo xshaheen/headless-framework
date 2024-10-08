@@ -2,12 +2,11 @@
 
 ## Framework
 
+- Couchbase
 - Settings
 - Features
 - Permissions (IClaimsTransformation)
-- Couchbase
 
 ## Test 
-  - Use testing containers
-  - Entity Framework
-  - Blobs
+  - Use testing containers (blobs)
+  
