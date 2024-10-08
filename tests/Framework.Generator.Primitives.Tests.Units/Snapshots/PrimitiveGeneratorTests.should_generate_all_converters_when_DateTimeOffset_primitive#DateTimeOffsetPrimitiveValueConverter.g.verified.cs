@@ -10,11 +10,11 @@
 
 using Framework.Primitives;
 using System;
+using Framework.Generator.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Framework.Generator.Primitives;
 
-namespace Framework.Primitives.EntityFrameworkCore.Converters;
+namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "DateTimeOffsetPrimitive"/></summary>
 public sealed class DateTimeOffsetPrimitiveValueConverter : ValueConverter<DateTimeOffsetPrimitive, DateTimeOffset>

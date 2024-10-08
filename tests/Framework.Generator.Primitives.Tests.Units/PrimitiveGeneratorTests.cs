@@ -9,7 +9,7 @@ namespace Tests;
 
 public sealed class PrimitiveGeneratorTests
 {
-    private const int _GenerateAllFileCounts = 8;
+    private const int _GenerateAllFileCounts = 9;
 
     private readonly PrimitiveGlobalOptions _generateAllOptions =
         new()

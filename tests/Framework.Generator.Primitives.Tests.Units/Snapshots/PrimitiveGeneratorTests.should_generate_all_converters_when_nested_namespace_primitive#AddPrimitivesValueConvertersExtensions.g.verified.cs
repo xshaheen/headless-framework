@@ -9,15 +9,15 @@
 #nullable enable
 
 using Framework.Primitives.Outer.Nested;
+using Framework.Primitives.Outer.Nested.Converters;
 using Microsoft.EntityFrameworkCore;
-using Framework.Primitives.Outer.Nested.EntityFrameworkCore.Converters;
 
 namespace generator_Test.Converters.Extensions;
 
-/// <summary>Helper class providing methods to configure EntityFrameworkCore ValueConverters for Primitive types of generator_Test</summary>
+/// <summary>Helper class providing methods to configure Entity Framework Value Converters for Primitive types of generator_Test</summary>
 public static class AddPrimitivesValueConvertersExtensions
 {
-    /// <summary>Adds EntityFrameworkCore ValueConverters for specific custom types to ensure proper mapping to EFCore ORM.</summary>
+    /// <summary>Adds Entity Framework Value Converters for specific custom types to ensure proper mapping to EF ORM.</summary>
     /// <param name="configurationBuilder">The ModelConfigurationBuilder instance to which converters are added.</param>
     public static ModelConfigurationBuilder AddPrimitivePropertyConversions(this ModelConfigurationBuilder configurationBuilder)
     {

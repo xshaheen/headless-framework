@@ -10,11 +10,11 @@
 
 using Framework.Primitives.Outer.Nested;
 using System;
+using Framework.Generator.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Framework.Generator.Primitives;
 
-namespace Framework.Primitives.Outer.Nested.EntityFrameworkCore.Converters;
+namespace Framework.Primitives.Outer.Nested.Converters;
 
 /// <summary>ValueConverter for <see cref = "IntPrimitive"/></summary>
 public sealed class IntPrimitiveValueConverter : ValueConverter<IntPrimitive, int>
