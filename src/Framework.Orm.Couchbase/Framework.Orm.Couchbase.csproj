@@ -15,12 +15,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Kernel.Domains\Framework.Kernel.Domains.csproj" />
     <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="AddCouchbaseExtensions.cs" />
   </ItemGroup>
 
 </Project>

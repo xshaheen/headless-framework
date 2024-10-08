@@ -2,7 +2,6 @@
 
 ## Framework
 
-- Couchbase
 - Settings
 - Features
 - Permissions (IClaimsTransformation)
