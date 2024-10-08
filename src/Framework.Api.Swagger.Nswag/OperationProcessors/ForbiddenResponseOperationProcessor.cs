@@ -30,8 +30,22 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
         }
 
         var actionDescriptor = ctx.ApiDescription.ActionDescriptor;
+
+        if (actionDescriptor.EndpointMetadata.OfType<AllowAnonymousAttribute>().Any())
+        {
+            return false;
+        }
+
+        var authorizeAttribute = actionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().ToList();
+
+        if (authorizeAttribute.Exists(attribute => attribute.Policy is not null || attribute.Roles is not null))
+        {
+            responses.Add(_ForbiddenStatusCode, _ForbiddenResponse);
+
+            return true;
+        }
+
         var authorizationRequirements = actionDescriptor.FilterDescriptors.GetPolicyRequirements();
-        var authorizeAttribute = actionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().FirstOrDefault();
 
         if (
             authorizationRequirements.Any(requirement =>
@@ -42,8 +56,6 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
                         or RolesAuthorizationRequirement
                         or AssertionRequirement
             )
-            || authorizeAttribute?.Roles is not null
-            || authorizeAttribute?.Policy is not null
         )
         {
             responses.Add(_ForbiddenStatusCode, _ForbiddenResponse);
