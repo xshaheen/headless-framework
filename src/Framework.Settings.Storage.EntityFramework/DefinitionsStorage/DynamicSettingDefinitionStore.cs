@@ -3,33 +3,21 @@ using Framework.ResourceLocks;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
 using Framework.Settings.Options;
+using Framework.Settings.Repositories;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.DefinitionsStorage;
 
-public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionStore
+public sealed class DynamicSettingDefinitionStore(
+    ISettingDefinitionRecordRepository textSettingRepository,
+    DynamicSettingDefinitionStoreInMemoryCache storeCache,
+    ICache distributedCache,
+    IResourceLockProvider resourceLockProvider,
+    IOptions<SettingManagementOptions> settingManagementOptions
+) : IDynamicSettingDefinitionStore
 {
-    private readonly ISettingDefinitionRecordRepository _settingRepository;
-    private readonly IDynamicSettingDefinitionStoreInMemoryCache _storeCache;
-    private readonly ICache _distributedCache;
-    private readonly IResourceLockProvider _resourceLockProvider;
-    private readonly SettingManagementOptions _settingManagementOptions;
-
-    public DynamicSettingDefinitionStore(
-        ISettingDefinitionRecordRepository textSettingRepository,
-        IDynamicSettingDefinitionStoreInMemoryCache storeCache,
-        ICache distributedCache,
-        IResourceLockProvider resourceLockProvider,
-        IOptions<SettingManagementOptions> settingManagementOptions
-    )
-    {
-        _settingRepository = textSettingRepository;
-        _storeCache = storeCache;
-        _distributedCache = distributedCache;
-        _resourceLockProvider = resourceLockProvider;
-        _settingManagementOptions = settingManagementOptions.Value;
-    }
+    private readonly SettingManagementOptions _settingManagementOptions = settingManagementOptions.Value;
 
     public async Task<SettingDefinition?> GetOrDefaultAsync(string name)
     {
@@ -38,10 +26,10 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
             return null;
         }
 
-        using (await _storeCache.SyncSemaphore.LockAsync())
+        using (await storeCache.SyncSemaphore.LockAsync())
         {
             await _EnsureCacheIsUptoDateAsync();
-            return _storeCache.GetSettingOrDefault(name);
+            return storeCache.GetSettingOrDefault(name);
         }
     }
 
@@ -52,10 +40,10 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
             return Array.Empty<SettingDefinition>();
         }
 
-        using (await _storeCache.SyncSemaphore.LockAsync())
+        using (await storeCache.SyncSemaphore.LockAsync())
         {
             await _EnsureCacheIsUptoDateAsync();
-            return _storeCache.GetSettings().ToImmutableList();
+            return storeCache.GetSettings().ToImmutableList();
         }
     }
 
@@ -64,8 +52,8 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
     private async Task _EnsureCacheIsUptoDateAsync()
     {
         if (
-            _storeCache.LastCheckTime.HasValue
-            && DateTime.Now.Subtract(_storeCache.LastCheckTime.Value).TotalSeconds < 30
+            storeCache.LastCheckTime.HasValue
+            && DateTime.Now.Subtract(storeCache.LastCheckTime.Value).TotalSeconds < 30
         )
         {
             /* We get the latest setting with a small delay for optimization */
@@ -74,35 +62,35 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
 
         var stampInDistributedCache = await _GetOrSetStampInDistributedCache();
 
-        if (string.Equals(stampInDistributedCache, _storeCache.CacheStamp, StringComparison.Ordinal))
+        if (string.Equals(stampInDistributedCache, storeCache.CacheStamp, StringComparison.Ordinal))
         {
-            _storeCache.LastCheckTime = DateTime.Now;
+            storeCache.LastCheckTime = DateTime.Now;
             return;
         }
 
         await _UpdateInMemoryStoreCache();
 
-        _storeCache.CacheStamp = stampInDistributedCache;
-        _storeCache.LastCheckTime = DateTime.Now;
+        storeCache.CacheStamp = stampInDistributedCache;
+        storeCache.LastCheckTime = DateTime.Now;
     }
 
     private async Task _UpdateInMemoryStoreCache()
     {
-        var settingRecords = await _settingRepository.GetListAsync();
-        await _storeCache.FillAsync(settingRecords);
+        var settingRecords = await textSettingRepository.GetListAsync();
+        await storeCache.FillAsync(settingRecords);
     }
 
     private async Task<string> _GetOrSetStampInDistributedCache()
     {
         var cacheKey = _GetCommonStampCacheKey();
 
-        var stampInDistributedCache = await _distributedCache.GetAsync<string>(cacheKey);
+        var stampInDistributedCache = await distributedCache.GetAsync<string>(cacheKey);
         if (!stampInDistributedCache.IsNull)
         {
             return stampInDistributedCache.Value;
         }
 
-        await using var commonLockHandle = await _resourceLockProvider.TryAcquireAsync(
+        await using var commonLockHandle = await resourceLockProvider.TryAcquireAsync(
             _GetCommonDistributedLockKey(),
             TimeSpan.FromMinutes(2)
         );
@@ -115,7 +103,7 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
             );
         }
 
-        stampInDistributedCache = await _distributedCache.GetAsync<string>(cacheKey);
+        stampInDistributedCache = await distributedCache.GetAsync<string>(cacheKey);
         if (!stampInDistributedCache.IsNull)
         {
             return stampInDistributedCache.Value;
@@ -123,7 +111,7 @@ public sealed class DynamicSettingDefinitionStore : IDynamicSettingDefinitionSto
 
         var newStamp = Guid.NewGuid().ToString();
 
-        await _distributedCache.UpsertAsync(cacheKey, newStamp, TimeSpan.FromDays(30));
+        await distributedCache.UpsertAsync(cacheKey, newStamp, TimeSpan.FromDays(30));
 
         return newStamp;
     }

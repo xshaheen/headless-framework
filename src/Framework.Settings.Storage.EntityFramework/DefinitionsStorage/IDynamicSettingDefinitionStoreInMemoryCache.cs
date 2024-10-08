@@ -1,25 +1,9 @@
-using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.DefinitionsStorage;
 
-public interface IDynamicSettingDefinitionStoreInMemoryCache
-{
-    string? CacheStamp { get; set; }
-
-    SemaphoreSlim SyncSemaphore { get; }
-
-    DateTime? LastCheckTime { get; set; }
-
-    Task FillAsync(List<SettingDefinitionRecord> settingRecords);
-
-    SettingDefinition? GetSettingOrDefault(string name);
-
-    IReadOnlyList<SettingDefinition> GetSettings();
-}
-
-public sealed class DynamicSettingDefinitionStoreInMemoryCache : IDynamicSettingDefinitionStoreInMemoryCache
+public sealed class DynamicSettingDefinitionStoreInMemoryCache
 {
     private readonly Dictionary<string, SettingDefinition> _settingDefinitions = new(StringComparer.Ordinal);
 

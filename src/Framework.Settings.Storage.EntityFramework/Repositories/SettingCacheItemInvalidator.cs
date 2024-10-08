@@ -4,13 +4,13 @@ using Framework.Settings.Entities;
 
 namespace Framework.Settings.Repositories;
 
-public sealed class SettingCacheItemInvalidator : ILocalMessageHandler<EntityChangedEventData<SettingRecord>>
+public sealed class SettingCacheItemInvalidator(ICache<SettingCacheItem> cache)
+    : ILocalMessageHandler<EntityChangedEventData<SettingRecord>>
 {
-    private ICache<SettingCacheItem> Cache { get; }
-
-    public SettingCacheItemInvalidator(ICache<SettingCacheItem> cache) => Cache = cache;
-
-    public async Task HandleAsync(EntityChangedEventData<SettingRecord> message, CancellationToken abortToken = default)
+    public async Task HandleAsync(
+        EntityChangedEventData<SettingRecord> message,
+        CancellationToken cancellationToken = default
+    )
     {
         var cacheKey = SettingCacheItem.CalculateCacheKey(
             message.Entity.Name,
@@ -18,6 +18,6 @@ public sealed class SettingCacheItemInvalidator : ILocalMessageHandler<EntityCha
             message.Entity.ProviderKey
         );
 
-        await Cache.RemoveAsync(cacheKey, abortToken);
+        await cache.RemoveAsync(cacheKey, cancellationToken);
     }
 }

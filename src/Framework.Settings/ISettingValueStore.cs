@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Settings.Models;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Framework.Settings.Values;
+namespace Framework.Settings;
 
 /// <summary>Represents a store for setting values.</summary>
 public interface ISettingValueStore

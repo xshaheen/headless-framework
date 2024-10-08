@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Primitives;
 using Framework.Settings.Definitions;
-using Framework.Settings.Values;
+using Framework.Settings.ValueProviders;
 
 namespace Framework.Settings;
 

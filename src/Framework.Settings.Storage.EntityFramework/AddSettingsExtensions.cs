@@ -2,10 +2,10 @@
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Definitions;
+using Framework.Settings.DefinitionsStorage;
 using Framework.Settings.Helpers;
 using Framework.Settings.Repositories;
 using Framework.Settings.ValueProviders;
-using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;

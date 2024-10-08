@@ -7,6 +7,7 @@ using Framework.ResourceLocks;
 using Framework.Serializer.Json.Modifiers;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
+using Framework.Settings.Serializers;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Repositories;

@@ -4,7 +4,6 @@ using Framework.Settings.Helpers;
 using Framework.Settings.Models;
 using Framework.Settings.Options;
 using Framework.Settings.ValueProviders;
-using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
