@@ -8,10 +8,9 @@
 
 #nullable enable
 
-using Framework.Primitives;
 using System;
-using System.ComponentModel;
 using System.Globalization;
+using Framework.Primitives;
 using Framework.Generator.Primitives;
 
 namespace Framework.Primitives.Converters;
@@ -21,7 +20,7 @@ public sealed class GuidPrimitiveDapperTypeHandler : global::Dapper.SqlMapper.Ty
 {
     public override void SetValue(global::System.Data.IDbDataParameter parameter, GuidPrimitive value)
     {
-        parameter.Value = value?.GetUnderlyingPrimitiveType();
+        parameter.Value = value.GetUnderlyingPrimitiveType();
     }
 
     public override GuidPrimitive Parse(object value)
@@ -29,7 +28,7 @@ public sealed class GuidPrimitiveDapperTypeHandler : global::Dapper.SqlMapper.Ty
         return value switch
         {
             global::System.Guid guidValue => new GuidPrimitive(guidValue),
-            string stringValue when !string.IsNullOrEmpty(stringValue) && global::System.Guid.TryParse(stringValue, out var result) => new GuidPrimitive(result),
+            string stringValue when !string.IsNullOrEmpty(stringValue) && global::System.Guid.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new GuidPrimitive(result),
             _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to GuidPrimitive"),
         };
     }

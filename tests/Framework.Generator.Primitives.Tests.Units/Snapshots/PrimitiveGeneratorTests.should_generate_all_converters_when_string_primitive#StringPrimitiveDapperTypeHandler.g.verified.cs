@@ -8,10 +8,9 @@
 
 #nullable enable
 
-using Framework.Primitives;
 using System;
-using System.ComponentModel;
 using System.Globalization;
+using Framework.Primitives;
 using Framework.Generator.Primitives;
 
 namespace Framework.Primitives.Converters;
@@ -19,12 +18,12 @@ namespace Framework.Primitives.Converters;
 /// <summary>Dapper TypeHandler for <see cref = "StringPrimitive"/></summary>
 public sealed class StringPrimitiveDapperTypeHandler : global::Dapper.SqlMapper.TypeHandler<StringPrimitive>
 {
-    public override void SetValue(global::System.Data.IDbDataParameter parameter, StringPrimitive value)
+    public override void SetValue(global::System.Data.IDbDataParameter parameter, StringPrimitive? value)
     {
         parameter.Value = value?.GetUnderlyingPrimitiveType();
     }
 
-    public override StringPrimitive Parse(object value)
+    public override StringPrimitive? Parse(object value)
     {
         return value switch
         {
