@@ -5,18 +5,15 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Framework.Permissions.PermissionRequirements;
 
-public class PermissionsRequirementHandler(IPermissionChecker permissionChecker)
-    : AuthorizationHandler<PermissionsRequirement>
+[PublicAPI]
+public class PermissionsRequirementHandler(IPermissionChecker checker) : AuthorizationHandler<PermissionsRequirement>
 {
     protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         PermissionsRequirement requirement
     )
     {
-        var multiplePermissionGrantResult = await permissionChecker.IsGrantedAsync(
-            context.User,
-            requirement.PermissionNames
-        );
+        var multiplePermissionGrantResult = await checker.IsGrantedAsync(context.User, requirement.PermissionNames);
 
         if (
             requirement.RequiresAll

@@ -4,6 +4,7 @@ using System.Security.Claims;
 
 namespace Framework.Permissions.Permissions.Checkers;
 
+[PublicAPI]
 public interface IPermissionChecker
 {
     Task<bool> IsGrantedAsync(string name);

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Framework.Permissions.PermissionRequirements;
 
+[PublicAPI]
 public sealed class PermissionRequirement(string permissionName) : IAuthorizationRequirement
 {
     public string PermissionName { get; } = Argument.IsNotNull(permissionName);
