@@ -121,25 +121,37 @@ internal static class Emitter
                 }
             }
 
-            if (globalOptions.GenerateSwashbuckleSwaggerConverters)
+            // Add helpers
+
+            var addAssemblyAttribute = true;
+
+            if (globalOptions.GenerateSwashbuckleSwaggerConverters && swaggerTypes.Count > 0)
             {
-                context.AddSwashbuckleSwaggerMappingsHelper(assemblyName, swaggerTypes);
+                context.AddSwashbuckleSwaggerMappingsHelper(assemblyName, swaggerTypes, addAssemblyAttribute);
+                addAssemblyAttribute = false;
             }
 
-            if (globalOptions.GenerateNswagSwaggerConverters)
+            if (globalOptions.GenerateNswagSwaggerConverters && swaggerTypes.Count > 0)
             {
-                context.AddNswagSwaggerMappingsHelper(
+                context.AddNswagSwaggerMappingsHelper(assemblyName, swaggerTypes, addAssemblyAttribute);
+                addAssemblyAttribute = false;
+            }
+
+            if (globalOptions.GenerateEntityFrameworkValueConverters && efValueConverterTypes.Count > 0)
+            {
+                context.AddEntityFrameworkValueConvertersHelper(
                     assemblyName,
-                    swaggerTypes,
-                    addAssemblyAttribute: !globalOptions.GenerateSwashbuckleSwaggerConverters
+                    efValueConverterTypes,
+                    addAssemblyAttribute
                 );
+                addAssemblyAttribute = false;
             }
 
-            context.AddEntityFrameworkValueConvertersHelper(
-                swaggerTypes.Count == 0,
-                assemblyName,
-                efValueConverterTypes
-            );
+            if (globalOptions.GenerateDapperConverters && dapperConverterTypes.Count > 0)
+            {
+                context.AddDapperTypeHandlersHelper(assemblyName, dapperConverterTypes, addAssemblyAttribute);
+                addAssemblyAttribute = false;
+            }
         }
         catch (Exception ex)
         {

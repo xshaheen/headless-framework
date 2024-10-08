@@ -10,11 +10,11 @@
 
 using Framework.Primitives;
 using System;
+using Framework.Generator.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using Framework.Generator.Primitives;
 
-namespace Framework.Primitives.EntityFrameworkCore.Converters;
+namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "DateOnlyPrimitive"/></summary>
 public sealed class DateOnlyPrimitiveValueConverter : ValueConverter<DateOnlyPrimitive, DateOnly>
