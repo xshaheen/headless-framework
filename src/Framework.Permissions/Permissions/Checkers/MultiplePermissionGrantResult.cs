@@ -14,7 +14,7 @@ public class MultiplePermissionGrantResult
 
     public MultiplePermissionGrantResult()
     {
-        Result = new Dictionary<string, PermissionGrantResult>(StringComparer.Ordinal);
+        Result = new(StringComparer.Ordinal);
     }
 
     public MultiplePermissionGrantResult(
@@ -23,18 +23,11 @@ public class MultiplePermissionGrantResult
     )
     {
         Argument.IsNotNull(names);
-        Result = new Dictionary<string, PermissionGrantResult>(StringComparer.Ordinal);
+        Result = new(StringComparer.Ordinal);
 
         foreach (var name in names)
         {
             Result.Add(name, grantResult);
         }
     }
-}
-
-public enum PermissionGrantResult
-{
-    Undefined,
-    Granted,
-    Prohibited,
 }
