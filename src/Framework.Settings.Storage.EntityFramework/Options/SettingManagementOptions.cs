@@ -11,9 +11,4 @@ public class SettingManagementOptions
     /// Default: true.
     /// </summary>
     public bool SaveStaticSettingsToDatabase { get; set; } = true;
-
-    /// <summary>
-    /// Default: false.
-    /// </summary>
-    public bool IsDynamicSettingStoreEnabled { get; set; }
 }

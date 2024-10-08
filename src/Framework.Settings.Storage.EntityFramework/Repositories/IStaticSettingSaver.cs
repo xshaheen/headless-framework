@@ -7,7 +7,6 @@ using Framework.ResourceLocks;
 using Framework.Serializer.Json.Modifiers;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
-using Framework.Settings.Serializers;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Repositories;
@@ -15,6 +14,15 @@ namespace Framework.Settings.Repositories;
 public interface IStaticSettingSaver
 {
     Task SaveAsync();
+}
+
+public interface ISettingsUnitOfWorkManager
+{
+    IDisposable Begin(bool requiresNew, bool isTransactional);
+
+    Task CompleteAsync();
+
+    Task RollbackAsync();
 }
 
 public sealed class StaticSettingSaver(
@@ -27,8 +35,8 @@ public sealed class StaticSettingSaver(
     IApplicationInformationAccessor applicationInfoAccessor,
     ICancellationTokenProvider cancellationTokenProvider,
     IOptions<FrameworkSettingOptions> settingOptions,
-    IOptions<CacheOptions> cacheOptions
-// IUnitOfWorkManager unitOfWorkManager
+    IOptions<CacheOptions> cacheOptions,
+    ISettingsUnitOfWorkManager unitOfWorkManager
 ) : IStaticSettingSaver
 {
     private readonly FrameworkSettingOptions _settingOptions = settingOptions.Value;
@@ -49,7 +57,7 @@ public sealed class StaticSettingSaver(
         var cacheKey = _GetApplicationHashCacheKey();
         var cachedHash = await cache.GetAsync<string>(cacheKey, cancellationTokenProvider.Token);
 
-        var settingRecords = await settingSerializer.SerializeAsync(await staticStore.GetAllAsync());
+        var settingRecords = settingSerializer.Serialize(await staticStore.GetAllAsync());
         var currentHash = _CalculateHash(settingRecords, _settingOptions.DeletedSettings);
 
         if (string.Equals(cachedHash.Value, currentHash, StringComparison.Ordinal))
@@ -70,40 +78,39 @@ public sealed class StaticSettingSaver(
                 throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!");
             }
 
-            using (var unitOfWork = _unitOfWorkManager.Begin(requiresNew: true, isTransactional: true))
+            using var unitOfWork = unitOfWorkManager.Begin(requiresNew: true, isTransactional: true);
+
+            try
+            {
+                var hasChangesInSettings = await _UpdateChangedSettingsAsync(settingRecords);
+
+                if (hasChangesInSettings)
+                {
+                    await cache.UpsertAsync(
+                        _GetCommonStampCacheKey(),
+                        guidGenerator.Create().ToString(),
+                        TimeSpan.FromDays(30),
+                        cancellationTokenProvider.Token
+                    );
+                }
+            }
+            catch
             {
                 try
                 {
-                    var hasChangesInSettings = await _UpdateChangedSettingsAsync(settingRecords);
-
-                    if (hasChangesInSettings)
-                    {
-                        await cache.UpsertAsync(
-                            _GetCommonStampCacheKey(),
-                            guidGenerator.Create().ToString(),
-                            TimeSpan.FromDays(30),
-                            cancellationTokenProvider.Token
-                        );
-                    }
+                    await unitOfWork.RollbackAsync();
                 }
+#pragma warning disable ERP022
                 catch
                 {
-                    try
-                    {
-                        await unitOfWork.RollbackAsync();
-                    }
-                    catch
-                    {
-                        /* ignored */
-#pragma warning disable ERP022
-                    }
+                    /* ignored */
+                }
 #pragma warning restore ERP022
 
-                    throw;
-                }
-
-                await unitOfWork.CompleteAsync();
+                throw;
             }
+
+            await unitOfWork.CompleteAsync();
         }
 
         await cache.UpsertAsync(cacheKey, currentHash, TimeSpan.FromDays(30), cancellationTokenProvider.Token);

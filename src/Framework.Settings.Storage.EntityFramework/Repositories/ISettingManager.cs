@@ -310,7 +310,7 @@ public sealed class SettingManager : ISettingManager
             }
         }
 
-        providers = providers.TakeWhile(p => p.Name == providerName).ToList(); // Getting list for case of there are more than one provider with same providerName
+        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList(); // Getting list for case of there are more than one provider with same providerName
 
         if (value == null)
         {

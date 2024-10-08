@@ -1,6 +1,6 @@
 using Framework.Settings.Entities;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.Definitions;
 
 public interface ISettingDefinitionRecordRepository
 {

@@ -3,7 +3,7 @@
 using System.Text;
 using Framework.Kernel.BuildingBlocks.Helpers.Text;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.ValuesStorage;
 
 public sealed class SettingCacheItem(string? value)
 {
