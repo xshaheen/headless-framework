@@ -723,4 +723,28 @@ public static class StringExtensions
 
         return sb.ToString();
     }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static T Parse<T>(this string str, IFormatProvider? format = null)
+        where T : ISpanParsable<T>
+    {
+        return T.Parse(str.AsSpan(), format);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static bool TryParse<T>(this string str, IFormatProvider? format, [NotNullWhen(true)] out T? value)
+        where T : ISpanParsable<T>
+    {
+        return T.TryParse(str.AsSpan(), format, out value);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static bool TryParse<T>(this string str, [NotNullWhen(true)] out T? value)
+        where T : ISpanParsable<T>
+    {
+        return str.TryParse(null, out value);
+    }
 }
