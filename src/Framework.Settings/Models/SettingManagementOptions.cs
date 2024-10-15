@@ -3,9 +3,9 @@
 using Framework.Kernel.Primitives;
 using Framework.Settings.ValueProviders;
 
-namespace Framework.Settings;
+namespace Framework.Settings.Models;
 
-public sealed class FrameworkSettingOptions
+public sealed class SettingManagementOptions
 {
     public TypeList<ISettingDefinitionProvider> DefinitionProviders { get; } = [];
 
@@ -15,4 +15,7 @@ public sealed class FrameworkSettingOptions
 
     /// <summary>Default: false.</summary>
     public bool IsDynamicSettingStoreEnabled { get; set; }
+
+    /// <summary>Default: true.</summary>
+    public bool SaveStaticSettingsToDatabase { get; set; } = true;
 }

@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Caching;
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.ResourceLocks;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
+using Humanizer;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
@@ -18,17 +20,16 @@ public interface IDynamicSettingDefinitionStore
 }
 
 public sealed class DynamicSettingDefinitionStore(
-    ISettingDefinitionRecordRepository repository,
+    SettingDefinitionRecordRepository repository,
+    ISettingDefinitionSerializer serializer,
     ICache distributedCache,
     IResourceLockProvider resourceLockProvider,
-    IOptions<FrameworkSettingOptions> optionsAccessor
+    IGuidGenerator guidGenerator,
+    IOptions<SettingManagementOptions> optionsAccessor,
+    TimeProvider timeProvider
 ) : IDynamicSettingDefinitionStore, IDisposable
 {
-    private string? _cacheStamp;
-    private DateTime? _lastCheckTime;
-    private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private readonly Dictionary<string, SettingDefinition> _settingDefinitions = new(StringComparer.Ordinal);
-    private readonly FrameworkSettingOptions _options = optionsAccessor.Value;
+    private readonly SettingManagementOptions _options = optionsAccessor.Value;
 
     public async Task<SettingDefinition?> GetOrDefaultAsync(string name)
     {
@@ -37,12 +38,9 @@ public sealed class DynamicSettingDefinitionStore(
             return null;
         }
 
-        using (await _syncSemaphore.LockAsync())
-        {
-            await _EnsureCacheIsUptoDateAsync();
+        await _EnsureMemoryCacheIsUptoDateAsync();
 
-            return _settingDefinitions.GetOrDefault(name);
-        }
+        return _memoryCache.GetOrDefault(name);
     }
 
     public async Task<IReadOnlyList<SettingDefinition>> GetAllAsync()
@@ -52,104 +50,98 @@ public sealed class DynamicSettingDefinitionStore(
             return [];
         }
 
-        using (await _syncSemaphore.LockAsync())
-        {
-            await _EnsureCacheIsUptoDateAsync();
+        await _EnsureMemoryCacheIsUptoDateAsync();
 
-            return _settingDefinitions.Values.ToImmutableList();
-        }
+        return _memoryCache.Values.ToImmutableList();
     }
 
     #region Helpers
 
-    private async Task _EnsureCacheIsUptoDateAsync()
+    private string? _cacheStamp;
+    private DateTimeOffset? _lastCheckTime;
+    private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
+    private readonly Dictionary<string, SettingDefinition> _memoryCache = new(StringComparer.Ordinal);
+
+    private async Task _EnsureMemoryCacheIsUptoDateAsync()
     {
-        if (_lastCheckTime.HasValue && DateTime.Now.Subtract(_lastCheckTime.Value).TotalSeconds < 30)
+        using (await _syncSemaphore.LockAsync())
         {
-            // We get the latest setting with a small delay for optimization
-            return;
+            if (!_IsUpdateMemoryCacheRequired())
+            {
+                // We get the latest setting with a small delay for optimization
+                return;
+            }
+
+            var cacheStamp = await _GetOrSetDistributedCacheStampAsync();
+
+            if (string.Equals(cacheStamp, _cacheStamp, StringComparison.Ordinal))
+            {
+                _lastCheckTime = timeProvider.GetUtcNow();
+
+                return;
+            }
+
+            await _UpdateInMemoryCacheAsync();
+            _cacheStamp = cacheStamp;
+            _lastCheckTime = timeProvider.GetUtcNow();
         }
-
-        var stampInDistributedCache = await _GetOrSetStampInDistributedCache();
-
-        if (string.Equals(stampInDistributedCache, _cacheStamp, StringComparison.Ordinal))
-        {
-            _lastCheckTime = DateTime.Now;
-
-            return;
-        }
-
-        await _UpdateInMemoryStoreCache();
-        _cacheStamp = stampInDistributedCache;
-        _lastCheckTime = DateTime.Now;
     }
 
-    private async Task<string> _GetOrSetStampInDistributedCache()
+    private async Task _UpdateInMemoryCacheAsync()
     {
-        const string cacheKey = "InMemorySettingCacheStamp";
+        var records = await repository.GetListAsync();
 
-        var stampInDistributedCache = await distributedCache.GetAsync<string>(cacheKey);
+        _memoryCache.Clear();
 
-        if (!stampInDistributedCache.IsNull)
+        foreach (var record in records)
         {
-            return stampInDistributedCache.Value;
+            _memoryCache[record.Name] = serializer.Deserialize(record);
+        }
+    }
+
+    private bool _IsUpdateMemoryCacheRequired()
+    {
+        if (!_lastCheckTime.HasValue)
+        {
+            return true;
         }
 
-        await using var commonLockHandle =
-            await resourceLockProvider.TryAcquireAsync("CommonSettingUpdateLock", TimeSpan.FromMinutes(2))
+        var elapsedSinceLastCheck = timeProvider.GetUtcNow().Subtract(_lastCheckTime.Value);
+
+        return elapsedSinceLastCheck.TotalSeconds < 30;
+    }
+
+    private async Task<string> _GetOrSetDistributedCacheStampAsync()
+    {
+        var cachedStamp = await distributedCache.GetAsync<string>(SettingsConstants.SettingUpdatedStampCacheKey);
+
+        if (!cachedStamp.IsNull)
+        {
+            return cachedStamp.Value;
+        }
+
+        await using var resourceLock =
+            await resourceLockProvider.TryAcquireAsync(SettingsConstants.CommonUpdateLockKey, 2.Minutes())
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for setting definition common stamp check!"
             );
 
-        stampInDistributedCache = await distributedCache.GetAsync<string>(cacheKey);
+        cachedStamp = await distributedCache.GetAsync<string>(SettingsConstants.SettingUpdatedStampCacheKey);
 
-        if (!stampInDistributedCache.IsNull)
+        if (!cachedStamp.IsNull)
         {
-            return stampInDistributedCache.Value;
+            return cachedStamp.Value;
         }
 
-        var newStamp = Guid.NewGuid().ToString();
+        var newStamp = guidGenerator.Create().ToString("N");
 
-        await distributedCache.UpsertAsync(cacheKey, newStamp, TimeSpan.FromDays(30));
+        await distributedCache.UpsertAsync(
+            SettingsConstants.SettingUpdatedStampCacheKey,
+            newStamp,
+            TimeSpan.FromDays(30)
+        );
 
         return newStamp;
-    }
-
-    private async Task _UpdateInMemoryStoreCache()
-    {
-        _Cache(await repository.GetListAsync());
-    }
-
-    private void _Cache(List<SettingDefinitionRecord> records)
-    {
-        _settingDefinitions.Clear();
-
-        foreach (var record in records)
-        {
-            var settingDefinition = new SettingDefinition(
-                record.Name,
-                record.DefaultValue,
-                record.DisplayName,
-                record.Description,
-                record.IsVisibleToClients,
-                record.IsInherited,
-                record.IsEncrypted
-            );
-
-            if (!record.Providers.IsNullOrWhiteSpace())
-            {
-                settingDefinition.Providers.AddRange(
-                    record.Providers.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                );
-            }
-
-            foreach (var property in record.ExtraProperties)
-            {
-                settingDefinition[property.Key] = property.Value;
-            }
-
-            _settingDefinitions[record.Name] = settingDefinition;
-        }
     }
 
     public void Dispose()

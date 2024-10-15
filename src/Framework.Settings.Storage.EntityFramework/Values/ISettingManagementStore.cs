@@ -1,15 +1,12 @@
-﻿using System.Text;
-using Framework.Caching;
+﻿using Framework.Caching;
 using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.BuildingBlocks.Helpers.Text;
 using Framework.Kernel.Checks;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
-using Framework.Settings.ValuesStorage;
 using Humanizer;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.Values;
 
 public interface ISettingManagementStore
 {
@@ -28,7 +25,7 @@ public sealed class SettingManagementStore(
     ISettingRecordRepository settingRecordRepository,
     ISettingDefinitionManager settingDefinitionManager,
     IGuidGenerator guidGenerator,
-    ICache<SettingCacheItem> cache
+    ICache<SettingValueCacheItem> cache
 ) : ISettingManagementStore
 {
     public async Task<string?> GetOrNullAsync(string name, string? providerName, string? providerKey)
@@ -52,8 +49,8 @@ public sealed class SettingManagementStore(
         }
 
         await cache.UpsertAsync(
-            _CalculateCacheKey(name, providerName, providerKey),
-            new SettingCacheItem(setting.Value),
+            SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            new SettingValueCacheItem(setting.Value),
             5.Hours()
         );
     }
@@ -72,7 +69,7 @@ public sealed class SettingManagementStore(
         if (setting is not null)
         {
             await settingRecordRepository.DeleteAsync(setting);
-            await cache.RemoveAsync(_CalculateCacheKey(name, providerName, providerKey));
+            await cache.RemoveAsync(SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey));
         }
     }
 
@@ -101,7 +98,7 @@ public sealed class SettingManagementStore(
 
     #region Helpers
 
-    private async Task<Dictionary<string, SettingCacheItem>> _SetCacheItemsAsync(
+    private async Task<Dictionary<string, SettingValueCacheItem>> _SetCacheItemsAsync(
         string? providerName,
         string? providerKey,
         List<string> notCacheKeys
@@ -121,13 +118,13 @@ public sealed class SettingManagementStore(
 
         var settingsDictionary = settingRecords.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
-        var cacheItems = new Dictionary<string, SettingCacheItem>(StringComparer.Ordinal);
+        var cacheItems = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
 
         foreach (var settingDefinition in settingDefinitions)
         {
-            var cacheKey = _CalculateCacheKey(settingDefinition.Name, providerName, providerKey);
+            var cacheKey = SettingValueCacheItem.CalculateCacheKey(settingDefinition.Name, providerName, providerKey);
             var settingValue = settingsDictionary.GetOrDefault(settingDefinition.Name);
-            cacheItems[cacheKey] = new SettingCacheItem(settingValue);
+            cacheItems[cacheKey] = new SettingValueCacheItem(settingValue);
         }
 
         await cache.UpsertAllAsync(cacheItems, 5.Hours());
@@ -135,52 +132,22 @@ public sealed class SettingManagementStore(
         return cacheItems;
     }
 
-    private async Task _SetCacheItemsAsync(
-        string? providerName,
-        string? providerKey,
-        string currentName,
-        SettingCacheItem currentCacheItem
-    )
-    {
-        var settingDefinitions = await settingDefinitionManager.GetAllAsync();
-
-        var settingsDictionary = (await settingRecordRepository.GetListAsync(providerName, providerKey)).ToDictionary(
-            s => s.Name,
-            s => s.Value,
-            StringComparer.Ordinal
-        );
-
-        var cacheItems = new Dictionary<string, SettingCacheItem>(StringComparer.Ordinal);
-
-        foreach (var settingDefinition in settingDefinitions)
-        {
-            var cacheKey = _CalculateCacheKey(settingDefinition.Name, providerName, providerKey);
-            var settingValue = settingsDictionary.GetOrDefault(settingDefinition.Name);
-            cacheItems[cacheKey] = new SettingCacheItem(settingValue);
-
-            if (string.Equals(settingDefinition.Name, currentName, StringComparison.Ordinal))
-            {
-                currentCacheItem.Value = settingValue;
-            }
-        }
-
-        await cache.UpsertAllAsync(cacheItems, 5.Hours());
-    }
-
-    private async Task<Dictionary<string, SettingCacheItem>> _GetCacheItemsAsync(
+    private async Task<Dictionary<string, SettingValueCacheItem>> _GetCacheItemsAsync(
         string[] names,
         string? providerName,
         string? providerKey
     )
     {
-        var cacheKeys = names.Select(x => _CalculateCacheKey(x, providerName, providerKey)).ToList();
+        var cacheKeys = names
+            .Select(x => SettingValueCacheItem.CalculateCacheKey(x, providerName, providerKey))
+            .ToList();
         var cacheItems = await cache.GetAllAsync(cacheKeys);
 
         if (cacheItems.All(x => x.Value.HasValue))
         {
             return cacheItems.ToDictionary(
                 x => x.Key,
-                x => x.Value.Value ?? new SettingCacheItem(value: null),
+                x => x.Value.Value ?? new SettingValueCacheItem(value: null),
                 StringComparer.Ordinal
             );
         }
@@ -189,44 +156,39 @@ public sealed class SettingManagementStore(
         var notCacheKeys = cacheItems.Where(x => !x.Value.HasValue).Select(x => x.Key).ToList();
         var newCacheItems = await _SetCacheItemsAsync(providerName, providerKey, notCacheKeys);
 
-        var result = new Dictionary<string, SettingCacheItem>(StringComparer.Ordinal);
+        var result = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
 
         foreach (var key in cacheKeys)
         {
             result[key] =
                 newCacheItems.FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.Ordinal)).Value
                 ?? cacheItems.FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.Ordinal)).Value.Value
-                ?? new SettingCacheItem(value: null);
+                ?? new SettingValueCacheItem(value: null);
         }
 
         return result;
     }
 
-    private async Task<SettingCacheItem> _GetCacheItemAsync(string name, string? providerName, string? providerKey)
+    private async Task<SettingValueCacheItem> _GetCacheItemAsync(string name, string? providerName, string? providerKey)
     {
-        var cacheKey = _CalculateCacheKey(name, providerName, providerKey);
+        var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
         var cacheValue = await cache.GetAsync(cacheKey);
 
         if (cacheValue.HasValue)
         {
-            return cacheValue.Value ?? new SettingCacheItem(value: null);
+            return cacheValue.Value ?? new SettingValueCacheItem(value: null);
         }
 
-        var cacheItem = new SettingCacheItem(value: null);
+        var cacheItem = new SettingValueCacheItem(value: null);
 
         await _SetCacheItemsAsync(providerName, providerKey, name, cacheItem);
 
         return cacheItem;
     }
 
-    private static string _CalculateCacheKey(string name, string? providerName, string? providerKey)
-    {
-        return SettingCacheItem.CalculateCacheKey(name, providerName, providerKey);
-    }
-
     private static string _GetSettingNameFormCacheKey(string key)
     {
-        var settingName = SettingCacheItem.GetSettingNameFormCacheKey(key);
+        var settingName = SettingValueCacheItem.GetSettingNameFormCacheKey(key);
         Ensure.True(settingName is not null, $"Invalid setting cache key `{key}` setting name not found");
 
         return settingName;

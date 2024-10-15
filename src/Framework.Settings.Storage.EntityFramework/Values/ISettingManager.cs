@@ -2,12 +2,11 @@
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Models;
-using Framework.Settings.Options;
 using Framework.Settings.ValueProviders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.Values;
 
 public interface ISettingManager
 {

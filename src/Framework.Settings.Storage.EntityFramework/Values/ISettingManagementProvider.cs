@@ -1,10 +1,9 @@
 ﻿using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Settings.Definitions;
 using Framework.Settings.Models;
 using Framework.Settings.ValueProviders;
 using Microsoft.Extensions.Configuration;
 
-namespace Framework.Settings.Repositories;
+namespace Framework.Settings.Values;
 
 public interface ISettingManagementProvider
 {

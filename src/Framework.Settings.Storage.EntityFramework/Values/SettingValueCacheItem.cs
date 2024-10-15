@@ -3,9 +3,9 @@
 using System.Text;
 using Framework.Kernel.BuildingBlocks.Helpers.Text;
 
-namespace Framework.Settings.ValuesStorage;
+namespace Framework.Settings.Values;
 
-public sealed class SettingCacheItem(string? value)
+public sealed class SettingValueCacheItem(string? value)
 {
     public string? Value { get; set; } = value;
 

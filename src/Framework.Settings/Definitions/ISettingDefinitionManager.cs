@@ -5,7 +5,7 @@ using Framework.Settings.Models;
 
 namespace Framework.Settings.Definitions;
 
-/// <summary>Retrieves setting definitions from a service provider and <see cref="FrameworkSettingOptions.DefinitionProviders"/></summary>
+/// <summary>Retrieves setting definitions from a service provider and <see cref="SettingManagementOptions.DefinitionProviders"/></summary>
 public interface ISettingDefinitionManager
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync();

@@ -1,6 +1,6 @@
 ﻿using Framework.Settings.Entities;
 
-namespace Framework.Settings.ValuesStorage;
+namespace Framework.Settings.Values;
 
 public interface ISettingRecordRepository
 {

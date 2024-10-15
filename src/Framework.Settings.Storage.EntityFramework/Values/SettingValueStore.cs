@@ -1,7 +1,6 @@
 ﻿using Framework.Settings.Models;
-using Framework.Settings.Repositories;
 
-namespace Framework.Settings.ValuesStorage;
+namespace Framework.Settings.Values;
 
 public sealed class SettingValueStore(ISettingManagementStore store) : ISettingValueStore
 {
