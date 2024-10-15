@@ -2,9 +2,9 @@
 using Framework.Kernel.Domains;
 using Framework.Settings.Entities;
 
-namespace Framework.Settings.ValuesStorage;
+namespace Framework.Settings.Values;
 
-public sealed class SettingCacheItemInvalidator(ICache<SettingCacheItem> cache)
+public sealed class SettingCacheItemInvalidator(ICache<SettingValueCacheItem> cache)
     : ILocalMessageHandler<EntityChangedEventData<SettingRecord>>
 {
     public async Task HandleAsync(
@@ -12,7 +12,7 @@ public sealed class SettingCacheItemInvalidator(ICache<SettingCacheItem> cache)
         CancellationToken cancellationToken = default
     )
     {
-        var cacheKey = SettingCacheItem.CalculateCacheKey(
+        var cacheKey = SettingValueCacheItem.CalculateCacheKey(
             message.Entity.Name,
             message.Entity.ProviderName,
             message.Entity.ProviderKey

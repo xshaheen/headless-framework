@@ -2,6 +2,7 @@
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Models;
+using Framework.Settings.Values;
 
 namespace Framework.Settings.ValueProviders;
 

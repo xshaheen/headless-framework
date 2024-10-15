@@ -5,7 +5,7 @@ using Framework.Settings.Helpers;
 using Framework.Settings.Models;
 using Framework.Settings.ValueProviders;
 
-namespace Framework.Settings;
+namespace Framework.Settings.Values;
 
 /// <summary>Retrieve setting value from <see cref="ISettingValueProvider"/></summary>
 public interface ISettingProvider
@@ -15,35 +15,6 @@ public interface ISettingProvider
     Task<List<SettingValue>> GetAllAsync(string[] names);
 
     Task<List<SettingValue>> GetAllAsync();
-}
-
-public static class SettingProviderExtensions
-{
-    public static async Task<bool> IsTrueAsync(this ISettingProvider settingProvider, string name)
-    {
-        var value = await settingProvider.GetOrDefaultAsync(name);
-
-        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-    }
-
-    public static async Task<bool> IsFalseAsync(this ISettingProvider settingProvider, string name)
-    {
-        var value = await settingProvider.GetOrDefaultAsync(name);
-
-        return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
-    }
-
-    public static async Task<T> GetAsync<T>(
-        this ISettingProvider settingProvider,
-        string name,
-        T defaultValue = default
-    )
-        where T : struct
-    {
-        var value = await settingProvider.GetOrDefaultAsync(name);
-
-        return value?.To<T>() ?? defaultValue;
-    }
 }
 
 public sealed class SettingProvider(

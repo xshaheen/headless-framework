@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MoreLinq;
@@ -16,10 +17,10 @@ public interface ISettingValueProviderManager
 public sealed class SettingValueProviderManager : ISettingValueProviderManager
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly FrameworkSettingOptions _options;
+    private readonly SettingManagementOptions _options;
     private readonly Lazy<List<ISettingValueProvider>> _lazyProviders;
 
-    public SettingValueProviderManager(IServiceProvider serviceProvider, IOptions<FrameworkSettingOptions> options)
+    public SettingValueProviderManager(IServiceProvider serviceProvider, IOptions<SettingManagementOptions> options)
     {
         _serviceProvider = serviceProvider;
         _options = options.Value;
