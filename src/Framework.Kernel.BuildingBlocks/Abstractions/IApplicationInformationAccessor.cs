@@ -16,6 +16,13 @@ public interface IApplicationInformationAccessor
     string InstanceId { get; }
 }
 
+public sealed class StaticApplicationInformationAccessor(string name) : IApplicationInformationAccessor
+{
+    public string ApplicationName { get; } = name;
+
+    public string InstanceId { get; } = Guid.NewGuid().ToString();
+}
+
 public sealed class ApplicationInformationAccessor(IBuildInformationAccessor accessor) : IApplicationInformationAccessor
 {
     public string ApplicationName { get; } = accessor.GetTitle() ?? "Unknown";

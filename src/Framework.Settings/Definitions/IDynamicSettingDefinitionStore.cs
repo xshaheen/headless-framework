@@ -35,10 +35,12 @@ public sealed class DynamicSettingDefinitionStore(
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
     IOptions<SettingManagementOptions> optionsAccessor,
+    IOptions<SettingManagementProvidersOptions> providersAccessor,
     TimeProvider timeProvider
 ) : IDynamicSettingDefinitionStore, IDisposable
 {
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
+    private readonly SettingManagementProvidersOptions _providers = providersAccessor.Value;
     private const string _CommonResourceLockKey = SettingsConstants.CommonUpdateLockKey;
     private readonly string _appResourceLockKey = SettingsConstants.GetApplicationLockKey(application.ApplicationName);
     private readonly string _hashCacheKey = $"{application.ApplicationName}_SettingsHash";
@@ -82,7 +84,7 @@ public sealed class DynamicSettingDefinitionStore(
         cancellationToken.ThrowIfCancellationRequested();
         var cachedHash = await distributedCache.GetAsync<string>(_hashCacheKey, cancellationToken);
         var records = serializer.Serialize(await staticStore.GetAllAsync());
-        var currentHash = _CalculateHash(records, _options.DeletedSettings);
+        var currentHash = _CalculateHash(records, _providers.DeletedSettings);
 
         if (string.Equals(cachedHash.Value, currentHash, StringComparison.Ordinal))
         {
@@ -261,9 +263,9 @@ public sealed class DynamicSettingDefinitionStore(
         }
 
         // Handle deleted records
-        if (_options.DeletedSettings.Count != 0)
+        if (_providers.DeletedSettings.Count != 0)
         {
-            deletedRecords.AddRange(dbSettingRecordsMap.Values.Where(x => _options.DeletedSettings.Contains(x.Name)));
+            deletedRecords.AddRange(dbSettingRecordsMap.Values.Where(x => _providers.DeletedSettings.Contains(x.Name)));
         }
 
         return (newRecords, changedRecords, deletedRecords);

@@ -17,10 +17,13 @@ public interface ISettingValueProviderManager
 public sealed class SettingValueProviderManager : ISettingValueProviderManager
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly SettingManagementOptions _options;
+    private readonly SettingManagementProvidersOptions _options;
     private readonly Lazy<List<ISettingValueReadProvider>> _lazyProviders;
 
-    public SettingValueProviderManager(IServiceProvider serviceProvider, IOptions<SettingManagementOptions> options)
+    public SettingValueProviderManager(
+        IServiceProvider serviceProvider,
+        IOptions<SettingManagementProvidersOptions> options
+    )
     {
         _serviceProvider = serviceProvider;
         _options = options.Value;

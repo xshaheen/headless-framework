@@ -28,7 +28,7 @@ public sealed class SettingProvider : ISettingProvider
     private readonly ISettingEncryptionService _settingEncryptionService;
     private readonly ISettingValueStore _settingValueStore;
     private readonly IServiceProvider _serviceProvider;
-    private readonly SettingManagementOptions _options;
+    private readonly SettingManagementProvidersOptions _options;
     private readonly Lazy<List<ISettingValueReadProvider>> _lazyProviders;
 
     public SettingProvider(
@@ -36,7 +36,7 @@ public sealed class SettingProvider : ISettingProvider
         ISettingEncryptionService settingEncryptionService,
         ISettingValueStore settingValueStore,
         IServiceProvider serviceProvider,
-        IOptions<SettingManagementOptions> options
+        IOptions<SettingManagementProvidersOptions> options
     )
     {
         _settingDefinitionManager = settingDefinitionManager;

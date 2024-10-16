@@ -22,12 +22,16 @@ public static class AddSettingsExtensions
     /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
     /// to be able to use this feature.
     /// </summary>
-    public static IHostApplicationBuilder AddSettingsManagementCore(this IHostApplicationBuilder builder)
+    public static IServiceCollection AddSettingsManagementCore(
+        this IServiceCollection services,
+        Action<SettingManagementOptions>? setupAction = null
+    )
     {
-        builder.Services._AddSettingEncryption();
-        builder.Services._AddCoreValueProvider();
-        builder.Services.AddHostedService<SettingsInitializationBackgroundService>();
-        builder.Services.AddTransient<
+        services.ConfigureSingleton(setupAction);
+        services._AddSettingEncryption();
+        services._AddCoreValueProvider();
+        services.AddHostedService<SettingsInitializationBackgroundService>();
+        services.AddTransient<
             ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
             SettingValueCacheItemInvalidator
         >();
@@ -38,19 +42,20 @@ public static class AddSettingsExtensions
          * 2. Implement `ISettingDefinitionProvider` to define your settings in code
          *    and use `AddSettingDefinitionProvider` to register it
          */
-        builder.Services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
-        builder.Services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
-        builder.Services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
+        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>();
+        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
+        services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
+        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
 
         // Setting Value Services
         /*
          * You need to provide a storage implementation for `ISettingValueRecordRepository`
          */
-        builder.Services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
-        builder.Services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
-        builder.Services.TryAddTransient<ISettingProvider, SettingProvider>();
+        services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
+        services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
+        services.TryAddTransient<ISettingProvider, SettingProvider>();
 
-        return builder;
+        return services;
     }
 
     public static void AddSettingDefinitionProvider<T>(this IServiceCollection services)
@@ -58,7 +63,7 @@ public static class AddSettingsExtensions
     {
         services.AddSingleton<ISettingDefinitionProvider, T>();
 
-        services.Configure<SettingManagementOptions>(options =>
+        services.Configure<SettingManagementProvidersOptions>(options =>
         {
             options.DefinitionProviders.Add<T>();
         });
@@ -69,7 +74,7 @@ public static class AddSettingsExtensions
     {
         services.AddSingleton<ISettingValueReadProvider, T>();
 
-        services.Configure<SettingManagementOptions>(options =>
+        services.Configure<SettingManagementProvidersOptions>(options =>
         {
             if (!options.ValueProviders.Contains<T>())
             {
@@ -87,7 +92,7 @@ public static class AddSettingsExtensions
 
     private static void _AddCoreValueProvider(this IServiceCollection services)
     {
-        services.Configure<SettingManagementOptions>(options =>
+        services.Configure<SettingManagementProvidersOptions>(options =>
         {
             // Last added provider has the highest priority
             options.ValueProviders.Add<DefaultValueSettingValueProvider>();
