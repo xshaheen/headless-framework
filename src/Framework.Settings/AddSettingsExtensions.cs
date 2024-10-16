@@ -2,7 +2,9 @@
 
 using System.Reflection;
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Kernel.Domains;
 using Framework.Settings.Definitions;
+using Framework.Settings.Entities;
 using Framework.Settings.Helpers;
 using Framework.Settings.Models;
 using Framework.Settings.ValueProviders;
@@ -27,10 +29,15 @@ public static class AddSettingsExtensions
     {
         builder.Services._AddSettingEncryption();
         builder.Services._AddCoreValueProvider();
+        builder.Services.AddHostedService<SettingsInitializationBackgroundService>();
+        builder.Services.AddTransient<
+            ILocalMessageHandler<EntityChangedEventData<SettingRecord>>,
+            SettingValueCacheItemInvalidator
+        >();
 
         // Setting Definition Services
         /*
-         * 1. You need to provide a storage implementation for `SettingDefinitionRecordRepository`
+         * 1. You need to provide a storage implementation for `ISettingDefinitionRecordRepository`
          * 2. Implement `ISettingDefinitionProvider` to define your settings in code
          *    and use `AddSettingDefinitionProvider` to register it
          */
@@ -40,12 +47,10 @@ public static class AddSettingsExtensions
 
         // Setting Value Services
         /*
-         * 1. You need to provide a storage implementation for `ISettingValueRecordRepository`
+         * You need to provide a storage implementation for `ISettingValueRecordRepository`
          */
         builder.Services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
         builder.Services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
-
-        // Main Setting Management Services
         builder.Services.TryAddTransient<ISettingProvider, SettingProvider>();
 
         return builder;
