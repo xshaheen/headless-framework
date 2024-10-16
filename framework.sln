@@ -144,7 +144,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database.Sqlite",
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database", "src\Framework.Database\Framework.Database.csproj", "{91610995-757E-4103-ABDC-D3EF7E779D1F}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Database.Orm", "Database.Orm", "{4681258C-BF42-4688-B619-513EB2658D82}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DatabaseOrms", "DatabaseOrms", "{4681258C-BF42-4688-B619-513EB2658D82}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database.PostgreSql", "src\Framework.Database.PostgreSql\Framework.Database.PostgreSql.csproj", "{D1C2452B-6515-4847-90B5-0102066836D3}"
 EndProject
@@ -195,6 +195,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.Swagger.Nswag.Demo", "demo\Framework.Api.Swagger.Nswag.Demo\Framework.Api.Swagger.Nswag.Demo.csproj", "{39DF0C8B-5F8C-4A2A-A2CB-78F64C06483F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Storage.EntityFramework", "src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj", "{67E4FB80-6838-4D8B-96CE-EC225F2AD64F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Tests.Integrations", "tests\Framework.Settings.Tests.Integrations\Framework.Settings.Tests.Integrations.csproj", "{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -480,6 +482,10 @@ Global
 		{67E4FB80-6838-4D8B-96CE-EC225F2AD64F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{67E4FB80-6838-4D8B-96CE-EC225F2AD64F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{67E4FB80-6838-4D8B-96CE-EC225F2AD64F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -554,6 +560,7 @@ Global
 		{C483CA8E-2EC2-41F8-9F4E-C3B639D06808} = {9DF89FEA-3DC2-4C8D-B844-29E42743354A}
 		{39DF0C8B-5F8C-4A2A-A2CB-78F64C06483F} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{67E4FB80-6838-4D8B-96CE-EC225F2AD64F} = {7119071F-8B25-48AB-8A76-09BC3A9F5AF3}
+		{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A} = {7119071F-8B25-48AB-8A76-09BC3A9F5AF3}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
