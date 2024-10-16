@@ -3,23 +3,17 @@
 using Framework.Kernel.Checks;
 using Jitbit.Utils;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Framework.ResourceLocks.Local;
 
 [PublicAPI]
 public sealed class LocalResourceThrottlingLockProvider(
     TimeProvider timeProvider,
-    ILogger<LocalResourceThrottlingLockProvider> logger,
-    IOptions<ThrottlingResourceLockOptions> optionsAccessor,
-    int maxHitsPerPeriod = 100,
-    TimeSpan? throttlingPeriod = null
+    ThrottlingResourceLockOptions options,
+    ILogger<LocalResourceThrottlingLockProvider> logger
 ) : IResourceThrottlingLockProvider, IDisposable
 {
     private readonly FastCache<string, ResourceLock> _resources = new();
-    private readonly ThrottlingResourceLockOptions _options = optionsAccessor.Value;
-    private readonly TimeSpan _throttlingPeriod = Argument.IsPositive(throttlingPeriod ?? TimeSpan.FromMinutes(15));
-    private readonly int _maxHitsPerPeriod = Argument.IsPositive(maxHitsPerPeriod);
 
     public async Task<IResourceThrottlingLock?> TryAcquireAsync(string resource, TimeSpan? acquireTimeout = null)
     {
@@ -57,9 +51,9 @@ public sealed class LocalResourceThrottlingLockProvider(
                 }
 
                 var hitCount = _GetHitsCount(resource);
-                logger.LogThrottlingLockHitCount(resource, hitCount, _maxHitsPerPeriod);
+                logger.LogThrottlingLockHitCount(resource, hitCount, options.MaxHitsPerPeriod);
 
-                if (hitCount <= _maxHitsPerPeriod - 1)
+                if (hitCount <= options.MaxHitsPerPeriod - 1)
                 {
                     var expiration = _GetDateCurrentThrottlingPeriodEnded()
                         .Subtract(timeProvider.GetUtcNow().UtcDateTime);
@@ -67,7 +61,7 @@ public sealed class LocalResourceThrottlingLockProvider(
                     hitCount = _Increment(cacheKey, expiration);
 
                     // Make sure someone didn't beat us to it.
-                    if (hitCount <= _maxHitsPerPeriod)
+                    if (hitCount <= options.MaxHitsPerPeriod)
                     {
                         allowLock = true;
 
@@ -160,7 +154,7 @@ public sealed class LocalResourceThrottlingLockProvider(
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        return Task.FromResult(_GetHitsCount(resource) >= _maxHitsPerPeriod);
+        return Task.FromResult(_GetHitsCount(resource) >= options.MaxHitsPerPeriod);
     }
 
     public void Dispose()
@@ -180,7 +174,7 @@ public sealed class LocalResourceThrottlingLockProvider(
     private DateTime _GetDateCurrentThrottlingPeriodStarted()
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var elapsedTicks = now.Ticks % _throttlingPeriod.Ticks;
+        var elapsedTicks = now.Ticks % options.ThrottlingPeriod.Ticks;
 
         return now.AddTicks(-elapsedTicks);
     }
@@ -188,27 +182,27 @@ public sealed class LocalResourceThrottlingLockProvider(
     private DateTime _GetDateCurrentThrottlingPeriodEnded()
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var elapsedTicks = now.Ticks % _throttlingPeriod.Ticks;
+        var elapsedTicks = now.Ticks % options.ThrottlingPeriod.Ticks;
 
-        return now.AddTicks(_throttlingPeriod.Ticks - elapsedTicks);
+        return now.AddTicks(options.ThrottlingPeriod.Ticks - elapsedTicks);
     }
 
     private int _GetHitsCount(string resource)
     {
-        var normalizeResource = _options.KeyPrefix + resource;
+        var normalizeResource = options.KeyPrefix + resource;
 
         return _resources.TryGet(normalizeResource, out var resourceLock) ? resourceLock.HitsCount : 0;
     }
 
     private int _Increment(string resource, TimeSpan expiration)
     {
-        var normalizeResource = _options.KeyPrefix + resource;
+        var normalizeResource = options.KeyPrefix + resource;
 
         var resourceLock = _resources.GetOrAdd(
             key: normalizeResource,
             valueFactory: static (_, maxHits) => new ResourceLock(maxHits),
             ttl: expiration,
-            factoryArgument: _maxHitsPerPeriod
+            factoryArgument: options.MaxHitsPerPeriod
         );
 
         resourceLock.Hit();

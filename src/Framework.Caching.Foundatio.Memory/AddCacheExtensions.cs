@@ -9,55 +9,53 @@ namespace Framework.Caching;
 [PublicAPI]
 public static class AddCacheExtensions
 {
-    public static IHostApplicationBuilder AddInMemoryCache(
-        this IHostApplicationBuilder builder,
+    public static IServiceCollection AddInMemoryCache(
+        this IServiceCollection services,
         Action<InMemoryCacheOptions, IServiceProvider> setupAction,
         bool isDefault = true
     )
     {
-        builder.Services.ConfigureSingleton(setupAction);
-        _AddCore(builder, isDefault);
+        services.ConfigureSingleton<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+        services._AddCacheCore(isDefault);
 
-        return builder;
+        return services;
     }
 
-    public static IHostApplicationBuilder AddInMemoryCache(
-        this IHostApplicationBuilder builder,
-        Action<InMemoryCacheOptions>? setupAction,
+    public static IServiceCollection AddInMemoryCache(
+        this IServiceCollection services,
+        Action<InMemoryCacheOptions>? setupAction = null,
         bool isDefault = true
     )
     {
         if (setupAction is null)
         {
-            builder.Services.AddSingletonOptions<InMemoryCacheOptions>();
+            services.AddSingletonOptions<InMemoryCacheOptions, InMemoryCacheOptionsValidator>();
         }
         else
         {
-            builder.Services.ConfigureSingleton(setupAction);
+            services.ConfigureSingleton<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
         }
 
-        _AddCore(builder, isDefault);
+        services._AddCacheCore(isDefault);
 
-        return builder;
+        return services;
     }
 
-    private static void _AddCore(IHostApplicationBuilder builder, bool isDefault)
+    private static void _AddCacheCore(this IServiceCollection services, bool isDefault)
     {
-        builder.Services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+        services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
 
         if (!isDefault)
         {
-            builder.Services.AddKeyedSingleton<ICache, InMemoryCachingFoundatioAdapter>(
-                CacheConstants.MemoryCacheProvider
-            );
+            services.AddKeyedSingleton<ICache, InMemoryCachingFoundatioAdapter>(CacheConstants.MemoryCacheProvider);
 
             return;
         }
 
-        builder.Services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
-        builder.Services.AddKeyedSingleton(
+        services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
+        services.AddKeyedSingleton(
             CacheConstants.MemoryCacheProvider,
-            services => services.GetRequiredService<ICache>()
+            provider => provider.GetRequiredService<ICache>()
         );
     }
 }
