@@ -6,6 +6,13 @@ namespace Framework.Settings.Values;
 
 public interface ISettingValueRecordRepository
 {
+    Task<SettingRecord?> FindAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
+
     Task<List<SettingRecord>> GetListAsync(
         string[] names,
         string? providerName,
@@ -18,4 +25,10 @@ public interface ISettingValueRecordRepository
         string? providerKey,
         CancellationToken cancellationToken = default
     );
+
+    Task InsertAsync(SettingRecord setting);
+
+    Task UpdateAsync(SettingRecord setting);
+
+    Task DeleteAsync(SettingRecord setting);
 }

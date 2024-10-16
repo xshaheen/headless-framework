@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.Reflection;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
@@ -15,6 +16,13 @@ namespace Framework.Settings;
 [PublicAPI]
 public static class AddSettingsExtensions
 {
+    /// <summary>
+    /// Adds core setting management services to the host builder and registers default setting value providers.
+    /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
+    /// to be able to use this feature.
+    /// </summary>
+    /// <param name="builder"></param>
+    /// <returns></returns>
     public static IHostApplicationBuilder AddCoreSettingsManagement(this IHostApplicationBuilder builder)
     {
         builder.Services._AddSettingEncryption();
@@ -31,7 +39,10 @@ public static class AddSettingsExtensions
         builder.Services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
 
         // Setting Value Services
-        // TODO: add storage
+        /*
+         * 1. You need to provide a storage implementation for `ISettingValueRecordRepository`
+         */
+        builder.Services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
         builder.Services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
 
         // Main Setting Management Services
@@ -52,9 +63,9 @@ public static class AddSettingsExtensions
     }
 
     public static void AddSettingValueProvider<T>(this IServiceCollection services)
-        where T : class, ISettingValueProvider
+        where T : class, ISettingValueReadProvider
     {
-        services.AddSingleton<ISettingValueProvider, T>();
+        services.AddSingleton<ISettingValueReadProvider, T>();
 
         services.Configure<SettingManagementOptions>(options =>
         {
@@ -84,9 +95,9 @@ public static class AddSettingsExtensions
             options.ValueProviders.Add<UserSettingValueProvider>();
         });
 
-        services.AddSingleton<ISettingValueProvider, DefaultValueSettingValueProvider>();
-        services.AddSingleton<ISettingValueProvider, ConfigurationSettingValueProvider>();
-        services.AddSingleton<ISettingValueProvider, GlobalSettingValueProvider>();
-        services.AddSingleton<ISettingValueProvider, TenantSettingValueProvider>();
+        services.AddSingleton<ISettingValueReadProvider, DefaultValueSettingValueProvider>();
+        services.AddSingleton<ISettingValueReadProvider, ConfigurationSettingValueProvider>();
+        services.AddSingleton<ISettingValueReadProvider, GlobalSettingValueProvider>();
+        services.AddSingleton<ISettingValueReadProvider, TenantSettingValueProvider>();
     }
 }

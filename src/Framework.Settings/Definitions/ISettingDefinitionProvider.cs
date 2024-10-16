@@ -2,7 +2,7 @@
 
 using Framework.Settings.Models;
 
-namespace Framework.Settings;
+namespace Framework.Settings.Definitions;
 
 /// <summary>Used to define a setting definition.</summary>
 public interface ISettingDefinitionProvider

@@ -7,11 +7,19 @@ namespace Framework.Settings.ValueProviders;
 /// <summary>
 /// The setting value provider is used to get the value of a setting from a specific source (e.g. database, file, etc.).
 /// </summary>
-public interface ISettingValueProvider
+public interface ISettingValueReadProvider
 {
     string Name { get; }
 
-    Task<string?> GetOrDefaultAsync(SettingDefinition setting);
+    Task<string?> GetOrDefaultAsync(SettingDefinition setting, string? providerKey);
 
-    Task<List<SettingValue>> GetAllAsync(SettingDefinition[] settings);
+    Task<List<SettingValue>> GetAllAsync(SettingDefinition[] settings, string? providerKey);
+}
+
+/// <inheritdoc />
+public interface ISettingValueProvider : ISettingValueReadProvider
+{
+    Task SetAsync(SettingDefinition setting, string value, string? providerKey);
+
+    Task ClearAsync(SettingDefinition setting, string? providerKey);
 }
