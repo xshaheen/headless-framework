@@ -5,10 +5,10 @@ using Framework.Settings.Entities;
 namespace Framework.Settings.Values;
 
 public sealed class SettingValueCacheItemInvalidator(ICache<SettingValueCacheItem> cache)
-    : ILocalMessageHandler<EntityChangedEventData<SettingRecord>>
+    : ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>
 {
     public async Task HandleAsync(
-        EntityChangedEventData<SettingRecord> message,
+        EntityChangedEventData<SettingValueRecord> message,
         CancellationToken cancellationToken = default
     )
     {

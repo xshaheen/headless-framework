@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using System.Reflection;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Domains;
 using Framework.Settings.Definitions;
@@ -23,15 +22,13 @@ public static class AddSettingsExtensions
     /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
     /// to be able to use this feature.
     /// </summary>
-    /// <param name="builder"></param>
-    /// <returns></returns>
-    public static IHostApplicationBuilder AddCoreSettingsManagement(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder AddSettingsManagementCore(this IHostApplicationBuilder builder)
     {
         builder.Services._AddSettingEncryption();
         builder.Services._AddCoreValueProvider();
         builder.Services.AddHostedService<SettingsInitializationBackgroundService>();
         builder.Services.AddTransient<
-            ILocalMessageHandler<EntityChangedEventData<SettingRecord>>,
+            ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
             SettingValueCacheItemInvalidator
         >();
 

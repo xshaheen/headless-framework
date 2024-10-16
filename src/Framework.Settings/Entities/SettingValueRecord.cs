@@ -3,15 +3,21 @@ using Framework.Kernel.Domains;
 
 namespace Framework.Settings.Entities;
 
-public sealed class SettingRecord : Entity<Guid>, IAggregateRoot<Guid>
+public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>
 {
-    private SettingRecord()
+    private SettingValueRecord()
     {
         Name = default!;
         Value = default!;
     }
 
-    public SettingRecord(Guid id, string name, string value, string? providerName = null, string? providerKey = null)
+    public SettingValueRecord(
+        Guid id,
+        string name,
+        string value,
+        string? providerName = null,
+        string? providerKey = null
+    )
     {
         Argument.IsNotNull(name);
         Argument.IsNotNull(value);

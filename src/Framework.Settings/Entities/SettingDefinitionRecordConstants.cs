@@ -8,7 +8,7 @@ public static class SettingDefinitionRecordConstants
 
     public static int MaxDescriptionLength { get; set; } = 512;
 
-    public static int MaxDefaultValueLength { get; set; } = SettingRecordConstants.MaxValueLengthValue;
+    public static int MaxDefaultValueLength { get; set; } = SettingValueRecordConstants.MaxValueLengthValue;
 
     public static int MaxProvidersLength { get; set; } = 1024;
 }
