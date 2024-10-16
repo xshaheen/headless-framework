@@ -1,135 +1,253 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Kernel.Checks;
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Models;
 using Framework.Settings.ValueProviders;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Values;
 
 /// <summary>Retrieve setting value from <see cref="ISettingValueProvider"/></summary>
 public interface ISettingProvider
 {
-    Task<string?> GetOrDefaultAsync(string name);
+    Task<string?> GetOrDefaultAsync(string name, string providerName, string? providerKey, bool fallback = true);
 
-    Task<List<SettingValue>> GetAllAsync(string[] names);
+    Task<List<SettingValue>> GetAllAsync(string providerName, string? providerKey, bool fallback = true);
 
-    Task<List<SettingValue>> GetAllAsync();
+    Task SetAsync(string name, string? value, string providerName, string? providerKey, bool forceToSet = false);
+
+    Task DeleteAsync(string providerName, string providerKey);
 }
 
-public sealed class SettingProvider(
-    ISettingDefinitionManager settingDefinitionManager,
-    ISettingValueProviderManager settingValueProviderManager,
-    ISettingEncryptionService settingEncryptionService
-) : ISettingProvider
+public sealed class SettingProvider : ISettingProvider
 {
-    public async Task<string?> GetOrDefaultAsync(string name)
+    private readonly ISettingDefinitionManager _settingDefinitionManager;
+    private readonly ISettingEncryptionService _settingEncryptionService;
+    private readonly ISettingValueStore _settingValueStore;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly SettingManagementOptions _options;
+    private readonly Lazy<List<ISettingValueReadProvider>> _lazyProviders;
+
+    public SettingProvider(
+        ISettingDefinitionManager settingDefinitionManager,
+        ISettingEncryptionService settingEncryptionService,
+        ISettingValueStore settingValueStore,
+        IServiceProvider serviceProvider,
+        IOptions<SettingManagementOptions> options
+    )
     {
-        var definition = await settingDefinitionManager.GetOrDefaultAsync(name);
-
-        if (definition is null)
-        {
-            return null;
-        }
-
-        var valueProviders = Enumerable.Reverse(settingValueProviderManager.Providers);
-
-        // filter providers by definition allowed providers if present
-        if (definition.Providers.Count != 0)
-        {
-            valueProviders = valueProviders.Where(p => definition.Providers.Contains(p.Name, StringComparer.Ordinal));
-        }
-
-        // TODO: How to implement setting.IsInherited?
-        var value = await _FindValueFromValueProvidersAsync(valueProviders, definition);
-
-        if (value is not null && definition.IsEncrypted)
-        {
-            value = settingEncryptionService.Decrypt(definition, value);
-        }
-
-        return value;
+        _settingDefinitionManager = settingDefinitionManager;
+        _settingEncryptionService = settingEncryptionService;
+        _settingValueStore = settingValueStore;
+        _serviceProvider = serviceProvider;
+        _options = options.Value;
+        _lazyProviders = new(_CreateProviders, isThreadSafe: true);
     }
 
-    public async Task<List<SettingValue>> GetAllAsync(string[] names)
+    public async Task SetAsync(
+        string name,
+        string? value,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false
+    )
     {
-        var settingDefinitions = (await settingDefinitionManager.GetAllAsync())
-            .Where(x => names.Contains(x.Name, StringComparer.Ordinal))
+        Argument.IsNotNull(name);
+        Argument.IsNotNull(providerName);
+
+        var setting =
+            await _settingDefinitionManager.GetOrDefaultAsync(name)
+            ?? throw new InvalidOperationException($"Undefined setting: {name}");
+
+        var providers = Enumerable
+            .Reverse(_lazyProviders.Value)
+            .SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
             .ToList();
 
-        var result = settingDefinitions.ToDictionary(
-            definition => definition.Name,
-            definition => new SettingValue(definition.Name),
-            StringComparer.Ordinal
-        );
-
-        foreach (var provider in Enumerable.Reverse(settingValueProviderManager.Providers))
+        if (providers.Count == 0)
         {
-            var settingValues = await provider.GetAllAsync(
-                settingDefinitions
-                    .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
-                    .ToArray()
-            );
+            throw new InvalidOperationException($"Unknown setting value provider: {providerName}");
+        }
 
-            var notNullValues = settingValues.Where(x => x.Value is not null).ToList();
-            foreach (var settingValue in notNullValues)
+        if (setting.IsEncrypted)
+        {
+            value = _settingEncryptionService.Encrypt(setting, value);
+        }
+
+        if (providers.Count > 1 && !forceToSet && setting.IsInherited && value != null)
+        {
+            var fallbackValue = await _CoreGetOrDefaultAsync(name, providers[1].Name, providerKey: null);
+
+            if (string.Equals(fallbackValue, value, StringComparison.Ordinal))
             {
-                var settingDefinition = settingDefinitions.First(x =>
-                    string.Equals(x.Name, settingValue.Name, StringComparison.Ordinal)
-                );
-                if (settingDefinition.IsEncrypted)
-                {
-                    settingValue.Value = settingEncryptionService.Decrypt(settingDefinition, settingValue.Value);
-                }
+                //Clear the value if it's same as it's fallback value
+                value = null;
+            }
+        }
 
-                if (result.TryGetValue(settingValue.Name, out var value) && value.Value is null)
-                {
-                    value.Value = settingValue.Value;
-                }
+        // Getting list for case of there are more than one provider with the same providerName
+        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList();
+
+        foreach (var provider in providers)
+        {
+            if (provider is not ISettingValueProvider p)
+            {
+                throw new InvalidOperationException($"Provider {providerName} is readonly provider");
             }
 
-            settingDefinitions.RemoveAll(x =>
-                notNullValues.Exists(v => string.Equals(v.Name, x.Name, StringComparison.Ordinal))
+            if (value == null)
+            {
+                await p.ClearAsync(setting, providerKey);
+            }
+            else
+            {
+                await p.SetAsync(setting, value, providerKey);
+            }
+        }
+    }
+
+    public Task<string?> GetOrDefaultAsync(string name, string providerName, string? providerKey, bool fallback = true)
+    {
+        Argument.IsNotNull(name);
+        Argument.IsNotNull(providerName);
+
+        return _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback);
+    }
+
+    public async Task<List<SettingValue>> GetAllAsync(string providerName, string? providerKey, bool fallback = true)
+    {
+        Argument.IsNotNull(providerName);
+
+        var settingDefinitions = await _settingDefinitionManager.GetAllAsync();
+
+        var providers = Enumerable
+            .Reverse(_lazyProviders.Value)
+            .SkipWhile(c => !string.Equals(c.Name, providerName, StringComparison.Ordinal));
+
+        if (!fallback)
+        {
+            providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
+        }
+
+        var providerList = providers.Reverse().ToList();
+
+        if (providerList.Count == 0)
+        {
+            return [];
+        }
+
+        var settingValues = new Dictionary<string, SettingValue>(StringComparer.Ordinal);
+
+        foreach (var setting in settingDefinitions)
+        {
+            string? value = null;
+
+            if (setting.IsInherited)
+            {
+                foreach (var provider in providerList)
+                {
+                    var providerValue = await provider.GetOrDefaultAsync(
+                        setting,
+                        string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null
+                    );
+
+                    if (providerValue is not null)
+                    {
+                        value = providerValue;
+                    }
+                }
+            }
+            else
+            {
+                value = await providerList[0].GetOrDefaultAsync(setting, providerKey);
+            }
+
+            if (setting.IsEncrypted)
+            {
+                value = _settingEncryptionService.Decrypt(setting, value);
+            }
+
+            if (value is not null)
+            {
+                settingValues[setting.Name] = new SettingValue(setting.Name, value);
+            }
+        }
+
+        return [.. settingValues.Values];
+    }
+
+    public async Task DeleteAsync(string providerName, string providerKey)
+    {
+        var settings = await _settingValueStore.GetAllAsync(providerName, providerKey);
+
+        foreach (var setting in settings)
+        {
+            await _settingValueStore.DeleteAsync(setting.Name, providerName, providerKey);
+        }
+    }
+
+    #region Helpers
+
+    private async Task<string?> _CoreGetOrDefaultAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        bool fallback = true
+    )
+    {
+        var definition =
+            await _settingDefinitionManager.GetOrDefaultAsync(name)
+            ?? throw new InvalidOperationException($"Undefined setting: {name}");
+
+        var valueProviders = Enumerable.Reverse(_lazyProviders.Value);
+
+        if (providerName is not null)
+        {
+            valueProviders = valueProviders.SkipWhile(c =>
+                !string.Equals(c.Name, providerName, StringComparison.Ordinal)
+            );
+        }
+
+        if (!fallback || !definition.IsInherited)
+        {
+            valueProviders = valueProviders.TakeWhile(c =>
+                string.Equals(c.Name, providerName, StringComparison.Ordinal)
+            );
+        }
+
+        string? value = null;
+        foreach (var provider in valueProviders)
+        {
+            value = await provider.GetOrDefaultAsync(
+                definition,
+                string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null
             );
 
-            if (settingDefinitions.Count == 0)
+            if (value != null)
             {
                 break;
             }
         }
 
-        return [.. result.Values];
-    }
-
-    public async Task<List<SettingValue>> GetAllAsync()
-    {
-        var settingDefinitions = await settingDefinitionManager.GetAllAsync();
-        var settingValues = new List<SettingValue>();
-
-        foreach (var setting in settingDefinitions)
+        if (definition.IsEncrypted)
         {
-            var value = await GetOrDefaultAsync(setting.Name);
-            settingValues.Add(new SettingValue(setting.Name, value));
+            value = _settingEncryptionService.Decrypt(definition, value);
         }
 
-        return settingValues;
+        return value;
     }
 
-    private static async Task<string?> _FindValueFromValueProvidersAsync(
-        IEnumerable<ISettingValueProvider> valueProviders,
-        SettingDefinition definition
-    )
+    private List<ISettingValueReadProvider> _CreateProviders()
     {
-        foreach (var valueProvider in valueProviders)
-        {
-            var value = await valueProvider.GetOrDefaultAsync(definition);
+        using var scope = _serviceProvider.CreateScope();
 
-            if (value is not null)
-            {
-                return value;
-            }
-        }
-
-        return null;
+        return _options
+            .ValueProviders.Select(type => (ISettingValueReadProvider)scope.ServiceProvider.GetRequiredService(type))
+            .ToList();
     }
+
+    #endregion
 }

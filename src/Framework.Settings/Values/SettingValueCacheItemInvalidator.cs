@@ -4,7 +4,7 @@ using Framework.Settings.Entities;
 
 namespace Framework.Settings.Values;
 
-public sealed class SettingCacheItemInvalidator(ICache<SettingValueCacheItem> cache)
+public sealed class SettingValueCacheItemInvalidator(ICache<SettingValueCacheItem> cache)
     : ILocalMessageHandler<EntityChangedEventData<SettingRecord>>
 {
     public async Task HandleAsync(

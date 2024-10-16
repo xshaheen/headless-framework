@@ -7,10 +7,10 @@ using MoreLinq;
 
 namespace Framework.Settings.ValueProviders;
 
-/// <summary>Manage list of setting value providers.</summary>
+/// <summary>Manage a list of setting value providers.</summary>
 public interface ISettingValueProviderManager
 {
-    List<ISettingValueProvider> Providers { get; }
+    List<ISettingValueReadProvider> Providers { get; }
 }
 
 /// <inheritdoc />
@@ -18,7 +18,7 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly SettingManagementOptions _options;
-    private readonly Lazy<List<ISettingValueProvider>> _lazyProviders;
+    private readonly Lazy<List<ISettingValueReadProvider>> _lazyProviders;
 
     public SettingValueProviderManager(IServiceProvider serviceProvider, IOptions<SettingManagementOptions> options)
     {
@@ -27,14 +27,14 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
         _lazyProviders = new(_GetProviders, isThreadSafe: true);
     }
 
-    public List<ISettingValueProvider> Providers => _lazyProviders.Value;
+    public List<ISettingValueReadProvider> Providers => _lazyProviders.Value;
 
     /// <summary>Retrieves a list of setting value providers from the service provider.</summary>
     /// <exception cref="InvalidOperationException">Thrown when there are duplicate setting value provider names.</exception>
-    private List<ISettingValueProvider> _GetProviders()
+    private List<ISettingValueReadProvider> _GetProviders()
     {
         var providers = _options
-            .ValueProviders.Select(type => (ISettingValueProvider)_serviceProvider.GetRequiredService(type))
+            .ValueProviders.Select(type => (ISettingValueReadProvider)_serviceProvider.GetRequiredService(type))
             .ToList();
 
         var multipleProviders = providers
