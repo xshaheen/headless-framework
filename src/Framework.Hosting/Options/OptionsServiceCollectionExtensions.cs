@@ -56,12 +56,10 @@ public static class OptionsServiceCollectionExtensions
     /// <typeparam name="TOption">The type of the options.</typeparam>
     /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="optionName">The name of the options instance.</param>
     /// <param name="validation">The validation function.</param>
     /// <returns>The same services collection.</returns>
     public static OptionsBuilder<TOption> AddSingletonOptions<TOption, TOptionValidator>(
         this IServiceCollection services,
-        string? optionName = null,
         Func<TOption, bool>? validation = null
     )
         where TOption : class
@@ -72,7 +70,7 @@ public static class OptionsServiceCollectionExtensions
         services.AddSingleton<IValidator<TOption>, TOptionValidator>();
         services.TryAddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value);
 
-        var builder = services.AddOptions<TOption>(optionName).ValidateFluentValidation();
+        var builder = services.AddOptions<TOption>().ValidateFluentValidation();
 
         if (validation is not null)
         {
@@ -90,12 +88,10 @@ public static class OptionsServiceCollectionExtensions
     /// </summary>
     /// <typeparam name="TOption">The type of the options.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="optionName">The name of the options instance.</param>
     /// <param name="validation">The validation function.</param>
     /// <returns>The same services collection.</returns>
     public static OptionsBuilder<TOption> AddSingletonOptions<TOption>(
         this IServiceCollection services,
-        string? optionName = null,
         Func<TOption, bool>? validation = null
     )
         where TOption : class
@@ -104,7 +100,7 @@ public static class OptionsServiceCollectionExtensions
 
         services.TryAddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value);
 
-        var builder = services.AddOptions<TOption>(optionName);
+        var builder = services.AddOptions<TOption>();
 
         if (validation is not null)
         {

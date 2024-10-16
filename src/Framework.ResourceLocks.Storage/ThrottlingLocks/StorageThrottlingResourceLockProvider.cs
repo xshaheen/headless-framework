@@ -11,14 +11,11 @@ public sealed class StorageThrottlingResourceLockProvider(
     IThrottlingResourceLockStorage storage,
     TimeProvider timeProvider,
     ILogger<StorageResourceLockProvider> logger,
-    IOptions<ThrottlingResourceLockOptions> optionsAccessor,
-    int maxHitsPerPeriod = 100,
-    TimeSpan? throttlingPeriod = null
+    IOptions<ThrottlingResourceLockOptions> optionsAccessor
 ) : IResourceThrottlingLockProvider
 {
-    private readonly ScopedThrottlingResourceLockStorage _storage = new(storage, optionsAccessor);
-    private readonly TimeSpan _throttlingPeriod = Argument.IsPositive(throttlingPeriod ?? TimeSpan.FromMinutes(15));
-    private readonly int _maxHitsPerPeriod = Argument.IsPositive(maxHitsPerPeriod);
+    private readonly ThrottlingResourceLockOptions _options = optionsAccessor.Value;
+    private readonly ScopedThrottlingResourceLockStorage _storage = new(storage, optionsAccessor.Value);
 
     public async Task<IResourceThrottlingLock?> TryAcquireAsync(string resource, TimeSpan? acquireTimeout = null)
     {
@@ -58,9 +55,9 @@ public sealed class StorageThrottlingResourceLockProvider(
                 }
 
                 var hitCount = await _storage.GetAsync<long?>(cacheKey, defaultValue: 0).AnyContext();
-                logger.LogThrottlingLockHitCount(resource, hitCount, _maxHitsPerPeriod);
+                logger.LogThrottlingLockHitCount(resource, hitCount, _options.MaxHitsPerPeriod);
 
-                if (hitCount <= _maxHitsPerPeriod - 1)
+                if (hitCount <= _options.MaxHitsPerPeriod - 1)
                 {
                     var expiration = _GetDateCurrentThrottlingPeriodEnded()
                         .Subtract(timeProvider.GetUtcNow().UtcDateTime);
@@ -68,7 +65,7 @@ public sealed class StorageThrottlingResourceLockProvider(
                     hitCount = await storage.IncrementAsync(cacheKey, 1, expiration).AnyContext();
 
                     // Make sure someone didn't beat us to it.
-                    if (hitCount <= _maxHitsPerPeriod)
+                    if (hitCount <= _options.MaxHitsPerPeriod)
                     {
                         allowLock = true;
 
@@ -164,7 +161,7 @@ public sealed class StorageThrottlingResourceLockProvider(
         var cacheKey = _GetCacheKey(resource);
         var hitCount = await storage.GetAsync<long>(cacheKey, 0).AnyContext();
 
-        return hitCount >= _maxHitsPerPeriod;
+        return hitCount >= _options.MaxHitsPerPeriod;
     }
 
     #region Helpers
@@ -179,7 +176,7 @@ public sealed class StorageThrottlingResourceLockProvider(
     private DateTime _GetDateCurrentThrottlingPeriodStarted()
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var elapsedTicks = now.Ticks % _throttlingPeriod.Ticks;
+        var elapsedTicks = now.Ticks % _options.ThrottlingPeriod.Ticks;
 
         return now.AddTicks(-elapsedTicks);
     }
@@ -187,9 +184,9 @@ public sealed class StorageThrottlingResourceLockProvider(
     private DateTime _GetDateCurrentThrottlingPeriodEnded()
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var elapsedTicks = now.Ticks % _throttlingPeriod.Ticks;
+        var elapsedTicks = now.Ticks % _options.ThrottlingPeriod.Ticks;
 
-        return now.AddTicks(_throttlingPeriod.Ticks - elapsedTicks);
+        return now.AddTicks(_options.ThrottlingPeriod.Ticks - elapsedTicks);
     }
 
     private static TimeSpan? _NormalizeAcquireTimeout(TimeSpan? acquireTimeout)

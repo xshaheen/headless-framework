@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Microsoft.Extensions.Options;
-
 namespace Framework.ResourceLocks.Storage.ThrottlingLocks;
 
 public interface IThrottlingResourceLockStorage
@@ -13,11 +11,9 @@ public interface IThrottlingResourceLockStorage
 
 internal sealed class ScopedThrottlingResourceLockStorage(
     IThrottlingResourceLockStorage storage,
-    IOptions<ThrottlingResourceLockOptions> optionsAccessor
+    ThrottlingResourceLockOptions options
 ) : IThrottlingResourceLockStorage
 {
-    private readonly ThrottlingResourceLockOptions _options = optionsAccessor.Value;
-
     public Task<T> GetAsync<T>(string key, T defaultValue)
     {
         return storage.GetAsync(_NormalizeResource(key), defaultValue);
@@ -28,5 +24,5 @@ internal sealed class ScopedThrottlingResourceLockStorage(
         return storage.IncrementAsync(_NormalizeResource(key), amount, expiration);
     }
 
-    private string _NormalizeResource(string resource) => _options.KeyPrefix + resource;
+    private string _NormalizeResource(string resource) => options.KeyPrefix + resource;
 }

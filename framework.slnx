@@ -99,6 +99,7 @@
   <Folder Name="/Settings/">
     <Project Path="src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj" />
     <Project Path="src\Framework.Settings\Framework.Settings.csproj" />
+    <Project Path="tests\Framework.Settings.Tests.Integrations\Framework.Settings.Tests.Integrations.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Sms/">
     <Project Path="src\Framework.Sms.Aws\Framework.Sms.Aws.csproj" />

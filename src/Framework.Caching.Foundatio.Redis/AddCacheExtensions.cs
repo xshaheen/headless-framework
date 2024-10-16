@@ -9,45 +9,43 @@ namespace Framework.Caching;
 [PublicAPI]
 public static class AddCacheExtensions
 {
-    public static IHostApplicationBuilder AddRedisCache(
-        this IHostApplicationBuilder builder,
+    public static IServiceCollection AddRedisCache(
+        this IServiceCollection services,
         Action<RedisCacheOptions, IServiceProvider> setupAction,
         bool isDefault = true
     )
     {
-        builder.Services.ConfigureSingleton(setupAction);
-        _AddCore(builder, isDefault);
+        services.ConfigureSingleton<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+        _AddCacheCore(services, isDefault);
 
-        return builder;
+        return services;
     }
 
-    public static IHostApplicationBuilder AddRedisCache(
-        this IHostApplicationBuilder builder,
+    public static IServiceCollection AddRedisCache(
+        this IServiceCollection services,
         Action<RedisCacheOptions> setupAction,
         bool isDefault = true
     )
     {
-        builder.Services.ConfigureSingleton(setupAction);
-        _AddCore(builder, isDefault);
+        services.ConfigureSingleton<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+        _AddCacheCore(services, isDefault);
 
-        return builder;
+        return services;
     }
 
-    private static void _AddCore(IHostApplicationBuilder builder, bool isDefault)
+    private static void _AddCacheCore(IServiceCollection builder, bool isDefault)
     {
-        builder.Services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+        builder.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
 
         if (!isDefault)
         {
-            builder.Services.AddKeyedSingleton<ICache, RedisCachingFoundatioAdapter>(
-                CacheConstants.DistributedCacheProvider
-            );
+            builder.AddKeyedSingleton<ICache, RedisCachingFoundatioAdapter>(CacheConstants.DistributedCacheProvider);
 
             return;
         }
 
-        builder.Services.AddSingleton<ICache, RedisCachingFoundatioAdapter>();
-        builder.Services.AddKeyedSingleton(
+        builder.AddSingleton<ICache, RedisCachingFoundatioAdapter>();
+        builder.AddKeyedSingleton(
             CacheConstants.DistributedCacheProvider,
             services => services.GetRequiredService<ICache>()
         );
