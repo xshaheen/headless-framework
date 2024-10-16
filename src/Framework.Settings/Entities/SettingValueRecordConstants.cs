@@ -1,6 +1,6 @@
 ﻿namespace Framework.Settings.Entities;
 
-public static class SettingRecordConstants
+public static class SettingValueRecordConstants
 {
     /// <summary>
     /// Default value: 128
@@ -10,7 +10,7 @@ public static class SettingRecordConstants
     /// <summary>
     /// Default value: 2048
     /// </summary>
-    public static int MaxValueLength { get; set; } = 2048;
+    public static int MaxValueLength { get; set; } = 2000;
 
     public static int MaxValueLengthValue { get; set; } = MaxValueLength;
 

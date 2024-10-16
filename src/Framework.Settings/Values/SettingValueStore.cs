@@ -70,7 +70,7 @@ public sealed class SettingValueStore(
 
         if (setting is null)
         {
-            setting = new SettingRecord(guidGenerator.Create(), name, value, providerName, providerKey);
+            setting = new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
             await repository.InsertAsync(setting);
         }
         else

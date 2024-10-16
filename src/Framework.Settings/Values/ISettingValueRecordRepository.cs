@@ -6,29 +6,29 @@ namespace Framework.Settings.Values;
 
 public interface ISettingValueRecordRepository
 {
-    Task<SettingRecord?> FindAsync(
+    Task<SettingValueRecord?> FindAsync(
         string name,
         string? providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task<List<SettingRecord>> GetListAsync(
+    Task<List<SettingValueRecord>> GetListAsync(
         string[] names,
         string? providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task<List<SettingRecord>> GetListAsync(
+    Task<List<SettingValueRecord>> GetListAsync(
         string? providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task InsertAsync(SettingRecord setting);
+    Task InsertAsync(SettingValueRecord setting);
 
-    Task UpdateAsync(SettingRecord setting);
+    Task UpdateAsync(SettingValueRecord setting);
 
-    Task DeleteAsync(SettingRecord setting);
+    Task DeleteAsync(SettingValueRecord setting);
 }
