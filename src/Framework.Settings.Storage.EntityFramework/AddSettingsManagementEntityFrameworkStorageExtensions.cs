@@ -10,17 +10,17 @@ namespace Framework.Settings.Storage.EntityFramework;
 
 public static class AddSettingsManagementEntityFrameworkStorageExtensions
 {
-    public static IHostApplicationBuilder AddSettingsManagementEntityFrameworkStorage(
-        this IHostApplicationBuilder builder,
+    public static IServiceCollection AddSettingsManagementEntityFrameworkStorage(
+        this IServiceCollection services,
         Action<DbContextOptionsBuilder>? optionsAction = null,
         ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
         ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
     )
     {
-        builder.Services.AddScoped<ISettingValueRecordRepository, EfSettingValueRecordRepository>();
-        builder.Services.AddScoped<ISettingDefinitionRecordRepository, EfSettingDefinitionRecordRepository>();
-        builder.Services.AddDbContext<SettingsDbContext>(optionsAction, contextLifetime, optionsLifetime);
+        services.AddScoped<ISettingValueRecordRepository, EfSettingValueRecordRepository>();
+        services.AddScoped<ISettingDefinitionRecordRepository, EfSettingDefinitionRecordRepository>();
+        services.AddDbContext<SettingsDbContext>(optionsAction, contextLifetime, optionsLifetime);
 
-        return builder;
+        return services;
     }
 }

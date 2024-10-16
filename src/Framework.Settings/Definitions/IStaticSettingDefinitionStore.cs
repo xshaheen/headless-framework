@@ -17,10 +17,13 @@ public interface IStaticSettingDefinitionStore
 public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly SettingManagementOptions _options;
+    private readonly SettingManagementProvidersOptions _options;
     private readonly Lazy<Dictionary<string, SettingDefinition>> _settingDefinitions;
 
-    public StaticSettingDefinitionStore(IServiceProvider serviceProvider, IOptions<SettingManagementOptions> options)
+    public StaticSettingDefinitionStore(
+        IServiceProvider serviceProvider,
+        IOptions<SettingManagementProvidersOptions> options
+    )
     {
         _serviceProvider = serviceProvider;
         _options = options.Value;
