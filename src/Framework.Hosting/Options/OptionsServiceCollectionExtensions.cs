@@ -143,7 +143,7 @@ public static class OptionsServiceCollectionExtensions
     /// <returns>The same services collection.</returns>
     public static IServiceCollection ConfigureSingleton<TOption>(
         this IServiceCollection services,
-        Action<TOption>? configureOption
+        Action<TOption> configureOption
     )
         where TOption : class
     {

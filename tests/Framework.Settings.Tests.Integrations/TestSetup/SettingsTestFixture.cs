@@ -1,16 +1,8 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Docker.DotNet.Models;
-using DotNet.Testcontainers.Containers;
-using Framework.Caching;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.ResourceLocks.Local;
-using Framework.Settings;
-using Framework.Settings.Storage.EntityFramework;
-using Microsoft.EntityFrameworkCore;
+using Framework.Kernel.Checks;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Nito.AsyncEx;
 using Respawn;
 using Respawn.Graph;
@@ -21,46 +13,16 @@ namespace Tests.TestSetup;
 public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
 {
     private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
-    private readonly string _connectionString;
-    private readonly AsyncLazy<Respawner> _respawner;
+    private AsyncLazy<Respawner>? _respawner;
 
-    public IHostEnvironment Environment { get; }
-
-    public IServiceScopeFactory ScopeFactory { get; }
-
-    public SettingsTestFixture()
-    {
-        _connectionString = _postgreSqlContainer.GetConnectionString();
-        _respawner = new(() => _CreateRespawnerAsync(_connectionString));
-
-        var builder = Host.CreateApplicationBuilder();
-
-        builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<IUniqueLongGenerator, SnowFlakIdUniqueLongGenerator>();
-        builder.Services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
-        builder.Services.AddSingleton(Substitute.For<ICurrentUser>());
-        builder.Services.AddSingleton(Substitute.For<ICurrentTenant>());
-        builder.Services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
-        builder.Services.AddInMemoryCache();
-        builder.Services.AddLocalResourceLock();
-
-        builder
-            .Services.AddSettingsManagementCore()
-            .AddSettingsManagementEntityFrameworkStorage(options =>
-            {
-                options.UseNpgsql(_connectionString);
-            });
-
-        var host = builder.Build();
-
-        Environment = builder.Environment;
-        ScopeFactory = host.Services.GetRequiredService<IServiceScopeFactory>();
-    }
+    public string ConnectionString { get; private set; } = default!;
 
     /// <summary>This runs before all tests finished and Called just after the constructor</summary>
     public async Task InitializeAsync()
     {
         await _postgreSqlContainer.StartAsync();
+        ConnectionString = _postgreSqlContainer.GetConnectionString();
+        _respawner = new(() => _CreateRespawnerAsync(ConnectionString));
     }
 
     /// <summary>This runs after all the tests run</summary>
@@ -74,8 +36,16 @@ public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
 
     public async Task ResetAsync()
     {
+        Ensure.True(_respawner is not null);
         var respawner = await _respawner;
-        await respawner.ResetAsync(_connectionString);
+        await respawner.ResetAsync(ConnectionString);
+    }
+
+    public IServiceProvider CreateSettingsServiceProvider()
+    {
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.ConfigureServices(ConnectionString);
+        return serviceCollection.BuildServiceProvider();
     }
 
     private static Task<Respawner> _CreateRespawnerAsync(string connectionString)
@@ -96,3 +66,6 @@ public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
             .Build();
     }
 }
+
+[CollectionDefinition(nameof(SettingsTestFixture))]
+public sealed class SettingsTestCollection : ICollectionFixture<SettingsTestFixture>;

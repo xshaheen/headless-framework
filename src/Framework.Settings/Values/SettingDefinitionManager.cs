@@ -22,7 +22,7 @@ public interface ISettingProvider
     Task DeleteAsync(string providerName, string providerKey);
 }
 
-public sealed class SettingProvider : ISettingProvider
+public sealed class SettingDefinitionManager : ISettingProvider
 {
     private readonly ISettingDefinitionManager _settingDefinitionManager;
     private readonly ISettingEncryptionService _settingEncryptionService;
@@ -31,7 +31,7 @@ public sealed class SettingProvider : ISettingProvider
     private readonly SettingManagementProvidersOptions _options;
     private readonly Lazy<List<ISettingValueReadProvider>> _lazyProviders;
 
-    public SettingProvider(
+    public SettingDefinitionManager(
         ISettingDefinitionManager settingDefinitionManager,
         ISettingEncryptionService settingEncryptionService,
         ISettingValueStore settingValueStore,
