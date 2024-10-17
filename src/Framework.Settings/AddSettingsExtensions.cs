@@ -11,6 +11,7 @@ using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using SettingDefinitionManager = Framework.Settings.Values.SettingDefinitionManager;
 
 namespace Framework.Settings;
 
@@ -27,7 +28,6 @@ public static class AddSettingsExtensions
         Action<SettingManagementOptions>? setupAction = null
     )
     {
-        services.ConfigureSingleton(setupAction);
         services._AddSettingEncryption();
         services._AddCoreValueProvider();
         services.AddHostedService<SettingsInitializationBackgroundService>();
@@ -35,6 +35,11 @@ public static class AddSettingsExtensions
             ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
             SettingValueCacheItemInvalidator
         >();
+
+        if (setupAction is not null)
+        {
+            services.ConfigureSingleton(setupAction);
+        }
 
         // Setting Definition Services
         /*
@@ -45,7 +50,7 @@ public static class AddSettingsExtensions
         services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>();
         services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
         services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
-        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
+        services.TryAddSingleton<ISettingDefinitionManager, Definitions.SettingDefinitionManager>();
 
         // Setting Value Services
         /*
@@ -53,7 +58,7 @@ public static class AddSettingsExtensions
          */
         services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
         services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
-        services.TryAddTransient<ISettingProvider, SettingProvider>();
+        services.TryAddTransient<ISettingProvider, SettingDefinitionManager>();
 
         return services;
     }
