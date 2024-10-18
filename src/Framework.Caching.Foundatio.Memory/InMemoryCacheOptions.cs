@@ -17,7 +17,7 @@ public sealed class InMemoryCacheOptionsValidator : AbstractValidator<InMemoryCa
 {
     public InMemoryCacheOptionsValidator()
     {
-        RuleFor(x => x.KeyPrefix).NotEmpty();
+        RuleFor(x => x.KeyPrefix).NotNull();
         RuleFor(x => x.MaxItems).GreaterThan(0);
     }
 }

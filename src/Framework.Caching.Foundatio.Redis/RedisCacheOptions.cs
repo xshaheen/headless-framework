@@ -17,7 +17,7 @@ public sealed class RedisCacheOptionsValidator : AbstractValidator<RedisCacheOpt
 {
     public RedisCacheOptionsValidator()
     {
-        RuleFor(x => x.KeyPrefix).NotEmpty();
+        RuleFor(x => x.KeyPrefix).NotNull();
         RuleFor(x => x.ConnectionMultiplexer).NotNull();
         RuleFor(x => x.ReadMode).IsInEnum();
     }

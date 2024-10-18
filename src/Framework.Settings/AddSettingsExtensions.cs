@@ -66,7 +66,7 @@ public static class AddSettingsExtensions
     public static void AddSettingDefinitionProvider<T>(this IServiceCollection services)
         where T : class, ISettingDefinitionProvider
     {
-        services.AddSingleton<ISettingDefinitionProvider, T>();
+        services.AddSingleton<T>();
 
         services.Configure<SettingManagementProvidersOptions>(options =>
         {
@@ -77,7 +77,7 @@ public static class AddSettingsExtensions
     public static void AddSettingValueProvider<T>(this IServiceCollection services)
         where T : class, ISettingValueReadProvider
     {
-        services.AddSingleton<ISettingValueReadProvider, T>();
+        services.AddSingleton<T>();
 
         services.Configure<SettingManagementProvidersOptions>(options =>
         {

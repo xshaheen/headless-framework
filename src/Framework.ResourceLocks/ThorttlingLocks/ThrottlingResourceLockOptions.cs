@@ -20,7 +20,7 @@ public sealed class ThrottlingResourceLockOptionsValidator : AbstractValidator<T
 {
     public ThrottlingResourceLockOptionsValidator()
     {
-        RuleFor(x => x.KeyPrefix).NotEmpty();
+        RuleFor(x => x.KeyPrefix).NotNull();
         RuleFor(x => x.MaxHitsPerPeriod).GreaterThan(0);
         RuleFor(x => x.ThrottlingPeriod).GreaterThan(TimeSpan.Zero);
     }
