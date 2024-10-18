@@ -26,9 +26,9 @@ public interface ISettingValueRecordRepository
         CancellationToken cancellationToken = default
     );
 
-    Task InsertAsync(SettingValueRecord setting);
+    Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default);
 
-    Task UpdateAsync(SettingValueRecord setting);
+    Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default);
 
-    Task DeleteAsync(SettingValueRecord setting);
+    Task DeleteAsync(SettingValueRecord setting, CancellationToken cancellationToken = default);
 }

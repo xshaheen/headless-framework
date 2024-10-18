@@ -13,15 +13,40 @@ namespace Framework.Settings.Values;
 /// <summary>Represents a store for setting values.</summary>
 public interface ISettingValueStore
 {
-    Task<string?> GetOrDefaultAsync(string name, string? providerName, string? providerKey);
+    Task<string?> GetOrDefaultAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<List<SettingValue>> GetAllAsync(string? providerName, string? providerKey);
+    Task<List<SettingValue>> GetAllAsync(
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<List<SettingValue>> GetAllAsync(string[] names, string? providerName, string? providerKey);
+    Task<List<SettingValue>> GetAllAsync(
+        string[] names,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task SetAsync(string name, string value, string? providerName, string? providerKey);
+    Task SetAsync(
+        string name,
+        string value,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task DeleteAsync(string name, string? providerName, string? providerKey);
+    Task DeleteAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public sealed class SettingValueStore(
@@ -31,21 +56,35 @@ public sealed class SettingValueStore(
     ICache<SettingValueCacheItem> distributedCache
 ) : ISettingValueStore
 {
-    public async Task<string?> GetOrDefaultAsync(string name, string? providerName, string? providerKey)
+    public async Task<string?> GetOrDefaultAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
         var item = await _GetCachedItemAsync(name, providerName, providerKey);
 
         return item.Value;
     }
 
-    public async Task<List<SettingValue>> GetAllAsync(string? providerName, string? providerKey)
+    public async Task<List<SettingValue>> GetAllAsync(
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
         var settings = await repository.GetListAsync(providerName, providerKey);
 
         return settings.ConvertAll(x => new SettingValue(x.Name, x.Value));
     }
 
-    public async Task<List<SettingValue>> GetAllAsync(string[] names, string? providerName, string? providerKey)
+    public async Task<List<SettingValue>> GetAllAsync(
+        string[] names,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(names);
 
@@ -64,7 +103,13 @@ public sealed class SettingValueStore(
             .ToList();
     }
 
-    public async Task SetAsync(string name, string value, string? providerName, string? providerKey)
+    public async Task SetAsync(
+        string name,
+        string value,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
         var setting = await repository.FindAsync(name, providerName, providerKey);
 
@@ -86,7 +131,12 @@ public sealed class SettingValueStore(
         );
     }
 
-    public async Task DeleteAsync(string name, string? providerName, string? providerKey)
+    public async Task DeleteAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
         var setting = await repository.FindAsync(name, providerName, providerKey);
 
@@ -105,7 +155,8 @@ public sealed class SettingValueStore(
     private async Task<SettingValueCacheItem> _GetCachedItemAsync(
         string name,
         string? providerName,
-        string? providerKey
+        string? providerKey,
+        CancellationToken cancellationToken = default
     )
     {
         var cacheKey = _CalculateCacheKey(name, providerName, providerKey);
@@ -124,7 +175,8 @@ public sealed class SettingValueStore(
     private async Task<Dictionary<string, SettingValueCacheItem>> _GetCachedItemsAsync(
         string[] names,
         string? providerName,
-        string? providerKey
+        string? providerKey,
+        CancellationToken cancellationToken = default
     )
     {
         var cacheKeys = names.ConvertAll(x => _CalculateCacheKey(x, providerName, providerKey));
@@ -159,7 +211,8 @@ public sealed class SettingValueStore(
     private async Task<SettingValueCacheItem> _CacheAllAndGetAsync(
         string? providerName,
         string? providerKey,
-        string nameToFind
+        string nameToFind,
+        CancellationToken cancellationToken = default
     )
     {
         var definitions = await _GetDbSettingDefinitionsAsync();
@@ -189,7 +242,8 @@ public sealed class SettingValueStore(
     private async Task<Dictionary<string, SettingValueCacheItem>> _CacheSomeAsync(
         string[] names,
         string? providerName,
-        string? providerKey
+        string? providerKey,
+        CancellationToken cancellationToken = default
     )
     {
         var definitions = await _GetDbSettingDefinitionsAsync(names);
@@ -226,7 +280,11 @@ public sealed class SettingValueStore(
 
     #region DB Helpers
 
-    private async Task<Dictionary<string, string>> _GetDbSettingValuesAsync(string? providerName, string? providerKey)
+    private async Task<Dictionary<string, string>> _GetDbSettingValuesAsync(
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
         var values = await repository.GetListAsync(providerName, providerKey);
 
@@ -236,7 +294,8 @@ public sealed class SettingValueStore(
     private async Task<Dictionary<string, string>> _GetDbSettingValuesAsync(
         string? providerName,
         string? providerKey,
-        string[] names
+        string[] names,
+        CancellationToken cancellationToken = default
     )
     {
         var values = await repository.GetListAsync(names, providerName, providerKey);
@@ -249,7 +308,10 @@ public sealed class SettingValueStore(
         return await settingDefinitionManager.GetAllAsync();
     }
 
-    private async Task<IEnumerable<SettingDefinition>> _GetDbSettingDefinitionsAsync(string[] names)
+    private async Task<IEnumerable<SettingDefinition>> _GetDbSettingDefinitionsAsync(
+        string[] names,
+        CancellationToken cancellationToken = default
+    )
     {
         if (names.Length == 0)
         {

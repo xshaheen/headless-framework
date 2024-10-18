@@ -11,24 +11,46 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
 
     private ISettingValueStore Store { get; } = store;
 
-    public async Task<string?> GetOrDefaultAsync(SettingDefinition setting, string? providerKey)
+    public async Task<string?> GetOrDefaultAsync(
+        SettingDefinition setting,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await Store.GetOrDefaultAsync(setting.Name, Name, NormalizeProviderKey(providerKey));
+        return await Store.GetOrDefaultAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken);
     }
 
-    public Task<List<SettingValue>> GetAllAsync(SettingDefinition[] settings, string? providerKey)
+    public Task<List<SettingValue>> GetAllAsync(
+        SettingDefinition[] settings,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        return Store.GetAllAsync(settings.Select(x => x.Name).ToArray(), Name, NormalizeProviderKey(providerKey));
+        return Store.GetAllAsync(
+            settings.Select(x => x.Name).ToArray(),
+            Name,
+            NormalizeProviderKey(providerKey),
+            cancellationToken
+        );
     }
 
-    public async Task SetAsync(SettingDefinition setting, string value, string? providerKey)
+    public async Task SetAsync(
+        SettingDefinition setting,
+        string value,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        await Store.SetAsync(setting.Name, value, Name, NormalizeProviderKey(providerKey));
+        await Store.SetAsync(setting.Name, value, Name, NormalizeProviderKey(providerKey), cancellationToken);
     }
 
-    public async Task ClearAsync(SettingDefinition setting, string? providerKey)
+    public async Task ClearAsync(
+        SettingDefinition setting,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        await Store.DeleteAsync(setting.Name, Name, NormalizeProviderKey(providerKey));
+        await Store.DeleteAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken);
     }
 
     protected virtual string? NormalizeProviderKey(string? providerKey) => providerKey;

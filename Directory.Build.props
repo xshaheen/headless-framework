@@ -27,6 +27,11 @@
     <Using Include="JetBrains.Annotations" />
   </ItemGroup>
 
+  <ItemGroup Label="Global Json Config">
+    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectRequiredConstructorParametersDefault" Value="true" />
+    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectNullableAnnotationsDefault" Value="true" />
+  </ItemGroup>
+
   <ItemGroup Label="Package References">
     <PackageReference Include="JetBrains.Annotations" />
   </ItemGroup>

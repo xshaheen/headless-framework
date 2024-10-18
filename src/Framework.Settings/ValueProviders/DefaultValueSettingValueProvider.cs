@@ -11,13 +11,23 @@ public sealed class DefaultValueSettingValueProvider : ISettingValueReadProvider
 
     public string Name => ProviderName;
 
-    public Task<string?> GetOrDefaultAsync(SettingDefinition setting, string? providerKey)
+    public Task<string?> GetOrDefaultAsync(
+        SettingDefinition setting,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(setting.DefaultValue);
     }
 
-    public Task<List<SettingValue>> GetAllAsync(SettingDefinition[] settings, string? providerKey)
+    public Task<List<SettingValue>> GetAllAsync(
+        SettingDefinition[] settings,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var settingValues = settings.Select(x => new SettingValue(x.Name, x.DefaultValue)).ToList();
 
         return Task.FromResult(settingValues);

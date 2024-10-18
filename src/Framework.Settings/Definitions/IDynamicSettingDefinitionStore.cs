@@ -15,7 +15,7 @@ using Nito.AsyncEx;
 
 namespace Framework.Settings.Definitions;
 
-/// <summary>Store for setting definitions that are defined dynamically from an external source like a database.</summary>
+/// <summary>Store for setting definitions that defined dynamically from an external source like a database.</summary>
 public interface IDynamicSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
@@ -134,7 +134,7 @@ public sealed class DynamicSettingDefinitionStore(
         {
             if (!_IsUpdateMemoryCacheRequired())
             {
-                // We get the latest setting with a small delay for optimization
+                // Get the latest setting with a small delay for optimization
                 return;
             }
 

@@ -11,15 +11,28 @@ public interface ISettingValueReadProvider
 {
     string Name { get; }
 
-    Task<string?> GetOrDefaultAsync(SettingDefinition setting, string? providerKey);
+    Task<string?> GetOrDefaultAsync(
+        SettingDefinition setting,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<List<SettingValue>> GetAllAsync(SettingDefinition[] settings, string? providerKey);
+    Task<List<SettingValue>> GetAllAsync(
+        SettingDefinition[] settings,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 }
 
 /// <inheritdoc />
 public interface ISettingValueProvider : ISettingValueReadProvider
 {
-    Task SetAsync(SettingDefinition setting, string value, string? providerKey);
+    Task SetAsync(
+        SettingDefinition setting,
+        string value,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task ClearAsync(SettingDefinition setting, string? providerKey);
+    Task ClearAsync(SettingDefinition setting, string? providerKey, CancellationToken cancellationToken = default);
 }

@@ -13,13 +13,31 @@ namespace Framework.Settings.Values;
 /// <summary>Retrieve setting value from <see cref="ISettingValueProvider"/></summary>
 public interface ISettingProvider
 {
-    Task<string?> GetOrDefaultAsync(string name, string providerName, string? providerKey, bool fallback = true);
+    Task<string?> GetOrDefaultAsync(
+        string name,
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<List<SettingValue>> GetAllAsync(string providerName, string? providerKey, bool fallback = true);
+    Task<List<SettingValue>> GetAllAsync(
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
 
-    Task SetAsync(string name, string? value, string providerName, string? providerKey, bool forceToSet = false);
+    Task SetAsync(
+        string name,
+        string? value,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    );
 
-    Task DeleteAsync(string providerName, string providerKey);
+    Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
 }
 
 public sealed class SettingDefinitionManager : ISettingProvider
@@ -52,14 +70,15 @@ public sealed class SettingDefinitionManager : ISettingProvider
         string? value,
         string providerName,
         string? providerKey,
-        bool forceToSet = false
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(name);
         Argument.IsNotNull(providerName);
 
         var setting =
-            await _settingDefinitionManager.GetOrDefaultAsync(name)
+            await _settingDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined setting: {name}");
 
         var providers = Enumerable
@@ -79,11 +98,16 @@ public sealed class SettingDefinitionManager : ISettingProvider
 
         if (providers.Count > 1 && !forceToSet && setting.IsInherited && value != null)
         {
-            var fallbackValue = await _CoreGetOrDefaultAsync(name, providers[1].Name, providerKey: null);
+            var fallbackValue = await _CoreGetOrDefaultAsync(
+                name,
+                providers[1].Name,
+                providerKey: null,
+                cancellationToken: cancellationToken
+            );
 
             if (string.Equals(fallbackValue, value, StringComparison.Ordinal))
             {
-                //Clear the value if it's same as it's fallback value
+                //Clear the value if it is same as it's fallback value
                 value = null;
             }
         }
@@ -100,28 +124,39 @@ public sealed class SettingDefinitionManager : ISettingProvider
 
             if (value == null)
             {
-                await p.ClearAsync(setting, providerKey);
+                await p.ClearAsync(setting, providerKey, cancellationToken);
             }
             else
             {
-                await p.SetAsync(setting, value, providerKey);
+                await p.SetAsync(setting, value, providerKey, cancellationToken);
             }
         }
     }
 
-    public Task<string?> GetOrDefaultAsync(string name, string providerName, string? providerKey, bool fallback = true)
+    public Task<string?> GetOrDefaultAsync(
+        string name,
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(name);
         Argument.IsNotNull(providerName);
 
-        return _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback);
+        return _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
     }
 
-    public async Task<List<SettingValue>> GetAllAsync(string providerName, string? providerKey, bool fallback = true)
+    public async Task<List<SettingValue>> GetAllAsync(
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(providerName);
 
-        var settingDefinitions = await _settingDefinitionManager.GetAllAsync();
+        var settingDefinitions = await _settingDefinitionManager.GetAllAsync(cancellationToken);
 
         var providers = Enumerable
             .Reverse(_lazyProviders.Value)
@@ -151,7 +186,8 @@ public sealed class SettingDefinitionManager : ISettingProvider
                 {
                     var providerValue = await provider.GetOrDefaultAsync(
                         setting,
-                        string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null
+                        string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null,
+                        cancellationToken
                     );
 
                     if (providerValue is not null)
@@ -162,7 +198,7 @@ public sealed class SettingDefinitionManager : ISettingProvider
             }
             else
             {
-                value = await providerList[0].GetOrDefaultAsync(setting, providerKey);
+                value = await providerList[0].GetOrDefaultAsync(setting, providerKey, cancellationToken);
             }
 
             if (setting.IsEncrypted)
@@ -179,13 +215,17 @@ public sealed class SettingDefinitionManager : ISettingProvider
         return [.. settingValues.Values];
     }
 
-    public async Task DeleteAsync(string providerName, string providerKey)
+    public async Task DeleteAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        var settings = await _settingValueStore.GetAllAsync(providerName, providerKey);
+        var settings = await _settingValueStore.GetAllAsync(providerName, providerKey, cancellationToken);
 
         foreach (var setting in settings)
         {
-            await _settingValueStore.DeleteAsync(setting.Name, providerName, providerKey);
+            await _settingValueStore.DeleteAsync(setting.Name, providerName, providerKey, cancellationToken);
         }
     }
 
@@ -195,11 +235,12 @@ public sealed class SettingDefinitionManager : ISettingProvider
         string name,
         string? providerName,
         string? providerKey,
-        bool fallback = true
+        bool fallback = true,
+        CancellationToken cancellationToken = default
     )
     {
         var definition =
-            await _settingDefinitionManager.GetOrDefaultAsync(name)
+            await _settingDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined setting: {name}");
 
         var valueProviders = Enumerable.Reverse(_lazyProviders.Value);
@@ -223,7 +264,8 @@ public sealed class SettingDefinitionManager : ISettingProvider
         {
             value = await provider.GetOrDefaultAsync(
                 definition,
-                string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null
+                string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null,
+                cancellationToken
             );
 
             if (value != null)
