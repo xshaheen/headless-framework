@@ -12,14 +12,12 @@ public static class AddSettingsManagementEntityFrameworkStorageExtensions
 {
     public static IServiceCollection AddSettingsManagementEntityFrameworkStorage(
         this IServiceCollection services,
-        Action<DbContextOptionsBuilder>? optionsAction = null,
-        ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
-        ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+        Action<DbContextOptionsBuilder> optionsAction
     )
     {
         services.AddScoped<ISettingValueRecordRepository, EfSettingValueRecordRepository>();
         services.AddScoped<ISettingDefinitionRecordRepository, EfSettingDefinitionRecordRepository>();
-        services.AddDbContext<SettingsDbContext>(optionsAction, contextLifetime, optionsLifetime);
+        services.AddDbContextPool<SettingsDbContext>(optionsAction);
 
         return services;
     }

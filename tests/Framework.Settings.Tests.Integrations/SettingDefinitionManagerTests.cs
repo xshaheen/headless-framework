@@ -16,13 +16,12 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
     public async Task should_provide_setting_value_when_call_get_default_async_and_is_defined()
     {
         // given
-        var host = Host.CreateApplicationBuilder(new )
-        var services = new ServiceCollection();
-        services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
-        services.ConfigureServices(fixture.ConnectionString);
-        var provider = services.BuildServiceProvider(validateScopes: true);
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
+        builder.Services.ConfigureServices(fixture.ConnectionString);
+        var host = builder.Build();
 
-        await using var scope = provider.CreateAsyncScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
 
         // when

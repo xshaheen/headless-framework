@@ -138,14 +138,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
             }
         }
 
-        if (isCanonical)
-        {
-            canonicalUrl = null;
-        }
-        else
-        {
-            canonicalUrl = new Uri(request.GetEncodedUrl(), UriKind.Absolute);
-        }
+        canonicalUrl = isCanonical ?  null : new Uri(request.GetEncodedUrl(), UriKind.Absolute);
 
         return isCanonical;
     }

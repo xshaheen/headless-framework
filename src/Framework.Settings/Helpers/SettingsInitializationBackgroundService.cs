@@ -117,7 +117,7 @@ public sealed class SettingsInitializationBackgroundService(
         {
             logger.LogError(e, "Failed to pre-cache dynamic settings");
 
-            throw; // It will be cached in InitializeDynamicSettings
+            throw;
         }
     }
 

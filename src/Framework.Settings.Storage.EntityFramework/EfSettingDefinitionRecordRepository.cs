@@ -3,14 +3,19 @@
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Settings.Storage.EntityFramework;
 
-public sealed class EfSettingDefinitionRecordRepository(SettingsDbContext db) : ISettingDefinitionRecordRepository
+public sealed class EfSettingDefinitionRecordRepository(IServiceScopeFactory scopeFactory)
+    : ISettingDefinitionRecordRepository
 {
-    public Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
+    public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
-        return db.SettingDefinitions.ToListAsync(cancellationToken);
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+
+        return await db.SettingDefinitions.ToListAsync(cancellationToken);
     }
 
     public async Task SaveAsync(
@@ -20,6 +25,9 @@ public sealed class EfSettingDefinitionRecordRepository(SettingsDbContext db) : 
         CancellationToken cancellationToken = default
     )
     {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+
         db.SettingDefinitions.AddRange(addedRecords);
         db.SettingDefinitions.UpdateRange(changedRecords);
         db.SettingDefinitions.RemoveRange(deletedRecords);

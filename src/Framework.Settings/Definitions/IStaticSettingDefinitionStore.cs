@@ -9,9 +9,9 @@ namespace Framework.Settings.Definitions;
 /// <summary>Store for setting definitions that are defined statically in memory.</summary>
 public interface IStaticSettingDefinitionStore
 {
-    Task<IReadOnlyList<SettingDefinition>> GetAllAsync();
+    Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
 
-    Task<SettingDefinition?> GetOrDefaultAsync(string name);
+    Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 }
 
 public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
@@ -30,15 +30,17 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
         _settingDefinitions = new(_CreateSettingDefinitions, isThreadSafe: true);
     }
 
-    public Task<IReadOnlyList<SettingDefinition>> GetAllAsync()
+    public Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var settingDefinitions = _settingDefinitions.Value.Values.ToImmutableList();
 
         return Task.FromResult<IReadOnlyList<SettingDefinition>>(settingDefinitions);
     }
 
-    public Task<SettingDefinition?> GetOrDefaultAsync(string name)
+    public Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var settingDefinition = _settingDefinitions.Value.GetOrDefault(name);
 
         return Task.FromResult(settingDefinition);
