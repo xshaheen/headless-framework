@@ -83,7 +83,7 @@ public sealed class DynamicSettingDefinitionStore(
 
         cancellationToken.ThrowIfCancellationRequested();
         var cachedHash = await distributedCache.GetAsync<string>(_hashCacheKey, cancellationToken);
-        var records = serializer.Serialize(await staticStore.GetAllAsync());
+        var records = serializer.Serialize(await staticStore.GetAllAsync(cancellationToken));
         var currentHash = _CalculateHash(records, _providers.DeletedSettings);
 
         if (string.Equals(cachedHash.Value, currentHash, StringComparison.Ordinal))

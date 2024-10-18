@@ -73,7 +73,7 @@ public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse>(
         IReadOnlyCollection<ValidationFailure> failures
     )
     {
-        _Log(logger, userId, messageName, message, failures, null);
+        _Log(logger, userId, messageName, message, failures, arg6: null);
     }
 
     #endregion

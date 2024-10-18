@@ -225,10 +225,11 @@ public static class TypeExtensions
     #region Assignable
 
     /// <summary>
+    /// <para>
     /// Determines whether an instance of this type can be assigned to
     /// an instance of the <typeparamref name="TTarget"></typeparamref>.
-    ///
-    /// Internally uses <see cref="Type.IsAssignableFrom"/>.
+    /// </para>
+    /// <para>Internally uses <see cref="Type.IsAssignableFrom"/>.</para>
     /// </summary>
     /// <typeparam name="TTarget">Target type</typeparam> (as reverse).
     [MustUseReturnValue]

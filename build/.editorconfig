@@ -7,6 +7,10 @@ dotnet_diagnostic.ca1050.severity = none
 dotnet_diagnostic.rcs1110.severity = none
 # MA0047: Declare types in namespaces
 dotnet_diagnostic.ma0047.severity = none
+# RCS1213: Remove unused member declaration
+dotnet_diagnostic.rcs1213.severity = none
+# MA0041: Make property static (deprecated, use CA1822 instead)
+dotnet_diagnostic.ma0041.severity = none
 
 dotnet_style_qualification_for_field = false:warning
 dotnet_style_qualification_for_property = false:warning
@@ -58,3 +62,6 @@ dotnet_naming_symbols.private_methods_group.applicable_kinds = method
 dotnet_naming_rule.private_methods_group_must_be_camel_case_rule.symbols = private_methods_group
 dotnet_naming_rule.private_methods_group_must_be_camel_case_rule.style = pascal_case_style
 dotnet_naming_rule.private_methods_group_must_be_camel_case_rule.severity = suggestion
+
+# IDE0051: Remove unused private members
+dotnet_diagnostic.IDE0051.severity = none

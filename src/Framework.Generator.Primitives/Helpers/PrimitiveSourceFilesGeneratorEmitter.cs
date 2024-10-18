@@ -12,8 +12,8 @@ namespace Framework.Generator.Primitives.Helpers;
 internal static class PrimitiveSourceFilesGeneratorEmitter
 {
     /// <summary>Processes the generator data and generates code for a specified class.</summary>
-    /// <param name="data">The GeneratorData for the class.</param>
     /// <param name="context">The SourceProductionContext for reporting diagnostics.</param>
+    /// <param name="data">The GeneratorData for the class.</param>
     /// <param name="ctorCode">The constructor code for the class.</param>
     /// <param name="options">The PrimitiveGlobalOptions for the generator.</param>
     internal static void AddPrimateImplementation(

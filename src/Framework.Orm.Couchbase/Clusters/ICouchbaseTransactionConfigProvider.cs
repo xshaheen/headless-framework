@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Couchbase.KeyValue;
 using Couchbase.Transactions.Config;
@@ -24,15 +24,9 @@ public sealed class CouchbaseTransactionConfigProvider : ICouchbaseTransactionCo
     public ValueTask<TransactionConfigBuilder> GetAsync(string clusterKey) => ValueTask.FromResult(_builder);
 }
 
-public sealed class DefaultCouchbaseTransactionConfigProvider : ICouchbaseTransactionConfigProvider
+public sealed class DefaultCouchbaseTransactionConfigProvider(IHostEnvironment environment)
+    : ICouchbaseTransactionConfigProvider
 {
-    private readonly IHostEnvironment _environment;
-
-    public DefaultCouchbaseTransactionConfigProvider(IHostEnvironment environment)
-    {
-        _environment = environment;
-    }
-
     public ValueTask<TransactionConfigBuilder> GetAsync(string clusterKey)
     {
         // Note: This can provide a Default Transactions Config per cluster key
@@ -41,7 +35,7 @@ public sealed class DefaultCouchbaseTransactionConfigProvider : ICouchbaseTransa
         var configBuilder = TransactionConfigBuilder
             .Create()
             .KeyValueTimeout(kvTimeout)
-            .ExpirationTime(_environment.IsDevelopment() ? kvTimeout * 50 : kvTimeout * 10)
+            .ExpirationTime(environment.IsDevelopment() ? kvTimeout * 50 : kvTimeout * 10)
             .DurabilityLevel(DurabilityLevel.Majority)
             .CleanupLostAttempts(cleanupLostAttempts: true)
             .CleanupClientAttempts(cleanupClientAttempts: true)

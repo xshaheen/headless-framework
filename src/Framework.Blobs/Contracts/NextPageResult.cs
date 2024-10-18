@@ -12,5 +12,5 @@ public sealed class NextPageResult : INextPageResult
 
     public required IReadOnlyCollection<BlobSpecification> Blobs { get; init; }
 
-    public Func<PagedFileListResult, Task<INextPageResult>>? NextPageFunc { get; init; }
+    public Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc { get; init; }
 }

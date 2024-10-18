@@ -201,7 +201,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             foreach (var objectKey in objectKeys)
             {
-                var deleteError = e.Response.DeleteErrors.FirstOrDefault(x =>
+                var deleteError = e.Response.DeleteErrors.Find(x =>
                     string.Equals(x.Key, objectKey.Key, StringComparison.Ordinal)
                 );
 
@@ -215,7 +215,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 }
                 else
                 {
-                    results.Add(Result<bool, Exception>.Success(true));
+                    results.Add(Result<bool, Exception>.Success(operand: true));
                 }
             }
 
@@ -417,13 +417,15 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(containers);
         var pattern = string.Join('/', containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
         var criteria = _GetRequestCriteria(pattern);
-        var result = new PagedFileListResult(_ => _GetFiles(bucket, criteria, pageSize, null, cancellationToken));
+        var result = new PagedFileListResult(_ =>
+            _GetFiles(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
+        );
         await result.NextPageAsync().AnyContext();
 
         return result;
     }
 
-    private async Task<INextPageResult> _GetFiles(
+    private async ValueTask<INextPageResult> _GetFiles(
         string bucket,
         SearchCriteria criteria,
         int pageSize,

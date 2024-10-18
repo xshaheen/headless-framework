@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Integrations.Recaptcha.Contracts;
 using Microsoft.AspNetCore.Razor.TagHelpers;
@@ -56,7 +56,7 @@ public sealed class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCaptchaSetti
             + "'"
             + (string.IsNullOrWhiteSpace(Action) ? "" : ",{action:'" + Action + "'}")
             + ")"
-            + (Execute ? ".then(function(token){" + Callback + "(token)" + "})" : ".then(callback)")
+            + (Execute ? ".then(function(token){" + Callback + "(token)})" : ".then(callback)")
             + "};"
             + (Execute ? "grecaptcha.reExecute()" : "")
             + "});";

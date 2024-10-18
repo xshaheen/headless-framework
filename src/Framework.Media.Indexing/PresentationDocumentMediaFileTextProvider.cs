@@ -11,7 +11,7 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
 {
     public Task<string> GetTextAsync(string path, Stream fileStream)
     {
-        using var document = PresentationDocument.Open(fileStream, false);
+        using var document = PresentationDocument.Open(fileStream, isEditable: false);
         var slideIds = document.PresentationPart?.Presentation.SlideIdList?.ChildElements.Cast<SlideId>();
 
         if (slideIds?.Any() != true)
