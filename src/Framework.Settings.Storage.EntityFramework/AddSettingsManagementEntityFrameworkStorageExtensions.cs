@@ -4,7 +4,6 @@ using Framework.Settings.Definitions;
 using Framework.Settings.Values;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Settings.Storage.EntityFramework;
 
@@ -15,8 +14,8 @@ public static class AddSettingsManagementEntityFrameworkStorageExtensions
         Action<DbContextOptionsBuilder> optionsAction
     )
     {
-        services.AddScoped<ISettingValueRecordRepository, EfSettingValueRecordRepository>();
-        services.AddScoped<ISettingDefinitionRecordRepository, EfSettingDefinitionRecordRepository>();
+        services.AddSingleton<ISettingValueRecordRepository, EfSettingValueRecordRepository>();
+        services.AddSingleton<ISettingDefinitionRecordRepository, EfSettingDefinitionRecordRepository>();
         services.AddDbContextPool<SettingsDbContext>(optionsAction);
 
         return services;
