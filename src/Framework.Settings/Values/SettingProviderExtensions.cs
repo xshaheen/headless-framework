@@ -494,7 +494,12 @@ public static class UserSettingProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAllAsync(UserSettingValueProvider.ProviderName, null, fallback, cancellationToken);
+        return settingManager.GetAllAsync(
+            UserSettingValueProvider.ProviderName,
+            providerKey: null,
+            fallback,
+            cancellationToken
+        );
     }
 
     public static Task SetForUserAsync(
@@ -528,7 +533,7 @@ public static class UserSettingProviderExtensions
             name,
             value,
             UserSettingValueProvider.ProviderName,
-            null,
+            providerKey: null,
             forceToSet,
             cancellationToken
         );

@@ -6,10 +6,11 @@ using Framework.Permissions.Permissions.Checkers;
 namespace Framework.Permissions.Testing;
 
 /// <summary>
-/// Always allows for any permission.
-///
+/// <para>Always allows for any permission.</para>
+/// <para>
 /// Use IServiceCollection.AddAlwaysAllowAuthorization() to replace
 /// IPermissionChecker with this class. This is useful for tests.
+/// </para>
 /// </summary>
 public sealed class AlwaysAllowPermissionChecker : IPermissionChecker
 {

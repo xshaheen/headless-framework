@@ -439,7 +439,9 @@ public sealed partial class AzureBlobStorage : IBlobStorage
             return new();
         }
 
+#pragma warning disable CA2249 // Consider using 'string.Contains' instead of 'string.IndexOf'
         var wildcardPos = searchPattern.IndexOf('*', StringComparison.Ordinal);
+#pragma warning restore CA2249
         var hasWildcard = wildcardPos >= 0;
 
         var prefix = searchPattern;

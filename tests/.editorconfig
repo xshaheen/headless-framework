@@ -13,3 +13,5 @@ dotnet_diagnostic.vsthrD200.severity = none
 dotnet_diagnostic.rcs1046.severity = none
 # CA1308: Normalize strings to uppercase
 dotnet_diagnostic.ca1308.severity = none
+# MA0003: Add parameter name to improve readability
+dotnet_diagnostic.ma0003.severity = none

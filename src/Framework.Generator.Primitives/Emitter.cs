@@ -12,8 +12,8 @@ namespace Framework.Generator.Primitives;
 internal static class Emitter
 {
     /// <summary>Executes the generation of primitives based on the provided parameters.</summary>
-    /// <param name="typesToGenerate">The list of primitives to generate.</param>
     /// <param name="context">The source production context.</param>
+    /// <param name="typesToGenerate">The list of primitives to generate.</param>
     /// <param name="assemblyName">The name of the assembly.</param>
     /// <param name="globalOptions">The global options for primitive generation.</param>
     internal static void Execute(

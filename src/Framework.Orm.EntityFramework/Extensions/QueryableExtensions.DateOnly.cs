@@ -5,7 +5,6 @@ using System.Reflection;
 using Framework.Kernel.BuildingBlocks.Helpers.Linq;
 using Framework.Kernel.Checks;
 
-#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 

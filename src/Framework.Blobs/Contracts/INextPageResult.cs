@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Collections.ObjectModel;
 
@@ -14,12 +14,12 @@ public interface INextPageResult
 
     public IReadOnlyCollection<BlobSpecification> Blobs { get; }
 
-    public Func<PagedFileListResult, Task<INextPageResult>>? NextPageFunc { get; }
+    public Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc { get; }
 }
 
 public interface IHasNextPageFunc
 {
-    Func<PagedFileListResult, Task<INextPageResult>>? NextPageFunc { get; }
+    Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc { get; }
 }
 
 public sealed class PagedFileListResult : IHasNextPageFunc
@@ -33,8 +33,8 @@ public sealed class PagedFileListResult : IHasNextPageFunc
 
     #region Next Page
 
-    private Func<PagedFileListResult, Task<INextPageResult>>? _nextPageFunc;
-    Func<PagedFileListResult, Task<INextPageResult>>? IHasNextPageFunc.NextPageFunc => _nextPageFunc;
+    private Func<PagedFileListResult, ValueTask<INextPageResult>>? _nextPageFunc;
+    Func<PagedFileListResult, ValueTask<INextPageResult>>? IHasNextPageFunc.NextPageFunc => _nextPageFunc;
 
     public async Task<bool> NextPageAsync()
     {
@@ -77,7 +77,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
     public PagedFileListResult(
         IReadOnlyCollection<BlobSpecification> blobs,
         bool hasMore,
-        Func<PagedFileListResult, Task<INextPageResult>> nextPageFunc
+        Func<PagedFileListResult, ValueTask<INextPageResult>> nextPageFunc
     )
     {
         Blobs = blobs;
@@ -85,7 +85,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
         _nextPageFunc = nextPageFunc;
     }
 
-    public PagedFileListResult(Func<PagedFileListResult, Task<INextPageResult>> nextPageFunc)
+    public PagedFileListResult(Func<PagedFileListResult, ValueTask<INextPageResult>> nextPageFunc)
     {
         _nextPageFunc = nextPageFunc;
     }

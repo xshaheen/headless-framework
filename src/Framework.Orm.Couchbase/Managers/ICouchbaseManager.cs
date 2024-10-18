@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using Couchbase;
@@ -345,8 +345,8 @@ public sealed class CouchbaseManager : ICouchbaseManager
                     var (collection, indexName, fields) = state;
 
                     var options = CreateQueryIndexOptions
-                        .Default.IgnoreIfExists(true)
-                        .Deferred(false)
+                        .Default.IgnoreIfExists(ignoreIfExists: true)
+                        .Deferred(deferred: false)
                         .Timeout(5.Seconds())
                         .CancellationToken(token);
 
@@ -394,7 +394,9 @@ public sealed class CouchbaseManager : ICouchbaseManager
             GetAllQueryIndexOptions.Default.CancellationToken(cancellationToken)
         );
 
-        return indexes.Any(index => index.IsPrimary || index.Name == "#primary");
+        return indexes.Any(index =>
+            index.IsPrimary || string.Equals(index.Name, "#primary", StringComparison.OrdinalIgnoreCase)
+        );
     }
 
     private async Task _CreatePrimaryIndexOnCollectionAsync(string clusterKey, ICouchbaseCollection collection)
@@ -408,9 +410,9 @@ public sealed class CouchbaseManager : ICouchbaseManager
                 {
                     var options = CreatePrimaryQueryIndexOptions
                         .Default.IndexName("#primary")
-                        .IgnoreIfExists(true)
+                        .IgnoreIfExists(ignoreIfExists: true)
                         .Timeout(5.Seconds())
-                        .Deferred(false)
+                        .Deferred(deferred: false)
                         .CancellationToken(token);
 
                     await collection.QueryIndexes.CreatePrimaryIndexAsync(options);

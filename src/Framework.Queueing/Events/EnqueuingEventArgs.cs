@@ -1,7 +1,8 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.ComponentModel;
 
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
 namespace Framework.Queueing;
 

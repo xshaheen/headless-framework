@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 namespace Framework.Blobs.Azure.Internals;
 
@@ -16,6 +16,6 @@ public sealed class AzureNextPageResult : INextPageResult
 
     public required Func<AzureNextPageResult, Task<AzureNextPageResult>>? AzureNextPageFunc { get; init; }
 
-    public Func<PagedFileListResult, Task<INextPageResult>>? NextPageFunc =>
+    public Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc =>
         AzureNextPageFunc is null ? null : async result => await AzureNextPageFunc.Invoke(this);
 }

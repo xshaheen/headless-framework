@@ -18,16 +18,10 @@ public static class SerializerExtensions
 
     public static T? Deserialize<T>(this ISerializer serializer, string? data)
     {
-        byte[] bytes;
-
-        if (data is null)
-        {
-            bytes = [];
-        }
-        else
-        {
-            bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
-        }
+        var bytes =
+            data is null ? []
+            : serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data)
+            : Convert.FromBase64String(data);
 
         return serializer.Deserialize<T>(new MemoryStream(bytes));
     }

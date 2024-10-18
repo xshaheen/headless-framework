@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Checks;
 
@@ -110,14 +110,11 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
 
     public void RemoveChild(string name)
     {
-        var featureToRemove = _children.Find(f => string.Equals(f.Name, name, StringComparison.Ordinal));
-
-        if (featureToRemove is null)
-        {
-            throw new InvalidOperationException(
+        var featureToRemove =
+            _children.Find(f => string.Equals(f.Name, name, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException(
                 $"Could not find a feature named '{name}' in the Children of this feature '{Name}'."
             );
-        }
 
         featureToRemove.Parent = null;
         _children.Remove(featureToRemove);

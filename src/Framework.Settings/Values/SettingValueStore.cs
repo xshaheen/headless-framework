@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Caching;
 using Framework.Kernel.BuildingBlocks.Abstractions;
@@ -63,7 +63,7 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var item = await _GetCachedItemAsync(name, providerName, providerKey);
+        var item = await _GetCachedItemAsync(name, providerName, providerKey, cancellationToken);
 
         return item.Value;
     }
@@ -74,7 +74,7 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await repository.GetListAsync(providerName, providerKey);
+        var settings = await repository.GetListAsync(providerName, providerKey, cancellationToken);
 
         return settings.ConvertAll(x => new SettingValue(x.Name, x.Value));
     }
@@ -91,12 +91,12 @@ public sealed class SettingValueStore(
         if (names.Length == 1)
         {
             var name = names[0];
-            var value = await GetOrDefaultAsync(name, providerName, providerKey);
+            var value = await GetOrDefaultAsync(name, providerName, providerKey, cancellationToken);
 
             return [new SettingValue(name, value)];
         }
 
-        var cacheItems = await _GetCachedItemsAsync(names, providerName, providerKey);
+        var cacheItems = await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken);
 
         return cacheItems
             .Select(item => new SettingValue(_GetSettingNameFormCacheKey(item.Key), item.Value.Value))
@@ -111,23 +111,24 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var setting = await repository.FindAsync(name, providerName, providerKey);
+        var setting = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
 
         if (setting is null)
         {
             setting = new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await repository.InsertAsync(setting);
+            await repository.InsertAsync(setting, cancellationToken);
         }
         else
         {
             setting.Value = value;
-            await repository.UpdateAsync(setting);
+            await repository.UpdateAsync(setting, cancellationToken);
         }
 
         await distributedCache.UpsertAsync(
             SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
             new SettingValueCacheItem(setting.Value),
-            5.Hours()
+            5.Hours(),
+            cancellationToken
         );
     }
 
@@ -138,16 +139,19 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var setting = await repository.FindAsync(name, providerName, providerKey);
+        var setting = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
 
         if (setting is null)
         {
             return;
         }
 
-        await repository.DeleteAsync(setting);
+        await repository.DeleteAsync(setting, cancellationToken);
 
-        await distributedCache.RemoveAsync(SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey));
+        await distributedCache.RemoveAsync(
+            SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            cancellationToken
+        );
     }
 
     #region Cache Helpers
@@ -160,14 +164,19 @@ public sealed class SettingValueStore(
     )
     {
         var cacheKey = _CalculateCacheKey(name, providerName, providerKey);
-        var existValueCacheItem = await distributedCache.GetAsync(cacheKey);
+        var existValueCacheItem = await distributedCache.GetAsync(cacheKey, cancellationToken);
 
         if (existValueCacheItem.HasValue)
         {
             return existValueCacheItem.Value ?? new SettingValueCacheItem(value: null);
         }
 
-        var valueCacheItem = await _CacheAllAndGetAsync(providerName, providerKey, nameToFind: name);
+        var valueCacheItem = await _CacheAllAndGetAsync(
+            providerName,
+            providerKey,
+            nameToFind: name,
+            cancellationToken: cancellationToken
+        );
 
         return valueCacheItem;
     }
@@ -180,7 +189,7 @@ public sealed class SettingValueStore(
     )
     {
         var cacheKeys = names.ConvertAll(x => _CalculateCacheKey(x, providerName, providerKey));
-        var cacheItems = await distributedCache.GetAllAsync(cacheKeys);
+        var cacheItems = await distributedCache.GetAllAsync(cacheKeys, cancellationToken);
 
         if (cacheItems.All(x => x.Value.HasValue))
         {
@@ -193,7 +202,7 @@ public sealed class SettingValueStore(
             .Select(x => _GetSettingNameFormCacheKey(x.Key))
             .ToArray();
 
-        var newCacheItems = await _CacheSomeAsync(notCacheNames, providerName, providerKey);
+        var newCacheItems = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken);
 
         var result = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
 
@@ -216,7 +225,7 @@ public sealed class SettingValueStore(
     )
     {
         var definitions = await _GetDbSettingDefinitionsAsync();
-        var values = await _GetDbSettingValuesAsync(providerName, providerKey);
+        var values = await _GetDbSettingValuesAsync(providerName, providerKey, cancellationToken);
 
         Dictionary<string, SettingValueCacheItem> cacheItems = new(StringComparer.Ordinal);
         SettingValueCacheItem? settingToFind = null;
@@ -234,7 +243,7 @@ public sealed class SettingValueStore(
             }
         }
 
-        await distributedCache.UpsertAllAsync(cacheItems, 5.Hours());
+        await distributedCache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
 
         return settingToFind ?? new SettingValueCacheItem(value: null);
     }
@@ -246,8 +255,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var definitions = await _GetDbSettingDefinitionsAsync(names);
-        var values = await _GetDbSettingValuesAsync(providerName, providerKey, names);
+        var definitions = await _GetDbSettingDefinitionsAsync(names, cancellationToken);
+        var values = await _GetDbSettingValuesAsync(providerName, providerKey, names, cancellationToken);
 
         var cacheItems = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
 
@@ -258,7 +267,7 @@ public sealed class SettingValueStore(
             cacheItems[cacheKey] = new SettingValueCacheItem(settingValue);
         }
 
-        await distributedCache.UpsertAllAsync(cacheItems, 5.Hours());
+        await distributedCache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
 
         return cacheItems;
     }
@@ -286,7 +295,7 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var values = await repository.GetListAsync(providerName, providerKey);
+        var values = await repository.GetListAsync(providerName, providerKey, cancellationToken);
 
         return values.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
@@ -298,7 +307,7 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var values = await repository.GetListAsync(names, providerName, providerKey);
+        var values = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
 
         return values.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
@@ -318,7 +327,7 @@ public sealed class SettingValueStore(
             return Array.Empty<SettingDefinition>();
         }
 
-        var definitions = await settingDefinitionManager.GetAllAsync();
+        var definitions = await settingDefinitionManager.GetAllAsync(cancellationToken);
 
         return definitions.Where(definition =>
             names.Any(name => string.Equals(name, definition.Name, StringComparison.Ordinal))

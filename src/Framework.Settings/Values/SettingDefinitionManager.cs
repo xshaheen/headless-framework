@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Checks;
 using Framework.Settings.Definitions;
@@ -284,7 +284,9 @@ public sealed class SettingDefinitionManager : ISettingProvider
 
     private List<ISettingValueReadProvider> _CreateProviders()
     {
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         using var scope = _serviceProvider.CreateScope();
+#pragma warning restore MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
 
         return _options
             .ValueProviders.Select(type => (ISettingValueReadProvider)scope.ServiceProvider.GetRequiredService(type))

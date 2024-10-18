@@ -29,9 +29,9 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Get Client
 
-    public SftpClient GetClient()
+    public async ValueTask<SftpClient> GetClient(CancellationToken cancellationToken)
     {
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
         return _client;
     }
@@ -51,9 +51,7 @@ public sealed class SshBlobStorage : IBlobStorage
         foreach (var segment in container)
         {
             // If the current directory is empty, use the current working directory instead of a rooted path.
-            currentDirectory = string.IsNullOrEmpty(currentDirectory)
-                ? segment
-                : string.Concat(currentDirectory, "/", segment);
+            currentDirectory = string.IsNullOrEmpty(currentDirectory) ? segment : $"{currentDirectory}/{segment}";
 
             if (_client.Exists(currentDirectory))
             {
@@ -84,7 +82,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         _logger.LogTrace("Saving {Path}", blobPath);
 
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
         try
         {
@@ -100,7 +98,7 @@ public sealed class SshBlobStorage : IBlobStorage
         catch (SftpPathNotFoundException e)
         {
             _logger.LogDebug(e, "Error saving {Path}: Attempting to create directory", blobPath);
-            await CreateContainerAsync(container);
+            await CreateContainerAsync(container, cancellationToken);
 
             _logger.LogTrace("Saving {Path}", blobPath);
 
@@ -157,7 +155,7 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
         var blobPath = _BuildBlobPath(container, blobName);
 
@@ -222,7 +220,7 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
         var blobPath = _BuildBlobPath(blobContainer, blobName);
         var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
@@ -250,7 +248,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 targetPath
             );
 
-            await CreateContainerAsync(newBlobContainer);
+            await CreateContainerAsync(newBlobContainer, cancellationToken);
             _logger.LogTrace("Renaming {Path} to {NewPath}", blobPath, targetPath);
             await _client.RenameFileAsync(blobPath, targetPath, cancellationToken);
         }
@@ -281,7 +279,7 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
         _logger.LogInformation(
             "Copying {@Container}/{Path} to {@TargetContainer}/{TargetPath}",
@@ -325,7 +323,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Exists
 
-    public ValueTask<bool> ExistsAsync(
+    public async ValueTask<bool> ExistsAsync(
         string blobName,
         string[] container,
         CancellationToken cancellationToken = default
@@ -334,7 +332,7 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
         var blobPath = _BuildBlobPath(container, blobName);
 
@@ -342,7 +340,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var exists = _client.Exists(blobPath);
 
-        return ValueTask.FromResult(exists);
+        return exists;
     }
 
     #endregion
@@ -358,7 +356,7 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
         var blobPath = _BuildBlobPath(container, blobName);
 
@@ -398,7 +396,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return result;
     }
 
-    private async Task<INextPageResult> _GetFiles(
+    private async ValueTask<INextPageResult> _GetFiles(
         string? searchPattern,
         int page,
         int pageSize,
@@ -446,9 +444,9 @@ public sealed class SshBlobStorage : IBlobStorage
         var list = new List<BlobSpecification>();
         var criteria = _GetRequestCriteria(searchPattern);
 
-        _EnsureClientConnected();
+        await _EnsureClientConnectedAsync(cancellationToken);
 
-        // NOTE: This could be very expensive the larger the directory structure you have as we aren't efficiently doing paging.
+        // NOTE: This could be expensive the larger the directory structure you have as we aren't efficiently doing paging.
         var recordsToReturn = limit.HasValue ? (skip.GetValueOrDefault() * limit) + limit : null;
 
         _logger.LogTrace(
@@ -526,7 +524,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 break;
             }
 
-            // If prefix (current directory) is empty, use current working directory instead of a rooted path.
+            // If the prefix (current directory) is empty, use the current working directory instead of a rooted path.
             var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : $"{pathPrefix}/{file.Name}";
 
             if (file.IsDirectory)
@@ -608,7 +606,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Delete Directory
 
-    private async Task<int> _DeleteDirectoryAsync(
+    public async Task<int> DeleteDirectoryAsync(
         string directory,
         bool includeSelf = true,
         CancellationToken cancellationToken = default
@@ -627,7 +625,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
             if (file.IsDirectory)
             {
-                count += await _DeleteDirectoryAsync(file.FullName, true, cancellationToken);
+                count += await DeleteDirectoryAsync(file.FullName, includeSelf: true, cancellationToken);
             }
             else
             {
@@ -671,7 +669,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Build Clients
 
-    private void _EnsureClientConnected()
+    private async ValueTask _EnsureClientConnectedAsync(CancellationToken cancellationToken)
     {
         if (_client.IsConnected)
         {
@@ -680,7 +678,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         _logger.LogTrace("Connecting to {Host}:{Port}", _client.ConnectionInfo.Host, _client.ConnectionInfo.Port);
 
-        _client.Connect();
+        await _client.ConnectAsync(cancellationToken);
 
         _logger.LogTrace(
             "Connected to {Host}:{Port} in {WorkingDirectory}",

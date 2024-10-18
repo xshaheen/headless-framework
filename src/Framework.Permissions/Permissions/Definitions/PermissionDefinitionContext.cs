@@ -67,11 +67,10 @@ public sealed class PermissionDefinitionContext(IServiceProvider serviceProvider
     {
         var group = GetGroupOrNull(name);
 
-        return group is null
-            ? throw new InvalidOperationException(
+        return group
+            ?? throw new InvalidOperationException(
                 $"Could not find a permission definition group with the given name: {name}"
-            )
-            : group;
+            );
     }
 
     public PermissionGroupDefinition? GetGroupOrNull(string name)

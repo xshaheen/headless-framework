@@ -195,7 +195,7 @@ public static class EntityTypeBuilderExtensions
         const string deletedByName = nameof(IDeleteAudit<string, object>.DeletedBy);
         const string restoredByName = nameof(IDeleteAudit<string, object>.RestoredBy);
 
-        builder.Property(isDeletedName).IsRequired().HasDefaultValue(false).HasColumnName(isDeletedName);
+        builder.Property(isDeletedName).IsRequired().HasDefaultValue(value: false).HasColumnName(isDeletedName);
         builder.Property(dateDeletedName).IsRequired(false).HasColumnName(dateDeletedName);
         builder.Property(dateRestoredName).IsRequired(false).HasColumnName(dateRestoredName);
 
@@ -292,7 +292,7 @@ public static class EntityTypeBuilderExtensions
         const string suspendedByName = nameof(ISuspendAudit<string, object>.SuspendedBy);
         const string restoredByName = nameof(ISuspendAudit<string, object>.RestoredBy);
 
-        builder.Property(isSuspended).IsRequired().HasDefaultValue(false).HasColumnName(isSuspended);
+        builder.Property(isSuspended).IsRequired().HasDefaultValue(value: false).HasColumnName(isSuspended);
         builder.Property(dateSuspendedName).IsRequired(false).HasColumnName(dateSuspendedName);
         builder.Property(dateRestoredName).IsRequired(false).HasColumnName(dateRestoredName);
 

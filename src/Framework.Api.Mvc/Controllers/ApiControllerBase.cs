@@ -84,7 +84,7 @@ public abstract class ApiControllerBase : ControllerBase
             )
             .ToDictionary(
                 failureGroup => failureGroup.Key,
-                failureGroup => (IReadOnlyList<ErrorDescriptor>) [.. failureGroup],
+                failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
                 StringComparer.Ordinal
             );
 

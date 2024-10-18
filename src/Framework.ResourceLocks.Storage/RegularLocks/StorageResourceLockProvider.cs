@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -23,7 +23,7 @@ public sealed class StorageResourceLockProvider(
     IOptions<ResourceLockOptions> optionsAccessor
 ) : IResourceLockProvider
 {
-    private readonly IResourceLockStorage _storage = new ScopedResourceLockStorage(storage, optionsAccessor);
+    private readonly ScopedResourceLockStorage _storage = new(storage, optionsAccessor);
     private bool _isSubscribed;
     private readonly AsyncLock _lock = new();
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _resetEvents = new(StringComparer.Ordinal);

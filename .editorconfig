@@ -251,7 +251,7 @@ dotnet_diagnostic.vsthrd110.severity = error
 # VSTHRD002: Avoid problematic synchronous waits
 dotnet_diagnostic.vsthrd002.severity = none
 # MA0041: Make property static (deprecated, use CA1822 instead)
-dotnet_diagnostic.ma0041.severity = suggestion
+dotnet_diagnostic.ma0041.severity = none
 # MA0045: Do not use blocking call (make method async)
 dotnet_diagnostic.ma0045.severity = suggestion
 # MA0097: A class that implements IComparable<T> or IComparable should override comparison operators. Justification: .NET has CA1036

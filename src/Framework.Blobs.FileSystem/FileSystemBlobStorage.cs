@@ -307,7 +307,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
         }
 
         var result = new PagedFileListResult(_ =>
-            Task.FromResult(_GetFiles(directoryPath, searchPattern, 1, pageSize))
+            ValueTask.FromResult<INextPageResult>(_GetFiles(directoryPath, searchPattern, 1, pageSize))
         );
 
         await result.NextPageAsync();
@@ -315,7 +315,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
         return result;
     }
 
-    private INextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
+    private NextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
     {
         var list = new List<BlobSpecification>();
 
@@ -373,7 +373,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
             HasMore = hasMore,
             Blobs = list,
             NextPageFunc = hasMore
-                ? _ => Task.FromResult(_GetFiles(directoryPath, searchPattern, page + 1, pageSize))
+                ? _ =>
+                    ValueTask.FromResult<INextPageResult>(_GetFiles(directoryPath, searchPattern, page + 1, pageSize))
                 : null,
         };
     }
