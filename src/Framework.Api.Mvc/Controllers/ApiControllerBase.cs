@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using FluentValidation.Results;
-using Framework.Api.Core.Abstractions;
+using Framework.Api.Abstractions;
 using Framework.Kernel.Primitives;
 using Mediator;
 using Microsoft.AspNetCore.Mvc;

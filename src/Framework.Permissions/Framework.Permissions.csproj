@@ -10,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Api.Core\Framework.Api.Core.csproj" />
+    <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
   </ItemGroup>
 

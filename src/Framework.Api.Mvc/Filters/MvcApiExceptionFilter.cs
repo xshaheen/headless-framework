@@ -3,8 +3,8 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using FluentValidation;
-using Framework.Api.Core.Abstractions;
-using Framework.Api.Core.Resources;
+using Framework.Api.Abstractions;
+using Framework.Api.Resources;
 using Framework.FluentValidation;
 using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Primitives;

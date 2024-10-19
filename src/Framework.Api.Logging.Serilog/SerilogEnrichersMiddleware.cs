@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Api.Core.Abstractions;
+using Framework.Api.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Serilog.Context;
 using Serilog.Core;

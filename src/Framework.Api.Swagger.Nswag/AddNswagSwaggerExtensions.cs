@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Api.Core.ApiExplorer;
+using Framework.Api.ApiExplorer;
 using Framework.Api.Swagger.Nswag.Extensions;
 using Framework.Api.Swagger.Nswag.OperationProcessors;
 using Framework.Api.Swagger.Nswag.SchemaProcessors;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Api.Core.Abstractions;
+using Framework.Api.Abstractions;
 using Framework.Kernel.Checks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
