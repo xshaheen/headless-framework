@@ -140,7 +140,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 
         var details = _problemDetailsCreator.Conflict(
             context.HttpContext,
-            [SharedMessageDescriber.General.ConcurrencyFailure()]
+            [GeneralMessageDescriber.ConcurrencyFailure()]
         );
 
         context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict };

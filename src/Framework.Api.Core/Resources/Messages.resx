@@ -36,4 +36,10 @@
   <data name="g:obsolete_api" xml:space="preserve">
     <value>Obsolete API. This request is not available for this account.</value>
   </data>
+  <data name="g:user_not_founded" xml:space="preserve">
+    <value>Something went wrong. Try to log in again.</value>
+  </data>
+  <data name="g:invalid_recaptcha" xml:space="preserve">
+    <value>Recaptcha host, and request host do not match.</value>
+  </data>
 </root>
