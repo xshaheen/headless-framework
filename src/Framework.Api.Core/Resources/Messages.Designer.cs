@@ -87,6 +87,15 @@ namespace Framework.Api.Core.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to You are not authenticated to execute request..
+        /// </summary>
+        internal static string g_not_authorized {
+            get {
+                return ResourceManager.GetString("g:not_authorized", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Obsolete API. This request is not available for this account..
         /// </summary>
         internal static string g_obsolete_api {

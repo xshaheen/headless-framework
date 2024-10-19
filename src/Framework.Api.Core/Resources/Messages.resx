@@ -42,4 +42,7 @@
   <data name="g:invalid_recaptcha" xml:space="preserve">
     <value>Recaptcha host, and request host do not match.</value>
   </data>
+  <data name="g:not_authorized" xml:space="preserve">
+    <value>You are not authenticated to execute request.</value>
+  </data>
 </root>

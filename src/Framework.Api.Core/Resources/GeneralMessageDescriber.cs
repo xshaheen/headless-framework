@@ -21,6 +21,11 @@ public static class GeneralMessageDescriber
         return new(code: "g:obsolete_api", description: Messages.g_obsolete_api);
     }
 
+    public static ErrorDescriptor NotAuthorized()
+    {
+        return new ErrorDescriptor(code: "g:not_authorized", description: Messages.g_not_authorized);
+    }
+
     public static ErrorDescriptor FeatureCurrentlyUnavailable()
     {
         return new(code: "g:feature_currently_not_available", description: Messages.g_feature_currently_unavailable);

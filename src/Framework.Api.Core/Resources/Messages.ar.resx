@@ -34,4 +34,7 @@
   <data name="g:invalid_recaptcha" xml:space="preserve">
     <value>التحقق الآلي خاطئ او انتهت المدة من فضلك اعد المحاولة.</value>
   </data>
+  <data name="g:not_authorized" xml:space="preserve">
+    <value>أنت لا تملك الصلاحيات لتنفيذ هذا الطلب.</value>
+  </data>
 </root>
