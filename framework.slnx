@@ -1,13 +1,16 @@
 ﻿<Solution>
-  <Folder Name="/Api/">
+  <Folder Name="/Api.Swagger/">
     <Project Path="demo\Framework.Api.Swagger.Nswag.Demo\Framework.Api.Swagger.Nswag.Demo.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api.Swagger.Nswag\Framework.Api.Swagger.Nswag.csproj" />
+    <Project Path="src\Framework.Api.Swagger.Swashbuckle.OData\Framework.Api.Swagger.Swashbuckle.OData.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api.Swagger.Swashbuckle\Framework.Api.Swagger.Swashbuckle.csproj" />
+  </Folder>
+  <Folder Name="/Api/">
     <Project Path="src\Framework.Api.DataProtection\Framework.Api.DataProtection.csproj" />
     <Project Path="src\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
     <Project Path="src\Framework.Api.Logging.Serilog\Framework.Api.Logging.Serilog.csproj" />
     <Project Path="src\Framework.Api.MinimalApi\Framework.Api.MinimalApi.csproj" />
     <Project Path="src\Framework.Api.Mvc\Framework.Api.Mvc.csproj" />
-    <Project Path="src\Framework.Api.Swagger.Nswag\Framework.Api.Swagger.Nswag.csproj" />
-    <Project Path="src\Framework.Api.Swagger.Swashbuckle\Framework.Api.Swagger.Swashbuckle.csproj" />
     <Project Path="src\Framework.Api.Testing\Framework.Api.Testing.csproj" />
     <Project Path="src\Framework.Api\Framework.Api.csproj" />
   </Folder>
@@ -22,11 +25,6 @@
     <Project Path="src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
     <Project Path="src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
     <Project Path="src\Framework.Caching\Framework.Caching.csproj" />
-  </Folder>
-  <Folder Name="/Database.Orm/">
-    <Project Path="src\Framework.Orm.Couchbase\Framework.Orm.Couchbase.csproj" />
-    <Project Path="src\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" />
-    <Project Path="src\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
   </Folder>
   <Folder Name="/Database/">
     <Project Path="src\Framework.Database.PostgreSql\Framework.Database.PostgreSql.csproj" />
@@ -82,6 +80,11 @@
     <Project Path="src\Framework.Messaging\Framework.Messaging.csproj" />
     <Project Path="src\Framework.Queueing.Foundatio\Framework.Queueing.Foundatio.csproj" />
     <Project Path="src\Framework.Queueing\Framework.Queueing.csproj" />
+  </Folder>
+  <Folder Name="/Orms/">
+    <Project Path="src\Framework.Orm.Couchbase\Framework.Orm.Couchbase.csproj" />
+    <Project Path="src\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" />
+    <Project Path="src\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
   </Folder>
   <Folder Name="/Permissions/">
     <Project Path="src\Framework.Permissions\Framework.Permissions.csproj" />
