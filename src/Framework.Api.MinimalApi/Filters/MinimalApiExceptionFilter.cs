@@ -72,7 +72,7 @@ public sealed partial class MinimalApiExceptionFilter(
 
             var details = problemDetailsCreator.Conflict(
                 context.HttpContext,
-                [SharedMessageDescriber.General.ConcurrencyFailure()]
+                [GeneralMessageDescriber.ConcurrencyFailure()]
             );
 
             return TypedResults.Problem(details);

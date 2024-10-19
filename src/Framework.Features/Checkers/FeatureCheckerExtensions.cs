@@ -58,8 +58,8 @@ public static class FeatureCheckerExtensions
     {
         if (!await featureChecker.IsEnabledAsync(featureName))
         {
-            var error = SharedMessageDescriber
-                .General.FeatureCurrentlyUnavailable()
+            var error = GeneralMessageDescriber
+                .FeatureCurrentlyUnavailable()
                 .WithParam("Type", "Single")
                 .WithParam("FeatureNames", new[] { featureName });
 
@@ -84,8 +84,8 @@ public static class FeatureCheckerExtensions
             {
                 if (!await featureChecker.IsEnabledAsync(featureName))
                 {
-                    var error = SharedMessageDescriber
-                        .General.FeatureCurrentlyUnavailable()
+                    var error = GeneralMessageDescriber
+                        .FeatureCurrentlyUnavailable()
                         .WithParam("Type", "And")
                         .WithParam("FeatureNames", featureNames);
 
@@ -103,8 +103,8 @@ public static class FeatureCheckerExtensions
                 }
             }
 
-            var error = SharedMessageDescriber
-                .General.FeatureCurrentlyUnavailable()
+            var error = GeneralMessageDescriber
+                .FeatureCurrentlyUnavailable()
                 .WithParam("Type", "Or")
                 .WithParam("FeatureNames", featureNames);
 

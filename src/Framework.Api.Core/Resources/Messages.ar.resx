@@ -28,4 +28,10 @@
   <data name="g:obsolete_api" xml:space="preserve">
     <value>واجهة برمجة تطبيقات قديمة. هذا الطلب غير متوفر لهذا الحساب.</value>
   </data>
+  <data name="g:user_not_founded" xml:space="preserve">
+    <value>حدث خطأ ما. حاول تسجيل الدخول مرة أخرى.</value>
+  </data>
+  <data name="g:invalid_recaptcha" xml:space="preserve">
+    <value>التحقق الآلي خاطئ او انتهت المدة من فضلك اعد المحاولة.</value>
+  </data>
 </root>
