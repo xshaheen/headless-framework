@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.OData.Query;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
-namespace Framework.Api.Swagger.Swashbuckle.OperationFilters;
+namespace Framework.Api.Swagger.Swashbuckle.OData;
 
 /// <summary>https://docs.microsoft.com/en-us/odata/concepts/queryoptions-overview</summary>
 public sealed class ODataOperationFilter : IOperationFilter
