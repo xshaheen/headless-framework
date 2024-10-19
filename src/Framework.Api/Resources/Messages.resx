@@ -45,4 +45,138 @@
   <data name="g:not_authorized" xml:space="preserve">
     <value>You are not authenticated to execute request.</value>
   </data>
+  <data name="auth:invalid_token" xml:space="preserve">
+    <value>Invalid token.</value>
+  </data>
+  <data name="auth:recovery_code_redemption_failed" xml:space="preserve">
+    <value>Recovery code redemption failed.</value>
+  </data>
+  <data name="auth:login_already_linked" xml:space="preserve">
+    <value>A user with this login already exists. External logins can only be associated with one account.</value>
+  </data>
+  <data name="auth:invalid_username" xml:space="preserve">
+    <value>UserName "{0}" is invalid, can only contain letters or digits.</value>
+  </data>
+  <data name="auth:invalid_email" xml:space="preserve">
+    <value>Email "{0}" is invalid.</value>
+  </data>
+  <data name="auth:duplicate_username" xml:space="preserve">
+    <value>Username "{0}" is already taken.</value>
+  </data>
+  <data name="auth:duplicate_email" xml:space="preserve">
+    <value>Email "{0}" is already taken.</value>
+  </data>
+  <data name="auth:invalid_role" xml:space="preserve">
+    <value>Role name "{0}" is invalid.</value>
+  </data>
+  <data name="auth:duplicate_role_name" xml:space="preserve">
+    <value>Role name "{0}" is already exist.</value>
+  </data>
+  <data name="auth:user_already_has_password" xml:space="preserve">
+    <value>User already has a password set.</value>
+  </data>
+  <data name="auth:lockout_not_enabled" xml:space="preserve">
+    <value>Lockout is not enabled for this user.</value>
+  </data>
+  <data name="auth:already_in_role" xml:space="preserve">
+    <value>User already in role "{0}".</value>
+  </data>
+  <data name="auth:not_in_role" xml:space="preserve">
+    <value>User is not in role "{0}".</value>
+  </data>
+  <data name="auth:password_mismatch" xml:space="preserve">
+    <value>Incorrect password.</value>
+  </data>
+  <data name="auth:password_too_short" xml:space="preserve">
+    <value>Passwords must be at least {0} characters.</value>
+  </data>
+  <data name="auth:password_requires_unique_chars" xml:space="preserve">
+    <value>Passwords must use at least {0} different characters.</value>
+  </data>
+  <data name="auth:password_requires_non_alphanumeric" xml:space="preserve">
+    <value>Passwords must have at least one non alphanumeric character.</value>
+  </data>
+  <data name="auth:password_requires_digit" xml:space="preserve">
+    <value>Passwords must have at least one digit ['0'_'9'].</value>
+  </data>
+  <data name="auth:password_requires_lower" xml:space="preserve">
+    <value>Passwords must have at least one lowercase ['a'_'z'].</value>
+  </data>
+  <data name="auth:password_requires_upper" xml:space="preserve">
+    <value>Passwords must have at least one uppercase ['A'_'Z'].</value>
+  </data>
+  <data name="auth:email_already_linked" xml:space="preserve">
+    <value>Email is already linked to this account.</value>
+  </data>
+  <data name="auth:user_locked_out" xml:space="preserve">
+    <value>You tried to enter password many times. The account temporarily suspended. Try again later.</value>
+  </data>
+  <data name="auth:login_requires_confirmation" xml:space="preserve">
+    <value>User cannot sign in without a confirmed account.</value>
+  </data>
+  <data name="auth:login_requires_two_factor" xml:space="preserve">
+    <value>Sign in requires two factor authentication.</value>
+  </data>
+  <data name="auth:login_failed" xml:space="preserve">
+    <value>Failed to sign in. Invalid email or password.</value>
+  </data>
+  <data name="auth:user_requires_alternate_login_or_password" xml:space="preserve">
+    <value>Can not remove this external login. There is no other registration method please set a password first.</value>
+  </data>
+  <data name="auth:email_already_confirmed" xml:space="preserve">
+    <value>This email already confirmed.</value>
+  </data>
+  <data name="auth:login_not_found" xml:space="preserve">
+    <value>Login account not associated with any user.</value>
+    <comment>Ignore this it just a message between front-end and back-end</comment>
+  </data>
+  <data name="auth:login_token_validation_failed" xml:space="preserve">
+    <value>Failed to connect to the authentication provider.</value>
+    <comment>General | Failed to connect to google or facebook to login.</comment>
+  </data>
+  <data name="auth:invalid_login_token" xml:space="preserve">
+    <value>Invalid login token,</value>
+  </data>
+  <data name="auth:remove_password_requires_alternate_login" xml:space="preserve">
+    <value>In order to remove the password, the account must have an alternative to login.</value>
+  </data>
+  <data name="auth:invalid_login_identifier" xml:space="preserve">
+    <value>Invalid login identifier. To login, you must use your phone number, national ID, or your email address.</value>
+  </data>
+  <data name="auth:expired_token" xml:space="preserve">
+    <value>The token has expired.</value>
+  </data>
+  <data name="user:duplicated_phone_number" xml:space="preserve">
+    <value>Duplicated phone number.</value>
+  </data>
+  <data name="user:duplicated_national_id" xml:space="preserve">
+    <value>Duplicated national ID.</value>
+  </data>
+  <data name="user:request_forget_password_cooldown" xml:space="preserve">
+    <value>You can only request forget password once every {0}. Please wait {1} before trying again.</value>
+  </data>
+  <data name="user:request_forget_password_attempts_exceeded" xml:space="preserve">
+    <value>You have exceeded the maximum number of attempts to request forget password. Please try again after {0}.</value>
+  </data>
+  <data name="user:email_already_linked_to_other_user" xml:space="preserve">
+    <value>Email {0} is already linked to another user.</value>
+  </data>
+  <data name="user:request_verify_email_attempts_exceeded" xml:space="preserve">
+    <value>You have exceeded the maximum number of attempts `{0}` to verify your email address. Please try again after {1}.</value>
+  </data>
+  <data name="user:request_verify_email_cooldown" xml:space="preserve">
+    <value>You can only request to verify your email address once every {0}. Please wait {1} before trying again.</value>
+  </data>
+  <data name="user:phone_number_already_linked_to_other_user" xml:space="preserve">
+    <value>Phone number {0} is already linked to another user.</value>
+  </data>
+  <data name="user:already_unblocked" xml:space="preserve">
+    <value>User already unblocked.</value>
+  </data>
+  <data name="user:already_blocked" xml:space="preserve">
+    <value>User already blocked.</value>
+  </data>
+  <data name="user:already_unlocked" xml:space="preserve">
+    <value>User is not locked out.</value>
+  </data>
 </root>

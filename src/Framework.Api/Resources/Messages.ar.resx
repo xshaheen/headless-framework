@@ -37,4 +37,136 @@
   <data name="g:not_authorized" xml:space="preserve">
     <value>أنت لا تملك الصلاحيات لتنفيذ هذا الطلب.</value>
   </data>
+  <data name="auth:invalid_token" xml:space="preserve">
+    <value>الرمز غير صالح.</value>
+  </data>
+  <data name="auth:recovery_code_redemption_failed" xml:space="preserve">
+    <value>فشل إيجاد رمز الاسترداد.</value>
+  </data>
+  <data name="auth:login_already_linked" xml:space="preserve">
+    <value>يوجد بالفعل مستخدم مع تسجيل الدخول هذا.</value>
+  </data>
+  <data name="auth:invalid_username" xml:space="preserve">
+    <value>اسم المستخدم "{0}" غير صالح، يجب أن يحتوي فقط على أحرف أو أرقام بالنمط المحدد.</value>
+  </data>
+  <data name="auth:invalid_email" xml:space="preserve">
+    <value>البريد الإلكتروني "{0}" غير صالح.</value>
+  </data>
+  <data name="auth:duplicate_username" xml:space="preserve">
+    <value>اسم المستخدم "{0}" مستخدم بالفعل.</value>
+  </data>
+  <data name="auth:duplicate_email" xml:space="preserve">
+    <value>البريد الإلكتروني "{0}" مستخدم بالفعل.</value>
+  </data>
+  <data name="auth:invalid_role" xml:space="preserve">
+    <value>"{0}" عنوان الصلاحية غير صحيح.</value>
+  </data>
+  <data name="auth:duplicate_role_name" xml:space="preserve">
+    <value>اسم الصلاحية "{0}" موجود بالفعل.</value>
+  </data>
+  <data name="auth:user_already_has_password" xml:space="preserve">
+    <value>تم تعيين كلمة مرور مسبقا لهذا الحساب بالفعل.</value>
+  </data>
+  <data name="auth:lockout_not_enabled" xml:space="preserve">
+    <value>التعطيل المؤقت غير مفعل لهذا المستخدم.</value>
+  </data>
+  <data name="auth:already_in_role" xml:space="preserve">
+    <value>المستخدم بالفعل يملك الصلاحية "{0}".</value>
+  </data>
+  <data name="auth:not_in_role" xml:space="preserve">
+    <value>هذا الحساب لا يملك الصلاحية "{0}".</value>
+  </data>
+  <data name="auth:password_mismatch" xml:space="preserve">
+    <value>كلمة سر خاطئة.</value>
+  </data>
+  <data name="auth:password_too_short" xml:space="preserve">
+    <value>يجب أن تتكون كلمة المرور من "{0}" حرف على الأقل.</value>
+  </data>
+  <data name="auth:password_requires_unique_chars" xml:space="preserve">
+    <value>يجب أن تستخدم كلمات المرور "{0}" حروف مختلفة على الأقل.</value>
+  </data>
+  <data name="auth:password_requires_non_alphanumeric" xml:space="preserve">
+    <value>يجب أن تحتوي كلمة المرور على حرف واحد غير أبجدي على الأقل.</value>
+  </data>
+  <data name="auth:password_requires_digit" xml:space="preserve">
+    <value>كلمة المرور يجب ان تحتوي علي رقم علي رقم واحد علي الأقل.</value>
+  </data>
+  <data name="auth:password_requires_lower" xml:space="preserve">
+    <value>يجب أن تحتوي كلمة المرور على حرف صغير واحد على الأقل ['a' _ 'z'].</value>
+  </data>
+  <data name="auth:password_requires_upper" xml:space="preserve">
+    <value>يجب أن تحتوي كلمة المرور على حرف كبير واحد على الأقل ['A' _ 'Z'].</value>
+  </data>
+  <data name="auth:email_already_linked" xml:space="preserve">
+    <value>البريد الإلكتروني مرتبط بالفعل بهذا الحساب.</value>
+  </data>
+  <data name="auth:login_failed" xml:space="preserve">
+    <value>فشل تسجيل الدخول. البريد الإلكتروني أو كلمة المرور غير صحيح.</value>
+  </data>
+  <data name="auth:login_requires_confirmation" xml:space="preserve">
+    <value>لا يمكن للمستخدم تسجيل الدخول بدون حساب تأكيد الحساب.</value>
+  </data>
+  <data name="auth:login_requires_two_factor" xml:space="preserve">
+    <value>يتطلب تسجيل الدخول المصادقة الثنائية.</value>
+  </data>
+  <data name="auth:user_locked_out" xml:space="preserve">
+    <value>لقد حاولت إدخال كلمة المرور عدة مرات. الحساب معلق مؤقتا. حاول مرة أخرى في وقت لاحق.</value>
+  </data>
+  <data name="auth:user_requires_alternate_login_or_password" xml:space="preserve">
+    <value>لا يمكن حذف تسجيل الدخول الخارجي. لا يوجد طريقة تسجيل آخري يرجى تعيين كلمة سر أولاً.</value>
+  </data>
+  <data name="auth:email_already_confirmed" xml:space="preserve">
+    <value>هذا البريد الإلكتروني تم تأكيده من قبل بالفعل.</value>
+  </data>
+  <data name="auth:login_not_found" xml:space="preserve">
+    <value>حساب تسجيل الدخول غير مرتبط بأي مستخدم.</value>
+  </data>
+  <data name="auth:login_token_validation_failed" xml:space="preserve">
+    <value>فشل في الاتصال بمزود المصادقة.</value>
+  </data>
+  <data name="auth:invalid_login_token" xml:space="preserve">
+    <value>رمز تسجيل الدخول غير صالح.</value>
+  </data>
+  <data name="auth:remove_password_requires_alternate_login" xml:space="preserve">
+    <value>لكي تقوم بحذف كلمة المرور يجب ان يملك الحساب بديل لتسجيل الدخول.</value>
+  </data>
+  <data name="auth:invalid_login_identifier" xml:space="preserve">
+    <value>لم يتم التعرف علي معرف تسجيل الدخول. لتسجيل الدخول يجب عليك استخدام رقم الموبايل الخاص بحسابك أو الرقم القومي أو البريد الإلكتروني.</value>
+  </data>
+  <data name="auth:expired_token" xml:space="preserve">
+    <value>انتهت صلاحية الرمز.</value>
+  </data>
+  <data name="user:duplicated_national_id" xml:space="preserve">
+    <value>الرقم القومي مكرر.</value>
+  </data>
+  <data name="user:duplicated_phone_number" xml:space="preserve">
+    <value>رقم هاتف مكرر.</value>
+  </data>
+  <data name="user:request_verify_email_attempts_exceeded" xml:space="preserve">
+    <value>لقد تجاوزت الحد الأقصى لعدد المحاولات `{0}` للتحقق من عنوان بريدك الإلكتروني. يرجى المحاولة مرة أخرى بعد {1}.</value>
+  </data>
+  <data name="user:request_forget_password_cooldown" xml:space="preserve">
+    <value>يمكنك طلب نسيان كلمة المرور مرة واحدة فقط كل {0}. الرجاء الانتظار {1} قبل المحاولة مرة أخرى.</value>
+  </data>
+  <data name="user:request_forget_password_attempts_exceeded" xml:space="preserve">
+    <value>لقد تجاوزت الحد الأقصى لعدد المحاولات لطلب نسيان كلمة المرور. يرجى المحاولة مرة أخرى بعد {0}.</value>
+  </data>
+  <data name="user:already_unlocked" xml:space="preserve">
+    <value>تسجيل الدخول لهذا الحساب غير مؤمن بالفعل.</value>
+  </data>
+  <data name="user:request_verify_email_cooldown" xml:space="preserve">
+    <value>لا يمكنك طلب التحقق من عنوان بريدك الإلكتروني إلا مرة واحدة كل {0}. الرجاء الانتظار {1} قبل المحاولة مرة أخرى.</value>
+  </data>
+  <data name="user:phone_number_already_linked_to_other_user" xml:space="preserve">
+    <value>رقم الهاتف {0} مرتبط بالفعل بمستخدم آخر.</value>
+  </data>
+  <data name="user:already_unblocked" xml:space="preserve">
+    <value>تم إلغاء حظر المستخدم بالفعل.</value>
+  </data>
+  <data name="user:already_blocked" xml:space="preserve">
+    <value>تم حظر المستخدم بالفعل.</value>
+  </data>
+  <data name="user:email_already_linked_to_other_user" xml:space="preserve">
+    <value>البريد الإلكتروني {0} مرتبط بالفعل بمستخدم آخر.</value>
+  </data>
 </root>
