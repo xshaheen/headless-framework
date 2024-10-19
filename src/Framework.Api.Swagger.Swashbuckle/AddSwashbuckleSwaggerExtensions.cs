@@ -2,7 +2,7 @@
 
 using System.Reflection;
 using Asp.Versioning.ApiExplorer;
-using Framework.Api.Core.ApiExplorer;
+using Framework.Api.ApiExplorer;
 using Framework.Api.Swagger.Swashbuckle.Extensions;
 using Framework.Api.Swagger.Swashbuckle.OperationFilters;
 using Framework.Kernel.BuildingBlocks;

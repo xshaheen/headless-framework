@@ -1,7 +1,6 @@
 ﻿<Solution>
   <Folder Name="/Api/">
     <Project Path="demo\Framework.Api.Swagger.Nswag.Demo\Framework.Api.Swagger.Nswag.Demo.csproj" Type="Classic C#" />
-    <Project Path="src\Framework.Api.Core\Framework.Api.Core.csproj" />
     <Project Path="src\Framework.Api.DataProtection\Framework.Api.DataProtection.csproj" />
     <Project Path="src\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
     <Project Path="src\Framework.Api.Logging.Serilog\Framework.Api.Logging.Serilog.csproj" />
@@ -10,6 +9,7 @@
     <Project Path="src\Framework.Api.Swagger.Nswag\Framework.Api.Swagger.Nswag.csproj" />
     <Project Path="src\Framework.Api.Swagger.Swashbuckle\Framework.Api.Swagger.Swashbuckle.csproj" />
     <Project Path="src\Framework.Api.Testing\Framework.Api.Testing.csproj" />
+    <Project Path="src\Framework.Api\Framework.Api.csproj" />
   </Folder>
   <Folder Name="/Blobs/">
     <Project Path="src\Framework.Blobs.Aws\Framework.Blobs.Aws.csproj" />
