@@ -4,9 +4,9 @@ using Framework.Features.Definitions;
 using Framework.Features.Values;
 using Framework.Kernel.Primitives;
 
-namespace Framework.Features;
+namespace Framework.Features.Models;
 
-public class FrameworkFeatureOptions
+public class FeatureManagementProviderOptions
 {
     public TypeList<IFeatureDefinitionProvider> DefinitionProviders { get; } = [];
 

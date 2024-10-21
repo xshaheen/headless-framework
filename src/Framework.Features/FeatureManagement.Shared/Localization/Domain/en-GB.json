@@ -1,0 +1,15 @@
+{
+  "culture": "en-GB",
+  "texts": {
+    "Features": "Features",
+    "NoFeatureFoundMessage": "There isn't any available feature.",
+    "Permission:FeatureManagement": "Feature Management",
+    "ManageHostFeatures": "Manage Host Features",
+    "Permission:FeatureManagement.ManageHostFeatures": "Manage Host features",
+    "Volo.Abp.FeatureManagement:InvalidFeatureValue": "{0} feature value is not valid!",
+    "Menu:FeatureManagement": "Feature Management",
+    "ResetToDefault": "Reset to default",
+    "ResetedToDefault": "Reseted to default",
+    "AreYouSureToResetToDefault": "Are you sure to reset to default?"
+  }
+}

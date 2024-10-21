@@ -3,6 +3,7 @@
 using Framework.Features.Checkers;
 using Framework.Features.Definitions;
 using Framework.Features.Filters;
+using Framework.Features.Models;
 using Framework.Features.Providers;
 using Framework.Features.Values;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,9 +34,9 @@ public static class AddFeaturesExtensions
     public static void AddFeatureDefinitionProvider<T>(this IServiceCollection services)
         where T : class, IFeatureDefinitionProvider
     {
-        services.AddSingleton<IFeatureDefinitionProvider, T>();
+        services.AddSingleton<T>();
 
-        services.Configure<FrameworkFeatureOptions>(options =>
+        services.Configure<FeatureManagementProviderOptions>(options =>
         {
             options.DefinitionProviders.Add<T>();
         });
@@ -44,9 +45,9 @@ public static class AddFeaturesExtensions
     public static void AddFeatureValueProvider<T>(this IServiceCollection services)
         where T : class, IFeatureValueProvider
     {
-        services.AddSingleton<IFeatureValueProvider, T>();
+        services.AddSingleton<T>();
 
-        services.Configure<FrameworkFeatureOptions>(options =>
+        services.Configure<FeatureManagementProviderOptions>(options =>
         {
             if (!options.ValueProviders.Contains<T>())
             {
@@ -57,7 +58,7 @@ public static class AddFeaturesExtensions
 
     private static void _AddCoreValueProviders(IHostApplicationBuilder builder)
     {
-        builder.Services.Configure<FrameworkFeatureOptions>(options =>
+        builder.Services.Configure<FeatureManagementProviderOptions>(options =>
         {
             options.ValueProviders.Add<DefaultValueFeatureValueProvider>();
             options.ValueProviders.Add<EditionFeatureValueProvider>();

@@ -1,0 +1,17 @@
+{
+  "culture": "fi",
+  "texts": {
+    "Features": "Ominaisuudet",
+    "NoFeatureFoundMessage": "Käytettävissä olevia ominaisuuksia ei löydy.",
+    "ManageHostFeatures": "Hallinnoi Isäntä Ominaisuuksia",
+    "ManageHostFeaturesText": "Voit hallita isäntäpuolen ominaisuuksia napsauttamalla seuraavaa painiketta.",
+    "Permission:FeatureManagement": "Ominaisuuden Hallinta",
+    "Permission:FeatureManagement.ManageHostFeatures": "Hallinnoi isäntäominaisuuksia",
+    "Volo.Abp.FeatureManagement:InvalidFeatureValue": "Ominaisuuden {0} arvo ei kelpaa!",
+    "Menu:FeatureManagement": "Ominaisuuden hallinta",
+    "ResetToDefault": "Palauta oletusarvo",
+    "ResetedToDefault": "Palautettu oletusarvoon",
+    "AreYouSure": "Oletko varma?",
+    "AreYouSureToResetToDefault": "Oletko varma, että haluat palauttaa oletusarvon?"
+  }
+}

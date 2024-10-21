@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Features.Models;
 using Framework.Kernel.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -20,12 +21,15 @@ public sealed class FeatureDefinitionManager : IFeatureDefinitionManager
     private readonly Lazy<Dictionary<string, FeatureGroupDefinition>> _lazyFeatureGroupDefinitions;
     private readonly Lazy<Dictionary<string, FeatureDefinition>> _lazyFeatureDefinitions;
     private readonly IServiceProvider _serviceProvider;
-    private readonly FrameworkFeatureOptions _options;
+    private readonly FeatureManagementProviderOptions _providerOptions;
 
-    public FeatureDefinitionManager(IOptions<FrameworkFeatureOptions> options, IServiceProvider serviceProvider)
+    public FeatureDefinitionManager(
+        IOptions<FeatureManagementProviderOptions> options,
+        IServiceProvider serviceProvider
+    )
     {
         _serviceProvider = serviceProvider;
-        _options = options.Value;
+        _providerOptions = options.Value;
         _lazyFeatureDefinitions = new(_CreateFeatureDefinitions, isThreadSafe: true);
         _lazyFeatureGroupDefinitions = new(_CreateFeatureGroupDefinitions, isThreadSafe: true);
     }
@@ -56,13 +60,15 @@ public sealed class FeatureDefinitionManager : IFeatureDefinitionManager
         );
     }
 
+    #region Helpers
+
     private Dictionary<string, FeatureGroupDefinition> _CreateFeatureGroupDefinitions()
     {
         var context = new FeatureDefinitionContext();
 
         using var scope = _serviceProvider.CreateScope();
 
-        var providers = _options
+        var providers = _providerOptions
             .DefinitionProviders.Select(p => (IFeatureDefinitionProvider)scope.ServiceProvider.GetRequiredService(p))
             .ToList();
 
@@ -78,12 +84,13 @@ public sealed class FeatureDefinitionManager : IFeatureDefinitionManager
     {
         var features = new Dictionary<string, FeatureDefinition>(StringComparer.Ordinal);
 
-        foreach (var groupDefinition in _lazyFeatureGroupDefinitions.Value.Values)
+        foreach (
+            var feature in _lazyFeatureGroupDefinitions.Value.Values.SelectMany(groupDefinition =>
+                groupDefinition.Features
+            )
+        )
         {
-            foreach (var feature in groupDefinition.Features)
-            {
-                _AddFeatureToDictionaryRecursively(features, feature);
-            }
+            _AddFeatureToDictionaryRecursively(features, feature);
         }
 
         return features;
@@ -104,4 +111,6 @@ public sealed class FeatureDefinitionManager : IFeatureDefinitionManager
             _AddFeatureToDictionaryRecursively(features, child);
         }
     }
+
+    #endregion
 }

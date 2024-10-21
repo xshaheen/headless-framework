@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Features.Definitions;
+using Framework.Features.Models;
 
 namespace Framework.Features.Values;
 

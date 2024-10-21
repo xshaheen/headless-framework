@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Features.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MoreLinq;
@@ -13,13 +14,16 @@ public interface IFeatureValueProviderManager
 
 public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
 {
-    private readonly FrameworkFeatureOptions _options;
+    private readonly FeatureManagementProviderOptions _providerOptions;
     private readonly IServiceProvider _serviceProvider;
     private readonly Lazy<List<IFeatureValueProvider>> _lazyProviders;
 
-    public FeatureValueProviderManager(IServiceProvider serviceProvider, IOptions<FrameworkFeatureOptions> options)
+    public FeatureValueProviderManager(
+        IServiceProvider serviceProvider,
+        IOptions<FeatureManagementProviderOptions> options
+    )
     {
-        _options = options.Value;
+        _providerOptions = options.Value;
         _serviceProvider = serviceProvider;
         _lazyProviders = new(_GetProviders, isThreadSafe: true);
     }
@@ -28,7 +32,7 @@ public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
 
     private List<IFeatureValueProvider> _GetProviders()
     {
-        var providers = _options
+        var providers = _providerOptions
             .ValueProviders.Select(type => (IFeatureValueProvider)_serviceProvider.GetRequiredService(type))
             .ToList();
 
