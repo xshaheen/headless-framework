@@ -1,0 +1,17 @@
+{
+  "culture": "tr",
+  "texts": {
+    "Features": "Özellikler",
+    "NoFeatureFoundMessage": "Hiç özellik yok.",
+    "ManageHostFeatures": "Host Özelliklerini Yönetin",
+    "ManageHostFeaturesText": "Aşağıdaki butona tıklayarak host özelliklerini yönetebilirsiniz.",
+    "Permission:FeatureManagement": "Özellik Yönetimi",
+    "Permission:FeatureManagement.ManageHostFeatures": "Host özelliklerini düzenle",
+    "Volo.Abp.FeatureManagement:InvalidFeatureValue": "{0} özellik değeri geçerli değil!",
+    "Menu:FeatureManagement": "Özellik Yönetimi",
+    "ResetToDefault": "Varsayılana sıfırla",
+    "ResetedToDefault": "Varsayılana sıfırlandı",
+    "AreYouSure": "Emin misiniz?",
+    "AreYouSureToResetToDefault": "Varsayılana sıfırlamak istediğinizden emin misiniz?"
+  }
+}

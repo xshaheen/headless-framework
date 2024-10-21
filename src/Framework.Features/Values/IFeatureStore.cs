@@ -14,3 +14,11 @@ public sealed class NullFeatureStore : IFeatureStore
         return Task.FromResult<string?>(null);
     }
 }
+
+public class FeatureStore(IFeatureManagementStore store) : IFeatureStore
+{
+    public virtual Task<string?> GetOrDefaultAsync(string name, string? providerName, string? providerKey)
+    {
+        return store.GetOrNullAsync(name, providerName, providerKey);
+    }
+}

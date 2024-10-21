@@ -2,7 +2,7 @@
 
 using System.Security.Claims;
 using Framework.Api.Security.Claims;
-using Framework.Features.Definitions;
+using Framework.Features.Models;
 using Framework.Features.Values;
 
 namespace Framework.Features.Providers;
