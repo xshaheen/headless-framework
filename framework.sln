@@ -84,7 +84,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database.SqlServe
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api", "Api", "{803B73EC-8061-4DF5-90D0-FD22AC252646}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.Core", "src\Framework.Api.Core\Framework.Api.Core.csproj", "{C2448001-A86D-4EB4-A9E7-ADC07A7A29E3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api", "src\Framework.Api\Framework.Api.csproj", "{C2448001-A86D-4EB4-A9E7-ADC07A7A29E3}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.MinimalApi", "src\Framework.Api.MinimalApi\Framework.Api.MinimalApi.csproj", "{A70BB165-6286-4430-9315-68E584C86B9B}"
 EndProject
