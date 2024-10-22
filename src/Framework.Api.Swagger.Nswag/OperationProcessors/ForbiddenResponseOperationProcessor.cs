@@ -19,21 +19,21 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
     {
         if (context is not AspNetCoreOperationProcessorContext ctx)
         {
-            return false;
+            return true;
         }
 
         var responses = ctx.OperationDescription.Operation.Responses;
 
         if (responses.ContainsKey(_ForbiddenStatusCode))
         {
-            return false;
+            return true;
         }
 
         var actionDescriptor = ctx.ApiDescription.ActionDescriptor;
 
         if (actionDescriptor.EndpointMetadata.OfType<AllowAnonymousAttribute>().Any())
         {
-            return false;
+            return true;
         }
 
         var authorizeAttribute = actionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().ToList();
@@ -63,7 +63,7 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
             return true;
         }
 
-        return false;
+        return true;
     }
 
     private static OpenApiResponse _CreateForbiddenResponse()

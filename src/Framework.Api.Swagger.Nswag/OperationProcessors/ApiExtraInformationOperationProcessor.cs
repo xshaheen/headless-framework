@@ -15,7 +15,7 @@ public sealed class ApiExtraInformationOperationProcessor : IOperationProcessor
     {
         if (context is not AspNetCoreOperationProcessorContext ctx)
         {
-            return false;
+            return true;
         }
 
         _Process(ctx);

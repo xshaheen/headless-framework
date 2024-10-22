@@ -19,14 +19,14 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
     {
         if (context is not AspNetCoreOperationProcessorContext ctx)
         {
-            return false;
+            return true;
         }
 
         var responses = ctx.OperationDescription.Operation.Responses;
 
         if (responses.ContainsKey(_UnauthorizedStatusCode))
         {
-            return false;
+            return true;
         }
 
         var actionDescriptor = ctx.ApiDescription.ActionDescriptor;
@@ -34,7 +34,7 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
 
         if (actionDescriptor.EndpointMetadata.OfType<AllowAnonymousAttribute>().Any())
         {
-            return false;
+            return true;
         }
 
         if (
@@ -47,7 +47,7 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
             return true;
         }
 
-        return false;
+        return true;
     }
 
     private static OpenApiResponse _CreateUnauthorizedResponse()
