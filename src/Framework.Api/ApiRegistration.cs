@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Framework.Api;
 
@@ -177,5 +178,7 @@ public static class ApiRegistration
         AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
         ValidatorOptions.Global.LanguageManager.Enabled = true;
         ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
+        JsonWebTokenHandler.DefaultMapInboundClaims = false;
+        JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 }
