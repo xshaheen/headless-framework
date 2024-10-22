@@ -6,7 +6,7 @@ namespace Framework.Kernel.BuildingBlocks;
 
 public static class FrameworkClaimTypes
 {
-    public const string AccountId = JwtClaimTypes.Subject;
+    public const string AccountId = "account_id";
 
     public const string UserId = "user_id";
 
