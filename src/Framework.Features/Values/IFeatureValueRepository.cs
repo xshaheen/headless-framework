@@ -1,24 +1,26 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-namespace Framework.Features.FeatureManagement;
+using Framework.Features.Entities;
+
+namespace Framework.Features.Values;
 
 public interface IFeatureValueRepository
 {
-    Task<FeatureValue?> FindAsync(
+    Task<FeatureValueRecord?> FindAsync(
         string name,
         string? providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task<List<FeatureValue>> FindAllAsync(
+    Task<List<FeatureValueRecord>> FindAllAsync(
         string name,
         string? providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task<List<FeatureValue>> GetListAsync(
+    Task<List<FeatureValueRecord>> GetListAsync(
         string? providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
@@ -26,7 +28,7 @@ public interface IFeatureValueRepository
 
     Task DeleteAsync(string? providerName, string? providerKey, CancellationToken cancellationToken = default);
 
-    Task UpdateAsync(FeatureValue featureValue);
+    Task UpdateAsync(FeatureValueRecord featureValue);
 
-    Task DeleteAsync(FeatureValue featureValue);
+    Task DeleteAsync(FeatureValueRecord featureValue);
 }

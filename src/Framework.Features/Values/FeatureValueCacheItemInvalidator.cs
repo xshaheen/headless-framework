@@ -1,11 +1,12 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Caching;
+using Framework.Features.Entities;
 using Framework.Kernel.Domains;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Values;
 
-public class FeatureValueCacheItemInvalidator : ILocalMessageHandler<EntityChangedEventData<FeatureValue>>
+public class FeatureValueCacheItemInvalidator : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
 {
     private readonly ICache<FeatureValueCacheItem> _cache;
 
@@ -15,7 +16,7 @@ public class FeatureValueCacheItemInvalidator : ILocalMessageHandler<EntityChang
     }
 
     public virtual async Task HandleAsync(
-        EntityChangedEventData<FeatureValue> message,
+        EntityChangedEventData<FeatureValueRecord> message,
         CancellationToken cancellationToken = default
     )
     {

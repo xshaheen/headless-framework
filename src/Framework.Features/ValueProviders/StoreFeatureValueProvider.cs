@@ -1,29 +1,26 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Features.FeatureManagement;
 using Framework.Features.Models;
+using Framework.Features.Values;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.ValueProviders;
 
-public abstract class FeatureManagementProvider(IFeatureManagementStore store) : IFeatureManagementProvider
+public abstract class StoreFeatureValueProvider(IFeatureManagementStore store) : IFeatureValueProvider
 {
-    public abstract string Name { get; }
-
     protected IFeatureManagementStore Store { get; } = store;
 
-    public virtual bool Compatible(string providerName)
+    public abstract string Name { get; }
+
+    public bool Compatible(string providerName)
     {
-        return providerName == Name;
+        return string.Equals(providerName, Name, StringComparison.Ordinal);
     }
 
-    public virtual Task<IAsyncDisposable> HandleContextAsync(string providerName, string providerKey)
+    public virtual async Task<string?> GetOrDefaultAsync(FeatureDefinition feature, string? providerKey)
     {
-        return Task.FromResult<IAsyncDisposable>(NullAsyncDisposable.Instance);
-    }
-
-    public virtual async Task<string?> GetOrNullAsync(FeatureDefinition feature, string? providerKey)
-    {
-        return await Store.GetOrNullAsync(feature.Name, Name, await NormalizeProviderKeyAsync(providerKey));
+        return await Store.GetOrDefaultAsync(feature.Name, Name, await NormalizeProviderKeyAsync(providerKey));
     }
 
     public virtual async Task SetAsync(FeatureDefinition feature, string value, string? providerKey)
@@ -34,6 +31,11 @@ public abstract class FeatureManagementProvider(IFeatureManagementStore store) :
     public virtual async Task ClearAsync(FeatureDefinition feature, string? providerKey)
     {
         await Store.DeleteAsync(feature.Name, Name, await NormalizeProviderKeyAsync(providerKey));
+    }
+
+    public virtual Task<IAsyncDisposable> HandleContextAsync(string providerName, string providerKey)
+    {
+        return Task.FromResult<IAsyncDisposable>(NullAsyncDisposable.Instance);
     }
 
     protected virtual Task<string?> NormalizeProviderKeyAsync(string? providerKey)

@@ -3,9 +3,9 @@
 using Framework.Kernel.Checks;
 using Framework.Kernel.Domains;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Entities;
 
-public sealed class FeatureValue : AggregateRoot<Guid>
+public sealed class FeatureValueRecord : AggregateRoot<Guid>
 {
     public string Name { get; private set; }
 
@@ -15,10 +15,8 @@ public sealed class FeatureValue : AggregateRoot<Guid>
 
     public string? ProviderKey { get; private set; }
 
-    public FeatureValue(Guid id, string name, string value, string providerName, string? providerKey)
+    public FeatureValueRecord(Guid id, string name, string value, string providerName, string? providerKey)
     {
-        Argument.IsNotNull(name);
-
         Id = id;
         Name = Argument.IsNotNullOrWhiteSpace(name);
         Value = Argument.IsNotNullOrWhiteSpace(value);

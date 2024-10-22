@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Features.Entities;
+using Framework.Features.FeatureManagement;
 using Framework.Features.Models;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Definitions;
 
 public interface IFeatureDefinitionSerializer
 {
@@ -17,23 +19,11 @@ public interface IFeatureDefinitionSerializer
     Task<FeatureDefinitionRecord> SerializeAsync(FeatureDefinition feature, FeatureGroupDefinition? featureGroup);
 }
 
-public class FeatureDefinitionSerializer : IFeatureDefinitionSerializer
+public sealed class FeatureDefinitionSerializer(
+    IGuidGenerator guidGenerator,
+    StringValueTypeSerializer stringValueTypeSerializer
+) : IFeatureDefinitionSerializer
 {
-    protected IGuidGenerator GuidGenerator { get; }
-    protected ILocalizableStringSerializer LocalizableStringSerializer { get; }
-    protected StringValueTypeSerializer StringValueTypeSerializer { get; }
-
-    public FeatureDefinitionSerializer(
-        IGuidGenerator guidGenerator,
-        ILocalizableStringSerializer localizableStringSerializer,
-        StringValueTypeSerializer stringValueTypeSerializer
-    )
-    {
-        GuidGenerator = guidGenerator;
-        LocalizableStringSerializer = localizableStringSerializer;
-        StringValueTypeSerializer = stringValueTypeSerializer;
-    }
-
     public async Task<(FeatureGroupDefinitionRecord[], FeatureDefinitionRecord[])> SerializeAsync(
         IEnumerable<FeatureGroupDefinition> featureGroups
     )
@@ -59,7 +49,7 @@ public class FeatureDefinitionSerializer : IFeatureDefinitionSerializer
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var featureGroupRecord = new FeatureGroupDefinitionRecord(
-                GuidGenerator.Create(),
+                guidGenerator.Create(),
                 featureGroup.Name,
                 LocalizableStringSerializer.Serialize(featureGroup.DisplayName)
             );
@@ -78,7 +68,7 @@ public class FeatureDefinitionSerializer : IFeatureDefinitionSerializer
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var featureRecord = new FeatureDefinitionRecord(
-                GuidGenerator.Create(),
+                guidGenerator.Create(),
                 featureGroup?.Name,
                 feature.Name,
                 feature.Parent?.Name,
@@ -87,8 +77,8 @@ public class FeatureDefinitionSerializer : IFeatureDefinitionSerializer
                 feature.DefaultValue,
                 feature.IsVisibleToClients,
                 feature.IsAvailableToHost,
-                SerializeProviders(feature.AllowedProviders),
-                SerializeStringValueType(feature.ValueType)
+                _SerializeProviders(feature.AllowedProviders),
+                _SerializeStringValueType(feature.ValueType)
             );
 
             foreach (var property in feature.Properties)
@@ -100,13 +90,13 @@ public class FeatureDefinitionSerializer : IFeatureDefinitionSerializer
         }
     }
 
-    protected virtual string? SerializeProviders(ICollection<string> providers)
+    private static string? _SerializeProviders(ICollection<string> providers)
     {
         return providers.Count != 0 ? providers.JoinAsString(",") : null;
     }
 
-    protected virtual string SerializeStringValueType(IStringValueType stringValueType)
+    private string _SerializeStringValueType(IStringValueType stringValueType)
     {
-        return StringValueTypeSerializer.Serialize(stringValueType);
+        return stringValueTypeSerializer.Serialize(stringValueType);
     }
 }

@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Features.Definitions;
+using Framework.Features.Entities;
+using Framework.Features.FeatureManagement;
 using Framework.Features.Models;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Definitions;
 
 public interface IDynamicFeatureDefinitionStoreInMemoryCache
 {
@@ -25,25 +26,19 @@ public interface IDynamicFeatureDefinitionStoreInMemoryCache
     IReadOnlyList<FeatureGroupDefinition> GetGroups();
 }
 
-public class DynamicFeatureDefinitionStoreInMemoryCache
-    : IDynamicFeatureDefinitionStoreInMemoryCache,
-        ISingletonDependency
+public class DynamicFeatureDefinitionStoreInMemoryCache : IDynamicFeatureDefinitionStoreInMemoryCache
 {
     public string CacheStamp { get; set; }
 
     protected IDictionary<string, FeatureGroupDefinition> FeatureGroupDefinitions { get; }
     protected IDictionary<string, FeatureDefinition> FeatureDefinitions { get; }
     protected StringValueTypeSerializer StateCheckerSerializer { get; }
-    protected ILocalizableStringSerializer LocalizableStringSerializer { get; }
 
     public SemaphoreSlim SyncSemaphore { get; } = new(1, 1);
 
     public DateTime? LastCheckTime { get; set; }
 
-    public DynamicFeatureDefinitionStoreInMemoryCache(
-        StringValueTypeSerializer stateCheckerSerializer,
-        ILocalizableStringSerializer localizableStringSerializer
-    )
+    public DynamicFeatureDefinitionStoreInMemoryCache(StringValueTypeSerializer stateCheckerSerializer)
     {
         StateCheckerSerializer = stateCheckerSerializer;
         LocalizableStringSerializer = localizableStringSerializer;
@@ -64,10 +59,7 @@ public class DynamicFeatureDefinitionStoreInMemoryCache
 
         foreach (var featureGroupRecord in featureGroupRecords)
         {
-            var featureGroup = context.AddGroup(
-                featureGroupRecord.Name,
-                LocalizableStringSerializer.Deserialize(featureGroupRecord.DisplayName)
-            );
+            var featureGroup = context.AddGroup(featureGroupRecord.Name, featureGroupRecord.DisplayName);
 
             FeatureGroupDefinitions[featureGroup.Name] = featureGroup;
 

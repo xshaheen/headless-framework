@@ -4,7 +4,7 @@ using Framework.Features.Checkers;
 using Framework.Features.Definitions;
 using Framework.Features.Filters;
 using Framework.Features.Models;
-using Framework.Features.Providers;
+using Framework.Features.ValueProviders;
 using Framework.Features.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -43,7 +43,7 @@ public static class AddFeaturesExtensions
     }
 
     public static void AddFeatureValueProvider<T>(this IServiceCollection services)
-        where T : class, IFeatureValueProvider
+        where T : class, IFeatureValueReadProvider
     {
         services.AddSingleton<T>();
 

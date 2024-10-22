@@ -2,6 +2,7 @@
 
 using Framework.Features.Definitions;
 using Framework.Features.Models;
+using Framework.Features.ValueProviders;
 using Framework.Features.Values;
 
 namespace Framework.Features.Checkers;
@@ -64,7 +65,7 @@ public sealed class FeatureChecker(
     }
 
     private static async Task<string?> _GetOrDefaultValueFromProvidersAsync(
-        IEnumerable<IFeatureValueProvider> providers,
+        IEnumerable<IFeatureValueReadProvider> providers,
         FeatureDefinition feature
     )
     {

@@ -2,9 +2,10 @@
 
 using Framework.Caching;
 using Framework.Features.Definitions;
+using Framework.Features.Entities;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Values;
 
 public class FeatureManagementStore : IFeatureManagementStore
 {
@@ -27,7 +28,7 @@ public class FeatureManagementStore : IFeatureManagementStore
     }
 
     [UnitOfWork]
-    public virtual async Task<string?> GetOrNullAsync(string name, string? providerName, string? providerKey)
+    public virtual async Task<string?> GetOrDefaultAsync(string name, string? providerName, string? providerKey)
     {
         var cacheItem = await GetCacheItemAsync(name, providerName, providerKey);
         return cacheItem.Value;
@@ -39,7 +40,7 @@ public class FeatureManagementStore : IFeatureManagementStore
         var featureValue = await FeatureValueRepository.FindAsync(name, providerName, providerKey);
         if (featureValue == null)
         {
-            featureValue = new FeatureValue(GuidGenerator.Create(), name, value, providerName, providerKey);
+            featureValue = new FeatureValueRecord(GuidGenerator.Create(), name, value, providerName, providerKey);
             await FeatureValueRepository.InsertAsync(featureValue);
         }
         else

@@ -98,8 +98,13 @@ public sealed class PhoneNumber : ValueObject
 
     public string Normalize() => Normalize(CountryCode, Number);
 
-    public static string Normalize(int code, string number) =>
-        $"+{code.ToString(CultureInfo.InvariantCulture)}{Normalize(number)}";
+    public static string Normalize(int code, string number)
+    {
+        var codeText = code.ToString(CultureInfo.InvariantCulture);
+        var numberText = number.NormalizePhoneNumber();
+
+        return $"+{codeText}{numberText}";
+    }
 
     public static string Normalize(string number) => number.NormalizePhoneNumber();
 

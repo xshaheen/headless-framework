@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Values;
 
 [Serializable]
 public class FeatureValueCacheItem(string? value)
