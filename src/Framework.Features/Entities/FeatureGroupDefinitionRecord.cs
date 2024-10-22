@@ -1,47 +1,41 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Features.FeatureManagement;
+using Framework.Kernel.Checks;
+using Framework.Kernel.Domains;
 using Framework.Kernel.Primitives;
-using Volo.Abp.FeatureManagement;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Entities;
 
-public class FeatureGroupDefinitionRecord : BasicAggregateRoot<Guid>, IHasExtraProperties
+public sealed class FeatureGroupDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
     public string Name { get; set; }
 
     public string DisplayName { get; set; }
 
-    public ExtraProperties ExtraProperties { get; protected set; }
-
-    public FeatureGroupDefinitionRecord()
-    {
-        ExtraProperties = new ExtraPropertyDictionary();
-        this.SetDefaultsForExtraProperties();
-    }
+    public ExtraProperties ExtraProperties { get; init; }
 
     public FeatureGroupDefinitionRecord(Guid id, string name, string displayName)
-        : base(id)
     {
-        Name = Check.NotNullOrWhiteSpace(name, nameof(name), FeatureGroupDefinitionRecordConsts.MaxNameLength);
-        DisplayName = Check.NotNullOrWhiteSpace(
-            displayName,
-            nameof(displayName),
-            FeatureGroupDefinitionRecordConsts.MaxDisplayNameLength
-        );
-        ;
+        Argument.IsNotNullOrWhiteSpace(name);
+        Argument.IsLessThanOrEqualTo(name.Length, FeatureGroupDefinitionRecordConsts.MaxNameLength);
+        Argument.IsNotNullOrWhiteSpace(displayName);
+        Argument.IsLessThanOrEqualTo(displayName.Length, FeatureGroupDefinitionRecordConsts.MaxDisplayNameLength);
 
-        ExtraProperties = new ExtraProperties();
-        this.SetDefaultsForExtraProperties();
+        Id = id;
+        Name = name;
+        DisplayName = displayName;
+        ExtraProperties = [];
     }
 
     public bool HasSameData(FeatureGroupDefinitionRecord otherRecord)
     {
-        if (Name != otherRecord.Name)
+        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (DisplayName != otherRecord.DisplayName)
+        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
         {
             return false;
         }
@@ -56,23 +50,23 @@ public class FeatureGroupDefinitionRecord : BasicAggregateRoot<Guid>, IHasExtraP
 
     public void Patch(FeatureGroupDefinitionRecord otherRecord)
     {
-        if (Name != otherRecord.Name)
+        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
         {
             Name = otherRecord.Name;
         }
 
-        if (DisplayName != otherRecord.DisplayName)
+        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
         {
             DisplayName = otherRecord.DisplayName;
         }
 
         if (!this.HasSameExtraProperties(otherRecord))
         {
-            this.ExtraProperties.Clear();
+            ExtraProperties.Clear();
 
             foreach (var property in otherRecord.ExtraProperties)
             {
-                this.ExtraProperties.Add(property.Key, property.Value);
+                ExtraProperties.Add(property.Key, property.Value);
             }
         }
     }

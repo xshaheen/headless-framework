@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Features.Models;
+using Framework.Features.ValueProviders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MoreLinq;
@@ -9,14 +10,14 @@ namespace Framework.Features.Values;
 
 public interface IFeatureValueProviderManager
 {
-    IReadOnlyList<IFeatureValueProvider> ValueProviders { get; }
+    IReadOnlyList<IFeatureValueReadProvider> ValueProviders { get; }
 }
 
 public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
 {
     private readonly FeatureManagementProviderOptions _providerOptions;
     private readonly IServiceProvider _serviceProvider;
-    private readonly Lazy<List<IFeatureValueProvider>> _lazyProviders;
+    private readonly Lazy<List<IFeatureValueReadProvider>> _lazyProviders;
 
     public FeatureValueProviderManager(
         IServiceProvider serviceProvider,
@@ -28,12 +29,12 @@ public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
         _lazyProviders = new(_GetProviders, isThreadSafe: true);
     }
 
-    public IReadOnlyList<IFeatureValueProvider> ValueProviders => _lazyProviders.Value;
+    public IReadOnlyList<IFeatureValueReadProvider> ValueProviders => _lazyProviders.Value;
 
-    private List<IFeatureValueProvider> _GetProviders()
+    private List<IFeatureValueReadProvider> _GetProviders()
     {
         var providers = _providerOptions
-            .ValueProviders.Select(type => (IFeatureValueProvider)_serviceProvider.GetRequiredService(type))
+            .ValueProviders.Select(type => (IFeatureValueReadProvider)_serviceProvider.GetRequiredService(type))
             .ToList();
 
         var multipleProviders = providers

@@ -1,53 +1,50 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Features.FeatureManagement;
+using Framework.Kernel.Checks;
+using Framework.Kernel.Domains;
 using Framework.Kernel.Primitives;
-using Volo.Abp.FeatureManagement;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Entities;
 
-public class FeatureDefinitionRecord : BasicAggregateRoot<Guid>, IHasExtraProperties
+public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
     public string GroupName { get; set; }
 
     public string Name { get; set; }
 
-    public string ParentName { get; set; }
-
     public string DisplayName { get; set; }
 
-    public string Description { get; set; }
+    public string? ParentName { get; set; }
+
+    public string? Description { get; set; }
 
     public string DefaultValue { get; set; }
 
-    public bool IsVisibleToClients { get; set; }
+    public bool IsVisibleToClients { get; set; } = true;
 
-    public bool IsAvailableToHost { get; set; }
+    public bool IsAvailableToHost { get; set; } = true;
 
-    /// <summary>
-    /// Comma separated list of provider names.
-    /// </summary>
+    /// <summary>Comma separated list of provider names.</summary>
     public string AllowedProviders { get; set; }
 
-    /// <summary>
-    /// Serialized string to store info about the ValueType.
-    /// </summary>
+    /// <summary>Serialized string to store info about the ValueType.</summary>
     public string ValueType { get; set; } // ToggleStringValueType
 
-    public ExtraPropertyDictionary ExtraProperties { get; protected set; }
+    public ExtraProperties ExtraProperties { get; protected set; }
 
     public FeatureDefinitionRecord()
     {
         IsVisibleToClients = true;
         IsAvailableToHost = true;
-        ExtraProperties = new ExtraPropertyDictionary();
-        this.SetDefaultsForExtraProperties();
+        ExtraProperties = [];
     }
 
     public FeatureDefinitionRecord(
         Guid id,
         string groupName,
         string name,
-        string parentName,
+        string? parentName,
         string? displayName = null,
         string? description = null,
         string? defaultValue = null,
@@ -56,78 +53,59 @@ public class FeatureDefinitionRecord : BasicAggregateRoot<Guid>, IHasExtraProper
         string? allowedProviders = null,
         string? valueType = null
     )
-        : base(id)
     {
-        GroupName = Check.NotNullOrWhiteSpace(
-            groupName,
-            nameof(groupName),
-            FeatureDefinitionRecordConsts.MaxNameLength
-        );
-        Name = Check.NotNullOrWhiteSpace(name, nameof(name), FeatureDefinitionRecordConsts.MaxNameLength);
-        ParentName = Check.Length(parentName, nameof(parentName), FeatureDefinitionRecordConsts.MaxNameLength);
-        DisplayName = Check.NotNullOrWhiteSpace(
-            displayName,
-            nameof(displayName),
-            FeatureDefinitionRecordConsts.MaxDisplayNameLength
-        );
+        Argument.IsNotNullOrWhiteSpace(groupName);
+        Argument.IsLessThanOrEqualTo(groupName.Length, FeatureDefinitionRecordConsts.MaxNameLength);
 
-        Description = Check.Length(
-            description,
-            nameof(description),
-            FeatureDefinitionRecordConsts.MaxDescriptionLength
-        );
-        DefaultValue = Check.Length(
-            defaultValue,
-            nameof(defaultValue),
-            FeatureDefinitionRecordConsts.MaxDefaultValueLength
-        );
+        Argument.IsNotNullOrWhiteSpace(name);
+        Argument.IsLessThanOrEqualTo(name.Length, FeatureDefinitionRecordConsts.MaxNameLength);
+
+        Id = id;
+        GroupName = groupName;
+        Name = name;
+        ParentName = Argument.IsLength(parentName, FeatureDefinitionRecordConsts.MaxNameLength);
+        DisplayName = Argument.IsNotNullOrWhiteSpace(displayName, FeatureDefinitionRecordConsts.MaxDisplayNameLength);
+
+        Description = Argument.IsLength(description, FeatureDefinitionRecordConsts.MaxDescriptionLength);
+        DefaultValue = Argument.IsLength(defaultValue, FeatureDefinitionRecordConsts.MaxDefaultValueLength);
 
         IsVisibleToClients = isVisibleToClients;
         IsAvailableToHost = isAvailableToHost;
 
-        AllowedProviders = Check.Length(
-            allowedProviders,
-            nameof(allowedProviders),
-            FeatureDefinitionRecordConsts.MaxAllowedProvidersLength
-        );
-        ValueType = Check.NotNullOrWhiteSpace(
-            valueType,
-            nameof(valueType),
-            FeatureDefinitionRecordConsts.MaxValueTypeLength
-        );
+        AllowedProviders = Argument.IsLength(allowedProviders, FeatureDefinitionRecordConsts.MaxAllowedProvidersLength);
+        ValueType = Argument.IsNotNullOrWhiteSpace(valueType, FeatureDefinitionRecordConsts.MaxValueTypeLength);
 
-        ExtraProperties = new ExtraProperties();
-        this.SetDefaultsForExtraProperties();
+        ExtraProperties = [];
     }
 
     public bool HasSameData(FeatureDefinitionRecord otherRecord)
     {
-        if (Name != otherRecord.Name)
+        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (GroupName != otherRecord.GroupName)
+        if (!string.Equals(GroupName, otherRecord.GroupName, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (ParentName != otherRecord.ParentName)
+        if (!string.Equals(ParentName, otherRecord.ParentName, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (DisplayName != otherRecord.DisplayName)
+        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (Description != otherRecord.Description)
+        if (!string.Equals(Description, otherRecord.Description, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (DefaultValue != otherRecord.DefaultValue)
+        if (!string.Equals(DefaultValue, otherRecord.DefaultValue, StringComparison.Ordinal))
         {
             return false;
         }
@@ -141,12 +119,12 @@ public class FeatureDefinitionRecord : BasicAggregateRoot<Guid>, IHasExtraProper
         {
             return false;
         }
-        if (AllowedProviders != otherRecord.AllowedProviders)
+        if (!string.Equals(AllowedProviders, otherRecord.AllowedProviders, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (ValueType != otherRecord.ValueType)
+        if (!string.Equals(ValueType, otherRecord.ValueType, StringComparison.Ordinal))
         {
             return false;
         }
@@ -161,32 +139,32 @@ public class FeatureDefinitionRecord : BasicAggregateRoot<Guid>, IHasExtraProper
 
     public void Patch(FeatureDefinitionRecord otherRecord)
     {
-        if (Name != otherRecord.Name)
+        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
         {
             Name = otherRecord.Name;
         }
 
-        if (GroupName != otherRecord.GroupName)
+        if (!string.Equals(GroupName, otherRecord.GroupName, StringComparison.Ordinal))
         {
             GroupName = otherRecord.GroupName;
         }
 
-        if (ParentName != otherRecord.ParentName)
+        if (!string.Equals(ParentName, otherRecord.ParentName, StringComparison.Ordinal))
         {
             ParentName = otherRecord.ParentName;
         }
 
-        if (DisplayName != otherRecord.DisplayName)
+        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
         {
             DisplayName = otherRecord.DisplayName;
         }
 
-        if (Description != otherRecord.Description)
+        if (!string.Equals(Description, otherRecord.Description, StringComparison.Ordinal))
         {
             Description = otherRecord.Description;
         }
 
-        if (DefaultValue != otherRecord.DefaultValue)
+        if (!string.Equals(DefaultValue, otherRecord.DefaultValue, StringComparison.Ordinal))
         {
             DefaultValue = otherRecord.DefaultValue;
         }
@@ -201,23 +179,23 @@ public class FeatureDefinitionRecord : BasicAggregateRoot<Guid>, IHasExtraProper
             IsAvailableToHost = otherRecord.IsAvailableToHost;
         }
 
-        if (AllowedProviders != otherRecord.AllowedProviders)
+        if (!string.Equals(AllowedProviders, otherRecord.AllowedProviders, StringComparison.Ordinal))
         {
             AllowedProviders = otherRecord.AllowedProviders;
         }
 
-        if (ValueType != otherRecord.ValueType)
+        if (!string.Equals(ValueType, otherRecord.ValueType, StringComparison.Ordinal))
         {
             ValueType = otherRecord.ValueType;
         }
 
         if (!this.HasSameExtraProperties(otherRecord))
         {
-            this.ExtraProperties.Clear();
+            ExtraProperties.Clear();
 
             foreach (var property in otherRecord.ExtraProperties)
             {
-                this.ExtraProperties.Add(property.Key, property.Value);
+                ExtraProperties.Add(property.Key, property.Value);
             }
         }
     }
