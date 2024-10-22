@@ -115,8 +115,7 @@ public static class AddNswagSwaggerExtensions
             Type = OpenApiSecuritySchemeType.Http,
             Description = """
                 JWT Authorization header using the Bearer scheme.
-                Enter 'Bearer' [space] and then your token in the text input below.
-                Example: 'Bearer <token>'
+                Enter Token without any prefix.
                 """,
         };
     }
