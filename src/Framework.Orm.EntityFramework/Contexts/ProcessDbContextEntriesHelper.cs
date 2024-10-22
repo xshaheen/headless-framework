@@ -64,7 +64,12 @@ public static class ProcessEntriesMessagesBeforeSaveHelper
             {
                 if (entry.Entity is IHasConcurrencyStamp entity)
                 {
-                    context.Entry(entity).Property(x => x.ConcurrencyStamp).OriginalValue = entity.ConcurrencyStamp;
+                    var propertyEntry = context.Entry(entity).Property(x => x.ConcurrencyStamp);
+
+                    if (!string.Equals(propertyEntry.OriginalValue, entity.ConcurrencyStamp, StringComparison.Ordinal))
+                    {
+                        propertyEntry.OriginalValue = entity.ConcurrencyStamp;
+                    }
                     entity.ConcurrencyStamp = Guid.NewGuid().ToString("N");
                 }
 
