@@ -2,6 +2,8 @@
 
 using System.Security.Claims;
 using System.Text;
+using Framework.Api.Security.Claims;
+using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -11,6 +13,16 @@ namespace Framework.Api.Security.Jwt;
 public interface IJwtTokenFactory
 {
     string CreateJwtToken(
+        IEnumerable<Claim> claims,
+        TimeSpan ttl,
+        string signingKey,
+        string? encryptingKey,
+        string? issuer,
+        string? audience,
+        TimeSpan? notBefore = null
+    );
+
+    string CreateJwtToken(
         ClaimsIdentity identity,
         TimeSpan ttl,
         string signingKey,
@@ -19,10 +31,35 @@ public interface IJwtTokenFactory
         string? audience,
         TimeSpan? notBefore = null
     );
+
+    Task<ClaimsPrincipal?> ParseJwtTokenAsync(
+        string token,
+        string signingKey,
+        string? encryptingKey,
+        string issuer,
+        string audience,
+        bool validateIssuer = true,
+        bool validateAudience = true
+    );
 }
 
-public sealed class JwtTokenFactory(IClock clock) : IJwtTokenFactory
+public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFactory, IClock clock) : IJwtTokenFactory
 {
+    public string CreateJwtToken(
+        IEnumerable<Claim> claims,
+        TimeSpan ttl,
+        string signingKey,
+        string? encryptingKey,
+        string? issuer,
+        string? audience,
+        TimeSpan? notBefore = null
+    )
+    {
+        var identity = claimsPrincipalFactory.CreateClaimsIdentity(claims);
+
+        return CreateJwtToken(identity, ttl, signingKey, encryptingKey, issuer, audience, notBefore);
+    }
+
     public string CreateJwtToken(
         ClaimsIdentity identity,
         TimeSpan ttl,
@@ -52,21 +89,52 @@ public sealed class JwtTokenFactory(IClock clock) : IJwtTokenFactory
         return token;
     }
 
+    public async Task<ClaimsPrincipal?> ParseJwtTokenAsync(
+        string token,
+        string signingKey,
+        string? encryptingKey,
+        string issuer,
+        string audience,
+        bool validateIssuer = true,
+        bool validateAudience = true
+    )
+    {
+        var tokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = validateIssuer,
+            ValidateAudience = validateAudience,
+            ValidIssuer = issuer,
+            ValidAudience = audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            ClockSkew = TimeSpan.Zero,
+            NameClaimType = FrameworkClaimTypes.UserName,
+            RoleClaimType = FrameworkClaimTypes.Roles,
+            AuthenticationType = AuthenticationConstants.IdentityAuthenticationType,
+            ValidateIssuerSigningKey = true,
+            RequireSignedTokens = true,
+            IssuerSigningKey = _CreateSecurityKey(signingKey),
+            TokenDecryptionKey = encryptingKey is null ? null : _CreateSecurityKey(encryptingKey),
+        };
+
+        var result = await JwtTokenHelper.TokenHandler.ValidateTokenAsync(token, tokenValidationParameters);
+
+        return result.IsValid ? new(result.ClaimsIdentity) : null;
+    }
+
     #region Helper Methods
 
     private static SigningCredentials _GetSigningCredentials(string key)
     {
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
-
-        return new(securityKey, algorithm: SecurityAlgorithms.HmacSha256);
+        return new(_CreateSecurityKey(key), algorithm: SecurityAlgorithms.HmacSha256);
     }
 
     private static EncryptingCredentials _GetEncryptingCredentials(string key)
     {
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
-
-        return new(securityKey, JwtConstants.DirectKeyUseAlg, SecurityAlgorithms.Aes256CbcHmacSha512);
+        return new(_CreateSecurityKey(key), JwtConstants.DirectKeyUseAlg, SecurityAlgorithms.Aes256CbcHmacSha512);
     }
+
+    private static SymmetricSecurityKey _CreateSecurityKey(string key) => new(Encoding.UTF8.GetBytes(key));
 
     #endregion
 }
