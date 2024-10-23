@@ -13,6 +13,17 @@ public static class JwtTokenHelper
         JsonWebTokenHandler.DefaultMapInboundClaims = false;
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
-        return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false };
+        return new JsonWebTokenHandler
+        {
+            MapInboundClaims = false,
+            SetDefaultTimesOnTokenCreation = false,
+            // Default lifetime of tokens created.
+            // When creating tokens, if 'expires', 'notbefore' or 'issuedat' are null, then a default will be set to:
+            // issuedat = DateTime.UtcNow,
+            // notbefore = DateTime.UtcNow,
+            // expires = DateTime.UtcNow + TimeSpan.FromMinutes(TokenLifetimeInMinutes).
+            TokenLifetimeInMinutes = 60,
+            MaximumTokenSizeInBytes = 256_000,
+        };
     }
 }
