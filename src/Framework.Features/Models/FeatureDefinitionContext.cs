@@ -6,9 +6,9 @@ namespace Framework.Features.Models;
 
 public interface IFeatureDefinitionContext
 {
-    FeatureGroupDefinition AddGroup(string name, string? displayName = null);
+    FeatureGroupDefinition? GetGroupOrDefault(string name);
 
-    FeatureGroupDefinition? GetGroupOrNull(string name);
+    FeatureGroupDefinition AddGroup(string name, string? displayName = null);
 
     void RemoveGroup(string name);
 }
@@ -29,7 +29,7 @@ public sealed class FeatureDefinitionContext : IFeatureDefinitionContext
         return Groups[name] = new FeatureGroupDefinition(name, displayName);
     }
 
-    public FeatureGroupDefinition? GetGroupOrNull(string name)
+    public FeatureGroupDefinition? GetGroupOrDefault(string name)
     {
         Argument.IsNotNull(name);
 

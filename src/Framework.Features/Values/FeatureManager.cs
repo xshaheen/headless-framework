@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Features.Definitions;
-using Framework.Features.FeatureManagement;
+using Framework.Features.Helpers;
+using Framework.Features.Models;
 using Framework.Kernel.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Localization;
@@ -9,13 +10,12 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Features.Values;
 
-public class FeatureManager : IFeatureManager
+public sealed class FeatureManager : IFeatureManager
 {
-    protected IFeatureDefinitionManager FeatureDefinitionManager { get; }
-    protected List<IFeatureManagementProvider> Providers => _lazyProviders.Value;
-    protected FeatureManagementOptions Options { get; }
-    protected IStringLocalizerFactory StringLocalizerFactory { get; }
-
+    private IFeatureDefinitionManager FeatureDefinitionManager;
+    private List<IFeatureManagementProvider> Providers => _lazyProviders.Value;
+    private FeatureManagementOptions Options;
+    private IStringLocalizerFactory StringLocalizerFactory
     private readonly Lazy<List<IFeatureManagementProvider>> _lazyProviders;
 
     public FeatureManager(

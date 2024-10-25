@@ -25,9 +25,6 @@ public static class AddFeaturesExtensions
         builder.Services.AddSingleton<IFeatureChecker, FeatureChecker>();
         builder.Services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();
 
-        // This is a fallback store, it should be replaced by a real store
-        builder.Services.TryAddSingleton<IFeatureStore, NullFeatureStore>();
-
         return builder;
     }
 
@@ -36,7 +33,7 @@ public static class AddFeaturesExtensions
     {
         services.AddSingleton<T>();
 
-        services.Configure<FeatureManagementProviderOptions>(options =>
+        services.Configure<FeatureManagementProvidersOptions>(options =>
         {
             options.DefinitionProviders.Add<T>();
         });
@@ -47,7 +44,7 @@ public static class AddFeaturesExtensions
     {
         services.AddSingleton<T>();
 
-        services.Configure<FeatureManagementProviderOptions>(options =>
+        services.Configure<FeatureManagementProvidersOptions>(options =>
         {
             if (!options.ValueProviders.Contains<T>())
             {
@@ -58,7 +55,7 @@ public static class AddFeaturesExtensions
 
     private static void _AddCoreValueProviders(IHostApplicationBuilder builder)
     {
-        builder.Services.Configure<FeatureManagementProviderOptions>(options =>
+        builder.Services.Configure<FeatureManagementProvidersOptions>(options =>
         {
             options.ValueProviders.Add<DefaultValueFeatureValueProvider>();
             options.ValueProviders.Add<EditionFeatureValueProvider>();

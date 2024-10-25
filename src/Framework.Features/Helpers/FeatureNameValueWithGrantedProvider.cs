@@ -4,9 +4,8 @@ using System.Diagnostics.CodeAnalysis;
 using Framework.Features.Values;
 using Framework.Kernel.Primitives;
 
-namespace Framework.Features.FeatureManagement;
+namespace Framework.Features.Helpers;
 
-[Serializable]
 [method: SetsRequiredMembers]
 public sealed class FeatureNameValueWithGrantedProvider(string name, string? value) : NameValue<string?>(name, value)
 {

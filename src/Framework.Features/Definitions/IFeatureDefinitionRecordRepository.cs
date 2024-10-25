@@ -6,7 +6,9 @@ namespace Framework.Features.Definitions;
 
 public interface IFeatureDefinitionRecordRepository
 {
-    Task<FeatureDefinitionRecord> FindByNameAsync(string name, CancellationToken cancellationToken = default);
+    Task<List<FeatureGroupDefinitionRecord>> GetGroupsListAsync(CancellationToken cancellationToken = default);
 
-    Task<List<FeatureDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default);
+    Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default);
+
+    Task<FeatureDefinitionRecord> FindFeatureByNameAsync(string name, CancellationToken cancellationToken = default);
 }

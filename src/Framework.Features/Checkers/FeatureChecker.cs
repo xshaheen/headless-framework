@@ -71,7 +71,7 @@ public sealed class FeatureChecker(
     {
         foreach (var provider in providers)
         {
-            var value = await provider.GetOrDefaultAsync(feature);
+            var value = await provider.GetOrDefaultAsync(feature, providerKey: null); // TODO(shaheen): Add providerKey
 
             if (value is not null)
             {

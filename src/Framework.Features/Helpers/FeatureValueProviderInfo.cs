@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Features.Values;
+namespace Framework.Features.Helpers;
 
 [Serializable]
 public class FeatureValueProviderInfo

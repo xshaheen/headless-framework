@@ -1,84 +1,76 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Features.Entities;
-using Framework.Features.FeatureManagement;
 using Framework.Features.Models;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
+using Framework.Kernel.Primitives;
 
 namespace Framework.Features.Definitions;
 
 public interface IFeatureDefinitionSerializer
 {
-    Task<(FeatureGroupDefinitionRecord[], FeatureDefinitionRecord[])> SerializeAsync(
-        IEnumerable<FeatureGroupDefinition> featureGroups
+    (IReadOnlyCollection<FeatureGroupDefinitionRecord>, IReadOnlyCollection<FeatureDefinitionRecord>) Serialize(
+        IEnumerable<FeatureGroupDefinition> groups
     );
 
-    Task<FeatureGroupDefinitionRecord> SerializeAsync(FeatureGroupDefinition featureGroup);
+    FeatureGroupDefinitionRecord Serialize(FeatureGroupDefinition group);
 
-    Task<FeatureDefinitionRecord> SerializeAsync(FeatureDefinition feature, FeatureGroupDefinition? featureGroup);
+    FeatureDefinitionRecord Serialize(FeatureDefinition feature, FeatureGroupDefinition group);
 }
 
-public sealed class FeatureDefinitionSerializer(
-    IGuidGenerator guidGenerator,
-    StringValueTypeSerializer stringValueTypeSerializer
-) : IFeatureDefinitionSerializer
+public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : IFeatureDefinitionSerializer
 {
-    public async Task<(FeatureGroupDefinitionRecord[], FeatureDefinitionRecord[])> SerializeAsync(
-        IEnumerable<FeatureGroupDefinition> featureGroups
+    public (IReadOnlyCollection<FeatureGroupDefinitionRecord>, IReadOnlyCollection<FeatureDefinitionRecord>) Serialize(
+        IEnumerable<FeatureGroupDefinition> groups
     )
     {
         var featureGroupRecords = new List<FeatureGroupDefinitionRecord>();
         var featureRecords = new List<FeatureDefinitionRecord>();
 
-        foreach (var featureGroup in featureGroups)
+        foreach (var featureGroup in groups)
         {
-            featureGroupRecords.Add(await SerializeAsync(featureGroup));
+            featureGroupRecords.Add(Serialize(featureGroup));
 
-            foreach (var feature in featureGroup.GetFeaturesWithChildren())
+            foreach (var feature in featureGroup.GetFlatFeatures())
             {
-                featureRecords.Add(await SerializeAsync(feature, featureGroup));
+                featureRecords.Add(Serialize(feature, featureGroup));
             }
         }
 
-        return (featureGroupRecords.ToArray(), featureRecords.ToArray());
+        return (featureGroupRecords, featureRecords);
     }
 
-    public Task<FeatureGroupDefinitionRecord> SerializeAsync(FeatureGroupDefinition featureGroup)
+    public FeatureGroupDefinitionRecord Serialize(FeatureGroupDefinition group)
     {
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
-            var featureGroupRecord = new FeatureGroupDefinitionRecord(
-                guidGenerator.Create(),
-                featureGroup.Name,
-                LocalizableStringSerializer.Serialize(featureGroup.DisplayName)
-            );
+            var record = new FeatureGroupDefinitionRecord(guidGenerator.Create(), group.Name, group.DisplayName);
 
-            foreach (var property in featureGroup.Properties)
+            foreach (var property in group.Properties)
             {
-                featureGroupRecord.SetProperty(property.Key, property.Value);
+                record.SetProperty(property.Key, property.Value);
             }
 
-            return Task.FromResult(featureGroupRecord);
+            return record;
         }
     }
 
-    public Task<FeatureDefinitionRecord> SerializeAsync(FeatureDefinition feature, FeatureGroupDefinition featureGroup)
+    public FeatureDefinitionRecord Serialize(FeatureDefinition feature, FeatureGroupDefinition group)
     {
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var featureRecord = new FeatureDefinitionRecord(
                 guidGenerator.Create(),
-                featureGroup?.Name,
+                group.Name,
                 feature.Name,
                 feature.Parent?.Name,
-                LocalizableStringSerializer.Serialize(feature.DisplayName),
-                LocalizableStringSerializer.Serialize(feature.Description),
+                feature.DisplayName,
+                feature.Description,
                 feature.DefaultValue,
                 feature.IsVisibleToClients,
                 feature.IsAvailableToHost,
-                _SerializeProviders(feature.AllowedProviders),
-                _SerializeStringValueType(feature.ValueType)
+                _SerializeProviders(feature.AllowedProviders)
             );
 
             foreach (var property in feature.Properties)
@@ -86,17 +78,12 @@ public sealed class FeatureDefinitionSerializer(
                 featureRecord.SetProperty(property.Key, property.Value);
             }
 
-            return Task.FromResult(featureRecord);
+            return featureRecord;
         }
     }
 
     private static string? _SerializeProviders(ICollection<string> providers)
     {
         return providers.Count != 0 ? providers.JoinAsString(",") : null;
-    }
-
-    private string _SerializeStringValueType(IStringValueType stringValueType)
-    {
-        return stringValueTypeSerializer.Serialize(stringValueType);
     }
 }

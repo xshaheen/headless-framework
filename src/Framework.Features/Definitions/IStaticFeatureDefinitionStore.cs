@@ -8,69 +8,77 @@ namespace Framework.Features.Definitions;
 
 public interface IStaticFeatureDefinitionStore
 {
-    Task<FeatureDefinition?> GetOrNullAsync(string name);
+    Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync();
+    Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync();
+    Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
 {
-    private Dictionary<string, FeatureGroupDefinition> FeatureGroupDefinitions => _lazyFeatureGroupDefinitions.Value;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly FeatureManagementProvidersOptions _options;
     private readonly Lazy<Dictionary<string, FeatureGroupDefinition>> _lazyFeatureGroupDefinitions;
-
-    private Dictionary<string, FeatureDefinition> FeatureDefinitions => _lazyFeatureDefinitions.Value;
     private readonly Lazy<Dictionary<string, FeatureDefinition>> _lazyFeatureDefinitions;
 
-    private AbpFeatureOptions Options { get; }
+    private Dictionary<string, FeatureGroupDefinition> FeatureGroupDefinitions => _lazyFeatureGroupDefinitions.Value;
 
-    private readonly IServiceProvider _serviceProvider;
+    private Dictionary<string, FeatureDefinition> FeatureDefinitions => _lazyFeatureDefinitions.Value;
 
-    public StaticFeatureDefinitionStore(IOptions<AbpFeatureOptions> options, IServiceProvider serviceProvider)
+    public StaticFeatureDefinitionStore(
+        IServiceProvider serviceProvider,
+        IOptions<FeatureManagementProvidersOptions> options
+    )
     {
         _serviceProvider = serviceProvider;
-        Options = options.Value;
-
-        _lazyFeatureDefinitions = new Lazy<Dictionary<string, FeatureDefinition>>(
-            _CreateFeatureDefinitions,
-            isThreadSafe: true
-        );
-
-        _lazyFeatureGroupDefinitions = new Lazy<Dictionary<string, FeatureGroupDefinition>>(
-            _CreateFeatureGroupDefinitions,
-            isThreadSafe: true
-        );
+        _options = options.Value;
+        _lazyFeatureDefinitions = new(_CreateFeatureDefinitions, isThreadSafe: true);
+        _lazyFeatureGroupDefinitions = new(_CreateFeatureGroupDefinitions, isThreadSafe: true);
     }
 
-    public Task<FeatureDefinition?> GetOrNullAsync(string name)
+    public Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(FeatureDefinitions.GetOrDefault(name));
     }
 
-    public Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync()
+    public Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<FeatureDefinition>>(FeatureDefinitions.Values.ToList());
     }
 
-    public Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync()
+    public Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<FeatureGroupDefinition>>(FeatureGroupDefinitions.Values.ToList());
     }
 
     #region Helpers
 
+    private Dictionary<string, FeatureGroupDefinition> _CreateFeatureGroupDefinitions()
+    {
+        var context = new FeatureDefinitionContext();
+
+        using var scope = _serviceProvider.CreateScope();
+
+        foreach (var type in _options.DefinitionProviders)
+        {
+            var provider = (IFeatureDefinitionProvider)scope.ServiceProvider.GetRequiredService(type);
+            provider.Define(context);
+        }
+
+        return context.Groups;
+    }
 
     private Dictionary<string, FeatureDefinition> _CreateFeatureDefinitions()
     {
         var features = new Dictionary<string, FeatureDefinition>(StringComparer.Ordinal);
 
-        foreach (var featureGroupDefinition in FeatureGroupDefinitions.Values)
+        foreach (var feature in FeatureGroupDefinitions.Values.SelectMany(x => x.Features))
         {
-            foreach (var feature in featureGroupDefinition.Features)
-            {
-                _AddFeatureToDictionaryRecursively(features, feature);
-            }
+            _AddFeatureToDictionaryRecursively(features, feature);
         }
 
         return features;
@@ -83,34 +91,13 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
     {
         if (!features.TryAdd(feature.Name, feature))
         {
-            throw new InvalidOperationException("Duplicate feature name: " + feature.Name);
+            throw new InvalidOperationException($"Duplicate feature name: {feature.Name}");
         }
 
         foreach (var child in feature.Children)
         {
             _AddFeatureToDictionaryRecursively(features, child);
         }
-    }
-
-    private Dictionary<string, FeatureGroupDefinition> _CreateFeatureGroupDefinitions()
-    {
-        var context = new FeatureDefinitionContext();
-
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var providers = Options
-                .DefinitionProviders.Select(p =>
-                    (scope.ServiceProvider.GetRequiredService(p) as IFeatureDefinitionProvider)!
-                )
-                .ToList();
-
-            foreach (var provider in providers)
-            {
-                provider.Define(context);
-            }
-        }
-
-        return context.Groups;
     }
 
     #endregion

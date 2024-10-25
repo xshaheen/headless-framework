@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Features.FeatureManagement;
+using System.Diagnostics.CodeAnalysis;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Domains;
 using Framework.Kernel.Primitives;
@@ -15,12 +15,13 @@ public sealed class FeatureGroupDefinitionRecord : AggregateRoot<Guid>, IHasExtr
 
     public ExtraProperties ExtraProperties { get; init; }
 
+    [SetsRequiredMembers]
     public FeatureGroupDefinitionRecord(Guid id, string name, string displayName)
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, FeatureGroupDefinitionRecordConsts.MaxNameLength);
+        Argument.IsLessThanOrEqualTo(name.Length, FeatureGroupDefinitionRecordConstants.NameMaxLength);
         Argument.IsNotNullOrWhiteSpace(displayName);
-        Argument.IsLessThanOrEqualTo(displayName.Length, FeatureGroupDefinitionRecordConsts.MaxDisplayNameLength);
+        Argument.IsLessThanOrEqualTo(displayName.Length, FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength);
 
         Id = id;
         Name = name;
