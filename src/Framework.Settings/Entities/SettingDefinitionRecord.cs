@@ -5,7 +5,7 @@ using Framework.Kernel.Primitives;
 
 namespace Framework.Settings.Entities;
 
-public class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
+public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
     public SettingDefinitionRecord()
     {
@@ -29,23 +29,24 @@ public class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
     )
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, SettingDefinitionRecordConstants.MaxNameLength);
+        Argument.IsLessThanOrEqualTo(name.Length, SettingDefinitionRecordConstants.NameMaxLength);
+
         Argument.IsNotNullOrWhiteSpace(displayName);
-        Argument.IsLessThanOrEqualTo(displayName.Length, SettingDefinitionRecordConstants.MaxDisplayNameLength);
+        Argument.IsLessThanOrEqualTo(displayName.Length, SettingDefinitionRecordConstants.DisplayNameMaxLength);
 
         if (description is not null)
         {
-            Argument.IsLessThanOrEqualTo(description.Length, SettingDefinitionRecordConstants.MaxDescriptionLength);
+            Argument.IsLessThanOrEqualTo(description.Length, SettingDefinitionRecordConstants.DescriptionMaxLength);
         }
 
         if (defaultValue is not null)
         {
-            Argument.IsLessThanOrEqualTo(defaultValue.Length, SettingDefinitionRecordConstants.MaxDefaultValueLength);
+            Argument.IsLessThanOrEqualTo(defaultValue.Length, SettingDefinitionRecordConstants.DefaultValueMaxLength);
         }
 
         if (providers is not null)
         {
-            Argument.IsLessThanOrEqualTo(providers.Length, SettingDefinitionRecordConstants.MaxProvidersLength);
+            Argument.IsLessThanOrEqualTo(providers.Length, SettingDefinitionRecordConstants.ProvidersMaxLength);
         }
 
         Id = id;
@@ -84,10 +85,10 @@ public class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
     /// <summary>Is this setting stored as encrypted in the data source. Default: False.</summary>
     public bool IsEncrypted { get; set; }
 
-    /// <summary>Comma separated list of provider names.</summary>
+    /// <summary>Comma separated the list of provider names.</summary>
     public string? Providers { get; set; }
 
-    public ExtraProperties ExtraProperties { get; protected set; }
+    public ExtraProperties ExtraProperties { get; private set; }
 
     public bool HasSameData(SettingDefinitionRecord other)
     {
