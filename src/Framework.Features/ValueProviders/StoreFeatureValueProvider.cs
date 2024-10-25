@@ -6,39 +6,64 @@ using Framework.Kernel.BuildingBlocks.Helpers.System;
 
 namespace Framework.Features.ValueProviders;
 
-public abstract class StoreFeatureValueProvider(IFeatureManagementStore store) : IFeatureValueProvider
+public abstract class StoreFeatureValueProvider(IFeatureStore store) : IFeatureValueProvider
 {
-    protected IFeatureManagementStore Store { get; } = store;
+    protected IFeatureStore Store { get; } = store;
 
     public abstract string Name { get; }
 
-    public bool Compatible(string providerName)
+    public virtual async Task<string?> GetOrDefaultAsync(
+        FeatureDefinition feature,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        return string.Equals(providerName, Name, StringComparison.Ordinal);
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken);
+
+        return await Store.GetOrDefaultAsync(feature.Name, Name, pk, cancellationToken);
     }
 
-    public virtual async Task<string?> GetOrDefaultAsync(FeatureDefinition feature, string? providerKey)
+    public virtual async Task SetAsync(
+        FeatureDefinition feature,
+        string value,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await Store.GetOrDefaultAsync(feature.Name, Name, await NormalizeProviderKeyAsync(providerKey));
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken);
+
+        await Store.SetAsync(feature.Name, value, Name, pk, cancellationToken);
     }
 
-    public virtual async Task SetAsync(FeatureDefinition feature, string value, string? providerKey)
+    public virtual async Task ClearAsync(
+        FeatureDefinition feature,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        await Store.SetAsync(feature.Name, value, Name, await NormalizeProviderKeyAsync(providerKey));
+        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken);
+
+        await Store.DeleteAsync(feature.Name, Name, pk, cancellationToken);
     }
 
-    public virtual async Task ClearAsync(FeatureDefinition feature, string? providerKey)
+    public virtual Task<IAsyncDisposable> HandleContextAsync(
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        await Store.DeleteAsync(feature.Name, Name, await NormalizeProviderKeyAsync(providerKey));
-    }
+        cancellationToken.ThrowIfCancellationRequested();
 
-    public virtual Task<IAsyncDisposable> HandleContextAsync(string providerName, string providerKey)
-    {
         return Task.FromResult<IAsyncDisposable>(NullAsyncDisposable.Instance);
     }
 
-    protected virtual Task<string?> NormalizeProviderKeyAsync(string? providerKey)
+    protected virtual Task<string?> NormalizeProviderKeyAsync(
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         return Task.FromResult(providerKey);
     }
 }

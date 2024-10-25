@@ -5,10 +5,10 @@ using Framework.Settings.ValueProviders;
 
 namespace Framework.Settings.Values;
 
-public static class SettingProviderExtensions
+public static class SettingManagerExtensions
 {
     public static async Task<bool> IsTrueAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         string providerName,
         string? providerKey,
@@ -16,7 +16,7 @@ public static class SettingProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var value = await settingProvider.GetOrDefaultAsync(
+        var value = await settingManager.GetOrDefaultAsync(
             name,
             providerName,
             providerKey,
@@ -28,7 +28,7 @@ public static class SettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         string providerName,
         string? providerKey,
@@ -36,7 +36,7 @@ public static class SettingProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var value = await settingProvider.GetOrDefaultAsync(
+        var value = await settingManager.GetOrDefaultAsync(
             name,
             providerName,
             providerKey,
@@ -48,7 +48,7 @@ public static class SettingProviderExtensions
     }
 
     public static async Task<T> GetAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         string providerName,
         string? providerKey,
@@ -58,7 +58,7 @@ public static class SettingProviderExtensions
     )
         where T : struct
     {
-        var value = await settingProvider.GetOrDefaultAsync(
+        var value = await settingManager.GetOrDefaultAsync(
             name,
             providerName,
             providerKey,
@@ -70,16 +70,16 @@ public static class SettingProviderExtensions
     }
 }
 
-public static class DefaultSettingProviderExtensions
+public static class DefaultSettingManagerExtensions
 {
     public static async Task<bool> IsTrueDefaultAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsTrueAsync(
+        return await settingManager.IsTrueAsync(
             name,
             DefaultValueSettingValueProvider.ProviderName,
             providerKey: null,
@@ -89,13 +89,13 @@ public static class DefaultSettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseDefaultAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsFalseAsync(
+        return await settingManager.IsFalseAsync(
             name,
             DefaultValueSettingValueProvider.ProviderName,
             providerKey: null,
@@ -105,7 +105,7 @@ public static class DefaultSettingProviderExtensions
     }
 
     public static Task<T> GetDefaultAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         T defaultValue = default,
         bool fallback = true,
@@ -113,7 +113,7 @@ public static class DefaultSettingProviderExtensions
     )
         where T : struct
     {
-        return settingProvider.GetAsync(
+        return settingManager.GetAsync(
             name,
             DefaultValueSettingValueProvider.ProviderName,
             providerKey: null,
@@ -124,7 +124,7 @@ public static class DefaultSettingProviderExtensions
     }
 
     public static Task<string?> GetOrDefaultDefaultAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -140,7 +140,7 @@ public static class DefaultSettingProviderExtensions
     }
 
     public static Task<List<SettingValue>> GetAllDefaultAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
@@ -154,16 +154,16 @@ public static class DefaultSettingProviderExtensions
     }
 }
 
-public static class ConfigurationValueSettingProviderExtensions
+public static class ConfigurationValueSettingManagerExtensions
 {
     public static async Task<bool> IsTrueConfigurationAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsTrueAsync(
+        return await settingManager.IsTrueAsync(
             name,
             ConfigurationSettingValueProvider.ProviderName,
             providerKey: null,
@@ -173,13 +173,13 @@ public static class ConfigurationValueSettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseConfigurationAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsFalseAsync(
+        return await settingManager.IsFalseAsync(
             name,
             ConfigurationSettingValueProvider.ProviderName,
             providerKey: null,
@@ -189,7 +189,7 @@ public static class ConfigurationValueSettingProviderExtensions
     }
 
     public static Task<T> GetConfigurationAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         T defaultValue = default,
         bool fallback = true,
@@ -197,7 +197,7 @@ public static class ConfigurationValueSettingProviderExtensions
     )
         where T : struct
     {
-        return settingProvider.GetAsync(
+        return settingManager.GetAsync(
             name,
             ConfigurationSettingValueProvider.ProviderName,
             providerKey: null,
@@ -208,7 +208,7 @@ public static class ConfigurationValueSettingProviderExtensions
     }
 
     public static Task<string?> GetOrDefaultConfigurationAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -224,7 +224,7 @@ public static class ConfigurationValueSettingProviderExtensions
     }
 
     public static Task<List<SettingValue>> GetAllConfigurationAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
@@ -238,16 +238,16 @@ public static class ConfigurationValueSettingProviderExtensions
     }
 }
 
-public static class GlobalSettingProviderExtensions
+public static class GlobalSettingManagerExtensions
 {
     public static async Task<bool> IsTrueGlobalAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsTrueAsync(
+        return await settingManager.IsTrueAsync(
             name,
             GlobalSettingValueProvider.ProviderName,
             providerKey: null,
@@ -257,13 +257,13 @@ public static class GlobalSettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseGlobalAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsFalseAsync(
+        return await settingManager.IsFalseAsync(
             name,
             GlobalSettingValueProvider.ProviderName,
             providerKey: null,
@@ -273,7 +273,7 @@ public static class GlobalSettingProviderExtensions
     }
 
     public static Task<T> GetGlobalAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         T defaultValue = default,
         bool fallback = true,
@@ -281,7 +281,7 @@ public static class GlobalSettingProviderExtensions
     )
         where T : struct
     {
-        return settingProvider.GetAsync(
+        return settingManager.GetAsync(
             name,
             GlobalSettingValueProvider.ProviderName,
             providerKey: null,
@@ -292,7 +292,7 @@ public static class GlobalSettingProviderExtensions
     }
 
     public static Task<string?> GetOrDefaultGlobalAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -308,7 +308,7 @@ public static class GlobalSettingProviderExtensions
     }
 
     public static Task<List<SettingValue>> GetAllGlobalAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
@@ -322,7 +322,7 @@ public static class GlobalSettingProviderExtensions
     }
 
     public static Task SetGlobalAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         string? value,
         CancellationToken cancellationToken = default
@@ -338,17 +338,17 @@ public static class GlobalSettingProviderExtensions
     }
 }
 
-public static class UserSettingProviderExtensions
+public static class UserSettingManagerExtensions
 {
     public static async Task<bool> IsTrueForUserAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         string userId,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsTrueAsync(
+        return await settingManager.IsTrueAsync(
             name,
             UserSettingValueProvider.ProviderName,
             userId,
@@ -358,13 +358,13 @@ public static class UserSettingProviderExtensions
     }
 
     public static async Task<bool> IsTrueForCurrentUserAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsTrueAsync(
+        return await settingManager.IsTrueAsync(
             name,
             UserSettingValueProvider.ProviderName,
             providerKey: null,
@@ -374,14 +374,14 @@ public static class UserSettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseForUserAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         string userId,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsFalseAsync(
+        return await settingManager.IsFalseAsync(
             name,
             UserSettingValueProvider.ProviderName,
             userId,
@@ -391,13 +391,13 @@ public static class UserSettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseForCurrentUserAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsFalseAsync(
+        return await settingManager.IsFalseAsync(
             name,
             UserSettingValueProvider.ProviderName,
             providerKey: null,
@@ -407,7 +407,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task<T> GetForUserAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string userId,
         string name,
         T defaultValue = default,
@@ -416,7 +416,7 @@ public static class UserSettingProviderExtensions
     )
         where T : struct
     {
-        return settingProvider.GetAsync(
+        return settingManager.GetAsync(
             name,
             UserSettingValueProvider.ProviderName,
             userId,
@@ -427,7 +427,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task<T> GetForCurrentUserAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         T defaultValue = default,
         bool fallback = true,
@@ -435,7 +435,7 @@ public static class UserSettingProviderExtensions
     )
         where T : struct
     {
-        return settingProvider.GetAsync(
+        return settingManager.GetAsync(
             name,
             UserSettingValueProvider.ProviderName,
             providerKey: null,
@@ -446,7 +446,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task<string?> GetOrDefaultForUserAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         string userId,
         bool fallback = true,
@@ -463,7 +463,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task<string?> GetOrDefaultForCurrentUserAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -479,7 +479,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task<List<SettingValue>> GetAllForUserAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string userId,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -489,7 +489,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task<List<SettingValue>> GetAllForCurrentUserAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
@@ -503,7 +503,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task SetForUserAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string userId,
         string name,
         string? value,
@@ -522,7 +522,7 @@ public static class UserSettingProviderExtensions
     }
 
     public static Task SetForCurrentUserAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         string? value,
         bool forceToSet = false,
@@ -540,17 +540,17 @@ public static class UserSettingProviderExtensions
     }
 }
 
-public static class TenantSettingProviderExtensions
+public static class TenantSettingManagerExtensions
 {
     public static async Task<bool> IsTrueForTenantAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         string tenantId,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsTrueAsync(
+        return await settingManager.IsTrueAsync(
             name,
             TenantSettingValueProvider.ProviderName,
             tenantId,
@@ -560,13 +560,13 @@ public static class TenantSettingProviderExtensions
     }
 
     public static async Task<bool> IsTrueForCurrentTenantAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsTrueAsync(
+        return await settingManager.IsTrueAsync(
             name,
             TenantSettingValueProvider.ProviderName,
             providerKey: null,
@@ -576,14 +576,14 @@ public static class TenantSettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseForTenantAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         string tenantId,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsFalseAsync(
+        return await settingManager.IsFalseAsync(
             name,
             TenantSettingValueProvider.ProviderName,
             tenantId,
@@ -593,13 +593,13 @@ public static class TenantSettingProviderExtensions
     }
 
     public static async Task<bool> IsFalseForCurrentTenantAsync(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return await settingProvider.IsFalseAsync(
+        return await settingManager.IsFalseAsync(
             name,
             TenantSettingValueProvider.ProviderName,
             providerKey: null,
@@ -609,7 +609,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task<T> GetForTenantAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string tenantId,
         string name,
         T defaultValue = default,
@@ -618,7 +618,7 @@ public static class TenantSettingProviderExtensions
     )
         where T : struct
     {
-        return settingProvider.GetAsync(
+        return settingManager.GetAsync(
             name,
             TenantSettingValueProvider.ProviderName,
             tenantId,
@@ -629,7 +629,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task<T> GetForCurrentTenantAsync<T>(
-        this ISettingProvider settingProvider,
+        this ISettingManager settingManager,
         string name,
         T defaultValue = default,
         bool fallback = true,
@@ -637,7 +637,7 @@ public static class TenantSettingProviderExtensions
     )
         where T : struct
     {
-        return settingProvider.GetAsync(
+        return settingManager.GetAsync(
             name,
             TenantSettingValueProvider.ProviderName,
             providerKey: null,
@@ -648,7 +648,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task<string?> GetOrDefaultForTenantAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         string tenantId,
         bool fallback = true,
@@ -665,7 +665,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task<string?> GetOrDefaultForCurrentTenantAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -681,7 +681,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task<List<SettingValue>> GetAllForTenantAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string tenantId,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -696,7 +696,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task<List<SettingValue>> GetAllForCurrentTenantAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
@@ -710,7 +710,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task SetForTenantAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string tenantId,
         string name,
         string? value,
@@ -729,7 +729,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task SetForCurrentTenantAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string name,
         string? value,
         bool forceToSet = false,
@@ -747,7 +747,7 @@ public static class TenantSettingProviderExtensions
     }
 
     public static Task SetForTenantOrGlobalAsync(
-        this ISettingProvider settingManager,
+        this ISettingManager settingManager,
         string? tenantId,
         string name,
         string? value,

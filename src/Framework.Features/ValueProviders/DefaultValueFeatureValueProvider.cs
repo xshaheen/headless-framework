@@ -12,18 +12,25 @@ public sealed class DefaultValueFeatureValueProvider : IFeatureValueReadProvider
 
     public string Name => ProviderName;
 
-    public bool Compatible(string providerName)
+    public Task<IAsyncDisposable> HandleContextAsync(
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        return string.Equals(providerName, Name, StringComparison.Ordinal);
-    }
+        cancellationToken.ThrowIfCancellationRequested();
 
-    public Task<IAsyncDisposable> HandleContextAsync(string providerName, string? providerKey)
-    {
         return Task.FromResult<IAsyncDisposable>(NullAsyncDisposable.Instance);
     }
 
-    public Task<string?> GetOrDefaultAsync(FeatureDefinition feature, string? providerKey)
+    public Task<string?> GetOrDefaultAsync(
+        FeatureDefinition feature,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         return Task.FromResult(feature.DefaultValue);
     }
 }

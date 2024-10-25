@@ -8,16 +8,27 @@ public interface IFeatureValueReadProvider
 {
     string Name { get; }
 
-    bool Compatible(string providerName);
+    Task<IAsyncDisposable> HandleContextAsync(
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<IAsyncDisposable> HandleContextAsync(string providerName, string providerKey);
-
-    Task<string?> GetOrDefaultAsync(FeatureDefinition feature, string? providerKey);
+    Task<string?> GetOrDefaultAsync(
+        FeatureDefinition feature,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public interface IFeatureValueProvider : IFeatureValueReadProvider
 {
-    Task SetAsync(FeatureDefinition feature, string value, string? providerKey);
+    Task SetAsync(
+        FeatureDefinition feature,
+        string value,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task ClearAsync(FeatureDefinition feature, string? providerKey);
+    Task ClearAsync(FeatureDefinition feature, string? providerKey, CancellationToken cancellationToken = default);
 }

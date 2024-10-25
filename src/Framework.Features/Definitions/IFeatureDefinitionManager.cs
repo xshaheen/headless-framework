@@ -7,7 +7,7 @@ namespace Framework.Features.Definitions;
 
 public interface IFeatureDefinitionManager
 {
-    Task<FeatureDefinition?> GetOrNullAsync(string name, CancellationToken cancellationToken = default);
+    Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<FeatureDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
 
@@ -19,7 +19,7 @@ public sealed class FeatureDefinitionManager(
     IDynamicFeatureDefinitionStore dynamicStore
 ) : IFeatureDefinitionManager
 {
-    public async Task<FeatureDefinition?> GetOrNullAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(name);
 

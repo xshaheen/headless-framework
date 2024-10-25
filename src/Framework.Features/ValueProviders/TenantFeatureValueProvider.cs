@@ -8,14 +8,18 @@ using Framework.Kernel.BuildingBlocks.Helpers.Threading;
 namespace Framework.Features.ValueProviders;
 
 [PublicAPI]
-public sealed class TenantFeatureValueProvider(IFeatureManagementStore store, ICurrentTenant currentTenant)
+public sealed class TenantFeatureValueProvider(IFeatureStore store, ICurrentTenant currentTenant)
     : StoreFeatureValueProvider(store)
 {
     public const string ProviderName = "Tenant";
 
     public override string Name => ProviderName;
 
-    public override Task<IAsyncDisposable> HandleContextAsync(string providerName, string providerKey)
+    public override Task<IAsyncDisposable> HandleContextAsync(
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
         if (
             !string.Equals(providerName, Name, StringComparison.Ordinal)
@@ -23,7 +27,7 @@ public sealed class TenantFeatureValueProvider(IFeatureManagementStore store, IC
             || !Guid.TryParse(providerKey, out var tenantId)
         )
         {
-            return base.HandleContextAsync(providerName, providerKey);
+            return base.HandleContextAsync(providerName, providerKey, cancellationToken);
         }
 
         var disposable = currentTenant.Change(tenantId);
@@ -38,8 +42,12 @@ public sealed class TenantFeatureValueProvider(IFeatureManagementStore store, IC
         return Task.FromResult<IAsyncDisposable>(asyncDisposable);
     }
 
-    public override Task<string?> GetOrDefaultAsync(FeatureDefinition feature, string? providerKey)
+    public override Task<string?> GetOrDefaultAsync(
+        FeatureDefinition feature,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        return Store.GetOrDefaultAsync(feature.Name, Name, currentTenant.Id?.ToString());
+        return Store.GetOrDefaultAsync(feature.Name, Name, currentTenant.Id?.ToString(), cancellationToken);
     }
 }

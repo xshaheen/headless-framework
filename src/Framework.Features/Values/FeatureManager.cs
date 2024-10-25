@@ -1,234 +1,253 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Features.Definitions;
-using Framework.Features.Helpers;
 using Framework.Features.Models;
+using Framework.Features.ValueProviders;
 using Framework.Kernel.Checks;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Features.Values;
 
-public sealed class FeatureManager : IFeatureManager
+public interface IFeatureManager
 {
-    private IFeatureDefinitionManager FeatureDefinitionManager;
-    private List<IFeatureManagementProvider> Providers => _lazyProviders.Value;
-    private FeatureManagementOptions Options;
-    private IStringLocalizerFactory StringLocalizerFactory
-    private readonly Lazy<List<IFeatureManagementProvider>> _lazyProviders;
-
-    public FeatureManager(
-        IOptions<FeatureManagementOptions> options,
-        IServiceProvider serviceProvider,
-        IFeatureDefinitionManager featureDefinitionManager,
-        IStringLocalizerFactory stringLocalizerFactory
-    )
-    {
-        FeatureDefinitionManager = featureDefinitionManager;
-        StringLocalizerFactory = stringLocalizerFactory;
-        Options = options.Value;
-
-        //TODO: Instead, use IServiceScopeFactory and create a scope..?
-
-        _lazyProviders = new Lazy<List<IFeatureManagementProvider>>(
-            () =>
-                Options
-                    .Providers.Select(c => serviceProvider.GetRequiredService(c) as IFeatureManagementProvider)
-                    .ToList(),
-            true
-        );
-    }
-
-    public virtual async Task<string> GetOrNullAsync(
+    Task<string?> GetOrDefaultAsync(
         string name,
         string providerName,
         string? providerKey,
-        bool fallback = true
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<FeatureNameValueWithGrantedProvider?> GetOrDefaultWithProviderAsync(
+        string name,
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<List<FeatureValue>> GetAllAsync(
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<List<FeatureNameValueWithGrantedProvider>> GetAllWithProviderAsync(
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
+
+    Task SetAsync(
+        string name,
+        string? value,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    );
+
+    Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
+}
+
+public sealed class FeatureManager : IFeatureManager
+{
+    private readonly IFeatureDefinitionManager _featureDefinitionManager;
+    private readonly Lazy<List<IFeatureValueReadProvider>> _lazyProviders;
+
+    public FeatureManager(
+        IFeatureDefinitionManager featureDefinitionManager,
+        IServiceScopeFactory serviceScopeFactory,
+        IOptions<FeatureManagementProvidersOptions> optionsAccessor
+    )
+    {
+        _featureDefinitionManager = featureDefinitionManager;
+
+        var options = optionsAccessor.Value;
+
+        _lazyProviders = new(
+            () =>
+            {
+                using var scope = serviceScopeFactory.CreateScope();
+
+                return options
+                    .ValueProviders.Select(type =>
+                        (IFeatureValueReadProvider)scope.ServiceProvider.GetRequiredService(type)
+                    )
+                    .Reverse()
+                    .ToList();
+            },
+            isThreadSafe: true
+        );
+    }
+
+    public async Task<string?> GetOrDefaultAsync(
+        string name,
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(name);
+        Argument.IsNotNull(providerName);
+        var featureValue = await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
+
+        return featureValue.Value;
+    }
+
+    public async Task<List<FeatureValue>> GetAllAsync(
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var items = await GetAllWithProviderAsync(providerName, providerKey, fallback, cancellationToken);
+
+        return items.ConvertAll(x => new FeatureValue(x.Name, x.Value));
+    }
+
+    public async Task<FeatureNameValueWithGrantedProvider?> GetOrDefaultWithProviderAsync(
+        string name,
+        string providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(name);
         Argument.IsNotNull(providerName);
 
-        return (await GetOrNullInternalAsync(name, providerName, providerKey, fallback)).Value;
-    }
-
-    public virtual async Task<List<FeatureNameValue>> GetAllAsync(
-        string providerName,
-        string providerKey,
-        bool fallback = true
-    )
-    {
-        return (await GetAllWithProviderAsync(providerName, providerKey, fallback))
-            .Select(x => new FeatureNameValue(x.Name, x.Value))
-            .ToList();
-    }
-
-    public async Task<FeatureNameValueWithGrantedProvider> GetOrNullWithProviderAsync(
-        string name,
-        string providerName,
-        string providerKey,
-        bool fallback = true
-    )
-    {
-        Check.NotNull(name, nameof(name));
-        Check.NotNull(providerName, nameof(providerName));
-
-        return await GetOrNullInternalAsync(name, providerName, providerKey, fallback);
+        return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
     }
 
     public async Task<List<FeatureNameValueWithGrantedProvider>> GetAllWithProviderAsync(
         string providerName,
-        string providerKey,
-        bool fallback = true
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
     )
     {
-        Check.NotNull(providerName, nameof(providerName));
+        Argument.IsNotNull(providerName);
 
-        var featureDefinitions = await FeatureDefinitionManager.GetAllAsync();
-        var providers = Enumerable.Reverse(Providers).SkipWhile(c => c.Name != providerName);
+        var featureDefinitions = await _featureDefinitionManager.GetAllAsync(cancellationToken);
+
+        var providers = _lazyProviders.Value.SkipWhile(c =>
+            !string.Equals(c.Name, providerName, StringComparison.Ordinal)
+        );
 
         if (!fallback)
         {
-            providers = providers.TakeWhile(c => c.Name == providerName);
+            providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }
 
         var providerList = providers.ToList();
-        if (!providerList.Any())
+
+        if (providerList.Count == 0)
         {
-            return new List<FeatureNameValueWithGrantedProvider>();
+            return [];
         }
 
-        var featureValues = new Dictionary<string, FeatureNameValueWithGrantedProvider>();
+        var featureValues = new Dictionary<string, FeatureNameValueWithGrantedProvider>(StringComparer.Ordinal);
 
-        foreach (var feature in featureDefinitions)
+        foreach (var definition in featureDefinitions)
         {
-            var featureNameValueWithGrantedProvider = new FeatureNameValueWithGrantedProvider(feature.Name, null);
             foreach (var provider in providerList)
             {
-                string pk = null;
-                if (provider.Compatible(providerName))
-                {
-                    pk = providerKey;
-                }
+                var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+                var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken);
 
-                var value = await provider.GetOrNullAsync(feature, pk);
-                if (value != null)
+                if (value is not null)
                 {
-                    featureNameValueWithGrantedProvider.Value = value;
-                    featureNameValueWithGrantedProvider.Provider = new FeatureValueProviderInfo(provider.Name, pk);
+                    featureValues[definition.Name] = new(definition.Name, value, new(provider.Name, pk));
+
                     break;
                 }
             }
-
-            if (featureNameValueWithGrantedProvider.Value != null)
-            {
-                featureValues[feature.Name] = featureNameValueWithGrantedProvider;
-            }
         }
 
-        return featureValues.Values.ToList();
+        return [.. featureValues.Values];
     }
 
-    public virtual async Task SetAsync(
+    public async Task SetAsync(
         string name,
-        string value,
+        string? value,
         string providerName,
-        string providerKey,
-        bool forceToSet = false
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
     )
     {
-        Check.NotNull(name, nameof(name));
-        Check.NotNull(providerName, nameof(providerName));
+        Argument.IsNotNull(name);
+        Argument.IsNotNull(providerName);
 
-        var feature = await FeatureDefinitionManager.GetAsync(name);
+        var feature =
+            await _featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
+            ?? throw new InvalidOperationException($"Undefined setting: {name}");
 
-        if (feature.ValueType?.Validator.IsValid(value) == false)
+        var providers = _lazyProviders
+            .Value.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
+            .ToList();
+
+        if (providers.Count == 0)
         {
-            throw new FeatureValueInvalidException(feature.DisplayName.Localize(StringLocalizerFactory));
+            throw new InvalidOperationException($"Unknown feature value provider: {providerName}");
         }
 
-        var providers = Enumerable.Reverse(Providers).SkipWhile(p => p.Name != providerName).ToList();
-
-        if (!providers.Any())
+        if (providers.Count > 1 && !forceToSet && value is not null)
         {
-            throw new AbpException($"Unknown feature value provider: {providerName}");
-        }
-
-        if (providers.Count > 1 && !forceToSet && value != null)
-        {
-            await using (await providers[0].HandleContextAsync(providerName, providerKey))
+            await using (await providers[0].HandleContextAsync(providerName, providerKey, cancellationToken))
             {
-                var fallbackValue = await GetOrNullInternalAsync(name, providers[1].Name, null);
-                if (fallbackValue.Value == value)
+                var fallbackValue = await _CoreGetOrDefaultAsync(
+                    name,
+                    providers[1].Name,
+                    providerKey: null,
+                    cancellationToken: cancellationToken
+                );
+
+                if (string.Equals(fallbackValue.Value, value, StringComparison.Ordinal))
                 {
-                    //Clear the value if it's same as it's fallback value
+                    // Clear the value if it's same as it's fallback value
                     value = null;
                 }
             }
         }
 
-        providers = providers.TakeWhile(p => p.Name == providerName).ToList(); //Getting list for case of there are more than one provider with same providerName
+        // Getting list for case of there are more than one provider with same providerName
+        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList();
 
-        if (value == null)
-        {
-            foreach (var provider in providers)
-            {
-                await provider.ClearAsync(feature, providerKey);
-            }
-        }
-        else
-        {
-            foreach (var provider in providers)
-            {
-                await provider.SetAsync(feature, value, providerKey);
-            }
-        }
-    }
-
-    protected virtual async Task<FeatureNameValueWithGrantedProvider> GetOrNullInternalAsync(
-        string name,
-        string providerName,
-        string? providerKey,
-        bool fallback = true
-    ) //TODO: Fallback is not used
-    {
-        var feature = await FeatureDefinitionManager.GetAsync(name);
-        var providers = Enumerable.Reverse(Providers);
-
-        if (providerName != null)
-        {
-            providers = providers.SkipWhile(c => c.Name != providerName);
-        }
-
-        var featureNameValueWithGrantedProvider = new FeatureNameValueWithGrantedProvider(name, null);
         foreach (var provider in providers)
         {
-            string? pk = null;
-            if (provider.Compatible(providerName))
+            if (provider is not IFeatureValueProvider p)
             {
-                pk = providerKey;
+                throw new InvalidOperationException($"Provider {providerName} is readonly provider");
             }
 
-            var value = await provider.GetOrNullAsync(feature, pk);
-            if (value != null)
+            if (value is null)
             {
-                featureNameValueWithGrantedProvider.Value = value;
-                featureNameValueWithGrantedProvider.Provider = new FeatureValueProviderInfo(provider.Name, pk);
-                break;
+                await p.ClearAsync(feature, providerKey, cancellationToken);
+            }
+            else
+            {
+                await p.SetAsync(feature, value, providerKey, cancellationToken);
             }
         }
-
-        return featureNameValueWithGrantedProvider;
     }
 
-    public virtual async Task DeleteAsync(string providerName, string providerKey)
+    public async Task DeleteAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        var featureNameValues = await GetAllAsync(providerName, providerKey);
+        var featureNameValues = await GetAllAsync(providerName, providerKey, cancellationToken: cancellationToken);
 
-        var providers = Enumerable
-            .Reverse(Providers)
-            .SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
+        var providers = _lazyProviders
+            .Value.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
             .ToList();
 
         if (providers.Count == 0)
@@ -236,16 +255,55 @@ public sealed class FeatureManager : IFeatureManager
             return;
         }
 
-        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList(); //Getting list for case of there are more than one provider with same providerName
+        // Getting list for case of there are more than one provider with same providerName
+        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList();
 
         foreach (var featureNameValue in featureNameValues)
         {
-            var feature = await FeatureDefinitionManager.GetAsync(featureNameValue.Name);
+            var feature = await _featureDefinitionManager.GetAsync(featureNameValue.Name);
 
             foreach (var provider in providers)
             {
                 await provider.ClearAsync(feature, providerKey);
             }
         }
+    }
+
+    private async Task<FeatureNameValueWithGrantedProvider> _CoreGetOrDefaultAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var definition =
+            await _featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
+            ?? throw new InvalidOperationException($"Undefined setting: {name}");
+
+        IEnumerable<IFeatureValueReadProvider> providers = _lazyProviders.Value;
+
+        if (providerName != null)
+        {
+            providers = providers.SkipWhile(c => !string.Equals(c.Name, providerName, StringComparison.Ordinal));
+        }
+
+        if (!fallback)
+        {
+            providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
+        }
+
+        foreach (var provider in providers)
+        {
+            var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            var value = await provider.GetOrDefaultAsync(definition, pk);
+
+            if (value is not null)
+            {
+                return new(name, value, new(provider.Name, pk));
+            }
+        }
+
+        return new(name, Value: null);
     }
 }

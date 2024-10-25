@@ -49,16 +49,14 @@ public sealed class FeatureChecker(
     public override async Task<string?> GetOrDefaultAsync(string name)
     {
         var featureDefinition =
-            await featureDefinitionManager.GetOrNullAsync(name)
+            await featureDefinitionManager.GetOrDefaultAsync(name)
             ?? throw new InvalidOperationException($"Feature {name} is not defined!");
 
         var providers = featureValueProviderManager.ValueProviders.Reverse();
 
-        if (featureDefinition.AllowedProviders.Count != 0)
+        if (featureDefinition.Providers.Count != 0)
         {
-            providers = providers.Where(p =>
-                featureDefinition.AllowedProviders.Contains(p.Name, StringComparer.Ordinal)
-            );
+            providers = providers.Where(p => featureDefinition.Providers.Contains(p.Name, StringComparer.Ordinal));
         }
 
         return await _GetOrDefaultValueFromProvidersAsync(providers, featureDefinition);

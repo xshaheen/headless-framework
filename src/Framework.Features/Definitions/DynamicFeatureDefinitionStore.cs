@@ -205,7 +205,7 @@ public sealed class DynamicFeatureDefinitionStore(
 
         if (!featureRecord.Providers.IsNullOrWhiteSpace())
         {
-            feature.AllowedProviders.AddRange(featureRecord.Providers.Split(','));
+            feature.Providers.AddRange(featureRecord.Providers.Split(','));
         }
 
         foreach (var property in featureRecord.ExtraProperties)
