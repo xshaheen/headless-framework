@@ -28,7 +28,7 @@ public interface IFeatureValueRepository
 
     Task DeleteAsync(string? providerName, string? providerKey, CancellationToken cancellationToken = default);
 
-    Task UpdateAsync(FeatureValueRecord featureValue);
+    Task UpdateAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default);
 
-    Task DeleteAsync(FeatureValueRecord featureValue);
+    Task DeleteAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default);
 }

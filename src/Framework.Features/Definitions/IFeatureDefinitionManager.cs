@@ -2,18 +2,16 @@
 
 using Framework.Features.Models;
 using Framework.Kernel.Checks;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Framework.Features.Definitions;
 
 public interface IFeatureDefinitionManager
 {
-    Task<FeatureDefinition?> GetOrNullAsync(string name);
+    Task<FeatureDefinition?> GetOrNullAsync(string name, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<FeatureDefinition>> GetAllAsync();
+    Task<IReadOnlyList<FeatureDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync();
+    Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class FeatureDefinitionManager(
@@ -21,34 +19,36 @@ public sealed class FeatureDefinitionManager(
     IDynamicFeatureDefinitionStore dynamicStore
 ) : IFeatureDefinitionManager
 {
-    public async Task<FeatureDefinition?> GetOrNullAsync(string name)
+    public async Task<FeatureDefinition?> GetOrNullAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(name);
 
-        return await staticStore.GetOrNullAsync(name) ?? await dynamicStore.GetOrNullAsync(name);
+        return await staticStore.GetOrDefaultAsync(name, cancellationToken)
+            ?? await dynamicStore.GetOrDefaultAsync(name, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FeatureDefinition>> GetAllAsync()
+    public async Task<IReadOnlyList<FeatureDefinition>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var staticFeatures = await staticStore.GetFeaturesAsync();
+        var staticFeatures = await staticStore.GetFeaturesAsync(cancellationToken);
         var staticFeatureNames = staticFeatures.Select(p => p.Name).ToImmutableHashSet();
 
-        var dynamicFeatures = await dynamicStore.GetFeaturesAsync();
-
         // We prefer static features over dynamics
-        return staticFeatures
-            .Concat(dynamicFeatures.Where(d => !staticFeatureNames.Contains(d.Name)))
-            .ToImmutableList();
+        var dynamicFeatures = await dynamicStore.GetFeaturesAsync(cancellationToken);
+        var uniqueDynamicSettings = dynamicFeatures.Where(d => !staticFeatureNames.Contains(d.Name));
+
+        return staticFeatures.Concat(uniqueDynamicSettings).ToImmutableList();
     }
 
-    public async Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync()
+    public async Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(
+        CancellationToken cancellationToken = default
+    )
     {
-        var staticGroups = await staticStore.GetGroupsAsync();
+        var staticGroups = await staticStore.GetGroupsAsync(cancellationToken);
         var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet();
+        // We prefer static settings over dynamics
+        var dynamicSettings = await dynamicStore.GetGroupsAsync(cancellationToken);
+        var uniqueDynamicSettings = dynamicSettings.Where(d => !staticGroupNames.Contains(d.Name));
 
-        var dynamicGroups = await dynamicStore.GetGroupsAsync();
-
-        // We prefer static groups over dynamics
-        return staticGroups.Concat(dynamicGroups.Where(d => !staticGroupNames.Contains(d.Name))).ToImmutableList();
+        return staticGroups.Concat(uniqueDynamicSettings).ToImmutableList();
     }
 }

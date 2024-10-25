@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Features.Models;
-
-namespace Framework.Features.Definitions;
+namespace Framework.Features.Models;
 
 public interface ICanCreateChildFeature
 {

@@ -2,14 +2,17 @@
 
 using Framework.Features.Definitions;
 using Framework.Features.ValueProviders;
-using Framework.Features.Values;
 using Framework.Kernel.Primitives;
 
 namespace Framework.Features.Models;
 
-public sealed class FeatureManagementProviderOptions
+public sealed class FeatureManagementProvidersOptions
 {
     public TypeList<IFeatureDefinitionProvider> DefinitionProviders { get; } = [];
 
     public TypeList<IFeatureValueReadProvider> ValueProviders { get; } = [];
+
+    public HashSet<string> DeletedFeatures { get; } = [];
+
+    public HashSet<string> DeletedFeatureGroups { get; } = [];
 }

@@ -15,13 +15,13 @@ public interface IFeatureValueProviderManager
 
 public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
 {
-    private readonly FeatureManagementProviderOptions _providerOptions;
+    private readonly FeatureManagementProvidersOptions _providerOptions;
     private readonly IServiceProvider _serviceProvider;
     private readonly Lazy<List<IFeatureValueReadProvider>> _lazyProviders;
 
     public FeatureValueProviderManager(
         IServiceProvider serviceProvider,
-        IOptions<FeatureManagementProviderOptions> options
+        IOptions<FeatureManagementProvidersOptions> options
     )
     {
         _providerOptions = options.Value;

@@ -41,6 +41,7 @@ public sealed class DynamicSettingDefinitionStore(
 {
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
     private readonly SettingManagementProvidersOptions _providers = providersAccessor.Value;
+
     private const string _StampCacheKey = "SettingUpdatedLocalStamp";
     private const string _CommonLockKey = "Common_SettingUpdateLock";
     private readonly string _appLockKey = $"{application.ApplicationName}_SettingUpdateLock";
@@ -108,18 +109,6 @@ public sealed class DynamicSettingDefinitionStore(
         _lastCheckTime = timeProvider.GetUtcNow();
     }
 
-    private async Task _UpdateInMemoryCacheAsync(CancellationToken cancellationToken)
-    {
-        var records = await repository.GetListAsync(cancellationToken);
-
-        _memoryCache.Clear();
-
-        foreach (var record in records)
-        {
-            _memoryCache[record.Name] = serializer.Deserialize(record);
-        }
-    }
-
     private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
     {
         var cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
@@ -136,7 +125,6 @@ public sealed class DynamicSettingDefinitionStore(
             ); // This request will fail
 
         cancellationToken.ThrowIfCancellationRequested();
-
         cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
 
         if (!cachedStamp.IsNull)
@@ -144,11 +132,19 @@ public sealed class DynamicSettingDefinitionStore(
             return cachedStamp.Value;
         }
 
-        var newStamp = guidGenerator.Create().ToString("N");
+        return await _ChangeCommonStamp(cancellationToken);
+    }
 
-        await distributedCache.UpsertAsync(_StampCacheKey, newStamp, TimeSpan.FromDays(30), cancellationToken);
+    private async Task _UpdateInMemoryCacheAsync(CancellationToken cancellationToken)
+    {
+        var records = await repository.GetListAsync(cancellationToken);
 
-        return newStamp;
+        _memoryCache.Clear();
+
+        foreach (var record in records)
+        {
+            _memoryCache[record.Name] = serializer.Deserialize(record);
+        }
     }
 
     private bool _IsUpdateMemoryCacheRequired()
@@ -234,13 +230,6 @@ public sealed class DynamicSettingDefinitionStore(
             },
         };
 
-    /// <summary>Change the cache stamp to notify other instances to update their local caches</summary>
-    private async Task _ChangeCommonStamp(CancellationToken cancellationToken)
-    {
-        var stamp = guidGenerator.Create().ToString();
-        await distributedCache.UpsertAsync(_StampCacheKey, stamp, TimeSpan.FromDays(30), cancellationToken);
-    }
-
     private async Task<(
         List<SettingDefinitionRecord> NewRecords,
         List<SettingDefinitionRecord> ChangedRecords,
@@ -295,6 +284,19 @@ public sealed class DynamicSettingDefinitionStore(
         stringBuilder.Append(deletedSettings.JoinAsString(","));
 
         return stringBuilder.ToString().ToMd5();
+    }
+
+    #endregion
+
+    #region Helpers
+
+    /// <summary>Change the cache stamp to notify other instances to update their local caches</summary>
+    private async Task<string> _ChangeCommonStamp(CancellationToken cancellationToken)
+    {
+        var stamp = guidGenerator.Create().ToString("N");
+        await distributedCache.UpsertAsync(_StampCacheKey, stamp, TimeSpan.FromDays(30), cancellationToken);
+
+        return stamp;
     }
 
     #endregion
