@@ -70,7 +70,7 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
                 feature.DefaultValue,
                 feature.IsVisibleToClients,
                 feature.IsAvailableToHost,
-                _SerializeProviders(feature.AllowedProviders)
+                _SerializeProviders(feature.Providers)
             );
 
             foreach (var property in feature.Properties)
