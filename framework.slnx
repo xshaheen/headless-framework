@@ -39,7 +39,6 @@
   </Folder>
   <Folder Name="/Features/">
     <Project Path="src\Framework.Features\Framework.Features.csproj" />
-    <Project Path="src\Framework.Settings\Framework.Settings.csproj" />
   </Folder>
   <Folder Name="/Generators/">
     <Project Path="src\Framework.Generator.Primitives.Abstractions\Framework.Generator.Primitives.Abstractions.csproj" />
@@ -102,6 +101,7 @@
   </Folder>
   <Folder Name="/Settings/">
     <Project Path="src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj" />
+    <Project Path="src\Framework.Settings\Framework.Settings.csproj" />
     <Project Path="tests\Framework.Settings.Tests.Integrations\Framework.Settings.Tests.Integrations.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Sms/">

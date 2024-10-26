@@ -25,7 +25,16 @@ public sealed class SettingEncryptionService(
             return plainValue;
         }
 
-        return stringEncryptionService.Encrypt(plainValue);
+        try
+        {
+            return stringEncryptionService.Encrypt(plainValue);
+        }
+        catch (Exception e)
+        {
+            logger.LogWarning(e, "Failed to encrypt setting value: {SettingDefinition}", settingDefinition.Name);
+
+            throw;
+        }
     }
 
     public string? Decrypt(SettingDefinition settingDefinition, string? encryptedValue)

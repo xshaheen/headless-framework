@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Settings.Entities;
 using Framework.Settings.Values;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +11,7 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
 {
     public async Task<SettingValueRecord?> FindAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -28,9 +27,34 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
             );
     }
 
+    public async Task<List<SettingValueRecord>> FindAllAsync(
+        string name,
+        string? providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+
+        var query = db.SettingValues.Where(s => s.Name == name);
+
+        if (providerName != null)
+        {
+            query = query.Where(s => s.ProviderName == providerName);
+        }
+
+        if (providerKey != null)
+        {
+            query = query.Where(s => s.ProviderKey == providerKey);
+        }
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
     public async Task<List<SettingValueRecord>> GetListAsync(
         string[] names,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -46,7 +70,7 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
     }
 
     public async Task<List<SettingValueRecord>> GetListAsync(
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -72,6 +96,14 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
         db.SettingValues.Update(setting);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAsync(List<SettingValueRecord> settings, CancellationToken cancellationToken = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        db.SettingValues.RemoveRange(settings);
         await db.SaveChangesAsync(cancellationToken);
     }
 

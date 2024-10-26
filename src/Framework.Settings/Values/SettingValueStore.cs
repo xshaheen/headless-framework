@@ -15,20 +15,20 @@ public interface ISettingValueStore
 {
     Task<string?> GetOrDefaultAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
     Task<List<SettingValue>> GetAllAsync(
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
     Task<List<SettingValue>> GetAllAsync(
         string[] names,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
@@ -36,14 +36,14 @@ public interface ISettingValueStore
     Task SetAsync(
         string name,
         string value,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
     Task DeleteAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
@@ -53,12 +53,12 @@ public sealed class SettingValueStore(
     ISettingValueRecordRepository repository,
     ISettingDefinitionManager settingDefinitionManager,
     IGuidGenerator guidGenerator,
-    ICache<SettingValueCacheItem> distributedCache
+    ICache<SettingValueCacheItem> cache
 ) : ISettingValueStore
 {
     public async Task<string?> GetOrDefaultAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -69,7 +69,7 @@ public sealed class SettingValueStore(
     }
 
     public async Task<List<SettingValue>> GetAllAsync(
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -81,7 +81,7 @@ public sealed class SettingValueStore(
 
     public async Task<List<SettingValue>> GetAllAsync(
         string[] names,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -106,65 +106,63 @@ public sealed class SettingValueStore(
     public async Task SetAsync(
         string name,
         string value,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var setting = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+        var settingValue = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
 
-        if (setting is null)
+        if (settingValue is null)
         {
-            setting = new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await repository.InsertAsync(setting, cancellationToken);
+            settingValue = new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
+            await repository.InsertAsync(settingValue, cancellationToken);
         }
         else
         {
-            setting.Value = value;
-            await repository.UpdateAsync(setting, cancellationToken);
+            settingValue.Value = value;
+            await repository.UpdateAsync(settingValue, cancellationToken);
         }
 
-        await distributedCache.UpsertAsync(
-            SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
-            new SettingValueCacheItem(setting.Value),
-            5.Hours(),
-            cancellationToken
-        );
+        var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+
+        await cache.UpsertAsync(cacheKey, new SettingValueCacheItem(settingValue.Value), 5.Hours(), cancellationToken);
     }
 
     public async Task DeleteAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var setting = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+        var settings = await repository.FindAllAsync(name, providerName, providerKey, cancellationToken);
 
-        if (setting is null)
+        if (settings.Count == 0)
         {
             return;
         }
 
-        await repository.DeleteAsync(setting, cancellationToken);
+        await repository.DeleteAsync(settings, cancellationToken);
 
-        await distributedCache.RemoveAsync(
-            SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
-            cancellationToken
-        );
+        foreach (var setting in settings)
+        {
+            var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, setting.ProviderKey);
+            await cache.RemoveAsync(cacheKey, cancellationToken);
+        }
     }
 
     #region Cache Helpers
 
     private async Task<SettingValueCacheItem> _GetCachedItemAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var cacheKey = _CalculateCacheKey(name, providerName, providerKey);
-        var existValueCacheItem = await distributedCache.GetAsync(cacheKey, cancellationToken);
+        var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken);
 
         if (existValueCacheItem.HasValue)
         {
@@ -183,13 +181,13 @@ public sealed class SettingValueStore(
 
     private async Task<Dictionary<string, SettingValueCacheItem>> _GetCachedItemsAsync(
         string[] names,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var cacheKeys = names.ConvertAll(x => _CalculateCacheKey(x, providerName, providerKey));
-        var cacheItems = await distributedCache.GetAllAsync(cacheKeys, cancellationToken);
+        var cacheKeys = names.ConvertAll(x => SettingValueCacheItem.CalculateCacheKey(x, providerName, providerKey));
+        var cacheItems = await cache.GetAllAsync(cacheKeys, cancellationToken);
 
         if (cacheItems.All(x => x.Value.HasValue))
         {
@@ -218,7 +216,7 @@ public sealed class SettingValueStore(
     }
 
     private async Task<SettingValueCacheItem> _CacheAllAndGetAsync(
-        string? providerName,
+        string providerName,
         string? providerKey,
         string nameToFind,
         CancellationToken cancellationToken = default
@@ -232,7 +230,7 @@ public sealed class SettingValueStore(
 
         foreach (var settingDefinition in definitions)
         {
-            var cacheKey = _CalculateCacheKey(settingDefinition.Name, providerName, providerKey);
+            var cacheKey = SettingValueCacheItem.CalculateCacheKey(settingDefinition.Name, providerName, providerKey);
             var settingValue = values.GetOrDefault(settingDefinition.Name);
             var settingValueCacheItem = new SettingValueCacheItem(settingValue);
             cacheItems[cacheKey] = settingValueCacheItem;
@@ -243,14 +241,14 @@ public sealed class SettingValueStore(
             }
         }
 
-        await distributedCache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
 
         return settingToFind ?? new SettingValueCacheItem(value: null);
     }
 
     private async Task<Dictionary<string, SettingValueCacheItem>> _CacheSomeAsync(
         string[] names,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -262,19 +260,14 @@ public sealed class SettingValueStore(
 
         foreach (var definition in definitions)
         {
-            var cacheKey = _CalculateCacheKey(definition.Name, providerName, providerKey);
+            var cacheKey = SettingValueCacheItem.CalculateCacheKey(definition.Name, providerName, providerKey);
             var settingValue = values.GetOrDefault(definition.Name);
             cacheItems[cacheKey] = new SettingValueCacheItem(settingValue);
         }
 
-        await distributedCache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
 
         return cacheItems;
-    }
-
-    private static string _CalculateCacheKey(string settingName, string? providerName, string? providerKey)
-    {
-        return SettingValueCacheItem.CalculateCacheKey(settingName, providerName, providerKey);
     }
 
     private static string _GetSettingNameFormCacheKey(string key)
@@ -290,7 +283,7 @@ public sealed class SettingValueStore(
     #region DB Helpers
 
     private async Task<Dictionary<string, string>> _GetDbSettingValuesAsync(
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
@@ -301,7 +294,7 @@ public sealed class SettingValueStore(
     }
 
     private async Task<Dictionary<string, string>> _GetDbSettingValuesAsync(
-        string? providerName,
+        string providerName,
         string? providerKey,
         string[] names,
         CancellationToken cancellationToken = default

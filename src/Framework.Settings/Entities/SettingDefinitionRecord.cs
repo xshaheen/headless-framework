@@ -61,12 +61,16 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
         ExtraProperties = [];
     }
 
+    /// <summary>Gets or sets the name of the setting.</summary>
     public string Name { get; set; }
 
+    /// <summary>Gets or sets the display name of the setting.</summary>
     public string DisplayName { get; set; }
 
+    /// <summary>Gets or sets the description of the setting.</summary>
     public string? Description { get; set; }
 
+    /// <summary>Gets or sets the default value of the setting.</summary>
     public string? DefaultValue { get; set; }
 
     /// <summary>
@@ -88,6 +92,7 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
     /// <summary>Comma separated the list of provider names.</summary>
     public string? Providers { get; set; }
 
+    /// <summary>Gets the extra properties associated with this setting.</summary>
     public ExtraProperties ExtraProperties { get; private set; }
 
     public bool HasSameData(SettingDefinitionRecord other)
