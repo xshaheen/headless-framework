@@ -22,7 +22,7 @@ public static class AddFeaturesExtensions
     /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
     /// to be able to use this feature.
     /// </summary>
-    public static IServiceCollection AddFrameworkFeaturesCore(
+    public static IServiceCollection AddFeaturesManagementCore(
         this IServiceCollection services,
         Action<FeatureManagementOptions>? setupAction = null
     )
