@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Permissions.Permissions.Definitions;
+namespace Framework.Permissions.Definitions;
 
 public interface IPermissionDefinitionContext
 {

@@ -1,12 +1,12 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Primitives;
-using Framework.Permissions.Permissions.Definitions;
-using Framework.Permissions.Permissions.Values;
+using Framework.Permissions.Definitions;
+using Framework.Permissions.Values;
 
-namespace Framework.Permissions.Permissions;
+namespace Framework.Permissions.Models;
 
-public class FrameworkPermissionOptions
+public class PermissionManagementProviderOptions
 {
     public TypeList<IPermissionDefinitionProvider> DefinitionProviders { get; } = [];
 

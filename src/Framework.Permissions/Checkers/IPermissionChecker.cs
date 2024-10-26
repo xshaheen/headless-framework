@@ -1,8 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Security.Claims;
+using Framework.Permissions.Models;
 
-namespace Framework.Permissions.Permissions.Checkers;
+namespace Framework.Permissions.Checkers;
 
 [PublicAPI]
 public interface IPermissionChecker

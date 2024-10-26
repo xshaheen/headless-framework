@@ -2,9 +2,9 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Permissions.Permissions.Checkers;
+namespace Framework.Permissions.Models;
 
-public class MultiplePermissionGrantResult
+public sealed class MultiplePermissionGrantResult
 {
     public bool AllGranted => Result.Values.All(x => x == PermissionGrantResult.Granted);
 

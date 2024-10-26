@@ -1,10 +1,11 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Permissions.Permissions.Checkers;
+using Framework.Permissions.Checkers;
+using Framework.Permissions.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Framework.Permissions.Permissions.Values;
+namespace Framework.Permissions.Values;
 
 public interface IPermissionStore
 {

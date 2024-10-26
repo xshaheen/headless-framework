@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Permissions;
+namespace Framework.Permissions.Models;
 
 public sealed class PermissionGrantInfo(
     string name,

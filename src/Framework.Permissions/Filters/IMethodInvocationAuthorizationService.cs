@@ -2,7 +2,7 @@
 
 using System.Reflection;
 
-namespace Framework.Permissions;
+namespace Framework.Permissions.Filters;
 
 public interface IMethodInvocationAuthorizationService
 {
