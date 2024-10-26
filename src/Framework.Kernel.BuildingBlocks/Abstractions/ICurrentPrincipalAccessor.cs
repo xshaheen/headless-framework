@@ -2,9 +2,8 @@
 
 using System.Security.Claims;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
-using Microsoft.AspNetCore.Http;
 
-namespace Framework.Api.Security.Claims;
+namespace Framework.Kernel.BuildingBlocks.Abstractions;
 
 public interface ICurrentPrincipalAccessor
 {
@@ -15,9 +14,9 @@ public interface ICurrentPrincipalAccessor
 
 public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 {
-    public ClaimsPrincipal Principal => _currentPrincipal.Value ?? GetClaimsPrincipal();
-
     private readonly AsyncLocal<ClaimsPrincipal> _currentPrincipal = new();
+
+    public ClaimsPrincipal Principal => _currentPrincipal.Value ?? GetClaimsPrincipal();
 
     protected abstract ClaimsPrincipal GetClaimsPrincipal();
 
@@ -43,13 +42,5 @@ public class ThreadCurrentPrincipalAccessor : CurrentPrincipalAccessor
     {
         return Thread.CurrentPrincipal as ClaimsPrincipal
             ?? throw new InvalidOperationException("Thread.CurrentPrincipal is null or not a ClaimsPrincipal.");
-    }
-}
-
-public sealed class HttpContextCurrentPrincipalAccessor(IHttpContextAccessor accessor) : ThreadCurrentPrincipalAccessor
-{
-    protected override ClaimsPrincipal GetClaimsPrincipal()
-    {
-        return accessor.HttpContext?.User ?? base.GetClaimsPrincipal();
     }
 }

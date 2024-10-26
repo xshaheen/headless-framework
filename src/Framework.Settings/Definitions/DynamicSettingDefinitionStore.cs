@@ -41,9 +41,13 @@ public sealed class DynamicSettingDefinitionStore(
 {
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
     private readonly SettingManagementProvidersOptions _providers = providersAccessor.Value;
-    private const string _CommonResourceLockKey = SettingsConstants.CommonUpdateLockKey;
-    private readonly string _appResourceLockKey = SettingsConstants.GetApplicationLockKey(application.ApplicationName);
+
+    private const string _StampCacheKey = "SettingUpdatedLocalStamp";
+    private const string _CommonLockKey = "Common_SettingUpdateLock";
+    private readonly string _appLockKey = $"{application.ApplicationName}_SettingUpdateLock";
     private readonly string _hashCacheKey = $"{application.ApplicationName}_SettingsHash";
+
+    #region Get Methods
 
     public async Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
@@ -52,9 +56,12 @@ public sealed class DynamicSettingDefinitionStore(
             return null;
         }
 
-        await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+        using (await _syncSemaphore.LockAsync(cancellationToken))
+        {
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
 
-        return _memoryCache.GetOrDefault(name);
+            return _memoryCache.GetOrDefault(name);
+        }
     }
 
     public async Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default)
@@ -64,16 +71,109 @@ public sealed class DynamicSettingDefinitionStore(
             return [];
         }
 
-        await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+        using (await _syncSemaphore.LockAsync(cancellationToken))
+        {
+            await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
 
-        return _memoryCache.Values.ToImmutableList();
+            return _memoryCache.Values.ToImmutableList();
+        }
     }
+
+    #endregion
+
+    #region Get Helpers
+
+    private string? _cacheStamp;
+    private DateTimeOffset? _lastCheckTime;
+    private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
+    private readonly Dictionary<string, SettingDefinition> _memoryCache = new(StringComparer.Ordinal);
+
+    private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
+    {
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            return; // Get the latest setting with a small delay for optimization
+        }
+
+        var cacheStamp = await _GetOrSetDistributedCacheStampAsync(cancellationToken);
+
+        if (string.Equals(cacheStamp, _cacheStamp, StringComparison.Ordinal))
+        {
+            _lastCheckTime = timeProvider.GetUtcNow();
+
+            return;
+        }
+
+        await _UpdateInMemoryCacheAsync(cancellationToken);
+        _cacheStamp = cacheStamp;
+        _lastCheckTime = timeProvider.GetUtcNow();
+    }
+
+    private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
+    {
+        var cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
+
+        if (!cachedStamp.IsNull)
+        {
+            return cachedStamp.Value;
+        }
+
+        await using var resourceLock =
+            await resourceLockProvider.TryAcquireAsync(_CommonLockKey, 2.Minutes())
+            ?? throw new InvalidOperationException(
+                "Could not acquire distributed lock for setting definition common stamp check!"
+            ); // This request will fail
+
+        cancellationToken.ThrowIfCancellationRequested();
+        cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
+
+        if (!cachedStamp.IsNull)
+        {
+            return cachedStamp.Value;
+        }
+
+        return await _ChangeCommonStamp(cancellationToken);
+    }
+
+    private async Task _UpdateInMemoryCacheAsync(CancellationToken cancellationToken)
+    {
+        var records = await repository.GetListAsync(cancellationToken);
+
+        _memoryCache.Clear();
+
+        foreach (var record in records)
+        {
+            _memoryCache[record.Name] = serializer.Deserialize(record);
+        }
+    }
+
+    private bool _IsUpdateMemoryCacheRequired()
+    {
+        if (_lastCheckTime is null)
+        {
+            return true;
+        }
+
+        var elapsedSinceLastCheck = timeProvider.GetUtcNow().Subtract(_lastCheckTime.Value);
+
+        return elapsedSinceLastCheck.TotalSeconds > 30;
+    }
+
+    public void Dispose()
+    {
+        _syncSemaphore.Dispose();
+    }
+
+    #endregion
+
+    #region Save Method
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
         await using var applicationResourceLock = await resourceLockProvider.TryAcquireAsync(
-            _appResourceLockKey,
-            timeUntilExpires: 5.Minutes()
+            _appLockKey,
+            timeUntilExpires: 10.Minutes(),
+            acquireTimeout: 5.Minutes()
         );
 
         if (applicationResourceLock is null)
@@ -91,11 +191,13 @@ public sealed class DynamicSettingDefinitionStore(
             return; // No changes
         }
 
-        await using var commonLockHandle =
-            await resourceLockProvider.TryAcquireAsync(_CommonResourceLockKey, TimeSpan.FromMinutes(5))
-            ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!"); // It will re-try
+        await using var commonResourceLock =
+            await resourceLockProvider.TryAcquireAsync(
+                _CommonLockKey,
+                timeUntilExpires: 10.Minutes(),
+                acquireTimeout: 5.Minutes()
+            ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!"); // It will re-try
 
-        // Execute in trans
         var (newRecords, changedRecords, deletedRecords) = await _UpdateChangedSettingsAsync(
             records,
             cancellationToken
@@ -106,127 +208,27 @@ public sealed class DynamicSettingDefinitionStore(
         if (hasChangesInSettings)
         {
             await repository.SaveAsync(newRecords, changedRecords, deletedRecords, cancellationToken);
-
-            // Change the cache stamp to notify other instances to update their local caches
-            var stamp = guidGenerator.Create().ToString();
-
-            await distributedCache.UpsertAsync(
-                SettingsConstants.SettingUpdatedStampCacheKey,
-                stamp,
-                TimeSpan.FromDays(30),
-                cancellationToken
-            );
+            await _ChangeCommonStamp(cancellationToken);
         }
 
         await distributedCache.UpsertAsync(_hashCacheKey, currentHash, TimeSpan.FromDays(30), cancellationToken);
     }
 
-    #region Get Helpers
-
-    private string? _cacheStamp;
-    private DateTimeOffset? _lastCheckTime;
-    private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private readonly Dictionary<string, SettingDefinition> _memoryCache = new(StringComparer.Ordinal);
-
-    private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
-    {
-        using (await _syncSemaphore.LockAsync(cancellationToken))
-        {
-            if (!_IsUpdateMemoryCacheRequired())
-            {
-                // Get the latest setting with a small delay for optimization
-                return;
-            }
-
-            var cacheStamp = await _GetOrSetDistributedCacheStampAsync(cancellationToken);
-
-            if (string.Equals(cacheStamp, _cacheStamp, StringComparison.Ordinal))
-            {
-                _lastCheckTime = timeProvider.GetUtcNow();
-
-                return;
-            }
-
-            await _UpdateInMemoryCacheAsync(cancellationToken);
-            _cacheStamp = cacheStamp;
-            _lastCheckTime = timeProvider.GetUtcNow();
-        }
-    }
-
-    private async Task _UpdateInMemoryCacheAsync(CancellationToken cancellationToken)
-    {
-        var records = await repository.GetListAsync(cancellationToken);
-
-        _memoryCache.Clear();
-
-        foreach (var record in records)
-        {
-            _memoryCache[record.Name] = serializer.Deserialize(record);
-        }
-    }
-
-    private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
-    {
-        var cachedStamp = await distributedCache.GetAsync<string>(
-            SettingsConstants.SettingUpdatedStampCacheKey,
-            cancellationToken
-        );
-
-        if (!cachedStamp.IsNull)
-        {
-            return cachedStamp.Value;
-        }
-
-        await using var resourceLock =
-            await resourceLockProvider.TryAcquireAsync(SettingsConstants.CommonUpdateLockKey, 2.Minutes())
-            ?? throw new InvalidOperationException(
-                "Could not acquire distributed lock for setting definition common stamp check!"
-            );
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        cachedStamp = await distributedCache.GetAsync<string>(
-            SettingsConstants.SettingUpdatedStampCacheKey,
-            cancellationToken
-        );
-
-        if (!cachedStamp.IsNull)
-        {
-            return cachedStamp.Value;
-        }
-
-        var newStamp = guidGenerator.Create().ToString("N");
-
-        await distributedCache.UpsertAsync(
-            SettingsConstants.SettingUpdatedStampCacheKey,
-            newStamp,
-            TimeSpan.FromDays(30),
-            cancellationToken
-        );
-
-        return newStamp;
-    }
-
-    private bool _IsUpdateMemoryCacheRequired()
-    {
-        if (!_lastCheckTime.HasValue)
-        {
-            return true;
-        }
-
-        var elapsedSinceLastCheck = timeProvider.GetUtcNow().Subtract(_lastCheckTime.Value);
-
-        return elapsedSinceLastCheck.TotalSeconds < 30;
-    }
-
-    public void Dispose()
-    {
-        _syncSemaphore.Dispose();
-    }
-
     #endregion
 
     #region Save Helpers
+
+    private readonly JsonSerializerOptions _jsonSerializerOptions =
+        new()
+        {
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver
+            {
+                Modifiers =
+                {
+                    JsonPropertiesModifiers<SettingDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
+                },
+            },
+        };
 
     private async Task<(
         List<SettingDefinitionRecord> NewRecords,
@@ -234,8 +236,8 @@ public sealed class DynamicSettingDefinitionStore(
         List<SettingDefinitionRecord> DeletedRecords
     )> _UpdateChangedSettingsAsync(List<SettingDefinitionRecord> settingRecords, CancellationToken cancellationToken)
     {
-        var dbSettingsRecords = await repository.GetListAsync(cancellationToken);
-        var dbSettingRecordsMap = dbSettingsRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
+        var dbRecords = await repository.GetListAsync(cancellationToken);
+        var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<SettingDefinitionRecord>();
         var changedRecords = new List<SettingDefinitionRecord>();
@@ -244,11 +246,11 @@ public sealed class DynamicSettingDefinitionStore(
         // Handle new and changed records
         foreach (var record in settingRecords)
         {
-            var dbSettingRecord = dbSettingRecordsMap.GetOrDefault(record.Name);
+            var dbSettingRecord = dbRecordsMap.GetOrDefault(record.Name);
 
             if (dbSettingRecord is null)
             {
-                newRecords.Add(record); // New group
+                newRecords.Add(record); // New
 
                 continue;
             }
@@ -265,23 +267,11 @@ public sealed class DynamicSettingDefinitionStore(
         // Handle deleted records
         if (_providers.DeletedSettings.Count != 0)
         {
-            deletedRecords.AddRange(dbSettingRecordsMap.Values.Where(x => _providers.DeletedSettings.Contains(x.Name)));
+            deletedRecords.AddRange(dbRecordsMap.Values.Where(x => _providers.DeletedSettings.Contains(x.Name)));
         }
 
         return (newRecords, changedRecords, deletedRecords);
     }
-
-    private readonly JsonSerializerOptions _jsonSerializerOptions =
-        new()
-        {
-            TypeInfoResolver = new DefaultJsonTypeInfoResolver
-            {
-                Modifiers =
-                {
-                    JsonPropertiesModifiers<SettingDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
-                },
-            },
-        };
 
     private string _CalculateHash(List<SettingDefinitionRecord> settingRecords, IEnumerable<string> deletedSettings)
     {
@@ -294,6 +284,19 @@ public sealed class DynamicSettingDefinitionStore(
         stringBuilder.Append(deletedSettings.JoinAsString(","));
 
         return stringBuilder.ToString().ToMd5();
+    }
+
+    #endregion
+
+    #region Helpers
+
+    /// <summary>Change the cache stamp to notify other instances to update their local caches</summary>
+    private async Task<string> _ChangeCommonStamp(CancellationToken cancellationToken)
+    {
+        var stamp = guidGenerator.Create().ToString("N");
+        await distributedCache.UpsertAsync(_StampCacheKey, stamp, TimeSpan.FromDays(30), cancellationToken);
+
+        return stamp;
     }
 
     #endregion

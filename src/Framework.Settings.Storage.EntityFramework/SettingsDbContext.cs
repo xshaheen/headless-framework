@@ -23,10 +23,16 @@ public sealed class SettingsDbContext : DbContext
         modelBuilder.Entity<SettingValueRecord>(b =>
         {
             b.ToTable(DefaultSettingValuesTableName, DefaultSchema);
-            b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.MaxNameLength).IsRequired();
-            b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.MaxValueLengthValue).IsRequired();
-            b.Property(x => x.ProviderName).HasMaxLength(SettingValueRecordConstants.MaxProviderNameLength);
-            b.Property(x => x.ProviderKey).HasMaxLength(SettingValueRecordConstants.MaxProviderKeyLength);
+            b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.NameMaxLength).IsRequired();
+            b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.ValueMaxLength).IsRequired();
+
+            b.Property(x => x.ProviderName)
+                .HasMaxLength(SettingValueRecordConstants.ProviderNameMaxLength)
+                .IsRequired();
+
+            b.Property(x => x.ProviderKey)
+                .HasMaxLength(SettingValueRecordConstants.ProviderKeyMaxLength)
+                .IsRequired(false);
 
             b.HasIndex(x => new
                 {
@@ -42,13 +48,15 @@ public sealed class SettingsDbContext : DbContext
             b.ToTable(DefaultSettingDefinitionTableName, DefaultSchema);
             b.TryConfigureExtraProperties();
 
-            b.Property(x => x.Name).HasMaxLength(SettingDefinitionRecordConstants.MaxNameLength).IsRequired();
+            b.Property(x => x.Name).HasMaxLength(SettingDefinitionRecordConstants.NameMaxLength).IsRequired();
+
             b.Property(x => x.DisplayName)
-                .HasMaxLength(SettingDefinitionRecordConstants.MaxDisplayNameLength)
+                .HasMaxLength(SettingDefinitionRecordConstants.DisplayNameMaxLength)
                 .IsRequired();
-            b.Property(x => x.Description).HasMaxLength(SettingDefinitionRecordConstants.MaxDescriptionLength);
-            b.Property(x => x.DefaultValue).HasMaxLength(SettingDefinitionRecordConstants.MaxDefaultValueLength);
-            b.Property(x => x.Providers).HasMaxLength(SettingDefinitionRecordConstants.MaxProvidersLength);
+
+            b.Property(x => x.Description).HasMaxLength(SettingDefinitionRecordConstants.DescriptionMaxLength);
+            b.Property(x => x.DefaultValue).HasMaxLength(SettingDefinitionRecordConstants.DefaultValueMaxLength);
+            b.Property(x => x.Providers).HasMaxLength(SettingDefinitionRecordConstants.ProvidersMaxLength);
 
             b.HasIndex(x => new { x.Name }).IsUnique();
         });

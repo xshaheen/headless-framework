@@ -2,13 +2,9 @@
 
 public static class SettingDefinitionRecordConstants
 {
-    public static int MaxNameLength { get; set; } = 128;
-
-    public static int MaxDisplayNameLength { get; set; } = 256;
-
-    public static int MaxDescriptionLength { get; set; } = 512;
-
-    public static int MaxDefaultValueLength { get; set; } = SettingValueRecordConstants.MaxValueLengthValue;
-
-    public static int MaxProvidersLength { get; set; } = 1024;
+    public const int NameMaxLength = 128;
+    public const int DisplayNameMaxLength = 256;
+    public const int DescriptionMaxLength = 512;
+    public const int DefaultValueMaxLength = SettingValueRecordConstants.ValueMaxLength;
+    public const int ProvidersMaxLength = 1024;
 }

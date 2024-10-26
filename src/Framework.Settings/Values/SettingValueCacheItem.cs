@@ -11,7 +11,7 @@ public sealed class SettingValueCacheItem(string? value)
 
     private static readonly CompositeFormat _CacheKeyFormat = CompositeFormat.Parse("pn:{0},pk:{1},n:{2}");
 
-    public static string CalculateCacheKey(string name, string? providerName, string? providerKey)
+    public static string CalculateCacheKey(string name, string providerName, string? providerKey)
     {
         return string.Format(CultureInfo.InvariantCulture, _CacheKeyFormat, providerName, providerKey, name);
     }

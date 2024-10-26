@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Features.Definitions;
+namespace Framework.Features.Models;
 
 public sealed class FeatureDefinition : ICanCreateChildFeature
 {
@@ -25,7 +25,7 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
         IsVisibleToClients = isVisibleToClients;
         IsAvailableToHost = isAvailableToHost;
         Properties = new(StringComparer.Ordinal);
-        AllowedProviders = [];
+        Providers = [];
         _children = [];
     }
 
@@ -63,7 +63,7 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
     /// A list of allowed providers to get/set value of this feature.
     /// An empty list indicates that all providers are allowed.
     /// </summary>
-    public List<string> AllowedProviders { get; }
+    public List<string> Providers { get; }
 
     /// <summary>Can be used to get/set custom properties for this feature.</summary>
     public Dictionary<string, object?> Properties { get; }

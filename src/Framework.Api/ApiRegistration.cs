@@ -50,6 +50,7 @@ public static class ApiRegistration
         builder.Services.TryAddScoped<IRequestTime, RequestTime>();
         builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
 
+        builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
         builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);
         builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
         builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();

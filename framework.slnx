@@ -1,116 +1,118 @@
 ﻿<Solution>
   <Folder Name="/Api.Swagger/">
     <Project Path="demo\Framework.Api.Swagger.Nswag.Demo\Framework.Api.Swagger.Nswag.Demo.csproj" Type="Classic C#" />
-    <Project Path="src\Framework.Api.Swagger.Nswag\Framework.Api.Swagger.Nswag.csproj" />
+    <Project Path="src\Framework.Api.Swagger.Nswag\Framework.Api.Swagger.Nswag.csproj" Type="Classic C#" />
     <Project Path="src\Framework.Api.Swagger.Swashbuckle.OData\Framework.Api.Swagger.Swashbuckle.OData.csproj" Type="Classic C#" />
-    <Project Path="src\Framework.Api.Swagger.Swashbuckle\Framework.Api.Swagger.Swashbuckle.csproj" />
+    <Project Path="src\Framework.Api.Swagger.Swashbuckle\Framework.Api.Swagger.Swashbuckle.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Api/">
-    <Project Path="src\Framework.Api.DataProtection\Framework.Api.DataProtection.csproj" />
-    <Project Path="src\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
-    <Project Path="src\Framework.Api.Logging.Serilog\Framework.Api.Logging.Serilog.csproj" />
-    <Project Path="src\Framework.Api.MinimalApi\Framework.Api.MinimalApi.csproj" />
-    <Project Path="src\Framework.Api.Mvc\Framework.Api.Mvc.csproj" />
-    <Project Path="src\Framework.Api.Testing\Framework.Api.Testing.csproj" />
-    <Project Path="src\Framework.Api\Framework.Api.csproj" />
+    <Project Path="src\Framework.Api.DataProtection\Framework.Api.DataProtection.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api.Logging.Serilog\Framework.Api.Logging.Serilog.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api.MinimalApi\Framework.Api.MinimalApi.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api.Mvc\Framework.Api.Mvc.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api.Testing\Framework.Api.Testing.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Api\Framework.Api.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Blobs/">
-    <Project Path="src\Framework.Blobs.Aws\Framework.Blobs.Aws.csproj" />
-    <Project Path="src\Framework.Blobs.Azure\Framework.Blobs.Azure.csproj" />
-    <Project Path="src\Framework.Blobs.FileSystem\Framework.Blobs.FileSystem.csproj" />
-    <Project Path="src\Framework.Blobs.SshNet\Framework.Blobs.SshNet.csproj" />
-    <Project Path="src\Framework.Blobs\Framework.Blobs.csproj" />
+    <Project Path="src\Framework.Blobs.Aws\Framework.Blobs.Aws.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Blobs.Azure\Framework.Blobs.Azure.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Blobs.FileSystem\Framework.Blobs.FileSystem.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Blobs.SshNet\Framework.Blobs.SshNet.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Blobs\Framework.Blobs.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Caching/">
-    <Project Path="src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
-    <Project Path="src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
-    <Project Path="src\Framework.Caching\Framework.Caching.csproj" />
+    <Project Path="src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Caching\Framework.Caching.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Database/">
-    <Project Path="src\Framework.Database.PostgreSql\Framework.Database.PostgreSql.csproj" />
-    <Project Path="src\Framework.Database.Sqlite\Framework.Database.Sqlite.csproj" />
-    <Project Path="src\Framework.Database.SqlServer\Framework.Database.SqlServer.csproj" />
-    <Project Path="src\Framework.Database\Framework.Database.csproj" />
+    <Project Path="src\Framework.Database.PostgreSql\Framework.Database.PostgreSql.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Database.Sqlite\Framework.Database.Sqlite.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Database.SqlServer\Framework.Database.SqlServer.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Database\Framework.Database.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Emails/">
-    <Project Path="src\Framework.Emails.Aws\Framework.Emails.Aws.csproj" />
-    <Project Path="src\Framework.Emails.Mailkit\Framework.Emails.Mailkit.csproj" />
-    <Project Path="src\Framework.Emails\Framework.Emails.csproj" />
+    <Project Path="src\Framework.Emails.Aws\Framework.Emails.Aws.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Emails.Mailkit\Framework.Emails.Mailkit.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Emails\Framework.Emails.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Features/">
-    <Project Path="src\Framework.Features\Framework.Features.csproj" />
+    <Project Path="src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Features\Framework.Features.csproj" Type="Classic C#" />
+    <Project Path="tests\Framework.Features.Tests.Integrations\Framework.Features.Tests.Integrations.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Generators/">
-    <Project Path="src\Framework.Generator.Primitives.Abstractions\Framework.Generator.Primitives.Abstractions.csproj" />
-    <Project Path="src\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" />
+    <Project Path="src\Framework.Generator.Primitives.Abstractions\Framework.Generator.Primitives.Abstractions.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" Type="Classic C#" />
     <Project Path="tests\Framework.Generator.Primitives.Tests.Units\Framework.Generator.Primitives.Tests.Units.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Hostings/">
-    <Project Path="src\Framework.Hosting\Framework.Hosting.csproj" />
+    <Project Path="src\Framework.Hosting\Framework.Hosting.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Identities/">
-    <Project Path="src\Framework.Identity.Storage.EntityFramework\Framework.Identity.Storage.EntityFramework.csproj" />
+    <Project Path="src\Framework.Identity.Storage.EntityFramework\Framework.Identity.Storage.EntityFramework.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Imaging/">
-    <Project Path="src\Framework.Imaging.ImageSharp\Framework.Imaging.ImageSharp.csproj" />
-    <Project Path="src\Framework.Imaging\Framework.Imaging.csproj" />
+    <Project Path="src\Framework.Imaging.ImageSharp\Framework.Imaging.ImageSharp.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Imaging\Framework.Imaging.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Integrations/">
-    <Project Path="demo\Framework.Integrations.Recaptcha.Demo\Framework.Integrations.Recaptcha.Demo.csproj" />
-    <Project Path="src\Framework.Integrations.PushNotifications\Framework.Integrations.PushNotifications.csproj" />
-    <Project Path="src\Framework.Integrations.Recaptcha\Framework.Integrations.Recaptcha.csproj" />
+    <Project Path="demo\Framework.Integrations.Recaptcha.Demo\Framework.Integrations.Recaptcha.Demo.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Integrations.PushNotifications\Framework.Integrations.PushNotifications.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Integrations.Recaptcha\Framework.Integrations.Recaptcha.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Kernel/">
-    <Project Path="src\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
-    <Project Path="src\Framework.Kernel.Checks\Framework.Kernel.Checks.csproj" />
-    <Project Path="src\Framework.Kernel.Domains\Framework.Kernel.Domains.csproj" />
-    <Project Path="src\Framework.Kernel.Specifications\Framework.Kernel.Specifications.csproj" />
-    <Project Path="tests\Framework.Kernel.BuildingBlocks.Tests.Units\Framework.Kernel.BuildingBlocks.Tests.Units.csproj" />
+    <Project Path="src\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Kernel.Checks\Framework.Kernel.Checks.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Kernel.Domains\Framework.Kernel.Domains.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Kernel.Specifications\Framework.Kernel.Specifications.csproj" Type="Classic C#" />
+    <Project Path="tests\Framework.Kernel.BuildingBlocks.Tests.Units\Framework.Kernel.BuildingBlocks.Tests.Units.csproj" Type="Classic C#" />
     <Project Path="tests\Framework.Kernel.Domains.Tests.Units\Framework.Kernel.Domains.Tests.Units.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Logging/">
-    <Project Path="src\Framework.Logging.Serilog\Framework.Logging.Serilog.csproj" />
+    <Project Path="src\Framework.Logging.Serilog\Framework.Logging.Serilog.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/MediaIndexing/">
-    <Project Path="src\Framework.Media.Indexing\Framework.Media.Indexing.csproj" />
+    <Project Path="src\Framework.Media.Indexing\Framework.Media.Indexing.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Messaging/">
-    <Project Path="src\Framework.Messaging.Cap\Framework.Messaging.Cap.csproj" />
-    <Project Path="src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
-    <Project Path="src\Framework.Messaging\Framework.Messaging.csproj" />
-    <Project Path="src\Framework.Queueing.Foundatio\Framework.Queueing.Foundatio.csproj" />
-    <Project Path="src\Framework.Queueing\Framework.Queueing.csproj" />
+    <Project Path="src\Framework.Messaging.Cap\Framework.Messaging.Cap.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Messaging\Framework.Messaging.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Queueing.Foundatio\Framework.Queueing.Foundatio.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Queueing\Framework.Queueing.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Orms/">
-    <Project Path="src\Framework.Orm.Couchbase\Framework.Orm.Couchbase.csproj" />
-    <Project Path="src\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" />
-    <Project Path="src\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
+    <Project Path="src\Framework.Orm.Couchbase\Framework.Orm.Couchbase.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Permissions/">
-    <Project Path="src\Framework.Permissions\Framework.Permissions.csproj" />
+    <Project Path="src\Framework.Permissions\Framework.Permissions.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/ResourceLocks/">
-    <Project Path="src\Framework.ResourceLocks.Local\Framework.ResourceLocks.Local.csproj" />
-    <Project Path="src\Framework.ResourceLocks.Storage\Framework.ResourceLocks.Storage.csproj" />
-    <Project Path="src\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+    <Project Path="src\Framework.ResourceLocks.Local\Framework.ResourceLocks.Local.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.ResourceLocks.Storage\Framework.ResourceLocks.Storage.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.ResourceLocks\Framework.ResourceLocks.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Serializers/">
-    <Project Path="src\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
-    <Project Path="src\Framework.Serializer.MessagePack\Framework.Serializer.MessagePack.csproj" />
-    <Project Path="src\Framework.Serializer\Framework.Serializer.csproj" />
+    <Project Path="src\Framework.Serializer.Json\Framework.Serializer.Json.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Serializer.MessagePack\Framework.Serializer.MessagePack.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Serializer\Framework.Serializer.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Settings/">
-    <Project Path="src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj" />
-    <Project Path="src\Framework.Settings\Framework.Settings.csproj" />
+    <Project Path="src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Settings\Framework.Settings.csproj" Type="Classic C#" />
     <Project Path="tests\Framework.Settings.Tests.Integrations\Framework.Settings.Tests.Integrations.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Sms/">
-    <Project Path="src\Framework.Sms.Aws\Framework.Sms.Aws.csproj" />
-    <Project Path="src\Framework.Sms.Cequens\Framework.Sms.Cequens.csproj" />
-    <Project Path="src\Framework.Sms.Infobip\Framework.Sms.Infobip.csproj" />
-    <Project Path="src\Framework.Sms.Twilio\Framework.Sms.Twilio.csproj" />
-    <Project Path="src\Framework.Sms.VictoryLink\Framework.Sms.VictoryLink.csproj" />
-    <Project Path="src\Framework.Sms\Framework.Sms.csproj" />
+    <Project Path="src\Framework.Sms.Aws\Framework.Sms.Aws.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Sms.Cequens\Framework.Sms.Cequens.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Sms.Infobip\Framework.Sms.Infobip.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Sms.Twilio\Framework.Sms.Twilio.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Sms.VictoryLink\Framework.Sms.VictoryLink.csproj" Type="Classic C#" />
+    <Project Path="src\Framework.Sms\Framework.Sms.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path="nuget.config" />
@@ -120,7 +122,7 @@
     <File Path="Directory.Packages.props" />
   </Folder>
   <Folder Name="/Validations/">
-    <Project Path="src\Framework.FluentValidation\Framework.FluentValidation.csproj" />
+    <Project Path="src\Framework.FluentValidation\Framework.FluentValidation.csproj" Type="Classic C#" />
     <Project Path="tests\Framework.FluentValidation.Tests.Unit\Framework.FluentValidation.Tests.Unit.csproj" Type="Classic C#" />
   </Folder>
   <Project Path="build\_build.csproj">

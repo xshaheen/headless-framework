@@ -9,18 +9,14 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>
     {
         Name = default!;
         Value = default!;
+        ProviderName = default!;
     }
 
-    public SettingValueRecord(
-        Guid id,
-        string name,
-        string value,
-        string? providerName = null,
-        string? providerKey = null
-    )
+    public SettingValueRecord(Guid id, string name, string value, string providerName, string? providerKey = null)
     {
         Argument.IsNotNull(name);
         Argument.IsNotNull(value);
+        Argument.IsNotNull(providerName);
 
         Id = id;
         Name = name;
@@ -33,7 +29,7 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>
 
     public string Value { get; internal set; }
 
-    public string? ProviderName { get; private set; }
+    public string ProviderName { get; private set; }
 
     public string? ProviderKey { get; private set; }
 
