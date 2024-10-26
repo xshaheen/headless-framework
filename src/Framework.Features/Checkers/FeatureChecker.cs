@@ -11,14 +11,7 @@ public interface IFeatureChecker
 {
     Task<string?> GetOrDefaultAsync(string name);
 
-    Task<bool> IsEnabledAsync(string name);
-}
-
-public abstract class FeatureCheckerBase : IFeatureChecker
-{
-    public abstract Task<string?> GetOrDefaultAsync(string name);
-
-    public virtual async Task<bool> IsEnabledAsync(string name)
+    public async Task<bool> IsEnabledAsync(string name)
     {
         var value = await GetOrDefaultAsync(name);
 
@@ -31,11 +24,11 @@ public abstract class FeatureCheckerBase : IFeatureChecker
         {
             return bool.Parse(value);
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
             throw new InvalidOperationException(
                 $"The value '{value}' for the feature '{name}' should be a boolean, but was not!",
-                ex
+                e
             );
         }
     }
@@ -44,12 +37,12 @@ public abstract class FeatureCheckerBase : IFeatureChecker
 public sealed class FeatureChecker(
     IFeatureDefinitionManager featureDefinitionManager,
     IFeatureValueProviderManager featureValueProviderManager
-) : FeatureCheckerBase
+) : IFeatureChecker
 {
-    public override async Task<string?> GetOrDefaultAsync(string name)
+    public async Task<string?> GetOrDefaultAsync(string name)
     {
         var featureDefinition =
-            await featureDefinitionManager.GetOrDefaultAsync(name)
+            await featureDefinitionManager.GetOrDefaultFeatureAsync(name)
             ?? throw new InvalidOperationException($"Feature {name} is not defined!");
 
         var providers = featureValueProviderManager.ValueProviders.Reverse();

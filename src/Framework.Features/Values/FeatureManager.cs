@@ -101,7 +101,7 @@ public sealed class FeatureManager : IFeatureManager
     {
         Argument.IsNotNull(providerName);
 
-        var definitions = await _featureDefinitionManager.GetAllAsync(cancellationToken);
+        var definitions = await _featureDefinitionManager.GetAllFeaturesAsync(cancellationToken);
 
         var providers = _lazyProviders.Value.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
@@ -153,7 +153,7 @@ public sealed class FeatureManager : IFeatureManager
         Argument.IsNotNull(providerName);
 
         var feature =
-            await _featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
+            await _featureDefinitionManager.GetOrDefaultFeatureAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined feature: {name}");
 
         var providers = _lazyProviders
@@ -230,7 +230,7 @@ public sealed class FeatureManager : IFeatureManager
         foreach (var featureNameValue in featureNameValues)
         {
             var feature =
-                await _featureDefinitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
+                await _featureDefinitionManager.GetOrDefaultFeatureAsync(featureNameValue.Name, cancellationToken)
                 ?? throw new InvalidOperationException($"Undefined feature: {featureNameValue.Name}");
 
             foreach (var provider in writableProviders)
@@ -251,7 +251,7 @@ public sealed class FeatureManager : IFeatureManager
         Argument.IsNotNull(name);
 
         var definition =
-            await _featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
+            await _featureDefinitionManager.GetOrDefaultFeatureAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined feature: {name}");
 
         IEnumerable<IFeatureValueReadProvider> providers = _lazyProviders.Value;
