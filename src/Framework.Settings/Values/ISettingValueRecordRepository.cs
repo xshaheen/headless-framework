@@ -37,5 +37,5 @@ public interface ISettingValueRecordRepository
 
     Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default);
 
-    Task DeleteAsync(List<SettingValueRecord> settings, CancellationToken cancellationToken = default);
+    Task DeleteAsync(IEnumerable<SettingValueRecord> settings, CancellationToken cancellationToken = default);
 }

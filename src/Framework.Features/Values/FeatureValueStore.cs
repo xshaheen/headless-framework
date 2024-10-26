@@ -35,7 +35,7 @@ public interface IFeatureValueStore
 
 public sealed class FeatureValueStore(
     IFeatureDefinitionManager featureDefinitionManager,
-    IFeatureValueRepository repository,
+    IFeatureValueRecordRepository recordRepository,
     IGuidGenerator guidGenerator,
     ICache<FeatureValueCacheItem> cache
 ) : IFeatureValueStore
@@ -60,17 +60,17 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var featureValue = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+        var featureValue = await recordRepository.FindAsync(name, providerName, providerKey, cancellationToken);
 
         if (featureValue is null)
         {
             featureValue = new FeatureValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await repository.InsertAsync(featureValue, cancellationToken);
+            await recordRepository.InsertAsync(featureValue, cancellationToken);
         }
         else
         {
             featureValue.Value = value;
-            await repository.UpdateAsync(featureValue, cancellationToken);
+            await recordRepository.UpdateAsync(featureValue, cancellationToken);
         }
 
         var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
@@ -84,14 +84,14 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var features = await repository.FindAllAsync(name, providerName, providerKey, cancellationToken);
+        var features = await recordRepository.FindAllAsync(name, providerName, providerKey, cancellationToken);
 
         if (features.Count == 0)
         {
             return;
         }
 
-        await repository.DeleteAsync(features, cancellationToken);
+        await recordRepository.DeleteAsync(features, cancellationToken);
 
         foreach (var featureValue in features)
         {
@@ -135,7 +135,7 @@ public sealed class FeatureValueStore(
     )
     {
         var definitions = await featureDefinitionManager.GetAllAsync(cancellationToken);
-        var dbRecords = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var dbRecords = await recordRepository.GetListAsync(providerName, providerKey, cancellationToken);
         var dbRecordsMap = dbRecords.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
         Dictionary<string, FeatureValueCacheItem> cacheItems = new(StringComparer.Ordinal);

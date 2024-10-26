@@ -18,7 +18,6 @@
     <ProjectReference Include="..\Framework.Kernel.Domains\Framework.Kernel.Domains.csproj" />
     <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" />
-    <ProjectReference Include="..\Framework.Settings\Framework.Settings.csproj" />
   </ItemGroup>
 
 </Project>

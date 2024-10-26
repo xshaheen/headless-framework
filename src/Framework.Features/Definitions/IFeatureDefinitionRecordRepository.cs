@@ -10,5 +10,13 @@ public interface IFeatureDefinitionRecordRepository
 
     Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default);
 
-    Task<FeatureDefinitionRecord> FindFeatureByNameAsync(string name, CancellationToken cancellationToken = default);
+    Task SaveAsync(
+        List<FeatureGroupDefinitionRecord> newGroups,
+        List<FeatureGroupDefinitionRecord> updatedGroups,
+        List<FeatureGroupDefinitionRecord> deletedGroups,
+        List<FeatureDefinitionRecord> newFeatures,
+        List<FeatureDefinitionRecord> updatedFeatures,
+        List<FeatureDefinitionRecord> deletedFeatures,
+        CancellationToken cancellationToken
+    );
 }
