@@ -238,7 +238,7 @@ public sealed class SettingManager : ISettingManager
 
     private async Task<string?> _CoreGetOrDefaultAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default

@@ -5,7 +5,23 @@ using Framework.Kernel.Checks;
 
 namespace Framework.Kernel.BuildingBlocks.Helpers.System;
 
-public sealed class PasswordGenerator
+public interface IPasswordGenerator
+{
+    string GeneratePassword(
+        int length,
+        int requiredUniqueChars = 1,
+        bool requireDigit = true,
+        bool requireLowercase = true,
+        bool requireNonAlphanumeric = true,
+        bool requireUppercase = true,
+        bool useDigitsInRemaining = true,
+        bool useLowercaseInRemaining = false,
+        bool useUppercaseInRemaining = false,
+        bool useNonAlphanumericInRemaining = false
+    );
+}
+
+public sealed class PasswordGenerator : IPasswordGenerator
 {
     private const int _Zero = '0';
     private const int _Nine = '9';
