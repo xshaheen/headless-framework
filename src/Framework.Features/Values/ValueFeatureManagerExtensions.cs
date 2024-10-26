@@ -7,46 +7,29 @@ namespace Framework.Features.Values;
 
 public static class DefaultValueFeatureManagerExtensions
 {
-    public static Task<string?> GetOrDefaultDefaultAsync(
+    public static Task<FeatureValue?> GetOrDefaultDefaultAsync(
         this IFeatureManager featureManager,
         string name,
         bool fallback = true
     )
     {
-        return featureManager.GetOrDefaultAsync(name, DefaultValueFeatureValueProvider.ProviderName, null, fallback);
+        return featureManager.GetOrDefaultAsync(
+            name,
+            DefaultValueFeatureValueProvider.ProviderName,
+            providerKey: null,
+            fallback
+        );
     }
 
     public static Task<List<FeatureValue>> GetAllDefaultAsync(this IFeatureManager featureManager, bool fallback = true)
     {
         return featureManager.GetAllAsync(DefaultValueFeatureValueProvider.ProviderName, providerKey: null, fallback);
     }
-
-    public static Task<FeatureNameValueWithGrantedProvider?> GetOrDefaultWithProviderAsync(
-        this IFeatureManager featureManager,
-        string name,
-        bool fallback = true
-    )
-    {
-        return featureManager.GetOrDefaultWithProviderAsync(
-            name,
-            DefaultValueFeatureValueProvider.ProviderName,
-            null,
-            fallback
-        );
-    }
-
-    public static Task<List<FeatureNameValueWithGrantedProvider>> GetAllWithProviderAsync(
-        this IFeatureManager featureManager,
-        bool fallback = true
-    )
-    {
-        return featureManager.GetAllWithProviderAsync(DefaultValueFeatureValueProvider.ProviderName, null, fallback);
-    }
 }
 
 public static class EditionFeatureManagerExtensions
 {
-    public static Task<string?> GetOrDefaultForEditionAsync(
+    public static Task<FeatureValue?> GetOrDefaultForEditionAsync(
         this IFeatureManager featureManager,
         string name,
         Guid editionId,
@@ -70,34 +53,6 @@ public static class EditionFeatureManagerExtensions
         return featureManager.GetAllAsync(EditionFeatureValueProvider.ProviderName, editionId.ToString(), fallback);
     }
 
-    public static Task<FeatureNameValueWithGrantedProvider?> GetOrDefaultWithProviderForEditionAsync(
-        this IFeatureManager featureManager,
-        string name,
-        Guid editionId,
-        bool fallback = true
-    )
-    {
-        return featureManager.GetOrDefaultWithProviderAsync(
-            name,
-            EditionFeatureValueProvider.ProviderName,
-            editionId.ToString(),
-            fallback
-        );
-    }
-
-    public static Task<List<FeatureNameValueWithGrantedProvider>> GetAllWithProviderForEditionAsync(
-        this IFeatureManager featureManager,
-        Guid editionId,
-        bool fallback = true
-    )
-    {
-        return featureManager.GetAllWithProviderAsync(
-            EditionFeatureValueProvider.ProviderName,
-            editionId.ToString(),
-            fallback
-        );
-    }
-
     public static Task SetForEditionAsync(
         this IFeatureManager featureManager,
         Guid editionId,
@@ -118,7 +73,7 @@ public static class EditionFeatureManagerExtensions
 
 public static class TenantFeatureManagerExtensions
 {
-    public static Task<string?> GetOrDefaultForTenantAsync(
+    public static Task<FeatureValue?> GetOrDefaultForTenantAsync(
         this IFeatureManager featureManager,
         string name,
         Guid tenantId,
@@ -140,34 +95,6 @@ public static class TenantFeatureManagerExtensions
     )
     {
         return featureManager.GetAllAsync(TenantFeatureValueProvider.ProviderName, tenantId.ToString(), fallback);
-    }
-
-    public static Task<FeatureNameValueWithGrantedProvider?> GetOrDefaultWithProviderForTenantAsync(
-        this IFeatureManager featureManager,
-        string name,
-        Guid tenantId,
-        bool fallback = true
-    )
-    {
-        return featureManager.GetOrDefaultWithProviderAsync(
-            name,
-            TenantFeatureValueProvider.ProviderName,
-            tenantId.ToString(),
-            fallback
-        );
-    }
-
-    public static Task<List<FeatureNameValueWithGrantedProvider>> GetAllWithProviderForTenantAsync(
-        this IFeatureManager featureManager,
-        Guid tenantId,
-        bool fallback = true
-    )
-    {
-        return featureManager.GetAllWithProviderAsync(
-            TenantFeatureValueProvider.ProviderName,
-            tenantId.ToString(),
-            fallback
-        );
     }
 
     public static Task SetForTenantAsync(
