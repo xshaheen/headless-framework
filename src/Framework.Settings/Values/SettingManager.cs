@@ -13,9 +13,21 @@ namespace Framework.Settings.Values;
 /// <summary>Retrieve setting value from <see cref="ISettingValueProvider"/></summary>
 public interface ISettingManager
 {
+    /// <summary>Get feature value by name.</summary>
+    /// <param name="name">The feature name.</param>
+    /// <param name="providerName">
+    /// If the providerName isn't provided, it will get the value from the first provider that has the value
+    /// by the order of the registered providers.
+    /// </param>
+    /// <param name="providerKey">
+    /// If the providerKey isn't provided, it will get the value according to each value provider's logic.
+    /// </param>
+    /// <param name="fallback">Force the value finds fallback to other providers.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns></returns>
     Task<string?> GetOrDefaultAsync(
         string name,
-        string providerName,
+        string? providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -78,7 +90,7 @@ public sealed class SettingManager : ISettingManager
 
     public Task<string?> GetOrDefaultAsync(
         string name,
-        string providerName,
+        string? providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -238,7 +250,7 @@ public sealed class SettingManager : ISettingManager
 
     private async Task<string?> _CoreGetOrDefaultAsync(
         string name,
-        string providerName,
+        string? providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default

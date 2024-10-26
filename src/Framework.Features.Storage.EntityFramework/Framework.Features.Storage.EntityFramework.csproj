@@ -7,7 +7,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
-    <ProjectReference Include="..\Framework.Settings\Framework.Settings.csproj" />
+    <ProjectReference Include="..\Framework.Features\Framework.Features.csproj" />
   </ItemGroup>
 
 </Project>
+

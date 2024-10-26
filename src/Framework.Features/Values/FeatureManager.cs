@@ -11,30 +11,27 @@ namespace Framework.Features.Values;
 
 public interface IFeatureManager
 {
-    Task<string?> GetOrDefaultAsync(
+    /// <summary>Get feature value by name.</summary>
+    /// <param name="name">The feature name.</param>
+    /// <param name="providerName">
+    /// If the providerName isn't provided, it will get the value from the first provider that has the value
+    /// by the order of the registered providers.
+    /// </param>
+    /// <param name="providerKey">
+    /// If the providerKey isn't provided, it will get the value according to each value provider's logic.
+    /// </param>
+    /// <param name="fallback">Force the value finds fallback to other providers.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns></returns>
+    Task<FeatureValue?> GetOrDefaultAsync(
         string name,
-        string providerName,
-        string? providerKey,
-        bool fallback = true,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<FeatureNameValueWithGrantedProvider?> GetOrDefaultWithProviderAsync(
-        string name,
-        string providerName,
-        string? providerKey,
+        string? providerName = null,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     );
 
     Task<List<FeatureValue>> GetAllAsync(
-        string providerName,
-        string? providerKey,
-        bool fallback = true,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<List<FeatureNameValueWithGrantedProvider>> GetAllWithProviderAsync(
         string providerName,
         string? providerKey,
         bool fallback = true,
@@ -84,19 +81,15 @@ public sealed class FeatureManager : IFeatureManager
         );
     }
 
-    public async Task<string?> GetOrDefaultAsync(
+    public async Task<FeatureValue?> GetOrDefaultAsync(
         string name,
-        string providerName,
-        string? providerKey,
+        string? providerName = null,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(name);
-        Argument.IsNotNull(providerName);
-        var featureValue = await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
-
-        return featureValue.Value;
+        return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
     }
 
     public async Task<List<FeatureValue>> GetAllAsync(
@@ -106,35 +99,9 @@ public sealed class FeatureManager : IFeatureManager
         CancellationToken cancellationToken = default
     )
     {
-        var items = await GetAllWithProviderAsync(providerName, providerKey, fallback, cancellationToken);
-
-        return items.ConvertAll(x => new FeatureValue(x.Name, x.Value));
-    }
-
-    public async Task<FeatureNameValueWithGrantedProvider?> GetOrDefaultWithProviderAsync(
-        string name,
-        string providerName,
-        string? providerKey,
-        bool fallback = true,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(name);
         Argument.IsNotNull(providerName);
 
-        return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
-    }
-
-    public async Task<List<FeatureNameValueWithGrantedProvider>> GetAllWithProviderAsync(
-        string providerName,
-        string? providerKey,
-        bool fallback = true,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNull(providerName);
-
-        var featureDefinitions = await _featureDefinitionManager.GetAllAsync(cancellationToken);
+        var definitions = await _featureDefinitionManager.GetAllAsync(cancellationToken);
 
         var providers = _lazyProviders.Value.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
@@ -152,9 +119,9 @@ public sealed class FeatureManager : IFeatureManager
             return [];
         }
 
-        var featureValues = new Dictionary<string, FeatureNameValueWithGrantedProvider>(StringComparer.Ordinal);
+        var featureValues = new Dictionary<string, FeatureValue>(StringComparer.Ordinal);
 
-        foreach (var definition in featureDefinitions)
+        foreach (var definition in definitions)
         {
             foreach (var provider in providerList)
             {
@@ -273,7 +240,7 @@ public sealed class FeatureManager : IFeatureManager
         }
     }
 
-    private async Task<FeatureNameValueWithGrantedProvider> _CoreGetOrDefaultAsync(
+    private async Task<FeatureValue> _CoreGetOrDefaultAsync(
         string name,
         string? providerName,
         string? providerKey,
@@ -281,6 +248,8 @@ public sealed class FeatureManager : IFeatureManager
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(name);
+
         var definition =
             await _featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined setting: {name}");
@@ -300,7 +269,7 @@ public sealed class FeatureManager : IFeatureManager
         foreach (var provider in providers)
         {
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            var value = await provider.GetOrDefaultAsync(definition, pk);
+            var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken);
 
             if (value is not null)
             {
@@ -308,6 +277,6 @@ public sealed class FeatureManager : IFeatureManager
             }
         }
 
-        return new(name, Value: null);
+        return new(name, Value: null, Provider: null);
     }
 }
