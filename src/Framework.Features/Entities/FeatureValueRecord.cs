@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Domains;
 
@@ -15,6 +16,7 @@ public sealed class FeatureValueRecord : AggregateRoot<Guid>
 
     public string? ProviderKey { get; private set; }
 
+    [SetsRequiredMembers]
     public FeatureValueRecord(Guid id, string name, string value, string providerName, string? providerKey)
     {
         Id = id;

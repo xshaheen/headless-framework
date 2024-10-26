@@ -211,13 +211,13 @@ public sealed class FeatureManager : IFeatureManager
 
                 if (string.Equals(fallbackValue.Value, value, StringComparison.Ordinal))
                 {
-                    // Clear the value if it's same as it's fallback value
+                    // Clear the value if it is same as it's fallback value
                     value = null;
                 }
             }
         }
 
-        // Getting list for case of there are more than one provider with same providerName
+        // Getting list for case of there are more than one provider with the same providerName
         providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList();
 
         foreach (var provider in providers)
@@ -246,25 +246,29 @@ public sealed class FeatureManager : IFeatureManager
     {
         var featureNameValues = await GetAllAsync(providerName, providerKey, cancellationToken: cancellationToken);
 
-        var providers = _lazyProviders
-            .Value.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
-            .ToList();
+        var providers = _lazyProviders.Value.SkipWhile(p =>
+            !string.Equals(p.Name, providerName, StringComparison.Ordinal)
+        );
 
-        if (providers.Count == 0)
+        // Getting list for case of there are more than one provider with the same providerName
+        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal));
+
+        var writableProviders = providers.OfType<IFeatureValueProvider>().ToList();
+
+        if (writableProviders.Count == 0)
         {
             return;
         }
 
-        // Getting list for case of there are more than one provider with same providerName
-        providers = providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal)).ToList();
-
         foreach (var featureNameValue in featureNameValues)
         {
-            var feature = await _featureDefinitionManager.GetAsync(featureNameValue.Name);
+            var feature =
+                await _featureDefinitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
+                ?? throw new InvalidOperationException($"Undefined setting: {featureNameValue.Name}");
 
-            foreach (var provider in providers)
+            foreach (var provider in writableProviders)
             {
-                await provider.ClearAsync(feature, providerKey);
+                await provider.ClearAsync(feature, providerKey, cancellationToken);
             }
         }
     }

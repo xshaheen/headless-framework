@@ -8,7 +8,7 @@ using Framework.Kernel.BuildingBlocks.Helpers.Threading;
 namespace Framework.Features.ValueProviders;
 
 [PublicAPI]
-public sealed class TenantFeatureValueProvider(IFeatureStore store, ICurrentTenant currentTenant)
+public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurrentTenant currentTenant)
     : StoreFeatureValueProvider(store)
 {
     public const string ProviderName = "Tenant";
