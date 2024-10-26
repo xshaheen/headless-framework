@@ -13,7 +13,7 @@ namespace Framework.Settings.Helpers;
 
 public sealed class SettingsInitializationBackgroundService(
     TimeProvider timeProvider,
-    IServiceProvider serviceProvider,
+    IServiceScopeFactory serviceScopeFactory,
     IOptions<SettingManagementOptions> optionsAccessor,
     ILogger<SettingsInitializationBackgroundService> logger
 ) : IHostedService, IDisposable
@@ -39,14 +39,20 @@ public sealed class SettingsInitializationBackgroundService(
         await _cancellationTokenSource.CancelAsync();
     }
 
+    public void Dispose()
+    {
+        _cancellationTokenSource.Dispose();
+        _initializeDynamicSettingsTask?.Dispose();
+    }
+
     private async Task _InitializeDynamicSettingsAsync(CancellationToken cancellationToken)
     {
-        await using var scope = serviceProvider.CreateAsyncScope();
-
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
+
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
 
         await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken);
 
@@ -76,7 +82,6 @@ public sealed class SettingsInitializationBackgroundService(
         };
 
         var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
-
         var pipeline = builder.AddRetry(options).Build();
 
         await pipeline.ExecuteAsync(
@@ -84,9 +89,10 @@ public sealed class SettingsInitializationBackgroundService(
             {
                 var (scope, logger) = state;
 
+                var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
+
                 try
                 {
-                    var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
                     await store.SaveAsync(cancellationToken);
                 }
                 catch (Exception e)
@@ -108,9 +114,10 @@ public sealed class SettingsInitializationBackgroundService(
             return;
         }
 
+        var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
+
         try
         {
-            var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
             await store.GetAllAsync(cancellationToken); // Pre-cache settings, so the first request doesn't wait
         }
         catch (Exception e)
@@ -119,11 +126,5 @@ public sealed class SettingsInitializationBackgroundService(
 
             throw;
         }
-    }
-
-    public void Dispose()
-    {
-        _cancellationTokenSource.Dispose();
-        _initializeDynamicSettingsTask?.Dispose();
     }
 }

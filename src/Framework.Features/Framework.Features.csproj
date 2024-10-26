@@ -7,7 +7,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
-    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
   </ItemGroup>
 
 </Project>

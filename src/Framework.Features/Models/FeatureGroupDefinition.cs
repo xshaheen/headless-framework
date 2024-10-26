@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Features.Definitions;
+namespace Framework.Features.Models;
 
 public sealed class FeatureGroupDefinition : ICanCreateChildFeature
 {

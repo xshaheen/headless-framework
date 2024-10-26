@@ -7,8 +7,9 @@ namespace Framework.Kernel.Primitives;
 [PublicAPI]
 public sealed class ExtraProperties : Dictionary<string, object?>
 {
-    public ExtraProperties() { }
+    public ExtraProperties()
+        : base(StringComparer.InvariantCulture) { }
 
     public ExtraProperties(IDictionary<string, object?> dictionary)
-        : base(dictionary) { }
+        : base(dictionary, StringComparer.InvariantCulture) { }
 }

@@ -1,0 +1,131 @@
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Features.Definitions;
+using Framework.Features.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
+
+namespace Framework.Features.Helpers;
+
+public sealed class FeatureInitializationBackgroundService(
+    TimeProvider timeProvider,
+    IServiceScopeFactory serviceScopeFactory,
+    IOptions<FeatureManagementOptions> optionsAccessor,
+    ILogger<FeatureInitializationBackgroundService> logger
+) : IHostedService, IDisposable
+{
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private readonly FeatureManagementOptions _options = optionsAccessor.Value;
+    private Task? _initializeDynamicFeaturesTask;
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        if (_options is { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
+        {
+            return Task.CompletedTask;
+        }
+
+        _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(cancellationToken);
+
+        return Task.CompletedTask;
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await _cancellationTokenSource.CancelAsync();
+    }
+
+    public void Dispose()
+    {
+        _cancellationTokenSource.Dispose();
+        _initializeDynamicFeaturesTask?.Dispose();
+    }
+
+    private async Task _InitializeDynamicFeaturesAsync(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
+
+        await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken);
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken);
+    }
+
+    private async Task _SaveStaticFeaturesToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    {
+        if (!_options.SaveStaticFeaturesToDatabase)
+        {
+            return;
+        }
+
+        var options = new RetryStrategyOptions
+        {
+            Name = "SaveStaticFeatureToDatabaseRetry",
+            Delay = TimeSpan.FromSeconds(2),
+            MaxRetryAttempts = 10,
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = false,
+            ShouldHandle = new PredicateBuilder().Handle<Exception>(),
+        };
+
+        var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
+        var pipeline = builder.AddRetry(options).Build();
+
+        await pipeline.ExecuteAsync(
+            static async (state, cancellationToken) =>
+            {
+                var (scope, logger) = state;
+
+                var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
+
+                try
+                {
+                    await store.SaveAsync(cancellationToken);
+                }
+                catch (Exception e)
+                {
+                    logger.LogError(e, "Failed to save static features to the database");
+
+                    throw; // Polly will catch it
+                }
+            },
+            (scope, logger),
+            cancellationToken
+        );
+    }
+
+    private async Task _PreCacheDynamicFeaturesAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    {
+        if (!_options.IsDynamicFeatureStoreEnabled)
+        {
+            return;
+        }
+
+        var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
+
+        try
+        {
+            // Pre-cache features, so the first request doesn't wait
+            await store.GetGroupsAsync(cancellationToken);
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, "Failed to pre-cache dynamic features");
+
+            throw;
+        }
+    }
+}

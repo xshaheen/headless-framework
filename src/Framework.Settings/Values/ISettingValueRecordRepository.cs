@@ -8,6 +8,13 @@ public interface ISettingValueRecordRepository
 {
     Task<SettingValueRecord?> FindAsync(
         string name,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<List<SettingValueRecord>> FindAllAsync(
+        string name,
         string? providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
@@ -15,13 +22,13 @@ public interface ISettingValueRecordRepository
 
     Task<List<SettingValueRecord>> GetListAsync(
         string[] names,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
 
     Task<List<SettingValueRecord>> GetListAsync(
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
@@ -30,5 +37,5 @@ public interface ISettingValueRecordRepository
 
     Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default);
 
-    Task DeleteAsync(SettingValueRecord setting, CancellationToken cancellationToken = default);
+    Task DeleteAsync(IEnumerable<SettingValueRecord> settings, CancellationToken cancellationToken = default);
 }

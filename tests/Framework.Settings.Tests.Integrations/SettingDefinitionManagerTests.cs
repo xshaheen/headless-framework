@@ -32,6 +32,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
         definitions.Should().ContainSingle(p => p.Name == "some-name");
     }
 
+    [UsedImplicitly]
     private sealed class SettingsDefinitionProvider : ISettingDefinitionProvider
     {
         public void Define(ISettingDefinitionContext context)
