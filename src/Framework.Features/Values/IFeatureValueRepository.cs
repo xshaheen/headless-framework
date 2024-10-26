@@ -30,5 +30,7 @@ public interface IFeatureValueRepository
 
     Task UpdateAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default);
 
-    Task DeleteAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default);
+    Task DeleteAsync(IEnumerable<FeatureValueRecord> featureValues, CancellationToken cancellationToken = default);
+
+    Task InsertAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default);
 }

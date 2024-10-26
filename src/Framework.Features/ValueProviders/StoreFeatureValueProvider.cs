@@ -6,9 +6,9 @@ using Framework.Kernel.BuildingBlocks.Helpers.System;
 
 namespace Framework.Features.ValueProviders;
 
-public abstract class StoreFeatureValueProvider(IFeatureStore store) : IFeatureValueProvider
+public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFeatureValueProvider
 {
-    protected IFeatureStore Store { get; } = store;
+    protected IFeatureValueStore Store { get; } = store;
 
     public abstract string Name { get; }
 

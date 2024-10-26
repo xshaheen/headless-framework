@@ -4,14 +4,15 @@ using Framework.Caching;
 using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Humanizer;
 
 namespace Framework.Features.Values;
 
-public interface IFeatureStore
+public interface IFeatureValueStore
 {
     Task<string?> GetOrDefaultAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     );
@@ -32,23 +33,23 @@ public interface IFeatureStore
     );
 }
 
-public sealed class FeatureStore(
+public sealed class FeatureValueStore(
     IFeatureDefinitionManager featureDefinitionManager,
     IFeatureValueRepository repository,
     IGuidGenerator guidGenerator,
     ICache<FeatureValueCacheItem> cache
-) : IFeatureStore
+) : IFeatureValueStore
 {
     public async Task<string?> GetOrDefaultAsync(
         string name,
-        string? providerName,
+        string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var cacheItem = await _GetCacheItemAsync(name, providerName, providerKey);
+        var item = await _GetCachedItemAsync(name, providerName, providerKey, cancellationToken);
 
-        return cacheItem.Value;
+        return item.Value;
     }
 
     public async Task SetAsync(
@@ -61,10 +62,10 @@ public sealed class FeatureStore(
     {
         var featureValue = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
 
-        if (featureValue == null)
+        if (featureValue is null)
         {
             featureValue = new FeatureValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await repository.InsertAsync(featureValue);
+            await repository.InsertAsync(featureValue, cancellationToken);
         }
         else
         {
@@ -72,11 +73,8 @@ public sealed class FeatureStore(
             await repository.UpdateAsync(featureValue, cancellationToken);
         }
 
-        await cache.UpsertAsync(
-            _CalculateCacheKey(name, providerName, providerKey),
-            new FeatureValueCacheItem(featureValue?.Value),
-            considerUow: true
-        );
+        var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+        await cache.UpsertAsync(cacheKey, new FeatureValueCacheItem(featureValue.Value), 5.Hours(), cancellationToken);
     }
 
     public async Task DeleteAsync(
@@ -86,73 +84,80 @@ public sealed class FeatureStore(
         CancellationToken cancellationToken = default
     )
     {
-        var featureValues = await repository.FindAllAsync(name, providerName, providerKey, cancellationToken);
+        var features = await repository.FindAllAsync(name, providerName, providerKey, cancellationToken);
 
-        foreach (var featureValue in featureValues)
+        if (features.Count == 0)
         {
-            await repository.DeleteAsync(featureValue, cancellationToken);
-            await cache.RemoveAsync(_CalculateCacheKey(name, providerName, providerKey), cancellationToken);
+            return;
+        }
+
+        await repository.DeleteAsync(features, cancellationToken);
+
+        foreach (var featureValue in features)
+        {
+            var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, featureValue.ProviderKey);
+            await cache.RemoveAsync(cacheKey, cancellationToken);
         }
     }
 
-    private async Task<FeatureValueCacheItem> _GetCacheItemAsync(
+    #region Helpers
+
+    private async Task<FeatureValueCacheItem> _GetCachedItemAsync(
         string name,
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var cacheKey = _CalculateCacheKey(name, providerName, providerKey);
-        var cacheItem = await cache.GetAsync(cacheKey, cancellationToken);
+        var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken);
 
-        if (cacheItem != null)
+        if (existValueCacheItem.HasValue)
         {
-            return cacheItem;
+            return existValueCacheItem.Value ?? new FeatureValueCacheItem(value: null);
         }
 
-        cacheItem = new FeatureValueCacheItem(null);
+        var valueCacheItem = await _CacheAllAndGetAsync(
+            providerName,
+            providerKey,
+            nameToFind: name,
+            cancellationToken: cancellationToken
+        );
 
-        await _SetCacheItemsAsync(providerName, providerKey, name, cacheItem);
-
-        return cacheItem;
+        return valueCacheItem;
     }
 
-    private async Task _SetCacheItemsAsync(
+    private async Task<FeatureValueCacheItem> _CacheAllAndGetAsync(
         string providerName,
-        string providerKey,
-        string currentName,
-        FeatureValueCacheItem currentCacheItem,
+        string? providerKey,
+        string nameToFind,
         CancellationToken cancellationToken = default
     )
     {
-        var featureDefinitions = await featureDefinitionManager.GetAllAsync(cancellationToken);
+        var definitions = await featureDefinitionManager.GetAllAsync(cancellationToken);
         var dbRecords = await repository.GetListAsync(providerName, providerKey, cancellationToken);
         var dbRecordsMap = dbRecords.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
-        var cacheItems = new List<KeyValuePair<string, FeatureValueCacheItem>>();
+        Dictionary<string, FeatureValueCacheItem> cacheItems = new(StringComparer.Ordinal);
+        FeatureValueCacheItem? featureToFind = null;
 
-        foreach (var featureDefinition in featureDefinitions)
+        foreach (var featureDefinition in definitions)
         {
+            var cacheKey = FeatureValueCacheItem.CalculateCacheKey(featureDefinition.Name, providerName, providerKey);
             var featureValue = dbRecordsMap.GetOrDefault(featureDefinition.Name);
+            var featureValueCacheItem = new FeatureValueCacheItem(featureValue);
+            cacheItems[cacheKey] = featureValueCacheItem;
 
-            cacheItems.Add(
-                new KeyValuePair<string, FeatureValueCacheItem>(
-                    _CalculateCacheKey(featureDefinition.Name, providerName, providerKey),
-                    new FeatureValueCacheItem(featureValue)
-                )
-            );
-
-            if (string.Equals(featureDefinition.Name, currentName, StringComparison.Ordinal))
+            if (string.Equals(featureDefinition.Name, nameToFind, StringComparison.Ordinal))
             {
-                currentCacheItem.Value = featureValue;
+                featureToFind = featureValueCacheItem;
             }
         }
 
-        await cache.SetManyAsync(cacheItems);
+        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+
+        return featureToFind ?? new FeatureValueCacheItem(value: null);
     }
 
-    private static string _CalculateCacheKey(string name, string providerName, string? providerKey)
-    {
-        return FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-    }
+    #endregion
 }
