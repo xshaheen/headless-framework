@@ -2,10 +2,11 @@
 
 using System.Security.Claims;
 using Framework.Kernel.Checks;
-using Framework.Permissions.Permissions.Checkers;
-using Framework.Permissions.Permissions.Values;
+using Framework.Permissions.Checkers;
+using Framework.Permissions.Models;
+using Framework.Permissions.Values;
 
-namespace Framework.Permissions.Providers;
+namespace Framework.Permissions.ValueProviders;
 
 [PublicAPI]
 public sealed class RolePermissionValueProvider(IPermissionStore store) : PermissionValueProvider(store)

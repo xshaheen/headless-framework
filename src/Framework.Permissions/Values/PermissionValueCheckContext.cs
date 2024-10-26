@@ -2,9 +2,9 @@
 
 using System.Security.Claims;
 using Framework.Kernel.Checks;
-using Framework.Permissions.Permissions.Definitions;
+using Framework.Permissions.Definitions;
 
-namespace Framework.Permissions.Permissions.Values;
+namespace Framework.Permissions.Values;
 
 public class PermissionValueCheckContext(PermissionDefinition permission, ClaimsPrincipal? principal)
 {

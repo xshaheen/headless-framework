@@ -1,9 +1,24 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Permissions.Permissions.Checkers;
+using Framework.Kernel.Checks;
+using Framework.Permissions.Checkers;
+using Framework.Permissions.Models;
 using Microsoft.AspNetCore.Authorization;
 
-namespace Framework.Permissions.PermissionRequirements;
+namespace Framework.Permissions.Requirements;
+
+[PublicAPI]
+public sealed class PermissionsRequirement(string[] permissionNames, bool requiresAll) : IAuthorizationRequirement
+{
+    public string[] PermissionNames { get; } = Argument.IsNotNull(permissionNames);
+
+    public bool RequiresAll { get; } = requiresAll;
+
+    public override string ToString()
+    {
+        return $"PermissionsRequirement: {string.Join(", ", PermissionNames)}";
+    }
+}
 
 [PublicAPI]
 public class PermissionsRequirementHandler(IPermissionChecker checker) : AuthorizationHandler<PermissionsRequirement>
