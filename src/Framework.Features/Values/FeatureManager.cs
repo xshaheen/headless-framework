@@ -154,7 +154,7 @@ public sealed class FeatureManager : IFeatureManager
 
         var feature =
             await _featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new InvalidOperationException($"Undefined setting: {name}");
+            ?? throw new InvalidOperationException($"Undefined feature: {name}");
 
         var providers = _lazyProviders
             .Value.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -231,7 +231,7 @@ public sealed class FeatureManager : IFeatureManager
         {
             var feature =
                 await _featureDefinitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
-                ?? throw new InvalidOperationException($"Undefined setting: {featureNameValue.Name}");
+                ?? throw new InvalidOperationException($"Undefined feature: {featureNameValue.Name}");
 
             foreach (var provider in writableProviders)
             {
@@ -252,7 +252,7 @@ public sealed class FeatureManager : IFeatureManager
 
         var definition =
             await _featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new InvalidOperationException($"Undefined setting: {name}");
+            ?? throw new InvalidOperationException($"Undefined feature: {name}");
 
         IEnumerable<IFeatureValueReadProvider> providers = _lazyProviders.Value;
 

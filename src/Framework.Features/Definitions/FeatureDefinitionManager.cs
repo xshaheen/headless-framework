@@ -34,9 +34,9 @@ public sealed class FeatureDefinitionManager(
 
         // We prefer static features over dynamics
         var dynamicFeatures = await dynamicStore.GetFeaturesAsync(cancellationToken);
-        var uniqueDynamicSettings = dynamicFeatures.Where(d => !staticFeatureNames.Contains(d.Name));
+        var uniqueDynamicFeatures = dynamicFeatures.Where(d => !staticFeatureNames.Contains(d.Name));
 
-        return staticFeatures.Concat(uniqueDynamicSettings).ToImmutableList();
+        return staticFeatures.Concat(uniqueDynamicFeatures).ToImmutableList();
     }
 
     public async Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(
@@ -45,10 +45,10 @@ public sealed class FeatureDefinitionManager(
     {
         var staticGroups = await staticStore.GetGroupsAsync(cancellationToken);
         var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet();
-        // We prefer static settings over dynamics
-        var dynamicSettings = await dynamicStore.GetGroupsAsync(cancellationToken);
-        var uniqueDynamicSettings = dynamicSettings.Where(d => !staticGroupNames.Contains(d.Name));
+        // We prefer static features over dynamics
+        var dynamicFeatures = await dynamicStore.GetGroupsAsync(cancellationToken);
+        var uniqueDynamicFeatures = dynamicFeatures.Where(d => !staticGroupNames.Contains(d.Name));
 
-        return staticGroups.Concat(uniqueDynamicSettings).ToImmutableList();
+        return staticGroups.Concat(uniqueDynamicFeatures).ToImmutableList();
     }
 }

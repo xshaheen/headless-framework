@@ -4,8 +4,8 @@ namespace Framework.Features.Entities;
 
 public static class FeatureValueRecordConstants
 {
-    public const int MaxNameLength = 128;
-    public const int MaxProviderNameLength = 64;
-    public const int MaxProviderKeyLength = 64;
-    public const int MaxValueLength = 128;
+    public const int NameMaxLength = 128;
+    public const int ProviderNameMaxLength = 64;
+    public const int ProviderKeyMaxLength = 64;
+    public const int ValueMaxLength = 128;
 }

@@ -18,7 +18,7 @@ namespace Framework.Features;
 public static class AddFeaturesExtensions
 {
     /// <summary>
-    /// Adds core feature management services to the host builder and registers default setting value providers.
+    /// Adds core feature management services to the host builder and registers default feature value providers.
     /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
     /// to be able to use this feature.
     /// </summary>

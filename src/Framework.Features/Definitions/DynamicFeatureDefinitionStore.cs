@@ -23,7 +23,7 @@ public interface IDynamicFeatureDefinitionStore
 
     Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Save the application static settings to the dynamic store.</summary>
+    /// <summary>Save the application static features to the dynamic store.</summary>
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
 
@@ -109,7 +109,7 @@ public sealed class DynamicFeatureDefinitionStore(
     {
         if (!_IsUpdateMemoryCacheRequired())
         {
-            return; // Get the latest setting with a small delay for optimization
+            return; // Get the latest feature with a small delay for optimization
         }
 
         var cacheStamp = await _GetOrSetDistributedCacheStampAsync(cancellationToken);
@@ -265,7 +265,7 @@ public sealed class DynamicFeatureDefinitionStore(
         // This is enough for now.
 
         var cachedHash = await distributedCache.GetAsync<string>(_hashCacheKey, cancellationToken);
-        var groups = await staticStore.GetGroupsAsync();
+        var groups = await staticStore.GetGroupsAsync(cancellationToken);
         var (featureGroupRecords, featureRecords) = serializer.Serialize(groups);
 
         var currentHash = _CalculateHash(
@@ -302,6 +302,16 @@ public sealed class DynamicFeatureDefinitionStore(
 
         if (hasChangesInGroups || hasChangesInFeatures)
         {
+            await repository.SaveAsync(
+                newGroups,
+                updatedGroups,
+                deletedGroups,
+                newFeatures,
+                updatedFeatures,
+                deletedFeatures,
+                cancellationToken
+            );
+
             await _ChangeCommonStamp(cancellationToken);
         }
 

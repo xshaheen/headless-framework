@@ -99,19 +99,14 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteAsync(List<SettingValueRecord> settings, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(
+        IEnumerable<SettingValueRecord> settings,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
         db.SettingValues.RemoveRange(settings);
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task DeleteAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
-    {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
-        db.SettingValues.Remove(setting);
         await db.SaveChangesAsync(cancellationToken);
     }
 }
