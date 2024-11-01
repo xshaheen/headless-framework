@@ -42,7 +42,8 @@ public sealed class StorageResourceLockProvider(
     public async Task<IResourceLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null
+        TimeSpan? acquireTimeout = null,
+        CancellationToken acquireAbortToken = default
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -54,7 +55,7 @@ public sealed class StorageResourceLockProvider(
         logger.LogAttemptingToAcquireLock(resource, lockId);
         using var activity = _StartLockActivity(resource);
 
-        using var acquireTimeoutCts = new CancellationTokenSource();
+        using var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(acquireAbortToken);
 
         if (normalizedAcquireTimeout is not null)
         {
@@ -186,20 +187,44 @@ public sealed class StorageResourceLockProvider(
         return new DisposableResourceLock(resource, lockId, timeWaitedForLock, this, logger, timeProvider);
     }
 
-    public async Task<bool> IsLockedAsync(string resource)
+    public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return await Run.WithRetriesAsync(() => _storage.ExistsAsync(resource)).AnyContext();
+        return Run.WithRetriesAsync(
+            (_storage, resource),
+            static state => state._storage.ExistsAsync(state.resource),
+            cancellationToken: cancellationToken
+        );
     }
 
-    public async Task ReleaseAsync(string resource, string lockId)
+    public async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
         logger.LogReleaseStarted(resource, lockId);
-        await Run.WithRetriesAsync(() => _storage.RemoveIfEqualAsync(resource, lockId), 15).AnyContext();
-        await messageBus.PublishAsync(new StorageLockReleased(resource, lockId)).AnyContext();
+
+        await Run.WithRetriesAsync(
+                (_storage, resource, lockId),
+                static state =>
+                {
+                    var (storage, resource, lockId) = state;
+                    return storage.RemoveIfEqualAsync(resource, lockId);
+                },
+                maxAttempts: 15,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
+
+        await messageBus
+            .PublishAsync(new StorageLockReleased(resource, lockId), cancellationToken: cancellationToken)
+            .AnyContext();
+
         logger.LogReleaseReleased(resource, lockId);
     }
 
-    public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+    public Task<bool> RenewAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
@@ -208,7 +233,14 @@ public sealed class StorageResourceLockProvider(
         logger.LogRenewingLock(resource, lockId, timeUntilExpires);
 
         return Run.WithRetriesAsync(
-            () => _storage.ReplaceIfEqualAsync(resource, lockId, lockId, normalizedTimeUntilExpires)
+            (_storage, resource, lockId, normalizedTimeUntilExpires),
+            static state =>
+            {
+                var (storage, resource, lockId, normalizedTimeUntilExpires) = state;
+
+                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, normalizedTimeUntilExpires);
+            },
+            cancellationToken: cancellationToken
         );
     }
 
@@ -231,6 +263,7 @@ public sealed class StorageResourceLockProvider(
             logger.LogSubscribingToLockReleased();
             await messageBus.SubscribeAsync<StorageLockReleased>(msg => _OnLockReleasedAsync(msg.Payload)).AnyContext();
             _isSubscribed = true;
+
             logger.LogSubscribedToLockReleased();
         }
     }
@@ -262,7 +295,7 @@ public sealed class StorageResourceLockProvider(
         return activity;
     }
 
-    /// <summary>Delay a minimum of 50ms and a maximum of 3 seconds</summary>
+    /// <summary>Delay a minimum of 50 ms and a maximum of 3 seconds</summary>
     private static TimeSpan _DelayAmount(TimeSpan expiration)
     {
         return expiration < TimeSpan.FromMilliseconds(50) ? TimeSpan.FromMilliseconds(50)

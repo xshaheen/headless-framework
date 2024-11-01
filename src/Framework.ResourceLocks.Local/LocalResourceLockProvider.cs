@@ -24,7 +24,8 @@ public sealed class LocalResourceLockProvider(
     public async Task<IResourceLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null
+        TimeSpan? acquireTimeout = null,
+        CancellationToken acquireAbortToken = default
     )
     {
         timeUntilExpires ??= TimeSpan.FromMinutes(20);
@@ -47,11 +48,11 @@ public sealed class LocalResourceLockProvider(
 
         if (acquireTimeout == Timeout.InfiniteTimeSpan)
         {
-            lockReleaser = await _locks.LockAsync(normalizeResource);
+            lockReleaser = await _locks.LockAsync(normalizeResource, acquireAbortToken);
         }
         else
         {
-            var timeoutRelease = await _locks.LockAsync(normalizeResource, acquireTimeout.Value);
+            var timeoutRelease = await _locks.LockAsync(normalizeResource, acquireTimeout.Value, acquireAbortToken);
 
             if (timeoutRelease.EnteredSemaphore)
             {
@@ -96,16 +97,25 @@ public sealed class LocalResourceLockProvider(
         return new DisposableResourceLock(resource, lockId, elapsed, this, logger, timeProvider);
     }
 
-    public Task<bool> IsLockedAsync(string resource)
+    public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrWhiteSpace(resource);
-        var normalizeResource = _options.KeyPrefix + resource;
 
-        return Task.FromResult(_locks.IsInUse(normalizeResource));
+        var normalizeResource = _options.KeyPrefix + resource;
+        var isInUse = _locks.IsInUse(normalizeResource);
+
+        return Task.FromResult(isInUse);
     }
 
-    public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+    public Task<bool> RenewAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         timeUntilExpires ??= TimeSpan.FromMinutes(20);
 
         Argument.IsNotNullOrWhiteSpace(resource);
@@ -139,8 +149,9 @@ public sealed class LocalResourceLockProvider(
         return Task.FromResult(true);
     }
 
-    public Task ReleaseAsync(string resource, string lockId)
+    public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
