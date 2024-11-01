@@ -6,9 +6,13 @@ using Framework.Permissions.Values;
 
 namespace Framework.Permissions.Models;
 
-public class PermissionManagementProviderOptions
+public sealed class PermissionManagementProviderOptions
 {
     public TypeList<IPermissionDefinitionProvider> DefinitionProviders { get; } = [];
 
     public TypeList<IPermissionValueProvider> ValueProviders { get; } = [];
+
+    public List<string> DeletedPermissionGroups { get; } = [];
+
+    public List<string> DeletedPermissions { get; } = [];
 }

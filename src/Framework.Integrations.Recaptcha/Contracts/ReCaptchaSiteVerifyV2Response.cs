@@ -6,7 +6,7 @@ using Framework.Integrations.Recaptcha.Internals;
 
 namespace Framework.Integrations.Recaptcha.Contracts;
 
-public class ReCaptchaSiteVerifyV2Response
+public sealed class ReCaptchaSiteVerifyV2Response
 {
     /// <summary>Whether this request was a valid reCAPTCHA token for your site.</summary>
     [JsonPropertyName("success")]

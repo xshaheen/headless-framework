@@ -2,7 +2,6 @@
 
 using System.Security.Claims;
 using Framework.Kernel.Checks;
-using Framework.Permissions.Checkers;
 using Framework.Permissions.Models;
 using Framework.Permissions.Values;
 

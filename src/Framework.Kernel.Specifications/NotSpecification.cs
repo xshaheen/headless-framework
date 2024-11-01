@@ -10,7 +10,7 @@ namespace Framework.Kernel.Specifications;
 /// Initializes a new instance of <see cref="NotSpecification{T}"/> class.
 /// </remarks>
 /// <param name="specification">The specification to be reversed.</param>
-public class NotSpecification<T>(ISpecification<T> specification) : Specification<T>
+public sealed class NotSpecification<T>(ISpecification<T> specification) : Specification<T>
 {
     /// <summary>
     /// Gets the LINQ expression which represents the current specification.

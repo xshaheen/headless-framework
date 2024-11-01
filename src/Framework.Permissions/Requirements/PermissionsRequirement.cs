@@ -21,7 +21,8 @@ public sealed class PermissionsRequirement(string[] permissionNames, bool requir
 }
 
 [PublicAPI]
-public class PermissionsRequirementHandler(IPermissionChecker checker) : AuthorizationHandler<PermissionsRequirement>
+public sealed class PermissionsRequirementHandler(IPermissionChecker checker)
+    : AuthorizationHandler<PermissionsRequirement>
 {
     protected override async Task HandleRequirementAsync(
         AuthorizationHandlerContext context,

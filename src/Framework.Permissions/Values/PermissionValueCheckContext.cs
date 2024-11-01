@@ -6,7 +6,7 @@ using Framework.Permissions.Definitions;
 
 namespace Framework.Permissions.Values;
 
-public class PermissionValueCheckContext(PermissionDefinition permission, ClaimsPrincipal? principal)
+public sealed class PermissionValueCheckContext(PermissionDefinition permission, ClaimsPrincipal? principal)
 {
     public PermissionDefinition Permission { get; } = Argument.IsNotNull(permission);
 
