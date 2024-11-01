@@ -6,7 +6,7 @@ using Framework.Kernel.Domains;
 
 namespace Framework.Features.Values;
 
-public class FeatureValueCacheItemInvalidator : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
+public sealed class FeatureValueCacheItemInvalidator : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
 {
     private readonly ICache<FeatureValueCacheItem> _cache;
 

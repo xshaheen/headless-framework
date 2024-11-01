@@ -13,7 +13,7 @@ namespace Framework.Kernel.Specifications;
 /// <remarks>Initializes a new instance of <see cref="OrSpecification{T}"/> class.</remarks>
 /// <param name="left">The first specification.</param>
 /// <param name="right">The second specification.</param>
-public class OrSpecification<T>(ISpecification<T> left, ISpecification<T> right)
+public sealed class OrSpecification<T>(ISpecification<T> left, ISpecification<T> right)
     : CompositeSpecification<T>(left, right)
 {
     /// <summary>

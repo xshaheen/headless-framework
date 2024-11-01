@@ -4,9 +4,9 @@ using Framework.Permissions.Definitions;
 
 namespace Framework.Permissions.Models;
 
-public class PermissionStateContext
+public sealed class PermissionStateContext
 {
-    public IServiceProvider ServiceProvider { get; set; } = default!;
+    public required IServiceProvider ServiceProvider { get; set; }
 
-    public PermissionDefinition Permission { get; set; } = default!;
+    public required PermissionDefinition Permission { get; set; }
 }

@@ -37,7 +37,7 @@ public interface ITypeList<in TBaseType> : IList<Type>
 }
 
 /// <summary>A shortcut for <see cref="TypeList{TBaseType}"/> to use object as base type.</summary>
-public class TypeList : TypeList<object>, ITypeList;
+public sealed class TypeList : TypeList<object>, ITypeList;
 
 /// <summary>Extends <see cref="List{Type}"/> to add restriction a specific base type.</summary>
 /// <typeparam name="TBaseType">Base Type of <see cref="Type"/>s in this list</typeparam>

@@ -42,13 +42,11 @@ public interface IPermissionDefinitionContext
     /// Returns null if you can not find the given group.
     /// <param name="name">Name of the group</param>
     /// </summary>
-    PermissionDefinition? GetPermissionOrNull(string name);
+    PermissionDefinition? GetPermissionOrDefault(string name);
 }
 
-public sealed class PermissionDefinitionContext(IServiceProvider serviceProvider) : IPermissionDefinitionContext
+public sealed class PermissionDefinitionContext : IPermissionDefinitionContext
 {
-    public IServiceProvider ServiceProvider { get; } = serviceProvider;
-
     public Dictionary<string, PermissionGroupDefinition> Groups { get; } = new(StringComparer.Ordinal);
 
     public PermissionGroupDefinition AddGroup(string name, string? displayName = null)
@@ -92,7 +90,7 @@ public sealed class PermissionDefinitionContext(IServiceProvider serviceProvider
         Groups.Remove(name);
     }
 
-    public PermissionDefinition? GetPermissionOrNull(string name)
+    public PermissionDefinition? GetPermissionOrDefault(string name)
     {
         Argument.IsNotNull(name);
 
@@ -107,5 +105,36 @@ public sealed class PermissionDefinitionContext(IServiceProvider serviceProvider
         }
 
         return null;
+    }
+}
+
+[PublicAPI]
+public static class PermissionDefinitionContextExtensions
+{
+    /// <summary>
+    /// Finds and disables a permission with the given <paramref name="name"/>.
+    /// Returns false if given permission was not found.
+    /// </summary>
+    /// <param name="context">Permission definition context</param>
+    /// <param name="name">Name of the permission</param>
+    /// <returns>
+    /// Returns true if given permission was found.
+    /// Returns false if given permission was not found.
+    /// </returns>
+    public static bool TryDisablePermission(this IPermissionDefinitionContext context, string name)
+    {
+        Argument.IsNotNull(context);
+        Argument.IsNotNull(name);
+
+        var permission = context.GetPermissionOrDefault(name);
+
+        if (permission is null)
+        {
+            return false;
+        }
+
+        permission.IsEnabled = false;
+
+        return true;
     }
 }

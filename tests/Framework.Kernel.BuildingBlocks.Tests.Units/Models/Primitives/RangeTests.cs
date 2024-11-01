@@ -4,7 +4,7 @@ using Framework.Kernel.Primitives;
 
 namespace Tests.Models.Primitives;
 
-public class RangeTests
+public sealed class RangeTests
 {
     #region Creation
 

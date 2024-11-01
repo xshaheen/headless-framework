@@ -16,7 +16,7 @@ namespace Framework.Generator.Primitives;
 /// <param name="message">The error message that describes the reason for the exception.</param>
 /// <param name="instance">actual instance of primitive</param>
 [method: EditorBrowsable(EditorBrowsableState.Never)]
-public class InvalidPrimitiveValueException(string message, IPrimitive instance)
+public sealed class InvalidPrimitiveValueException(string message, IPrimitive instance)
     : Exception(_GenerateErrorMessage(message, instance))
 {
     /// <summary>Generates the error message for the <see cref="InvalidPrimitiveValueException"/>.</summary>
