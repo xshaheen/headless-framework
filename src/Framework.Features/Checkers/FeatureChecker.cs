@@ -9,11 +9,11 @@ namespace Framework.Features.Checkers;
 
 public interface IFeatureChecker
 {
-    Task<string?> GetOrDefaultAsync(string name);
+    Task<string?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
-    public async Task<bool> IsEnabledAsync(string name)
+    public async Task<bool> IsEnabledAsync(string name, CancellationToken cancellationToken = default)
     {
-        var value = await GetOrDefaultAsync(name);
+        var value = await GetOrDefaultAsync(name, cancellationToken);
 
         if (value.IsNullOrEmpty())
         {
@@ -39,10 +39,10 @@ public sealed class FeatureChecker(
     IFeatureValueProviderManager featureValueProviderManager
 ) : IFeatureChecker
 {
-    public async Task<string?> GetOrDefaultAsync(string name)
+    public async Task<string?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
         var featureDefinition =
-            await featureDefinitionManager.GetOrDefaultFeatureAsync(name)
+            await featureDefinitionManager.GetOrDefaultFeatureAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Feature {name} is not defined!");
 
         var providers = featureValueProviderManager.ValueProviders.Reverse();
@@ -52,17 +52,18 @@ public sealed class FeatureChecker(
             providers = providers.Where(p => featureDefinition.Providers.Contains(p.Name, StringComparer.Ordinal));
         }
 
-        return await _GetOrDefaultValueFromProvidersAsync(providers, featureDefinition);
+        return await _GetOrDefaultValueFromProvidersAsync(providers, featureDefinition, cancellationToken);
     }
 
     private static async Task<string?> _GetOrDefaultValueFromProvidersAsync(
         IEnumerable<IFeatureValueReadProvider> providers,
-        FeatureDefinition feature
+        FeatureDefinition feature,
+        CancellationToken cancellationToken
     )
     {
         foreach (var provider in providers)
         {
-            var value = await provider.GetOrDefaultAsync(feature, providerKey: null); // TODO(shaheen): Add providerKey
+            var value = await provider.GetOrDefaultAsync(feature, providerKey: null, cancellationToken);
 
             if (value is not null)
             {

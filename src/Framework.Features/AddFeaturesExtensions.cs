@@ -28,7 +28,7 @@ public static class AddFeaturesExtensions
     )
     {
         services._AddCoreValueProviders();
-        services.AddHostedService<FeatureInitializationBackgroundService>();
+        services.AddHostedService<FeaturesInitializationBackgroundService>();
 
         services.AddTransient<
             ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>,

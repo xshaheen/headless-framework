@@ -42,10 +42,14 @@ public sealed class DynamicSettingDefinitionStore(
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
     private readonly SettingManagementProvidersOptions _providers = providersAccessor.Value;
 
-    private const string _StampCacheKey = "SettingUpdatedLocalStamp";
-    private const string _CommonLockKey = "Common_SettingUpdateLock";
-    private readonly string _appLockKey = $"{application.ApplicationName}_SettingUpdateLock";
-    private readonly string _hashCacheKey = $"{application.ApplicationName}_SettingsHash";
+    /// <summary>
+    /// A lock key for the application features update to allow only one instance to try
+    /// to save the changes at a time.
+    /// </summary>
+    private readonly string _appSaveLockKey = $"{application.ApplicationName}_SettingsUpdateLock";
+
+    /// <summary>A hash of the application features to check if there are changes and need to save them.</summary>
+    private readonly string _appSaveFeaturesHashCacheKey = $"{application.ApplicationName}_SettingsHash";
 
     #region Get Methods
 
@@ -111,7 +115,10 @@ public sealed class DynamicSettingDefinitionStore(
 
     private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
     {
-        var cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
+        var cachedStamp = await distributedCache.GetAsync<string>(
+            _options.CommonSettingsUpdatedStampCacheKey,
+            cancellationToken
+        );
 
         if (!cachedStamp.IsNull)
         {
@@ -119,13 +126,22 @@ public sealed class DynamicSettingDefinitionStore(
         }
 
         await using var resourceLock =
-            await resourceLockProvider.TryAcquireAsync(_CommonLockKey, 2.Minutes())
+            await resourceLockProvider.TryAcquireAsync(
+                resource: _options.CrossApplicationsCommonLockKey,
+                timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
+                acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
+                acquireAbortToken: cancellationToken
+            )
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for setting definition common stamp check!"
             ); // This request will fail
 
         cancellationToken.ThrowIfCancellationRequested();
-        cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
+
+        cachedStamp = await distributedCache.GetAsync<string>(
+            _options.CommonSettingsUpdatedStampCacheKey,
+            cancellationToken
+        );
 
         if (!cachedStamp.IsNull)
         {
@@ -171,9 +187,10 @@ public sealed class DynamicSettingDefinitionStore(
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
         await using var applicationResourceLock = await resourceLockProvider.TryAcquireAsync(
-            _appLockKey,
-            timeUntilExpires: 10.Minutes(),
-            acquireTimeout: 5.Minutes()
+            _appSaveLockKey,
+            timeUntilExpires: _options.ApplicationSaveLockExpiration,
+            acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
+            acquireAbortToken: cancellationToken
         );
 
         if (applicationResourceLock is null)
@@ -182,7 +199,7 @@ public sealed class DynamicSettingDefinitionStore(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var cachedHash = await distributedCache.GetAsync<string>(_hashCacheKey, cancellationToken);
+        var cachedHash = await distributedCache.GetAsync<string>(_appSaveFeaturesHashCacheKey, cancellationToken);
         var records = serializer.Serialize(await staticStore.GetAllAsync(cancellationToken));
         var currentHash = _CalculateHash(records, _providers.DeletedSettings);
 
@@ -193,9 +210,10 @@ public sealed class DynamicSettingDefinitionStore(
 
         await using var commonResourceLock =
             await resourceLockProvider.TryAcquireAsync(
-                _CommonLockKey,
+                _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: 10.Minutes(),
-                acquireTimeout: 5.Minutes()
+                acquireTimeout: 5.Minutes(),
+                acquireAbortToken: cancellationToken
             ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!"); // It will re-try
 
         var (newRecords, changedRecords, deletedRecords) = await _UpdateChangedSettingsAsync(
@@ -211,7 +229,12 @@ public sealed class DynamicSettingDefinitionStore(
             await _ChangeCommonStamp(cancellationToken);
         }
 
-        await distributedCache.UpsertAsync(_hashCacheKey, currentHash, TimeSpan.FromDays(30), cancellationToken);
+        await distributedCache.UpsertAsync(
+            _appSaveFeaturesHashCacheKey,
+            currentHash,
+            _options.SettingsHashCacheExpiration,
+            cancellationToken
+        );
     }
 
     #endregion
@@ -294,7 +317,13 @@ public sealed class DynamicSettingDefinitionStore(
     private async Task<string> _ChangeCommonStamp(CancellationToken cancellationToken)
     {
         var stamp = guidGenerator.Create().ToString("N");
-        await distributedCache.UpsertAsync(_StampCacheKey, stamp, TimeSpan.FromDays(30), cancellationToken);
+
+        await distributedCache.UpsertAsync(
+            _options.CommonSettingsUpdatedStampCacheKey,
+            stamp,
+            _options.CommonSettingsUpdatedStampCacheExpiration,
+            cancellationToken
+        );
 
         return stamp;
     }

@@ -11,11 +11,11 @@ using Polly.Retry;
 
 namespace Framework.Features.Helpers;
 
-public sealed class FeatureInitializationBackgroundService(
+public sealed class FeaturesInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<FeatureManagementOptions> optionsAccessor,
-    ILogger<FeatureInitializationBackgroundService> logger
+    ILogger<FeaturesInitializationBackgroundService> logger
 ) : IHostedService, IDisposable
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
