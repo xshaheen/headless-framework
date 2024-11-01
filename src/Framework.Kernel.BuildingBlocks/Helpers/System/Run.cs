@@ -157,6 +157,26 @@ public static class Run
         return resiliencePipeline.ExecuteAsync(callback, cancellationToken);
     }
 
+    public static async Task<TResult> WithRetriesAsync<TResult, TState>(
+        TState state,
+        Func<TState, CancellationToken, Task<TResult>> callback,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+
+        var newState = (state, callback);
+
+        return await resiliencePipeline.ExecuteAsync(
+            static async (newState, token) => await newState.callback(newState.state, token),
+            newState,
+            cancellationToken
+        );
+    }
+
     public static ValueTask<TResult> WithRetriesAsync<TResult, TState>(
         TState state,
         Func<TState, CancellationToken, ValueTask<TResult>> callback,

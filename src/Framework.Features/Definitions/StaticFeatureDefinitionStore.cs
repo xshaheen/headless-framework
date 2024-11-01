@@ -21,9 +21,7 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
     private readonly FeatureManagementProvidersOptions _options;
     private readonly Lazy<Dictionary<string, FeatureGroupDefinition>> _lazyFeatureGroupDefinitions;
     private readonly Lazy<Dictionary<string, FeatureDefinition>> _lazyFeatureDefinitions;
-
     private Dictionary<string, FeatureGroupDefinition> FeatureGroupDefinitions => _lazyFeatureGroupDefinitions.Value;
-
     private Dictionary<string, FeatureDefinition> FeatureDefinitions => _lazyFeatureDefinitions.Value;
 
     public StaticFeatureDefinitionStore(
@@ -78,25 +76,25 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
 
         foreach (var feature in FeatureGroupDefinitions.Values.SelectMany(x => x.Features))
         {
-            _AddFeatureToDictionaryRecursively(features, feature);
+            addFeatureToDictionaryRecursively(features, feature);
         }
 
         return features;
-    }
 
-    private static void _AddFeatureToDictionaryRecursively(
-        Dictionary<string, FeatureDefinition> features,
-        FeatureDefinition feature
-    )
-    {
-        if (!features.TryAdd(feature.Name, feature))
+        static void addFeatureToDictionaryRecursively(
+            Dictionary<string, FeatureDefinition> features,
+            FeatureDefinition feature
+        )
         {
-            throw new InvalidOperationException($"Duplicate feature name: {feature.Name}");
-        }
+            if (!features.TryAdd(feature.Name, feature))
+            {
+                throw new InvalidOperationException($"Duplicate feature name: {feature.Name}");
+            }
 
-        foreach (var child in feature.Children)
-        {
-            _AddFeatureToDictionaryRecursively(features, child);
+            foreach (var child in feature.Children)
+            {
+                addFeatureToDictionaryRecursively(features, child);
+            }
         }
     }
 

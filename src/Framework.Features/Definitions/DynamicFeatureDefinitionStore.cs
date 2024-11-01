@@ -9,12 +9,12 @@ using Framework.Features.Models;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.ResourceLocks;
 using Framework.Serializer.Json.Modifiers;
-using Humanizer;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
 namespace Framework.Features.Definitions;
 
+/// <summary>Store for feature definitions that defined dynamically from an external source like a database.</summary>
 public interface IDynamicFeatureDefinitionStore
 {
     Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
@@ -43,10 +43,14 @@ public sealed class DynamicFeatureDefinitionStore(
     private readonly FeatureManagementOptions _options = optionsAccessor.Value;
     private readonly FeatureManagementProvidersOptions _providers = providersAccessor.Value;
 
-    private const string _StampCacheKey = "FeaturesUpdatedLocalStamp";
-    private const string _CommonLockKey = "Common_FeaturesUpdateLock";
-    private readonly string _appLockKey = $"{application.ApplicationName}_FeaturesUpdateLock";
-    private readonly string _hashCacheKey = $"{application.ApplicationName}_FeaturesHash";
+    /// <summary>
+    /// A lock key for the application features update to allow only one instance to try
+    /// to save the changes at a time.
+    /// </summary>
+    private readonly string _appSaveLockKey = $"{application.ApplicationName}_FeaturesUpdateLock";
+
+    /// <summary>A hash of the application features to check if there are changes and need to save them.</summary>
+    private readonly string _appSaveFeaturesHashCacheKey = $"{application.ApplicationName}_FeaturesHash";
 
     #region Get Methods
 
@@ -128,7 +132,10 @@ public sealed class DynamicFeatureDefinitionStore(
 
     private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
     {
-        var cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
+        var cachedStamp = await distributedCache.GetAsync<string>(
+            _options.CommonFeaturesUpdatedStampCacheKey,
+            cancellationToken
+        );
 
         if (!cachedStamp.IsNull)
         {
@@ -136,13 +143,22 @@ public sealed class DynamicFeatureDefinitionStore(
         }
 
         await using var resourceLock =
-            await resourceLockProvider.TryAcquireAsync(_CommonLockKey, 2.Minutes())
+            await resourceLockProvider.TryAcquireAsync(
+                resource: _options.CrossApplicationsCommonLockKey,
+                timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
+                acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
+                acquireAbortToken: cancellationToken
+            )
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for feature definition common stamp check!"
             ); // This request will fail
 
         cancellationToken.ThrowIfCancellationRequested();
-        cachedStamp = await distributedCache.GetAsync<string>(_StampCacheKey, cancellationToken);
+
+        cachedStamp = await distributedCache.GetAsync<string>(
+            _options.CommonFeaturesUpdatedStampCacheKey,
+            cancellationToken
+        );
 
         if (!cachedStamp.IsNull)
         {
@@ -246,13 +262,14 @@ public sealed class DynamicFeatureDefinitionStore(
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        await using var applicationResourceLock = await resourceLockProvider.TryAcquireAsync(
-            _appLockKey,
-            timeUntilExpires: 10.Minutes(),
-            acquireTimeout: 5.Minutes()
+        await using var appResourceLock = await resourceLockProvider.TryAcquireAsync(
+            _appSaveLockKey,
+            timeUntilExpires: _options.ApplicationSaveLockExpiration,
+            acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
+            acquireAbortToken: cancellationToken
         );
 
-        if (applicationResourceLock is null)
+        if (appResourceLock is null)
         {
             return; // Another application instance is already doing it
         }
@@ -264,7 +281,7 @@ public sealed class DynamicFeatureDefinitionStore(
         // But the code would be more complex.
         // This is enough for now.
 
-        var cachedHash = await distributedCache.GetAsync<string>(_hashCacheKey, cancellationToken);
+        var cachedHash = await distributedCache.GetAsync<string>(_appSaveFeaturesHashCacheKey, cancellationToken);
         var groups = await staticStore.GetGroupsAsync(cancellationToken);
         var (featureGroupRecords, featureRecords) = serializer.Serialize(groups);
 
@@ -282,9 +299,10 @@ public sealed class DynamicFeatureDefinitionStore(
 
         await using var commonResourceLock =
             await resourceLockProvider.TryAcquireAsync(
-                resource: _CommonLockKey,
-                timeUntilExpires: 10.Minutes(),
-                acquireTimeout: 5.Minutes()
+                resource: _options.CrossApplicationsCommonLockKey,
+                timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
+                acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
+                acquireAbortToken: cancellationToken
             ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static features!"); // It will re-try
 
         var (newGroups, updatedGroups, deletedGroups) = await _UpdateChangedFeatureGroupsAsync(
@@ -315,7 +333,12 @@ public sealed class DynamicFeatureDefinitionStore(
             await _ChangeCommonStamp(cancellationToken);
         }
 
-        await distributedCache.UpsertAsync(_hashCacheKey, currentHash, TimeSpan.FromDays(30), cancellationToken);
+        await distributedCache.UpsertAsync(
+            _appSaveFeaturesHashCacheKey,
+            currentHash,
+            _options.FeaturesHashCacheExpiration,
+            cancellationToken
+        );
     }
 
     #endregion
@@ -464,11 +487,16 @@ public sealed class DynamicFeatureDefinitionStore(
 
     #region Helpers
 
-    /// <summary>Change the cache stamp to notify other instances to update their local caches</summary>
     private async Task<string> _ChangeCommonStamp(CancellationToken cancellationToken)
     {
         var stamp = guidGenerator.Create().ToString("N");
-        await distributedCache.UpsertAsync(_StampCacheKey, stamp, TimeSpan.FromDays(30), cancellationToken);
+
+        await distributedCache.UpsertAsync(
+            _options.CommonFeaturesUpdatedStampCacheKey,
+            stamp,
+            _options.CommonFeaturesUpdatedStampCacheExpiration,
+            cancellationToken
+        );
 
         return stamp;
     }

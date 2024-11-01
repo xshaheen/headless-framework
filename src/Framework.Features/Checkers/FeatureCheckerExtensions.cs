@@ -8,13 +8,18 @@ namespace Framework.Features.Checkers;
 
 public static class FeatureCheckerExtensions
 {
-    public static async Task<T> GetAsync<T>(this IFeatureChecker featureChecker, string name, T defaultValue = default)
+    public static async Task<T> GetAsync<T>(
+        this IFeatureChecker featureChecker,
+        string name,
+        T defaultValue = default,
+        CancellationToken cancellationToken = default
+    )
         where T : struct
     {
         Argument.IsNotNull(featureChecker);
         Argument.IsNotNull(name);
 
-        var value = await featureChecker.GetOrDefaultAsync(name);
+        var value = await featureChecker.GetOrDefaultAsync(name, cancellationToken);
 
         return value?.To<T>() ?? defaultValue;
     }
@@ -22,7 +27,8 @@ public static class FeatureCheckerExtensions
     public static async Task<bool> IsEnabledAsync(
         this IFeatureChecker featureChecker,
         bool requiresAll,
-        params string[] featureNames
+        string[] featureNames,
+        CancellationToken cancellationToken = default
     )
     {
         if (featureNames.IsNullOrEmpty())
@@ -34,7 +40,7 @@ public static class FeatureCheckerExtensions
         {
             foreach (var featureName in featureNames)
             {
-                if (!await featureChecker.IsEnabledAsync(featureName))
+                if (!await featureChecker.IsEnabledAsync(featureName, cancellationToken))
                 {
                     return false;
                 }
@@ -45,7 +51,7 @@ public static class FeatureCheckerExtensions
 
         foreach (var featureName in featureNames)
         {
-            if (await featureChecker.IsEnabledAsync(featureName))
+            if (await featureChecker.IsEnabledAsync(featureName, cancellationToken))
             {
                 return true;
             }
@@ -54,9 +60,13 @@ public static class FeatureCheckerExtensions
         return false;
     }
 
-    public static async Task CheckEnabledAsync(this IFeatureChecker featureChecker, string featureName)
+    public static async Task CheckEnabledAsync(
+        this IFeatureChecker featureChecker,
+        string featureName,
+        CancellationToken cancellationToken = default
+    )
     {
-        if (!await featureChecker.IsEnabledAsync(featureName))
+        if (!await featureChecker.IsEnabledAsync(featureName, cancellationToken))
         {
             var error = GeneralMessageDescriber
                 .FeatureCurrentlyUnavailable()
@@ -70,7 +80,8 @@ public static class FeatureCheckerExtensions
     public static async Task CheckEnabledAsync(
         this IFeatureChecker featureChecker,
         bool requiresAll,
-        params string[] featureNames
+        string[] featureNames,
+        CancellationToken cancellationToken = default
     )
     {
         if (featureNames.IsNullOrEmpty())
@@ -82,7 +93,7 @@ public static class FeatureCheckerExtensions
         {
             foreach (var featureName in featureNames)
             {
-                if (!await featureChecker.IsEnabledAsync(featureName))
+                if (!await featureChecker.IsEnabledAsync(featureName, cancellationToken))
                 {
                     var error = GeneralMessageDescriber
                         .FeatureCurrentlyUnavailable()
@@ -97,7 +108,7 @@ public static class FeatureCheckerExtensions
         {
             foreach (var featureName in featureNames)
             {
-                if (await featureChecker.IsEnabledAsync(featureName))
+                if (await featureChecker.IsEnabledAsync(featureName, cancellationToken))
                 {
                     return;
                 }
