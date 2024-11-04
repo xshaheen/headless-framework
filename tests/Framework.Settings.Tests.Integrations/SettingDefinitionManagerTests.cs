@@ -12,8 +12,10 @@ namespace Tests;
 [Collection(nameof(SettingsTestFixture))]
 public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
 {
+    private static readonly SettingDefinition _SettingDefinition = TestData.CreateSettingDefinitionFaker().Generate();
+
     [Fact]
-    public async Task should_provide_setting_value_when_call_get_default_async_and_is_defined()
+    public async Task should_get_defined_settings_when_call_GetAllAsync_and_is_defined()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -29,7 +31,27 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
 
         // then
         definitions.Should().NotBeEmpty();
-        definitions.Should().ContainSingle(p => p.Name == "some-name");
+        definitions.Should().Contain(_SettingDefinition);
+    }
+
+    [Fact]
+    public async Task should_get_defined_setting_when_call_GetOrDefaultAsync_and_is_defined()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
+        builder.Services.ConfigureServices(fixture.ConnectionString);
+        var host = builder.Build();
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
+
+        // when
+        var definition = await definitionManager.GetOrDefaultAsync(_SettingDefinition.Name);
+
+        // then
+        definition.Should().NotBeNull();
+        definition!.Should().Be(_SettingDefinition);
     }
 
     [UsedImplicitly]
@@ -37,17 +59,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(
-                new SettingDefinition(
-                    name: "some-name",
-                    defaultValue: "some-default-value",
-                    displayName: "some-display-name",
-                    description: "some-description",
-                    isVisibleToClients: true,
-                    isInherited: true,
-                    isEncrypted: true
-                )
-            );
+            context.Add(_SettingDefinition);
         }
     }
 }

@@ -24,15 +24,15 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var record = new SettingDefinitionRecord(
-                guidGenerator.Create(),
-                setting.Name,
-                setting.DisplayName,
-                setting.Description,
-                setting.DefaultValue,
-                _SerializeProviders(setting.Providers),
-                setting.IsVisibleToClients,
-                setting.IsInherited,
-                setting.IsEncrypted
+                id: guidGenerator.Create(),
+                name: setting.Name,
+                displayName: setting.DisplayName,
+                description: setting.Description,
+                defaultValue: setting.DefaultValue,
+                providers: _SerializeProviders(setting.Providers),
+                isVisibleToClients: setting.IsVisibleToClients,
+                isInherited: setting.IsInherited,
+                isEncrypted: setting.IsEncrypted
             );
 
             foreach (var property in setting.Properties)
