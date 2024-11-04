@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Checks;
+using Microsoft.Extensions.Hosting;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -213,5 +214,24 @@ public static class DependencyInjectionExtensions
     {
         return services.AddKeyedTransient<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
+    #endregion
+
+    #region Hosted Service
+
+    public static IServiceCollection RemoveHostedService<T>(this IServiceCollection services)
+        where T : IHostedService
+    {
+        var hostedServiceDescriptor = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) && descriptor.ImplementationType == typeof(T)
+        );
+
+        if (hostedServiceDescriptor is not null)
+        {
+            services.Remove(hostedServiceDescriptor);
+        }
+
+        return services;
+    }
+
     #endregion
 }
