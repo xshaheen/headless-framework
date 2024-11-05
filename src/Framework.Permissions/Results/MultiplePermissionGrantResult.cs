@@ -1,8 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Checks;
+using Framework.Permissions.Models;
 
-namespace Framework.Permissions.Models;
+namespace Framework.Permissions.Results;
 
 public sealed class MultiplePermissionGrantResult
 {

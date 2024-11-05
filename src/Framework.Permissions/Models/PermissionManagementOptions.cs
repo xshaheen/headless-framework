@@ -36,9 +36,9 @@ public sealed class PermissionManagementOptions
     public string CommonPermissionsUpdatedStampCacheKey { get; set; } = "PermissionsUpdatedLocalStamp";
 }
 
-public sealed class FeatureManagementOptionsValidator : AbstractValidator<PermissionManagementOptions>
+public sealed class PermissionManagementOptionsValidator : AbstractValidator<PermissionManagementOptions>
 {
-    public FeatureManagementOptionsValidator()
+    public PermissionManagementOptionsValidator()
     {
         RuleFor(x => x.CrossApplicationsCommonLockKey).NotEmpty();
         RuleFor(x => x.CrossApplicationsCommonLockExpiration).GreaterThan(TimeSpan.Zero);

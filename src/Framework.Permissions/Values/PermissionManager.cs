@@ -3,10 +3,32 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Models;
+using Framework.Permissions.Results;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Permissions.PermissionManagement;
+namespace Framework.Permissions.Values;
+
+//TODO: Write extension methods for simple IsGranted check
+
+public interface IPermissionManager
+{
+    Task<PermissionWithGrantedProviders> GetAsync(string permissionName, string providerName, string providerKey);
+
+    Task<MultiplePermissionWithGrantedProviders> GetAsync(
+        string[] permissionNames,
+        string provideName,
+        string providerKey
+    );
+
+    Task<List<PermissionWithGrantedProviders>> GetAllAsync(string providerName, string providerKey);
+
+    Task SetAsync(string permissionName, string providerName, string providerKey, bool isGranted);
+
+    Task<PermissionGrantRecord> UpdateProviderKeyAsync(PermissionGrantRecord permissionGrant, string providerKey);
+
+    Task DeleteAsync(string providerName, string providerKey);
+}
 
 public sealed class PermissionManager : IPermissionManager
 {
@@ -161,7 +183,10 @@ public sealed class PermissionManager : IPermissionManager
         await provider.SetAsync(permissionName, providerKey, isGranted);
     }
 
-    public async Task<PermissionGrant> UpdateProviderKeyAsync(PermissionGrant permissionGrant, string providerKey)
+    public async Task<PermissionGrantRecord> UpdateProviderKeyAsync(
+        PermissionGrantRecord permissionGrant,
+        string providerKey
+    )
     {
         using (_currentTenant.Change(permissionGrant.TenantId))
         {

@@ -3,6 +3,7 @@
 using System.Security.Claims;
 using Framework.Kernel.Checks;
 using Framework.Permissions.Models;
+using Framework.Permissions.Results;
 using Framework.Permissions.Values;
 
 namespace Framework.Permissions.ValueProviders;

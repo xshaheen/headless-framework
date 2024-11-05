@@ -1,4 +1,4 @@
-﻿namespace Framework.Permissions.Models;
+﻿namespace Framework.Permissions.Results;
 
 public sealed class PermissionValueProviderGrantInfo(bool isGranted, string? providerKey = null) //TODO: Rename to PermissionGrantInfo
 {

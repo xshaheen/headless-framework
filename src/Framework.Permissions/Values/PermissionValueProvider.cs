@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Permissions.Models;
+using Framework.Permissions.Results;
 
 namespace Framework.Permissions.Values;
 

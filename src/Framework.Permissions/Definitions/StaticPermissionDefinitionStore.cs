@@ -21,12 +21,12 @@ public sealed class StaticPermissionDefinitionStore : IStaticPermissionDefinitio
 {
     private readonly Lazy<Dictionary<string, PermissionGroupDefinition>> _lazyPermissionGroupDefinitions;
     private readonly Lazy<Dictionary<string, PermissionDefinition>> _lazyPermissionDefinitions;
-    private readonly PermissionManagementProviderOptions _options;
+    private readonly PermissionManagementProvidersOptions _options;
     private readonly IServiceScopeFactory _serviceScopeFactory;
 
     public StaticPermissionDefinitionStore(
         IServiceScopeFactory serviceScopeFactory,
-        IOptions<PermissionManagementProviderOptions> options
+        IOptions<PermissionManagementProvidersOptions> options
     )
     {
         _serviceScopeFactory = serviceScopeFactory;

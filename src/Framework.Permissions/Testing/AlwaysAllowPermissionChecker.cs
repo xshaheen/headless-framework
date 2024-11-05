@@ -3,6 +3,7 @@
 using System.Security.Claims;
 using Framework.Permissions.Checkers;
 using Framework.Permissions.Models;
+using Framework.Permissions.Results;
 
 namespace Framework.Permissions.Testing;
 

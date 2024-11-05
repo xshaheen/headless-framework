@@ -1,32 +1,34 @@
 ﻿using Framework.Permissions.Entities;
 
-namespace Framework.Permissions.PermissionManagement;
+namespace Framework.Permissions.Values;
 
 public interface IPermissionGrantRepository
 {
-    Task<PermissionGrant> FindAsync(
+    Task<PermissionGrantRecord> FindAsync(
         string name,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task<List<PermissionGrant>> GetListAsync(
+    Task<List<PermissionGrantRecord>> GetListAsync(
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task<List<PermissionGrant>> GetListAsync(
+    Task<List<PermissionGrantRecord>> GetListAsync(
         string[] names,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task InsertAsync(PermissionGrant permissionGrant);
+    Task InsertAsync(PermissionGrantRecord permissionGrant);
 
-    Task DeleteAsync(PermissionGrant permissionGrant);
+    Task InsertManyAsync(IEnumerable<PermissionGrantRecord> permissionGrants);
 
-    Task<PermissionGrant> UpdateAsync(PermissionGrant permissionGrant);
+    Task DeleteAsync(PermissionGrantRecord permissionGrant);
+
+    Task<PermissionGrantRecord> UpdateAsync(PermissionGrantRecord permissionGrant);
 }

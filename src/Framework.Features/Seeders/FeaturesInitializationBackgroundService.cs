@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Settings.Definitions;
-using Framework.Settings.Models;
+using Framework.Features.Definitions;
+using Framework.Features.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -9,27 +9,27 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 
-namespace Framework.Settings.Helpers;
+namespace Framework.Features.Seeders;
 
-public sealed class SettingsInitializationBackgroundService(
+public sealed class FeaturesInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
-    IOptions<SettingManagementOptions> optionsAccessor,
-    ILogger<SettingsInitializationBackgroundService> logger
+    IOptions<FeatureManagementOptions> optionsAccessor,
+    ILogger<FeaturesInitializationBackgroundService> logger
 ) : IHostedService, IDisposable
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly SettingManagementOptions _options = optionsAccessor.Value;
-    private Task? _initializeDynamicSettingsTask;
+    private readonly FeatureManagementOptions _options = optionsAccessor.Value;
+    private Task? _initializeDynamicFeaturesTask;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (_options is { SaveStaticSettingsToDatabase: false, IsDynamicSettingStoreEnabled: false })
+        if (_options is { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
         {
             return Task.CompletedTask;
         }
 
-        _initializeDynamicSettingsTask = _InitializeDynamicSettingsAsync(cancellationToken);
+        _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(cancellationToken);
 
         return Task.CompletedTask;
     }
@@ -42,10 +42,10 @@ public sealed class SettingsInitializationBackgroundService(
     public void Dispose()
     {
         _cancellationTokenSource.Dispose();
-        _initializeDynamicSettingsTask?.Dispose();
+        _initializeDynamicFeaturesTask?.Dispose();
     }
 
-    private async Task _InitializeDynamicSettingsAsync(CancellationToken cancellationToken)
+    private async Task _InitializeDynamicFeaturesAsync(CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -54,26 +54,26 @@ public sealed class SettingsInitializationBackgroundService(
 
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
-        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken);
+        await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken);
 
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        await _PreCacheDynamicSettingsAsync(scope, cancellationToken);
+        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken);
     }
 
-    private async Task _SaveStaticSettingsToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    private async Task _SaveStaticFeaturesToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
     {
-        if (!_options.SaveStaticSettingsToDatabase)
+        if (!_options.SaveStaticFeaturesToDatabase)
         {
             return;
         }
 
         var options = new RetryStrategyOptions
         {
-            Name = "SaveStaticSettingsToDatabaseRetry",
+            Name = "SaveStaticFeatureToDatabaseRetry",
             Delay = TimeSpan.FromSeconds(2),
             MaxRetryAttempts = 10,
             BackoffType = DelayBackoffType.Exponential,
@@ -89,7 +89,7 @@ public sealed class SettingsInitializationBackgroundService(
             {
                 var (scope, logger) = state;
 
-                var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
+                var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
 
                 try
                 {
@@ -97,7 +97,7 @@ public sealed class SettingsInitializationBackgroundService(
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Failed to save static settings to the database");
+                    logger.LogError(e, "Failed to save static features to the database");
 
                     throw; // Polly will catch it
                 }
@@ -107,22 +107,23 @@ public sealed class SettingsInitializationBackgroundService(
         );
     }
 
-    private async Task _PreCacheDynamicSettingsAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    private async Task _PreCacheDynamicFeaturesAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
     {
-        if (!_options.IsDynamicSettingStoreEnabled)
+        if (!_options.IsDynamicFeatureStoreEnabled)
         {
             return;
         }
 
-        var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
+        var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
 
         try
         {
-            await store.GetAllAsync(cancellationToken); // Pre-cache settings, so the first request doesn't wait
+            // Pre-cache features, so the first request doesn't wait
+            await store.GetGroupsAsync(cancellationToken);
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to pre-cache dynamic settings");
+            logger.LogError(e, "Failed to pre-cache dynamic features");
 
             throw;
         }

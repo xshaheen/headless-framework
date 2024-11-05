@@ -1,0 +1,68 @@
+﻿using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Permissions.Definitions;
+using Framework.Permissions.Entities;
+using Framework.Permissions.ValueProviders;
+using Framework.Permissions.Values;
+
+namespace Framework.Permissions.Seeders;
+
+public interface IGrantPermissionsSeedHelper
+{
+    ValueTask GrantAllPermissionsToRoleAsync(string roleName, Guid? tenantId = null);
+}
+
+public sealed class GrantPermissionsSeedHelper(
+    IPermissionDefinitionManager permissionDefinitionManager,
+    IPermissionGrantRepository permissionGrantRepository,
+    IGuidGenerator guidGenerator,
+    ICurrentTenant currentTenant
+) : IGrantPermissionsSeedHelper
+{
+    public async ValueTask GrantAllPermissionsToRoleAsync(string roleName, Guid? tenantId = null)
+    {
+        using var _ = currentTenant.Change(tenantId);
+
+        var allPermissionNames = await _GetAllPermissionNamesAsync();
+        var existsPermissionGrants = await _GetExistsPermissionGrantsAsync(roleName, allPermissionNames);
+
+        var notExistPermissionGrants = allPermissionNames
+            .Except(existsPermissionGrants, StringComparer.Ordinal)
+            .Select(permissionName => new PermissionGrantRecord(
+                id: guidGenerator.Create(),
+                name: permissionName,
+                providerName: RolePermissionValueProvider.ProviderName,
+                providerKey: roleName,
+                tenantId: currentTenant.Id
+            ));
+
+        await permissionGrantRepository.InsertManyAsync(notExistPermissionGrants);
+    }
+
+    private async Task<List<string>> _GetExistsPermissionGrantsAsync(string roleName, string[] allPermissionNames)
+    {
+        var permissionGrants = await permissionGrantRepository.GetListAsync(
+            allPermissionNames,
+            RolePermissionValueProvider.ProviderName,
+            roleName
+        );
+
+        var existsPermissionGrants = permissionGrants.ConvertAll(x => x.Name);
+
+        return existsPermissionGrants;
+    }
+
+    private async Task<string[]> _GetAllPermissionNamesAsync()
+    {
+        var permissions = await permissionDefinitionManager.GetAllPermissionsAsync();
+
+        var permissionNames = permissions
+            .Where(p =>
+                p.Providers.Count == 0
+                || p.Providers.Contains(RolePermissionValueProvider.ProviderName, StringComparer.Ordinal)
+            )
+            .Select(p => p.Name)
+            .ToArray();
+
+        return permissionNames;
+    }
+}

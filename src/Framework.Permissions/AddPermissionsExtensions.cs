@@ -1,8 +1,14 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Kernel.Domains;
 using Framework.Permissions.Checkers;
+using Framework.Permissions.Definitions;
+using Framework.Permissions.Entities;
 using Framework.Permissions.Filters;
+using Framework.Permissions.Models;
+using Framework.Permissions.Seeders;
 using Framework.Permissions.Testing;
+using Framework.Permissions.ValueProviders;
 using Framework.Permissions.Values;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,12 +19,63 @@ namespace Framework.Permissions;
 [PublicAPI]
 public static class AddPermissionsExtensions
 {
-    public static IServiceCollection AddPermissionsManagementCore(this IServiceCollection services)
+    public static IServiceCollection AddPermissionsManagementCore(
+        this IServiceCollection services,
+        Action<PermissionManagementOptions>? setupAction = null
+    )
     {
-        // This is a fallback store, it should be replaced by a real store
-        services.TryAddSingleton<IPermissionStore, NullPermissionStore>();
+        services._AddCoreValueProvider();
+        services.AddHostedService<PermissionsInitializationBackgroundService>();
+        services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
+        services.AddSingletonOptions<PermissionManagementOptions, PermissionManagementOptionsValidator>();
+
+        if (setupAction is not null)
+        {
+            services.Configure(setupAction);
+        }
+
+        services.AddTransient<
+            ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>,
+            PermissionGrantCacheItemInvalidator
+        >();
+
+        // Definition Services
+        /*
+         * 1. You need to provide a storage implementation for `IPermissionDefinitionRecordRepository`
+         * 2. Implement `IPermissionDefinitionProvider` to define your permissions in code
+         *    and use `AddPermissionDefinitionProvider` to register it
+         */
+        services.TryAddSingleton<IPermissionDefinitionSerializer, PermissionDefinitionSerializer>();
+        services.TryAddSingleton<IStaticPermissionDefinitionStore, StaticPermissionDefinitionStore>();
+        services.TryAddSingleton<IDynamicPermissionDefinitionStore, DynamicPermissionDefinitionStore>();
+        services.TryAddSingleton<IPermissionDefinitionManager, PermissionDefinitionManager>();
 
         return services;
+    }
+
+    public static void AddPermissionDefinitionProvider<T>(this IServiceCollection services)
+        where T : class, IPermissionDefinitionProvider
+    {
+        services.AddSingleton<T>();
+
+        services.Configure<PermissionManagementProvidersOptions>(options =>
+        {
+            options.DefinitionProviders.Add<T>();
+        });
+    }
+
+    public static void AddPermissionValueProvider<T>(this IServiceCollection services)
+        where T : class, IPermissionValueProvider
+    {
+        services.AddSingleton<T>();
+
+        services.Configure<PermissionManagementProvidersOptions>(options =>
+        {
+            if (!options.ValueProviders.Contains<T>())
+            {
+                options.ValueProviders.Add<T>();
+            }
+        });
     }
 
     public static IServiceCollection AddAlwaysAllowAuthorization(this IServiceCollection services)
@@ -32,5 +89,18 @@ public static class AddPermissionsExtensions
         >();
 
         return services;
+    }
+
+    private static void _AddCoreValueProvider(this IServiceCollection services)
+    {
+        services.Configure<PermissionManagementProvidersOptions>(options =>
+        {
+            // Last added provider has the highest priority
+            options.ValueProviders.Add<RolePermissionValueProvider>();
+            options.ValueProviders.Add<UserPermissionValueProvider>();
+        });
+
+        services.TryAddSingleton<IPermissionValueProvider, RolePermissionValueProvider>();
+        services.TryAddSingleton<IPermissionValueProvider, UserPermissionValueProvider>();
     }
 }
