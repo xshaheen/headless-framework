@@ -4,7 +4,7 @@ namespace Framework.Permissions.Values;
 
 public interface IPermissionGrantRepository
 {
-    Task<PermissionGrantRecord> FindAsync(
+    Task<PermissionGrantRecord?> FindAsync(
         string name,
         string providerName,
         string providerKey,
@@ -26,9 +26,9 @@ public interface IPermissionGrantRepository
 
     Task InsertAsync(PermissionGrantRecord permissionGrant);
 
-    Task InsertManyAsync(IEnumerable<PermissionGrantRecord> permissionGrants);
-
     Task DeleteAsync(PermissionGrantRecord permissionGrant);
 
     Task<PermissionGrantRecord> UpdateAsync(PermissionGrantRecord permissionGrant);
+
+    Task InsertManyAsync(IEnumerable<PermissionGrantRecord> permissionGrants);
 }

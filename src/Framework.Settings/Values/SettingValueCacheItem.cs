@@ -7,9 +7,9 @@ namespace Framework.Settings.Values;
 
 public sealed class SettingValueCacheItem(string? value)
 {
-    public string? Value { get; } = value;
-
     private static readonly CompositeFormat _CacheKeyFormat = CompositeFormat.Parse("pn:{0},pk:{1},n:{2}");
+
+    public string? Value { get; } = value;
 
     public static string CalculateCacheKey(string name, string providerName, string? providerKey)
     {

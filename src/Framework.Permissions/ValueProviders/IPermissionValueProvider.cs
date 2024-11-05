@@ -2,8 +2,9 @@
 
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
+using Framework.Permissions.Values;
 
-namespace Framework.Permissions.Values;
+namespace Framework.Permissions.ValueProviders;
 
 public interface IPermissionValueProvider
 {
@@ -14,7 +15,7 @@ public interface IPermissionValueProvider
     Task<MultiplePermissionGrantResult> GetResultAsync(PermissionValuesCheckContext context);
 }
 
-public abstract class PermissionValueProvider(IPermissionStore store) : IPermissionValueProvider
+public abstract class StorePermissionValueProvider(IPermissionStore store) : IPermissionValueProvider
 {
     public abstract string Name { get; }
 
