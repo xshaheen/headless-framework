@@ -1,7 +1,5 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
-
-using Framework.Features.Definitions;
-using Framework.Features.Models;
+﻿using Framework.Permissions.Definitions;
+using Framework.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -9,27 +7,27 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 
-namespace Framework.Features.Helpers;
+namespace Framework.Permissions.Seeders;
 
-public sealed class FeaturesInitializationBackgroundService(
+public sealed class PermissionsInitializationBackgroundService(
     TimeProvider timeProvider,
     IServiceScopeFactory serviceScopeFactory,
-    IOptions<FeatureManagementOptions> optionsAccessor,
-    ILogger<FeaturesInitializationBackgroundService> logger
+    IOptions<PermissionManagementOptions> optionsAccessor,
+    ILogger<PermissionsInitializationBackgroundService> logger
 ) : IHostedService, IDisposable
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly FeatureManagementOptions _options = optionsAccessor.Value;
-    private Task? _initializeDynamicFeaturesTask;
+    private readonly PermissionManagementOptions _options = optionsAccessor.Value;
+    private Task? _initializeDynamicPermissionsTask;
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (_options is { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
+        if (_options is { SaveStaticPermissionsToDatabase: false, IsDynamicPermissionStoreEnabled: false })
         {
             return Task.CompletedTask;
         }
 
-        _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(cancellationToken);
+        _initializeDynamicPermissionsTask = _InitializeDynamicPermissionsAsync(cancellationToken);
 
         return Task.CompletedTask;
     }
@@ -42,10 +40,10 @@ public sealed class FeaturesInitializationBackgroundService(
     public void Dispose()
     {
         _cancellationTokenSource.Dispose();
-        _initializeDynamicFeaturesTask?.Dispose();
+        _initializeDynamicPermissionsTask?.Dispose();
     }
 
-    private async Task _InitializeDynamicFeaturesAsync(CancellationToken cancellationToken)
+    private async Task _InitializeDynamicPermissionsAsync(CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -54,26 +52,29 @@ public sealed class FeaturesInitializationBackgroundService(
 
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
-        await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken);
+        await _SaveStaticPermissionsToDatabaseAsync(scope, cancellationToken);
 
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken);
+        await _PreCacheDynamicPermissionsAsync(scope, cancellationToken);
     }
 
-    private async Task _SaveStaticFeaturesToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    private async Task _SaveStaticPermissionsToDatabaseAsync(
+        AsyncServiceScope scope,
+        CancellationToken cancellationToken
+    )
     {
-        if (!_options.SaveStaticFeaturesToDatabase)
+        if (!_options.SaveStaticPermissionsToDatabase)
         {
             return;
         }
 
         var options = new RetryStrategyOptions
         {
-            Name = "SaveStaticFeatureToDatabaseRetry",
+            Name = "SaveStaticPermissionToDatabaseRetry",
             Delay = TimeSpan.FromSeconds(2),
             MaxRetryAttempts = 10,
             BackoffType = DelayBackoffType.Exponential,
@@ -89,7 +90,7 @@ public sealed class FeaturesInitializationBackgroundService(
             {
                 var (scope, logger) = state;
 
-                var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
+                var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
 
                 try
                 {
@@ -97,7 +98,7 @@ public sealed class FeaturesInitializationBackgroundService(
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Failed to save static features to the database");
+                    logger.LogError(e, "Failed to save static permissions to the database");
 
                     throw; // Polly will catch it
                 }
@@ -107,23 +108,23 @@ public sealed class FeaturesInitializationBackgroundService(
         );
     }
 
-    private async Task _PreCacheDynamicFeaturesAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
+    private async Task _PreCacheDynamicPermissionsAsync(IServiceScope scope, CancellationToken cancellationToken)
     {
-        if (!_options.IsDynamicFeatureStoreEnabled)
+        if (!_options.IsDynamicPermissionStoreEnabled)
         {
             return;
         }
 
-        var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
+        var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
 
         try
         {
-            // Pre-cache features, so the first request doesn't wait
+            // Pre-cache permissions, so first request doesn't wait
             await store.GetGroupsAsync(cancellationToken);
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to pre-cache dynamic features");
+            logger.LogError(e, "Failed to pre-cache dynamic permissions");
 
             throw;
         }

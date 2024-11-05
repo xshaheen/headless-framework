@@ -1,6 +1,6 @@
 ﻿using Framework.Kernel.Checks;
 
-namespace Framework.Permissions.Models;
+namespace Framework.Permissions.Results;
 
 public sealed class PermissionValueProviderInfo(string name, string key)
 {

@@ -1,6 +1,6 @@
 ﻿using Framework.Kernel.BuildingBlocks.Helpers.Text;
 
-namespace Framework.Permissions.PermissionManagement;
+namespace Framework.Permissions.Values;
 
 public sealed class PermissionGrantCacheItem
 {

@@ -2,17 +2,16 @@
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Domains;
 using Framework.Permissions.Entities;
-using Framework.Permissions.PermissionManagement;
 
 namespace Framework.Permissions.Values;
 
 public sealed class PermissionGrantCacheItemInvalidator(
     ICache<PermissionGrantCacheItem> cache,
     ICurrentTenant currentTenant
-) : ILocalMessageHandler<EntityChangedEventData<PermissionGrant>>
+) : ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>
 {
     public async Task HandleAsync(
-        EntityChangedEventData<PermissionGrant> message,
+        EntityChangedEventData<PermissionGrantRecord> message,
         CancellationToken cancellationToken = default
     )
     {

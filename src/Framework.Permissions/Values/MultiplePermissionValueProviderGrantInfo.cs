@@ -1,7 +1,8 @@
 ﻿using Framework.Kernel.Checks;
 using Framework.Permissions.Models;
+using Framework.Permissions.Results;
 
-namespace Framework.Permissions.PermissionManagement;
+namespace Framework.Permissions.Values;
 
 public sealed class MultiplePermissionValueProviderGrantInfo
 {

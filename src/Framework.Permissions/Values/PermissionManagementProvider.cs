@@ -1,8 +1,19 @@
 ﻿using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Permissions.Entities;
-using Framework.Permissions.Models;
+using Framework.Permissions.Results;
 
-namespace Framework.Permissions.PermissionManagement;
+namespace Framework.Permissions.Values;
+
+public interface IPermissionManagementProvider
+{
+    string Name { get; }
+
+    Task<PermissionValueProviderGrantInfo> CheckAsync(string name, string providerName, string providerKey);
+
+    Task<MultiplePermissionValueProviderGrantInfo> CheckAsync(string[] names, string providerName, string providerKey);
+
+    Task SetAsync(string name, string providerKey, bool isGranted);
+}
 
 public abstract class PermissionManagementProvider(
     IPermissionGrantRepository permissionGrantRepository,
@@ -62,7 +73,7 @@ public abstract class PermissionManagementProvider(
         }
 
         await permissionGrantRepository.InsertAsync(
-            new PermissionGrant(guidGenerator.Create(), name, Name, providerKey, currentTenant.Id)
+            new PermissionGrantRecord(guidGenerator.Create(), name, Name, providerKey, currentTenant.Id)
         );
     }
 

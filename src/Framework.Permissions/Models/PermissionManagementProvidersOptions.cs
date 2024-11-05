@@ -6,7 +6,7 @@ using Framework.Permissions.Values;
 
 namespace Framework.Permissions.Models;
 
-public sealed class PermissionManagementProviderOptions
+public sealed class PermissionManagementProvidersOptions
 {
     public TypeList<IPermissionDefinitionProvider> DefinitionProviders { get; } = [];
 

@@ -4,7 +4,7 @@ using Framework.Caching;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.ResourceLocks.Local;
 using Framework.Settings;
-using Framework.Settings.Helpers;
+using Framework.Settings.Seeders;
 using Framework.Settings.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

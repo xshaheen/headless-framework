@@ -1,4 +1,4 @@
-namespace Framework.Permissions.Models;
+namespace Framework.Permissions.Results;
 
 public sealed class IsGrantedRequest
 {
