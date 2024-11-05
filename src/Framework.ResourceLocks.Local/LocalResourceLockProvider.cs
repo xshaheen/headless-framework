@@ -54,7 +54,7 @@ public sealed class LocalResourceLockProvider(
         {
             var timeoutRelease = await _locks.LockAsync(normalizeResource, acquireTimeout.Value, acquireAbortToken);
 
-            if (timeoutRelease.EnteredSemaphore)
+            if (!timeoutRelease.EnteredSemaphore)
             {
                 timeoutRelease.Dispose();
 

@@ -11,9 +11,9 @@ public static class TestData
     {
         return new Faker<SettingDefinition>().CustomInstantiator(faker => new SettingDefinition(
             name: faker.Random.String(SettingDefinitionRecordConstants.NameMaxLength),
-            defaultValue: faker.Random.String(SettingDefinitionRecordConstants.NameMaxLength),
-            displayName: faker.Random.String(),
-            description: faker.Random.String(),
+            defaultValue: faker.Random.String(SettingDefinitionRecordConstants.DefaultValueMaxLength),
+            displayName: faker.Random.String(SettingDefinitionRecordConstants.DisplayNameMaxLength),
+            description: faker.Random.String(SettingDefinitionRecordConstants.DescriptionMaxLength),
             isVisibleToClients: faker.Random.Bool(),
             isInherited: faker.Random.Bool(),
             isEncrypted: faker.Random.Bool()

@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using FluentValidation;
 using Humanizer;
 
 namespace Framework.Features.Models;
@@ -35,4 +36,19 @@ public sealed class FeatureManagementOptions
 
     /// <summary>A stamp when changed the application updates its local cache.</summary>
     public string CommonFeaturesUpdatedStampCacheKey { get; set; } = "FeaturesUpdatedLocalStamp";
+}
+
+public sealed class FeatureManagementOptionsValidator : AbstractValidator<FeatureManagementOptions>
+{
+    public FeatureManagementOptionsValidator()
+    {
+        RuleFor(x => x.CrossApplicationsCommonLockKey).NotEmpty();
+        RuleFor(x => x.CrossApplicationsCommonLockExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.CrossApplicationsCommonLockAcquireTimeout).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.ApplicationSaveLockExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.ApplicationSaveLockAcquireTimeout).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.FeaturesHashCacheExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.CommonFeaturesUpdatedStampCacheExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.CommonFeaturesUpdatedStampCacheKey).NotEmpty();
+    }
 }

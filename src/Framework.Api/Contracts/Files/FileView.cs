@@ -7,7 +7,7 @@ using File = Framework.Kernel.Primitives.File;
 // ReSharper disable once CheckNamespace
 namespace Framework.Api.Contracts;
 
-public sealed class FileView
+public class FileView
 {
     public required string Id { get; init; }
 

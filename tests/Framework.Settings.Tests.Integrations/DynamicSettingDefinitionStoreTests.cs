@@ -3,6 +3,7 @@
 using Framework.Settings;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
+using Framework.Settings.Storage.EntityFramework;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
@@ -12,26 +13,27 @@ namespace Tests;
 [Collection(nameof(SettingsTestFixture))]
 public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixture)
 {
-    private readonly SettingDefinition _settingDefinition = TestData.CreateSettingDefinitionFaker().Generate();
+    private static readonly List<SettingDefinition> _SettingDefinitions = TestData
+        .CreateSettingDefinitionFaker()
+        .Generate(10);
 
     [Fact]
     public async Task should_save_defined_settings_when_call_SaveAsync()
     {
         // given
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
-        builder.Services.ConfigureServices(fixture.ConnectionString);
-        var host = builder.Build();
+        var host = await _CreateSettingsHostAsync();
 
         await using var scope = host.Services.CreateAsyncScope();
-        var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
+        var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
+        var beforeDefinitions = await store.GetAllAsync();
 
         // when
-        var definition = await definitionManager.GetOrDefaultAsync("some-name");
+        await store.SaveAsync();
+        var afterDefinitions = await store.GetAllAsync();
 
         // then
-        definition.Should().NotBeNull();
-        definition!.Name.Should().Be("some-name");
+        beforeDefinitions.Should().BeEmpty();
+        afterDefinitions.Should().BeEquivalentTo(_SettingDefinitions);
     }
 
     [UsedImplicitly]
@@ -39,7 +41,19 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(TestData.CreateSettingDefinitionFaker());
+            context.Add([.. _SettingDefinitions]);
         }
+    }
+
+    private async Task<IHost> _CreateSettingsHostAsync()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
+        builder.Services.ConfigureSettingsServices(fixture.ConnectionString);
+        var host = builder.Build();
+
+        await host.Services.MigrateDbContextAsync<SettingsDbContext>();
+
+        return host;
     }
 }

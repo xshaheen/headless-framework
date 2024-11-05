@@ -64,9 +64,8 @@ public sealed class DynamicFeatureDefinitionStore(
         using (await _syncSemaphore.LockAsync(cancellationToken))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
+            return _featureMemoryCache.GetOrDefault(name);
         }
-
-        return _featuresMemoryCache.GetOrDefault(name);
     }
 
     public async Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default)
@@ -79,7 +78,7 @@ public sealed class DynamicFeatureDefinitionStore(
         using (await _syncSemaphore.LockAsync(cancellationToken))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
-            return _featuresMemoryCache.Values.ToImmutableList();
+            return _featureMemoryCache.Values.ToImmutableList();
         }
     }
 
@@ -107,7 +106,7 @@ public sealed class DynamicFeatureDefinitionStore(
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
     private readonly Dictionary<string, FeatureGroupDefinition> _groupMemoryCache = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, FeatureDefinition> _featuresMemoryCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, FeatureDefinition> _featureMemoryCache = new(StringComparer.Ordinal);
 
     private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
     {
@@ -125,17 +124,15 @@ public sealed class DynamicFeatureDefinitionStore(
             return;
         }
 
-        await _UpdateInMemoryStoreCache(cancellationToken);
+        await _UpdateInMemoryStoreCacheAsync(cancellationToken);
         _cacheStamp = cacheStamp;
         _lastCheckTime = timeProvider.GetUtcNow();
     }
 
     private async Task<string> _GetOrSetDistributedCacheStampAsync(CancellationToken cancellationToken)
     {
-        var cachedStamp = await distributedCache.GetAsync<string>(
-            _options.CommonFeaturesUpdatedStampCacheKey,
-            cancellationToken
-        );
+        var cacheKey = _options.CommonFeaturesUpdatedStampCacheKey;
+        var cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
 
         if (!cachedStamp.IsNull)
         {
@@ -155,26 +152,23 @@ public sealed class DynamicFeatureDefinitionStore(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        cachedStamp = await distributedCache.GetAsync<string>(
-            _options.CommonFeaturesUpdatedStampCacheKey,
-            cancellationToken
-        );
+        cachedStamp = await distributedCache.GetAsync<string>(cacheKey, cancellationToken);
 
         if (!cachedStamp.IsNull)
         {
             return cachedStamp.Value;
         }
 
-        return await _ChangeCommonStamp(cancellationToken);
+        return await _ChangeCommonStampAsync(cancellationToken);
     }
 
-    private async Task _UpdateInMemoryStoreCache(CancellationToken cancellationToken)
+    private async Task _UpdateInMemoryStoreCacheAsync(CancellationToken cancellationToken)
     {
         var featureGroupRecords = await repository.GetGroupsListAsync(cancellationToken);
         var featureRecords = await repository.GetFeaturesListAsync(cancellationToken);
 
         _groupMemoryCache.Clear();
-        _featuresMemoryCache.Clear();
+        _featureMemoryCache.Clear();
 
         var context = new FeatureDefinitionContext();
 
@@ -198,8 +192,6 @@ public sealed class DynamicFeatureDefinitionStore(
                 _UpdateInMemoryStoreCacheAddFeatureRecursively(featureGroup, featureRecord, featureRecords);
             }
         }
-
-        await Task.CompletedTask;
     }
 
     private void _UpdateInMemoryStoreCacheAddFeatureRecursively(
@@ -217,7 +209,7 @@ public sealed class DynamicFeatureDefinitionStore(
             featureRecord.IsAvailableToHost
         );
 
-        _featuresMemoryCache[feature.Name] = feature;
+        _featureMemoryCache[feature.Name] = feature;
 
         if (!featureRecord.Providers.IsNullOrWhiteSpace())
         {
@@ -330,7 +322,7 @@ public sealed class DynamicFeatureDefinitionStore(
                 cancellationToken
             );
 
-            await _ChangeCommonStamp(cancellationToken);
+            await _ChangeCommonStampAsync(cancellationToken);
         }
 
         await distributedCache.UpsertAsync(
@@ -345,18 +337,103 @@ public sealed class DynamicFeatureDefinitionStore(
 
     #region Save Helpers
 
-    private static readonly JsonSerializerOptions _JsonSerializerOptions =
-        new()
+    private async Task<(
+        List<FeatureGroupDefinitionRecord> NewRecords,
+        List<FeatureGroupDefinitionRecord> ChangedRecords,
+        List<FeatureGroupDefinitionRecord> DeletedRecords
+    )> _UpdateChangedFeatureGroupsAsync(
+        IEnumerable<FeatureGroupDefinitionRecord> featureGroupRecords,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbRecords = await repository.GetGroupsListAsync(cancellationToken);
+        var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
+
+        var newRecords = new List<FeatureGroupDefinitionRecord>();
+        var changedRecords = new List<FeatureGroupDefinitionRecord>();
+        var deletedRecords = new List<FeatureGroupDefinitionRecord>();
+
+        foreach (var featureGroupRecord in featureGroupRecords)
         {
-            TypeInfoResolver = new DefaultJsonTypeInfoResolver
+            var dbRecord = dbRecordsMap.GetOrDefault(featureGroupRecord.Name);
+
+            if (dbRecord is null)
             {
-                Modifiers =
-                {
-                    JsonPropertiesModifiers<FeatureGroupDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
-                    JsonPropertiesModifiers<FeatureDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
-                },
-            },
-        };
+                newRecords.Add(featureGroupRecord); // New
+
+                continue;
+            }
+
+            if (featureGroupRecord.HasSameData(dbRecord))
+            {
+                continue; // Not changed
+            }
+
+            dbRecord.Patch(featureGroupRecord); // Changed
+            changedRecords.Add(dbRecord);
+        }
+
+        // Handle deleted records
+        if (_providers.DeletedFeatureGroups.Count != 0)
+        {
+            deletedRecords.AddRange(dbRecords.Where(x => _providers.DeletedFeatureGroups.Contains(x.Name)));
+        }
+
+        return (newRecords, changedRecords, deletedRecords);
+    }
+
+    private async Task<(
+        List<FeatureDefinitionRecord> NewRecords,
+        List<FeatureDefinitionRecord> ChangedRecords,
+        List<FeatureDefinitionRecord> DeletedRecords
+    )> _UpdateChangedFeaturesAsync(
+        IEnumerable<FeatureDefinitionRecord> featureRecords,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbRecords = await repository.GetFeaturesListAsync(cancellationToken);
+        var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
+
+        var newRecords = new List<FeatureDefinitionRecord>();
+        var changedRecords = new List<FeatureDefinitionRecord>();
+        var deletedRecords = new List<FeatureDefinitionRecord>();
+
+        // Handle new and changed records
+        foreach (var featureRecord in featureRecords)
+        {
+            var dbRecord = dbRecordsMap.GetOrDefault(featureRecord.Name);
+
+            if (dbRecord is null) // New
+            {
+                newRecords.Add(featureRecord);
+
+                continue;
+            }
+
+            if (featureRecord.HasSameData(dbRecord)) // Not changed
+            {
+                continue;
+            }
+
+            dbRecord.Patch(featureRecord); // Changed
+            changedRecords.Add(dbRecord);
+        }
+
+        // Handle deleted records
+        if (_providers.DeletedFeatures.Count != 0)
+        {
+            deletedRecords.AddRange(dbRecordsMap.Values.Where(x => _providers.DeletedFeatures.Contains(x.Name)));
+        }
+
+        if (_providers.DeletedFeatureGroups.Count != 0)
+        {
+            deletedRecords.AddIfNotContains(
+                dbRecordsMap.Values.Where(x => _providers.DeletedFeatureGroups.Contains(x.GroupName))
+            );
+        }
+
+        return (newRecords, changedRecords, deletedRecords);
+    }
 
     private static string _CalculateHash(
         IReadOnlyCollection<FeatureGroupDefinitionRecord> featureGroupRecords,
@@ -382,112 +459,28 @@ public sealed class DynamicFeatureDefinitionStore(
         return stringBuilder.ToString().ToMd5();
     }
 
-    private async Task<(
-        List<FeatureGroupDefinitionRecord> NewRecords,
-        List<FeatureGroupDefinitionRecord> ChangedRecords,
-        List<FeatureGroupDefinitionRecord> DeletedRecords
-    )> _UpdateChangedFeatureGroupsAsync(
-        IEnumerable<FeatureGroupDefinitionRecord> featureGroupRecords,
-        CancellationToken cancellationToken
-    )
+    private static readonly JsonSerializerOptions _JsonSerializerOptions = _CreateHashJsonSerializerOptions();
+
+    private static JsonSerializerOptions _CreateHashJsonSerializerOptions()
     {
-        var dbRecords = await repository.GetGroupsListAsync(cancellationToken);
-        var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
-
-        var newRecords = new List<FeatureGroupDefinitionRecord>();
-        var changedRecords = new List<FeatureGroupDefinitionRecord>();
-        var deletedRecords = new List<FeatureGroupDefinitionRecord>();
-
-        foreach (var featureGroupRecord in featureGroupRecords)
+        return new()
         {
-            var featureGroupRecordInDatabase = dbRecordsMap.GetOrDefault(featureGroupRecord.Name);
-
-            if (featureGroupRecordInDatabase is null)
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver
             {
-                newRecords.Add(featureGroupRecord); // New
-
-                continue;
-            }
-
-            if (featureGroupRecord.HasSameData(featureGroupRecordInDatabase))
-            {
-                continue; // Not changed
-            }
-
-            featureGroupRecordInDatabase.Patch(featureGroupRecord); // Changed
-            changedRecords.Add(featureGroupRecordInDatabase);
-        }
-
-        // Handle deleted records
-        if (_providers.DeletedFeatureGroups.Count != 0)
-        {
-            deletedRecords.AddRange(dbRecordsMap.Values.Where(x => _providers.DeletedFeatureGroups.Contains(x.Name)));
-        }
-
-        return (newRecords, changedRecords, deletedRecords);
-    }
-
-    private async Task<(
-        List<FeatureDefinitionRecord> NewRecords,
-        List<FeatureDefinitionRecord> ChangedRecords,
-        List<FeatureDefinitionRecord> DeletedRecords
-    )> _UpdateChangedFeaturesAsync(
-        IEnumerable<FeatureDefinitionRecord> featureRecords,
-        CancellationToken cancellationToken
-    )
-    {
-        var dbRecords = await repository.GetFeaturesListAsync(cancellationToken);
-        var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
-
-        var newRecords = new List<FeatureDefinitionRecord>();
-        var changedRecords = new List<FeatureDefinitionRecord>();
-        var deletedRecords = new List<FeatureDefinitionRecord>();
-
-        // Handle new and changed records
-        foreach (var featureRecord in featureRecords)
-        {
-            var featureRecordInDatabase = dbRecordsMap.GetOrDefault(featureRecord.Name);
-
-            if (featureRecordInDatabase == null)
-            {
-                /* New group */
-                newRecords.Add(featureRecord);
-
-                continue;
-            }
-
-            if (featureRecord.HasSameData(featureRecordInDatabase))
-            {
-                /* Not changed */
-                continue;
-            }
-
-            /* Changed */
-            featureRecordInDatabase.Patch(featureRecord);
-            changedRecords.Add(featureRecordInDatabase);
-        }
-
-        // Handle deleted records
-        if (_providers.DeletedFeatures.Count != 0)
-        {
-            deletedRecords.AddRange(dbRecordsMap.Values.Where(x => _providers.DeletedFeatures.Contains(x.Name)));
-        }
-
-        if (_providers.DeletedFeatureGroups.Count != 0)
-        {
-            deletedRecords.AddIfNotContains(
-                dbRecordsMap.Values.Where(x => _providers.DeletedFeatureGroups.Contains(x.GroupName))
-            );
-        }
-
-        return (newRecords, changedRecords, deletedRecords);
+                Modifiers =
+                {
+                    JsonPropertiesModifiers<FeatureGroupDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
+                    JsonPropertiesModifiers<FeatureDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
+                },
+            },
+        };
     }
 
     #endregion
 
     #region Helpers
 
-    private async Task<string> _ChangeCommonStamp(CancellationToken cancellationToken)
+    private async Task<string> _ChangeCommonStampAsync(CancellationToken cancellationToken)
     {
         var stamp = guidGenerator.Create().ToString("N");
 

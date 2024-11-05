@@ -148,7 +148,7 @@ public sealed class DynamicSettingDefinitionStore(
             return cachedStamp.Value;
         }
 
-        return await _ChangeCommonStamp(cancellationToken);
+        return await _ChangeCommonStampAsync(cancellationToken);
     }
 
     private async Task _UpdateInMemoryCacheAsync(CancellationToken cancellationToken)
@@ -226,7 +226,7 @@ public sealed class DynamicSettingDefinitionStore(
         if (hasChangesInSettings)
         {
             await repository.SaveAsync(newRecords, changedRecords, deletedRecords, cancellationToken);
-            await _ChangeCommonStamp(cancellationToken);
+            await _ChangeCommonStampAsync(cancellationToken);
         }
 
         await distributedCache.UpsertAsync(
@@ -314,7 +314,7 @@ public sealed class DynamicSettingDefinitionStore(
     #region Helpers
 
     /// <summary>Change the cache stamp to notify other instances to update their local caches</summary>
-    private async Task<string> _ChangeCommonStamp(CancellationToken cancellationToken)
+    private async Task<string> _ChangeCommonStampAsync(CancellationToken cancellationToken)
     {
         var stamp = guidGenerator.Create().ToString("N");
 

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using FluentValidation;
 using Humanizer;
 
 namespace Framework.Settings.Models;
@@ -35,4 +36,19 @@ public sealed class SettingManagementOptions
 
     /// <summary>A stamp when changed the application updates its local cache.</summary>
     public string CommonSettingsUpdatedStampCacheKey { get; set; } = "SettingsUpdatedLocalStamp";
+}
+
+public sealed class SettingManagementOptionsValidator : AbstractValidator<SettingManagementOptions>
+{
+    public SettingManagementOptionsValidator()
+    {
+        RuleFor(x => x.CrossApplicationsCommonLockKey).NotEmpty();
+        RuleFor(x => x.CrossApplicationsCommonLockExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.CrossApplicationsCommonLockAcquireTimeout).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.ApplicationSaveLockExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.ApplicationSaveLockAcquireTimeout).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.SettingsHashCacheExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.CommonSettingsUpdatedStampCacheExpiration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.CommonSettingsUpdatedStampCacheKey).NotEmpty();
+    }
 }

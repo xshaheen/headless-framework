@@ -15,6 +15,13 @@
         "dotnet-csharpier"
       ],
       "rollForward": true
+    },
+    "dotnet-ef": {
+      "version": "8.0.10",
+      "commands": [
+        "dotnet-ef"
+      ],
+      "rollForward": false
     }
   }
 }

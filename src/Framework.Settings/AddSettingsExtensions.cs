@@ -28,18 +28,18 @@ public static class AddSettingsExtensions
     {
         services._AddSettingEncryption();
         services._AddCoreValueProvider();
-
         services.AddHostedService<SettingsInitializationBackgroundService>();
-
-        services.AddTransient<
-            ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
-            SettingValueCacheItemInvalidator
-        >();
+        services.AddSingletonOptions<SettingManagementOptions, SettingManagementOptionsValidator>();
 
         if (setupAction is not null)
         {
             services.ConfigureSingleton(setupAction);
         }
+
+        services.AddTransient<
+            ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
+            SettingValueCacheItemInvalidator
+        >();
 
         // Definition Services
         /*
@@ -47,8 +47,8 @@ public static class AddSettingsExtensions
          * 2. Implement `ISettingDefinitionProvider` to define your settings in code
          *    and use `AddSettingDefinitionProvider` to register it
          */
-        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>();
-        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
+        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>(); // ✅
+        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>(); // ✅
         services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
         services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
 
@@ -88,13 +88,6 @@ public static class AddSettingsExtensions
         });
     }
 
-    private static void _AddSettingEncryption(this IServiceCollection services)
-    {
-        services.AddSingletonOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
-        services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
-        services.AddSingleton<ISettingEncryptionService, SettingEncryptionService>();
-    }
-
     private static void _AddCoreValueProvider(this IServiceCollection services)
     {
         services.Configure<SettingManagementProvidersOptions>(options =>
@@ -107,9 +100,16 @@ public static class AddSettingsExtensions
             options.ValueProviders.Add<UserSettingValueProvider>();
         });
 
-        services.AddSingleton<ISettingValueReadProvider, DefaultValueSettingValueProvider>();
-        services.AddSingleton<ISettingValueReadProvider, ConfigurationSettingValueProvider>();
-        services.AddSingleton<ISettingValueReadProvider, GlobalSettingValueProvider>();
-        services.AddSingleton<ISettingValueReadProvider, TenantSettingValueProvider>();
+        services.TryAddSingleton<ISettingValueReadProvider, DefaultValueSettingValueProvider>();
+        services.TryAddSingleton<ISettingValueReadProvider, ConfigurationSettingValueProvider>();
+        services.TryAddSingleton<ISettingValueReadProvider, GlobalSettingValueProvider>();
+        services.TryAddSingleton<ISettingValueReadProvider, TenantSettingValueProvider>();
+    }
+
+    private static void _AddSettingEncryption(this IServiceCollection services)
+    {
+        services.AddSingletonOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
+        services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
+        services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
     }
 }

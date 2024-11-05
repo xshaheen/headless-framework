@@ -29,16 +29,17 @@ public static class AddFeaturesExtensions
     {
         services._AddCoreValueProviders();
         services.AddHostedService<FeaturesInitializationBackgroundService>();
+        services.AddSingletonOptions<FeatureManagementOptions, FeatureManagementOptionsValidator>();
+
+        if (setupAction is not null)
+        {
+            services.Configure(setupAction);
+        }
 
         services.AddTransient<
             ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>,
             FeatureValueCacheItemInvalidator
         >();
-
-        if (setupAction is not null)
-        {
-            services.ConfigureSingleton(setupAction);
-        }
 
         // Definition Services
         /*

@@ -5,7 +5,7 @@
 namespace Framework.Kernel.Domains;
 
 [PublicAPI]
-public class DistributedMessage<T> : EqualityBase<DistributedMessage<T>>, IDistributedMessage<T>
+public class DistributedMessage : EqualityBase<DistributedMessage>, IDistributedMessage
 {
     public required string UniqueId { get; init; }
 
@@ -13,10 +13,14 @@ public class DistributedMessage<T> : EqualityBase<DistributedMessage<T>>, IDistr
 
     public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    public required T Payload { get; init; }
-
     protected override IEnumerable<object?> EqualityComponents()
     {
         yield return UniqueId;
     }
+}
+
+[PublicAPI]
+public class DistributedMessage<T> : DistributedMessage, IDistributedMessage<T>
+{
+    public required T Payload { get; init; }
 }

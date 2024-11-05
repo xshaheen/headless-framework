@@ -44,7 +44,7 @@ public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
     public IServiceProvider CreateSettingsServiceProvider()
     {
         var serviceCollection = new ServiceCollection();
-        serviceCollection.ConfigureServices(ConnectionString);
+        serviceCollection.ConfigureSettingsServices(ConnectionString);
         return serviceCollection.BuildServiceProvider();
     }
 

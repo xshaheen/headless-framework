@@ -18,12 +18,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
     public async Task should_get_defined_settings_when_call_GetAllAsync_and_is_defined()
     {
         // given
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
-        builder.Services.ConfigureServices(fixture.ConnectionString);
-        var host = builder.Build();
-
-        await using var scope = host.Services.CreateAsyncScope();
+        await using var scope = _CreateHost().Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
 
         // when
@@ -38,12 +33,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
     public async Task should_get_defined_setting_when_call_GetOrDefaultAsync_and_is_defined()
     {
         // given
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
-        builder.Services.ConfigureServices(fixture.ConnectionString);
-        var host = builder.Build();
-
-        await using var scope = host.Services.CreateAsyncScope();
+        await using var scope = _CreateHost().Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
 
         // when
@@ -54,12 +44,22 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
         definition!.Should().Be(_SettingDefinition);
     }
 
+    private IHost _CreateHost()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
+        builder.Services.ConfigureSettingsServices(fixture.ConnectionString);
+        var host = builder.Build();
+
+        return host;
+    }
+
     [UsedImplicitly]
     private sealed class SettingsDefinitionProvider : ISettingDefinitionProvider
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(_SettingDefinition);
+            context.Add([_SettingDefinition]);
         }
     }
 }
