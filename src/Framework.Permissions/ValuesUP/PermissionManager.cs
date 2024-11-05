@@ -38,7 +38,6 @@ public sealed class PermissionManager : IPermissionManager
     private readonly IGuidGenerator _guidGenerator;
     private readonly ICurrentTenant _currentTenant;
     private readonly ICache<PermissionGrantCacheItem> _cache;
-    private readonly PermissionManagementOptions _options;
 
     private readonly Lazy<List<IPermissionManagementProvider>> _lazyProviders;
 
@@ -49,25 +48,22 @@ public sealed class PermissionManager : IPermissionManager
         IGuidGenerator guidGenerator,
         ICurrentTenant currentTenant,
         ICache<PermissionGrantCacheItem> cache,
-        IOptions<PermissionManagementOptions> options
+        IOptions<PermissionManagementProvidersOptions> optionsAccessor
     )
     {
         _guidGenerator = guidGenerator;
         _currentTenant = currentTenant;
         _cache = cache;
-        _simpleStateCheckerManager = simpleStateCheckerManager;
         _permissionGrantRepository = permissionGrantRepository;
         _permissionDefinitionManager = permissionDefinitionManager;
-        _options = options.Value;
+        var options = optionsAccessor.Value;
 
         _lazyProviders = new Lazy<List<IPermissionManagementProvider>>(
             () =>
-                _options
-                    .ManagementProviders.Select(c =>
-                        serviceProvider.GetRequiredService(c) as IPermissionManagementProvider
-                    )
+                options
+                    .ValueProviders.Select(c => (IPermissionManagementProvider)serviceProvider.GetRequiredService(c))
                     .ToList(),
-            true
+            isThreadSafe: true
         );
     }
 
