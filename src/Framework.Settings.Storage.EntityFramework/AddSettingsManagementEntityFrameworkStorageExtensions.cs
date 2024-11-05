@@ -16,7 +16,7 @@ public static class AddSettingsManagementEntityFrameworkStorageExtensions
     {
         services.AddSingleton<ISettingValueRecordRepository, EfSettingValueRecordRepository>();
         services.AddSingleton<ISettingDefinitionRecordRepository, EfSettingDefinitionRecordRepository>();
-        services.AddDbContextPool<SettingsDbContext>(optionsAction);
+        services.AddPooledDbContextFactory<SettingsDbContext>(optionsAction);
 
         return services;
     }

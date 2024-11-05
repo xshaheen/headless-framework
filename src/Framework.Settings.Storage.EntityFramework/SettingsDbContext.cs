@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Framework.Settings.Storage.EntityFramework;
 
 [PublicAPI]
-public sealed class SettingsDbContext : DbContext
+public sealed class SettingsDbContext(DbContextOptions options) : DbContext(options)
 {
     public static string DefaultSchema { get; set; } = "settings";
     public static string DefaultSettingValuesTableName { get; set; } = "SettingValues";
