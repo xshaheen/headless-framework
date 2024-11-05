@@ -6,26 +6,20 @@ using Framework.Kernel.Domains;
 
 namespace Framework.Features.Values;
 
-public sealed class FeatureValueCacheItemInvalidator : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
+public sealed class FeatureValueCacheItemInvalidator(ICache<FeatureValueCacheItem> cache)
+    : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
 {
-    private readonly ICache<FeatureValueCacheItem> _cache;
-
-    public FeatureValueCacheItemInvalidator(ICache<FeatureValueCacheItem> cache)
-    {
-        _cache = cache;
-    }
-
-    public virtual async Task HandleAsync(
+    public async Task HandleAsync(
         EntityChangedEventData<FeatureValueRecord> message,
         CancellationToken cancellationToken = default
     )
     {
-        var cacheKey = CalculateCacheKey(message.Entity.Name, message.Entity.ProviderName, message.Entity.ProviderKey);
+        var cacheKey = _CalculateCacheKey(message.Entity.Name, message.Entity.ProviderName, message.Entity.ProviderKey);
 
-        await _cache.RemoveAsync(cacheKey, cancellationToken);
+        await cache.RemoveAsync(cacheKey, cancellationToken);
     }
 
-    protected virtual string CalculateCacheKey(string name, string providerName, string? providerKey)
+    private static string _CalculateCacheKey(string name, string providerName, string? providerKey)
     {
         return FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
     }
