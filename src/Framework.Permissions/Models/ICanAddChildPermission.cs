@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-namespace Framework.Permissions.Definitions;
+namespace Framework.Permissions.Models;
 
 public interface ICanAddChildPermission
 {
-    PermissionDefinition AddPermission(string name, string? displayName = null, bool isEnabled = true);
+    PermissionDefinition AddChild(string name, string? displayName = null, bool isEnabled = true);
 }

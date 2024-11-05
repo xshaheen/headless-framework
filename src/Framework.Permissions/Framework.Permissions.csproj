@@ -13,6 +13,7 @@
     <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
     <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Messaging\Framework.Messaging.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
   </ItemGroup>
 

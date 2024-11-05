@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Checks;
+using Framework.Permissions.Models;
 
 namespace Framework.Permissions.Definitions;
 
@@ -26,7 +27,7 @@ public sealed class PermissionDefinitionManager(
         Argument.IsNotNull(name);
 
         return await staticStore.GetOrDefaultPermissionAsync(name, cancellationToken)
-            ?? await dynamicStore.GetOrNullAsync(name, cancellationToken);
+            ?? await dynamicStore.GetOrDefaultAsync(name, cancellationToken);
     }
 
     public async Task<IReadOnlyList<PermissionDefinition>> GetAllPermissionsAsync(

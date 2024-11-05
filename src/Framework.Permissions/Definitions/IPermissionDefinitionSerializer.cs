@@ -2,6 +2,7 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
 using Framework.Kernel.Primitives;
 using Framework.Permissions.Entities;
+using Framework.Permissions.Models;
 
 namespace Framework.Permissions.Definitions;
 
@@ -13,7 +14,7 @@ public interface IPermissionDefinitionSerializer
 
     PermissionGroupDefinitionRecord Serialize(PermissionGroupDefinition group);
 
-    PermissionDefinitionRecord Serialize(PermissionDefinition permission, PermissionGroupDefinition? group);
+    PermissionDefinitionRecord Serialize(PermissionDefinition permission, PermissionGroupDefinition group);
 }
 
 public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator) : IPermissionDefinitionSerializer
@@ -58,13 +59,13 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
         }
     }
 
-    public PermissionDefinitionRecord Serialize(PermissionDefinition permission, PermissionGroupDefinition? group)
+    public PermissionDefinitionRecord Serialize(PermissionDefinition permission, PermissionGroupDefinition group)
     {
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
         {
             var permissionRecord = new PermissionDefinitionRecord(
                 guidGenerator.Create(),
-                group?.Name,
+                group.Name,
                 permission.Name,
                 permission.Parent?.Name,
                 permission.DisplayName,

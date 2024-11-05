@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Permissions.Definitions;
+namespace Framework.Permissions.Models;
 
 public sealed class PermissionGroupDefinition : ICanAddChildPermission
 {
@@ -64,7 +64,7 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
         return _GetPermissionOrDefaultRecursively(Permissions, name);
     }
 
-    public PermissionDefinition AddPermission(string name, string? displayName = null, bool isEnabled = true)
+    public PermissionDefinition AddChild(string name, string? displayName = null, bool isEnabled = true)
     {
         var permission = new PermissionDefinition(name, displayName, isEnabled);
         _permissions.Add(permission);
