@@ -3,11 +3,11 @@
 using Framework.Settings.Entities;
 using Framework.Settings.Values;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Settings.Storage.EntityFramework;
 
-public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFactory) : ISettingValueRecordRepository
+public sealed class EfSettingValueRecordRepository(IDbContextFactory<SettingsDbContext> dbFactory)
+    : ISettingValueRecordRepository
 {
     public async Task<SettingValueRecord?> FindAsync(
         string name,
@@ -16,8 +16,7 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
             .SettingValues.OrderBy(x => x.Id)
@@ -34,8 +33,7 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var query = db.SettingValues.Where(s => s.Name == name);
 
@@ -59,8 +57,7 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
             .SettingValues.Where(s =>
@@ -75,8 +72,7 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
             .SettingValues.Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
@@ -85,16 +81,16 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
 
     public async Task InsertAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
         db.SettingValues.Add(setting);
         await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task UpdateAsync(SettingValueRecord setting, CancellationToken cancellationToken = default)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
         db.SettingValues.Update(setting);
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -104,8 +100,8 @@ public sealed class EfSettingValueRecordRepository(IServiceScopeFactory scopeFac
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
         db.SettingValues.RemoveRange(settings);
         await db.SaveChangesAsync(cancellationToken);
     }
