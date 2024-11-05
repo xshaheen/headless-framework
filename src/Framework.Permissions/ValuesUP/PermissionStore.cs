@@ -1,4 +1,7 @@
-﻿using Framework.Caching;
+﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+
+using Framework.Caching;
+using Framework.Kernel.Checks;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
@@ -7,6 +10,13 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Framework.Permissions.Values;
+
+public interface IPermissionStore
+{
+    Task<bool> IsGrantedAsync(string name, string providerName, string? providerKey);
+
+    Task<MultiplePermissionGrantResult> IsGrantedAsync(string[] names, string providerName, string? providerKey);
+}
 
 public sealed class PermissionStore(
     IPermissionGrantRepository permissionGrantRepository,
@@ -24,7 +34,7 @@ public sealed class PermissionStore(
     private async Task<PermissionGrantCacheItem> _GetCacheItemAsync(
         string name,
         string providerName,
-        string providerKey
+        string? providerKey
     )
     {
         var cacheKey = _CalculateCacheKey(name, providerName, providerKey);
@@ -117,7 +127,7 @@ public sealed class PermissionStore(
         foreach (var item in cacheItems)
         {
             result.Result.Add(
-                _GetPermissionNameFormCacheKeyOrNull(item.Key),
+                _GetPermissionNameFormCacheKey(item.Key),
                 item.Value != null && item.Value.IsGranted
                     ? PermissionGrantResult.Granted
                     : PermissionGrantResult.Undefined
@@ -173,7 +183,7 @@ public sealed class PermissionStore(
     )
     {
         var permissions = (await permissionDefinitionManager.GetAllPermissionsAsync())
-            .Where(x => notCacheKeys.Any(k => _GetPermissionNameFormCacheKeyOrNull(k) == x.Name))
+            .Where(x => notCacheKeys.Any(k => _GetPermissionNameFormCacheKey(k) == x.Name))
             .ToList();
 
         _logger.LogDebug(
@@ -185,7 +195,7 @@ public sealed class PermissionStore(
         var grantedPermissionsHashSet = new HashSet<string>(
             (
                 await permissionGrantRepository.GetListAsync(
-                    notCacheKeys.Select(_GetPermissionNameFormCacheKeyOrNull).ToArray(),
+                    notCacheKeys.Select(_GetPermissionNameFormCacheKey).ToArray(),
                     providerName,
                     providerKey
                 )
@@ -216,9 +226,11 @@ public sealed class PermissionStore(
         return PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
     }
 
-    private string? _GetPermissionNameFormCacheKeyOrNull(string key)
+    private static string _GetPermissionNameFormCacheKey(string key)
     {
-        //TODO: throw ex when name is null?
-        return PermissionGrantCacheItem.GetPermissionNameFormCacheKeyOrDefault(key);
+        var permissionName = PermissionGrantCacheItem.GetPermissionNameFormCacheKeyOrDefault(key);
+        Ensure.True(permissionName is not null, $"Invalid permission cache key `{key}` setting name not found");
+
+        return permissionName;
     }
 }

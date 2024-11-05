@@ -2,6 +2,7 @@
 
 using Framework.Kernel.Primitives;
 using Framework.Permissions.Definitions;
+using Framework.Permissions.ValueProviders;
 using Framework.Permissions.Values;
 
 namespace Framework.Permissions.Models;

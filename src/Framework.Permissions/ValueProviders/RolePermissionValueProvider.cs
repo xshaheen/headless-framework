@@ -9,7 +9,7 @@ using Framework.Permissions.Values;
 namespace Framework.Permissions.ValueProviders;
 
 [PublicAPI]
-public sealed class RolePermissionValueProvider(IPermissionStore store) : PermissionValueProvider(store)
+public sealed class RolePermissionValueProvider(IPermissionStore store) : StorePermissionValueProvider(store)
 {
     public const string ProviderName = "Role";
 
