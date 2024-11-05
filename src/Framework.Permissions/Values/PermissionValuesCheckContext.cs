@@ -2,7 +2,7 @@
 
 using System.Security.Claims;
 using Framework.Kernel.Checks;
-using Framework.Permissions.Definitions;
+using Framework.Permissions.Models;
 
 namespace Framework.Permissions.Values;
 

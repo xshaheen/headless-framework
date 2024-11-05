@@ -7,7 +7,7 @@ namespace Framework.Permissions.Entities;
 
 public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
-    public string? GroupName { get; set; }
+    public string GroupName { get; set; }
 
     public required string Name { get; set; }
 
@@ -22,12 +22,18 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
 
     public ExtraProperties ExtraProperties { get; private set; } = [];
 
-    private PermissionDefinitionRecord() { }
+    private PermissionDefinitionRecord()
+    {
+        GroupName = default!;
+        Name = default!;
+        DisplayName = default!;
+        ExtraProperties = [];
+    }
 
     [SetsRequiredMembers]
     public PermissionDefinitionRecord(
         Guid id,
-        string? groupName,
+        string groupName,
         string name,
         string? parentName,
         string displayName,
@@ -35,10 +41,7 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
         string? providers = null
     )
     {
-        if (groupName != null)
-        {
-            Argument.IsLessThanOrEqualTo(groupName.Length, PermissionGroupDefinitionRecordConstants.NameMaxLength);
-        }
+        Argument.IsLessThanOrEqualTo(groupName.Length, PermissionGroupDefinitionRecordConstants.NameMaxLength);
 
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.IsLessThanOrEqualTo(name.Length, PermissionDefinitionRecordConstants.NameMaxLength);

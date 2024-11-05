@@ -12,7 +12,7 @@ public sealed class PermissionManagementProviderOptions
 
     public TypeList<IPermissionValueProvider> ValueProviders { get; } = [];
 
-    public List<string> DeletedPermissionGroups { get; } = [];
+    public HashSet<string> DeletedPermissionGroups { get; } = [];
 
-    public List<string> DeletedPermissions { get; } = [];
+    public HashSet<string> DeletedPermissions { get; } = [];
 }

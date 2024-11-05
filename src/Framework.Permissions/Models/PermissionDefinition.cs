@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Checks;
 
-namespace Framework.Permissions.Definitions;
+namespace Framework.Permissions.Models;
 
 public sealed class PermissionDefinition : ICanAddChildPermission
 {
@@ -72,7 +72,7 @@ public sealed class PermissionDefinition : ICanAddChildPermission
     }
 
     /// <summary>Adds a child permission to this permission.</summary>
-    public PermissionDefinition AddPermission(string name, string? displayName = null, bool isEnabled = true)
+    public PermissionDefinition AddChild(string name, string? displayName = null, bool isEnabled = true)
     {
         var child = new PermissionDefinition(name, displayName, isEnabled) { Parent = this };
 
