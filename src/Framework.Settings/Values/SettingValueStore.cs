@@ -191,7 +191,6 @@ public sealed class SettingValueStore(
             .ToArray();
 
         var newCacheItemsMap = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken);
-
         var result = new List<SettingValue>(cacheKeys.Length);
 
         foreach (var cacheKey in cacheKeys)

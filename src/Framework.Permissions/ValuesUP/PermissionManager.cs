@@ -198,7 +198,9 @@ public sealed class PermissionManager : IPermissionManager
         }
 
         permissionGrant.ProviderKey = providerKey;
-        return await _permissionGrantRepository.UpdateAsync(permissionGrant);
+        await _permissionGrantRepository.UpdateAsync(permissionGrant);
+
+        return permissionGrant;
     }
 
     public async Task DeleteAsync(string providerName, string providerKey)
