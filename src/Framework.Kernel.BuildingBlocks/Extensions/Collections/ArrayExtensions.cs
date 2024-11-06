@@ -348,4 +348,10 @@ public static class ArrayExtensions
     {
         return Array.ConvertAll(array, converter);
     }
+
+    [MustUseReturnValue]
+    public static bool Exists<TInput>(this TInput[] array, Predicate<TInput> converter)
+    {
+        return Array.Exists(array, converter);
+    }
 }

@@ -7,7 +7,7 @@ public sealed class PermissionGrantCacheItem(bool isGranted)
 {
     private static readonly CompositeFormat _CacheKeyFormat = CompositeFormat.Parse("pn:{0},pk:{1},n:{2}");
 
-    public bool IsGranted { get; set; } = isGranted;
+    public bool IsGranted { get; } = isGranted;
 
     public static string CalculateCacheKey(string name, string providerName, string? providerKey)
     {

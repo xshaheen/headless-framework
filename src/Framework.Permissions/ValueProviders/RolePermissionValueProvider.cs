@@ -9,15 +9,18 @@ using Framework.Permissions.Values;
 namespace Framework.Permissions.ValueProviders;
 
 [PublicAPI]
-public sealed class RolePermissionValueProvider(IPermissionStore store) : StorePermissionValueProvider(store)
+public sealed class RolePermissionValueProvider(IPermissionValueStore store) : StorePermissionValueProvider(store)
 {
     public const string ProviderName = "Role";
 
     public override string Name => ProviderName;
 
-    public override async Task<PermissionGrantResult> GetResultAsync(PermissionValueCheckContext context)
+    public override async Task<PermissionGrantResult> GetResultAsync(
+        PermissionDefinition permission,
+        ClaimsPrincipal? principal
+    )
     {
-        var roles = context.Principal?.GetRoles();
+        var roles = principal?.GetRoles();
 
         if (roles is null || roles.Count == 0)
         {
@@ -26,7 +29,7 @@ public sealed class RolePermissionValueProvider(IPermissionStore store) : StoreP
 
         foreach (var role in roles.Distinct(StringComparer.Ordinal))
         {
-            if (await PermissionStore.IsGrantedAsync(context.Permission.Name, Name, role))
+            if (await PermissionValueStore.IsGrantedAsync(permission.Name, Name, role))
             {
                 return PermissionGrantResult.Granted;
             }
@@ -35,14 +38,17 @@ public sealed class RolePermissionValueProvider(IPermissionStore store) : StoreP
         return PermissionGrantResult.Undefined;
     }
 
-    public override async Task<MultiplePermissionGrantResult> GetResultAsync(PermissionValuesCheckContext context)
+    public override async Task<MultiplePermissionGrantResult> GetResultAsync(
+        List<PermissionDefinition> permissions,
+        ClaimsPrincipal? principal
+    )
     {
-        Argument.IsNotNullOrEmpty(context.Permissions);
+        Argument.IsNotNullOrEmpty(permissions);
 
-        var permissionNames = context.Permissions.Select(x => x.Name).Distinct(StringComparer.Ordinal).ToArray();
+        var permissionNames = permissions.Select(x => x.Name).Distinct(StringComparer.Ordinal).ToArray();
         var result = new MultiplePermissionGrantResult(permissionNames);
 
-        var roles = context.Principal?.GetRoles();
+        var roles = principal?.GetRoles();
 
         if (roles == null || roles.Count == 0)
         {
@@ -51,7 +57,7 @@ public sealed class RolePermissionValueProvider(IPermissionStore store) : StoreP
 
         foreach (var role in roles.Distinct(StringComparer.Ordinal))
         {
-            var multipleResult = await PermissionStore.IsGrantedAsync(permissionNames, Name, role);
+            var multipleResult = await PermissionValueStore.IsGrantedAsync(permissionNames, Name, role);
 
             foreach (
                 var grantResult in multipleResult.Result.Where(grantResult =>
