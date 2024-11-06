@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Caching;
-using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
@@ -31,7 +30,6 @@ public interface IPermissionValueStore
 public sealed class PermissionValueStore(
     IPermissionDefinitionManager permissionDefinitionManager,
     IPermissionGrantRepository repository,
-    IGuidGenerator guidGenerator,
     ICache<PermissionGrantCacheItem> cache,
     ILogger<PermissionValueStore> logger
 ) : IPermissionValueStore
@@ -95,13 +93,14 @@ public sealed class PermissionValueStore(
     )
     {
         var cacheKeys = names.ConvertAll(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey));
-        logger.LogDebug("PermissionStore._GetCachedItemsAsync: {@CacheKeys}", cacheKeys as object);
         var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken);
 
         var notCachedNames = cacheItemsMap
             .Where(x => !x.Value.HasValue)
             .Select(x => _GetPermissionNameFormCacheKey(x.Key))
             .ToArray();
+
+        logger.LogDebug("PermissionStore._GetCachedItemsAsync: {@CacheKeys}", cacheKeys as object);
 
         if (notCachedNames.Length == 0)
         {
@@ -112,18 +111,21 @@ public sealed class PermissionValueStore(
 
         // Some cache items aren't found in the cache, get them from the database
         logger.LogDebug("Not found in the cache: {@Names}", notCachedNames as object);
+
         var newCacheItems = await _CacheSomeAsync(notCachedNames, providerName, providerKey, cancellationToken);
+        var result = new MultiplePermissionGrantResult();
 
-        foreach (var key in cacheKeys)
+        foreach (var cacheKey in cacheKeys)
         {
-            var item = newCacheItems.FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.Ordinal));
+            var item = newCacheItems.GetOrDefault(cacheKey) ?? cacheItemsMap.GetOrDefault(cacheKey)?.Value;
+            var permissionName = _GetPermissionNameFormCacheKey(cacheKey);
 
-            if (item.Value == null)
+            result.Result[permissionName] = item?.IsGranted switch
             {
-                item = cacheItems.FirstOrDefault(x => x.Key == key);
-            }
-
-            result.Add(new KeyValuePair<string, PermissionGrantCacheItem>(key, item.Value));
+                true => PermissionGrantResult.Granted,
+                false => PermissionGrantResult.Prohibited,
+                null => PermissionGrantResult.Undefined,
+            };
         }
 
         return result;
@@ -158,7 +160,6 @@ public sealed class PermissionValueStore(
         }
 
         await cache.UpsertAllAsync(cacheItems, 30.Days(), cancellationToken);
-
         logger.LogDebug("Finished setting the cache items. Count: {PermissionsCount}", definitions.Length);
 
         return cacheItems;

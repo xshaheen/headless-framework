@@ -28,7 +28,7 @@ public interface IPermissionGrantRepository
 
     Task DeleteAsync(PermissionGrantRecord permissionGrant);
 
-    Task<PermissionGrantRecord> UpdateAsync(PermissionGrantRecord permissionGrant);
+    Task UpdateAsync(PermissionGrantRecord permissionGrant);
 
     Task InsertManyAsync(IEnumerable<PermissionGrantRecord> permissionGrants);
 }
