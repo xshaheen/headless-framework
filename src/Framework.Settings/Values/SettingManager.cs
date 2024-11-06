@@ -240,7 +240,7 @@ public sealed class SettingManager : ISettingManager
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await _settingValueStore.GetAllAsync(providerName, providerKey, cancellationToken);
+        var settings = await _settingValueStore.GetAllProviderValuesAsync(providerName, providerKey, cancellationToken);
 
         foreach (var setting in settings)
         {
