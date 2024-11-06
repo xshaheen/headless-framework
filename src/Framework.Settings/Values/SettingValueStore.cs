@@ -20,7 +20,7 @@ public interface ISettingValueStore
         CancellationToken cancellationToken = default
     );
 
-    Task<List<SettingValue>> GetAllAsync(
+    Task<List<SettingValue>> GetAllProviderValuesAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
@@ -63,12 +63,25 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var item = await _GetCachedItemAsync(name, providerName, providerKey, cancellationToken);
+        var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken);
 
-        return item.Value;
+        if (existValueCacheItem.HasValue)
+        {
+            return existValueCacheItem.Value?.Value;
+        }
+
+        var valueCacheItem = await _CacheAllAndGetAsync(
+            providerName,
+            providerKey,
+            nameToFind: name,
+            cancellationToken: cancellationToken
+        );
+
+        return valueCacheItem;
     }
 
-    public async Task<List<SettingValue>> GetAllAsync(
+    public async Task<List<SettingValue>> GetAllProviderValuesAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default
@@ -98,9 +111,7 @@ public sealed class SettingValueStore(
 
         var cacheItems = await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken);
 
-        return cacheItems
-            .Select(item => new SettingValue(_GetSettingNameFormCacheKey(item.Key), item.Value.Value))
-            .ToList();
+        return cacheItems;
     }
 
     public async Task SetAsync(
@@ -152,98 +163,59 @@ public sealed class SettingValueStore(
         }
     }
 
-    #region Cache Helpers
+    #region Helpers
 
-    private async Task<SettingValueCacheItem> _GetCachedItemAsync(
-        string name,
-        string providerName,
-        string? providerKey,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken);
-
-        if (existValueCacheItem.HasValue)
-        {
-            return existValueCacheItem.Value ?? new SettingValueCacheItem(value: null);
-        }
-
-        var valueCacheItem = await _CacheAllAndGetAsync(
-            providerName,
-            providerKey,
-            nameToFind: name,
-            cancellationToken: cancellationToken
-        );
-
-        return valueCacheItem;
-    }
-
-    private async Task<Dictionary<string, SettingValueCacheItem>> _GetCachedItemsAsync(
+    private async Task<List<SettingValue>> _GetCachedItemsAsync(
         string[] names,
         string providerName,
         string? providerKey,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         var cacheKeys = names.ConvertAll(x => SettingValueCacheItem.CalculateCacheKey(x, providerName, providerKey));
-        var cacheItems = await cache.GetAllAsync(cacheKeys, cancellationToken);
+        var existCacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken);
+        var existCacheItems = existCacheItemsMap.ToList();
 
-        if (cacheItems.All(x => x.Value.HasValue))
+        if (existCacheItems.TrueForAll(x => x.Value.HasValue))
         {
-            return cacheItems.ToDictionary(x => x.Key, x => x.Value.Value ?? new(value: null), StringComparer.Ordinal);
+            return existCacheItems.ConvertAll(item => new SettingValue(
+                name: _GetSettingNameFormCacheKey(item.Key),
+                value: item.Value.Value?.Value
+            ));
         }
 
         // Some cache items aren't found in the cache, get them from the database
-        var notCacheNames = cacheItems
+        var notCacheNames = existCacheItems
             .Where(x => !x.Value.HasValue)
             .Select(x => _GetSettingNameFormCacheKey(x.Key))
             .ToArray();
 
-        var newCacheItems = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken);
+        var newCacheItemsMap = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken);
 
-        var result = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
+        var result = new List<SettingValue>(cacheKeys.Length);
 
-        foreach (var key in cacheKeys)
+        foreach (var cacheKey in cacheKeys)
         {
-            result[key] =
-                newCacheItems.FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.Ordinal)).Value
-                ?? cacheItems.FirstOrDefault(x => string.Equals(x.Key, key, StringComparison.Ordinal)).Value.Value
-                ?? new SettingValueCacheItem(value: null);
+            var settingName = _GetSettingNameFormCacheKey(cacheKey);
+
+            if (newCacheItemsMap.TryGetValue(cacheKey, out var newCachedValue))
+            {
+                result.Add(new SettingValue(settingName, newCachedValue.Value));
+
+                continue;
+            }
+
+            if (existCacheItemsMap.TryGetValue(cacheKey, out var cacheItem))
+            {
+                result.Add(new SettingValue(settingName, cacheItem.Value?.Value));
+
+                continue;
+            }
+
+            result.Add(new SettingValue(settingName, value: null));
         }
 
         return result;
-    }
-
-    private async Task<SettingValueCacheItem> _CacheAllAndGetAsync(
-        string providerName,
-        string? providerKey,
-        string nameToFind,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var definitions = await _GetDbSettingDefinitionsAsync();
-        var values = await _GetDbSettingValuesAsync(providerName, providerKey, cancellationToken);
-
-        Dictionary<string, SettingValueCacheItem> cacheItems = new(StringComparer.Ordinal);
-        SettingValueCacheItem? settingToFind = null;
-
-        foreach (var settingDefinition in definitions)
-        {
-            var cacheKey = SettingValueCacheItem.CalculateCacheKey(settingDefinition.Name, providerName, providerKey);
-            var settingValue = values.GetOrDefault(settingDefinition.Name);
-            var settingValueCacheItem = new SettingValueCacheItem(settingValue);
-            cacheItems[cacheKey] = settingValueCacheItem;
-
-            if (string.Equals(settingDefinition.Name, nameToFind, StringComparison.Ordinal))
-            {
-                settingToFind = settingValueCacheItem;
-            }
-        }
-
-        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
-
-        return settingToFind ?? new SettingValueCacheItem(value: null);
     }
 
     private async Task<Dictionary<string, SettingValueCacheItem>> _CacheSomeAsync(
@@ -254,14 +226,15 @@ public sealed class SettingValueStore(
     )
     {
         var definitions = await _GetDbSettingDefinitionsAsync(names, cancellationToken);
-        var values = await _GetDbSettingValuesAsync(providerName, providerKey, names, cancellationToken);
+        var dbValues = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
+        var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
         var cacheItems = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
 
         foreach (var definition in definitions)
         {
             var cacheKey = SettingValueCacheItem.CalculateCacheKey(definition.Name, providerName, providerKey);
-            var settingValue = values.GetOrDefault(definition.Name);
+            var settingValue = dbValuesMap.GetOrDefault(definition.Name);
             cacheItems[cacheKey] = new SettingValueCacheItem(settingValue);
         }
 
@@ -270,44 +243,44 @@ public sealed class SettingValueStore(
         return cacheItems;
     }
 
+    private async Task<string?> _CacheAllAndGetAsync(
+        string providerName,
+        string? providerKey,
+        string nameToFind,
+        CancellationToken cancellationToken
+    )
+    {
+        var definitions = await settingDefinitionManager.GetAllAsync(cancellationToken);
+        var dbValues = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
+
+        Dictionary<string, SettingValueCacheItem> cacheItems = new(StringComparer.Ordinal);
+        string? settingValueToFind = null;
+
+        foreach (var settingDefinition in definitions)
+        {
+            var cacheKey = SettingValueCacheItem.CalculateCacheKey(settingDefinition.Name, providerName, providerKey);
+            var settingValue = dbValuesMap.GetOrDefault(settingDefinition.Name);
+            var settingValueCacheItem = new SettingValueCacheItem(settingValue);
+            cacheItems[cacheKey] = settingValueCacheItem;
+
+            if (string.Equals(settingDefinition.Name, nameToFind, StringComparison.Ordinal))
+            {
+                settingValueToFind = settingValue;
+            }
+        }
+
+        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+
+        return settingValueToFind;
+    }
+
     private static string _GetSettingNameFormCacheKey(string key)
     {
         var settingName = SettingValueCacheItem.GetSettingNameFormCacheKey(key);
         Ensure.True(settingName is not null, $"Invalid setting cache key `{key}` setting name not found");
 
         return settingName;
-    }
-
-    #endregion
-
-    #region DB Helpers
-
-    private async Task<Dictionary<string, string>> _GetDbSettingValuesAsync(
-        string providerName,
-        string? providerKey,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var values = await repository.GetListAsync(providerName, providerKey, cancellationToken);
-
-        return values.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
-    }
-
-    private async Task<Dictionary<string, string>> _GetDbSettingValuesAsync(
-        string providerName,
-        string? providerKey,
-        string[] names,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var values = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
-
-        return values.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
-    }
-
-    private async Task<IEnumerable<SettingDefinition>> _GetDbSettingDefinitionsAsync()
-    {
-        return await settingDefinitionManager.GetAllAsync();
     }
 
     private async Task<IEnumerable<SettingDefinition>> _GetDbSettingDefinitionsAsync(
