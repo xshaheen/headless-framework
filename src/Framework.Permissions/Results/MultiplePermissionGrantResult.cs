@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Checks;
 using Framework.Permissions.Models;
@@ -7,9 +7,9 @@ namespace Framework.Permissions.Results;
 
 public sealed class MultiplePermissionGrantResult
 {
-    public bool AllGranted => Result.Values.All(x => x == PermissionGrantResult.Granted);
+    public bool AllGranted => Result.Values.All(x => x is PermissionGrantResult.Granted);
 
-    public bool AllProhibited => Result.Values.All(x => x == PermissionGrantResult.Prohibited);
+    public bool AllProhibited => Result.Values.All(x => x is PermissionGrantResult.Prohibited);
 
     public Dictionary<string, PermissionGrantResult> Result { get; }
 
@@ -24,6 +24,7 @@ public sealed class MultiplePermissionGrantResult
     )
     {
         Argument.IsNotNull(names);
+
         Result = new(StringComparer.Ordinal);
 
         foreach (var name in names)

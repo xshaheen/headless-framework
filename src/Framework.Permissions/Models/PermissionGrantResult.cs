@@ -4,7 +4,7 @@ namespace Framework.Permissions.Models;
 
 public enum PermissionGrantResult
 {
-    Undefined,
+    Undefined = 0,
     Granted,
     Prohibited,
 }
