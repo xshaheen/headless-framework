@@ -206,7 +206,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Storage.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Tests.Integrations", "tests\Framework.Features.Tests.Integrations\Framework.Features.Tests.Integrations.csproj", "{4E3B3E1F-D84C-4FE4-9E5E-058BFA29699C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.EntityFramework.Migration.Startup", "demo\Framework.EntityFramework.Migration.Startup\Framework.EntityFramework.Migration.Startup.csproj", "{79AC0B05-1F01-45F7-9576-AE74CEC6FE9F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.EntityFramework.Migrations.Startup", "demo\Framework.EntityFramework.Migrations.Startup\Framework.EntityFramework.Migrations.Startup.csproj", "{79AC0B05-1F01-45F7-9576-AE74CEC6FE9F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
