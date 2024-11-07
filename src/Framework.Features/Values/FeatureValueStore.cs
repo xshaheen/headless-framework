@@ -40,6 +40,8 @@ public sealed class FeatureValueStore(
     ICache<FeatureValueCacheItem> cache
 ) : IFeatureValueStore
 {
+    private readonly TimeSpan _cacheExpiration = 5.Hours();
+
     public async Task<string?> GetOrDefaultAsync(
         string name,
         string providerName,
@@ -86,8 +88,12 @@ public sealed class FeatureValueStore(
             await repository.UpdateAsync(featureValue, cancellationToken);
         }
 
-        var cacheKey = FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-        await cache.UpsertAsync(cacheKey, new FeatureValueCacheItem(featureValue.Value), 5.Hours(), cancellationToken);
+        await cache.UpsertAsync(
+            cacheKey: FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            cacheValue: new FeatureValueCacheItem(featureValue.Value),
+            expiration: _cacheExpiration,
+            cancellationToken: cancellationToken
+        );
     }
 
     public async Task DeleteAsync(
@@ -142,7 +148,7 @@ public sealed class FeatureValueStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
 
         return featureValueToFind;
     }

@@ -50,12 +50,14 @@ public interface ISettingValueStore
 }
 
 public sealed class SettingValueStore(
-    ISettingValueRecordRepository repository,
-    ISettingDefinitionManager settingDefinitionManager,
+    ISettingValueRecordRepository valueRepository,
+    ISettingDefinitionManager definitionManager,
     IGuidGenerator guidGenerator,
     ICache<SettingValueCacheItem> cache
 ) : ISettingValueStore
 {
+    private readonly TimeSpan _cacheExpiration = 5.Hours();
+
     public async Task<string?> GetOrDefaultAsync(
         string name,
         string providerName,
@@ -87,7 +89,7 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var settings = await valueRepository.GetListAsync(providerName, providerKey, cancellationToken);
 
         return settings.ConvertAll(x => new SettingValue(x.Name, x.Value));
     }
@@ -122,22 +124,27 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var settingValue = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+        var settingValue = await valueRepository.FindAsync(name, providerName, providerKey, cancellationToken);
 
         if (settingValue is null)
         {
             settingValue = new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await repository.InsertAsync(settingValue, cancellationToken);
+            await valueRepository.InsertAsync(settingValue, cancellationToken);
         }
         else
         {
             settingValue.Value = value;
-            await repository.UpdateAsync(settingValue, cancellationToken);
+            await valueRepository.UpdateAsync(settingValue, cancellationToken);
         }
 
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
 
-        await cache.UpsertAsync(cacheKey, new SettingValueCacheItem(settingValue.Value), 5.Hours(), cancellationToken);
+        await cache.UpsertAsync(
+            cacheKey: cacheKey,
+            cacheValue: new SettingValueCacheItem(settingValue.Value),
+            expiration: _cacheExpiration,
+            cancellationToken: cancellationToken
+        );
     }
 
     public async Task DeleteAsync(
@@ -147,14 +154,14 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await repository.FindAllAsync(name, providerName, providerKey, cancellationToken);
+        var settings = await valueRepository.FindAllAsync(name, providerName, providerKey, cancellationToken);
 
         if (settings.Count == 0)
         {
             return;
         }
 
-        await repository.DeleteAsync(settings, cancellationToken);
+        await valueRepository.DeleteAsync(settings, cancellationToken);
 
         foreach (var setting in settings)
         {
@@ -225,7 +232,7 @@ public sealed class SettingValueStore(
     )
     {
         var definitions = await _GetDbSettingDefinitionsAsync(names, cancellationToken);
-        var dbValues = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
+        var dbValues = await valueRepository.GetListAsync(names, providerName, providerKey, cancellationToken);
         var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
         var cacheItems = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
@@ -237,7 +244,7 @@ public sealed class SettingValueStore(
             cacheItems[cacheKey] = new SettingValueCacheItem(settingValue);
         }
 
-        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
 
         return cacheItems;
     }
@@ -249,8 +256,8 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken
     )
     {
-        var definitions = await settingDefinitionManager.GetAllAsync(cancellationToken);
-        var dbValues = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        var definitions = await definitionManager.GetAllAsync(cancellationToken);
+        var dbValues = await valueRepository.GetListAsync(providerName, providerKey, cancellationToken);
         var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
         Dictionary<string, SettingValueCacheItem> cacheItems = new(StringComparer.Ordinal);
@@ -269,17 +276,9 @@ public sealed class SettingValueStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
 
         return settingValueToFind;
-    }
-
-    private static string _GetSettingNameFormCacheKey(string key)
-    {
-        var settingName = SettingValueCacheItem.GetSettingNameFormCacheKey(key);
-        Ensure.True(settingName is not null, $"Invalid setting cache key `{key}` setting name not found");
-
-        return settingName;
     }
 
     private async Task<IEnumerable<SettingDefinition>> _GetDbSettingDefinitionsAsync(
@@ -292,11 +291,19 @@ public sealed class SettingValueStore(
             return Array.Empty<SettingDefinition>();
         }
 
-        var definitions = await settingDefinitionManager.GetAllAsync(cancellationToken);
+        var definitions = await definitionManager.GetAllAsync(cancellationToken);
 
         return definitions.Where(definition =>
             names.Any(name => string.Equals(name, definition.Name, StringComparison.Ordinal))
         );
+    }
+
+    private static string _GetSettingNameFormCacheKey(string key)
+    {
+        var settingName = SettingValueCacheItem.GetSettingNameFormCacheKey(key);
+        Ensure.True(settingName is not null, $"Invalid setting cache key `{key}` setting name not found");
+
+        return settingName;
     }
 
     #endregion

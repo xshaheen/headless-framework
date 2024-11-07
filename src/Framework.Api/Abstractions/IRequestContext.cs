@@ -40,7 +40,7 @@ public sealed class HttpRequestContext(
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,
     IWebClientInfoProvider webClientInfoProvider,
-    IClock clock
+    IRequestTime requestTime
 ) : IRequestContext
 {
     private HttpContext HttpContext =>
@@ -60,5 +60,5 @@ public sealed class HttpRequestContext(
 
     public bool IsAvailable => accessor.HttpContext is not null;
 
-    public DateTimeOffset DateStarted { get; } = clock.UtcNow;
+    public DateTimeOffset DateStarted { get; } = requestTime.Now;
 }

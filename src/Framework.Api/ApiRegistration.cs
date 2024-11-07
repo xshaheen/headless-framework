@@ -42,9 +42,11 @@ public static class ApiRegistration
         builder.Services.AddCustomStatusCodesRewriterMiddleware();
         builder.Services.AddRequestCanceledMiddleware();
 
-        builder.Services.TryAddScoped<ICurrentUser, HttpCurrentUser>();
-        builder.Services.TryAddScoped<ICurrentTenant, NullCurrentTenant>();
-        builder.Services.TryAddScoped<IWebClientInfoProvider, HttpWebClientInfoProvider>();
+        builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
+        builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
+        builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        builder.Services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
+        builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
         builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
         builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
         builder.Services.TryAddScoped<IRequestTime, RequestTime>();
@@ -55,7 +57,6 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
         builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
-        builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
         builder.Services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();

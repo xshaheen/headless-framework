@@ -53,10 +53,10 @@ public interface ISettingManager
 }
 
 public sealed class SettingManager(
-    ISettingDefinitionManager settingDefinitionManager,
-    ISettingValueProviderManager settingValueProviderManager,
-    ISettingEncryptionService settingEncryptionService,
-    ISettingValueStore settingValueStore
+    ISettingDefinitionManager definitionManager,
+    ISettingValueStore valueStore,
+    ISettingValueProviderManager valueProviderManager,
+    ISettingEncryptionService encryptionService
 ) : ISettingManager
 {
     public Task<string?> GetOrDefaultAsync(
@@ -82,9 +82,9 @@ public sealed class SettingManager(
     {
         Argument.IsNotNull(providerName);
 
-        var settingDefinitions = await settingDefinitionManager.GetAllAsync(cancellationToken);
+        var settingDefinitions = await definitionManager.GetAllAsync(cancellationToken);
 
-        var providers = settingValueProviderManager.Providers.SkipWhile(c =>
+        var providers = valueProviderManager.Providers.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
         );
 
@@ -126,7 +126,7 @@ public sealed class SettingManager(
 
             if (setting.IsEncrypted)
             {
-                value = settingEncryptionService.Decrypt(setting, value);
+                value = encryptionService.Decrypt(setting, value);
             }
 
             if (value is not null)
@@ -151,10 +151,10 @@ public sealed class SettingManager(
         Argument.IsNotNull(providerName);
 
         var setting =
-            await settingDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
+            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined setting: {name}");
 
-        var providers = settingValueProviderManager
+        var providers = valueProviderManager
             .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
             .ToList();
 
@@ -165,7 +165,7 @@ public sealed class SettingManager(
 
         if (setting.IsEncrypted)
         {
-            value = settingEncryptionService.Encrypt(setting, value);
+            value = encryptionService.Encrypt(setting, value);
         }
 
         if (providers.Count > 1 && !forceToSet && setting.IsInherited && value is not null)
@@ -211,11 +211,11 @@ public sealed class SettingManager(
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await settingValueStore.GetAllProviderValuesAsync(providerName, providerKey, cancellationToken);
+        var settings = await valueStore.GetAllProviderValuesAsync(providerName, providerKey, cancellationToken);
 
         foreach (var setting in settings)
         {
-            await settingValueStore.DeleteAsync(setting.Name, providerName, providerKey, cancellationToken);
+            await valueStore.DeleteAsync(setting.Name, providerName, providerKey, cancellationToken);
         }
     }
 
@@ -228,10 +228,10 @@ public sealed class SettingManager(
     )
     {
         var definition =
-            await settingDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
+            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined setting: {name}");
 
-        IEnumerable<ISettingValueReadProvider> providers = settingValueProviderManager.Providers;
+        IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 
         if (providerName is not null)
         {
@@ -258,7 +258,7 @@ public sealed class SettingManager(
 
         if (definition.IsEncrypted)
         {
-            value = settingEncryptionService.Decrypt(definition, value);
+            value = encryptionService.Decrypt(definition, value);
         }
 
         return value;
