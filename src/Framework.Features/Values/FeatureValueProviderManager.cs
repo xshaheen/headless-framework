@@ -35,6 +35,7 @@ public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
     {
         var providers = _providerOptions
             .ValueProviders.Select(type => (IFeatureValueReadProvider)_serviceProvider.GetRequiredService(type))
+            .Reverse()
             .ToList();
 
         var multipleProviders = providers
@@ -46,8 +47,10 @@ public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
             return providers;
         }
 
+        var providersText = multipleProviders.Select(p => p.GetType().FullName!).JoinAsString(Environment.NewLine);
+
         throw new InvalidOperationException(
-            $"Duplicate feature value provider name detected: {multipleProviders.Key}. Providers:{Environment.NewLine}{multipleProviders.Select(p => p.GetType().FullName!).JoinAsString(Environment.NewLine)}"
+            $"Duplicate feature value provider name detected: {multipleProviders.Key}. Providers:{Environment.NewLine}{providersText}"
         );
     }
 }

@@ -14,78 +14,77 @@ namespace Framework.Permissions.Values;
 
 public interface IPermissionManager
 {
-    Task<PermissionWithGrantedProviders> GetAsync(string permissionName, string providerName, string providerKey);
+    Task<PermissionWithGrantedProviders> GetAsync(
+        string permissionName,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    );
 
     Task<MultiplePermissionWithGrantedProviders> GetAsync(
         string[] permissionNames,
         string provideName,
-        string providerKey
+        string providerKey,
+        CancellationToken cancellationToken = default
     );
 
-    Task<List<PermissionWithGrantedProviders>> GetAllAsync(string providerName, string providerKey);
+    Task<List<PermissionWithGrantedProviders>> GetAllAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task SetAsync(string permissionName, string providerName, string providerKey, bool isGranted);
+    Task SetAsync(
+        string permissionName,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<PermissionGrantRecord> UpdateProviderKeyAsync(PermissionGrantRecord permissionGrant, string providerKey);
+    Task<PermissionGrantRecord> UpdateProviderKeyAsync(
+        PermissionGrantRecord permissionGrant,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    );
 
-    Task DeleteAsync(string providerName, string providerKey);
+    Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
 }
 
-public sealed class PermissionManager : IPermissionManager
+public sealed class PermissionManager(
+    IPermissionDefinitionManager permissionDefinitionManager,
+    IPermissionValueProviderManager permissionValueProviderManager,
+    IPermissionGrantRepository permissionGrantRepository,
+    IGuidGenerator guidGenerator,
+    ICurrentTenant currentTenant,
+    ICache<PermissionGrantCacheItem> cache
+) : IPermissionManager
 {
-    private readonly IPermissionGrantRepository _permissionGrantRepository;
-    private readonly IPermissionDefinitionManager _permissionDefinitionManager;
-    private readonly IGuidGenerator _guidGenerator;
-    private readonly ICurrentTenant _currentTenant;
-    private readonly ICache<PermissionGrantCacheItem> _cache;
-
-    private readonly Lazy<List<IPermissionManagementProvider>> _lazyProviders;
-
-    public PermissionManager(
-        IPermissionDefinitionManager permissionDefinitionManager,
-        IPermissionGrantRepository permissionGrantRepository,
-        IServiceProvider serviceProvider,
-        IGuidGenerator guidGenerator,
-        ICurrentTenant currentTenant,
-        ICache<PermissionGrantCacheItem> cache,
-        IOptions<PermissionManagementProvidersOptions> optionsAccessor
-    )
-    {
-        _guidGenerator = guidGenerator;
-        _currentTenant = currentTenant;
-        _cache = cache;
-        _permissionGrantRepository = permissionGrantRepository;
-        _permissionDefinitionManager = permissionDefinitionManager;
-        var options = optionsAccessor.Value;
-
-        _lazyProviders = new Lazy<List<IPermissionManagementProvider>>(
-            () =>
-                options
-                    .ValueProviders.Select(c => (IPermissionManagementProvider)serviceProvider.GetRequiredService(c))
-                    .ToList(),
-            isThreadSafe: true
-        );
-    }
-
     public async Task<PermissionWithGrantedProviders> GetAsync(
         string permissionName,
         string providerName,
-        string providerKey
+        string providerKey,
+        CancellationToken cancellationToken = default
     )
     {
-        var permission = await _permissionDefinitionManager.GetOrNullAsync(permissionName);
-        if (permission == null)
+        var permission = await permissionDefinitionManager.GetOrDefaultPermissionAsync(
+            permissionName,
+            cancellationToken
+        );
+
+        if (permission is null)
         {
-            return new PermissionWithGrantedProviders(permissionName, false);
+            return new(permissionName, isGranted: false);
         }
 
-        return await _GetInternalAsync((PermissionDefinition)permission, providerName, providerKey);
+        return await _GetInternalAsync(permission, providerName, providerKey, cancellationToken);
     }
 
     public async Task<MultiplePermissionWithGrantedProviders> GetAsync(
         string[] permissionNames,
         string providerName,
-        string providerKey
+        string providerKey,
+        CancellationToken cancellationToken = default
     )
     {
         var permissions = new List<PermissionDefinition>();
@@ -93,7 +92,8 @@ public sealed class PermissionManager : IPermissionManager
 
         foreach (var permissionName in permissionNames)
         {
-            var permission = await _permissionDefinitionManager.GetOrNullAsync(permissionName);
+            var permission = await permissionDefinitionManager.GetOrNullAsync(permissionName);
+
             if (permission != null)
             {
                 permissions.Add(permission);
@@ -119,9 +119,13 @@ public sealed class PermissionManager : IPermissionManager
         return result;
     }
 
-    public async Task<List<PermissionWithGrantedProviders>> GetAllAsync(string providerName, string providerKey)
+    public async Task<List<PermissionWithGrantedProviders>> GetAllAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        var permissionDefinitions = (await _permissionDefinitionManager.GetAllPermissionsAsync()).ToArray();
+        var permissionDefinitions = (await permissionDefinitionManager.GetAllPermissionsAsync()).ToArray();
 
         var multiplePermissionWithGrantedProviders = await _GetInternalAsync(
             permissionDefinitions,
@@ -132,9 +136,16 @@ public sealed class PermissionManager : IPermissionManager
         return multiplePermissionWithGrantedProviders.Result;
     }
 
-    public async Task SetAsync(string permissionName, string providerName, string providerKey, bool isGranted)
+    public async Task SetAsync(
+        string permissionName,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    )
     {
-        var permission = await _permissionDefinitionManager.GetOrNullAsync(permissionName);
+        var permission = await permissionDefinitionManager.GetOrNullAsync(permissionName);
+
         if (permission == null)
         {
             /* Silently ignore undefined permissions,
@@ -156,21 +167,23 @@ public sealed class PermissionManager : IPermissionManager
             );
         }
 
-        if (!permission.MultiTenancySide.HasFlag(_currentTenant.GetMultiTenancySide()))
+        if (!permission.MultiTenancySide.HasFlag(currentTenant.GetMultiTenancySide()))
         {
             //TODO: BusinessException
             throw new ApplicationException(
-                $"The permission named '{permission.Name}' has multitenancy side '{permission.MultiTenancySide}' which is not compatible with the current multitenancy side '{_currentTenant.GetMultiTenancySide()}'"
+                $"The permission named '{permission.Name}' has multitenancy side '{permission.MultiTenancySide}' which is not compatible with the current multitenancy side '{currentTenant.GetMultiTenancySide()}'"
             );
         }
 
         var currentGrantInfo = await _GetInternalAsync((PermissionDefinition)permission, providerName, providerKey);
+
         if (currentGrantInfo.IsGranted == isGranted)
         {
             return;
         }
 
         var provider = _lazyProviders.Value.FirstOrDefault(m => m.Name == providerName);
+
         if (provider == null)
         {
             //TODO: BusinessException
@@ -182,13 +195,14 @@ public sealed class PermissionManager : IPermissionManager
 
     public async Task<PermissionGrantRecord> UpdateProviderKeyAsync(
         PermissionGrantRecord permissionGrant,
-        string providerKey
+        string providerKey,
+        CancellationToken cancellationToken = default
     )
     {
-        using (_currentTenant.Change(permissionGrant.TenantId))
+        using (currentTenant.Change(permissionGrant.TenantId))
         {
             //Invalidating the cache for the old key
-            await _cache.RemoveAsync(
+            await cache.RemoveAsync(
                 PermissionGrantCacheItem.CalculateCacheKey(
                     permissionGrant.Name,
                     permissionGrant.ProviderName,
@@ -198,27 +212,38 @@ public sealed class PermissionManager : IPermissionManager
         }
 
         permissionGrant.ProviderKey = providerKey;
-        await _permissionGrantRepository.UpdateAsync(permissionGrant);
+        await permissionGrantRepository.UpdateAsync(permissionGrant);
 
         return permissionGrant;
     }
 
-    public async Task DeleteAsync(string providerName, string providerKey)
+    public async Task DeleteAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
     {
-        var permissionGrants = await _permissionGrantRepository.GetListAsync(providerName, providerKey);
+        var permissionGrants = await permissionGrantRepository.GetListAsync(providerName, providerKey);
+
         foreach (var permissionGrant in permissionGrants)
         {
-            await _permissionGrantRepository.DeleteAsync(permissionGrant);
+            await permissionGrantRepository.DeleteAsync(permissionGrant);
         }
     }
 
     private async Task<PermissionWithGrantedProviders> _GetInternalAsync(
         PermissionDefinition permission,
         string providerName,
-        string providerKey
+        string providerKey,
+        CancellationToken cancellationToken = default
     )
     {
-        var multiplePermissionWithGrantedProviders = await _GetInternalAsync([permission], providerName, providerKey);
+        var multiplePermissionWithGrantedProviders = await _GetInternalAsync(
+            [permission],
+            providerName,
+            providerKey,
+            cancellationToken
+        );
 
         return multiplePermissionWithGrantedProviders.Result[0];
     }
@@ -226,7 +251,8 @@ public sealed class PermissionManager : IPermissionManager
     private async Task<MultiplePermissionWithGrantedProviders> _GetInternalAsync(
         PermissionDefinition[] permissions,
         string providerName,
-        string providerKey
+        string providerKey,
+        CancellationToken cancellationToken = default
     )
     {
         var permissionNames = permissions.Select(x => x.Name).ToArray();
@@ -237,7 +263,7 @@ public sealed class PermissionManager : IPermissionManager
         foreach (
             var permission in permissions
                 .Where(x => x.IsEnabled)
-                .Where(x => x.MultiTenancySide.HasFlag(_currentTenant.GetMultiTenancySide()))
+                .Where(x => x.MultiTenancySide.HasFlag(currentTenant.GetMultiTenancySide()))
                 .Where(x => !x.Providers.Any() || x.Providers.Contains(providerName))
         )
         {
@@ -255,6 +281,7 @@ public sealed class PermissionManager : IPermissionManager
         foreach (var provider in _lazyProviders.Value)
         {
             permissionNames = neededCheckPermissions.Select(x => x.Name).ToArray();
+
             var multiplePermissionValueProviderGrantInfo = await provider.CheckAsync(
                 permissionNames,
                 providerName,

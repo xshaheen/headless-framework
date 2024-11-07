@@ -86,11 +86,11 @@ public sealed class PermissionChecker(
 
             var result = await provider.CheckAsync(context);
 
-            if (result == PermissionGrantResult.Granted)
+            if (result == PermissionGrantStatus.Granted)
             {
                 isGranted = true;
             }
-            else if (result is PermissionGrantResult.Prohibited)
+            else if (result is PermissionGrantStatus.Prohibited)
             {
                 return false;
             }
@@ -132,12 +132,12 @@ public sealed class PermissionChecker(
 
             if (permission is null)
             {
-                result.Result.Add(name, PermissionGrantResult.Prohibited);
+                result.Result.Add(name, PermissionGrantStatus.Prohibited);
 
                 continue;
             }
 
-            result.Result.Add(name, PermissionGrantResult.Undefined);
+            result.Result.Add(name, PermissionGrantStatus.Undefined);
 
             if (
                 permission.IsEnabled
@@ -167,8 +167,8 @@ public sealed class PermissionChecker(
             foreach (
                 var grantResult in multipleResult.Result.Where(grantResult =>
                     result.Result.ContainsKey(grantResult.Key)
-                    && result.Result[grantResult.Key] == PermissionGrantResult.Undefined
-                    && grantResult.Value != PermissionGrantResult.Undefined
+                    && result.Result[grantResult.Key] == PermissionGrantStatus.Undefined
+                    && grantResult.Value != PermissionGrantStatus.Undefined
                 )
             )
             {

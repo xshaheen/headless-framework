@@ -66,11 +66,11 @@ public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasE
 
         if (!this.HasSameExtraProperties(otherRecord))
         {
-            this.ExtraProperties.Clear();
+            ExtraProperties.Clear();
 
             foreach (var property in otherRecord.ExtraProperties)
             {
-                this.ExtraProperties.Add(property.Key, property.Value);
+                ExtraProperties.Add(property.Key, property.Value);
             }
         }
     }
