@@ -167,7 +167,7 @@ public sealed class PermissionChecker(
             foreach (
                 var grantResult in multipleResult.Result.Where(grantResult =>
                     result.Result.ContainsKey(grantResult.Key)
-                    && result.Result[grantResult.Key] == PermissionGrantStatus.Undefined
+                    && result.Result[grantResult.Key].Status == PermissionGrantStatus.Undefined
                     && grantResult.Value != PermissionGrantStatus.Undefined
                 )
             )

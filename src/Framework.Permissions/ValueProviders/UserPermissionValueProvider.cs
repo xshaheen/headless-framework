@@ -7,10 +7,9 @@ namespace Framework.Permissions.ValueProviders;
 
 [PublicAPI]
 public sealed class UserPermissionValueProvider(
-    IPermissionGrantRepository permissionGrantRepository,
-    IGuidGenerator guidGenerator,
+    IPermissionGrantStore permissionGrantStore,
     ICurrentTenant currentTenant
-) : StorePermissionValueProvider(permissionGrantRepository, guidGenerator, currentTenant)
+) : StorePermissionValueProvider(permissionGrantStore, currentTenant)
 {
     public const string ProviderName = "User";
 
