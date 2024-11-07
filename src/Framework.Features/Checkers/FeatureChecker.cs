@@ -45,7 +45,7 @@ public sealed class FeatureChecker(
             await featureDefinitionManager.GetOrDefaultFeatureAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Feature {name} is not defined!");
 
-        var providers = featureValueProviderManager.ValueProviders.Reverse();
+        IEnumerable<IFeatureValueReadProvider> providers = featureValueProviderManager.ValueProviders;
 
         if (featureDefinition.Providers.Count != 0)
         {

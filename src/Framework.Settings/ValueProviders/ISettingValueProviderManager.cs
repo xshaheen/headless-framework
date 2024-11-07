@@ -10,7 +10,7 @@ namespace Framework.Settings.ValueProviders;
 /// <summary>Manage a list of setting value providers.</summary>
 public interface ISettingValueProviderManager
 {
-    List<ISettingValueReadProvider> Providers { get; }
+    IReadOnlyList<ISettingValueReadProvider> Providers { get; }
 }
 
 /// <inheritdoc />
@@ -30,7 +30,7 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
         _lazyProviders = new(_GetProviders, isThreadSafe: true);
     }
 
-    public List<ISettingValueReadProvider> Providers => _lazyProviders.Value;
+    public IReadOnlyList<ISettingValueReadProvider> Providers => _lazyProviders.Value;
 
     /// <summary>Retrieves a list of setting value providers from the service provider.</summary>
     /// <exception cref="InvalidOperationException">Thrown when there are duplicate setting value provider names.</exception>
@@ -38,6 +38,7 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
     {
         var providers = _options
             .ValueProviders.Select(type => (ISettingValueReadProvider)_serviceProvider.GetRequiredService(type))
+            .Reverse()
             .ToList();
 
         var multipleProviders = providers

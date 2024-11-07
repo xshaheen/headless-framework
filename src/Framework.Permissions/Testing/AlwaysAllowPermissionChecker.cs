@@ -16,23 +16,36 @@ namespace Framework.Permissions.Testing;
 /// </summary>
 public sealed class AlwaysAllowPermissionChecker : IPermissionChecker
 {
-    public Task<bool> IsGrantedAsync(string name)
+    public Task<bool> IsGrantedAsync(string name, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(true);
     }
 
-    public Task<bool> IsGrantedAsync(ClaimsPrincipal? claimsPrincipal, string name)
+    public Task<bool> IsGrantedAsync(
+        ClaimsPrincipal? claimsPrincipal,
+        string name,
+        CancellationToken cancellationToken = default
+    )
     {
         return Task.FromResult(true);
     }
 
-    public Task<MultiplePermissionGrantResult> IsGrantedAsync(string[] names)
+    public Task<MultiplePermissionGrantResult> IsGrantedAsync(
+        string[] names,
+        CancellationToken cancellationToken = default
+    )
     {
-        return IsGrantedAsync(claimsPrincipal: null, names);
+        return IsGrantedAsync(claimsPrincipal: null, names, cancellationToken);
     }
 
-    public Task<MultiplePermissionGrantResult> IsGrantedAsync(ClaimsPrincipal? claimsPrincipal, string[] names)
+    public Task<MultiplePermissionGrantResult> IsGrantedAsync(
+        ClaimsPrincipal? claimsPrincipal,
+        string[] names,
+        CancellationToken cancellationToken = default
+    )
     {
-        return Task.FromResult(new MultiplePermissionGrantResult(names, PermissionGrantResult.Granted));
+        var result = new MultiplePermissionGrantResult(names, PermissionGrantStatus.Granted);
+
+        return Task.FromResult(result);
     }
 }

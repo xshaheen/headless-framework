@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Permissions.Values;
 
-public interface IPermissionValueStore
+public interface IPermissionGrantStore
 {
     Task<PermissionGrantResult> IsGrantedAsync(
         string name,
@@ -20,19 +20,33 @@ public interface IPermissionValueStore
     );
 
     Task<MultiplePermissionGrantResult> IsGrantedAsync(
-        string[] names,
+        IReadOnlyList<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    );
+
+    Task GrantAsync(
+        string name,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    );
+
+    Task RevokeAsync(
+        string name,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
     );
 }
 
-public sealed class PermissionValueStore(
+public sealed class PermissionGrantStore(
     IPermissionDefinitionManager permissionDefinitionManager,
     IPermissionGrantRepository repository,
     ICache<PermissionGrantCacheItem> cache,
-    ILogger<PermissionValueStore> logger
-) : IPermissionValueStore
+    ILogger<PermissionGrantStore> logger
+) : IPermissionGrantStore
 {
     public async Task<PermissionGrantResult> IsGrantedAsync(
         string name,
@@ -51,20 +65,25 @@ public sealed class PermissionValueStore(
         {
             logger.LogDebug("Permission found in the cache: {CacheKey}", cacheKey);
 
-            return existValueCacheItem.Value?.IsGranted ?? false
-                ? PermissionGrantResult.Granted
-                : PermissionGrantResult.Prohibited;
+            var permissionIsGranted = existValueCacheItem.Value?.IsGranted switch
+            {
+                true => PermissionGrantStatus.Granted,
+                false => PermissionGrantStatus.Prohibited,
+                null => PermissionGrantStatus.Undefined,
+            };
+
+            return new PermissionGrantResult(permissionIsGranted, providerKey);
         }
 
         logger.LogDebug("Permission not found in the cache: {CacheKey}", cacheKey);
 
         var valueCacheItem = await _CacheAllAndGetAsync(providerName, providerKey, name, cancellationToken);
 
-        return valueCacheItem;
+        return new PermissionGrantResult(valueCacheItem, providerKey);
     }
 
     public async Task<MultiplePermissionGrantResult> IsGrantedAsync(
-        string[] names,
+        IReadOnlyList<string> names,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
@@ -72,7 +91,7 @@ public sealed class PermissionValueStore(
     {
         Argument.IsNotNullOrEmpty(names);
 
-        if (names.Length == 1)
+        if (names.Count == 1)
         {
             var name = names[0];
             var result = await IsGrantedAsync(name, providerName, providerKey, cancellationToken);
@@ -83,16 +102,38 @@ public sealed class PermissionValueStore(
         return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken);
     }
 
+    public Task GrantAsync(
+        string name,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task RevokeAsync(
+        string name,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new NotImplementedException();
+    }
+
     #region Helpers
 
     private async Task<MultiplePermissionGrantResult> _GetCachedItemsAsync(
-        string[] names,
+        IReadOnlyList<string> names,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken
     )
     {
-        var cacheKeys = names.ConvertAll(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey));
+        var cacheKeys = names
+            .Select(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey))
+            .ToList();
         var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken);
 
         var notCachedNames = cacheItemsMap
@@ -100,13 +141,13 @@ public sealed class PermissionValueStore(
             .Select(x => _GetPermissionNameFormCacheKey(x.Key))
             .ToArray();
 
-        logger.LogDebug("PermissionStore._GetCachedItemsAsync: {@CacheKeys}", cacheKeys as object);
+        logger.LogDebug("PermissionStore._GetCachedItemsAsync: {@CacheKeys}", cacheKeys);
 
         if (notCachedNames.Length == 0)
         {
-            logger.LogDebug("Found in the cache: {@CacheKeys}", cacheKeys as object);
+            logger.LogDebug("Found in the cache: {@CacheKeys}", cacheKeys);
 
-            return new MultiplePermissionGrantResult(names, PermissionGrantResult.Granted);
+            return new MultiplePermissionGrantResult(names, PermissionGrantStatus.Granted);
         }
 
         // Some cache items aren't found in the cache, get them from the database
@@ -120,12 +161,14 @@ public sealed class PermissionValueStore(
             var item = newCacheItems.GetOrDefault(cacheKey) ?? cacheItemsMap.GetOrDefault(cacheKey)?.Value;
             var permissionName = _GetPermissionNameFormCacheKey(cacheKey);
 
-            result.Result[permissionName] = item?.IsGranted switch
+            var status = item?.IsGranted switch
             {
-                true => PermissionGrantResult.Granted,
-                false => PermissionGrantResult.Prohibited,
-                null => PermissionGrantResult.Undefined,
+                true => PermissionGrantStatus.Granted,
+                false => PermissionGrantStatus.Prohibited,
+                null => PermissionGrantStatus.Undefined,
             };
+
+            result.Result[permissionName] = new PermissionGrantResult(status, providerKey);
         }
 
         return result;
@@ -165,7 +208,7 @@ public sealed class PermissionValueStore(
         return cacheItems;
     }
 
-    private async Task<PermissionGrantResult> _CacheAllAndGetAsync(
+    private async Task<PermissionGrantStatus> _CacheAllAndGetAsync(
         string providerName,
         string providerKey,
         string permissionToFind,
@@ -186,7 +229,7 @@ public sealed class PermissionValueStore(
         logger.LogDebug("Permissions - Set the cache items. Count: {DefinitionsCount}", definitions.Count);
 
         Dictionary<string, PermissionGrantCacheItem> cacheItems = new(StringComparer.Ordinal);
-        var permissionIsGranted = PermissionGrantResult.Undefined;
+        var permissionIsGranted = PermissionGrantStatus.Undefined;
 
         foreach (var permission in definitions)
         {
@@ -197,7 +240,7 @@ public sealed class PermissionValueStore(
 
             if (string.Equals(permission.Name, permissionToFind, StringComparison.Ordinal))
             {
-                permissionIsGranted = isGranted ? PermissionGrantResult.Granted : PermissionGrantResult.Prohibited;
+                permissionIsGranted = isGranted ? PermissionGrantStatus.Granted : PermissionGrantStatus.Prohibited;
             }
         }
 
