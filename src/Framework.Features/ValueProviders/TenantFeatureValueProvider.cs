@@ -21,16 +21,12 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
         CancellationToken cancellationToken = default
     )
     {
-        if (
-            !string.Equals(providerName, Name, StringComparison.Ordinal)
-            || providerKey.IsNullOrWhiteSpace()
-            || !Guid.TryParse(providerKey, out var tenantId)
-        )
+        if (!string.Equals(providerName, Name, StringComparison.Ordinal) || providerKey.IsNullOrWhiteSpace())
         {
             return base.HandleContextAsync(providerName, providerKey, cancellationToken);
         }
 
-        var disposable = currentTenant.Change(tenantId);
+        var disposable = currentTenant.Change(providerKey);
 
         var asyncDisposable = new AsyncDisposeFunc(() =>
         {
@@ -48,6 +44,6 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
         CancellationToken cancellationToken = default
     )
     {
-        return Store.GetOrDefaultAsync(feature.Name, Name, currentTenant.Id?.ToString(), cancellationToken);
+        return Store.GetOrDefaultAsync(feature.Name, Name, currentTenant.Id, cancellationToken);
     }
 }

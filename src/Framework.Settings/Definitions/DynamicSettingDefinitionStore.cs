@@ -27,9 +27,9 @@ public interface IDynamicSettingDefinitionStore
 }
 
 public sealed class DynamicSettingDefinitionStore(
-    ISettingDefinitionRecordRepository repository,
+    ISettingDefinitionRecordRepository definitionRepository,
     IStaticSettingDefinitionStore staticStore,
-    ISettingDefinitionSerializer serializer,
+    ISettingDefinitionSerializer definitionSerializer,
     ICache distributedCache,
     IResourceLockProvider resourceLockProvider,
     IGuidGenerator guidGenerator,
@@ -153,13 +153,13 @@ public sealed class DynamicSettingDefinitionStore(
 
     private async Task _UpdateInMemoryCacheAsync(CancellationToken cancellationToken)
     {
-        var records = await repository.GetListAsync(cancellationToken);
+        var records = await definitionRepository.GetListAsync(cancellationToken);
 
         _memoryCache.Clear();
 
         foreach (var record in records)
         {
-            _memoryCache[record.Name] = serializer.Deserialize(record);
+            _memoryCache[record.Name] = definitionSerializer.Deserialize(record);
         }
     }
 
@@ -200,7 +200,7 @@ public sealed class DynamicSettingDefinitionStore(
 
         cancellationToken.ThrowIfCancellationRequested();
         var cachedHash = await distributedCache.GetAsync<string>(_appSaveFeaturesHashCacheKey, cancellationToken);
-        var records = serializer.Serialize(await staticStore.GetAllAsync(cancellationToken));
+        var records = definitionSerializer.Serialize(await staticStore.GetAllAsync(cancellationToken));
         var currentHash = _CalculateHash(records, _providers.DeletedSettings);
 
         if (string.Equals(cachedHash.Value, currentHash, StringComparison.Ordinal))
@@ -225,7 +225,7 @@ public sealed class DynamicSettingDefinitionStore(
 
         if (hasChangesInSettings)
         {
-            await repository.SaveAsync(newRecords, changedRecords, deletedRecords, cancellationToken);
+            await definitionRepository.SaveAsync(newRecords, changedRecords, deletedRecords, cancellationToken);
             await _ChangeCommonStampAsync(cancellationToken);
         }
 
@@ -259,7 +259,7 @@ public sealed class DynamicSettingDefinitionStore(
         List<SettingDefinitionRecord> DeletedRecords
     )> _UpdateChangedSettingsAsync(List<SettingDefinitionRecord> settingRecords, CancellationToken cancellationToken)
     {
-        var dbRecords = await repository.GetListAsync(cancellationToken);
+        var dbRecords = await definitionRepository.GetListAsync(cancellationToken);
         var dbRecordsMap = dbRecords.ToDictionary(x => x.Name, StringComparer.Ordinal);
 
         var newRecords = new List<SettingDefinitionRecord>();

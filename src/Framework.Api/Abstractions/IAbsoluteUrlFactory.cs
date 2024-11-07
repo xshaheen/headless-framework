@@ -23,7 +23,7 @@ public interface IAbsoluteUrlFactory
     string? GetAbsoluteUrl(HttpContext context, string path);
 }
 
-public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor httpHttpContextAccessor) : IAbsoluteUrlFactory
+public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor accessor) : IAbsoluteUrlFactory
 {
     private static readonly string[] _Separator = ["://"];
 
@@ -31,20 +31,20 @@ public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor httpHttpContextA
     {
         get
         {
-            if (httpHttpContextAccessor.HttpContext?.Request is null)
+            if (accessor.HttpContext?.Request is null)
             {
                 throw new InvalidOperationException(
                     "The request is not currently available. This service can only be used within the context of an existing HTTP request."
                 );
             }
 
-            var request = httpHttpContextAccessor.HttpContext.Request;
+            var request = accessor.HttpContext.Request;
 
             return request.Scheme + "://" + request.Host.ToUriComponent();
         }
         set
         {
-            if (httpHttpContextAccessor.HttpContext?.Request is null)
+            if (accessor.HttpContext?.Request is null)
             {
                 throw new InvalidOperationException(
                     "The request is not currently available. This service can only be used within the context of an existing HTTP request."
@@ -52,7 +52,7 @@ public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor httpHttpContextA
             }
 
             var split = value.Split(_Separator, StringSplitOptions.RemoveEmptyEntries);
-            var request = httpHttpContextAccessor.HttpContext.Request;
+            var request = accessor.HttpContext.Request;
             request.Scheme = split[0];
             request.Host = new HostString(split[^1]);
         }
@@ -67,14 +67,14 @@ public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor httpHttpContextA
             return result;
         }
 
-        if (httpHttpContextAccessor.HttpContext?.Request is null)
+        if (accessor.HttpContext?.Request is null)
         {
             throw new InvalidOperationException(
                 "The request is not currently available. This service can only be used within the context of an existing HTTP request."
             );
         }
 
-        return GetAbsoluteUrl(httpHttpContextAccessor.HttpContext, path);
+        return GetAbsoluteUrl(accessor.HttpContext, path);
     }
 
     public string? GetAbsoluteUrl(HttpContext context, string path)
@@ -98,11 +98,6 @@ public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor httpHttpContextA
             return (process: false, result: null);
         }
 
-        if (Uri.IsWellFormedUriString(path, UriKind.Absolute))
-        {
-            return (process: false, result: path);
-        }
-
-        return (process: true, result: path);
+        return (process: !Uri.IsWellFormedUriString(path, UriKind.Absolute), result: path);
     }
 }

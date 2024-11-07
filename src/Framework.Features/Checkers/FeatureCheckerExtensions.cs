@@ -6,6 +6,7 @@ using Framework.Kernel.Primitives;
 
 namespace Framework.Features.Checkers;
 
+[PublicAPI]
 public static class FeatureCheckerExtensions
 {
     public static async Task<T> GetAsync<T>(
