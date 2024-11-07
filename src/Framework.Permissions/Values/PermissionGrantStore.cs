@@ -1,8 +1,10 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Caching;
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Framework.Permissions.Definitions;
+using Framework.Permissions.Entities;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 using Humanizer;
@@ -30,6 +32,7 @@ public interface IPermissionGrantStore
         string name,
         string providerName,
         string providerKey,
+        Guid? tenantId = null,
         CancellationToken cancellationToken = default
     );
 
@@ -44,10 +47,13 @@ public interface IPermissionGrantStore
 public sealed class PermissionGrantStore(
     IPermissionDefinitionManager permissionDefinitionManager,
     IPermissionGrantRepository repository,
+    IGuidGenerator guidGenerator,
     ICache<PermissionGrantCacheItem> cache,
     ILogger<PermissionGrantStore> logger
 ) : IPermissionGrantStore
 {
+    private readonly TimeSpan _cacheExpiration = 5.Hours();
+
     public async Task<PermissionGrantResult> IsGrantedAsync(
         string name,
         string providerName,
@@ -102,24 +108,53 @@ public sealed class PermissionGrantStore(
         return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken);
     }
 
-    public Task GrantAsync(
+    public async Task GrantAsync(
         string name,
         string providerName,
         string providerKey,
+        Guid? tenantId = null,
         CancellationToken cancellationToken = default
     )
     {
-        throw new NotImplementedException();
+        var permissionGrant = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+
+        if (permissionGrant is not null)
+        {
+            return;
+        }
+
+        await repository.InsertAsync(
+            new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, tenantId)
+        );
+
+        await cache.UpsertAsync(
+            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            cacheValue: new PermissionGrantCacheItem(isGranted: true),
+            expiration: _cacheExpiration,
+            cancellationToken: cancellationToken
+        );
     }
 
-    public Task RevokeAsync(
+    public async Task RevokeAsync(
         string name,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        throw new NotImplementedException();
+        var permissionGrant = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
+
+        if (permissionGrant is null)
+        {
+            return;
+        }
+
+        await repository.DeleteAsync(permissionGrant);
+
+        await cache.RemoveAsync(
+            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            cancellationToken
+        );
     }
 
     #region Helpers
@@ -202,7 +237,7 @@ public sealed class PermissionGrantStore(
             cacheItems[cacheKey] = new PermissionGrantCacheItem(isGranted);
         }
 
-        await cache.UpsertAllAsync(cacheItems, 30.Days(), cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
         logger.LogDebug("Finished setting the cache items. Count: {PermissionsCount}", definitions.Length);
 
         return cacheItems;
@@ -244,7 +279,7 @@ public sealed class PermissionGrantStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, 5.Hours(), cancellationToken);
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
 
         logger.LogDebug("Finished setting the cache items. Count: {DefinitionsCount}", definitions.Count);
 

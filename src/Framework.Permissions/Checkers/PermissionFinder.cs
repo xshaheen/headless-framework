@@ -1,8 +1,8 @@
-using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 using Framework.Permissions.ValueProviders;
+using Framework.Permissions.Values;
 
-namespace Framework.Permissions.Values;
+namespace Framework.Permissions.Checkers;
 
 public interface IPermissionFinder
 {

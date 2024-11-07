@@ -29,6 +29,7 @@ public static class AddSettingsExtensions
     {
         services._AddSettingEncryption();
         services._AddCoreValueProvider();
+
         services.AddHostedService<SettingsInitializationBackgroundService>();
         services.AddSingletonOptions<SettingManagementOptions, SettingManagementOptionsValidator>();
 
@@ -48,18 +49,18 @@ public static class AddSettingsExtensions
          * 2. Implement `ISettingDefinitionProvider` to define your settings in code
          *    and use `AddSettingDefinitionProvider` to register it
          */
-        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>(); // ✅
-        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>(); // ✅
-        services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
-        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
+        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>(); // Transient
+        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>(); // Singleton
+        services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>(); // Transient
+        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>(); // Singleton
 
         // Value Services
         /*
          * You need to provide a storage implementation for `ISettingValueRecordRepository`
          */
-        services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
-        services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
-        services.TryAddTransient<ISettingManager, SettingManager>();
+        services.TryAddSingleton<ISettingValueStore, SettingValueStore>(); // Transient
+        services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>(); // Singleton
+        services.TryAddSingleton<ISettingManager, SettingManager>(); // Singleton
 
         return services;
     }
@@ -75,7 +76,7 @@ public static class AddSettingsExtensions
         });
     }
 
-    public static void AddSettingValueProvider<T>(this IServiceCollection services)
+    public static void AddSettingValueProvider<T>(this IServiceCollection services) // Transient
         where T : class, ISettingValueReadProvider
     {
         services.AddSingleton<T>();

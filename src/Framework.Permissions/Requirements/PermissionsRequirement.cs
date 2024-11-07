@@ -35,7 +35,7 @@ public sealed class PermissionsRequirementHandler(IPermissionChecker checker)
         if (
             requirement.RequiresAll
                 ? multiplePermissionGrantResult.AllGranted
-                : multiplePermissionGrantResult.Result.Any(x => x.Value is PermissionGrantStatus.Granted)
+                : multiplePermissionGrantResult.Result.Any(x => x.Value.Status is PermissionGrantStatus.Granted)
         )
         {
             context.Succeed(requirement);

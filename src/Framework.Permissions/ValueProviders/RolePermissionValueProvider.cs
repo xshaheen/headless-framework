@@ -15,36 +15,27 @@ public interface IUserRoleFinder
     Task<string[]> GetRoleNamesAsync(Guid userId);
 }
 
-public sealed class RolePermissionManagementProvider(
-    IPermissionGrantRepository permissionGrantRepository,
-    IGuidGenerator guidGenerator,
+[PublicAPI]
+public sealed class RolePermissionValueProvider(
+    IPermissionGrantStore permissionGrantStore,
     ICurrentTenant currentTenant,
     IUserRoleFinder userRoleFinder
-) : StorePermissionValueProvider(permissionGrantRepository, guidGenerator, currentTenant)
+) : StorePermissionValueProvider(permissionGrantStore, currentTenant)
 {
-    private readonly IPermissionGrantRepository _permissionGrantRepository = permissionGrantRepository;
+    private readonly IPermissionGrantStore _permissionGrantStore = permissionGrantStore;
 
-    public override string Name => RolePermissionValueProvider.ProviderName;
+    public const string ProviderName = "Role";
 
-    public override async Task<PermissionGrantInfo> CheckAsync(string name, string providerName, string providerKey)
+    public override string Name => ProviderName;
+
+    public async Task<MultiplePermissionGrantResult> CheckAsync(string[] names, string providerName, string providerKey)
     {
-        var multipleGrantInfo = await CheckAsync([name], providerName, providerKey);
-
-        return multipleGrantInfo.Result.Values.First();
-    }
-
-    public override async Task<MultiplePermissionGrantResult> CheckAsync(
-        string[] names,
-        string providerName,
-        string providerKey
-    )
-    {
-        var multiplePermissionValueProviderGrantInfo = new MultiplePermissionGrantResult(names);
+        var result = new MultiplePermissionGrantResult(names);
         var permissionGrants = new List<PermissionGrantRecord>();
 
         if (string.Equals(providerName, Name, StringComparison.Ordinal))
         {
-            permissionGrants.AddRange(await _permissionGrantRepository.GetListAsync(names, providerName, providerKey));
+            permissionGrants.AddRange(await _permissionGrantStore.GetListAsync(names, providerName, providerKey));
         }
 
         if (string.Equals(providerName, UserPermissionValueProvider.ProviderName, StringComparison.Ordinal))
@@ -54,7 +45,7 @@ public sealed class RolePermissionManagementProvider(
 
             foreach (var roleName in roleNames)
             {
-                permissionGrants.AddRange(await _permissionGrantRepository.GetListAsync(names, Name, roleName));
+                permissionGrants.AddRange(await _permissionGrantStore.GetListAsync(names, Name, roleName));
             }
         }
 
@@ -62,7 +53,7 @@ public sealed class RolePermissionManagementProvider(
 
         if (permissionGrants.Count == 0)
         {
-            return multiplePermissionValueProviderGrantInfo;
+            return result;
         }
 
         foreach (var permissionName in names)
@@ -73,23 +64,12 @@ public sealed class RolePermissionManagementProvider(
 
             if (permissionGrant != null)
             {
-                multiplePermissionValueProviderGrantInfo.Result[permissionName] = new(
-                    isGranted: true,
-                    permissionGrant.ProviderKey
-                );
+                result.Result[permissionName] = new(PermissionGrantStatus.Granted, permissionGrant.ProviderKey);
             }
         }
 
-        return multiplePermissionValueProviderGrantInfo;
+        return result;
     }
-}
-
-[PublicAPI]
-public sealed class RolePermissionValueProvider(IPermissionGrantStore store) : StorePermissionValueProvider(store)
-{
-    public const string ProviderName = "Role";
-
-    public override string Name => ProviderName;
 
     public async Task<PermissionGrantStatus> GetResultAsync(PermissionDefinition permission, ClaimsPrincipal? principal)
     {
@@ -102,7 +82,7 @@ public sealed class RolePermissionValueProvider(IPermissionGrantStore store) : S
 
         foreach (var role in roles.Distinct(StringComparer.Ordinal))
         {
-            if (await PermissionGrantStore.IsGrantedAsync(permission.Name, Name, role))
+            if (await _permissionGrantStore.IsGrantedAsync(permission.Name, Name, role))
             {
                 return PermissionGrantStatus.Granted;
             }
@@ -130,18 +110,18 @@ public sealed class RolePermissionValueProvider(IPermissionGrantStore store) : S
 
         foreach (var role in roles.Distinct(StringComparer.Ordinal))
         {
-            var multipleResult = await PermissionGrantStore.IsGrantedAsync(permissionNames, Name, role);
+            var multipleResult = await _permissionGrantStore.IsGrantedAsync(permissionNames, Name, role);
 
-            foreach (
-                var grantResult in multipleResult.Result.Where(grantResult =>
-                    result.Result.ContainsKey(grantResult.Key)
-                    && result.Result[grantResult.Key] == PermissionGrantStatus.Undefined
-                    && grantResult.Value != PermissionGrantStatus.Undefined
-                )
-            )
+            var keyValuePairs = multipleResult.Result.Where(grantResult =>
+                result.Result.ContainsKey(grantResult.Key)
+                && result.Result[grantResult.Key].Status is PermissionGrantStatus.Undefined
+                && grantResult.Value.Status is not PermissionGrantStatus.Undefined
+            );
+
+            foreach (var (key, grantResult) in keyValuePairs)
             {
-                result.Result[grantResult.Key] = grantResult.Value;
-                permissionNames.RemoveAll(x => string.Equals(x, grantResult.Key, StringComparison.Ordinal));
+                result.Result[key] = grantResult;
+                permissionNames.RemoveAll(x => string.Equals(x, key, StringComparison.Ordinal));
             }
 
             if (result.AllGranted || result.AllProhibited)
