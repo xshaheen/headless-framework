@@ -14,8 +14,6 @@
   </PropertyGroup>
 
   <ItemGroup Label="Global Packages">
-    <PackageReference Include="AutoBogus" />
-    <PackageReference Include="AutoBogus.NSubstitute" />
     <PackageReference Include="Bogus" />
     <PackageReference Include="DeepCloner" />
     <PackageReference Include="FluentAssertions" />

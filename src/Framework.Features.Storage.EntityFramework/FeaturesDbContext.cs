@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Framework.Features.Storage.EntityFramework;
 
 [PublicAPI]
-public sealed class FeaturesDbContext : DbContext
+public sealed class FeaturesDbContext(DbContextOptions options) : DbContext(options)
 {
     public static string DefaultSchema { get; set; } = "features";
     public static string DefaultFeatureValuesTableName { get; set; } = "FeatureValues";

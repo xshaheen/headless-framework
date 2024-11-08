@@ -2,6 +2,7 @@
 
 using Framework.Caching;
 using Framework.Features;
+using Framework.Features.Seeders;
 using Framework.Features.Storage.EntityFramework;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.ResourceLocks.Local;
@@ -12,7 +13,10 @@ namespace Tests.TestSetup;
 
 public static class HostExtensions
 {
-    public static IServiceCollection ConfigureServices(this IServiceCollection services, string postgreConnectionString)
+    public static IServiceCollection ConfigureFeaturesServices(
+        this IServiceCollection services,
+        string postgreConnectionString
+    )
     {
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
@@ -31,6 +35,8 @@ public static class HostExtensions
             {
                 options.UseNpgsql(postgreConnectionString);
             });
+
+        services.RemoveHostedService<FeaturesInitializationBackgroundService>();
 
         return services;
     }

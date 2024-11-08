@@ -38,7 +38,7 @@ public sealed class SettingManagementOptions
     public string CommonSettingsUpdatedStampCacheKey { get; set; } = "SettingsUpdatedLocalStamp";
 
     /// <summary>Default: 30 seconds.</summary>
-    public TimeSpan DynamicSettingDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
+    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
 }
 
 public sealed class SettingManagementOptionsValidator : AbstractValidator<SettingManagementOptions>

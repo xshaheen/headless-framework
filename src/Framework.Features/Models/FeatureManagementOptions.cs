@@ -36,6 +36,9 @@ public sealed class FeatureManagementOptions
 
     /// <summary>A stamp when changed the application updates its local cache.</summary>
     public string CommonFeaturesUpdatedStampCacheKey { get; set; } = "FeaturesUpdatedLocalStamp";
+
+    /// <summary>Default: 30 seconds.</summary>
+    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
 }
 
 public sealed class FeatureManagementOptionsValidator : AbstractValidator<FeatureManagementOptions>

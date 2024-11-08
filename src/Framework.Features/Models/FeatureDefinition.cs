@@ -9,7 +9,7 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
     private string? _displayName;
     private readonly List<FeatureDefinition> _children;
 
-    public FeatureDefinition(
+    internal FeatureDefinition(
         string name,
         string? defaultValue = null,
         string? displayName = null,

@@ -1,9 +1,9 @@
 ﻿using System.Reflection;
 using Framework.Api;
 using Framework.Caching;
+using Framework.Features;
+using Framework.Features.Storage.EntityFramework;
 using Framework.ResourceLocks.Local;
-using Framework.Settings;
-using Framework.Settings.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 
 // To add a migration use:
@@ -22,8 +22,8 @@ builder.Services.AddInMemoryCache();
 builder.Services.AddLocalResourceLock();
 
 builder
-    .Services.AddSettingsManagementCore()
-    .AddSettingsManagementEntityFrameworkStorage(options =>
+    .Services.AddFeaturesManagementCore()
+    .AddFeaturesManagementEntityFrameworkStorage(options =>
     {
         options.UseNpgsql(
             "Host=localhost;Database=Framework;Username=postgres;Password=postgres",

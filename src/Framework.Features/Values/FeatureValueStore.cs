@@ -128,7 +128,7 @@ public sealed class FeatureValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var definitions = await featureDefinitionManager.GetAllFeaturesAsync(cancellationToken);
+        var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken);
         var dbValues = await repository.GetListAsync(providerName, providerKey, cancellationToken);
         var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
