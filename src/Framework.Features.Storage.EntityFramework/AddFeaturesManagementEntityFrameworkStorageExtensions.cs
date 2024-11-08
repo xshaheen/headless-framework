@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Features.Storage.EntityFramework;
 
+[PublicAPI]
 public static class AddFeaturesManagementEntityFrameworkStorageExtensions
 {
     public static IServiceCollection AddFeaturesManagementEntityFrameworkStorage(
@@ -16,7 +17,7 @@ public static class AddFeaturesManagementEntityFrameworkStorageExtensions
     {
         services.AddSingleton<IFeatureValueRecordRepository, EfFeatureValueRecordRecordRepository>();
         services.AddSingleton<IFeatureDefinitionRecordRepository, EfFeatureDefinitionRecordRepository>();
-        services.AddDbContextPool<FeaturesDbContext>(optionsAction);
+        services.AddPooledDbContextFactory<FeaturesDbContext>(optionsAction);
 
         return services;
     }

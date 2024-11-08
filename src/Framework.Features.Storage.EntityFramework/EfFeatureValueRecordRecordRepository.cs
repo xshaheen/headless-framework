@@ -3,11 +3,10 @@
 using Framework.Features.Entities;
 using Framework.Features.Values;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Features.Storage.EntityFramework;
 
-public sealed class EfFeatureValueRecordRecordRepository(IServiceScopeFactory scopeFactory)
+public sealed class EfFeatureValueRecordRecordRepository(IDbContextFactory<FeaturesDbContext> dbFactory)
     : IFeatureValueRecordRepository
 {
     public async Task<FeatureValueRecord?> FindAsync(
@@ -17,8 +16,7 @@ public sealed class EfFeatureValueRecordRecordRepository(IServiceScopeFactory sc
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
             .FeatureValues.OrderBy(x => x.Id)
@@ -35,8 +33,7 @@ public sealed class EfFeatureValueRecordRecordRepository(IServiceScopeFactory sc
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         var query = db.FeatureValues.Where(s => s.Name == name);
 
@@ -59,8 +56,7 @@ public sealed class EfFeatureValueRecordRecordRepository(IServiceScopeFactory sc
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
             .FeatureValues.Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
@@ -69,16 +65,14 @@ public sealed class EfFeatureValueRecordRecordRepository(IServiceScopeFactory sc
 
     public async Task InsertAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         db.FeatureValues.Add(featureValue);
         await db.SaveChangesAsync(cancellationToken);
     }
 
     public async Task UpdateAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         db.FeatureValues.Update(featureValue);
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -88,8 +82,7 @@ public sealed class EfFeatureValueRecordRecordRepository(IServiceScopeFactory sc
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         db.FeatureValues.RemoveRange(featureValues);
         await db.SaveChangesAsync(cancellationToken);
     }

@@ -3,27 +3,24 @@
 using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Features.Storage.EntityFramework;
 
-public sealed class EfFeatureDefinitionRecordRepository(IServiceScopeFactory scopeFactory)
+public sealed class EfFeatureDefinitionRecordRepository(IDbContextFactory<FeaturesDbContext> dbFactory)
     : IFeatureDefinitionRecordRepository
 {
     public async Task<List<FeatureGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db.FeatureGroupDefinitions.ToListAsync(cancellationToken);
     }
 
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db.FeatureDefinitions.ToListAsync(cancellationToken);
     }
@@ -35,11 +32,10 @@ public sealed class EfFeatureDefinitionRecordRepository(IServiceScopeFactory sco
         List<FeatureDefinitionRecord> newFeatures,
         List<FeatureDefinitionRecord> updatedFeatures,
         List<FeatureDefinitionRecord> deletedFeatures,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<FeaturesDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         db.FeatureGroupDefinitions.AddRange(newGroups);
         db.FeatureGroupDefinitions.UpdateRange(updatedGroups);

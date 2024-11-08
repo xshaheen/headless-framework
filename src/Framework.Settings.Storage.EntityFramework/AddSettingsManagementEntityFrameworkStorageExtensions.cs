@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Settings.Storage.EntityFramework;
 
+[PublicAPI]
 public static class AddSettingsManagementEntityFrameworkStorageExtensions
 {
     public static IServiceCollection AddSettingsManagementEntityFrameworkStorage(

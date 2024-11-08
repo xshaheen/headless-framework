@@ -4,11 +4,6 @@ namespace Framework.Permissions.Definitions;
 
 public interface IPermissionDefinitionRecordRepository
 {
-    Task<PermissionDefinitionRecord> FindPermissionByNameAsync(
-        string name,
-        CancellationToken cancellationToken = default
-    );
-
     Task<List<PermissionDefinitionRecord>> GetPermissionsListAsync(CancellationToken cancellationToken = default);
 
     Task<List<PermissionGroupDefinitionRecord>> GetGroupsListAsync(CancellationToken cancellationToken = default);

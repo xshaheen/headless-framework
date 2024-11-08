@@ -8,7 +8,7 @@ namespace Framework.Permissions.Seeders;
 
 public interface IGrantPermissionsSeedHelper
 {
-    ValueTask GrantAllPermissionsToRoleAsync(string roleName, Guid? tenantId = null);
+    ValueTask GrantAllPermissionsToRoleAsync(string roleName, string? tenantId = null);
 }
 
 public sealed class GrantPermissionsSeedHelper(
@@ -18,7 +18,7 @@ public sealed class GrantPermissionsSeedHelper(
     ICurrentTenant currentTenant
 ) : IGrantPermissionsSeedHelper
 {
-    public async ValueTask GrantAllPermissionsToRoleAsync(string roleName, Guid? tenantId = null)
+    public async ValueTask GrantAllPermissionsToRoleAsync(string roleName, string? tenantId = null)
     {
         using var _ = currentTenant.Change(tenantId);
 

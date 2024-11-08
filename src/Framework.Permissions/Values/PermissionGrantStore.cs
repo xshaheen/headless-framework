@@ -32,7 +32,7 @@ public interface IPermissionGrantStore
         string name,
         string providerName,
         string providerKey,
-        Guid? tenantId = null,
+        string? tenantId = null,
         CancellationToken cancellationToken = default
     );
 
@@ -112,7 +112,7 @@ public sealed class PermissionGrantStore(
         string name,
         string providerName,
         string providerKey,
-        Guid? tenantId = null,
+        string? tenantId = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -124,7 +124,8 @@ public sealed class PermissionGrantStore(
         }
 
         await repository.InsertAsync(
-            new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, tenantId)
+            new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, tenantId),
+            cancellationToken
         );
 
         await cache.UpsertAsync(
@@ -149,7 +150,7 @@ public sealed class PermissionGrantStore(
             return;
         }
 
-        await repository.DeleteAsync(permissionGrant);
+        await repository.DeleteAsync(permissionGrant, cancellationToken);
 
         await cache.RemoveAsync(
             cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),

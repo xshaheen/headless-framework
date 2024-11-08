@@ -2,7 +2,7 @@
 
 ## Framework
 
-- Features
+- Permissions
 - Permissions (IClaimsTransformation)
 - Test blobs like foundatio
   
