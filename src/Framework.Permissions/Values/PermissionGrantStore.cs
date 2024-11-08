@@ -170,6 +170,7 @@ public sealed class PermissionGrantStore(
         var cacheKeys = names
             .Select(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey))
             .ToList();
+
         var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken);
 
         var notCachedNames = cacheItemsMap
@@ -251,7 +252,7 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken
     )
     {
-        var definitions = await permissionDefinitionManager.GetAllPermissionsAsync(cancellationToken);
+        var definitions = await permissionDefinitionManager.GetPermissionsAsync(cancellationToken);
 
         logger.LogDebug(
             "Getting all granted permissions from the repository for this provider name,key: {ProviderName},{ProviderKey}",
@@ -297,7 +298,7 @@ public sealed class PermissionGrantStore(
             return [];
         }
 
-        var definitions = await permissionDefinitionManager.GetAllPermissionsAsync(cancellationToken);
+        var definitions = await permissionDefinitionManager.GetPermissionsAsync(cancellationToken);
 
         return definitions
             .Where(definition => names.Exists(name => string.Equals(name, definition.Name, StringComparison.Ordinal)))

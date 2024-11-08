@@ -26,11 +26,16 @@ public interface IPermissionGrantRepository
 
     Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default);
 
-    Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default);
-
     Task UpdateAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default);
 
+    Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken);
+
     Task InsertManyAsync(
+        IEnumerable<PermissionGrantRecord> permissionGrants,
+        CancellationToken cancellationToken = default
+    );
+
+    Task DeleteManyAsync(
         IEnumerable<PermissionGrantRecord> permissionGrants,
         CancellationToken cancellationToken = default
     );

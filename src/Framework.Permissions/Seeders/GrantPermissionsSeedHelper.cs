@@ -8,7 +8,11 @@ namespace Framework.Permissions.Seeders;
 
 public interface IGrantPermissionsSeedHelper
 {
-    ValueTask GrantAllPermissionsToRoleAsync(string roleName, string? tenantId = null);
+    ValueTask GrantAllPermissionsToRoleAsync(
+        string roleName,
+        string? tenantId = null,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public sealed class GrantPermissionsSeedHelper(
@@ -18,12 +22,21 @@ public sealed class GrantPermissionsSeedHelper(
     ICurrentTenant currentTenant
 ) : IGrantPermissionsSeedHelper
 {
-    public async ValueTask GrantAllPermissionsToRoleAsync(string roleName, string? tenantId = null)
+    public async ValueTask GrantAllPermissionsToRoleAsync(
+        string roleName,
+        string? tenantId = null,
+        CancellationToken cancellationToken = default
+    )
     {
         using var _ = currentTenant.Change(tenantId);
 
-        var allPermissionNames = await _GetAllPermissionNamesAsync();
-        var existsPermissionGrants = await _GetExistsPermissionGrantsAsync(roleName, allPermissionNames);
+        var allPermissionNames = await _GetAllPermissionNamesAsync(cancellationToken);
+
+        var existsPermissionGrants = await _GetExistsPermissionGrantsAsync(
+            roleName,
+            allPermissionNames,
+            cancellationToken
+        );
 
         var notExistPermissionGrants = allPermissionNames
             .Except(existsPermissionGrants, StringComparer.Ordinal)
@@ -35,15 +48,20 @@ public sealed class GrantPermissionsSeedHelper(
                 tenantId: currentTenant.Id
             ));
 
-        await permissionGrantRepository.InsertManyAsync(notExistPermissionGrants);
+        await permissionGrantRepository.InsertManyAsync(notExistPermissionGrants, cancellationToken);
     }
 
-    private async Task<List<string>> _GetExistsPermissionGrantsAsync(string roleName, string[] allPermissionNames)
+    private async Task<List<string>> _GetExistsPermissionGrantsAsync(
+        string roleName,
+        string[] allPermissionNames,
+        CancellationToken cancellationToken = default
+    )
     {
         var permissionGrants = await permissionGrantRepository.GetListAsync(
             allPermissionNames,
             RolePermissionValueProvider.ProviderName,
-            roleName
+            roleName,
+            cancellationToken
         );
 
         var existsPermissionGrants = permissionGrants.ConvertAll(x => x.Name);
@@ -51,9 +69,9 @@ public sealed class GrantPermissionsSeedHelper(
         return existsPermissionGrants;
     }
 
-    private async Task<string[]> _GetAllPermissionNamesAsync()
+    private async Task<string[]> _GetAllPermissionNamesAsync(CancellationToken cancellationToken = default)
     {
-        var permissions = await permissionDefinitionManager.GetAllPermissionsAsync();
+        var permissions = await permissionDefinitionManager.GetPermissionsAsync(cancellationToken);
 
         var permissionNames = permissions
             .Where(p =>

@@ -5,8 +5,6 @@ using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Models;
 using Framework.Settings.ValueProviders;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Values;
 
@@ -14,7 +12,7 @@ namespace Framework.Settings.Values;
 public interface ISettingManager
 {
     /// <summary>Get feature value by name.</summary>
-    /// <param name="name">The feature name.</param>
+    /// <param name="settingName">The feature name.</param>
     /// <param name="providerName">
     /// If the providerName isn't provided, it will get the value from the first provider that has the value
     /// by the order of the registered providers.
@@ -26,7 +24,7 @@ public interface ISettingManager
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns></returns>
     Task<string?> GetOrDefaultAsync(
-        string name,
+        string settingName,
         string? providerName,
         string? providerKey,
         bool fallback = true,
@@ -41,7 +39,7 @@ public interface ISettingManager
     );
 
     Task SetAsync(
-        string name,
+        string settingName,
         string? value,
         string providerName,
         string? providerKey,
@@ -60,17 +58,17 @@ public sealed class SettingManager(
 ) : ISettingManager
 {
     public Task<string?> GetOrDefaultAsync(
-        string name,
+        string settingName,
         string? providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(name);
+        Argument.IsNotNull(settingName);
         Argument.IsNotNull(providerName);
 
-        return _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
+        return _CoreGetOrDefaultAsync(settingName, providerName, providerKey, fallback, cancellationToken);
     }
 
     public async Task<List<SettingValue>> GetAllAsync(
@@ -139,7 +137,7 @@ public sealed class SettingManager(
     }
 
     public async Task SetAsync(
-        string name,
+        string settingName,
         string? value,
         string providerName,
         string? providerKey,
@@ -147,12 +145,12 @@ public sealed class SettingManager(
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(name);
+        Argument.IsNotNull(settingName);
         Argument.IsNotNull(providerName);
 
         var setting =
-            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new InvalidOperationException($"Undefined setting: {name}");
+            await definitionManager.GetOrDefaultAsync(settingName, cancellationToken)
+            ?? throw new InvalidOperationException($"Undefined setting: {settingName}");
 
         var providers = valueProviderManager
             .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -171,7 +169,7 @@ public sealed class SettingManager(
         if (providers.Count > 1 && !forceToSet && setting.IsInherited && value is not null)
         {
             var fallbackValue = await _CoreGetOrDefaultAsync(
-                name,
+                settingName,
                 providers[1].Name,
                 providerKey: null,
                 cancellationToken: cancellationToken
