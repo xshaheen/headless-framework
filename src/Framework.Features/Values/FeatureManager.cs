@@ -4,8 +4,6 @@ using Framework.Features.Definitions;
 using Framework.Features.Models;
 using Framework.Features.ValueProviders;
 using Framework.Kernel.Checks;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Framework.Features.Values;
 
@@ -75,7 +73,7 @@ public sealed class FeatureManager(
     {
         Argument.IsNotNull(providerName);
 
-        var definitions = await featureDefinitionManager.GetAllFeaturesAsync(cancellationToken);
+        var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken);
 
         var providers = featureValueProviderManager.ValueProviders.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
@@ -127,7 +125,7 @@ public sealed class FeatureManager(
         Argument.IsNotNull(providerName);
 
         var feature =
-            await featureDefinitionManager.GetOrDefaultFeatureAsync(name, cancellationToken)
+            await featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined feature: {name}");
 
         var providers = featureValueProviderManager
@@ -204,7 +202,7 @@ public sealed class FeatureManager(
         foreach (var featureNameValue in featureNameValues)
         {
             var feature =
-                await featureDefinitionManager.GetOrDefaultFeatureAsync(featureNameValue.Name, cancellationToken)
+                await featureDefinitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
                 ?? throw new InvalidOperationException($"Undefined feature: {featureNameValue.Name}");
 
             foreach (var provider in writableProviders)
@@ -225,7 +223,7 @@ public sealed class FeatureManager(
         Argument.IsNotNull(name);
 
         var definition =
-            await featureDefinitionManager.GetOrDefaultFeatureAsync(name, cancellationToken)
+            await featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined feature: {name}");
 
         IEnumerable<IFeatureValueReadProvider> providers = featureValueProviderManager.ValueProviders;

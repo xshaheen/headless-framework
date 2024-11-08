@@ -42,7 +42,7 @@ public sealed class FeatureChecker(
     public async Task<string?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
         var featureDefinition =
-            await featureDefinitionManager.GetOrDefaultFeatureAsync(name, cancellationToken)
+            await featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Feature {name} is not defined!");
 
         IEnumerable<IFeatureValueReadProvider> providers = featureValueProviderManager.ValueProviders;

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.Diagnostics;
+using Framework.Kernel.BuildingBlocks.Extensions.System;
 using Framework.Kernel.Checks;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +12,7 @@ using Testcontainers.PostgreSql;
 
 namespace Tests.TestSetup;
 
-public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
+public sealed class FeaturesTestFixture : IAsyncLifetime, IDisposable
 {
     private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
     private AsyncLazy<Respawner>? _respawner;
@@ -23,6 +25,7 @@ public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
         await _postgreSqlContainer.StartAsync();
         ConnectionString = _postgreSqlContainer.GetConnectionString();
         _respawner = new(() => _CreateRespawnerAsync(ConnectionString));
+        await _RunMigrationAsync(ConnectionString);
     }
 
     /// <summary>This runs after all the tests run</summary>
@@ -41,10 +44,10 @@ public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
         await respawner.ResetAsync(ConnectionString);
     }
 
-    public IServiceProvider CreateSettingsServiceProvider()
+    public IServiceProvider CreateFeaturesServiceProvider()
     {
         var serviceCollection = new ServiceCollection();
-        serviceCollection.ConfigureServices(ConnectionString);
+        serviceCollection.ConfigureFeaturesServices(ConnectionString);
         return serviceCollection.BuildServiceProvider();
     }
 
@@ -59,13 +62,35 @@ public sealed class SettingsTestFixture : IAsyncLifetime, IDisposable
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
         return new PostgreSqlBuilder()
-            .WithDatabase("SettingsTest")
+            .WithDatabase("FeaturesTest")
             .WithUsername("postgres")
             .WithPassword("postgres")
             .WithPortBinding(5432)
             .Build();
     }
+
+    private static async Task _RunMigrationAsync(string connectionString)
+    {
+        var ps = new ProcessStartInfo
+        {
+            FileName = "./TestSetup/postgre-init.exe",
+            Arguments = $"--connection \"{connectionString}\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        var result = await ps.RunAsTaskAsync();
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Migration failed with exit code {result.ExitCode.ToString(CultureInfo.InvariantCulture)}. Output: {result.Output}"
+            );
+        }
+    }
 }
 
-[CollectionDefinition(nameof(SettingsTestFixture))]
-public sealed class SettingsTestCollection : ICollectionFixture<SettingsTestFixture>;
+[CollectionDefinition(nameof(FeaturesTestFixture))]
+public sealed class FeaturesTestCollection : ICollectionFixture<FeaturesTestFixture>;

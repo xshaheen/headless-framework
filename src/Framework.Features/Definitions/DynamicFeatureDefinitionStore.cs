@@ -240,7 +240,7 @@ public sealed class DynamicFeatureDefinitionStore(
 
         var elapsedSinceLastCheck = timeProvider.GetUtcNow().Subtract(_lastCheckTime.Value);
 
-        return elapsedSinceLastCheck.TotalSeconds > 30;
+        return elapsedSinceLastCheck > _options.DynamicDefinitionsMemoryCacheExpiration;
     }
 
     public void Dispose()

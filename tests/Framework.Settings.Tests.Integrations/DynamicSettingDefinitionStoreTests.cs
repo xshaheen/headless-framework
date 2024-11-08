@@ -25,7 +25,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
         hostBuilder.Services.Configure<SettingManagementOptions>(options =>
         {
             options.IsDynamicSettingStoreEnabled = true;
-            options.DynamicSettingDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
+            options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
         });
 
         var host = hostBuilder.Build();

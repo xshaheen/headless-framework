@@ -7,11 +7,11 @@ namespace Framework.Features.Definitions;
 
 public interface IFeatureDefinitionManager
 {
-    Task<FeatureDefinition?> GetOrDefaultFeatureAsync(string name, CancellationToken cancellationToken = default);
+    Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<FeatureDefinition>> GetAllFeaturesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<FeatureGroupDefinition>> GetAllGroupsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class FeatureDefinitionManager(
@@ -19,10 +19,7 @@ public sealed class FeatureDefinitionManager(
     IDynamicFeatureDefinitionStore dynamicStore
 ) : IFeatureDefinitionManager
 {
-    public async Task<FeatureDefinition?> GetOrDefaultFeatureAsync(
-        string name,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(name);
 
@@ -30,9 +27,7 @@ public sealed class FeatureDefinitionManager(
             ?? await dynamicStore.GetOrDefaultAsync(name, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FeatureDefinition>> GetAllFeaturesAsync(
-        CancellationToken cancellationToken = default
-    )
+    public async Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default)
     {
         var staticFeatures = await staticStore.GetFeaturesAsync(cancellationToken);
         var staticFeatureNames = staticFeatures.Select(p => p.Name).ToImmutableHashSet();
@@ -44,7 +39,7 @@ public sealed class FeatureDefinitionManager(
         return staticFeatures.Concat(uniqueDynamicFeatures).ToImmutableList();
     }
 
-    public async Task<IReadOnlyList<FeatureGroupDefinition>> GetAllGroupsAsync(
+    public async Task<IReadOnlyList<FeatureGroupDefinition>> GetGroupsAsync(
         CancellationToken cancellationToken = default
     )
     {

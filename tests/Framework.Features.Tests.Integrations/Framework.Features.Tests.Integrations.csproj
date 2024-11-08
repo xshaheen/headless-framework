@@ -20,13 +20,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Local\Framework.ResourceLocks.Local.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="TestSetup\postgre-init.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="TestSetup\postgre-init.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
