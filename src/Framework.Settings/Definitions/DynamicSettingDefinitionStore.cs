@@ -172,7 +172,7 @@ public sealed class DynamicSettingDefinitionStore(
 
         var elapsedSinceLastCheck = timeProvider.GetUtcNow().Subtract(_lastCheckTime.Value);
 
-        return elapsedSinceLastCheck.TotalSeconds > 30;
+        return elapsedSinceLastCheck > _options.DynamicSettingDefinitionsMemoryCacheExpiration;
     }
 
     public void Dispose()

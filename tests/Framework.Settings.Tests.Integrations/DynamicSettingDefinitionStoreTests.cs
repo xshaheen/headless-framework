@@ -20,7 +20,15 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     public async Task should_save_defined_settings_when_call_SaveAsync()
     {
         // given
-        var host = _CreateSettingsHost();
+        var hostBuilder = _CreateSettingsHostBuilder();
+
+        hostBuilder.Services.Configure<SettingManagementOptions>(options =>
+        {
+            options.IsDynamicSettingStoreEnabled = true;
+            options.DynamicSettingDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
+        });
+
+        var host = hostBuilder.Build();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
@@ -45,18 +53,12 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
         }
     }
 
-    private IHost _CreateSettingsHost()
+    private HostApplicationBuilder _CreateSettingsHostBuilder()
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
         builder.Services.ConfigureSettingsServices(fixture.ConnectionString);
-        builder.Services.Configure<SettingManagementOptions>(options =>
-        {
-            options.SaveStaticSettingsToDatabase = false;
-            options.IsDynamicSettingStoreEnabled = true;
-        });
-        var host = builder.Build();
 
-        return host;
+        return builder;
     }
 }
