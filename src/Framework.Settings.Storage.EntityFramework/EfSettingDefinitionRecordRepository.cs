@@ -12,8 +12,9 @@ public sealed class EfSettingDefinitionRecordRepository(IDbContextFactory<Settin
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        var list = await db.SettingDefinitions.ToListAsync(cancellationToken);
 
-        return await db.SettingDefinitions.ToListAsync(cancellationToken);
+        return list;
     }
 
     public async Task SaveAsync(
