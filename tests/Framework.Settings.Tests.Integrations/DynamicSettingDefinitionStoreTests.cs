@@ -3,7 +3,6 @@
 using Framework.Settings;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
-using Framework.Settings.Storage.EntityFramework;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
@@ -21,7 +20,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     public async Task should_save_defined_settings_when_call_SaveAsync()
     {
         // given
-        var host = await _CreateSettingsHostAsync();
+        var host = _CreateSettingsHost();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
@@ -33,6 +32,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
 
         // then
         beforeDefinitions.Should().BeEmpty();
+        afterDefinitions.Should().NotBeEmpty();
         afterDefinitions.Should().BeEquivalentTo(_SettingDefinitions);
     }
 
@@ -45,14 +45,17 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
         }
     }
 
-    private async Task<IHost> _CreateSettingsHostAsync()
+    private IHost _CreateSettingsHost()
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
         builder.Services.ConfigureSettingsServices(fixture.ConnectionString);
+        builder.Services.Configure<SettingManagementOptions>(options =>
+        {
+            options.SaveStaticSettingsToDatabase = false;
+            options.IsDynamicSettingStoreEnabled = true;
+        });
         var host = builder.Build();
-
-        await host.Services.MigrateDbContextAsync<SettingsDbContext>();
 
         return host;
     }
