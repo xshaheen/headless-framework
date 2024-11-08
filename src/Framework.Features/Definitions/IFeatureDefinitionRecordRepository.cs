@@ -17,6 +17,6 @@ public interface IFeatureDefinitionRecordRepository
         List<FeatureDefinitionRecord> newFeatures,
         List<FeatureDefinitionRecord> updatedFeatures,
         List<FeatureDefinitionRecord> deletedFeatures,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     );
 }

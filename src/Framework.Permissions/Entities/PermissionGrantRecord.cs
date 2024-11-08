@@ -4,29 +4,30 @@ using Framework.Kernel.Domains;
 
 namespace Framework.Permissions.Entities;
 
-public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant<Guid?>
+public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant<string?>
 {
     public string Name { get; private set; }
 
     public string ProviderName { get; private set; }
 
-    public string? ProviderKey { get; private set; }
+    public string ProviderKey { get; private set; }
 
-    public Guid? TenantId { get; private set; }
+    public string? TenantId { get; private set; }
 
     private PermissionGrantRecord()
     {
         Name = default!;
         ProviderName = default!;
+        ProviderKey = default!;
     }
 
     [SetsRequiredMembers]
-    public PermissionGrantRecord(Guid id, string name, string providerName, string? providerKey, Guid? tenantId = null)
+    public PermissionGrantRecord(Guid id, string name, string providerName, string providerKey, string? tenantId = null)
     {
         Id = id;
         Name = Argument.IsNotNullOrWhiteSpace(name);
         ProviderName = Argument.IsNotNullOrWhiteSpace(providerName);
-        ProviderKey = providerKey;
+        ProviderKey = Argument.IsNotNullOrWhiteSpace(providerKey);
         TenantId = tenantId;
     }
 }
