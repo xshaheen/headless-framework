@@ -16,32 +16,22 @@ public abstract class StorePermissionValueProvider(
 
     public async Task<PermissionGrantResult> CheckAsync(
         PermissionDefinition permission,
+        ICurrentUser currentUser,
         string providerName,
-        string providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        var result = await CheckAsync([permission], providerName, providerKey, cancellationToken);
+        var result = await CheckAsync([permission], currentUser, providerName, cancellationToken);
 
         return result.Result.First().Value;
     }
 
-    public async Task<MultiplePermissionGrantResult> CheckAsync(
-        List<PermissionDefinition> permissions,
+    public abstract Task<MultiplePermissionGrantResult> CheckAsync(
+        IReadOnlyCollection<PermissionDefinition> permissions,
+        ICurrentUser currentUser,
         string providerName,
-        string providerKey,
         CancellationToken cancellationToken = default
-    )
-    {
-        var permissionNames = permissions.ConvertAll(x => x.Name);
-
-        if (!string.Equals(providerName, Name, StringComparison.Ordinal))
-        {
-            return new MultiplePermissionGrantResult(permissionNames);
-        }
-
-        return await permissionGrantStore.IsGrantedAsync(permissionNames, Name, providerKey, cancellationToken);
-    }
+    );
 
     public Task SetAsync(
         PermissionDefinition permission,

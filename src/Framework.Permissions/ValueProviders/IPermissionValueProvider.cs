@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Permissions.Entities;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 
@@ -14,12 +13,14 @@ public interface IPermissionValueProvider
     Task<PermissionGrantResult> CheckAsync(
         PermissionDefinition permission,
         ICurrentUser currentUser,
+        string providerName,
         CancellationToken cancellationToken = default
     );
 
     Task<MultiplePermissionGrantResult> CheckAsync(
-        List<PermissionDefinition> permissions,
+        IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
+        string providerName,
         CancellationToken cancellationToken = default
     );
 

@@ -105,7 +105,7 @@ public static class ClaimsPrincipalExtensions
         return claimsIdentity?.FindFirst(FrameworkClaimTypes.TenantId)?.Value;
     }
 
-    public static string? GetUserType(this ClaimsPrincipal? principal)
+    public static string? GetAccountType(this ClaimsPrincipal? principal)
     {
         return principal?.FindFirst(FrameworkClaimTypes.AccountType)?.Value;
     }
@@ -119,12 +119,12 @@ public static class ClaimsPrincipalExtensions
         );
     }
 
-    public static IReadOnlyList<string> GetRoles(this ClaimsPrincipal principal)
+    public static ImmutableHashSet<string> GetRoles(this ClaimsPrincipal principal)
     {
         var roles = principal
             .Claims.Where(claim => string.Equals(claim.Type, FrameworkClaimTypes.Roles, StringComparison.Ordinal))
             .Select(claim => claim.Value)
-            .ToList();
+            .ToImmutableHashSet(StringComparer.Ordinal);
 
         return roles;
     }

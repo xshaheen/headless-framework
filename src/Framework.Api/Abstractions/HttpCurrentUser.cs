@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Security.Claims;
-using Framework.Api.Security.Claims;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Primitives;
 
@@ -13,11 +12,11 @@ public sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurre
 
     public UserId? UserId => accessor.Principal.GetUserId();
 
-    public string? UserType => accessor.Principal.GetUserType();
+    public string? AccountType => accessor.Principal.GetAccountType();
 
     public AccountId? AccountId => accessor.Principal.GetAccountId();
 
-    public IReadOnlyList<string> Roles => accessor.Principal.GetRoles();
+    public IReadOnlySet<string> Roles => accessor.Principal.GetRoles();
 
     public Claim? FindClaim(string claimType)
     {

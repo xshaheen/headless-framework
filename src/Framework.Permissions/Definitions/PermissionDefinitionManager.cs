@@ -7,11 +7,11 @@ namespace Framework.Permissions.Definitions;
 
 public interface IPermissionDefinitionManager
 {
-    Task<PermissionDefinition?> GetOrDefaultPermissionAsync(string name, CancellationToken cancellationToken = default);
+    Task<PermissionDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<PermissionDefinition>> GetAllPermissionsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PermissionDefinition>> GetPermissionsAsync(CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<PermissionGroupDefinition>> GetAllGroupsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PermissionGroupDefinition>> GetGroupsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class PermissionDefinitionManager(
@@ -19,7 +19,7 @@ public sealed class PermissionDefinitionManager(
     IDynamicPermissionDefinitionStore dynamicStore
 ) : IPermissionDefinitionManager
 {
-    public async Task<PermissionDefinition?> GetOrDefaultPermissionAsync(
+    public async Task<PermissionDefinition?> GetOrDefaultAsync(
         string name,
         CancellationToken cancellationToken = default
     )
@@ -30,7 +30,7 @@ public sealed class PermissionDefinitionManager(
             ?? await dynamicStore.GetOrDefaultAsync(name, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<PermissionDefinition>> GetAllPermissionsAsync(
+    public async Task<IReadOnlyList<PermissionDefinition>> GetPermissionsAsync(
         CancellationToken cancellationToken = default
     )
     {
@@ -43,7 +43,7 @@ public sealed class PermissionDefinitionManager(
         return staticPermissions.Concat(uniqueDynamicPermissions).ToImmutableList();
     }
 
-    public async Task<IReadOnlyList<PermissionGroupDefinition>> GetAllGroupsAsync(
+    public async Task<IReadOnlyList<PermissionGroupDefinition>> GetGroupsAsync(
         CancellationToken cancellationToken = default
     )
     {
