@@ -4,9 +4,9 @@ using System.Security.Claims;
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Framework.Permissions.Definitions;
+using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
-using Framework.Permissions.Values;
 
 namespace Framework.Permissions.Checkers;
 
@@ -15,7 +15,10 @@ public interface IPermissionChecker
 {
     Task<bool> IsGrantedAsync(string name, CancellationToken cancellationToken = default);
 
-    Task<MultiplePermissionGrantResult> IsGrantedAsync(string[] names, CancellationToken cancellationToken = default);
+    Task<MultiplePermissionGrantResult> IsGrantedAsync(
+        IReadOnlyCollection<string> names,
+        CancellationToken cancellationToken = default
+    );
 
     Task<bool> IsGrantedAsync(
         ClaimsPrincipal? claimsPrincipal,
@@ -34,7 +37,7 @@ public sealed class PermissionChecker(
     ICurrentPrincipalAccessor principalAccessor,
     IPermissionDefinitionManager permissionDefinitionManager,
     ICurrentTenant currentTenant,
-    IPermissionValueProviderManager permissionValueProviderManager
+    IPermissionGrantProviderManager permissionValueProviderManager
 ) : IPermissionChecker
 {
     public async Task<bool> IsGrantedAsync(string name, CancellationToken cancellationToken = default)
@@ -50,7 +53,7 @@ public sealed class PermissionChecker(
     {
         Argument.IsNotNull(name);
 
-        var permission = await permissionDefinitionManager.GetOrDefaultPermissionAsync(name, cancellationToken);
+        var permission = await permissionDefinitionManager.GetOrDefaultAsync(name, cancellationToken);
 
         if (permission is null)
         {
@@ -62,20 +65,8 @@ public sealed class PermissionChecker(
             return false;
         }
 
-        if (!await StateCheckerManager.IsEnabledAsync(permission))
-        {
-            return false;
-        }
-
-        var multiTenancySide = claimsPrincipal?.GetMultiTenancySide() ?? currentTenant.GetMultiTenancySide();
-
-        if (!permission.MultiTenancySide.HasFlag(multiTenancySide))
-        {
-            return false;
-        }
-
         var isGranted = false;
-        var context = new PermissionValueCheckContext(permission, claimsPrincipal);
+        var context = new PermissionValueCheckContext();
 
         foreach (var provider in permissionValueProviderManager.ValueProviders)
         {
@@ -100,7 +91,7 @@ public sealed class PermissionChecker(
     }
 
     public async Task<MultiplePermissionGrantResult> IsGrantedAsync(
-        string[] names,
+        IReadOnlyCollection<string> names,
         CancellationToken cancellationToken = default
     )
     {
@@ -122,28 +113,22 @@ public sealed class PermissionChecker(
             return result;
         }
 
-        var multiTenancySide = claimsPrincipal?.GetMultiTenancySide() ?? currentTenant.GetMultiTenancySide();
-
         var permissionDefinitions = new List<PermissionDefinition>();
 
         foreach (var name in names)
         {
-            var permission = await permissionDefinitionManager.GetOrDefaultPermissionAsync(name, cancellationToken);
+            var permission = await permissionDefinitionManager.GetOrDefaultAsync(name, cancellationToken);
 
             if (permission is null)
             {
-                result.Result.Add(name, PermissionGrantStatus.Prohibited);
+                result.Add(name, PermissionGrantStatus.Prohibited);
 
                 continue;
             }
 
-            result.Result.Add(name, PermissionGrantStatus.Undefined);
+            result.Add(name, PermissionGrantStatus.Undefined);
 
-            if (
-                permission.IsEnabled
-                && await StateCheckerManager.IsEnabledAsync(permission)
-                && permission.MultiTenancySide.HasFlag(multiTenancySide)
-            )
+            if (permission.IsEnabled)
             {
                 permissionDefinitions.Add(permission);
             }
@@ -166,8 +151,8 @@ public sealed class PermissionChecker(
 
             foreach (
                 var grantResult in multipleResult.Result.Where(grantResult =>
-                    result.Result.ContainsKey(grantResult.Key)
-                    && result.Result[grantResult.Key].Status == PermissionGrantStatus.Undefined
+                    result.ContainsKey(grantResult.Key)
+                    && result[grantResult.Key].Status == PermissionGrantStatus.Undefined
                     && grantResult.Value != PermissionGrantStatus.Undefined
                 )
             )

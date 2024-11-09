@@ -5,11 +5,11 @@ using Framework.Permissions.Checkers;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Filters;
+using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Seeders;
 using Framework.Permissions.Testing;
 using Framework.Permissions.ValueProviders;
-using Framework.Permissions.Values;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -50,6 +50,14 @@ public static class AddPermissionsExtensions
         services.TryAddSingleton<IDynamicPermissionDefinitionStore, DynamicPermissionDefinitionStore>();
         services.TryAddSingleton<IPermissionDefinitionManager, PermissionDefinitionManager>();
 
+        // Value Services
+        /*
+         * You need to provide a storage implementation for `IPermissionGrantRecordRepository`
+         */
+        services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
+        services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
+        services.TryAddSingleton<IPermissionManager, PermissionManager>();
+
         return services;
     }
 
@@ -64,16 +72,16 @@ public static class AddPermissionsExtensions
         });
     }
 
-    public static void AddPermissionValueProvider<T>(this IServiceCollection services)
+    public static void AddPermissionGrantProvider<T>(this IServiceCollection services)
         where T : class, IPermissionValueProvider
     {
         services.AddSingleton<T>();
 
         services.Configure<PermissionManagementProvidersOptions>(options =>
         {
-            if (!options.ValueProviders.Contains<T>())
+            if (!options.GrantProviders.Contains<T>())
             {
-                options.ValueProviders.Add<T>();
+                options.GrantProviders.Add<T>();
             }
         });
     }
@@ -96,8 +104,8 @@ public static class AddPermissionsExtensions
         services.Configure<PermissionManagementProvidersOptions>(options =>
         {
             // Last added provider has the highest priority
-            options.ValueProviders.Add<RolePermissionValueProvider>();
-            options.ValueProviders.Add<UserPermissionValueProvider>();
+            options.GrantProviders.Add<RolePermissionValueProvider>();
+            options.GrantProviders.Add<UserPermissionValueProvider>();
         });
 
         services.TryAddSingleton<IPermissionValueProvider, RolePermissionValueProvider>();

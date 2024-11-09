@@ -1,6 +1,6 @@
 ﻿using Framework.Permissions.Entities;
 
-namespace Framework.Permissions.Values;
+namespace Framework.Permissions.Grants;
 
 public interface IPermissionGrantRepository
 {
@@ -18,7 +18,7 @@ public interface IPermissionGrantRepository
     );
 
     Task<List<PermissionGrantRecord>> GetListAsync(
-        string[] names,
+        IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
@@ -26,14 +26,12 @@ public interface IPermissionGrantRepository
 
     Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default);
 
-    Task UpdateAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default);
-
-    Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken);
-
     Task InsertManyAsync(
         IEnumerable<PermissionGrantRecord> permissionGrants,
         CancellationToken cancellationToken = default
     );
+
+    Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken);
 
     Task DeleteManyAsync(
         IEnumerable<PermissionGrantRecord> permissionGrants,

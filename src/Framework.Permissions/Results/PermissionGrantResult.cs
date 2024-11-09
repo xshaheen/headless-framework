@@ -1,10 +1,33 @@
-﻿namespace Framework.Permissions.Results;
+﻿using Framework.Kernel.Checks;
 
-public sealed record PermissionGrantResult(PermissionGrantStatus Status, string? ProviderKey = null)
+namespace Framework.Permissions.Results;
+
+public sealed class PermissionGrantResult
 {
-    public static PermissionGrantResult Prohibited { get; } = new(PermissionGrantStatus.Prohibited);
+    private PermissionGrantResult() { }
 
-    public static PermissionGrantResult Granted { get; } = new(PermissionGrantStatus.Granted);
+    public required PermissionGrantStatus Status { get; init; }
 
-    public static PermissionGrantResult Undefined { get; } = new(PermissionGrantStatus.Undefined);
+    public required IReadOnlyCollection<string> ProviderKeys { get; init; }
+
+    public static PermissionGrantResult Granted(IReadOnlyCollection<string> providerKeys)
+    {
+        Argument.IsNotNullOrEmpty(providerKeys);
+
+        return new PermissionGrantResult { Status = PermissionGrantStatus.Granted, ProviderKeys = providerKeys };
+    }
+
+    public static PermissionGrantResult Prohibited(IReadOnlyCollection<string> providerKeys)
+    {
+        Argument.IsNotNullOrEmpty(providerKeys);
+
+        return new PermissionGrantResult { Status = PermissionGrantStatus.Prohibited, ProviderKeys = providerKeys };
+    }
+
+    public static PermissionGrantResult Undefined(IReadOnlyCollection<string> providerKeys)
+    {
+        Argument.IsNotNull(providerKeys);
+
+        return new PermissionGrantResult { Status = PermissionGrantStatus.Undefined, ProviderKeys = providerKeys };
+    }
 }

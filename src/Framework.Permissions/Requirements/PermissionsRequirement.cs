@@ -2,7 +2,6 @@
 
 using Framework.Kernel.Checks;
 using Framework.Permissions.Checkers;
-using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 using Microsoft.AspNetCore.Authorization;
 
@@ -35,7 +34,7 @@ public sealed class PermissionsRequirementHandler(IPermissionChecker checker)
         if (
             requirement.RequiresAll
                 ? multiplePermissionGrantResult.AllGranted
-                : multiplePermissionGrantResult.Result.Any(x => x.Value.Status is PermissionGrantStatus.Granted)
+                : multiplePermissionGrantResult.Any(x => x.Value.Status is PermissionGrantStatus.Granted)
         )
         {
             context.Succeed(requirement);

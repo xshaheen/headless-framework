@@ -2,19 +2,17 @@
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
+using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
-using Framework.Permissions.Values;
 
 namespace Framework.Permissions.ValueProviders;
 
 [PublicAPI]
-public sealed class RolePermissionValueProvider(
-    IPermissionGrantStore permissionGrantStore,
-    ICurrentTenant currentTenant
-) : StorePermissionValueProvider(permissionGrantStore, currentTenant)
+public sealed class RolePermissionValueProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
+    : StorePermissionValueProvider(grantStore, currentTenant)
 {
-    private readonly IPermissionGrantStore _permissionGrantStore = permissionGrantStore;
+    private readonly IPermissionGrantStore _grantStore = grantStore;
 
     public const string ProviderName = "Role";
 
@@ -23,54 +21,50 @@ public sealed class RolePermissionValueProvider(
     public override async Task<MultiplePermissionGrantResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
-        string providerName,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(permissions);
 
         var permissionNames = permissions.Select(x => x.Name).Distinct(StringComparer.Ordinal).ToArray();
-        var result = new MultiplePermissionGrantResult(permissionNames);
-
-        if (!string.Equals(providerName, Name, StringComparison.Ordinal))
-        {
-            return new MultiplePermissionGrantResult(permissionNames);
-        }
-
         var roles = currentUser.Roles;
 
         if (roles.Count == 0)
         {
-            return result;
+            return new MultiplePermissionGrantResult(permissionNames, roles, PermissionGrantStatus.Undefined);
         }
+
+        // Assume all are undefined by default
+        var result = new MultiplePermissionGrantResult(permissionNames, roles, PermissionGrantStatus.Undefined);
 
         foreach (var role in roles)
         {
-            var multipleResult = await _permissionGrantStore.IsGrantedAsync(
+            var roleGrantStatusResults = await _grantStore.IsGrantedAsync(
                 names: permissionNames,
                 providerName: Name,
                 providerKey: role,
                 cancellationToken: cancellationToken
             );
 
-            var keyValuePairs = multipleResult.Result.Where(grantResult =>
-                result.Result.ContainsKey(grantResult.Key)
-                && result.Result[grantResult.Key].Status is PermissionGrantStatus.Undefined
-                && grantResult.Value.Status is not PermissionGrantStatus.Undefined
+            var foundedStatuses = roleGrantStatusResults.Where(newStatus =>
+                newStatus.Value is not PermissionGrantStatus.Undefined
+                && result.TryGetValue(newStatus.Key, out var existStatus)
+                && existStatus.Status is PermissionGrantStatus.Undefined
             );
 
-            foreach (var (key, grantResult) in keyValuePairs)
+            foreach (var (permissionName, grantStatus) in foundedStatuses)
             {
-                result.Result[key] = grantResult;
-                permissionNames.RemoveAll(x => string.Equals(x, key, StringComparison.Ordinal));
+                result[permissionName] = grantStatus switch
+                {
+                    PermissionGrantStatus.Granted => PermissionGrantResult.Granted([role]),
+                    PermissionGrantStatus.Prohibited => PermissionGrantResult.Prohibited([role]),
+                    _ => PermissionGrantResult.Undefined(roles),
+                };
+
+                permissionNames.RemoveAll(name => string.Equals(name, permissionName, StringComparison.Ordinal));
             }
 
-            if (result.AllGranted || result.AllProhibited)
-            {
-                break;
-            }
-
-            if (permissionNames.IsNullOrEmpty())
+            if (result.AllGranted || result.AllProhibited || permissionNames.Length == 0)
             {
                 break;
             }

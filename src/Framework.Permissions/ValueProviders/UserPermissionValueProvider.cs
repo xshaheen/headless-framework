@@ -1,19 +1,17 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
-using Framework.Permissions.Values;
 
 namespace Framework.Permissions.ValueProviders;
 
 [PublicAPI]
-public sealed class UserPermissionValueProvider(
-    IPermissionGrantStore permissionGrantStore,
-    ICurrentTenant currentTenant
-) : StorePermissionValueProvider(permissionGrantStore, currentTenant)
+public sealed class UserPermissionValueProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
+    : StorePermissionValueProvider(grantStore, currentTenant)
 {
-    private readonly IPermissionGrantStore _permissionGrantStore = permissionGrantStore;
+    private readonly IPermissionGrantStore _grantStore = grantStore;
 
     public const string ProviderName = "User";
 
@@ -22,24 +20,41 @@ public sealed class UserPermissionValueProvider(
     public override async Task<MultiplePermissionGrantResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
-        string providerName,
         CancellationToken cancellationToken = default
     )
     {
         var permissionNames = permissions.Select(x => x.Name).ToList();
-
-        if (!string.Equals(providerName, Name, StringComparison.Ordinal))
-        {
-            return new MultiplePermissionGrantResult(permissionNames);
-        }
-
         var userId = currentUser.UserId?.ToString();
 
         if (userId is null)
         {
-            return new MultiplePermissionGrantResult(permissionNames);
+            return new MultiplePermissionGrantResult(permissionNames, [], PermissionGrantStatus.Undefined);
         }
 
-        return await _permissionGrantStore.IsGrantedAsync(permissionNames, Name, userId, cancellationToken);
+        var result = new MultiplePermissionGrantResult();
+        var statusMap = await _grantStore.IsGrantedAsync(permissionNames, Name, userId, cancellationToken);
+
+        foreach (var permission in permissions)
+        {
+            string[] providerKeys = [userId];
+
+            if (!statusMap.TryGetValue(permission.Name, out var status))
+            {
+                result.Add(permission.Name, PermissionGrantResult.Undefined(providerKeys));
+
+                continue;
+            }
+
+            var permissionGrantResult = status switch
+            {
+                PermissionGrantStatus.Granted => PermissionGrantResult.Granted(providerKeys),
+                PermissionGrantStatus.Prohibited => PermissionGrantResult.Prohibited(providerKeys),
+                _ => PermissionGrantResult.Undefined(providerKeys),
+            };
+
+            result.Add(permission.Name, permissionGrantResult);
+        }
+
+        return result;
     }
 }

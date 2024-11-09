@@ -10,18 +10,18 @@ using Framework.Permissions.Results;
 using Humanizer;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.Permissions.Values;
+namespace Framework.Permissions.Grants;
 
 public interface IPermissionGrantStore
 {
-    Task<PermissionGrantResult> IsGrantedAsync(
+    Task<PermissionGrantStatus> IsGrantedAsync(
         string name,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
     );
 
-    Task<MultiplePermissionGrantResult> IsGrantedAsync(
+    Task<Dictionary<string, PermissionGrantStatus>> IsGrantedAsync(
         IReadOnlyList<string> names,
         string providerName,
         string providerKey,
@@ -36,8 +36,23 @@ public interface IPermissionGrantStore
         CancellationToken cancellationToken = default
     );
 
+    Task GrantAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string? tenantId = null,
+        CancellationToken cancellationToken = default
+    );
+
     Task RevokeAsync(
         string name,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    );
+
+    Task RevokeAsync(
+        IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
@@ -54,7 +69,7 @@ public sealed class PermissionGrantStore(
 {
     private readonly TimeSpan _cacheExpiration = 5.Hours();
 
-    public async Task<PermissionGrantResult> IsGrantedAsync(
+    public async Task<PermissionGrantStatus> IsGrantedAsync(
         string name,
         string providerName,
         string providerKey,
@@ -71,24 +86,22 @@ public sealed class PermissionGrantStore(
         {
             logger.LogDebug("Permission found in the cache: {CacheKey}", cacheKey);
 
-            var permissionIsGranted = existValueCacheItem.Value?.IsGranted switch
+            return existValueCacheItem.Value?.IsGranted switch
             {
                 true => PermissionGrantStatus.Granted,
                 false => PermissionGrantStatus.Prohibited,
                 null => PermissionGrantStatus.Undefined,
             };
-
-            return new PermissionGrantResult(permissionIsGranted, providerKey);
         }
 
         logger.LogDebug("Permission not found in the cache: {CacheKey}", cacheKey);
 
         var valueCacheItem = await _CacheAllAndGetAsync(providerName, providerKey, name, cancellationToken);
 
-        return new PermissionGrantResult(valueCacheItem, providerKey);
+        return valueCacheItem;
     }
 
-    public async Task<MultiplePermissionGrantResult> IsGrantedAsync(
+    public async Task<Dictionary<string, PermissionGrantStatus>> IsGrantedAsync(
         IReadOnlyList<string> names,
         string providerName,
         string providerKey,
@@ -100,9 +113,11 @@ public sealed class PermissionGrantStore(
         if (names.Count == 1)
         {
             var name = names[0];
-            var result = await IsGrantedAsync(name, providerName, providerKey, cancellationToken);
 
-            return new() { Result = { [name] = result } };
+            return new(StringComparer.Ordinal)
+            {
+                [name] = await IsGrantedAsync(name, providerName, providerKey, cancellationToken),
+            };
         }
 
         return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken);
@@ -136,6 +151,55 @@ public sealed class PermissionGrantStore(
         );
     }
 
+    public async Task GrantAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        string? tenantId = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNullOrEmpty(providerName);
+        Argument.IsNotNullOrEmpty(providerKey);
+
+        var distinctNames = names.ToHashSet(StringComparer.Ordinal);
+
+        var existGrantRecords = await repository.GetListAsync(
+            distinctNames,
+            providerName,
+            providerKey,
+            cancellationToken
+        );
+
+        if (existGrantRecords.Count == distinctNames.Count)
+        {
+            return;
+        }
+
+        var newRecords = distinctNames
+            .Where(name => existGrantRecords.TrueForAll(x => !string.Equals(x.Name, name, StringComparison.Ordinal)))
+            .Select(name => new PermissionGrantRecord(
+                guidGenerator.Create(),
+                name,
+                providerName,
+                providerKey,
+                tenantId
+            ));
+
+        await repository.InsertManyAsync(newRecords, cancellationToken);
+
+        var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
+        var cacheItem = new PermissionGrantCacheItem(isGranted: true);
+
+        foreach (var name in distinctNames)
+        {
+            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
+        }
+
+        await cache.UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken);
+    }
+
     public async Task RevokeAsync(
         string name,
         string providerName,
@@ -158,9 +222,45 @@ public sealed class PermissionGrantStore(
         );
     }
 
+    public async Task RevokeAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(names);
+        Argument.IsNotNullOrEmpty(providerName);
+        Argument.IsNotNullOrEmpty(providerKey);
+
+        var distinctNames = names.ToHashSet(StringComparer.Ordinal);
+
+        var existGrantRecords = await repository.GetListAsync(
+            distinctNames,
+            providerName,
+            providerKey,
+            cancellationToken
+        );
+
+        if (existGrantRecords.Count == 0)
+        {
+            return;
+        }
+
+        await repository.DeleteManyAsync(existGrantRecords, cancellationToken);
+
+        foreach (var name in names)
+        {
+            await cache.RemoveAsync(
+                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
+                cancellationToken
+            );
+        }
+    }
+
     #region Helpers
 
-    private async Task<MultiplePermissionGrantResult> _GetCachedItemsAsync(
+    private async Task<Dictionary<string, PermissionGrantStatus>> _GetCachedItemsAsync(
         IReadOnlyList<string> names,
         string providerName,
         string providerKey,
@@ -184,28 +284,26 @@ public sealed class PermissionGrantStore(
         {
             logger.LogDebug("Found in the cache: {@CacheKeys}", cacheKeys);
 
-            return new MultiplePermissionGrantResult(names, PermissionGrantStatus.Granted);
+            return names.ToDictionary(name => name, _ => PermissionGrantStatus.Granted, StringComparer.Ordinal);
         }
 
         // Some cache items aren't found in the cache, get them from the database
         logger.LogDebug("Not found in the cache: {@Names}", notCachedNames as object);
 
         var newCacheItems = await _CacheSomeAsync(notCachedNames, providerName, providerKey, cancellationToken);
-        var result = new MultiplePermissionGrantResult();
+        var result = new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal);
 
         foreach (var cacheKey in cacheKeys)
         {
             var item = newCacheItems.GetOrDefault(cacheKey) ?? cacheItemsMap.GetOrDefault(cacheKey)?.Value;
             var permissionName = _GetPermissionNameFormCacheKey(cacheKey);
 
-            var status = item?.IsGranted switch
+            result[permissionName] = item?.IsGranted switch
             {
                 true => PermissionGrantStatus.Granted,
                 false => PermissionGrantStatus.Prohibited,
                 null => PermissionGrantStatus.Undefined,
             };
-
-            result.Result[permissionName] = new PermissionGrantResult(status, providerKey);
         }
 
         return result;

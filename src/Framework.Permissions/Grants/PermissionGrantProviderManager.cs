@@ -6,14 +6,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MoreLinq.Extensions;
 
-namespace Framework.Permissions.Values;
+namespace Framework.Permissions.Grants;
 
-public interface IPermissionValueProviderManager
+public interface IPermissionGrantProviderManager
 {
     IReadOnlyList<IPermissionValueProvider> ValueProviders { get; }
 }
 
-public sealed class PermissionValueProviderManager : IPermissionValueProviderManager
+public sealed class PermissionGrantProviderManager : IPermissionGrantProviderManager
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly PermissionManagementProvidersOptions _options;
@@ -21,7 +21,7 @@ public sealed class PermissionValueProviderManager : IPermissionValueProviderMan
 
     public IReadOnlyList<IPermissionValueProvider> ValueProviders => _lazyProviders.Value;
 
-    public PermissionValueProviderManager(
+    public PermissionGrantProviderManager(
         IServiceProvider serviceProvider,
         IOptions<PermissionManagementProvidersOptions> options
     )
@@ -34,7 +34,7 @@ public sealed class PermissionValueProviderManager : IPermissionValueProviderMan
     private List<IPermissionValueProvider> _GetProviders()
     {
         var providers = _options
-            .ValueProviders.Select(type => (IPermissionValueProvider)_serviceProvider.GetRequiredService(type))
+            .GrantProviders.Select(type => (IPermissionValueProvider)_serviceProvider.GetRequiredService(type))
             .ToList();
 
         var multipleProviders = providers

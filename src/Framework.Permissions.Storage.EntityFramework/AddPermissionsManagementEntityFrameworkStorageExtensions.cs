@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Permissions.Definitions;
-using Framework.Permissions.Values;
+using Framework.Permissions.Grants;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 

@@ -1,8 +1,8 @@
 ﻿using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
+using Framework.Permissions.Grants;
 using Framework.Permissions.ValueProviders;
-using Framework.Permissions.Values;
 
 namespace Framework.Permissions.Seeders;
 
