@@ -49,8 +49,8 @@ public interface IFeatureManager
 }
 
 public sealed class FeatureManager(
-    IFeatureDefinitionManager featureDefinitionManager,
-    IFeatureValueProviderManager featureValueProviderManager
+    IFeatureDefinitionManager definitionManager,
+    IFeatureValueProviderManager valueProviderManager
 ) : IFeatureManager
 {
     public async Task<FeatureValue?> GetOrDefaultAsync(
@@ -61,6 +61,11 @@ public sealed class FeatureManager(
         CancellationToken cancellationToken = default
     )
     {
+        if (!fallback)
+        {
+            Argument.IsNotNull(providerName);
+        }
+
         return await _CoreGetOrDefaultAsync(name, providerName, providerKey, fallback, cancellationToken);
     }
 
@@ -73,9 +78,9 @@ public sealed class FeatureManager(
     {
         Argument.IsNotNull(providerName);
 
-        var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken);
+        var definitions = await definitionManager.GetFeaturesAsync(cancellationToken);
 
-        var providers = featureValueProviderManager.ValueProviders.SkipWhile(c =>
+        var providers = valueProviderManager.ValueProviders.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
         );
 
@@ -125,10 +130,10 @@ public sealed class FeatureManager(
         Argument.IsNotNull(providerName);
 
         var feature =
-            await featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
+            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined feature: {name}");
 
-        var providers = featureValueProviderManager
+        var providers = valueProviderManager
             .ValueProviders.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
             .ToList();
 
@@ -185,7 +190,7 @@ public sealed class FeatureManager(
     {
         var featureNameValues = await GetAllAsync(providerName, providerKey, cancellationToken: cancellationToken);
 
-        var providers = featureValueProviderManager.ValueProviders.SkipWhile(p =>
+        var providers = valueProviderManager.ValueProviders.SkipWhile(p =>
             !string.Equals(p.Name, providerName, StringComparison.Ordinal)
         );
 
@@ -202,7 +207,7 @@ public sealed class FeatureManager(
         foreach (var featureNameValue in featureNameValues)
         {
             var feature =
-                await featureDefinitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
+                await definitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
                 ?? throw new InvalidOperationException($"Undefined feature: {featureNameValue.Name}");
 
             foreach (var provider in writableProviders)
@@ -222,13 +227,18 @@ public sealed class FeatureManager(
     {
         Argument.IsNotNull(name);
 
+        if (!fallback)
+        {
+            Argument.IsNotNull(providerName);
+        }
+
         var definition =
-            await featureDefinitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new InvalidOperationException($"Undefined feature: {name}");
+            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
+            ?? throw new InvalidOperationException($"Feature {name} is not defined!");
 
-        IEnumerable<IFeatureValueReadProvider> providers = featureValueProviderManager.ValueProviders;
+        IEnumerable<IFeatureValueReadProvider> providers = valueProviderManager.ValueProviders;
 
-        if (providerName != null)
+        if (providerName is not null)
         {
             providers = providers.SkipWhile(c => !string.Equals(c.Name, providerName, StringComparison.Ordinal));
         }

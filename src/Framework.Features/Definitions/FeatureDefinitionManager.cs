@@ -32,7 +32,7 @@ public sealed class FeatureDefinitionManager(
         var staticFeatures = await staticStore.GetFeaturesAsync(cancellationToken);
         var staticFeatureNames = staticFeatures.Select(p => p.Name).ToImmutableHashSet();
 
-        // We prefer static features over dynamics
+        // Prefer static features over dynamics
         var dynamicFeatures = await dynamicStore.GetFeaturesAsync(cancellationToken);
         var uniqueDynamicFeatures = dynamicFeatures.Where(d => !staticFeatureNames.Contains(d.Name));
 
@@ -45,7 +45,7 @@ public sealed class FeatureDefinitionManager(
     {
         var staticGroups = await staticStore.GetGroupsAsync(cancellationToken);
         var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet();
-        // We prefer static features over dynamics
+        // Prefer static features over dynamics
         var dynamicFeatures = await dynamicStore.GetGroupsAsync(cancellationToken);
         var uniqueDynamicFeatures = dynamicFeatures.Where(d => !staticGroupNames.Contains(d.Name));
 

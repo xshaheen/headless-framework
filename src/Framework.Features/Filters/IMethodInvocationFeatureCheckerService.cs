@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using System.Reflection;
-using Framework.Features.Checkers;
+using Framework.Features.Values;
 
 namespace Framework.Features.Filters;
 
@@ -14,11 +14,11 @@ public sealed record MethodInvocationFeatureCheckerContext(MethodInfo Method);
 
 public sealed class MethodInvocationFeatureCheckerService : IMethodInvocationFeatureCheckerService
 {
-    private readonly IFeatureChecker _featureChecker;
+    private readonly IFeatureManager _featureManager;
 
-    public MethodInvocationFeatureCheckerService(IFeatureChecker featureChecker)
+    public MethodInvocationFeatureCheckerService(IFeatureManager featureManager)
     {
-        _featureChecker = featureChecker;
+        _featureManager = featureManager;
     }
 
     public async Task CheckAsync(MethodInvocationFeatureCheckerContext context)
@@ -30,7 +30,7 @@ public sealed class MethodInvocationFeatureCheckerService : IMethodInvocationFea
 
         foreach (var requiresFeatureAttribute in _GetRequiredFeatureAttributes(context.Method))
         {
-            await _featureChecker.CheckEnabledAsync(requiresFeatureAttribute.IsAnd, requiresFeatureAttribute.Features);
+            await _featureManager.EnsureEnabledAsync(requiresFeatureAttribute.IsAnd, requiresFeatureAttribute.Features);
         }
     }
 

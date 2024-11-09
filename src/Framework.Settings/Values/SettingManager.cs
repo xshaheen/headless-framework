@@ -25,7 +25,7 @@ public interface ISettingManager
     /// <returns></returns>
     Task<string?> GetOrDefaultAsync(
         string settingName,
-        string? providerName,
+        string providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -59,7 +59,7 @@ public sealed class SettingManager(
 {
     public Task<string?> GetOrDefaultAsync(
         string settingName,
-        string? providerName,
+        string providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default
@@ -225,6 +225,13 @@ public sealed class SettingManager(
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(name);
+
+        if (!fallback)
+        {
+            Argument.IsNotNull(providerName);
+        }
+
         var definition =
             await definitionManager.GetOrDefaultAsync(name, cancellationToken)
             ?? throw new InvalidOperationException($"Undefined setting: {name}");

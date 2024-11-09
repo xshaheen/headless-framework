@@ -40,7 +40,7 @@ public sealed class EfPermissionGrantRepository(IDbContextFactory<PermissionsDbC
     }
 
     public async Task<List<PermissionGrantRecord>> GetListAsync(
-        string[] names,
+        IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
         CancellationToken cancellationToken = default
@@ -63,22 +63,6 @@ public sealed class EfPermissionGrantRepository(IDbContextFactory<PermissionsDbC
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        db.PermissionGrants.Update(permissionGrant);
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-
-        db.PermissionGrants.Remove(permissionGrant);
-        await db.SaveChangesAsync(cancellationToken);
-    }
-
     public async Task InsertManyAsync(
         IEnumerable<PermissionGrantRecord> permissionGrants,
         CancellationToken cancellationToken = default
@@ -87,6 +71,14 @@ public sealed class EfPermissionGrantRepository(IDbContextFactory<PermissionsDbC
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         db.PermissionGrants.AddRange(permissionGrants);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        db.PermissionGrants.Remove(permissionGrant);
         await db.SaveChangesAsync(cancellationToken);
     }
 
