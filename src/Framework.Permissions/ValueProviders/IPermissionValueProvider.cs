@@ -13,19 +13,24 @@ public interface IPermissionValueProvider
     Task<PermissionGrantResult> CheckAsync(
         PermissionDefinition permission,
         ICurrentUser currentUser,
-        string providerName,
         CancellationToken cancellationToken = default
     );
 
     Task<MultiplePermissionGrantResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
-        string providerName,
         CancellationToken cancellationToken = default
     );
 
     Task SetAsync(
         PermissionDefinition permission,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    );
+
+    Task SetAsync(
+        IReadOnlyCollection<PermissionDefinition> permissions,
         string providerKey,
         bool isGranted,
         CancellationToken cancellationToken = default

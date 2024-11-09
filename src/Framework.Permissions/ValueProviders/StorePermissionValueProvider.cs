@@ -1,35 +1,31 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
-using Framework.Permissions.Values;
 
 namespace Framework.Permissions.ValueProviders;
 
-public abstract class StorePermissionValueProvider(
-    IPermissionGrantStore permissionGrantStore,
-    ICurrentTenant currentTenant
-) : IPermissionValueProvider
+public abstract class StorePermissionValueProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
+    : IPermissionValueProvider
 {
     public abstract string Name { get; }
 
     public async Task<PermissionGrantResult> CheckAsync(
         PermissionDefinition permission,
         ICurrentUser currentUser,
-        string providerName,
         CancellationToken cancellationToken = default
     )
     {
-        var result = await CheckAsync([permission], currentUser, providerName, cancellationToken);
+        var result = await CheckAsync([permission], currentUser, cancellationToken);
 
-        return result.Result.First().Value;
+        return result.First().Value;
     }
 
     public abstract Task<MultiplePermissionGrantResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
-        string providerName,
         CancellationToken cancellationToken = default
     );
 
@@ -41,7 +37,21 @@ public abstract class StorePermissionValueProvider(
     )
     {
         return isGranted
-            ? permissionGrantStore.GrantAsync(permission.Name, Name, providerKey, currentTenant.Id, cancellationToken)
-            : permissionGrantStore.RevokeAsync(permission.Name, Name, providerKey, cancellationToken);
+            ? grantStore.GrantAsync(permission.Name, Name, providerKey, currentTenant.Id, cancellationToken)
+            : grantStore.RevokeAsync(permission.Name, Name, providerKey, cancellationToken);
+    }
+
+    public Task SetAsync(
+        IReadOnlyCollection<PermissionDefinition> permissions,
+        string providerKey,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var names = permissions.Select(x => x.Name).ToArray();
+
+        return isGranted
+            ? grantStore.GrantAsync(names, Name, providerKey, currentTenant.Id, cancellationToken)
+            : grantStore.RevokeAsync(names, Name, providerKey, cancellationToken);
     }
 }

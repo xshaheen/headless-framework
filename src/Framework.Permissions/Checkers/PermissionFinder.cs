@@ -1,6 +1,6 @@
+using Framework.Permissions.Grants;
 using Framework.Permissions.Results;
 using Framework.Permissions.ValueProviders;
-using Framework.Permissions.Values;
 
 namespace Framework.Permissions.Checkers;
 
@@ -17,7 +17,7 @@ public sealed class PermissionFinder(IPermissionManager permissionManager) : IPe
 
         foreach (var item in requests)
         {
-            var providers = await permissionManager.GetAsync(
+            var providers = await permissionManager.GetAllAsync(
                 item.PermissionNames,
                 UserPermissionValueProvider.ProviderName,
                 item.UserId.ToString()
@@ -26,7 +26,7 @@ public sealed class PermissionFinder(IPermissionManager permissionManager) : IPe
             var isGrantedResponse = new IsGrantedResponse
             {
                 UserId = item.UserId,
-                Permissions = providers.Result.ToDictionary(x => x.Name, x => x.IsGranted, StringComparer.Ordinal),
+                Permissions = providers.ToDictionary(x => x.Name, x => x.IsGranted, StringComparer.Ordinal),
             };
 
             result.Add(isGrantedResponse);

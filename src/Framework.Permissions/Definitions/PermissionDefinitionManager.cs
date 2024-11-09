@@ -36,7 +36,7 @@ public sealed class PermissionDefinitionManager(
     {
         var staticPermissions = await staticStore.GetAllPermissionsAsync(cancellationToken);
         var staticPermissionNames = staticPermissions.Select(p => p.Name).ToImmutableHashSet();
-        // We prefer static permissions over dynamics
+        // Prefer static permissions over dynamics
         var dynamicPermissions = await dynamicStore.GetPermissionsAsync(cancellationToken);
         var uniqueDynamicPermissions = dynamicPermissions.Where(d => !staticPermissionNames.Contains(d.Name));
 
@@ -49,7 +49,7 @@ public sealed class PermissionDefinitionManager(
     {
         var staticGroups = await staticStore.GetGroupsAsync(cancellationToken);
         var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet();
-        // We prefer static groups over dynamics
+        // Prefer static groups over dynamics
         var dynamicGroups = await dynamicStore.GetGroupsAsync(cancellationToken);
         var uniqueDynamicGroups = dynamicGroups.Where(d => !staticGroupNames.Contains(d.Name));
 

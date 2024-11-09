@@ -4,38 +4,35 @@ using Framework.Kernel.Checks;
 
 namespace Framework.Permissions.Results;
 
-public sealed class MultiplePermissionGrantResult
+public sealed class MultiplePermissionGrantResult : Dictionary<string, PermissionGrantResult>
 {
-    public bool AllGranted => Result.Values.All(x => x.Status is PermissionGrantStatus.Granted);
+    public bool AllGranted => Values.All(x => x.Status is PermissionGrantStatus.Granted);
 
-    public bool AllProhibited => Result.Values.All(x => x.Status is PermissionGrantStatus.Prohibited);
-
-    public Dictionary<string, PermissionGrantResult> Result { get; }
+    public bool AllProhibited => Values.All(x => x.Status is PermissionGrantStatus.Prohibited);
 
     public MultiplePermissionGrantResult()
-    {
-        Result = new(StringComparer.Ordinal);
-    }
+        : base(StringComparer.Ordinal) { }
 
     public MultiplePermissionGrantResult(
         IReadOnlyList<string> names,
-        PermissionGrantStatus grantStatus = PermissionGrantStatus.Undefined
+        IReadOnlyCollection<string> providerKeys,
+        PermissionGrantStatus grantStatus
     )
+        : this()
     {
         Argument.IsNotNull(names);
-
-        Result = new(StringComparer.Ordinal);
+        Argument.IsInEnum(grantStatus);
 
         var info = grantStatus switch
         {
-            PermissionGrantStatus.Granted => PermissionGrantResult.Granted,
-            PermissionGrantStatus.Prohibited => PermissionGrantResult.Prohibited,
-            _ => PermissionGrantResult.Undefined,
+            PermissionGrantStatus.Granted => PermissionGrantResult.Granted(providerKeys),
+            PermissionGrantStatus.Prohibited => PermissionGrantResult.Prohibited(providerKeys),
+            _ => PermissionGrantResult.Undefined(providerKeys),
         };
 
         foreach (var name in names)
         {
-            Result.Add(name, info);
+            Add(name, info);
         }
     }
 }

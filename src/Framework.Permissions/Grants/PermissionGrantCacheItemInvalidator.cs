@@ -3,7 +3,7 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Domains;
 using Framework.Permissions.Entities;
 
-namespace Framework.Permissions.Values;
+namespace Framework.Permissions.Grants;
 
 public sealed class PermissionGrantCacheItemInvalidator(
     ICache<PermissionGrantCacheItem> cache,

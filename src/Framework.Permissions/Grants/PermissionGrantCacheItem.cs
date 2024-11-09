@@ -1,7 +1,7 @@
 ﻿using System.Text;
 using Framework.Kernel.BuildingBlocks.Helpers.Text;
 
-namespace Framework.Permissions.Values;
+namespace Framework.Permissions.Grants;
 
 public sealed class PermissionGrantCacheItem(bool isGranted)
 {
