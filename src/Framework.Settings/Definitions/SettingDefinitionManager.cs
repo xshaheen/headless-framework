@@ -30,7 +30,7 @@ public sealed class SettingDefinitionManager(
     {
         var staticSettings = await staticStore.GetAllAsync(cancellationToken);
         var staticSettingNames = staticSettings.Select(p => p.Name).ToImmutableHashSet();
-        // We prefer static settings over dynamics
+        // Prefer static settings over dynamics
         var dynamicSettings = await dynamicStore.GetAllAsync(cancellationToken);
         var uniqueDynamicSettings = dynamicSettings.Where(d => !staticSettingNames.Contains(d.Name));
 

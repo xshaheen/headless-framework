@@ -33,10 +33,10 @@ public static class ServiceCollectionExtensions
     }
 
     [UsedImplicitly]
-    private sealed class AntiforgeryOptionsConfiguration(IOptions<DataProtectionOptions> dataProtectionOptions)
+    private sealed class AntiforgeryOptionsConfiguration(IOptions<DataProtectionOptions> options)
         : IConfigureOptions<AntiforgeryOptions>
     {
-        private readonly DataProtectionOptions _dataProtectionOptions = dataProtectionOptions.Value;
+        private readonly DataProtectionOptions _dataProtectionOptions = options.Value;
 
         public void Configure(AntiforgeryOptions options)
         {

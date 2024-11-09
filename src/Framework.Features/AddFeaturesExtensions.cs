@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Framework.Features.Checkers;
 using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Framework.Features.Filters;
@@ -60,7 +59,6 @@ public static class AddFeaturesExtensions
         services.TryAddSingleton<IFeatureValueProviderManager, FeatureValueProviderManager>();
         services.TryAddTransient<IFeatureManager, FeatureManager>();
 
-        services.AddSingleton<IFeatureChecker, FeatureChecker>();
         services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();
 
         return services;
