@@ -1,18 +1,36 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.Twilio;
 
+[PublicAPI]
 public static class AddTwilioExtensions
 {
-    public static void AddTwilioSmsSender(this IHostApplicationBuilder builder, string configKey)
+    public static IServiceCollection AddTwilioSmsSender(
+        this IServiceCollection services,
+        Action<TwilioSettings, IServiceProvider> setupAction
+    )
     {
-        var section = builder.Configuration.GetRequiredSection(configKey);
-        builder.Services.ConfigureSingleton<TwilioSettings, TwilioSettingsValidator>(section);
+        services.ConfigureSingleton<TwilioSettings, TwilioSettingsValidator>(setupAction);
 
-        builder.Services.AddSingleton<ISmsSender, TwilioSmsSender>();
+        return _AddCore(services);
+    }
+
+    public static IServiceCollection AddTwilioSmsSender(
+        this IServiceCollection services,
+        Action<TwilioSettings> setupAction
+    )
+    {
+        services.ConfigureSingleton<TwilioSettings, TwilioSettingsValidator>(setupAction);
+
+        return _AddCore(services);
+    }
+
+    private static IServiceCollection _AddCore(IServiceCollection services)
+    {
+        services.AddSingleton<ISmsSender, TwilioSmsSender>();
+
+        return services;
     }
 }

@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Integrations.Recaptcha;
 
+[PublicAPI]
 public static class AddRecaptchaExtensions
 {
     public static IServiceCollection AddReCaptchaV3(

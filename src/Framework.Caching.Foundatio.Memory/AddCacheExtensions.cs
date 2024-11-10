@@ -2,7 +2,6 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Caching;
 
@@ -16,9 +15,8 @@ public static class AddCacheExtensions
     )
     {
         services.ConfigureSingleton<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
-        services._AddCacheCore(isDefault);
 
-        return services;
+        return _AddCacheCore(services, isDefault);
     }
 
     public static IServiceCollection AddInMemoryCache(
@@ -36,12 +34,10 @@ public static class AddCacheExtensions
             services.ConfigureSingleton<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
         }
 
-        services._AddCacheCore(isDefault);
-
-        return services;
+        return _AddCacheCore(services, isDefault);
     }
 
-    private static void _AddCacheCore(this IServiceCollection services, bool isDefault)
+    private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
     {
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
 
@@ -49,13 +45,16 @@ public static class AddCacheExtensions
         {
             services.AddKeyedSingleton<ICache, InMemoryCachingFoundatioAdapter>(CacheConstants.MemoryCacheProvider);
 
-            return;
+            return services;
         }
 
         services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
+
         services.AddKeyedSingleton(
             CacheConstants.MemoryCacheProvider,
             provider => provider.GetRequiredService<ICache>()
         );
+
+        return services;
     }
 }

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Blobs.Azure;
 
+[PublicAPI]
 public static class AddAzureBlobExtensions
 {
     public static IServiceCollection AddAzureBlobStorage(
@@ -13,9 +14,8 @@ public static class AddAzureBlobExtensions
     )
     {
         services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(setupAction);
-        _AddCoreServices(services);
 
-        return services;
+        return _AddCore(services);
     }
 
     public static IServiceCollection AddAzureBlobStorage(
@@ -24,22 +24,22 @@ public static class AddAzureBlobExtensions
     )
     {
         services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(setupAction);
-        _AddCoreServices(services);
 
-        return services;
+        return _AddCore(services);
     }
 
     public static IServiceCollection AddAzureBlobStorage(this IServiceCollection services, IConfiguration config)
     {
         services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(config);
-        _AddCoreServices(services);
 
-        return services;
+        return _AddCore(services);
     }
 
-    private static void _AddCoreServices(IServiceCollection services)
+    private static IServiceCollection _AddCore(IServiceCollection services)
     {
         services.AddSingleton<IBlobNamingNormalizer, AzureBlobNamingNormalizer>();
         services.AddSingleton<IBlobStorage, AzureBlobStorage>();
+
+        return services;
     }
 }

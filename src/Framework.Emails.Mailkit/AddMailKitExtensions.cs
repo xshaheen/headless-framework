@@ -2,25 +2,45 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Emails.Mailkit;
 
+[PublicAPI]
 public static class AddMailKitExtensions
 {
-    public static void AddMailKitEmailSender(this IHostApplicationBuilder builder, string configKey)
+    public static IServiceCollection AddMailKitEmailSender(this IServiceCollection services, IConfiguration config)
     {
-        var section = builder.Configuration.GetRequiredSection(configKey);
-        builder.Services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(section);
-        builder.Services.AddSingleton<IEmailSender, MailkitEmailSender>();
+        services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(config);
+
+        return _AddCore(services);
     }
 
-    public static void AddMailKitEmailSender(
-        this IHostApplicationBuilder builder,
+    public static IServiceCollection AddMailKitEmailSender(
+        this IServiceCollection services,
         Action<MailkitSmtpSettings> configure
     )
     {
-        builder.Services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(configure);
-        builder.Services.AddSingleton<IEmailSender, MailkitEmailSender>();
+        services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(configure);
+        services.AddSingleton<IEmailSender, MailkitEmailSender>();
+
+        return _AddCore(services);
+    }
+
+    public static IServiceCollection AddMailKitEmailSender(
+        this IServiceCollection services,
+        Action<MailkitSmtpSettings, IServiceProvider> configure
+    )
+    {
+        services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(configure);
+        services.AddSingleton<IEmailSender, MailkitEmailSender>();
+
+        return _AddCore(services);
+    }
+
+    private static IServiceCollection _AddCore(IServiceCollection services)
+    {
+        services.AddSingleton<IEmailSender, MailkitEmailSender>();
+
+        return services;
     }
 }
