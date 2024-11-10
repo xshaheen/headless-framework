@@ -218,6 +218,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Seo", "Seo", "{598A8FF8-F74
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sitemaps.Tests.Units", "tests\Framework.Sitemaps.Tests.Units\Framework.Sitemaps.Tests.Units.csproj", "{9CD5A8AB-43D1-4B06-BB53-AE785B865EA5}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Payments", "Payments", "{BD0F9A3E-1C87-4FA2-81FB-5439E2CF548E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashIn", "src\Framework.Payments.Paymob\Framework.Payments.Paymob.CashIn.csproj", "{CEB9163B-EF3B-4686-A9BD-A7D1E3484528}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashIn.Tests.Units", "tests\Framework.Payments.Paymob.CashIn.Tests.Units\Framework.Payments.Paymob.CashIn.Tests.Units.csproj", "{CA90A859-0478-43EE-8F8B-1B00A6B05FD8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -538,6 +544,14 @@ Global
 		{9CD5A8AB-43D1-4B06-BB53-AE785B865EA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9CD5A8AB-43D1-4B06-BB53-AE785B865EA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9CD5A8AB-43D1-4B06-BB53-AE785B865EA5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CEB9163B-EF3B-4686-A9BD-A7D1E3484528}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CEB9163B-EF3B-4686-A9BD-A7D1E3484528}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CEB9163B-EF3B-4686-A9BD-A7D1E3484528}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CEB9163B-EF3B-4686-A9BD-A7D1E3484528}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA90A859-0478-43EE-8F8B-1B00A6B05FD8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA90A859-0478-43EE-8F8B-1B00A6B05FD8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA90A859-0478-43EE-8F8B-1B00A6B05FD8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA90A859-0478-43EE-8F8B-1B00A6B05FD8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -621,6 +635,8 @@ Global
 		{45EE0F71-5038-4D09-9424-F870B62790C8} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
 		{CDFC5372-7803-45DA-BBB0-BEE35BEA61C4} = {598A8FF8-F74D-4E1D-BAA2-BD8A3D20EBF7}
 		{9CD5A8AB-43D1-4B06-BB53-AE785B865EA5} = {598A8FF8-F74D-4E1D-BAA2-BD8A3D20EBF7}
+		{CEB9163B-EF3B-4686-A9BD-A7D1E3484528} = {BD0F9A3E-1C87-4FA2-81FB-5439E2CF548E}
+		{CA90A859-0478-43EE-8F8B-1B00A6B05FD8} = {BD0F9A3E-1C87-4FA2-81FB-5439E2CF548E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
