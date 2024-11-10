@@ -2,6 +2,7 @@
 
 using Framework.Caching;
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Messaging;
 using Framework.Permissions;
 using Framework.Permissions.Seeders;
 using Framework.Permissions.Storage.EntityFramework;
@@ -19,6 +20,7 @@ public static class HostExtensions
     )
     {
         services.AddSingleton(TimeProvider.System);
+
         services.AddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddSingleton<ICancellationTokenProvider>(DefaultCancellationTokenProvider.Instance);
@@ -26,6 +28,8 @@ public static class HostExtensions
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
+        services.AddSingleton(Substitute.For<IDistributedMessagePublisher>());
+
         services.AddInMemoryCache();
         services.AddLocalResourceLock();
 

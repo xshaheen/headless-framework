@@ -33,11 +33,11 @@
     <PackageVersion Include="DeviceId.Windows.Wmi" Version="6.6.0" />
     <PackageVersion Include="DistributedLock.Core" Version="1.0.7" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.1.1" />
-    <PackageVersion Include="DotNetCore.CAP" Version="8.3.0" />
-    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.3.0" />
-    <PackageVersion Include="DotNetCore.CAP.InMemoryStorage" Version="8.3.1" />
+    <PackageVersion Include="DotNetCore.CAP" Version="8.3.1" />
+    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.3.1" />
+    <PackageVersion Include="DotNetCore.CAP.InMemoryStorage" Version="8.3.0" />
     <PackageVersion Include="DotNetCore.CAP.OpenTelemetry" Version="8.3.0" />
-    <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.2.0" />
+    <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.3.1" />
     <PackageVersion Include="EFCore.CheckConstraints" Version="8.0.1" />
     <PackageVersion Include="FileSignatures" Version="5.1.0" />
     <PackageVersion Include="FirebaseAdmin" Version="3.0.1" />
@@ -123,7 +123,7 @@
     <PackageVersion Include="Polly.Extensions" Version="8.4.2" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.4.2" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
-    <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.0.0" />
+    <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="1.2.15" />
     <PackageVersion Include="Scrutor" Version="5.0.1" />
     <PackageVersion Include="Serilog" Version="4.0.2" />

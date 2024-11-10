@@ -3,19 +3,17 @@
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Permissions.Storage.EntityFramework;
 
-public sealed class EfPermissionDefinitionRecordRepository(IServiceScopeFactory scopeFactory)
+public sealed class EfPermissionDefinitionRecordRepository(IDbContextFactory<PermissionsDbContext> dbFactory)
     : IPermissionDefinitionRecordRepository
 {
     public async Task<List<PermissionGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<PermissionsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db.PermissionGroupDefinitions.ToListAsync(cancellationToken);
     }
@@ -24,8 +22,7 @@ public sealed class EfPermissionDefinitionRecordRepository(IServiceScopeFactory 
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<PermissionsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db.PermissionDefinitions.ToListAsync(cancellationToken);
     }
@@ -40,8 +37,7 @@ public sealed class EfPermissionDefinitionRecordRepository(IServiceScopeFactory 
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<PermissionsDbContext>();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         db.PermissionGroupDefinitions.AddRange(newGroups);
         db.PermissionGroupDefinitions.UpdateRange(updatedGroups);
