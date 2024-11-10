@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Blobs.SshNet;
 
+[PublicAPI]
 public static class AddFileSystemBlobExtensions
 {
     public static IServiceCollection AddSshBlobStorage(
@@ -13,9 +14,8 @@ public static class AddFileSystemBlobExtensions
     )
     {
         services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(setupAction);
-        _AddBaseServices(services);
 
-        return services;
+        return _AddCore(services);
     }
 
     public static IServiceCollection AddSshBlobStorage(
@@ -24,22 +24,22 @@ public static class AddFileSystemBlobExtensions
     )
     {
         services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(setupAction);
-        _AddBaseServices(services);
 
-        return services;
+        return _AddCore(services);
     }
 
     public static IServiceCollection AddSshBlobStorage(this IServiceCollection services, IConfigurationSection config)
     {
         services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(config);
-        _AddBaseServices(services);
 
-        return services;
+        return _AddCore(services);
     }
 
-    private static void _AddBaseServices(IServiceCollection services)
+    private static IServiceCollection _AddCore(IServiceCollection services)
     {
         services.AddSingleton<IBlobNamingNormalizer, SshBlobNamingNormalizer>();
         services.AddSingleton<IBlobStorage, SshBlobStorage>();
+
+        return services;
     }
 }

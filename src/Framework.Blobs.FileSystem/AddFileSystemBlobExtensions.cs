@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Blobs.FileSystem;
 
+[PublicAPI]
 public static class AddFileSystemBlobExtensions
 {
     public static IServiceCollection AddFileSystemBlobStorage(
@@ -13,9 +14,8 @@ public static class AddFileSystemBlobExtensions
     )
     {
         services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(setupAction);
-        _AddBaseServices(services);
 
-        return services;
+        return _AddBaseServices(services);
     }
 
     public static IServiceCollection AddFileSystemBlobStorage(
@@ -24,9 +24,8 @@ public static class AddFileSystemBlobExtensions
     )
     {
         services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(setupAction);
-        _AddBaseServices(services);
 
-        return services;
+        return _AddBaseServices(services);
     }
 
     public static IServiceCollection AddFileSystemBlobStorage(
@@ -35,14 +34,15 @@ public static class AddFileSystemBlobExtensions
     )
     {
         services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(config);
-        _AddBaseServices(services);
 
-        return services;
+        return _AddBaseServices(services);
     }
 
-    private static void _AddBaseServices(IServiceCollection builder)
+    private static IServiceCollection _AddBaseServices(IServiceCollection builder)
     {
         builder.AddSingleton<IBlobNamingNormalizer, FileSystemBlobNamingNormalizer>();
         builder.AddSingleton<IBlobStorage, FileSystemBlobStorage>();
+
+        return builder;
     }
 }

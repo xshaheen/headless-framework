@@ -2,20 +2,46 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.VictoryLink;
 
+[PublicAPI]
 public static class AddVictoryLinkExtensions
 {
-    public static void AddVictoryLinkSmsSender(this IHostApplicationBuilder builder, string configKey)
+    public static IServiceCollection AddVictoryLinkSmsSender(this IServiceCollection services, IConfiguration config)
     {
-        var section = builder.Configuration.GetRequiredSection(configKey);
-        builder.Services.ConfigureSingleton<VictoryLinkSettings, VictoryLinkSettingsValidator>(section);
+        services.ConfigureSingleton<VictoryLinkSettings, VictoryLinkSettingsValidator>(config);
 
-        builder
-            .Services.AddSingleton<ISmsSender, VictoryLinkSmsSender>()
+        return _AddCore(services);
+    }
+
+    public static IServiceCollection AddVictoryLinkSmsSender(
+        this IServiceCollection services,
+        Action<VictoryLinkSettings, IServiceProvider> setupAction
+    )
+    {
+        services.ConfigureSingleton<VictoryLinkSettings, VictoryLinkSettingsValidator>(setupAction);
+
+        return _AddCore(services);
+    }
+
+    public static IServiceCollection AddVictoryLinkSmsSender(
+        this IServiceCollection services,
+        Action<VictoryLinkSettings> setupAction
+    )
+    {
+        services.ConfigureSingleton<VictoryLinkSettings, VictoryLinkSettingsValidator>(setupAction);
+
+        return _AddCore(services);
+    }
+
+    private static IServiceCollection _AddCore(IServiceCollection services)
+    {
+        services
+            .AddSingleton<ISmsSender, VictoryLinkSmsSender>()
             .AddHttpClient<ISmsSender, VictoryLinkSmsSender>(name: "victory-link-client")
             .AddStandardResilienceHandler();
+
+        return services;
     }
 }

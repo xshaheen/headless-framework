@@ -2,20 +2,46 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.Infobip;
 
+[PublicAPI]
 public static class AddInfobipExtensions
 {
-    public static void AddInfobipSmsSender(this IHostApplicationBuilder builder, string configKey)
+    public static IServiceCollection AddInfobipSmsSender(this IServiceCollection services, IConfiguration config)
     {
-        var section = builder.Configuration.GetRequiredSection(configKey);
-        builder.Services.ConfigureSingleton<InfobipSettings, InfobipSettingsValidator>(section);
+        services.ConfigureSingleton<InfobipSettings, InfobipSettingsValidator>(config);
 
-        builder
-            .Services.AddSingleton<ISmsSender, InfobipSmsSender>()
+        return _AddCore(services);
+    }
+
+    public static IServiceCollection AddInfobipSmsSender(
+        this IServiceCollection services,
+        Action<InfobipSettings> setupAction
+    )
+    {
+        services.ConfigureSingleton<InfobipSettings, InfobipSettingsValidator>(setupAction);
+
+        return _AddCore(services);
+    }
+
+    public static IServiceCollection AddInfobipSmsSender(
+        this IServiceCollection services,
+        Action<InfobipSettings, IServiceProvider> setupAction
+    )
+    {
+        services.ConfigureSingleton<InfobipSettings, InfobipSettingsValidator>(setupAction);
+
+        return _AddCore(services);
+    }
+
+    private static IServiceCollection _AddCore(IServiceCollection services)
+    {
+        services
+            .AddSingleton<ISmsSender, InfobipSmsSender>()
             .AddHttpClient<ISmsSender, InfobipSmsSender>(name: "infobip-client")
             .AddStandardResilienceHandler();
+
+        return services;
     }
 }

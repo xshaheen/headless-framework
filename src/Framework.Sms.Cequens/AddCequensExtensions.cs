@@ -2,19 +2,37 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.Cequens;
 
+[PublicAPI]
 public static class AddCequensExtensions
 {
-    public static void AddCequensSmsSender(this IHostApplicationBuilder builder, string configKey)
+    public static void AddCequensSmsSender(this IServiceCollection services, IConfiguration config)
     {
-        var section = builder.Configuration.GetRequiredSection(configKey);
-        builder.Services.ConfigureSingleton<CequensSettings, CequensSettingsValidator>(section);
+        services.ConfigureSingleton<CequensSettings, CequensSettingsValidator>(config);
+        _AddCore(services);
+    }
 
-        builder
-            .Services.AddSingleton<ISmsSender, CequensSmsSender>()
+    public static void AddCequensSmsSender(this IServiceCollection services, Action<CequensSettings> setupAction)
+    {
+        services.ConfigureSingleton<CequensSettings, CequensSettingsValidator>(setupAction);
+        _AddCore(services);
+    }
+
+    public static void AddCequensSmsSender(
+        this IServiceCollection services,
+        Action<CequensSettings, IServiceProvider> setupAction
+    )
+    {
+        services.ConfigureSingleton<CequensSettings, CequensSettingsValidator>(setupAction);
+        _AddCore(services);
+    }
+
+    private static void _AddCore(IServiceCollection services)
+    {
+        services
+            .AddSingleton<ISmsSender, CequensSmsSender>()
             .AddHttpClient<ISmsSender, CequensSmsSender>(name: "cequens-client")
             .AddStandardResilienceHandler();
     }

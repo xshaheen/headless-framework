@@ -2,19 +2,23 @@
 
 using Framework.Emails.Dev;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Emails;
 
+[PublicAPI]
 public static class AddDevEmailExtensions
 {
-    public static void AddDevEmailSender(this IHostApplicationBuilder builder)
+    public static IServiceCollection AddDevEmailSender(this IServiceCollection services)
     {
-        builder.Services.AddSingleton<IEmailSender, DevEmailSender>();
+        services.AddSingleton<IEmailSender, DevEmailSender>();
+
+        return services;
     }
 
-    public static void AddNoopEmailSender(this IHostApplicationBuilder builder)
+    public static IServiceCollection AddNoopEmailSender(this IServiceCollection services)
     {
-        builder.Services.AddSingleton<IEmailSender, NoopEmailSender>();
+        services.AddSingleton<IEmailSender, NoopEmailSender>();
+
+        return services;
     }
 }

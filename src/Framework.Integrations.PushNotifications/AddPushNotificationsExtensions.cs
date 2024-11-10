@@ -4,35 +4,22 @@ using FirebaseAdmin;
 using Framework.Integrations.PushNotifications.Dev;
 using Framework.Integrations.PushNotifications.Gcm;
 using Google.Apis.Auth.OAuth2;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Integrations.PushNotifications;
 
+[PublicAPI]
 public static class AddPushNotificationsExtensions
 {
-    public static void AddPushNotifications(this IHostApplicationBuilder builder, string sectionName)
+    public static void AddPushNotifications(this IServiceCollection services, FirebaseSettings settings)
     {
-        var section = builder.Configuration.GetRequiredSection(sectionName);
-
-        var settings =
-            section.Get<FirebaseSettings>()
-            ?? throw new InvalidOperationException($"{nameof(FirebaseSettings)} is not configured.");
-
-        builder.Services.AddSingleton<IPushNotificationService, GoogleCloudMessagingPushNotificationService>();
         _LoadFirebase(settings.Json);
+        services.AddSingleton<IPushNotificationService, GoogleCloudMessagingPushNotificationService>();
     }
 
-    public static void AddPushNotifications(this IHostApplicationBuilder builder, FirebaseSettings settings)
+    public static void AddNoopPushNotification(this IServiceCollection services)
     {
-        builder.Services.AddSingleton<IPushNotificationService, GoogleCloudMessagingPushNotificationService>();
-        _LoadFirebase(settings.Json);
-    }
-
-    public static void AddNoopPushNotification(this IHostApplicationBuilder builder)
-    {
-        builder.Services.AddSingleton<IPushNotificationService, NoopPushNotificationService>();
+        services.AddSingleton<IPushNotificationService, NoopPushNotificationService>();
     }
 
     private static void _LoadFirebase(string json)

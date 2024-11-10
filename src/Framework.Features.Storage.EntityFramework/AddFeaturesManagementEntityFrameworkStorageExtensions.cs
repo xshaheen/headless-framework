@@ -15,9 +15,25 @@ public static class AddFeaturesManagementEntityFrameworkStorageExtensions
         Action<DbContextOptionsBuilder> optionsAction
     )
     {
+        services.AddPooledDbContextFactory<FeaturesDbContext>(optionsAction);
+
+        return _AddCore(services);
+    }
+
+    public static IServiceCollection AddFeaturesManagementEntityFrameworkStorage(
+        this IServiceCollection services,
+        Action<IServiceProvider, DbContextOptionsBuilder> optionsAction
+    )
+    {
+        services.AddPooledDbContextFactory<FeaturesDbContext>(optionsAction);
+
+        return _AddCore(services);
+    }
+
+    private static IServiceCollection _AddCore(IServiceCollection services)
+    {
         services.AddSingleton<IFeatureValueRecordRepository, EfFeatureValueRecordRecordRepository>();
         services.AddSingleton<IFeatureDefinitionRecordRepository, EfFeatureDefinitionRecordRepository>();
-        services.AddPooledDbContextFactory<FeaturesDbContext>(optionsAction);
 
         return services;
     }

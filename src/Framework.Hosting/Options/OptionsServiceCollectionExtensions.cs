@@ -415,7 +415,7 @@ public static class OptionsServiceCollectionExtensions
     /// <returns>The same services collection.</returns>
     public static IServiceCollection ConfigureOptions<TOption, TOptionValidator>(
         this IServiceCollection services,
-        IConfiguration config,
+        IConfiguration? config,
         string? name = null,
         Func<TOption, bool>? validation = null,
         Action<BinderOptions>? configureBinder = null
@@ -424,59 +424,28 @@ public static class OptionsServiceCollectionExtensions
         where TOptionValidator : class, IValidator<TOption>
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNull(config);
 
-        var builder = services
-            .AddSingleton<IValidator<TOption>, TOptionValidator>()
-            .AddOptions<TOption>(name)
-            .Bind(config, configureBinder)
-            .ValidateFluentValidation();
+        if (config is null && configureBinder is not null)
+        {
+            throw new ArgumentNullException(
+                nameof(config),
+                "The configuration must be provided when the binder is configured."
+            );
+        }
+
+        var builder = services.AddSingleton<IValidator<TOption>, TOptionValidator>().AddOptions<TOption>(name);
+
+        if (config is not null)
+        {
+            builder.Bind(config, configureBinder);
+        }
 
         if (validation is not null)
         {
             builder.Validate(validation);
         }
 
-        builder.ValidateOnStart();
-
-        return services;
-    }
-
-    /// <summary>
-    /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
-    /// Also runs data annotation validation and custom validation using the default failure message on application startup.
-    /// </summary>
-    /// <typeparam name="TOption">The type of the options.</typeparam>
-    /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configureOption">The configuration.</param>
-    /// <param name="name">The name of the options instance.</param>
-    /// <param name="validation">The validation function.</param>
-    /// <returns>The same services collection.</returns>
-    public static IServiceCollection ConfigureOptions<TOption, TOptionValidator>(
-        this IServiceCollection services,
-        Action<TOption> configureOption,
-        string? name = null,
-        Func<TOption, bool>? validation = null
-    )
-        where TOption : class
-        where TOptionValidator : class, IValidator<TOption>
-    {
-        Argument.IsNotNull(services);
-        Argument.IsNotNull(configureOption);
-
-        var builder = services
-            .AddSingleton<IValidator<TOption>, TOptionValidator>()
-            .AddOptions<TOption>(name)
-            .Configure(configureOption)
-            .ValidateFluentValidation();
-
-        if (validation is not null)
-        {
-            builder.Validate(validation);
-        }
-
-        builder.ValidateOnStart();
+        builder.ValidateFluentValidation().ValidateOnStart();
 
         return services;
     }
@@ -494,7 +463,7 @@ public static class OptionsServiceCollectionExtensions
     /// <returns>The same services collection.</returns>
     public static IServiceCollection ConfigureOptions<TOption, TOptionValidator>(
         this IServiceCollection services,
-        Action<TOption, IServiceProvider> setupAction,
+        Action<TOption>? setupAction,
         string? name = null,
         Func<TOption, bool>? validation = null
     )
@@ -502,20 +471,59 @@ public static class OptionsServiceCollectionExtensions
         where TOptionValidator : class, IValidator<TOption>
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNull(setupAction);
 
-        var builder = services
-            .AddSingleton<IValidator<TOption>, TOptionValidator>()
-            .AddOptions<TOption>(name)
-            .Configure(setupAction)
-            .ValidateFluentValidation();
+        var builder = services.AddSingleton<IValidator<TOption>, TOptionValidator>().AddOptions<TOption>(name);
+
+        if (setupAction is not null)
+        {
+            builder.Configure(setupAction);
+        }
 
         if (validation is not null)
         {
             builder.Validate(validation);
         }
 
-        builder.ValidateOnStart();
+        builder.ValidateFluentValidation().ValidateOnStart();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
+    /// Also runs data annotation validation and custom validation using the default failure message on application startup.
+    /// </summary>
+    /// <typeparam name="TOption">The type of the options.</typeparam>
+    /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="setupAction">The configuration.</param>
+    /// <param name="name">The name of the options instance.</param>
+    /// <param name="validation">The validation function.</param>
+    /// <returns>The same services collection.</returns>
+    public static IServiceCollection ConfigureOptions<TOption, TOptionValidator>(
+        this IServiceCollection services,
+        Action<TOption, IServiceProvider>? setupAction,
+        string? name = null,
+        Func<TOption, bool>? validation = null
+    )
+        where TOption : class
+        where TOptionValidator : class, IValidator<TOption>
+    {
+        Argument.IsNotNull(services);
+
+        var builder = services.AddSingleton<IValidator<TOption>, TOptionValidator>().AddOptions<TOption>(name);
+
+        if (setupAction is not null)
+        {
+            builder.Configure(setupAction);
+        }
+
+        if (validation is not null)
+        {
+            builder.Validate(validation);
+        }
+
+        builder.ValidateFluentValidation().ValidateOnStart();
 
         return services;
     }
@@ -533,29 +541,39 @@ public static class OptionsServiceCollectionExtensions
     /// <returns>The same services collection.</returns>
     public static IServiceCollection ConfigureSingleton<TOption, TOptionValidator>(
         this IServiceCollection services,
-        IConfiguration config,
-        Func<TOption, bool>? validation = null,
-        Action<BinderOptions>? configureBinder = null
+        IConfiguration? config,
+        Action<BinderOptions>? configureBinder = null,
+        Func<TOption, bool>? validation = null
     )
         where TOption : class
         where TOptionValidator : class, IValidator<TOption>
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNull(config);
+
+        if (config is null && configureBinder is not null)
+        {
+            throw new ArgumentNullException(
+                nameof(config),
+                "The configuration must be provided when the binder is configured."
+            );
+        }
 
         var builder = services
             .AddSingleton<IValidator<TOption>, TOptionValidator>()
             .AddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value)
-            .AddOptions<TOption>()
-            .Bind(config, configureBinder)
-            .ValidateFluentValidation();
+            .AddOptions<TOption>();
+
+        if (config is not null)
+        {
+            builder.Bind(config, configureBinder);
+        }
 
         if (validation is not null)
         {
             builder.Validate(validation);
         }
 
-        builder.ValidateOnStart();
+        builder.ValidateFluentValidation().ValidateOnStart();
 
         return services;
     }
@@ -572,28 +590,30 @@ public static class OptionsServiceCollectionExtensions
     /// <returns>The same services collection.</returns>
     public static IServiceCollection ConfigureSingleton<TOption, TOptionValidator>(
         this IServiceCollection services,
-        Action<TOption> setupAction,
+        Action<TOption>? setupAction,
         Func<TOption, bool>? validation = null
     )
         where TOption : class
         where TOptionValidator : class, IValidator<TOption>
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNull(setupAction);
 
         var builder = services
             .AddSingleton<IValidator<TOption>, TOptionValidator>()
             .AddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value)
-            .AddOptions<TOption>()
-            .Configure(setupAction)
-            .ValidateFluentValidation();
+            .AddOptions<TOption>();
+
+        if (setupAction is not null)
+        {
+            builder.Configure(setupAction);
+        }
 
         if (validation is not null)
         {
             builder.Validate(validation);
         }
 
-        builder.ValidateOnStart();
+        builder.ValidateFluentValidation().ValidateOnStart();
 
         return services;
     }
@@ -610,28 +630,30 @@ public static class OptionsServiceCollectionExtensions
     /// <returns>The same services collection.</returns>
     public static IServiceCollection ConfigureSingleton<TOption, TOptionValidator>(
         this IServiceCollection services,
-        Action<TOption, IServiceProvider> setupAction,
+        Action<TOption, IServiceProvider>? setupAction,
         Func<TOption, bool>? validation = null
     )
         where TOption : class
         where TOptionValidator : class, IValidator<TOption>
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNull(setupAction);
 
         var builder = services
             .AddSingleton<IValidator<TOption>, TOptionValidator>()
             .AddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value)
-            .AddOptions<TOption>()
-            .Configure(setupAction)
-            .ValidateFluentValidation();
+            .AddOptions<TOption>();
+
+        if (setupAction is not null)
+        {
+            builder.Configure(setupAction);
+        }
 
         if (validation is not null)
         {
             builder.Validate(validation);
         }
 
-        builder.ValidateOnStart();
+        builder.ValidateFluentValidation().ValidateOnStart();
 
         return services;
     }

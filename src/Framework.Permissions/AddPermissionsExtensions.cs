@@ -18,49 +18,27 @@ namespace Framework.Permissions;
 [PublicAPI]
 public static class AddPermissionsExtensions
 {
+    public static IServiceCollection AddFeaturesManagementCore(
+        this IServiceCollection services,
+        Action<PermissionManagementOptions, IServiceProvider> setupAction
+    )
+    {
+        services.ConfigureSingleton<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
+
+        return _AddCore(services);
+    }
+
     public static IServiceCollection AddPermissionsManagementCore(
         this IServiceCollection services,
         Action<PermissionManagementOptions>? setupAction = null
     )
     {
-        services._AddCoreValueProvider();
-        services.AddHostedService<PermissionsInitializationBackgroundService>();
-        services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
-        services.AddSingletonOptions<PermissionManagementOptions, PermissionManagementOptionsValidator>();
+        services.ConfigureSingleton<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
 
-        if (setupAction is not null)
-        {
-            services.Configure(setupAction);
-        }
-
-        services.AddTransient<
-            ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>,
-            PermissionGrantCacheItemInvalidator
-        >();
-
-        // Definition Services
-        /*
-         * 1. You need to provide a storage implementation for `IPermissionDefinitionRecordRepository`
-         * 2. Implement `IPermissionDefinitionProvider` to define your permissions in code
-         *    and use `AddPermissionDefinitionProvider` to register it
-         */
-        services.TryAddSingleton<IPermissionDefinitionSerializer, PermissionDefinitionSerializer>();
-        services.TryAddSingleton<IStaticPermissionDefinitionStore, StaticPermissionDefinitionStore>();
-        services.TryAddSingleton<IDynamicPermissionDefinitionStore, DynamicPermissionDefinitionStore>();
-        services.TryAddSingleton<IPermissionDefinitionManager, PermissionDefinitionManager>();
-
-        // Value Services
-        /*
-         * You need to provide a storage implementation for `IPermissionGrantRecordRepository`
-         */
-        services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
-        services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
-        services.TryAddSingleton<IPermissionManager, PermissionManager>();
-
-        return services;
+        return _AddCore(services);
     }
 
-    public static void AddPermissionDefinitionProvider<T>(this IServiceCollection services)
+    public static IServiceCollection AddPermissionDefinitionProvider<T>(this IServiceCollection services)
         where T : class, IPermissionDefinitionProvider
     {
         services.AddSingleton<T>();
@@ -69,9 +47,11 @@ public static class AddPermissionsExtensions
         {
             options.DefinitionProviders.Add<T>();
         });
+
+        return services;
     }
 
-    public static void AddPermissionGrantProvider<T>(this IServiceCollection services)
+    public static IServiceCollection AddPermissionGrantProvider<T>(this IServiceCollection services)
         where T : class, IPermissionGrantProvider
     {
         services.AddSingleton<T>();
@@ -83,6 +63,8 @@ public static class AddPermissionsExtensions
                 options.GrantProviders.Add<T>();
             }
         });
+
+        return services;
     }
 
     public static IServiceCollection AddAlwaysAllowAuthorization(this IServiceCollection services)
@@ -109,5 +91,38 @@ public static class AddPermissionsExtensions
 
         services.TryAddSingleton<IPermissionGrantProvider, RolePermissionGrantProvider>();
         services.TryAddSingleton<IPermissionGrantProvider, UserPermissionGrantProvider>();
+    }
+
+    private static IServiceCollection _AddCore(IServiceCollection services)
+    {
+        services._AddCoreValueProvider();
+        services.AddHostedService<PermissionsInitializationBackgroundService>();
+        services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
+
+        services.AddTransient<
+            ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>,
+            PermissionGrantCacheItemInvalidator
+        >();
+
+        // Definition Services
+        /*
+         * 1. You need to provide a storage implementation for `IPermissionDefinitionRecordRepository`
+         * 2. Implement `IPermissionDefinitionProvider` to define your permissions in code
+         *    and use `AddPermissionDefinitionProvider` to register it
+         */
+        services.TryAddSingleton<IPermissionDefinitionSerializer, PermissionDefinitionSerializer>();
+        services.TryAddSingleton<IStaticPermissionDefinitionStore, StaticPermissionDefinitionStore>();
+        services.TryAddSingleton<IDynamicPermissionDefinitionStore, DynamicPermissionDefinitionStore>();
+        services.TryAddSingleton<IPermissionDefinitionManager, PermissionDefinitionManager>();
+
+        // Value Services
+        /*
+         * You need to provide a storage implementation for `IPermissionGrantRecordRepository`
+         */
+        services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
+        services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
+        services.TryAddSingleton<IPermissionManager, PermissionManager>();
+
+        return services;
     }
 }

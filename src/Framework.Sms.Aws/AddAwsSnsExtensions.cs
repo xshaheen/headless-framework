@@ -3,10 +3,10 @@
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleNotificationService;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms.Aws;
 
+[PublicAPI]
 public static class AddAwsSnsExtensions
 {
     /// <summary>
@@ -22,14 +22,11 @@ public static class AddAwsSnsExtensions
     /// // or pass null to use the default AWSOptions registered in the DI container
     /// </code>
     /// </summary>
-    public static IHostApplicationBuilder AddAwsSnsSmsSender(
-        this IHostApplicationBuilder builder,
-        AWSOptions? awsOptions = null
-    )
+    public static IServiceCollection AddAwsSnsSmsSender(this IServiceCollection services, AWSOptions? awsOptions = null)
     {
-        builder.Services.TryAddAWSService<IAmazonSimpleNotificationService>(awsOptions);
-        builder.Services.AddSingleton<ISmsSender, AwsSnsSmsSender>();
+        services.TryAddAWSService<IAmazonSimpleNotificationService>(awsOptions);
+        services.AddSingleton<ISmsSender, AwsSnsSmsSender>();
 
-        return builder;
+        return services;
     }
 }
