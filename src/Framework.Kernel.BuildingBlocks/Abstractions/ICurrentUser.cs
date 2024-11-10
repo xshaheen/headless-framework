@@ -7,6 +7,8 @@ namespace Framework.Kernel.BuildingBlocks.Abstractions;
 
 public interface ICurrentUser
 {
+    public ClaimsPrincipal Principal { get; }
+
     bool IsAuthenticated { get; }
 
     UserId? UserId { get; }
@@ -20,12 +22,12 @@ public interface ICurrentUser
     Claim? FindClaim(string claimType);
 
     Claim[] FindClaims(string claimType);
-
-    Claim[] GetAllClaims();
 }
 
 public sealed class NullCurrentUser : ICurrentUser
 {
+    public ClaimsPrincipal Principal => new();
+
     public bool IsAuthenticated => false;
 
     public UserId? UserId => null;
@@ -39,12 +41,12 @@ public sealed class NullCurrentUser : ICurrentUser
     public Claim? FindClaim(string claimType) => null;
 
     public Claim[] FindClaims(string claimType) => [];
-
-    public Claim[] GetAllClaims() => [];
 }
 
 public sealed class PrincipalCurrentUser(ClaimsPrincipal principal) : ICurrentUser
 {
+    public ClaimsPrincipal Principal => principal;
+
     public bool IsAuthenticated => UserId is not null;
 
     public UserId? UserId => principal.GetUserId();
@@ -63,10 +65,5 @@ public sealed class PrincipalCurrentUser(ClaimsPrincipal principal) : ICurrentUs
     public Claim[] FindClaims(string claimType)
     {
         return principal.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray();
-    }
-
-    public Claim[] GetAllClaims()
-    {
-        return principal.Claims.ToArray();
     }
 }

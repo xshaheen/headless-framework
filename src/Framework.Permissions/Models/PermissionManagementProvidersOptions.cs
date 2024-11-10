@@ -2,7 +2,7 @@
 
 using Framework.Kernel.Primitives;
 using Framework.Permissions.Definitions;
-using Framework.Permissions.ValueProviders;
+using Framework.Permissions.GrantProviders;
 
 namespace Framework.Permissions.Models;
 
@@ -10,7 +10,7 @@ public sealed class PermissionManagementProvidersOptions
 {
     public TypeList<IPermissionDefinitionProvider> DefinitionProviders { get; } = [];
 
-    public TypeList<IPermissionValueProvider> GrantProviders { get; } = [];
+    public TypeList<IPermissionGrantProvider> GrantProviders { get; } = [];
 
     public HashSet<string> DeletedPermissionGroups { get; } = [];
 

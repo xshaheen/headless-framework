@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
-using Framework.Permissions.Checkers;
-using Framework.Permissions.Results;
+using Framework.Permissions.Grants;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Framework.Permissions.Requirements;
@@ -21,7 +21,7 @@ public sealed class PermissionsRequirement(string[] permissionNames, bool requir
 }
 
 [PublicAPI]
-public sealed class PermissionsRequirementHandler(IPermissionChecker checker)
+public sealed class PermissionsRequirementHandler(IPermissionManager permissionManager)
     : AuthorizationHandler<PermissionsRequirement>
 {
     protected override async Task HandleRequirementAsync(
@@ -29,12 +29,15 @@ public sealed class PermissionsRequirementHandler(IPermissionChecker checker)
         PermissionsRequirement requirement
     )
     {
-        var multiplePermissionGrantResult = await checker.IsGrantedAsync(context.User, requirement.PermissionNames);
+        var multiplePermissionGrantResult = await permissionManager.IsGrantedAsync(
+            new PrincipalCurrentUser(context.User),
+            requirement.PermissionNames
+        );
 
         if (
             requirement.RequiresAll
                 ? multiplePermissionGrantResult.AllGranted
-                : multiplePermissionGrantResult.Any(x => x.Value.Status is PermissionGrantStatus.Granted)
+                : multiplePermissionGrantResult.Any(x => x.Value)
         )
         {
             context.Succeed(requirement);

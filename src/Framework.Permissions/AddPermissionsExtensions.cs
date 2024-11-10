@@ -1,15 +1,14 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
 using Framework.Kernel.Domains;
-using Framework.Permissions.Checkers;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Filters;
+using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Seeders;
 using Framework.Permissions.Testing;
-using Framework.Permissions.ValueProviders;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -73,7 +72,7 @@ public static class AddPermissionsExtensions
     }
 
     public static void AddPermissionGrantProvider<T>(this IServiceCollection services)
-        where T : class, IPermissionValueProvider
+        where T : class, IPermissionGrantProvider
     {
         services.AddSingleton<T>();
 
@@ -88,7 +87,7 @@ public static class AddPermissionsExtensions
 
     public static IServiceCollection AddAlwaysAllowAuthorization(this IServiceCollection services)
     {
-        services.ReplaceSingleton<IPermissionChecker, AlwaysAllowPermissionChecker>();
+        services.ReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
         services.ReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
 
         services.ReplaceSingleton<
@@ -104,11 +103,11 @@ public static class AddPermissionsExtensions
         services.Configure<PermissionManagementProvidersOptions>(options =>
         {
             // Last added provider has the highest priority
-            options.GrantProviders.Add<RolePermissionValueProvider>();
-            options.GrantProviders.Add<UserPermissionValueProvider>();
+            options.GrantProviders.Add<RolePermissionGrantProvider>();
+            options.GrantProviders.Add<UserPermissionGrantProvider>();
         });
 
-        services.TryAddSingleton<IPermissionValueProvider, RolePermissionValueProvider>();
-        services.TryAddSingleton<IPermissionValueProvider, UserPermissionValueProvider>();
+        services.TryAddSingleton<IPermissionGrantProvider, RolePermissionGrantProvider>();
+        services.TryAddSingleton<IPermissionGrantProvider, UserPermissionGrantProvider>();
     }
 }

@@ -10,30 +10,23 @@ public sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurre
 {
     public bool IsAuthenticated => UserId is not null;
 
-    public UserId? UserId => accessor.Principal.GetUserId();
+    public ClaimsPrincipal Principal => accessor.Principal;
 
-    public string? AccountType => accessor.Principal.GetAccountType();
+    public UserId? UserId => Principal.GetUserId();
 
-    public AccountId? AccountId => accessor.Principal.GetAccountId();
+    public string? AccountType => Principal.GetAccountType();
 
-    public IReadOnlySet<string> Roles => accessor.Principal.GetRoles();
+    public AccountId? AccountId => Principal.GetAccountId();
+
+    public IReadOnlySet<string> Roles => Principal.GetRoles();
 
     public Claim? FindClaim(string claimType)
     {
-        return accessor.Principal.Claims.FirstOrDefault(c =>
-            string.Equals(c.Type, claimType, StringComparison.Ordinal)
-        );
+        return Principal.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
     }
 
     public Claim[] FindClaims(string claimType)
     {
-        return accessor
-            .Principal.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal))
-            .ToArray();
-    }
-
-    public Claim[] GetAllClaims()
-    {
-        return accessor.Principal.Claims.ToArray();
+        return Principal.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray();
     }
 }

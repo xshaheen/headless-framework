@@ -6,11 +6,11 @@ using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 
-namespace Framework.Permissions.ValueProviders;
+namespace Framework.Permissions.GrantProviders;
 
 [PublicAPI]
-public sealed class RolePermissionValueProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
-    : StorePermissionValueProvider(grantStore, currentTenant)
+public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
+    : StorePermissionGrantProvider(grantStore, currentTenant)
 {
     private readonly IPermissionGrantStore _grantStore = grantStore;
 
@@ -18,7 +18,7 @@ public sealed class RolePermissionValueProvider(IPermissionGrantStore grantStore
 
     public override string Name => ProviderName;
 
-    public override async Task<MultiplePermissionGrantResult> CheckAsync(
+    public override async Task<MultiplePermissionGrantStatusResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
         CancellationToken cancellationToken = default
@@ -31,11 +31,11 @@ public sealed class RolePermissionValueProvider(IPermissionGrantStore grantStore
 
         if (roles.Count == 0)
         {
-            return new MultiplePermissionGrantResult(permissionNames, roles, PermissionGrantStatus.Undefined);
+            return new MultiplePermissionGrantStatusResult(permissionNames, roles, PermissionGrantStatus.Undefined);
         }
 
         // Assume all are undefined by default
-        var result = new MultiplePermissionGrantResult(permissionNames, roles, PermissionGrantStatus.Undefined);
+        var result = new MultiplePermissionGrantStatusResult(permissionNames, roles, PermissionGrantStatus.Undefined);
 
         foreach (var role in roles)
         {

@@ -28,6 +28,12 @@ public interface IPermissionGrantStore
         CancellationToken cancellationToken = default
     );
 
+    Task<List<PermissionGrant>> GetAllGrantsAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    );
+
     Task GrantAsync(
         string name,
         string providerName,
@@ -121,6 +127,17 @@ public sealed class PermissionGrantStore(
         }
 
         return await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken);
+    }
+
+    public async Task<List<PermissionGrant>> GetAllGrantsAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var result = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+
+        return result.ConvertAll(x => new PermissionGrant(x.Name, isGranted: true));
     }
 
     public async Task GrantAsync(

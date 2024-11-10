@@ -1,8 +1,8 @@
 ﻿using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
+using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Grants;
-using Framework.Permissions.ValueProviders;
 
 namespace Framework.Permissions.Seeders;
 
@@ -43,7 +43,7 @@ public sealed class GrantPermissionsSeedHelper(
             .Select(permissionName => new PermissionGrantRecord(
                 id: guidGenerator.Create(),
                 name: permissionName,
-                providerName: RolePermissionValueProvider.ProviderName,
+                providerName: RolePermissionGrantProvider.ProviderName,
                 providerKey: roleName,
                 tenantId: currentTenant.Id
             ));
@@ -59,7 +59,7 @@ public sealed class GrantPermissionsSeedHelper(
     {
         var permissionGrants = await permissionGrantRepository.GetListAsync(
             allPermissionNames,
-            RolePermissionValueProvider.ProviderName,
+            RolePermissionGrantProvider.ProviderName,
             roleName,
             cancellationToken
         );
@@ -76,7 +76,7 @@ public sealed class GrantPermissionsSeedHelper(
         var permissionNames = permissions
             .Where(p =>
                 p.Providers.Count == 0
-                || p.Providers.Contains(RolePermissionValueProvider.ProviderName, StringComparer.Ordinal)
+                || p.Providers.Contains(RolePermissionGrantProvider.ProviderName, StringComparer.Ordinal)
             )
             .Select(p => p.Name)
             .ToArray();

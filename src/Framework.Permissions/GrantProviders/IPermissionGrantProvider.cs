@@ -4,9 +4,9 @@ using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 
-namespace Framework.Permissions.ValueProviders;
+namespace Framework.Permissions.GrantProviders;
 
-public interface IPermissionValueProvider
+public interface IPermissionGrantProvider
 {
     string Name { get; }
 
@@ -16,7 +16,7 @@ public interface IPermissionValueProvider
         CancellationToken cancellationToken = default
     );
 
-    Task<MultiplePermissionGrantResult> CheckAsync(
+    Task<MultiplePermissionGrantStatusResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
         CancellationToken cancellationToken = default
