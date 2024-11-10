@@ -1,0 +1,31 @@
+<Project>
+
+  <Import Project="../Directory.Build.props" />
+
+  <ItemGroup Label="Global packages">
+    <PackageReference Include="AutoFixture" Version="4.18.0" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="NSubstitute" Version="5.1.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Global usings">
+    <Using Include="AutoFixture" />
+    <Using Include="FluentAssertions" />
+    <Using Include="NSubstitute" />
+    <Using Include="Xunit" />
+    <Using Include="Xunit.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup Label="Analyzers">
+    <PackageReference Include="NSubstitute.Analyzers.CSharp" Version="1.0.16">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup Label="Fix running Xunit tests when targeting .Net Framework on Unix">
+    <!-- see: https://cake-contrib.github.io/Cake.Recipe/docs/known-issues/running-xunit-tests-on-net-framework -->
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="17.4.0" Condition="$(TargetFramework.StartsWith('net4')) AND '$(OS)' == 'Unix'" />
+  </ItemGroup>
+
+</Project>

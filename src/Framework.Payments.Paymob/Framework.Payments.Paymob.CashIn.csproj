@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Framework.Payments.Paymob.CashIn.Tests.Unit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="PaymobCashInAuthenticator.cs">
+      <DependentUpon>IPaymobCashInAuthenticator.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBroker.Payment.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBrocker.VoidTransaction.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBroker.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBroker.CreateOrder.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBroker.OrderQueries.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBroker.RequestPaymentKey.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBroker.TransactionsQueries.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+    <Compile Update="PaymobCashInBroker.ValidateHmac.cs">
+      <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+  </ItemGroup>
+
+</Project>
