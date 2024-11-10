@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
-using System.Diagnostics;
-using Framework.Kernel.BuildingBlocks.Extensions.System;
 using Framework.Kernel.Checks;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Nito.AsyncEx;
+using Npgsql;
 using Respawn;
 using Respawn.Graph;
 using Testcontainers.PostgreSql;
@@ -71,24 +70,15 @@ public sealed class FeaturesTestFixture : IAsyncLifetime, IDisposable
 
     private static async Task _RunMigrationAsync(string connectionString)
     {
-        var ps = new ProcessStartInfo
-        {
-            FileName = "./TestSetup/postgre-init.exe",
-            Arguments = $"--connection \"{connectionString}\"",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
+        var migrationScript = await File.ReadAllTextAsync("TestSetup/postgre-init.sql");
 
-        var result = await ps.RunAsTaskAsync();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
 
-        if (result.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"Migration failed with exit code {result.ExitCode.ToString(CultureInfo.InvariantCulture)}. Output: {result.Output}"
-            );
-        }
+#pragma warning disable CA2100 // Review SQL queries for security vulnerabilities
+        await using var command = new NpgsqlCommand(migrationScript, connection);
+#pragma warning restore CA2100
+        await command.ExecuteNonQueryAsync();
     }
 }
 

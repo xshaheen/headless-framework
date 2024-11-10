@@ -24,12 +24,10 @@ public sealed class FeaturesInitializationBackgroundService(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (_options is { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
+        if (_options is not { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
         {
-            return Task.CompletedTask;
+            _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(cancellationToken);
         }
-
-        _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(cancellationToken);
 
         return Task.CompletedTask;
     }
