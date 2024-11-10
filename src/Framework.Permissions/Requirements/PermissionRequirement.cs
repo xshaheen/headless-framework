@@ -1,7 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
-using Framework.Permissions.Checkers;
+using Framework.Permissions.Grants;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Framework.Permissions.Requirements;
@@ -15,7 +16,7 @@ public sealed class PermissionRequirement(string permissionName) : IAuthorizatio
 }
 
 [PublicAPI]
-public sealed class PermissionRequirementHandler(IPermissionChecker checker)
+public sealed class PermissionRequirementHandler(IPermissionManager permissionManager)
     : AuthorizationHandler<PermissionRequirement>
 {
     protected override async Task HandleRequirementAsync(
@@ -23,7 +24,7 @@ public sealed class PermissionRequirementHandler(IPermissionChecker checker)
         PermissionRequirement requirement
     )
     {
-        if (await checker.IsGrantedAsync(context.User, requirement.PermissionName))
+        if (await permissionManager.IsGrantedAsync(new PrincipalCurrentUser(context.User), requirement.PermissionName))
         {
             context.Succeed(requirement);
         }

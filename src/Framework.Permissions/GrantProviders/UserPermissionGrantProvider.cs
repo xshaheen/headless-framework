@@ -5,11 +5,11 @@ using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 
-namespace Framework.Permissions.ValueProviders;
+namespace Framework.Permissions.GrantProviders;
 
 [PublicAPI]
-public sealed class UserPermissionValueProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
-    : StorePermissionValueProvider(grantStore, currentTenant)
+public sealed class UserPermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
+    : StorePermissionGrantProvider(grantStore, currentTenant)
 {
     private readonly IPermissionGrantStore _grantStore = grantStore;
 
@@ -17,7 +17,7 @@ public sealed class UserPermissionValueProvider(IPermissionGrantStore grantStore
 
     public override string Name => ProviderName;
 
-    public override async Task<MultiplePermissionGrantResult> CheckAsync(
+    public override async Task<MultiplePermissionGrantStatusResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
         CancellationToken cancellationToken = default
@@ -28,10 +28,10 @@ public sealed class UserPermissionValueProvider(IPermissionGrantStore grantStore
 
         if (userId is null)
         {
-            return new MultiplePermissionGrantResult(permissionNames, [], PermissionGrantStatus.Undefined);
+            return new MultiplePermissionGrantStatusResult(permissionNames, [], PermissionGrantStatus.Undefined);
         }
 
-        var result = new MultiplePermissionGrantResult();
+        var result = new MultiplePermissionGrantStatusResult();
         var statusMap = await _grantStore.IsGrantedAsync(permissionNames, Name, userId, cancellationToken);
 
         foreach (var permission in permissions)

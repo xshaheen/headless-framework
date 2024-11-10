@@ -4,35 +4,20 @@ using Framework.Kernel.Checks;
 
 namespace Framework.Permissions.Results;
 
-public sealed class MultiplePermissionGrantResult : Dictionary<string, PermissionGrantResult>
+public sealed class MultiplePermissionGrantResult() : Dictionary<string, bool>(StringComparer.Ordinal)
 {
-    public bool AllGranted => Values.All(x => x.Status is PermissionGrantStatus.Granted);
+    public bool AllGranted => Values.All(isGranted => isGranted);
 
-    public bool AllProhibited => Values.All(x => x.Status is PermissionGrantStatus.Prohibited);
+    public bool AllProhibited => Values.All(isGranted => !isGranted);
 
-    public MultiplePermissionGrantResult()
-        : base(StringComparer.Ordinal) { }
-
-    public MultiplePermissionGrantResult(
-        IReadOnlyList<string> names,
-        IReadOnlyCollection<string> providerKeys,
-        PermissionGrantStatus grantStatus
-    )
+    public MultiplePermissionGrantResult(IReadOnlyList<string> names, bool isGranted = false)
         : this()
     {
         Argument.IsNotNull(names);
-        Argument.IsInEnum(grantStatus);
-
-        var info = grantStatus switch
-        {
-            PermissionGrantStatus.Granted => PermissionGrantResult.Granted(providerKeys),
-            PermissionGrantStatus.Prohibited => PermissionGrantResult.Prohibited(providerKeys),
-            _ => PermissionGrantResult.Undefined(providerKeys),
-        };
 
         foreach (var name in names)
         {
-            Add(name, info);
+            Add(name, isGranted);
         }
     }
 }

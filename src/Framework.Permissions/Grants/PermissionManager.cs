@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.BuildingBlocks.Abstractions;
+﻿using System.Security.Claims;
+using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
@@ -11,21 +13,21 @@ public interface IPermissionManager
 {
     Task<GrantedPermissionResult> GetAsync(
         string permissionName,
-        string providerName,
         ICurrentUser currentUser,
+        string? providerName = null,
         CancellationToken cancellationToken = default
     );
 
     Task<List<GrantedPermissionResult>> GetAllAsync(
-        string providerName,
         ICurrentUser currentUser,
+        string? providerName = null,
         CancellationToken cancellationToken = default
     );
 
     Task<List<GrantedPermissionResult>> GetAllAsync(
         IReadOnlyCollection<string> permissionNames,
-        string providerName,
         ICurrentUser currentUser,
+        string? providerName = null,
         CancellationToken cancellationToken = default
     );
 
@@ -56,14 +58,14 @@ public sealed class PermissionManager(
 {
     public async Task<GrantedPermissionResult> GetAsync(
         string permissionName,
-        string providerName,
         ICurrentUser currentUser,
+        string? providerName = null,
         CancellationToken cancellationToken = default
     )
     {
         var permission = await definitionManager.GetOrDefaultAsync(permissionName, cancellationToken);
 
-        if (permission is null)
+        if (permission is null || !permission.IsEnabled)
         {
             return new(permissionName, isGranted: false);
         }
@@ -75,11 +77,19 @@ public sealed class PermissionManager(
 
     public async Task<List<GrantedPermissionResult>> GetAllAsync(
         IReadOnlyCollection<string> permissionNames,
-        string providerName,
         ICurrentUser currentUser,
+        string? providerName = null,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(permissionNames);
+        Argument.IsNotNull(currentUser);
+
+        if (permissionNames.Count == 0)
+        {
+            return [];
+        }
+
         var existPermissions = new List<PermissionDefinition>();
         var undefinedPermissions = new List<string>();
 
@@ -110,13 +120,13 @@ public sealed class PermissionManager(
     }
 
     public async Task<List<GrantedPermissionResult>> GetAllAsync(
-        string providerName,
         ICurrentUser currentUser,
+        string? providerName = null,
         CancellationToken cancellationToken = default
     )
     {
-        var permissionDefinitions = await definitionManager.GetPermissionsAsync(cancellationToken);
-        var result = await _CoreGetOrDefaultAsync(permissionDefinitions, currentUser, providerName, cancellationToken);
+        var allDefinitions = await definitionManager.GetPermissionsAsync(cancellationToken);
+        var result = await _CoreGetOrDefaultAsync(allDefinitions, currentUser, providerName, cancellationToken);
 
         return result;
     }
@@ -240,6 +250,11 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
+        if (permissions.Count == 0)
+        {
+            return [];
+        }
+
         // Assume all permissions are not granted
         var result = permissions.Select(x => new GrantedPermissionResult(x.Name, isGranted: false)).ToList();
 
@@ -286,9 +301,4 @@ public sealed class PermissionManager(
     }
 
     #endregion
-}
-
-public static class PermissionManagerExtensions
-{
-    // TODO: Write extension methods for simple IsGranted check
 }

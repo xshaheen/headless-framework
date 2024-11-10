@@ -5,10 +5,10 @@ using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
 using Framework.Permissions.Results;
 
-namespace Framework.Permissions.ValueProviders;
+namespace Framework.Permissions.GrantProviders;
 
-public abstract class StorePermissionValueProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
-    : IPermissionValueProvider
+public abstract class StorePermissionGrantProvider(IPermissionGrantStore grantStore, ICurrentTenant currentTenant)
+    : IPermissionGrantProvider
 {
     public abstract string Name { get; }
 
@@ -23,7 +23,7 @@ public abstract class StorePermissionValueProvider(IPermissionGrantStore grantSt
         return result.First().Value;
     }
 
-    public abstract Task<MultiplePermissionGrantResult> CheckAsync(
+    public abstract Task<MultiplePermissionGrantStatusResult> CheckAsync(
         IReadOnlyCollection<PermissionDefinition> permissions,
         ICurrentUser currentUser,
         CancellationToken cancellationToken = default

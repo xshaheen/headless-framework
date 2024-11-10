@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Definitions;
 
-/// <summary>Store for setting definitions that are defined statically in memory.</summary>
+/// <summary>Store for setting definitions that are defined statically in memory which is defined at <see cref="SettingManagementProvidersOptions.DefinitionProviders"/>.</summary>
 public interface IStaticSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default);

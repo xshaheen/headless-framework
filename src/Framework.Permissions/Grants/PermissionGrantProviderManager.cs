@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Models;
-using Framework.Permissions.ValueProviders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MoreLinq.Extensions;
@@ -10,16 +10,16 @@ namespace Framework.Permissions.Grants;
 
 public interface IPermissionGrantProviderManager
 {
-    IReadOnlyList<IPermissionValueProvider> ValueProviders { get; }
+    IReadOnlyList<IPermissionGrantProvider> ValueProviders { get; }
 }
 
 public sealed class PermissionGrantProviderManager : IPermissionGrantProviderManager
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly PermissionManagementProvidersOptions _options;
-    private readonly Lazy<List<IPermissionValueProvider>> _lazyProviders;
+    private readonly Lazy<List<IPermissionGrantProvider>> _lazyProviders;
 
-    public IReadOnlyList<IPermissionValueProvider> ValueProviders => _lazyProviders.Value;
+    public IReadOnlyList<IPermissionGrantProvider> ValueProviders => _lazyProviders.Value;
 
     public PermissionGrantProviderManager(
         IServiceProvider serviceProvider,
@@ -28,13 +28,13 @@ public sealed class PermissionGrantProviderManager : IPermissionGrantProviderMan
     {
         _options = options.Value;
         _serviceProvider = serviceProvider;
-        _lazyProviders = new Lazy<List<IPermissionValueProvider>>(_GetProviders, isThreadSafe: true);
+        _lazyProviders = new Lazy<List<IPermissionGrantProvider>>(_GetProviders, isThreadSafe: true);
     }
 
-    private List<IPermissionValueProvider> _GetProviders()
+    private List<IPermissionGrantProvider> _GetProviders()
     {
         var providers = _options
-            .GrantProviders.Select(type => (IPermissionValueProvider)_serviceProvider.GetRequiredService(type))
+            .GrantProviders.Select(type => (IPermissionGrantProvider)_serviceProvider.GetRequiredService(type))
             .ToList();
 
         var multipleProviders = providers
