@@ -210,6 +210,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.EntityFramework.M
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Permissions.Storage.EntityFramework", "src\Framework.Permissions.Storage.EntityFramework\Framework.Permissions.Storage.EntityFramework.csproj", "{B3582D9E-4456-4BAC-B9B1-1C438C7F4D94}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Permissions.Tests.Integrations", "tests\Framework.Permissions.Tests.Integrations\Framework.Permissions.Tests.Integrations.csproj", "{45EE0F71-5038-4D09-9424-F870B62790C8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -518,6 +520,10 @@ Global
 		{B3582D9E-4456-4BAC-B9B1-1C438C7F4D94}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B3582D9E-4456-4BAC-B9B1-1C438C7F4D94}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B3582D9E-4456-4BAC-B9B1-1C438C7F4D94}.Release|Any CPU.Build.0 = Release|Any CPU
+		{45EE0F71-5038-4D09-9424-F870B62790C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{45EE0F71-5038-4D09-9424-F870B62790C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{45EE0F71-5038-4D09-9424-F870B62790C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{45EE0F71-5038-4D09-9424-F870B62790C8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -598,6 +604,7 @@ Global
 		{07AAA09E-A478-487D-AC3D-21DB41E577F9} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
 		{79AC0B05-1F01-45F7-9576-AE74CEC6FE9F} = {4681258C-BF42-4688-B619-513EB2658D82}
 		{B3582D9E-4456-4BAC-B9B1-1C438C7F4D94} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
+		{45EE0F71-5038-4D09-9424-F870B62790C8} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}

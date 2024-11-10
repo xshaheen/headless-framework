@@ -1,10 +1,13 @@
 ﻿using System.Reflection;
+using Foundatio.Messaging;
 using Framework.Api;
 using Framework.Caching;
-using Framework.Features;
-using Framework.Features.Storage.EntityFramework;
+using Framework.Messaging;
+using Framework.Permissions;
+using Framework.Permissions.Storage.EntityFramework;
 using Framework.ResourceLocks.Local;
 using Microsoft.EntityFrameworkCore;
+using Savorboard.CAP.InMemoryMessageQueue;
 
 // To add a migration use:
 // dotnet ef migrations add InitialMigration -p .\demo\Framework.EntityFramework.Migrations.Startup
@@ -20,10 +23,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddFrameworkApiServices();
 builder.Services.AddInMemoryCache();
 builder.Services.AddLocalResourceLock();
+builder.Services.AddCapDistributedMessaging(options =>
+{
+    options.UseInMemoryStorage();
+    options.UseInMemoryMessageQueue();
+});
 
 builder
-    .Services.AddFeaturesManagementCore()
-    .AddFeaturesManagementEntityFrameworkStorage(options =>
+    .Services.AddPermissionsManagementCore()
+    .AddPermissionsManagementEntityFrameworkStorage(options =>
     {
         options.UseNpgsql(
             "Host=localhost;Database=Framework;Username=postgres;Password=postgres",

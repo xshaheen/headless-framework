@@ -44,7 +44,7 @@ public sealed class DynamicPermissionDefinitionStore(
 ) : IDynamicPermissionDefinitionStore, IDisposable
 {
     private readonly PermissionManagementOptions _options = optionsAccessor.Value;
-    private readonly PermissionManagementProvidersOptions _providerses = providersAccessor.Value;
+    private readonly PermissionManagementProvidersOptions _providers = providersAccessor.Value;
 
     /// <summary>
     /// A lock key for the application permissions update to allow only one instance to try
@@ -245,7 +245,7 @@ public sealed class DynamicPermissionDefinitionStore(
 
         var elapsedSinceLastCheck = timeProvider.GetUtcNow().Subtract(_lastCheckTime.Value);
 
-        return elapsedSinceLastCheck.TotalSeconds > 30;
+        return elapsedSinceLastCheck > _options.DynamicDefinitionsMemoryCacheExpiration;
     }
 
     public void Dispose()
@@ -285,8 +285,8 @@ public sealed class DynamicPermissionDefinitionStore(
         var currentHash = _CalculateHash(
             permissionGroupRecords,
             permissionRecords,
-            _providerses.DeletedPermissionGroups,
-            _providerses.DeletedPermissions
+            _providers.DeletedPermissionGroups,
+            _providers.DeletedPermissions
         );
 
         if (string.Equals(cachedHash.Value, currentHash, StringComparison.Ordinal))
@@ -393,9 +393,9 @@ public sealed class DynamicPermissionDefinitionStore(
         }
 
         // Handle deleted records
-        if (_providerses.DeletedPermissionGroups.Count != 0)
+        if (_providers.DeletedPermissionGroups.Count != 0)
         {
-            deletedRecords.AddRange(dbRecords.Where(x => _providerses.DeletedPermissionGroups.Contains(x.Name)));
+            deletedRecords.AddRange(dbRecords.Where(x => _providers.DeletedPermissionGroups.Contains(x.Name)));
         }
 
         return (newRecords, changedRecords, deletedRecords);
@@ -463,15 +463,15 @@ public sealed class DynamicPermissionDefinitionStore(
         }
 
         // Handle deleted records
-        if (_providerses.DeletedPermissions.Count != 0)
+        if (_providers.DeletedPermissions.Count != 0)
         {
-            deletedRecords.AddRange(dbRecordsMap.Values.Where(x => _providerses.DeletedPermissions.Contains(x.Name)));
+            deletedRecords.AddRange(dbRecordsMap.Values.Where(x => _providers.DeletedPermissions.Contains(x.Name)));
         }
 
-        if (_providerses.DeletedPermissionGroups.Count != 0)
+        if (_providers.DeletedPermissionGroups.Count != 0)
         {
             deletedRecords.AddIfNotContains(
-                dbRecordsMap.Values.Where(x => _providerses.DeletedPermissionGroups.Contains(x.GroupName))
+                dbRecordsMap.Values.Where(x => _providers.DeletedPermissionGroups.Contains(x.GroupName))
             );
         }
 

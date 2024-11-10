@@ -34,6 +34,9 @@ public sealed class PermissionManagementOptions
 
     /// <summary>A stamp when changed the application updates its local cache.</summary>
     public string CommonPermissionsUpdatedStampCacheKey { get; set; } = "PermissionsUpdatedLocalStamp";
+
+    /// <summary>Default: 30 seconds.</summary>
+    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
 }
 
 public sealed class PermissionManagementOptionsValidator : AbstractValidator<PermissionManagementOptions>
