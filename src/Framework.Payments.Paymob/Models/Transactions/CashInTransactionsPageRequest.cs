@@ -9,7 +9,7 @@ public sealed class CashInTransactionsPageRequest
 {
     private CashInTransactionsPageRequest() { }
 
-    public Dictionary<string, string> Query { get; } = new();
+    public Dictionary<string, string> Query { get; } = new(StringComparer.Ordinal);
 
     public static CashInTransactionsPageRequest Create => new();
 
@@ -104,6 +104,7 @@ public sealed class CashInTransactionsPageRequest
         return this;
     }
 
+    /// <summary>Add transaction_type to the query</summary>
     /// <param name="type">See: <see cref="CashInTransactionTypes"/></param>
     public CashInTransactionsPageRequest WithTransactionType(string type)
     {
@@ -115,6 +116,7 @@ public sealed class CashInTransactionsPageRequest
         return this;
     }
 
+    /// <summary>Add origin to the query</summary>
     /// <param name="origin">See: <see cref="CashInTransactionOrigins"/></param>
     public CashInTransactionsPageRequest WithOrigin(string origin)
     {
@@ -126,6 +128,7 @@ public sealed class CashInTransactionsPageRequest
         return this;
     }
 
+    /// <summary>Add source to the query</summary>
     /// <param name="source">See: <see cref="CashInTransactionSources"/></param>
     public CashInTransactionsPageRequest WithSource(string source)
     {
@@ -137,6 +140,7 @@ public sealed class CashInTransactionsPageRequest
         return this;
     }
 
+    /// <summary>Add status to the query</summary>
     /// <param name="status">See: <see cref="CashInStatuses"/></param>
     public CashInTransactionsPageRequest WithStatus(string status)
     {

@@ -10,9 +10,8 @@ public partial class PaymobCashInBroker
 {
     public async Task<CashInTransactionsPage?> GetTransactionsPageAsync(CashInTransactionsPageRequest? request = null)
     {
-        string authToken = await authenticator.GetAuthenticationTokenAsync();
-
-        string requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/transactions");
+        var authToken = await authenticator.GetAuthenticationTokenAsync();
+        var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/transactions");
 
         if (request is not null)
         {
@@ -37,15 +36,14 @@ public partial class PaymobCashInBroker
 
     public async Task<CashInTransaction?> GetTransactionAsync(string transactionId)
     {
-        string authToken = await authenticator.GetAuthenticationTokenAsync();
-        string requestUrl = Url.Combine(_options.ApiBaseUrl, $"acceptance/transactions/{transactionId}");
+        var authToken = await authenticator.GetAuthenticationTokenAsync();
+        var requestUrl = Url.Combine(_options.ApiBaseUrl, $"acceptance/transactions/{transactionId}");
 
-        using var request = new HttpRequestMessage
-        {
-            Method = HttpMethod.Get,
-            RequestUri = new Uri(requestUrl, UriKind.Absolute),
-            Headers = { { "Authorization", $"Bearer {authToken}" } },
-        };
+        using var request = new HttpRequestMessage();
+
+        request.Method = HttpMethod.Get;
+        request.RequestUri = new Uri(requestUrl, UriKind.Absolute);
+        request.Headers.Add("Authorization", $"Bearer {authToken}");
 
         using var response = await httpClient.SendAsync(request);
 

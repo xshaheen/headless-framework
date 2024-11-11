@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
 
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using Framework.Payments.Paymob.CashIn.Internal;
 
 namespace Tests.Internal;
 
-public class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverterTests
+public sealed class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverterTests
 {
     public static readonly TheoryData<DateTimeOffset, string> WriteTestsData =
         new()
@@ -30,7 +30,7 @@ public class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverterTests
     [InlineData("2021-08-08T06:26:21.4526814+01:00", 6, 1)]
     public void read_tests(string timestamp, int hour, int offset)
     {
-        var json = $@"{{ ""Timestamp"": ""{timestamp}"" }}";
+        var json = $$"""{ "Timestamp": "{{timestamp}}" }""";
         var result = JsonSerializer.Deserialize<Target>(json);
         result!.Timestamp.DateTime.Hour.Should().Be(hour);
         result.Timestamp.Offset.Should().Be(TimeSpan.FromHours(offset));
@@ -40,7 +40,7 @@ public class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverterTests
     [MemberData(nameof(WriteTestsData))]
     public void write_tests(DateTimeOffset dateTimeOffset, string expected)
     {
-        string json = JsonSerializer.Serialize(dateTimeOffset, _Options);
+        var json = JsonSerializer.Serialize(dateTimeOffset, _Options);
         json.Should().Be(expected);
     }
 

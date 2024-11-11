@@ -2,9 +2,4 @@
 
 namespace Tests;
 
-public partial class PaymobCashInAuthenticatorTests : IClassFixture<PaymobCashInFixture>
-{
-    private readonly PaymobCashInFixture _fixture;
-
-    public PaymobCashInAuthenticatorTests(PaymobCashInFixture fixture) => _fixture = fixture;
-}
+public partial class PaymobCashInAuthenticatorTests(PaymobCashInFixture fixture) : IClassFixture<PaymobCashInFixture>;

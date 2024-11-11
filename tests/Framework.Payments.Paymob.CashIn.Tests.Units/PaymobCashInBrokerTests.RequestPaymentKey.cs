@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
 
 using System.Net;
-using System.Text.Json;
 using Framework.Payments.Paymob.CashIn;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
 using WireMock.RequestBuilders;
@@ -14,7 +13,10 @@ public partial class PaymobCashInBrokerTests
     public static Fixture AutoFixture { get; } = new();
 
     public static readonly TheoryData<CashInPaymentKeyRequest> RequestPaymentKeyData =
-        new() { _GetPaymentKeyRequest(expiration: null), _GetPaymentKeyRequest(expiration: AutoFixture.Create<int>()) };
+    [
+        _GetPaymentKeyRequest(expiration: null),
+        _GetPaymentKeyRequest(expiration: AutoFixture.Create<int>()),
+    ];
 
     [Theory]
     [MemberData(nameof(RequestPaymentKeyData))]
@@ -22,22 +24,22 @@ public partial class PaymobCashInBrokerTests
     {
         // given
         var (authenticator, token) = _SetupGentAuthenticationToken();
-        var expiration = _fixture.AutoFixture.Create<int>();
-        var config = _fixture.CashInConfig with { ExpirationPeriod = expiration };
-        _fixture.Options.CurrentValue.Returns(config);
+        var expiration = fixture.AutoFixture.Create<int>();
+        var config = fixture.CashInConfig with { ExpirationPeriod = expiration };
+        fixture.Options.CurrentValue.Returns(config);
         var internalRequest = new CashInPaymentKeyInternalRequest(request, token, expiration);
         var internalRequestJson = JsonSerializer.Serialize(internalRequest);
-        var response = _fixture.AutoFixture.Create<CashInPaymentKeyResponse>();
+        var response = fixture.AutoFixture.Create<CashInPaymentKeyResponse>();
         var responseJson = JsonSerializer.Serialize(response);
 
-        _fixture
+        fixture
             .Server.Given(
                 Request.Create().WithPath("/acceptance/payment_keys").UsingPost().WithBody(internalRequestJson)
             )
             .RespondWith(Response.Create().WithBody(responseJson));
 
         // when
-        var broker = new PaymobCashInBroker(_fixture.HttpClient, authenticator, _fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.Options);
         var result = await broker.RequestPaymentKeyAsync(request);
 
         // then
@@ -49,21 +51,21 @@ public partial class PaymobCashInBrokerTests
     public async Task should_throw_http_request_exception_when_request_payment_key_not_success()
     {
         // given
-        var request = _fixture.AutoFixture.Create<CashInPaymentKeyRequest>();
+        var request = fixture.AutoFixture.Create<CashInPaymentKeyRequest>();
         var (authenticator, _) = _SetupGentAuthenticationToken();
-        var body = _fixture.AutoFixture.Create<string>();
+        var body = fixture.AutoFixture.Create<string>();
 
-        _fixture
+        fixture
             .Server.Given(Request.Create().WithPath("/acceptance/payment_keys").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(body));
 
         // when
-        var broker = new PaymobCashInBroker(_fixture.HttpClient, authenticator, _fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.Options);
         var invocation = FluentActions.Awaiting(() => broker.RequestPaymentKeyAsync(request));
 
         // then
         await _ShouldThrowPaymobRequestException(invocation, HttpStatusCode.InternalServerError, body);
-        await authenticator.Received(1).GetAuthenticationTokenAsync();
+        _ = await authenticator.Received(1).GetAuthenticationTokenAsync();
     }
 
     private static CashInPaymentKeyRequest _GetPaymentKeyRequest(int? expiration)
