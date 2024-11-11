@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
 
-using System.Text.Json;
 using Framework.Payments.Paymob.CashIn;
 using Framework.Payments.Paymob.CashIn.Models.Auth;
+using Humanizer;
+using Microsoft.Extensions.Time.Testing;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -14,14 +15,14 @@ public partial class PaymobCashInAuthenticatorTests
     public async Task should_request_new_token_when_cache_token_expired()
     {
         // given
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(_fixture.HttpClient, _fixture.MemoryCache, _fixture.Options);
-        _fixture.SystemClock.UtcNow.Returns(DateTime.Now);
-        string result1 = await authenticator.GetAuthenticationTokenAsync();
-        _fixture.SystemClock.UtcNow.Returns(DateTime.Now.AddMinutes(61));
-        string result2 = await authenticator.GetAuthenticationTokenAsync();
+        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.Options);
+        var result1 = await authenticator.GetAuthenticationTokenAsync();
+        timeProvider.Advance(61.Minutes());
+        var result2 = await authenticator.GetAuthenticationTokenAsync();
 
         // then
         result1.Should().NotBe(result2);
@@ -31,14 +32,14 @@ public partial class PaymobCashInAuthenticatorTests
     public async Task should_cache_token_fo_an_hour_when_success()
     {
         // given
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(_fixture.HttpClient, _fixture.MemoryCache, _fixture.Options);
-        _fixture.SystemClock.UtcNow.Returns(DateTime.Now);
-        string result1 = await authenticator.GetAuthenticationTokenAsync();
-        _fixture.SystemClock.UtcNow.Returns(DateTime.Now.AddMinutes(50));
-        string result2 = await authenticator.GetAuthenticationTokenAsync();
+        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.Options);
+        var result1 = await authenticator.GetAuthenticationTokenAsync();
+        timeProvider.Advance(50.Minutes());
+        var result2 = await authenticator.GetAuthenticationTokenAsync();
 
         // then
         result1.Should().Be(result2);
@@ -46,20 +47,21 @@ public partial class PaymobCashInAuthenticatorTests
 
     private void _SetupRandomResponse()
     {
-        string apiKey = _fixture.AutoFixture.Create<string>();
-        var config = _fixture.CashInConfig with { ApiKey = apiKey };
-        _fixture.Options.CurrentValue.Returns(config);
+        var apiKey = fixture.AutoFixture.Create<string>();
+        var config = fixture.CashInConfig with { ApiKey = apiKey };
+        fixture.Options.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
-        string requestJson = JsonSerializer.Serialize<CashInAuthenticationTokenRequest>(request);
+        var requestJson = JsonSerializer.Serialize<CashInAuthenticationTokenRequest>(request);
 
-        _fixture
+        fixture
             .Server.Given(Request.Create().WithPath("/auth/tokens").UsingPost().WithBody(requestJson))
             .RespondWith(Response.Create().WithBody(_ => _GetTokenResponseJson()));
     }
 
     private string _GetTokenResponseJson()
     {
-        var response = _fixture.AutoFixture.Create<CashInAuthenticationTokenResponse>();
+        // var fixture = new Fixture();
+        var response = fixture.AutoFixture.Create<CashInAuthenticationTokenResponse>();
         return JsonSerializer.Serialize(response);
     }
 }

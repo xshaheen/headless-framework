@@ -36,10 +36,10 @@ public sealed class CashInCallbackTransactionData
     public decimal Amount { get; init; }
 
     [JsonPropertyName("merchant")]
-    public required string Merchant { get; init; }
+    public string? Merchant { get; init; }
 
     [JsonPropertyName("card_type")]
-    public required string CardType { get; init; }
+    public string? CardType { get; init; }
 
     [JsonPropertyName("created_at")]
     [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
@@ -73,7 +73,7 @@ public sealed class CashInCallbackTransactionData
     public string? Message { get; init; }
 
     [JsonPropertyName("currency")]
-    public required string Currency { get; init; }
+    public string? Currency { get; init; }
 
     [JsonPropertyName("migs_result")]
     public string? MigsResult { get; init; }
@@ -82,10 +82,10 @@ public sealed class CashInCallbackTransactionData
     public string? OrderInfo { get; init; }
 
     [JsonPropertyName("migs_transaction")]
-    public required CashInCallbackTransactionDataMigsTransaction MigsTransaction { get; init; }
+    public CashInCallbackTransactionDataMigsTransaction? MigsTransaction { get; init; }
 
     [JsonPropertyName("migs_order")]
-    public required CashInCallbackTransactionDataMigsOrder MigsOrder { get; init; }
+    public CashInCallbackTransactionDataMigsOrder? MigsOrder { get; init; }
 
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; init; }

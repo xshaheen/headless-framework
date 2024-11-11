@@ -47,7 +47,7 @@ public sealed class CashInCallbackToken
             + Id.ToString(CultureInfo.InvariantCulture)
             + MaskedPan
             + MerchantId.ToString(CultureInfo.InvariantCulture)
-            + OrderId.ToString(CultureInfo.InvariantCulture)
+            + OrderId
             + Token;
     }
 
@@ -55,7 +55,7 @@ public sealed class CashInCallbackToken
     {
         var dateTime = DateTime.Parse(CreatedAt, CultureInfo.InvariantCulture);
 
-        // If not have time zone offset consider it cairo time.
+        // If not have time zone offset, consider it cairo time.
         return dateTime.Kind is DateTimeKind.Unspecified
             ? new DateTimeOffset(
                 dateTime,

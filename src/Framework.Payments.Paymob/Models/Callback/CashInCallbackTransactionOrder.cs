@@ -26,7 +26,7 @@ public sealed class CashInCallbackTransactionOrder
     public int AmountCents { get; init; }
 
     [JsonPropertyName("currency")]
-    public required string Currency { get; init; }
+    public string? Currency { get; init; }
 
     [JsonPropertyName("is_payment_locked")]
     public bool IsPaymentLocked { get; init; }
@@ -65,10 +65,10 @@ public sealed class CashInCallbackTransactionOrder
     public required string PaymentMethod { get; init; }
 
     [JsonPropertyName("api_source")]
-    public required string ApiSource { get; init; }
+    public string? ApiSource { get; init; }
 
     [JsonPropertyName("merchant")]
-    public required CashInOrderMerchant Merchant { get; init; }
+    public CashInOrderMerchant? Merchant { get; init; }
 
     [JsonPropertyName("shipping_data")]
     public CashInOrderShippingData? ShippingData { get; init; }

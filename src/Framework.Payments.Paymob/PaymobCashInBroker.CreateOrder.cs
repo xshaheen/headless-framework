@@ -16,9 +16,10 @@ public partial class PaymobCashInBroker
     /// <summary>Create order. Order is a logical container for a transaction(s).</summary>
     public async Task<CashInCreateOrderResponse> CreateOrderAsync(CashInCreateOrderRequest request)
     {
-        string authToken = await authenticator.GetAuthenticationTokenAsync();
+        var authToken = await authenticator.GetAuthenticationTokenAsync();
         var requestUrl = Url.Combine(_options.ApiBaseUrl, "ecommerce/orders");
         var internalRequest = new CashInCreateOrderInternalRequest(authToken, request);
+
         using var response = await httpClient.PostAsJsonAsync(requestUrl, internalRequest, _IgnoreNullOptions);
 
         if (!response.IsSuccessStatusCode)

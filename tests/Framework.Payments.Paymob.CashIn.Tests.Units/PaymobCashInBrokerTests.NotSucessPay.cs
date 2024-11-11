@@ -10,13 +10,12 @@ namespace Tests;
 public partial class PaymobCashInBrokerTests
 {
     public static readonly TheoryData<Func<PaymobCashInBroker, Task<object>>> PayRequests =
-        new()
-        {
-            async broker => await broker.CreateWalletPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
-            async broker => await broker.CreateKioskPayAsync(Guid.NewGuid().ToString()),
-            async broker => await broker.CreateCashCollectionPayAsync(Guid.NewGuid().ToString()),
-            async broker => await broker.CreateSavedTokenPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
-        };
+    [
+        async broker => await broker.CreateWalletPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
+        async broker => await broker.CreateKioskPayAsync(Guid.NewGuid().ToString()),
+        async broker => await broker.CreateCashCollectionPayAsync(Guid.NewGuid().ToString()),
+        async broker => await broker.CreateSavedTokenPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
+    ];
 
     [Theory]
     [MemberData(nameof(PayRequests))]
@@ -25,16 +24,16 @@ public partial class PaymobCashInBrokerTests
     )
     {
         // given
-        var body = _fixture.AutoFixture.Create<string>();
+        var body = fixture.AutoFixture.Create<string>();
 
-        _fixture.Server.Reset();
+        fixture.Server.Reset();
 
-        _fixture
+        fixture
             .Server.Given(Request.Create().WithPath("/acceptance/payments/pay").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(body));
 
         // when
-        var broker = new PaymobCashInBroker(_fixture.HttpClient, null!, _fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, null!, fixture.Options);
         var invocation = FluentActions.Awaiting(() => func(broker));
 
         // then
