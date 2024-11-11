@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using FluentValidation;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
@@ -27,5 +28,16 @@ public sealed class ImageSharpOptions
             CompressionLevel = PngCompressionLevel.BestCompression,
             SkipMetadata = true,
         };
+    }
+}
+
+public sealed class ImageSharpOptionsValidator : AbstractValidator<ImageSharpOptions>
+{
+    public ImageSharpOptionsValidator()
+    {
+        RuleFor(x => x.DefaultCompressQuality).InclusiveBetween(1, 100);
+        RuleFor(x => x.WebpCompressEncoder).NotNull();
+        RuleFor(x => x.JpegCompressEncoder).NotNull();
+        RuleFor(x => x.PngCompressEncoder).NotNull();
     }
 }
