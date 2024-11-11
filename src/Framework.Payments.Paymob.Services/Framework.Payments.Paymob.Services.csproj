@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Payments.Paymob.CashIn\Framework.Payments.Paymob.CashIn.csproj" />
+    <ProjectReference Include="..\Framework.Payments.Paymob.CashOut\Framework.Payments.Paymob.CashOut.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Resources\CashInMessages.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>CashInMessages.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <Compile Update="Resources\CashInMessages.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>CashInMessages.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+</Project>

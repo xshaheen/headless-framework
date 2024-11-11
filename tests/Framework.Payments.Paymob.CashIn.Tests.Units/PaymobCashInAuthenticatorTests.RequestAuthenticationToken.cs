@@ -2,6 +2,7 @@
 
 using System.Net;
 using Framework.Payments.Paymob.CashIn;
+using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Auth;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -15,8 +16,8 @@ public partial class PaymobCashInAuthenticatorTests
     {
         // given
         var apiKey = fixture.AutoFixture.Create<string>();
-        var config = fixture.CashInConfig with { ApiKey = apiKey };
-        fixture.Options.CurrentValue.Returns(config);
+        var config = fixture.CashInOptions with { ApiKey = apiKey };
+        fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
         var requestJson = JsonSerializer.Serialize(request);
         var expectedResponse = fixture.AutoFixture.Create<CashInAuthenticationTokenResponse>();
@@ -27,7 +28,11 @@ public partial class PaymobCashInAuthenticatorTests
             .RespondWith(Response.Create().WithBody(expectedResponseJson));
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, fixture.TimeProvider, fixture.Options);
+        var authenticator = new PaymobCashInAuthenticator(
+            fixture.HttpClient,
+            fixture.TimeProvider,
+            fixture.OptionsAccessor
+        );
         var result = await authenticator.RequestAuthenticationTokenAsync();
 
         // then
@@ -39,8 +44,8 @@ public partial class PaymobCashInAuthenticatorTests
     {
         // given
         var apiKey = fixture.AutoFixture.Create<string>();
-        var config = fixture.CashInConfig with { ApiKey = apiKey };
-        fixture.Options.CurrentValue.Returns(config);
+        var config = fixture.CashInOptions with { ApiKey = apiKey };
+        fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
         var requestJson = JsonSerializer.Serialize(request);
         var body = fixture.AutoFixture.Create<string>();
@@ -50,11 +55,15 @@ public partial class PaymobCashInAuthenticatorTests
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(body));
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, fixture.TimeProvider, fixture.Options);
+        var authenticator = new PaymobCashInAuthenticator(
+            fixture.HttpClient,
+            fixture.TimeProvider,
+            fixture.OptionsAccessor
+        );
         var invocation = FluentActions.Awaiting(() => authenticator.RequestAuthenticationTokenAsync());
 
         // then
-        var assertions = await invocation.Should().ThrowAsync<PaymobRequestException>();
+        var assertions = await invocation.Should().ThrowAsync<PaymobCashInException>();
         assertions.Which.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         assertions.Which.Message.Should().Be("Paymob Cash In - Http request failed with status code (500).");
         assertions.Which.Body.Should().Be(body);

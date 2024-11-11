@@ -1,28 +1,30 @@
 // Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
 
-using Framework.Payments.Paymob.CashIn.Models;
+using System.Text.Json;
+using AutoFixture;
+using Framework.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Options;
 using WireMock.Server;
 
 namespace Tests;
 
-public sealed class PaymobCashInFixture : IDisposable
+public sealed class PaymobCashOutFixture : IDisposable
 {
-    public PaymobCashInFixture()
+    public PaymobCashOutFixture()
     {
         Server = WireMockServer.Start();
         HttpClient = new HttpClient();
         AutoFixture.Register(() => JsonSerializer.Deserialize<object?>("null"));
-
-        CashInOptions = new PaymobCashInOptions
+        CashOutOptions = new PaymobCashOutOptions
         {
             ApiBaseUrl = Server.Urls[0],
-            Hmac = Guid.NewGuid().ToString(),
-            ApiKey = Guid.NewGuid().ToString(),
+            UserName = "username",
+            Password = "password",
+            ClientId = "client_id",
+            ClientSecret = "client_secret",
         };
-
-        OptionsAccessor = Substitute.For<IOptionsMonitor<PaymobCashInOptions>>();
-        OptionsAccessor.CurrentValue.Returns(CashInOptions);
+        OptionsAccessor = Substitute.For<IOptionsMonitor<PaymobCashOutOptions>>();
+        OptionsAccessor.CurrentValue.Returns(CashOutOptions);
         TimeProvider = TimeProvider.System;
     }
 
@@ -32,9 +34,9 @@ public sealed class PaymobCashInFixture : IDisposable
 
     public HttpClient HttpClient { get; }
 
-    public PaymobCashInOptions CashInOptions { get; }
+    public PaymobCashOutOptions CashOutOptions { get; }
 
-    public IOptionsMonitor<PaymobCashInOptions> OptionsAccessor { get; }
+    public IOptionsMonitor<PaymobCashOutOptions> OptionsAccessor { get; }
 
     public TimeProvider TimeProvider { get; }
 

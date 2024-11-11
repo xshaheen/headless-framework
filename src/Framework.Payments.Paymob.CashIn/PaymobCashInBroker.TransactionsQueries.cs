@@ -2,6 +2,7 @@
 
 using System.Net.Http.Json;
 using Flurl;
+using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Transactions;
 
 namespace Framework.Payments.Paymob.CashIn;
@@ -28,7 +29,7 @@ public partial class PaymobCashInBroker
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobRequestException.ThrowAsync(response);
+            await PaymobCashInException.ThrowAsync(response);
         }
 
         return await response.Content.ReadFromJsonAsync<CashInTransactionsPage>();
@@ -49,7 +50,7 @@ public partial class PaymobCashInBroker
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobRequestException.ThrowAsync(response);
+            await PaymobCashInException.ThrowAsync(response);
         }
 
         return await response.Content.ReadFromJsonAsync<CashInTransaction>();

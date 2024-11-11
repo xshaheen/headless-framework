@@ -42,7 +42,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobRequestException.ThrowAsync(response);
+            await PaymobCashInException.ThrowAsync(response);
         }
 
         var content = await response.Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>();
