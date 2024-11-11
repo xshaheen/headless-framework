@@ -16,14 +16,14 @@ public sealed class CashInCallbackTransaction
     public int Id { get; init; }
 
     /// <summary>
-    /// It indicating the amount that was paid to this transaction, it might be different than
+    /// It's indicating the amount paid to this transaction, it might be different from
     /// the original order price, and it is in cents.
     /// </summary>
     [JsonPropertyName("amount_cents")]
     public int AmountCents { get; init; }
 
     /// <summary>
-    /// True in one of these case:
+    /// True in one of these cases:
     /// <para>Card Payments: The customer has been redirected to the issuing bank page to enter his OTP.</para>
     /// <para>Kiosk Payments: A payment reference number was generated, and it is pending to be paid.</para>
     /// <para>
@@ -95,7 +95,7 @@ public sealed class CashInCallbackTransaction
     public required string Currency { get; init; }
 
     [JsonPropertyName("api_source")]
-    public required string ApiSource { get; init; }
+    public string? ApiSource { get; init; }
 
     [JsonPropertyName("merchant_commission")]
     public int MerchantCommission { get; init; }
@@ -204,26 +204,28 @@ public sealed class CashInCallbackTransaction
             : DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture);
     }
 
-    public bool IsCard() => SourceData?.Type == "card";
+    public bool IsCard() => string.Equals(SourceData?.Type, "card", StringComparison.Ordinal);
 
-    public bool IsWallet() => SourceData?.Type == "wallet";
+    public bool IsWallet() => string.Equals(SourceData?.Type, "wallet", StringComparison.Ordinal);
 
-    public bool IsCashCollection() => SourceData?.Type == "cash_present";
+    public bool IsCashCollection() => string.Equals(SourceData?.Type, "cash_present", StringComparison.Ordinal);
 
-    public bool IsAcceptKiosk() => SourceData?.Type == "aggregator";
+    public bool IsAcceptKiosk() => string.Equals(SourceData?.Type, "aggregator", StringComparison.Ordinal);
 
-    public bool IsFromIFrame() => ApiSource == "IFRAME";
+    public bool IsFromIFrame() => string.Equals(ApiSource, "IFRAME", StringComparison.Ordinal);
 
-    public bool IsInvoice() => ApiSource == "INVOICE";
+    public bool IsInvoice() => string.Equals(ApiSource, "INVOICE", StringComparison.Ordinal);
 
-    public bool IsInsufficientFundError() => Data?.TxnResponseCode == "INSUFFICIENT_FUNDS";
+    public bool IsInsufficientFundError() =>
+        string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.Ordinal);
 
-    public bool IsAuthenticationFailedError() => Data?.TxnResponseCode == "AUTHENTICATION_FAILED";
+    public bool IsAuthenticationFailedError() =>
+        string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.Ordinal);
 
     public bool IsDeclinedError()
     {
         // "data.message": may be "Do not honour", or "Invalid card number", ...
-        return Data?.TxnResponseCode == "DECLINED";
+        return string.Equals(Data?.TxnResponseCode, "DECLINED", StringComparison.Ordinal);
     }
 
     public bool IsRiskChecksError()

@@ -12,9 +12,9 @@ internal sealed class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter : Jso
 
     public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        DateTime dateTime = reader.GetDateTime();
+        var dateTime = reader.GetDateTime();
 
-        // If not have time zone offset consider it cairo time.
+        // If not have time zone offset, consider it cairo time.
         return dateTime.Kind is DateTimeKind.Unspecified
             ? new DateTimeOffset(dateTime, EgyptTimeZone.GetUtcOffset(dateTime))
             : reader.GetDateTimeOffset();

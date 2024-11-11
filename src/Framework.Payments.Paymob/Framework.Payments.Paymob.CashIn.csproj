@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Framework.Payments.Paymob.CashIn.Tests.Unit" />
+    <InternalsVisibleTo Include="Framework.Payments.Paymob.CashIn.Tests.Units" />
   </ItemGroup>
 
   <ItemGroup>

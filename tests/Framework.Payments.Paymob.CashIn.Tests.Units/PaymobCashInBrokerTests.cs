@@ -5,16 +5,13 @@ using Framework.Payments.Paymob.CashIn;
 
 namespace Tests;
 
-public partial class PaymobCashInBrokerTests : IClassFixture<PaymobCashInFixture>
+public partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture) : IClassFixture<PaymobCashInFixture>
 {
-    private readonly PaymobCashInFixture _fixture;
     private static readonly Faker _Faker = new();
-
-    public PaymobCashInBrokerTests(PaymobCashInFixture fixture) => _fixture = fixture;
 
     private (IPaymobCashInAuthenticator authenticator, string token) _SetupGentAuthenticationToken()
     {
-        var token = _fixture.AutoFixture.Create<string>();
+        var token = fixture.AutoFixture.Create<string>();
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
         authenticator.GetAuthenticationTokenAsync().Returns(token);
         return (authenticator, token);

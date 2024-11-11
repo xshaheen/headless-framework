@@ -12,7 +12,7 @@ public interface IPaymobCashInAuthenticator
     [Pure]
     Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync();
 
-    /// <summary>Get authentication token from cache if is valid or request a new one.</summary>
+    /// <summary>Get an authentication token from cache if is valid or request a new one.</summary>
     /// <returns>Authentication token, which is valid for 1 hour from the creation time.</returns>
     /// <exception cref="PaymobRequestException"></exception>
     [Pure]
