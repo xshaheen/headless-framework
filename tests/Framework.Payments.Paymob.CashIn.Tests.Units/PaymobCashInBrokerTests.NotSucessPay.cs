@@ -33,7 +33,7 @@ public partial class PaymobCashInBrokerTests
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(body));
 
         // when
-        var broker = new PaymobCashInBroker(fixture.HttpClient, null!, fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, null!, fixture.OptionsAccessor);
         var invocation = FluentActions.Awaiting(() => func(broker));
 
         // then

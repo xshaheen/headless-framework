@@ -26,7 +26,7 @@ public partial class PaymobCashInBrokerTests
             .RespondWith(Response.Create().WithBody(responseJson));
 
         // when
-        var broker = new PaymobCashInBroker(fixture.HttpClient, null!, fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, null!, fixture.OptionsAccessor);
         var result = await broker.CreateKioskPayAsync(requestPaymentKey);
 
         // then

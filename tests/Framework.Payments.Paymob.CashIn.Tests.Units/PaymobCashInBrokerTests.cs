@@ -2,6 +2,7 @@
 
 using System.Net;
 using Framework.Payments.Paymob.CashIn;
+using Framework.Payments.Paymob.CashIn.Models;
 
 namespace Tests;
 
@@ -23,7 +24,7 @@ public partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture) : ICla
         string? body
     )
     {
-        var assertions = await invocation.Should().ThrowAsync<PaymobRequestException>();
+        var assertions = await invocation.Should().ThrowAsync<PaymobCashInException>();
         assertions.Which.StatusCode.Should().Be(statusCode);
         assertions
             .Which.Message.Should()

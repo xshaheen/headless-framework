@@ -9,6 +9,7 @@ using Microsoft.Extensions.Http.Resilience;
 
 namespace Framework.Payments.Paymob.CashIn;
 
+[PublicAPI]
 public static class AddPaymobCashInExtensions
 {
     /// <summary>Adds services required for using paymob cash in.</summary>

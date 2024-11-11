@@ -2,10 +2,10 @@
 
 using System.Net;
 
-namespace Framework.Payments.Paymob.CashIn;
+namespace Framework.Payments.Paymob.CashOut.Models;
 
 [Serializable]
-public sealed class PaymobRequestException(string? message, HttpStatusCode statusCode, string? body)
+public sealed class PaymobCashOutException(string? message, HttpStatusCode statusCode, string? body)
     : Exception(message)
 {
     /// <summary>Gets the HTTP response status code.</summary>
@@ -39,6 +39,6 @@ public sealed class PaymobRequestException(string? message, HttpStatusCode statu
         var statusCode = ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
         var message = $"Paymob Cash In - Http request failed with status code ({statusCode}).";
 
-        throw new PaymobRequestException(message, response.StatusCode, body);
+        throw new PaymobCashOutException(message, response.StatusCode, body);
     }
 }
