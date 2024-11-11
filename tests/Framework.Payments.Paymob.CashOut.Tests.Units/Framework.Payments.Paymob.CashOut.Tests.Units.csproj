@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Payments.Paymob.CashIn\Framework.Payments.Paymob.CashIn.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Payments.Paymob.CashOut\Framework.Payments.Paymob.CashOut.csproj" />
   </ItemGroup>
 
 </Project>

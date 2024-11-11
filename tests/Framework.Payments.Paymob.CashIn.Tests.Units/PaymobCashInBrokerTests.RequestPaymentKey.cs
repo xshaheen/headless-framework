@@ -25,8 +25,8 @@ public partial class PaymobCashInBrokerTests
         // given
         var (authenticator, token) = _SetupGentAuthenticationToken();
         var expiration = fixture.AutoFixture.Create<int>();
-        var config = fixture.CashInConfig with { ExpirationPeriod = expiration };
-        fixture.Options.CurrentValue.Returns(config);
+        var config = fixture.CashInOptions with { ExpirationPeriod = expiration };
+        fixture.OptionsAccessor.CurrentValue.Returns(config);
         var internalRequest = new CashInPaymentKeyInternalRequest(request, token, expiration);
         var internalRequestJson = JsonSerializer.Serialize(internalRequest);
         var response = fixture.AutoFixture.Create<CashInPaymentKeyResponse>();
@@ -39,7 +39,7 @@ public partial class PaymobCashInBrokerTests
             .RespondWith(Response.Create().WithBody(responseJson));
 
         // when
-        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.RequestPaymentKeyAsync(request);
 
         // then
@@ -60,7 +60,7 @@ public partial class PaymobCashInBrokerTests
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(body));
 
         // when
-        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var invocation = FluentActions.Awaiting(() => broker.RequestPaymentKeyAsync(request));
 
         // then

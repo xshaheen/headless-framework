@@ -32,7 +32,7 @@ public partial class PaymobCashInBrokerTests
             .RespondWith(Response.Create().WithBody(responseJson));
 
         // when
-        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var result = await broker.CreateOrderAsync(request);
 
         // then
@@ -55,7 +55,7 @@ public partial class PaymobCashInBrokerTests
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(body));
 
         // when
-        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.Options);
+        var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
         var invocation = FluentActions.Awaiting(() => broker.CreateOrderAsync(request));
 
         // then

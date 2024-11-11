@@ -19,7 +19,7 @@ public partial class PaymobCashInAuthenticatorTests
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.Options);
+        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.OptionsAccessor);
         var result1 = await authenticator.GetAuthenticationTokenAsync();
         timeProvider.Advance(61.Minutes());
         var result2 = await authenticator.GetAuthenticationTokenAsync();
@@ -36,7 +36,7 @@ public partial class PaymobCashInAuthenticatorTests
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.Options);
+        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.OptionsAccessor);
         var result1 = await authenticator.GetAuthenticationTokenAsync();
         timeProvider.Advance(50.Minutes());
         var result2 = await authenticator.GetAuthenticationTokenAsync();
@@ -48,8 +48,8 @@ public partial class PaymobCashInAuthenticatorTests
     private void _SetupRandomResponse()
     {
         var apiKey = fixture.AutoFixture.Create<string>();
-        var config = fixture.CashInConfig with { ApiKey = apiKey };
-        fixture.Options.CurrentValue.Returns(config);
+        var config = fixture.CashInOptions with { ApiKey = apiKey };
+        fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
         var requestJson = JsonSerializer.Serialize<CashInAuthenticationTokenRequest>(request);
 
