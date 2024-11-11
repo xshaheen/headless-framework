@@ -11,15 +11,19 @@ namespace Framework.Integrations.PushNotifications;
 [PublicAPI]
 public static class AddPushNotificationsExtensions
 {
-    public static void AddPushNotifications(this IServiceCollection services, FirebaseSettings settings)
+    public static IServiceCollection AddPushNotifications(this IServiceCollection services, FirebaseSettings settings)
     {
         _LoadFirebase(settings.Json);
         services.AddSingleton<IPushNotificationService, GoogleCloudMessagingPushNotificationService>();
+
+        return services;
     }
 
-    public static void AddNoopPushNotification(this IServiceCollection services)
+    public static IServiceCollection AddNoopPushNotification(this IServiceCollection services)
     {
         services.AddSingleton<IPushNotificationService, NoopPushNotificationService>();
+
+        return services;
     }
 
     private static void _LoadFirebase(string json)
