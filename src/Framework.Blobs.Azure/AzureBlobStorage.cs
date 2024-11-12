@@ -20,7 +20,7 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Blobs.Azure;
 
-public sealed partial class AzureBlobStorage : IBlobStorage
+public sealed class AzureBlobStorage : IBlobStorage
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedContainers = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "max-age=7776000, must-revalidate";
@@ -182,6 +182,33 @@ public sealed partial class AzureBlobStorage : IBlobStorage
         var results = await batch.DeleteBlobsAsync(blobUrls, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken);
 
         return results.ConvertAll(result => Result<bool, Exception>.Success(!result.IsError));
+    }
+
+    public async ValueTask<int> DeleteAllAsync(
+        string[] container,
+        string? searchPattern = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var files = await GetPagedListAsync(container, searchPattern, 500, cancellationToken);
+        var count = 0;
+
+        do
+        {
+            var names = files.Blobs.Select(file => file.Path).ToArray();
+            var results = await BulkDeleteAsync(names, container, cancellationToken);
+            count += results.Count(x => x.Succeeded);
+            await files.NextPageAsync().AnyContext();
+        } while (files.HasMore);
+
+        _logger.LogTrace(
+            "Finished deleting {FileCount} files matching {@Container} {SearchPattern}",
+            count,
+            container,
+            searchPattern
+        );
+
+        return count;
     }
 
     #endregion
@@ -410,7 +437,7 @@ public sealed partial class AzureBlobStorage : IBlobStorage
                 blobs.Add(blobSpecification);
             }
 
-            // If the continuation token is null or the blobs count is greater than or equal to the page size hint, then break.
+            // If the continuation token is null or the blob count is greater than or equal to the page size hint, then break.
             if (page.ContinuationToken is null || blobs.Count >= pageSizeToLoad)
             {
                 break;
@@ -439,10 +466,7 @@ public sealed partial class AzureBlobStorage : IBlobStorage
             return new();
         }
 
-#pragma warning disable CA2249 // Consider using 'string.Contains' instead of 'string.IndexOf'
-        var wildcardPos = searchPattern.IndexOf('*', StringComparison.Ordinal);
-#pragma warning restore CA2249
-        var hasWildcard = wildcardPos >= 0;
+        var hasWildcard = searchPattern.Contains('*', StringComparison.Ordinal);
 
         var prefix = searchPattern;
         Regex? patternRegex = null;

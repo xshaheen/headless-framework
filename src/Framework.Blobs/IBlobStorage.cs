@@ -7,14 +7,25 @@ namespace Framework.Blobs;
 using JetBrainsPure = PureAttribute;
 using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
-// TODO: Add List
-// TODO: Add Sync versions and use them in the DataProtectionXmlRepository
-
 public interface IBlobStorage : IDisposable
 {
+    #region Create Container
+
     [SystemPure]
     [JetBrainsPure]
     ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Upload
+
+    [SystemPure]
+    [JetBrainsPure]
+    ValueTask UploadAsync(BlobUploadRequest blob, string[] container, CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Bulk Upload
 
     [SystemPure]
     [JetBrainsPure]
@@ -23,6 +34,18 @@ public interface IBlobStorage : IDisposable
         string[] container,
         CancellationToken cancellationToken = default
     );
+
+    #endregion
+
+    #region Delete
+
+    [SystemPure]
+    [JetBrainsPure]
+    ValueTask<bool> DeleteAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Bulk Delete
 
     [SystemPure]
     [JetBrainsPure]
@@ -34,21 +57,15 @@ public interface IBlobStorage : IDisposable
 
     [SystemPure]
     [JetBrainsPure]
-    ValueTask UploadAsync(BlobUploadRequest blob, string[] container, CancellationToken cancellationToken = default);
-
-    [SystemPure]
-    [JetBrainsPure]
-    ValueTask<bool> DeleteAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
-
-    [SystemPure]
-    [JetBrainsPure]
-    ValueTask<bool> CopyAsync(
-        string blobName,
-        string[] blobContainer,
-        string newBlobName,
-        string[] newBlobContainer,
+    ValueTask<int> DeleteAllAsync(
+        string[] container,
+        string? searchPattern = null,
         CancellationToken cancellationToken = default
     );
+
+    #endregion
+
+    #region Rename
 
     [SystemPure]
     [JetBrainsPure]
@@ -60,9 +77,31 @@ public interface IBlobStorage : IDisposable
         CancellationToken cancellationToken = default
     );
 
+    #endregion
+
+    #region Copy
+
+    [SystemPure]
+    [JetBrainsPure]
+    ValueTask<bool> CopyAsync(
+        string blobName,
+        string[] blobContainer,
+        string newBlobName,
+        string[] newBlobContainer,
+        CancellationToken cancellationToken = default
+    );
+
+    #endregion
+
+    #region Exists
+
     [SystemPure]
     [JetBrainsPure]
     ValueTask<bool> ExistsAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Download
 
     [SystemPure]
     [JetBrainsPure]
@@ -71,6 +110,10 @@ public interface IBlobStorage : IDisposable
         string[] container,
         CancellationToken cancellationToken = default
     );
+
+    #endregion
+
+    #region List
 
     /// <summary>Get page</summary>
     /// <param name="containers">Container directory to paginate.</param>
@@ -89,4 +132,6 @@ public interface IBlobStorage : IDisposable
         int pageSize = 100,
         CancellationToken cancellationToken = default
     );
+
+    #endregion
 }

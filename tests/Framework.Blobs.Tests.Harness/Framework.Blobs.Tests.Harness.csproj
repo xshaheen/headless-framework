@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Framework.Blobs\Framework.Blobs.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

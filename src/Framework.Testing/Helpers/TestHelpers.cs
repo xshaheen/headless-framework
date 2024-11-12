@@ -4,7 +4,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Framework.Api.Testing.Helpers;
+namespace Framework.Testing.Helpers;
 
 public static class TestHelpers
 {
