@@ -21,7 +21,7 @@ public interface IBlobStorage : IDisposable
 
     [SystemPure]
     [JetBrainsPure]
-    ValueTask UploadAsync(BlobUploadRequest blob, string[] container, CancellationToken cancellationToken = default);
+    ValueTask UploadAsync(string[] container, BlobUploadRequest blob, CancellationToken cancellationToken = default);
 
     #endregion
 
@@ -30,8 +30,8 @@ public interface IBlobStorage : IDisposable
     [SystemPure]
     [JetBrainsPure]
     ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
+        IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     );
 
@@ -41,7 +41,7 @@ public interface IBlobStorage : IDisposable
 
     [SystemPure]
     [JetBrainsPure]
-    ValueTask<bool> DeleteAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
+    ValueTask<bool> DeleteAsync(string[] container, string blobName, CancellationToken cancellationToken = default);
 
     #endregion
 
@@ -50,13 +50,11 @@ public interface IBlobStorage : IDisposable
     [SystemPure]
     [JetBrainsPure]
     ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        IReadOnlyCollection<string> blobNames,
         string[] container,
+        IReadOnlyCollection<string> blobNames,
         CancellationToken cancellationToken = default
     );
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<int> DeleteAllAsync(
         string[] container,
         string? searchPattern = null,
@@ -70,10 +68,10 @@ public interface IBlobStorage : IDisposable
     [SystemPure]
     [JetBrainsPure]
     ValueTask<bool> RenameAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     );
 
@@ -84,10 +82,10 @@ public interface IBlobStorage : IDisposable
     [SystemPure]
     [JetBrainsPure]
     ValueTask<bool> CopyAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     );
 
@@ -97,7 +95,7 @@ public interface IBlobStorage : IDisposable
 
     [SystemPure]
     [JetBrainsPure]
-    ValueTask<bool> ExistsAsync(string blobName, string[] container, CancellationToken cancellationToken = default);
+    ValueTask<bool> ExistsAsync(string[] container, string blobName, CancellationToken cancellationToken = default);
 
     #endregion
 
@@ -106,8 +104,8 @@ public interface IBlobStorage : IDisposable
     [SystemPure]
     [JetBrainsPure]
     ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     );
 

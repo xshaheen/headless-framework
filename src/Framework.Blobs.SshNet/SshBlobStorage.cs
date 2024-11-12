@@ -70,8 +70,8 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Upload
 
     public async ValueTask UploadAsync(
-        BlobUploadRequest blob,
         string[] container,
+        BlobUploadRequest blob,
         CancellationToken cancellationToken = default
     )
     {
@@ -118,8 +118,8 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Bulk Upload
 
     public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
+        IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     )
     {
@@ -130,7 +130,7 @@ public sealed class SshBlobStorage : IBlobStorage
         {
             try
             {
-                await UploadAsync(blob, container, cancellationToken);
+                await UploadAsync(container, blob, cancellationToken);
 
                 return Result<Exception>.Success();
             }
@@ -148,8 +148,8 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Delete
 
     public async ValueTask<bool> DeleteAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -186,8 +186,8 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Bulk Delete
 
     public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        IReadOnlyCollection<string> blobNames,
         string[] container,
+        IReadOnlyCollection<string> blobNames,
         CancellationToken cancellationToken = default
     )
     {
@@ -198,7 +198,7 @@ public sealed class SshBlobStorage : IBlobStorage
         {
             try
             {
-                return await DeleteAsync(fileName, container, cancellationToken);
+                return await DeleteAsync(container, fileName, cancellationToken);
             }
             catch (Exception e)
             {
@@ -267,7 +267,9 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var count = 0;
 
-        await foreach (var file in _client.ListDirectoryAsync(directory, cancellationToken))
+        var files = _client.ListDirectoryAsync(directory, cancellationToken).AnyContext();
+
+        await foreach (var file in files)
         {
             if (file.Name is "." or "..")
             {
@@ -301,10 +303,10 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Rename
 
     public async ValueTask<bool> RenameAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -321,10 +323,10 @@ public sealed class SshBlobStorage : IBlobStorage
         _logger.LogInformation("Renaming {Path} to {TargetPath}", blobPath, targetPath);
 
         // If the target path already exists, delete it.
-        if (await ExistsAsync(newBlobName, newBlobContainer, cancellationToken))
+        if (await ExistsAsync(newBlobContainer, newBlobName, cancellationToken))
         {
             _logger.LogDebug("Removing existing {TargetPath} path for rename operation", targetPath);
-            _ = await DeleteAsync(newBlobName, newBlobContainer, cancellationToken);
+            _ = await DeleteAsync(newBlobContainer, newBlobName, cancellationToken);
             _logger.LogDebug("Removed existing {TargetPath} path for rename operation", targetPath);
         }
 
@@ -360,10 +362,10 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Copy
 
     public async ValueTask<bool> CopyAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -384,7 +386,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         try
         {
-            var blob = await DownloadAsync(blobName, blobContainer, cancellationToken);
+            var blob = await DownloadAsync(blobContainer, blobName, cancellationToken);
 
             if (blob is null)
             {
@@ -393,7 +395,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
             await using var stream = blob.Stream;
 
-            await UploadAsync(new BlobUploadRequest(stream, newBlobName), newBlobContainer, cancellationToken);
+            await UploadAsync(newBlobContainer, new BlobUploadRequest(stream, newBlobName), cancellationToken);
 
             return true;
         }
@@ -417,8 +419,8 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Exists
 
     public async ValueTask<bool> ExistsAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -441,8 +443,8 @@ public sealed class SshBlobStorage : IBlobStorage
     #region Downalod
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {

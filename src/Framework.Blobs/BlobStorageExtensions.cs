@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
 
+using System.Text;
+
 namespace Framework.Blobs;
 
 public static class BlobStorageExtensions
@@ -24,5 +26,39 @@ public static class BlobStorageExtensions
         } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync());
 
         return files;
+    }
+
+    public static async ValueTask UploadAsync(
+        this IBlobStorage storage,
+        string[] container,
+        string blobName,
+        string? contents,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await storage.UploadAsync(
+            container,
+            new BlobUploadRequest(new MemoryStream(Encoding.UTF8.GetBytes(contents ?? string.Empty)), blobName),
+            cancellationToken
+        );
+    }
+
+    public static async ValueTask<string?> GetFileContentsAsync(
+        this IBlobStorage storage,
+        string[] container,
+        string blobName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var result = await storage.DownloadAsync(container, blobName, cancellationToken);
+
+        if (result is null)
+        {
+            return null;
+        }
+
+        using var reader = new StreamReader(result.Stream);
+
+        return await reader.ReadToEndAsync(cancellationToken);
     }
 }
