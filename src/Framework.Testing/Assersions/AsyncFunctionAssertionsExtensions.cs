@@ -39,22 +39,6 @@ public static class AsyncFunctionAssertionsExtensions
         return assertions;
     }
 
-    public static Task<ExceptionAssertions<EntityNotFoundException>> ThrowEntityNotFoundExceptionnAsync<
-        TTask,
-        TAssertions
-    >(
-        this AsyncFunctionAssertions<TTask, TAssertions> action,
-        string? key = null,
-        string? message = null,
-        string because = "",
-        params object[] becauseArgs
-    )
-        where TTask : Task
-        where TAssertions : AsyncFunctionAssertions<TTask, TAssertions>
-    {
-        return ThrowEntityNotFoundExceptionAsync(action, key, message, because, becauseArgs);
-    }
-
     public static async Task<ExceptionAssertions<EntityNotFoundException>> ThrowEntityNotFoundExceptionAsync<
         TTask,
         TAssertions

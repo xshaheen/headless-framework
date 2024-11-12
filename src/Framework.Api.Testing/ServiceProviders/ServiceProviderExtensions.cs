@@ -2,8 +2,8 @@
 
 using System.Net;
 using System.Security.Claims;
-using Framework.Api.Testing.Helpers;
 using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.Testing.Helpers;
 using Mediator;
 using Microsoft.AspNetCore.Http;
 

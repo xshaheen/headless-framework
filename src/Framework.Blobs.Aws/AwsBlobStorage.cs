@@ -229,6 +229,93 @@ public sealed class AwsBlobStorage : IBlobStorage
         return objectKeys.ConvertAll(_ => Result<bool, Exception>.Success(operand: true));
     }
 
+    public async ValueTask<int> DeleteAllAsync(
+        string[] container,
+        string? searchPattern = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        const int pageSize = 100;
+
+        var criteria = _GetRequestCriteria(searchPattern);
+        var (bucket, keyPrefix) = (container[0], Url.Combine([.. container.Skip(1).Append(criteria.Prefix)]));
+
+        var listRequest = new ListObjectsV2Request
+        {
+            BucketName = bucket,
+            Prefix = keyPrefix,
+            MaxKeys = pageSize,
+        };
+
+        var deleteRequest = new DeleteObjectsRequest { BucketName = bucket };
+
+        var errors = new List<DeleteError>();
+        var count = 0;
+
+        ListObjectsV2Response listResponse;
+
+        do
+        {
+            listResponse = await _s3.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
+            listRequest.ContinuationToken = listResponse.NextContinuationToken;
+
+            var keys = _MatchesPattern(listResponse.S3Objects, criteria.Pattern)
+                .Select(o => new KeyVersion { Key = o.Key })
+                .ToArray();
+
+            if (keys.Length == 0)
+            {
+                continue;
+            }
+
+            deleteRequest.Objects.AddRange(keys);
+
+            _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", keys.Length, searchPattern);
+            var deleteResponse = await _s3.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
+
+            if (deleteResponse.DeleteErrors.Count > 0)
+            {
+                // retry 1 time, continue on.
+                var deleteRetryRequest = new DeleteObjectsRequest { BucketName = bucket };
+
+                deleteRetryRequest.Objects.AddRange(
+                    deleteResponse.DeleteErrors.Select(e => new KeyVersion { Key = e.Key })
+                );
+
+                var deleteRetryResponse = await _s3.DeleteObjectsAsync(deleteRetryRequest, cancellationToken)
+                    .AnyContext();
+
+                if (deleteRetryResponse.DeleteErrors.Count > 0)
+                {
+                    errors.AddRange(deleteRetryResponse.DeleteErrors);
+                }
+            }
+
+            _logger.LogTrace(
+                "Deleted {FileCount} files matching {SearchPattern}",
+                deleteResponse.DeletedObjects.Count,
+                searchPattern
+            );
+
+            count += deleteResponse.DeletedObjects.Count;
+            deleteRequest.Objects.Clear();
+        } while (listResponse.IsTruncated && !cancellationToken.IsCancellationRequested);
+
+        if (errors.Count > 0)
+        {
+            var more = errors.Count > 20 ? errors.Count - 20 : 0;
+            var keys = string.Join(',', errors.Take(20).Select(e => e.Key));
+
+            throw new InvalidOperationException(
+                $"Unable to delete all S3 entries \"{keys}\"{(more > 0 ? $" plus {more.ToString(CultureInfo.InvariantCulture)} more" : "")}."
+            );
+        }
+
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, searchPattern);
+
+        return count;
+    }
+
     #endregion
 
     #region Copy
@@ -417,9 +504,11 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(containers);
         var pattern = string.Join('/', containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
         var criteria = _GetRequestCriteria(pattern);
+
         var result = new PagedFileListResult(_ =>
             _GetFiles(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
         );
+
         await result.NextPageAsync().AnyContext();
 
         return result;
@@ -481,7 +570,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         {
             var path = blob?.Key;
 
-            return path is not null && (pattern?.IsMatch(path) != false);
+            return path is not null && pattern?.IsMatch(path) != false;
         })!;
     }
 
@@ -492,8 +581,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             return new();
         }
 
-        var wildcardPos = searchPattern.IndexOf('*', StringComparison.Ordinal);
-        var hasWildcard = wildcardPos >= 0;
+        var hasWildcard = searchPattern.Contains('*', StringComparison.Ordinal);
 
         var prefix = searchPattern;
         Regex? patternRegex = null;

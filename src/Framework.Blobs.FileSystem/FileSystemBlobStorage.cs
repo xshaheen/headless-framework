@@ -16,6 +16,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
 {
     private readonly AsyncLock _lock = new();
     private readonly string _basePath = options.Value.BaseDirectoryPath;
+
     private readonly ILogger _logger =
         options.Value.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
 
@@ -129,6 +130,89 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
             .ToList();
 
         return ValueTask.FromResult(results);
+    }
+
+    public ValueTask<int> DeleteAllAsync(
+        string[] container,
+        string? searchPattern = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var directoryPath = _GetDirectoryPath(container);
+
+        // No search pattern, delete the entire directory
+        if (string.IsNullOrEmpty(searchPattern) || string.Equals(searchPattern, "*", StringComparison.Ordinal))
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                return ValueTask.FromResult(0);
+            }
+
+            _logger.LogInformation("Deleting {Directory} directory", directoryPath);
+
+            var count = Directory.EnumerateFiles(directoryPath, "*.*", SearchOption.AllDirectories).Count();
+            Directory.Delete(directoryPath, recursive: true);
+
+            _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directoryPath, count);
+
+            return ValueTask.FromResult(count);
+        }
+
+        searchPattern = searchPattern.NormalizePath();
+        var path = Path.Combine(directoryPath, searchPattern);
+
+        // If the pattern is end with directory separator, delete the directory
+        if (
+            path[^1] == Path.DirectorySeparatorChar
+            || path.EndsWith($"{Path.DirectorySeparatorChar}*", StringComparison.Ordinal)
+        )
+        {
+            var directory = Path.GetDirectoryName(path);
+
+            if (!Directory.Exists(directory))
+            {
+                return ValueTask.FromResult(0);
+            }
+
+            _logger.LogInformation("Deleting {Directory} directory", directory);
+
+            var count = Directory.EnumerateFiles(directory, "*.*", SearchOption.AllDirectories).Count();
+            Directory.Delete(directory, recursive: true);
+
+            _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
+
+            return ValueTask.FromResult(count);
+        }
+
+        // If the pattern is a directory, delete the directory
+        if (Directory.Exists(path))
+        {
+            _logger.LogInformation("Deleting {Directory} directory", path);
+
+            var count = Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories).Count();
+            Directory.Delete(path, recursive: true);
+
+            _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", path, count);
+
+            return ValueTask.FromResult(count);
+        }
+
+        _logger.LogInformation("Deleting files matching {SearchPattern}", searchPattern);
+
+        var filesCount = 0;
+
+        foreach (var file in Directory.EnumerateFiles(directoryPath, searchPattern, SearchOption.AllDirectories))
+        {
+            _logger.LogTrace("Deleting {Path}", file);
+            File.Delete(file);
+            filesCount++;
+        }
+
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", filesCount, searchPattern);
+
+        return ValueTask.FromResult(filesCount);
     }
 
     #endregion
