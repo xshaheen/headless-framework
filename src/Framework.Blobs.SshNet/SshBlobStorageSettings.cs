@@ -10,7 +10,7 @@ public sealed class SshBlobStorageSettings
 {
     public required string ConnectionString { get; set; }
 
-    public required string Proxy { get; set; }
+    public string? Proxy { get; set; }
 
     public ProxyTypes ProxyType { get; set; } = ProxyTypes.None;
 
@@ -26,7 +26,6 @@ public sealed class SshBlobStorageSettingsValidator : AbstractValidator<SshBlobS
     public SshBlobStorageSettingsValidator()
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
-        RuleFor(x => x.Proxy).NotEmpty();
         RuleFor(x => x.ProxyType).IsInEnum();
     }
 }

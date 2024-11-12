@@ -68,8 +68,8 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Upload
 
     public async ValueTask UploadAsync(
-        BlobUploadRequest blob,
         string[] container,
+        BlobUploadRequest blob,
         CancellationToken cancellationToken = default
     )
     {
@@ -113,8 +113,8 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Bulk Upload
 
     public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
+        IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     )
     {
@@ -125,7 +125,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         {
             try
             {
-                await UploadAsync(blob, container, cancellationToken);
+                await UploadAsync(container, blob, cancellationToken);
 
                 return Result<Exception>.Success();
             }
@@ -143,8 +143,8 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Delete
 
     public async ValueTask<bool> DeleteAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -168,8 +168,8 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Bulk Delete
 
     public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        IReadOnlyCollection<string> blobNames,
         string[] container,
+        IReadOnlyCollection<string> blobNames,
         CancellationToken cancellationToken = default
     )
     {
@@ -321,10 +321,10 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Copy
 
     public async ValueTask<bool> CopyAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -355,10 +355,10 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Rename
 
     public async ValueTask<bool> RenameAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -406,8 +406,8 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Exists
 
     public ValueTask<bool> ExistsAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -450,8 +450,8 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {

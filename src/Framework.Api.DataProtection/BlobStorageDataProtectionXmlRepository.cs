@@ -50,7 +50,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         foreach (var file in files)
         {
             _logger.LogTrace("Loading element: {File}", file.Path);
-            var downloadResult = await _storage.DownloadAsync(file.Path, _Containers);
+            var downloadResult = await _storage.DownloadAsync(_Containers, file.Path);
 
             if (downloadResult is null)
             {
@@ -98,7 +98,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
             await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, cancellationToken);
             memoryStream.Seek(0, SeekOrigin.Begin);
 
-            await storage.UploadAsync(new(memoryStream, fileName), _Containers, cancellationToken);
+            await storage.UploadAsync(_Containers, new(memoryStream, fileName), cancellationToken);
         }
     }
 }

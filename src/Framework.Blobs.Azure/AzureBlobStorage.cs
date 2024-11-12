@@ -87,8 +87,8 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Upload
 
     public async ValueTask UploadAsync(
-        BlobUploadRequest blob,
         string[] container,
+        BlobUploadRequest blob,
         CancellationToken cancellationToken = default
     )
     {
@@ -118,8 +118,8 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Bulk Upload
 
     public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
+        IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     )
     {
@@ -130,7 +130,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         {
             try
             {
-                await UploadAsync(blob, container, cancellationToken);
+                await UploadAsync(container, blob, cancellationToken);
 
                 return Result<Exception>.Success();
             }
@@ -148,8 +148,8 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Delete
 
     public async ValueTask<bool> DeleteAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -169,8 +169,8 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Bulk Delete
 
     public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        IReadOnlyCollection<string> blobNames,
         string[] container,
+        IReadOnlyCollection<string> blobNames,
         CancellationToken cancellationToken = default
     )
     {
@@ -196,7 +196,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         do
         {
             var names = files.Blobs.Select(file => file.Path).ToArray();
-            var results = await BulkDeleteAsync(names, container, cancellationToken);
+            var results = await BulkDeleteAsync(container, names, cancellationToken);
             count += results.Count(x => x.Succeeded);
             await files.NextPageAsync().AnyContext();
         } while (files.HasMore);
@@ -216,10 +216,10 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Copy
 
     public async ValueTask<bool> CopyAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -253,10 +253,10 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Rename
 
     public async ValueTask<bool> RenameAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -265,7 +265,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(newBlobName);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        var copyResult = await CopyAsync(blobName, blobContainer, newBlobName, newBlobContainer, cancellationToken);
+        var copyResult = await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken);
 
         if (!copyResult)
         {
@@ -274,7 +274,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             return false;
         }
 
-        var deleteResult = await DeleteAsync(blobName, blobContainer, cancellationToken);
+        var deleteResult = await DeleteAsync(blobContainer, blobName, cancellationToken);
 
         if (!deleteResult)
         {
@@ -291,8 +291,8 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Exists
 
     public async ValueTask<bool> ExistsAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -309,8 +309,8 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {

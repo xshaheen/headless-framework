@@ -39,8 +39,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Upload
 
     public async ValueTask UploadAsync(
-        BlobUploadRequest blob,
         string[] container,
+        BlobUploadRequest blob,
         CancellationToken cancellationToken = default
     )
     {
@@ -56,8 +56,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Bulk Upload
 
     public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
-        IReadOnlyCollection<BlobUploadRequest> blobs,
         string[] container,
+        IReadOnlyCollection<BlobUploadRequest> blobs,
         CancellationToken cancellationToken = default
     )
     {
@@ -78,8 +78,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Delete
 
     public ValueTask<bool> DeleteAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -108,8 +108,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Bulk Delete
 
     public ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
-        IReadOnlyCollection<string> blobNames,
         string[] container,
+        IReadOnlyCollection<string> blobNames,
         CancellationToken cancellationToken = default
     )
     {
@@ -220,10 +220,10 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Rename
 
     public async ValueTask<bool> RenameAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -273,10 +273,10 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Copy
 
     public async ValueTask<bool> CopyAsync(
-        string blobName,
         string[] blobContainer,
-        string newBlobName,
+        string blobName,
         string[] newBlobContainer,
+        string newBlobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -315,8 +315,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Exists
 
     public ValueTask<bool> ExistsAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
@@ -333,8 +333,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
     #region Downaload
 
     public ValueTask<BlobDownloadResult?> DownloadAsync(
-        string blobName,
         string[] container,
+        string blobName,
         CancellationToken cancellationToken = default
     )
     {
