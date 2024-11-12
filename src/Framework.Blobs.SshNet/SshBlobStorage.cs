@@ -131,6 +131,7 @@ public sealed class SshBlobStorage : IBlobStorage
             try
             {
                 await UploadAsync(blob, container, cancellationToken);
+
                 return Result<Exception>.Success();
             }
             catch (Exception e)
@@ -161,6 +162,11 @@ public sealed class SshBlobStorage : IBlobStorage
 
         _logger.LogTrace("Deleting {Path}", blobPath);
 
+        return await _DeleteAsync(blobPath, cancellationToken);
+    }
+
+    private async Task<bool> _DeleteAsync(string blobPath, CancellationToken cancellationToken)
+    {
         try
         {
             await _client.DeleteFileAsync(blobPath, cancellationToken);
@@ -201,6 +207,93 @@ public sealed class SshBlobStorage : IBlobStorage
         });
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
+    }
+
+    public async ValueTask<int> DeleteAllAsync(
+        string[] container,
+        string? searchPattern = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _EnsureClientConnectedAsync(cancellationToken);
+
+        var containerPath = _BuildContainerPath(container);
+
+        if (searchPattern is null)
+        {
+            var directoryPath = Path.Combine(_client.WorkingDirectory, containerPath);
+
+            return await DeleteDirectoryAsync(directoryPath, includeSelf: false, cancellationToken);
+        }
+
+        searchPattern = Path.Combine(containerPath, _NormalizePath(searchPattern));
+
+        if (searchPattern.EndsWith("/*", StringComparison.Ordinal))
+        {
+            return await DeleteDirectoryAsync(searchPattern[..^2], includeSelf: false, cancellationToken);
+        }
+
+        var files = await _GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
+        var count = 0;
+
+        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, searchPattern);
+
+        foreach (var file in files)
+        {
+            var result = await _DeleteAsync(file.Path, cancellationToken);
+
+            if (result)
+            {
+                count++;
+            }
+            else
+            {
+                _logger.LogWarning("Failed to delete {Path}", file.Path);
+            }
+        }
+
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, searchPattern);
+
+        return count;
+    }
+
+    public async Task<int> DeleteDirectoryAsync(
+        string directory,
+        bool includeSelf = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _logger.LogInformation("Deleting {Directory} directory", directory);
+
+        var count = 0;
+
+        await foreach (var file in _client.ListDirectoryAsync(directory, cancellationToken))
+        {
+            if (file.Name is "." or "..")
+            {
+                continue;
+            }
+
+            if (file.IsDirectory)
+            {
+                count += await DeleteDirectoryAsync(file.FullName, includeSelf: true, cancellationToken);
+            }
+            else
+            {
+                _logger.LogTrace("Deleting file {Path}", file.FullName);
+                await _client.DeleteFileAsync(file.FullName, cancellationToken);
+                count++;
+            }
+        }
+
+        if (includeSelf)
+        {
+            _client.DeleteDirectory(directory);
+        }
+
+        _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
+
+        return count;
     }
 
     #endregion
@@ -389,6 +482,9 @@ public sealed class SshBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(containers);
         Argument.IsPositive(pageSize);
+
+        var containerPath = _BuildContainerPath(containers);
+        searchPattern = string.IsNullOrEmpty(searchPattern) ? containerPath : $"{containerPath}/{searchPattern}";
 
         var result = new PagedFileListResult(_ => _GetFiles(searchPattern, 1, pageSize, cancellationToken));
         await result.NextPageAsync().AnyContext();
@@ -593,6 +689,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 RegexOptions.ExplicitCapture,
                 RegexPatterns.MatchTimeout
             );
+
             var slashPos = normalizedSearchPattern.LastIndexOf('/');
             prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
         }
@@ -601,49 +698,6 @@ public sealed class SshBlobStorage : IBlobStorage
     }
 
     private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
-
-    #endregion
-
-    #region Delete Directory
-
-    public async Task<int> DeleteDirectoryAsync(
-        string directory,
-        bool includeSelf = true,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _logger.LogInformation("Deleting {Directory} directory", directory);
-
-        var count = 0;
-
-        await foreach (var file in _client.ListDirectoryAsync(directory, cancellationToken))
-        {
-            if (file.Name is "." or "..")
-            {
-                continue;
-            }
-
-            if (file.IsDirectory)
-            {
-                count += await DeleteDirectoryAsync(file.FullName, includeSelf: true, cancellationToken);
-            }
-            else
-            {
-                _logger.LogTrace("Deleting file {Path}", file.FullName);
-                await _client.DeleteFileAsync(file.FullName, cancellationToken);
-                count++;
-            }
-        }
-
-        if (includeSelf)
-        {
-            _client.DeleteDirectory(directory);
-        }
-
-        _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
-
-        return count;
-    }
 
     #endregion
 
