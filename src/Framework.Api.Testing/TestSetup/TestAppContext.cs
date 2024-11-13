@@ -36,19 +36,11 @@ public sealed class TestAppContext<TEntryPoint> : ITestOutputHelperAccessor, IDi
     )
     {
         Factory = CreateDefaultFactory(configureServices, configureHost);
-        _connectionString = getConnectionString();
+        _connectionString = Factory.Services.GetRequiredService<IConfiguration>().GetRequiredConnectionString("SQL");
         _respawner = new(() => _CreateRespawnerAsync(_connectionString));
         ScopeFactory = Factory.Services.GetRequiredService<IServiceScopeFactory>();
 
         return;
-
-        string getConnectionString()
-        {
-            var configuration = Factory.Services.GetRequiredService<IConfiguration>();
-            var connectionString = configuration.GetRequiredConnectionString("SQL");
-
-            return connectionString;
-        }
     }
 
     public async Task ResetAsync()
