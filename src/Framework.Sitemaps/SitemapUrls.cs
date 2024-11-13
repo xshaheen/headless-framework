@@ -71,7 +71,12 @@ public static class SitemapUrls
         if (!hasAlternates)
         {
             await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null);
-            await writer.WriteElementStringAsync(prefix: null, localName: "loc", ns: null, value: sitemapUrl.Location!);
+            await writer.WriteElementStringAsync(
+                prefix: null,
+                localName: "loc",
+                ns: null,
+                value: sitemapUrl.Location!.AbsoluteUri
+            );
             _WriteOtherNodes(writer, sitemapUrl);
             await writer.WriteEndElementAsync();
 
@@ -82,8 +87,13 @@ public static class SitemapUrls
 
         foreach (var url in sitemapUrl.AlternateLocations!)
         {
-            await writer.WriteStartElementAsync(localName: "url", prefix: null, ns: null);
-            await writer.WriteElementStringAsync(localName: "loc", value: url.Location, prefix: null, ns: null);
+            await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null);
+            await writer.WriteElementStringAsync(
+                prefix: null,
+                localName: "loc",
+                ns: null,
+                value: url.Location.AbsoluteUri
+            );
             await _WriteAlternateUrlsReferenceAsync(writer, sitemapUrl.AlternateLocations);
             _WriteOtherNodes(writer, sitemapUrl);
             await writer.WriteEndElementAsync();
@@ -97,16 +107,8 @@ public static class SitemapUrls
     {
         foreach (var alternate in alternateUrls)
         {
-            if (
-                string.IsNullOrWhiteSpace(value: alternate.Location)
-                || string.IsNullOrWhiteSpace(value: alternate.LanguageCode)
-            )
-            {
-                continue;
-            }
-
-            await writer.WriteStartElementAsync(localName: "link", prefix: "xhtml", ns: null);
-            await writer.WriteAttributeStringAsync(localName: "rel", prefix: null, ns: null, value: "alternate");
+            await writer.WriteStartElementAsync(prefix: "xhtml", localName: "link", ns: null);
+            await writer.WriteAttributeStringAsync(prefix: null, localName: "rel", ns: null, value: "alternate");
             await writer.WriteAttributeStringAsync(
                 prefix: null,
                 localName: "hreflang",
@@ -117,7 +119,7 @@ public static class SitemapUrls
                 prefix: null,
                 localName: "href",
                 ns: null,
-                value: alternate.Location
+                value: alternate.Location.AbsoluteUri
             );
             await writer.WriteEndElementAsync();
         }
