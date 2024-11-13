@@ -28,11 +28,11 @@
     <ProjectReference Include="..\..\src\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" />
     <ProjectReference Include="..\..\src\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <Compile Remove="Snapshots\**" />
     <EmbeddedResource Remove="Snapshots\**" />
     <None Remove="Snapshots\**" />
   </ItemGroup>
-  
+
 </Project>
