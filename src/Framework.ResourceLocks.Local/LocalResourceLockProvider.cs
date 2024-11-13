@@ -52,12 +52,14 @@ public sealed class LocalResourceLockProvider(
         }
         else
         {
-            var timeoutRelease = await _locks.LockAsync(normalizeResource, acquireTimeout.Value, acquireAbortToken);
+            var timeoutRelease = await _locks.LockOrNullAsync(
+                normalizeResource,
+                acquireTimeout.Value,
+                acquireAbortToken
+            );
 
-            if (!timeoutRelease.EnteredSemaphore)
+            if (timeoutRelease is null)
             {
-                timeoutRelease.Dispose();
-
                 return null;
             }
 

@@ -2,6 +2,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Framework.Blobs;
 using Framework.Blobs.SshNet;
+using Framework.Blobs.Tests.Harness;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
