@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
 using Framework.Integrations.Recaptcha.Contracts;
@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Framework.Integrations.Recaptcha.Demo.Pages;
 
-public sealed class V3Model(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
+internal sealed class V3Model(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
 {
     public string? Result { get; set; }
 

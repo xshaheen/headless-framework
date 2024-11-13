@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace Framework.Integrations.Recaptcha.Demo.Pages;
 
 [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-public sealed class ErrorModel : PageModel
+internal sealed class ErrorModel : PageModel
 {
     public string? RequestId { get; set; }
 

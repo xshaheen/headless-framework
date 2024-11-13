@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -34,9 +34,7 @@ public sealed class JsonCollectionItemConverter<TDatatype, TConverterType> : Jso
         {
             if (reader.TokenType is not JsonTokenType.StartArray)
             {
-                returnValue.Add(
-                    (TDatatype)JsonSerializer.Deserialize(ref reader, typeof(TDatatype), serializerOptions)!
-                );
+                returnValue.Add(JsonSerializer.Deserialize<TDatatype>(ref reader, serializerOptions)!);
             }
 
             reader.Read();

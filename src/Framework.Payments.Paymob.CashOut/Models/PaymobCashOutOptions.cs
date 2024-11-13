@@ -1,4 +1,6 @@
-﻿using FluentValidation;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using FluentValidation;
 using Framework.FluentValidation;
 
 namespace Framework.Payments.Paymob.CashOut.Models;

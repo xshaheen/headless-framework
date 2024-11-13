@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text;
 using static Framework.Kernel.BuildingBlocks.Helpers.Ar.ArabicLetters;
@@ -127,7 +127,7 @@ public static class SearchableStringExtensions
         return set.ToFrozenSet();
     }
 
-    private static char[][] _CreateArabicPrefixStems()
+    /*private static char[][] _CreateArabicPrefixStems()
     {
         return
         [
@@ -284,7 +284,7 @@ public static class SearchableStringExtensions
         ];
 
         return arabicStopWords.ToFrozenSet();
-    }
+    }*/
 
     private static FrozenDictionary<char, string> _CreateArabicNormalizations()
     {

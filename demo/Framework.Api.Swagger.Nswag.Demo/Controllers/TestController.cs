@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Asp.Versioning;
 using Framework.Kernel.BuildingBlocks;
@@ -10,7 +10,7 @@ namespace Framework.Api.Swagger.Nswag.Demo.Controllers;
 [ApiController]
 [Route("console")]
 [ApiVersion(ApiVersions.V1)]
-public sealed class TestController : ControllerBase
+internal sealed class TestController : ControllerBase
 {
     [HttpGet("/get-endpoint")]
     [Authorize("PolicyName")]

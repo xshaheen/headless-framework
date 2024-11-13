@@ -2,16 +2,13 @@
 
   <Import Project="../Directory.Build.props" />
 
-  <PropertyGroup Label="Compiler settings">
-    <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <WarningsAsErrors>nullable</WarningsAsErrors>
-    <AnalysisLevel>latest</AnalysisLevel>
-    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-  </PropertyGroup>
+  <ItemGroup Label="Global usings">
+    <Using Include="NSubstitute" />
+    <Using Include="Bogus" />
+    <Using Include="FluentAssertions" />
+    <Using Include="Xunit" />
+    <Using Include="Xunit.Abstractions" />
+  </ItemGroup>
 
   <ItemGroup Label="Global Packages">
     <PackageReference Include="Bogus" />
@@ -31,14 +28,6 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-  </ItemGroup>
-
-  <ItemGroup Label="Global usings">
-    <Using Include="NSubstitute" />
-    <Using Include="Bogus" />
-    <Using Include="FluentAssertions" />
-    <Using Include="Xunit" />
-    <Using Include="Xunit.Abstractions" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
 using Framework.Payments.Paymob.CashIn;
@@ -60,7 +60,8 @@ public partial class PaymobCashInAuthenticatorTests
             fixture.TimeProvider,
             fixture.OptionsAccessor
         );
-        var invocation = FluentActions.Awaiting(() => authenticator.RequestAuthenticationTokenAsync());
+
+        var invocation = FluentActions.Awaiting(authenticator.RequestAuthenticationTokenAsync);
 
         // then
         var assertions = await invocation.Should().ThrowAsync<PaymobCashInException>();

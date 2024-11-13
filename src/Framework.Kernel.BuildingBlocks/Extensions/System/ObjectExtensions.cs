@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
 using System.Diagnostics;
@@ -6,7 +6,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Framework.Kernel.BuildingBlocks;
 
 #pragma warning disable IDE0130

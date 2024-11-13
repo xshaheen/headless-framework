@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
 using System.ComponentModel;
@@ -150,7 +150,7 @@ public static partial class ProcessExtensions
                 if (cancellationToken.CanBeCanceled && !process.HasExited)
                 {
                     // ReSharper disable once AccessToDisposedClosure
-                    registration = cancellationToken.Register(() => process.TryToKill());
+                    registration = cancellationToken.Register(process.TryToKill);
                 }
 
                 await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);

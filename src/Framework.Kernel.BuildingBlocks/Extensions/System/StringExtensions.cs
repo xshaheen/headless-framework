@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
@@ -177,7 +177,7 @@ public static class StringExtensions
         return input.Split(Environment.NewLine, options);
     }
 
-    /// <summary>Adds a char to beginning of given string if it does not starts with the char.</summary>
+    /// <summary>Adds a char to the beginning of given string if it doesn't start with the char.</summary>
     [SystemPure]
     [JetBrainsPure]
     public static string EnsureStartsWith(
@@ -189,7 +189,7 @@ public static class StringExtensions
         return input.StartsWith(c.ToString(), comparisonType) ? input : c + input;
     }
 
-    /// <summary>Adds a char to end of given string if it does not ends with the char.</summary>
+    /// <summary>Adds a char to the end of given string if it doesn't end with the char.</summary>
     [SystemPure]
     [JetBrainsPure]
     public static string EnsureEndsWith(
@@ -201,7 +201,7 @@ public static class StringExtensions
         return input.EndsWith(c.ToString(), comparisonType) ? input : input + c;
     }
 
-    /// <summary>Removes first occurrence of the given postfixes from end of the given string.</summary>
+    /// <summary>Removes the first occurrence of the given postfixes from the end of the given string.</summary>
     /// <param name="input">The string.</param>
     /// <param name="postfixes">one or more postfix.</param>
     /// <returns>Modified string or the same string if it has not any of given postfixes</returns>
@@ -214,7 +214,7 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes first occurrence of the given postfixes from end of the given string.
+    /// Removes the first occurrence of the given postfixes from the end of the given string.
     /// </summary>
     /// <param name="input">The string.</param>
     /// <param name="comparisonType">String comparison type</param>
@@ -260,11 +260,11 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes first occurrence of the given prefixes from beginning of the given string.
+    /// Removes the first occurrence of the given prefixes from the beginning of the given string.
     /// </summary>
     /// <param name="input">The string.</param>
     /// <param name="prefixes">one or more prefix.</param>
-    /// <returns>Modified string or the same string if it has not any of given prefixes</returns>
+    /// <returns>Modified string or the same string if it has not any of the given prefixes</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -274,12 +274,12 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes first occurrence of the given prefixes from beginning of the given string.
+    /// Removes the first occurrence of the given prefixes from the beginning of the given string.
     /// </summary>
     /// <param name="input">The string.</param>
     /// <param name="comparisonType">String comparison type</param>
     /// <param name="prefixes">one or more prefix.</param>
-    /// <returns>Modified string or the same string if it has not any of given prefixes</returns>
+    /// <returns>Modified string or the same string if it has not any of the given prefixes</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -309,11 +309,11 @@ public static class StringExtensions
     }
 
     /// <summary>
-    /// Removes first occurrence of the given prefixes from beginning of the given string.
+    /// Removes the first occurrence of the given prefixes from the beginning of the given string.
     /// </summary>
     /// <param name="input">The string.</param>
     /// <param name="prefixes">one or more prefix.</param>
-    /// <returns>Modified string or the same string if it has not any of given prefixes</returns>
+    /// <returns>Modified string or the same string if it has not any of the given prefixes</returns>
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
@@ -342,7 +342,7 @@ public static class StringExtensions
         return input;
     }
 
-    /// <summary>Removes first occurrence of the given prefix from beginning of the given string.</summary>
+    /// <summary>Removes the first occurrence of the given prefix from the beginning of the given string.</summary>
     /// <returns>Modified string or the same string if it has not any of given prefix</returns>
     [SystemPure]
     [JetBrainsPure]
@@ -521,14 +521,14 @@ public static class StringExtensions
     /// </summary>
     /// <typeparam name="T">Type of enum</typeparam>
     /// <param name="value">String value to convert</param>
-    /// <param name="ignoreCase">Ignore case</param>
+    /// <param name="ignoreCase">Ignore a case</param>
     /// <returns>Returns enum object</returns>
     [SystemPure]
     [JetBrainsPure]
     public static T ToEnum<T>(this string value, bool ignoreCase = true)
         where T : struct
     {
-        return (T)Enum.Parse(typeof(T), Argument.IsNotNull(value), ignoreCase);
+        return Enum.Parse<T>(Argument.IsNotNull(value), ignoreCase);
     }
 
     /// <summary>
@@ -637,7 +637,7 @@ public static class StringExtensions
         return string.Concat(cs).Normalize(NormalizationForm.FormC);
     }
 
-    /// <summary>Check that text not contain non Arabic characters.</summary>
+    /// <summary>Check that text not contain non-Arabic characters.</summary>
     /// <param name="text">Unicode text</param>
     /// <returns>True if all characters are in Arabic block.</returns>
     [SystemPure]

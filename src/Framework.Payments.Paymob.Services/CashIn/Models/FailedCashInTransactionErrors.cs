@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Framework.Payments.Paymob.Services.CashIn.Models;
 
 public static class FailedCashInTransactionErrors

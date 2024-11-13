@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Net.Http.Json;
 using Flurl;
 using Framework.Kernel.BuildingBlocks.Helpers.Network;

@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Text;
 using Framework.Kernel.BuildingBlocks.Helpers.Text;
 
 namespace Framework.Permissions.Grants;

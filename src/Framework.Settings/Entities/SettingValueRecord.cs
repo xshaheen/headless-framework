@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.Checks;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Kernel.Checks;
 using Framework.Kernel.Domains;
 
 namespace Framework.Settings.Entities;

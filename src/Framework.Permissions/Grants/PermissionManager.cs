@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;

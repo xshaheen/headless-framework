@@ -1,4 +1,6 @@
-﻿using Framework.Caching;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Caching;
 using Framework.Kernel.Domains;
 using Framework.Settings.Entities;
 
