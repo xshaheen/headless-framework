@@ -1,4 +1,6 @@
-﻿using Framework.Permissions.Definitions;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

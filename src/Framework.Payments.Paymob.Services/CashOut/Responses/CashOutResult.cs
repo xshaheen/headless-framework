@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Diagnostics.CodeAnalysis;
 using Framework.Kernel.Primitives;
 

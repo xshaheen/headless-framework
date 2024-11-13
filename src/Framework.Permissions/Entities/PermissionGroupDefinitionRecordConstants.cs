@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Framework.Permissions.Entities;
 
 public static class PermissionGroupDefinitionRecordConstants

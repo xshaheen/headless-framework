@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Framework.Payments.Paymob.Services.CashOut.Models;
 
 public sealed record CashOutBanks(string Name, string Code)

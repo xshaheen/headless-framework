@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
 using Framework.Kernel.Primitives;

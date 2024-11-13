@@ -1,4 +1,6 @@
-﻿namespace Framework.Settings.Entities;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Framework.Settings.Entities;
 
 public static class SettingValueRecordConstants
 {

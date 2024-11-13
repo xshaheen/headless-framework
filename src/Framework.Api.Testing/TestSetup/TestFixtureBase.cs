@@ -1,9 +1,8 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using MartinCostello.Logging.XUnit;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Serilog;
 using WireMock.Server;

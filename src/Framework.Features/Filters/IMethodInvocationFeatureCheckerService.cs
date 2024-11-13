@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
 using Framework.Features.Values;
@@ -12,15 +12,9 @@ public interface IMethodInvocationFeatureCheckerService
 
 public sealed record MethodInvocationFeatureCheckerContext(MethodInfo Method);
 
-public sealed class MethodInvocationFeatureCheckerService : IMethodInvocationFeatureCheckerService
+public sealed class MethodInvocationFeatureCheckerService(IFeatureManager featureManager)
+    : IMethodInvocationFeatureCheckerService
 {
-    private readonly IFeatureManager _featureManager;
-
-    public MethodInvocationFeatureCheckerService(IFeatureManager featureManager)
-    {
-        _featureManager = featureManager;
-    }
-
     public async Task CheckAsync(MethodInvocationFeatureCheckerContext context)
     {
         if (_IsFeatureCheckDisabled(context))
@@ -30,7 +24,7 @@ public sealed class MethodInvocationFeatureCheckerService : IMethodInvocationFea
 
         foreach (var requiresFeatureAttribute in _GetRequiredFeatureAttributes(context.Method))
         {
-            await _featureManager.EnsureEnabledAsync(requiresFeatureAttribute.IsAnd, requiresFeatureAttribute.Features);
+            await featureManager.EnsureEnabledAsync(requiresFeatureAttribute.IsAnd, requiresFeatureAttribute.Features);
         }
     }
 

@@ -1,4 +1,6 @@
-﻿namespace Framework.Payments.Paymob.CashOut.Models;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Framework.Payments.Paymob.CashOut.Models;
 
 public static class BankTransactionTypes
 {

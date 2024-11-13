@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 namespace Framework.Payments.Paymob.Services.CashOut.Requests;
 
 public enum BankTransactionType
