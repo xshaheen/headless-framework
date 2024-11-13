@@ -1,10 +1,14 @@
-﻿namespace Framework.Blobs.Tests.Harness;
+﻿using Framework.Blobs;
+
+namespace Tests;
 
 public abstract class FileStorageTestsBase(ITestOutputHelper output)
 {
     protected abstract IBlobStorage? GetStorage();
 
-    protected virtual string[] GetContainers() => ["test"];
+    protected virtual string GetContainer() => "storage";
+
+    protected virtual string[] GetContainers() => [GetContainer()];
 
     public virtual async Task CanGetEmptyFileListOnMissingDirectoryAsync()
     {
@@ -38,8 +42,8 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
 
         using (storage)
         {
-            const string container = "test";
-            string[] containers = [container];
+            var container = GetContainer();
+            var containers = GetContainers();
 
             await storage.UploadAsync([container, "archived"], "archived.txt", "archived");
             await storage.UploadAsync([container, "q"], "new.txt", "new");
