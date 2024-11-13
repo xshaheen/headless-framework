@@ -40,7 +40,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Create Container
 
-    public ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
+    public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
         cancellationToken.ThrowIfCancellationRequested();
@@ -53,16 +53,14 @@ public sealed class SshBlobStorage : IBlobStorage
             // If the current directory is empty, use the current working directory instead of a rooted path.
             currentDirectory = string.IsNullOrEmpty(currentDirectory) ? segment : $"{currentDirectory}/{segment}";
 
-            if (_client.Exists(currentDirectory))
+            if (await _client.ExistsAsync(currentDirectory, cancellationToken))
             {
                 continue;
             }
 
             _logger.LogInformation("Creating Container segment {Segment}", segment);
-            _client.CreateDirectory(currentDirectory);
+            await _client.CreateDirectoryAsync(currentDirectory, cancellationToken);
         }
-
-        return ValueTask.CompletedTask;
     }
 
     #endregion
@@ -267,9 +265,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var count = 0;
 
-        var files = _client.ListDirectoryAsync(directory, cancellationToken).AnyContext();
-
-        await foreach (var file in files)
+        await foreach (var file in _client.ListDirectoryAsync(directory, cancellationToken))
         {
             if (file.Name is "." or "..")
             {
@@ -290,7 +286,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         if (includeSelf)
         {
-            _client.DeleteDirectory(directory);
+            await _client.DeleteDirectoryAsync(directory, cancellationToken);
         }
 
         _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
@@ -433,7 +429,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         _logger.LogTrace("Checking if {Path} exists", blobPath);
 
-        var exists = _client.Exists(blobPath);
+        var exists = await _client.ExistsAsync(blobPath, cancellationToken);
 
         return exists;
     }

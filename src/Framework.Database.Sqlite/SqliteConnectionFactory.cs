@@ -13,9 +13,15 @@ public sealed class SqliteConnectionFactory(string connectionString)
 {
     private SqliteConnection? _connection;
 
-    public string GetConnectionString() => connectionString;
+    public string GetConnectionString()
+    {
+        return connectionString;
+    }
 
-    public async ValueTask<IDbConnection> CreateNewConnectionAsync() => await _OpenConnectionAsync();
+    public async ValueTask<IDbConnection> CreateNewConnectionAsync()
+    {
+        return await _OpenConnectionAsync();
+    }
 
     public async ValueTask<IDbConnection> GetOpenConnectionAsync()
     {

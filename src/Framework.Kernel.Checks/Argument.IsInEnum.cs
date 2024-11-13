@@ -24,7 +24,7 @@ public static partial class Argument
     )
         where T : struct, Enum
     {
-        if (Enum.IsDefined(typeof(T), argument))
+        if (Enum.IsDefined(argument))
         {
             return argument;
         }
