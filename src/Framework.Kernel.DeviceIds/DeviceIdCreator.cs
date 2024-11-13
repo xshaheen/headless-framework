@@ -2,10 +2,10 @@
 
 using DeviceId;
 
-namespace Framework.Kernel.BuildingBlocks.Helpers.System;
+namespace Framework.Kernel.DeviceIds;
 
 [PublicAPI]
-public static class DeviceIdHelper
+public static class DeviceIdCreator
 {
     private static readonly DeviceIdBuilder _DeviceIdBuilder = new DeviceIdBuilder()
         .AddMachineName()
