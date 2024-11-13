@@ -12,11 +12,15 @@ public sealed class SitemapUrlsTests : TestBase
         {
             // basic
             {
-                [new(location: "https://www.example.com"), new(location: "https://www.example.com/contact-us")],
+
+                [
+                    new(location: new Uri("https://www.example.com")),
+                    new(location: new Uri("https://www.example.com/contact-us")),
+                ],
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                     + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                     + "  <url>"
-                    + "    <loc>https://www.example.com</loc>"
+                    + "    <loc>https://www.example.com/</loc>"
                     + "  </url>"
                     + "  <url>"
                     + "    <loc>https://www.example.com/contact-us</loc>"
@@ -28,7 +32,7 @@ public sealed class SitemapUrlsTests : TestBase
 
                 [
                     new(
-                        location: "https://www.example.com",
+                        location: new Uri("https://www.example.com"),
                         lastModified: new DateTime(year: 2021, month: 3, day: 15),
                         changeFrequency: ChangeFrequency.Daily,
                         priority: 0.8f
@@ -36,7 +40,7 @@ public sealed class SitemapUrlsTests : TestBase
                 ],
                 "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                     + "  <url>"
-                    + "   <loc>https://www.example.com</loc>"
+                    + "   <loc>https://www.example.com/</loc>"
                     + "   <priority>0.8</priority>"
                     + "   <changefreq>daily</changefreq>"
                     + "   <lastmod>2021-03-15</lastmod>"
@@ -47,13 +51,13 @@ public sealed class SitemapUrlsTests : TestBase
             {
 
                 [
-                    new(location: "https://www.Example.com/ümlaT.html"),
-                    new(location: "https://www.example.com/اداره-اعلانات"),
+                    new(location: new Uri("https://www.Example.com/ümlaT.html")),
+                    new(location: new Uri("https://www.example.com/اداره-اعلانات")),
                 ],
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                     + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                     + "  <url>"
-                    + "    <loc>https://www.example.com/%C3%BCmlat.html</loc>"
+                    + "    <loc>https://www.example.com/%C3%BCmlaT.html</loc>"
                     + "  </url>"
                     + "  <url>"
                     + "    <loc>https://www.example.com/%D8%A7%D8%AF%D8%A7%D8%B1%D9%87-%D8%A7%D8%B9%D9%84%D8%A7%D9%86%D8%A7%D8%AA</loc>"
@@ -62,7 +66,7 @@ public sealed class SitemapUrlsTests : TestBase
             },
             // XML entity escape URLs
             {
-                [new(location: "https://www.example.com/ümlat.html&q=name")],
+                [new(location: new Uri("https://www.example.com/ümlat.html&q=name"))],
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                     + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                     + "  <url>"
@@ -95,8 +99,8 @@ public sealed class SitemapUrlsTests : TestBase
             new(
                 alternateLocations:
                 [
-                    new() { Location = "https://www.example.com/ar/page.html", LanguageCode = "ar" },
-                    new() { Location = "https://www.example.com/en/page.html", LanguageCode = "en" },
+                    new() { Location = new Uri("https://www.example.com/ar/page.html"), LanguageCode = "ar" },
+                    new() { Location = new Uri("https://www.example.com/en/page.html"), LanguageCode = "en" },
                 ]
             ),
         };
@@ -120,9 +124,13 @@ public sealed class SitemapUrlsTests : TestBase
             new(
                 alternateLocations:
                 [
-                    new() { Location = "https://www.example.com/english/page.html", LanguageCode = "en" },
-                    new() { Location = "https://www.example.com/deutsch/page.html", LanguageCode = "de" },
-                    new() { Location = "https://www.example.com/schweiz-deutsch/page.html", LanguageCode = "de-ch" },
+                    new() { Location = new Uri("https://www.example.com/english/page.html"), LanguageCode = "en" },
+                    new() { Location = new Uri("https://www.example.com/deutsch/page.html"), LanguageCode = "de" },
+                    new()
+                    {
+                        Location = new Uri("https://www.example.com/schweiz-deutsch/page.html"),
+                        LanguageCode = "de-ch",
+                    },
                 ]
             ),
         };
