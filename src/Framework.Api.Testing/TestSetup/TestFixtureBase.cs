@@ -3,6 +3,7 @@
 using Framework.Kernel.BuildingBlocks.Abstractions;
 using MartinCostello.Logging.XUnit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Serilog;
 using WireMock.Server;
