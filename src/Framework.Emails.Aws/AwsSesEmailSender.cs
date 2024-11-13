@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
@@ -12,17 +12,9 @@ namespace Framework.Emails.Aws;
  * API Docs
  * https://docs.aws.amazon.com/ses/latest/APIReference/Welcome.html
  */
-public sealed class AwsSesEmailSender : IEmailSender
+public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 client, ILogger<AwsSesEmailSender> logger)
+    : IEmailSender
 {
-    private readonly IAmazonSimpleEmailServiceV2 _client;
-    private readonly ILogger<AwsSesEmailSender> _logger;
-
-    public AwsSesEmailSender(IAmazonSimpleEmailServiceV2 client, ILogger<AwsSesEmailSender> logger)
-    {
-        _client = client;
-        _logger = logger;
-    }
-
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default
@@ -88,7 +80,7 @@ public sealed class AwsSesEmailSender : IEmailSender
 
         try
         {
-            response = await _client.SendEmailAsync(request, cancellationToken);
+            response = await client.SendEmailAsync(request, cancellationToken);
         }
         catch (Exception ex)
             when (ex
@@ -110,7 +102,7 @@ public sealed class AwsSesEmailSender : IEmailSender
             return SendSingleEmailResponse.Succeeded();
         }
 
-        _logger.LogError("Failed to send an email to with response {@Response}", response);
+        logger.LogError("Failed to send an email to with response {@Response}", response);
 
         return SendSingleEmailResponse.Failed("Failed to send an email to the recipient.");
     }

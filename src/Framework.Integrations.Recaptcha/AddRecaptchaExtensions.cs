@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen, 2024. All rights reserved
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 global using JetBrainsPure = JetBrains.Annotations.PureAttribute;
 global using SystemPure = System.Diagnostics.Contracts.PureAttribute;

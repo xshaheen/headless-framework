@@ -1,5 +1,6 @@
-﻿using System.Reflection;
-using Foundatio.Messaging;
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Reflection;
 using Framework.Api;
 using Framework.Caching;
 using Framework.Messaging;

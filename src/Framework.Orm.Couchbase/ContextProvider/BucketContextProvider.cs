@@ -1,4 +1,6 @@
-﻿using Couchbase;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Couchbase;
 using Framework.Orm.Couchbase.Clusters;
 using Framework.Orm.Couchbase.Context;
 

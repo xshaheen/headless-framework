@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.Domains;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Kernel.Domains;
 
 namespace Framework.Permissions.Entities;
 

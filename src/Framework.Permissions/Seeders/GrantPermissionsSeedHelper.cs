@@ -1,4 +1,6 @@
-﻿using Framework.Kernel.BuildingBlocks.Abstractions;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.GrantProviders;

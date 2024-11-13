@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Framework.Kernel.Checks;
 using Framework.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Configuration;

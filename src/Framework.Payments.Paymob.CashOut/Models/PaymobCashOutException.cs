@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
 

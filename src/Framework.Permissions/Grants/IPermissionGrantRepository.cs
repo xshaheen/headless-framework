@@ -1,4 +1,6 @@
-﻿using Framework.Permissions.Entities;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Permissions.Entities;
 
 namespace Framework.Permissions.Grants;
 

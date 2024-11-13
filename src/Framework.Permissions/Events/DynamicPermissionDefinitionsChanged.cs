@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Framework.Kernel.Domains;
 
 namespace Framework.Permissions.Events;

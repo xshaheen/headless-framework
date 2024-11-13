@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Framework.Blobs;
@@ -16,14 +18,14 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : FileStorageT
         .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(22))
         .Build();
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        await _sftpContainer.StartAsync();
+        return _sftpContainer.StartAsync();
     }
 
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
-        await _sftpContainer.StopAsync();
+        return _sftpContainer.StopAsync();
     }
 
     protected override IBlobStorage GetStorage()
