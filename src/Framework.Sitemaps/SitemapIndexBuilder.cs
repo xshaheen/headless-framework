@@ -32,8 +32,13 @@ public static class SitemapIndexBuilder
 
     private static async Task _WriteSitemapRefNodeAsync(XmlWriter writer, SitemapReference sitemapRef)
     {
-        await writer.WriteStartElementAsync(localName: "sitemap", prefix: null, ns: null);
-        await writer.WriteElementStringAsync(localName: "loc", value: sitemapRef.Location, prefix: null, ns: null);
+        await writer.WriteStartElementAsync(prefix: null, localName: "sitemap", ns: null);
+        await writer.WriteElementStringAsync(
+            prefix: null,
+            localName: "loc",
+            ns: null,
+            value: sitemapRef.Location.AbsoluteUri
+        );
 
         if (sitemapRef.LastModified.HasValue)
         {

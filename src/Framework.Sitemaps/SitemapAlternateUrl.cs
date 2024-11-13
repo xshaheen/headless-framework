@@ -1,21 +1,13 @@
 // Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
 
-using Framework.Sitemaps.Internals;
-
 namespace Framework.Sitemaps;
 
 /// <summary>Represents sitemap alternate URL node.</summary>
 [PublicAPI]
 public sealed record SitemapAlternateUrl
 {
-    private readonly string _location = null!;
-
     /// <summary>Alternate url.</summary>
-    public required string Location
-    {
-        get => _location;
-        init => _location = Uri.EscapeUriString(value.ToLowerInvariant().RemoveHiddenChars());
-    }
+    public required Uri Location { get; init; }
 
     /// <summary>
     /// Language/region codes (in ISO 639-1 format) and optionally

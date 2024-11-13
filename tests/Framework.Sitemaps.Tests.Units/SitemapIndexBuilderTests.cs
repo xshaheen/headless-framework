@@ -14,8 +14,8 @@ public sealed class SitemapIndexBuilderTests : TestBase
             {
 
                 [
-                    new() { Location = "https://www.example.com/sitemap-main.xml" },
-                    new() { Location = "https://www.example.com/sitemap-jobs.xml" },
+                    new() { Location = new Uri("https://www.example.com/sitemap-main.xml") },
+                    new() { Location = new Uri("https://www.example.com/sitemap-jobs.xml") },
                 ],
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                     + "<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
@@ -33,7 +33,7 @@ public sealed class SitemapIndexBuilderTests : TestBase
                 [
                     new()
                     {
-                        Location = "https://www.example.com/sitemap-main.xml",
+                        Location = new Uri("https://www.example.com/sitemap-main.xml"),
                         LastModified = new DateTime(2021, 3, 15),
                     },
                 ],
@@ -49,13 +49,13 @@ public sealed class SitemapIndexBuilderTests : TestBase
             {
 
                 [
-                    new() { Location = "https://www.Example.com/ümlaT-sitemap.xml" },
-                    new() { Location = "https://www.example.com/اداره-اعلانات" },
+                    new() { Location = new Uri("https://www.Example.com/ümlaT-sitemap.xml") },
+                    new() { Location = new Uri("https://www.example.com/اداره-اعلانات") },
                 ],
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                     + "<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                     + "  <sitemap>"
-                    + "    <loc>https://www.example.com/%C3%BCmlat-sitemap.xml</loc>"
+                    + "    <loc>https://www.example.com/%C3%BCmlaT-sitemap.xml</loc>"
                     + "  </sitemap>"
                     + "  <sitemap>"
                     + "    <loc>https://www.example.com/%D8%A7%D8%AF%D8%A7%D8%B1%D9%87-%D8%A7%D8%B9%D9%84%D8%A7%D9%86%D8%A7%D8%AA</loc>"
@@ -64,7 +64,7 @@ public sealed class SitemapIndexBuilderTests : TestBase
             },
             // XML entity escape URLs
             {
-                [new() { Location = "https://www.example.com/ümlat.html&q=name" }],
+                [new() { Location = new Uri("https://www.example.com/ümlat.html&q=name") }],
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                     + "<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                     + "  <sitemap>"

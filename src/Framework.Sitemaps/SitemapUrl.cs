@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen, 2021. All rights reserved.
 
-using Framework.Sitemaps.Internals;
-
 namespace Framework.Sitemaps;
 
 /// <summary>Represents sitemap URL node.</summary>
@@ -14,13 +12,13 @@ public sealed record SitemapUrl
     /// <param name="changeFrequency"></param>
     /// <param name="priority"></param>
     public SitemapUrl(
-        string location,
+        Uri location,
         DateTime? lastModified = null,
         ChangeFrequency? changeFrequency = null,
         float? priority = null
     )
     {
-        Location = Uri.EscapeUriString(location.ToLowerInvariant().RemoveHiddenChars());
+        Location = location;
         LastModified = lastModified;
         ChangeFrequency = changeFrequency;
         Priority = priority;
@@ -45,7 +43,7 @@ public sealed record SitemapUrl
     }
 
     /// <summary>Gets the full URL of the page.</summary>
-    public string? Location { get; }
+    public Uri? Location { get; }
 
     /// <summary>Gets alternate localized URLs of the page.</summary>
     public IEnumerable<SitemapAlternateUrl>? AlternateLocations { get; }
