@@ -110,6 +110,14 @@ public interface IBlobStorage : IDisposable
         CancellationToken cancellationToken = default
     );
 
+    [SystemPure]
+    [JetBrainsPure]
+    ValueTask<BlobInfo?> GetBlobInfoAsync(
+        string[] container,
+        string blobName,
+        CancellationToken cancellationToken = default
+    );
+
     #endregion
 
     #region List

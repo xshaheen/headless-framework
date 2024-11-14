@@ -87,7 +87,7 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
             list.Should().ContainSingle();
             list[0].Path.Should().Be("storage/archived/archived.txt");
             list[0].Size.Should().BePositive();
-            list[0].Created.Should().BeAfter(DateTime.MinValue);
+            list[0].Created.Should().BeAfter(DateTimeOffset.MinValue);
         }
     }
 
@@ -163,42 +163,55 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
+        string[] blobContainer = [GetContainer(), "folder"];
+
         using (storage)
         {
-            var fileInfo = await storage.GetFileInfoAsync(Guid.NewGuid().ToString());
-            Assert.Null(fileInfo);
+            /* Not exist */
+            var fileInfo = await storage.GetBlobInfoAsync(blobContainer, Guid.NewGuid().ToString());
+            fileInfo.Should().BeNull();
 
-            var startTime = DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(1));
-            string path = $"folder\\{Guid.NewGuid()}-nested.txt";
-            Assert.True(await storage.SaveFileAsync(path, "test"));
-            fileInfo = await storage.GetFileInfoAsync(path);
-            Assert.NotNull(fileInfo);
-            Assert.True(fileInfo.Path.EndsWith("nested.txt"), "Incorrect file");
-            Assert.True(fileInfo.Size > 0, "Incorrect file size");
+            /* Exist one */
+            var startTime = DateTimeOffset.UtcNow.Subtract(TimeSpan.FromMinutes(1));
+            var blobName = $"{Guid.NewGuid()}-nested.txt";
+            await storage.UploadAsync(blobContainer, blobName, "test");
+
+            fileInfo = await storage.GetBlobInfoAsync(blobContainer, blobName);
+            fileInfo.Should().NotBeNull();
+            fileInfo!.Path.Should().EndWith("nested.txt", "Incorrect file");
+            fileInfo.Size.Should().BePositive("Incorrect file size");
+
             // NOTE: File creation time might not be accurate: http://stackoverflow.com/questions/2109152/unbelievable-strange-file-creation-time-problem
-            Assert.True(fileInfo.Created > DateTime.MinValue, "File creation time should be newer than the start time");
+            fileInfo
+                .Created.Should()
+                .BeAfter(DateTimeOffset.MinValue, "File creation time should be newer than the start time");
 
-            Assert.True(
-                startTime <= fileInfo.Modified,
-                $"File {path} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}."
-            );
+            fileInfo
+                .Modified.Should()
+                .BeOnOrAfter(
+                    startTime,
+                    $"File {blobName} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}."
+                );
 
-            path = $"{Guid.NewGuid()}-test.txt";
-            Assert.True(await storage.SaveFileAsync(path, "test"));
-            fileInfo = await storage.GetFileInfoAsync(path);
-            Assert.NotNull(fileInfo);
-            Assert.True(fileInfo.Path.EndsWith("test.txt"), "Incorrect file");
-            Assert.True(fileInfo.Size > 0, "Incorrect file size");
+            /* Exist multiple */
+            blobName = $"{Guid.NewGuid()}-test.txt";
+            await storage.UploadAsync(blobContainer, blobName, "test");
+            fileInfo = await storage.GetBlobInfoAsync(blobContainer, blobName);
 
-            Assert.True(
-                fileInfo.Created > DateTime.MinValue,
-                "File creation time should be newer than the start time."
-            );
+            fileInfo.Should().NotBeNull();
+            fileInfo!.Path.Should().EndWith("test.txt", "Incorrect file");
+            fileInfo.Size.Should().BePositive("Incorrect file size");
 
-            Assert.True(
-                startTime <= fileInfo.Modified,
-                $"File {path} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}."
-            );
+            fileInfo
+                .Created.Should()
+                .BeOnOrAfter(DateTimeOffset.MinValue, "File creation time should be newer than the start time.");
+
+            fileInfo
+                .Modified.Should()
+                .BeOnOrAfter(
+                    startTime,
+                    $"File {blobName} modified time {fileInfo.Modified:O} should be newer than the start time {startTime:O}."
+                );
         }
     }
 
@@ -212,11 +225,13 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
         }
 
         await ResetAsync(storage);
+        var container = GetContainers();
 
         using (storage)
         {
-            await Assert.ThrowsAnyAsync<ArgumentException>(() => storage.GetFileInfoAsync(null));
-            Assert.Null(await storage.GetFileInfoAsync(Guid.NewGuid().ToString()));
+            Func<Task> action = async () => _ = await storage.GetBlobInfoAsync(container, null!);
+            await action.Should().ThrowExactlyAsync<ArgumentException>();
+            (await storage.GetBlobInfoAsync(container, Guid.NewGuid().ToString())).Should().BeNull();
         }
     }
 
@@ -232,7 +247,6 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
         await ResetAsync(storage);
 
         var mainContainer = GetContainers();
-        var mainName = GetContainer();
 
         using (storage)
         {
@@ -240,12 +254,13 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
             var file = (await storage.GetFileListAsync(mainContainer)).Single();
             file.Should().NotBeNull();
             file.Path.Should().Be("test.txt");
+
             var content = await storage.GetFileContentsAsync(mainContainer, "test.txt");
             content.Should().Be("test");
-            await storage.RenameAsync("test.txt", "new.txt");
-            Assert.Contains(await storage.GetFileListAsync(), f => f.Path == "new.txt");
-            await storage.DeleteFileAsync("new.txt");
-            Assert.Empty(await storage.GetFileListAsync());
+            (await storage.RenameAsync(mainContainer, "test.txt", mainContainer, "new.txt")).Should().BeTrue();
+            (await storage.GetFileListAsync(mainContainer)).Should().ContainSingle(x => x.Path == "new.txt");
+            (await storage.DeleteAsync(mainContainer, "new.txt")).Should().BeTrue();
+            (await storage.GetFileListAsync(mainContainer)).Should().BeEmpty();
         }
     }
 

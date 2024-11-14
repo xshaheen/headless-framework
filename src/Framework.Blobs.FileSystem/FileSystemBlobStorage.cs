@@ -358,6 +358,35 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
         );
     }
 
+    public ValueTask<BlobInfo?> GetBlobInfoAsync(
+        string[] container,
+        string blobName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var filePath = _BuildBlobPath(container, blobName);
+
+        _logger.LogTrace("Getting file stream for {Path}", filePath);
+        var fileInfo = new FileInfo(Path.Combine(_basePath, filePath));
+
+        if (!fileInfo.Exists)
+        {
+            _logger.LogError("Unable to get file info for {Path}: File Not Found", filePath);
+
+            return ValueTask.FromResult<BlobInfo?>(null);
+        }
+
+        return ValueTask.FromResult<BlobInfo?>(
+            new BlobInfo
+            {
+                Path = filePath.Replace(_basePath, string.Empty, StringComparison.Ordinal),
+                Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+                Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
+                Size = fileInfo.Length,
+            }
+        );
+    }
+
     #endregion
 
     #region List
@@ -404,7 +433,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
 
     private NextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
     {
-        var list = new List<BlobSpecification>();
+        var list = new List<BlobInfo>();
 
         var pagingLimit = pageSize;
         var skip = (page - 1) * pagingLimit;
@@ -428,9 +457,9 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
                 .Take(pagingLimit)
         )
         {
-            var info = new FileInfo(path);
+            var fileInfo = new FileInfo(path);
 
-            if (!info.Exists)
+            if (!fileInfo.Exists)
             {
                 continue;
             }
@@ -438,10 +467,10 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
             list.Add(
                 new()
                 {
-                    Path = info.FullName.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
-                    Created = info.CreationTimeUtc,
-                    Modified = info.LastWriteTimeUtc,
-                    Size = info.Length,
+                    Path = fileInfo.FullName.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
+                    Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+                    Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
+                    Size = fileInfo.Length,
                 }
             );
         }

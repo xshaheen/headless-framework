@@ -22,6 +22,9 @@ public sealed class AwsBlobStorage : IBlobStorage
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedBuckets = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
+    private const string _MetaDataHeaderPrefix = "x-amz-meta-";
+    private const string _UploadDateMetadataKey = "upload-date";
+    private const string _ExtensionMetadataKey = "extension";
 
     private readonly IAmazonS3 _s3;
     private readonly IMimeTypeProvider _mimeTypeProvider;
@@ -95,13 +98,13 @@ public sealed class AwsBlobStorage : IBlobStorage
         {
             foreach (var metadata in blob.Metadata)
             {
-                // Note: MetadataCollection is automatically prefixed with "x-amz-meta-"
+                // Note: MetadataCollection automatically prefixed keys with "x-amz-meta-"
                 request.Metadata[metadata.Key] = metadata.Value;
             }
         }
 
-        request.Metadata["upload-date"] = _clock.UtcNow.ToString("O");
-        request.Metadata["extension"] = Path.GetExtension(blob.FileName);
+        request.Metadata[_UploadDateMetadataKey] = _clock.UtcNow.ToString("O");
+        request.Metadata[_ExtensionMetadataKey] = Path.GetExtension(blob.FileName);
 
         var response = await _s3.PutObjectAsync(request, cancellationToken).AnyContext();
 
@@ -279,7 +282,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             if (deleteResponse.DeleteErrors.Count > 0)
             {
-                // retry 1 time, continue on.
+                // retry 1 time, continue.
                 var deleteRetryRequest = new DeleteObjectsRequest { BucketName = bucket };
 
                 deleteRetryRequest.Objects.AddRange(
@@ -491,6 +494,37 @@ public sealed class AwsBlobStorage : IBlobStorage
         return new(stream, blobName, _ToDictionary(response.Metadata));
     }
 
+    public async ValueTask<BlobInfo?> GetBlobInfoAsync(
+        string[] container,
+        string blobName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var (bucket, key) = _BuildObjectKey(blobName, container);
+
+        var request = new GetObjectMetadataRequest { BucketName = bucket, Key = key };
+
+        var response = await _s3.GetObjectMetadataAsync(request, cancellationToken);
+
+        if (response.HttpStatusCode is HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.HttpStatusCode.EnsureSuccessStatusCode();
+
+        var modified = new DateTimeOffset(response.LastModified);
+        var created = _GetUploadedDate(response.Metadata, modified);
+
+        return new BlobInfo
+        {
+            Path = key,
+            Created = created,
+            Modified = modified,
+            Size = response.ContentLength,
+        };
+    }
+
     #endregion
 
     #region Page
@@ -544,7 +578,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             Success = response.HttpStatusCode.IsSuccessStatusCode(),
             HasMore = response.IsTruncated,
             Blobs = _MatchesPattern(response.S3Objects, criteria.Pattern)
-                .Select(_ToBlobSpecification)
+                .Select(_ToBlobInfo)
                 .Where(spec => !_IsDirectory(spec))
                 .ToList(),
             NextPageFunc = response.IsTruncated
@@ -553,18 +587,20 @@ public sealed class AwsBlobStorage : IBlobStorage
         };
     }
 
-    private static BlobSpecification _ToBlobSpecification(S3Object blob)
+    private static BlobInfo _ToBlobInfo(S3Object blob)
     {
+        var modified = new DateTimeOffset(blob.LastModified);
+
         return new()
         {
             Path = blob.Key,
-            Created = blob.LastModified,
-            Modified = blob.LastModified,
+            Created = modified,
+            Modified = modified,
             Size = blob.Size,
         };
     }
 
-    private static bool _IsDirectory(BlobSpecification file)
+    private static bool _IsDirectory(BlobInfo file)
     {
         return file.Size is 0 && file.Path.EndsWith('/');
     }
@@ -640,14 +676,34 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         foreach (var awsMetadataKey in metadata.Keys)
         {
-            var key = awsMetadataKey.StartsWith("x-amz-meta-", StringComparison.Ordinal)
-                ? awsMetadataKey[11..]
+            var key = awsMetadataKey.StartsWith(_MetaDataHeaderPrefix, StringComparison.Ordinal)
+                ? awsMetadataKey[_MetaDataHeaderPrefix.Length..]
                 : awsMetadataKey;
 
             dictionary[key] = metadata[awsMetadataKey];
         }
 
         return dictionary;
+    }
+
+    private static DateTimeOffset _GetUploadedDate(MetadataCollection metadata, DateTimeOffset defaultValue)
+    {
+        var createdValue = metadata[_UploadDateMetadataKey];
+
+        if (createdValue is null)
+        {
+            return defaultValue;
+        }
+
+        return DateTimeOffset.TryParseExact(
+            createdValue,
+            "o",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
+            out var value
+        )
+            ? value
+            : defaultValue;
     }
 
     #endregion

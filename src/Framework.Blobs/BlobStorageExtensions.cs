@@ -6,7 +6,7 @@ namespace Framework.Blobs;
 
 public static class BlobStorageExtensions
 {
-    public static async Task<IReadOnlyList<BlobSpecification>> GetFileListAsync(
+    public static async Task<IReadOnlyList<BlobInfo>> GetFileListAsync(
         this IBlobStorage storage,
         string[] container,
         string? blobSearchPattern = null,
@@ -14,7 +14,7 @@ public static class BlobStorageExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var files = new List<BlobSpecification>();
+        var files = new List<BlobInfo>();
 
         limit ??= int.MaxValue;
 
