@@ -4,4 +4,4 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Blobs;
 
-public sealed record BlobDownloadResult(Stream Stream, string FileName, IDictionary<string, object?>? Metadata = null);
+public sealed record BlobDownloadResult(Stream Stream, string FileName, Dictionary<string, string?>? Metadata = null);
