@@ -12,7 +12,7 @@ public interface INextPageResult
 
     public bool HasMore { get; }
 
-    public IReadOnlyCollection<BlobSpecification> Blobs { get; }
+    public IReadOnlyCollection<BlobInfo> Blobs { get; }
 
     public Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc { get; }
 }
@@ -24,12 +24,12 @@ public interface IHasNextPageFunc
 
 public sealed class PagedFileListResult : IHasNextPageFunc
 {
-    private static readonly ReadOnlyCollection<BlobSpecification> _Empty = new([]);
+    private static readonly ReadOnlyCollection<BlobInfo> _Empty = new([]);
     public static readonly PagedFileListResult Empty = new(_Empty);
 
     public bool HasMore { get; private set; }
 
-    public IReadOnlyCollection<BlobSpecification> Blobs { get; private set; } = _Empty;
+    public IReadOnlyCollection<BlobInfo> Blobs { get; private set; } = _Empty;
 
     #region Next Page
 
@@ -67,7 +67,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
 
     #region Constructors
 
-    public PagedFileListResult(IReadOnlyCollection<BlobSpecification> blobs)
+    public PagedFileListResult(IReadOnlyCollection<BlobInfo> blobs)
     {
         Blobs = blobs;
         HasMore = false;
@@ -75,7 +75,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
     }
 
     public PagedFileListResult(
-        IReadOnlyCollection<BlobSpecification> blobs,
+        IReadOnlyCollection<BlobInfo> blobs,
         bool hasMore,
         Func<PagedFileListResult, ValueTask<INextPageResult>> nextPageFunc
     )

@@ -475,6 +475,42 @@ public sealed class SshBlobStorage : IBlobStorage
         }
     }
 
+    public async ValueTask<BlobInfo?> GetBlobInfoAsync(
+        string[] container,
+        string blobName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(blobName);
+        Argument.IsNotNull(container);
+
+        await _EnsureClientConnectedAsync(cancellationToken);
+
+        var blobPath = _BuildBlobPath(container, blobName);
+
+        _logger.LogTrace("Getting blob info for {Path}", blobPath);
+
+        try
+        {
+            var file = await _client.GetAsync(blobPath, cancellationToken);
+
+            if (file.IsDirectory)
+            {
+                _logger.LogWarning("Unable to get blob info for {Path}: Is a directory", blobPath);
+
+                return null;
+            }
+
+            return _ToBlobInfo(file, blobPath);
+        }
+        catch (SftpPathNotFoundException ex)
+        {
+            _logger.LogError(ex, "Unable to get file info for {Path}: File Not Found", blobPath);
+
+            return null;
+        }
+    }
+
     #endregion
 
     #region List
@@ -536,7 +572,7 @@ public sealed class SshBlobStorage : IBlobStorage
         };
     }
 
-    private async Task<List<BlobSpecification>> _GetFileListAsync(
+    private async Task<List<BlobInfo>> _GetFileListAsync(
         string directoryPath,
         string? searchPattern = null,
         int? limit = null,
@@ -562,7 +598,7 @@ public sealed class SshBlobStorage : IBlobStorage
             criteria.Pattern
         );
 
-        var list = new List<BlobSpecification>();
+        var list = new List<BlobInfo>();
 
         await _GetFileListRecursivelyAsync(
             criteria.PathPrefix,
@@ -588,7 +624,7 @@ public sealed class SshBlobStorage : IBlobStorage
     private async Task _GetFileListRecursivelyAsync(
         string pathPrefix,
         Regex? pattern,
-        ICollection<BlobSpecification> list,
+        ICollection<BlobInfo> list,
         int? recordsToReturn = null,
         CancellationToken cancellationToken = default
     )
@@ -664,15 +700,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 continue;
             }
 
-            list.Add(
-                new BlobSpecification
-                {
-                    Path = path,
-                    Created = file.LastWriteTimeUtc,
-                    Modified = file.LastWriteTimeUtc,
-                    Size = file.Length,
-                }
-            );
+            list.Add(_ToBlobInfo(file, path));
         }
     }
 
@@ -855,6 +883,24 @@ public sealed class SshBlobStorage : IBlobStorage
             proxyPassword,
             [.. authenticationMethods]
         );
+    }
+
+    #endregion
+
+    #region Mappers
+
+    private static BlobInfo _ToBlobInfo(ISftpFile file, string blobPath)
+    {
+        var modified = new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
+
+        return new BlobInfo
+        {
+            Path = blobPath,
+            // SFTP doesn't provide creation time, so we use modified time.
+            Created = modified,
+            Modified = modified,
+            Size = file.Length,
+        };
     }
 
     #endregion
