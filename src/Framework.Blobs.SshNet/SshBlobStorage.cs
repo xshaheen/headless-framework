@@ -70,14 +70,16 @@ public sealed class SshBlobStorage : IBlobStorage
 
     public async ValueTask UploadAsync(
         string[] container,
-        BlobUploadRequest blob,
+        string blobName,
+        Stream stream,
+        Dictionary<string, string?>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blob);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
-        var blobPath = _BuildBlobPath(container, blob.FileName);
+        var blobPath = _BuildBlobPath(container, blobName);
 
         _logger.LogTrace("Saving {Path}", blobPath);
 
@@ -92,7 +94,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 cancellationToken
             );
 
-            await blob.Stream.CopyToAsync(sftpFileStream, cancellationToken);
+            await stream.CopyToAsync(sftpFileStream, cancellationToken);
         }
         catch (SftpPathNotFoundException e)
         {
@@ -108,7 +110,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 cancellationToken
             );
 
-            await blob.Stream.CopyToAsync(sftpFileStream, cancellationToken);
+            await stream.CopyToAsync(sftpFileStream, cancellationToken);
         }
     }
 
@@ -129,7 +131,7 @@ public sealed class SshBlobStorage : IBlobStorage
         {
             try
             {
-                await UploadAsync(container, blob, cancellationToken);
+                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
                 return Result<Exception>.Success();
             }
@@ -399,7 +401,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
             await using var stream = blob.Stream;
 
-            await UploadAsync(newBlobContainer, new BlobUploadRequest(stream, newBlobName), cancellationToken);
+            await UploadAsync(newBlobContainer, newBlobName, stream, blob.Metadata, cancellationToken);
 
             return true;
         }

@@ -2,13 +2,12 @@
 
 using System.Text.RegularExpressions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
-using Humanizer;
 
 namespace Framework.Blobs.Aws;
 
-public sealed class AwsBlobNamingNormalizer : IBlobNamingNormalizer
+public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
 {
-    /// <summary>https://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html</summary>
+    /// <summary><a href="https://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html" /></summary>
     public string NormalizeContainerName(string containerName)
     {
         using (CultureHelper.Use(CultureInfo.InvariantCulture))
@@ -23,33 +22,20 @@ public sealed class AwsBlobNamingNormalizer : IBlobNamingNormalizer
             }
 
             // Bucket names can consist only of lowercase letters, numbers, dots (.), and hyphens (-).
-            containerName = Regex.Replace(
-                containerName,
-                "[^a-z0-9-.]",
-                string.Empty,
-                RegexOptions.Compiled,
-                100.Seconds()
-            );
-
             // Bucket names must begin and end with a letter or number.
+            // Bucket names can't start or end with hyphens adjacent to a period
+            // Bucket names can't start or end with dots adjacent to a period
             // Bucket names must not be formatted as an IP address (for example, 192.168.5.4).
-            // Bucket names can't start or end with hyphens adjacent to period
-            // Bucket names can't start or end with dots adjacent to period
-            containerName = Regex.Replace(containerName, "\\.{2,}", ".", RegexOptions.Compiled, 100.Seconds());
-            containerName = Regex.Replace(containerName, "-\\.", string.Empty, RegexOptions.Compiled, 100.Seconds());
-            containerName = Regex.Replace(containerName, "\\.-", string.Empty, RegexOptions.Compiled, 100.Seconds());
-            containerName = Regex.Replace(containerName, "^-", string.Empty, RegexOptions.Compiled, 100.Seconds());
-            containerName = Regex.Replace(containerName, "-$", string.Empty, RegexOptions.Compiled, 100.Seconds());
-            containerName = Regex.Replace(containerName, "^\\.", string.Empty, RegexOptions.Compiled, 100.Seconds());
-            containerName = Regex.Replace(containerName, "\\.$", string.Empty, RegexOptions.Compiled, 100.Seconds());
 
-            containerName = Regex.Replace(
-                containerName,
-                @"^(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d){4}$",
-                string.Empty,
-                RegexOptions.Compiled,
-                100.Seconds()
-            );
+            containerName = _NotAllowedContainerCharactersRegex().Replace(containerName, string.Empty);
+            containerName = _MultiplePeriodsRegex().Replace(containerName, ".");
+            containerName = _HyphenPeriodRegex().Replace(containerName, string.Empty);
+            containerName = _PeriodHyphenRegex().Replace(containerName, string.Empty);
+            containerName = _HyphenAtTheBeginningRegex().Replace(containerName, string.Empty);
+            containerName = _HyphenAtTheEndRegex().Replace(containerName, string.Empty);
+            containerName = _PeriodAtTheBeginningRegex().Replace(containerName, string.Empty);
+            containerName = _PeriodAtTheEndRegex().Replace(containerName, string.Empty);
+            containerName = _IpAddressRegex().Replace(containerName, string.Empty);
 
             if (containerName.Length >= 3)
             {
@@ -67,9 +53,40 @@ public sealed class AwsBlobNamingNormalizer : IBlobNamingNormalizer
         }
     }
 
-    /// <summary>https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html</summary>
+    /// <summary><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html" /></summary>
     public string NormalizeBlobName(string blobName)
     {
         return blobName;
     }
+
+    #region Helpers
+
+    [GeneratedRegex("[^a-z0-9-.]", RegexOptions.None, 100)]
+    private static partial Regex _NotAllowedContainerCharactersRegex();
+
+    [GeneratedRegex(@"\.$", RegexOptions.None, 100)]
+    private static partial Regex _PeriodAtTheEndRegex();
+
+    [GeneratedRegex(@"^\.", RegexOptions.None, 100)]
+    private static partial Regex _PeriodAtTheBeginningRegex();
+
+    [GeneratedRegex(@"\.{2,}", RegexOptions.None, 100)]
+    private static partial Regex _MultiplePeriodsRegex();
+
+    [GeneratedRegex(@"-\.", RegexOptions.None, 100)]
+    private static partial Regex _HyphenPeriodRegex();
+
+    [GeneratedRegex(@"\.-", RegexOptions.None, 100)]
+    private static partial Regex _PeriodHyphenRegex();
+
+    [GeneratedRegex("^-", RegexOptions.None, 100)]
+    private static partial Regex _HyphenAtTheBeginningRegex();
+
+    [GeneratedRegex("-$", RegexOptions.None, 100)]
+    private static partial Regex _HyphenAtTheEndRegex();
+
+    [GeneratedRegex(@"^(?:^|\.)(?:2(?:5[0-5]|[0-4]\d)|1?\d?\d){4}$", RegexOptions.ExplicitCapture, 100)]
+    private static partial Regex _IpAddressRegex();
+
+    #endregion
 }

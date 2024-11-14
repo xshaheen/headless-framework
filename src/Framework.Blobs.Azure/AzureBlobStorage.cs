@@ -88,29 +88,31 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     public async ValueTask UploadAsync(
         string[] container,
-        BlobUploadRequest blob,
+        string blobName,
+        Stream stream,
+        Dictionary<string, string?>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blob);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         await CreateContainerAsync(container, cancellationToken);
 
-        var blobUrl = _BuildBlobUrl(blob.FileName, container);
+        var blobUrl = _BuildBlobUrl(blobName, container);
         var blobClient = _GetBlobClient(blobUrl);
 
         var httpHeader = new BlobHttpHeaders
         {
-            ContentType = _mimeTypeProvider.GetMimeType(blob.FileName),
+            ContentType = _mimeTypeProvider.GetMimeType(blobName),
             CacheControl = _DefaultCacheControl,
         };
 
-        var metadata = blob.Metadata ?? new Dictionary<string, string?>(StringComparer.Ordinal);
+        metadata ??= new Dictionary<string, string?>(StringComparer.Ordinal);
         metadata["upload-date"] = _clock.UtcNow.ToString("O");
-        metadata["extension"] = Path.GetExtension(blob.FileName);
+        metadata["extension"] = Path.GetExtension(blobName);
 
-        await blobClient.UploadAsync(blob.Stream, httpHeader, metadata, cancellationToken: cancellationToken);
+        await blobClient.UploadAsync(stream, httpHeader, metadata, cancellationToken: cancellationToken);
     }
 
     #endregion
@@ -130,7 +132,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         {
             try
             {
-                await UploadAsync(container, blob, cancellationToken);
+                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
                 return Result<Exception>.Success();
             }

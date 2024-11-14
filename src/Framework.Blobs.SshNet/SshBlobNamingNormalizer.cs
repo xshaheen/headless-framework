@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
+using Cysharp.Text;
 using Framework.Kernel.BuildingBlocks.Helpers.IO;
 
 namespace Framework.Blobs.SshNet;
@@ -16,7 +16,7 @@ public sealed class SshBlobNamingNormalizer : IBlobNamingNormalizer
         // A Windows filename cannot contain any of the following characters: \ / : * ? " < > |
         // In order to support the directory included in the blob name, remove / and \
 
-        var sb = new StringBuilder(fileName.Length);
+        var sb = ZString.CreateStringBuilder();
 
         foreach (var c in fileName)
         {

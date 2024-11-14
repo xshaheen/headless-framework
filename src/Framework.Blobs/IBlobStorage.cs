@@ -22,7 +22,13 @@ public interface IBlobStorage : IDisposable
 
     [SystemPure]
     [JetBrainsPure]
-    ValueTask UploadAsync(string[] container, BlobUploadRequest blob, CancellationToken cancellationToken = default);
+    ValueTask UploadAsync(
+        string[] container,
+        string blobName,
+        Stream stream,
+        Dictionary<string, string?>? metadata = null,
+        CancellationToken cancellationToken = default
+    );
 
     #endregion
 
@@ -125,7 +131,7 @@ public interface IBlobStorage : IDisposable
     /// <summary>Get page</summary>
     /// <param name="containers">Container directory to paginate.</param>
     /// <param name="blobSearchPattern">
-    /// The search string to match against the names of files in path. This parameter can contain
+    /// The search string to match against the names of files in a path. This parameter can contain
     /// a combination of valid literal path and wildcard (* and ?) characters, but it doesn't
     /// regular expressions.
     /// </param>
