@@ -186,11 +186,11 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     public async ValueTask<int> DeleteAllAsync(
         string[] container,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
     )
     {
-        var files = await GetPagedListAsync(container, searchPattern, 500, cancellationToken);
+        var files = await GetPagedListAsync(container, blobSearchPattern, 500, cancellationToken);
         var count = 0;
 
         do
@@ -205,7 +205,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             "Finished deleting {FileCount} files matching {@Container} {SearchPattern}",
             count,
             container,
-            searchPattern
+            blobSearchPattern
         );
 
         return count;
@@ -337,7 +337,7 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] containers,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
@@ -347,7 +347,8 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         var containerUrl = Url.Combine(_accountUrl, containers[0]);
         var client = _GetContainerClient(containerUrl);
-        var pattern = string.Join('/', containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
+        var pattern =
+            string.Join('/', containers.Skip(1)) + "/" + blobSearchPattern?.Replace('\\', '/').RemovePrefix('/');
         var criteria = _GetRequestCriteria(pattern);
 
         var result = new PagedFileListResult(async _ =>

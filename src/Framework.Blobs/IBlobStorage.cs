@@ -7,6 +7,7 @@ namespace Framework.Blobs;
 using JetBrainsPure = PureAttribute;
 using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
+[PublicAPI]
 public interface IBlobStorage : IDisposable
 {
     #region Create Container
@@ -57,7 +58,7 @@ public interface IBlobStorage : IDisposable
 
     ValueTask<int> DeleteAllAsync(
         string[] container,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
     );
 
@@ -115,7 +116,7 @@ public interface IBlobStorage : IDisposable
 
     /// <summary>Get page</summary>
     /// <param name="containers">Container directory to paginate.</param>
-    /// <param name="searchPattern">
+    /// <param name="blobSearchPattern">
     /// The search string to match against the names of files in path. This parameter can contain
     /// a combination of valid literal path and wildcard (* and ?) characters, but it doesn't
     /// regular expressions.
@@ -126,7 +127,7 @@ public interface IBlobStorage : IDisposable
     [JetBrainsPure]
     ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] containers,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     );

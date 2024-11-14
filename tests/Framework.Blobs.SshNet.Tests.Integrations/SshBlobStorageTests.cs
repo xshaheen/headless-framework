@@ -18,7 +18,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : FileStorageT
 
     public async Task InitializeAsync()
     {
-        // await _sftpContainer.StartAsync();
+        await _sftpContainer.StartAsync();
     }
 
     public async Task DisposeAsync()
@@ -28,7 +28,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : FileStorageT
 
     protected override IBlobStorage GetStorage()
     {
-        var options = new SshBlobStorageSettings { ConnectionString = "sftp://foundatio:password@localhost:2222" };
+        var options = new SshBlobStorageSettings { ConnectionString = "sftp://framework:password@localhost:2222" };
         var optionsWrapper = new OptionsWrapper<SshBlobStorageSettings>(options);
 
         return new SshBlobStorage(optionsWrapper);
