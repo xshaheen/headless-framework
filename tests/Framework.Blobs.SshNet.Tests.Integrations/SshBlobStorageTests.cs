@@ -47,4 +47,16 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : FileStorageT
     {
         return base.CanGetFileListForSingleFolderAsync();
     }
+
+    [Fact]
+    public override Task CanGetFileListForSingleFileAsync()
+    {
+        return base.CanGetFileListForSingleFileAsync();
+    }
+
+    [Fact]
+    public override Task CanGetPagedFileListForSingleFolderAsync()
+    {
+        return base.CanGetPagedFileListForSingleFolderAsync();
+    }
 }

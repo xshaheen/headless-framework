@@ -6,7 +6,7 @@ namespace Framework.Blobs;
 
 public static class BlobStorageExtensions
 {
-    public static async Task<IReadOnlyCollection<BlobSpecification>> GetFileListAsync(
+    public static async Task<IReadOnlyList<BlobSpecification>> GetFileListAsync(
         this IBlobStorage storage,
         string[] container,
         string? blobSearchPattern = null,

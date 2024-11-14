@@ -1,0 +1,12 @@
+services:
+  sftp:
+    image: atmoz/sftp:latest
+    ports:
+        - "2222:22"
+    command: framework:password:::storage
+
+  ready:
+    image: andrewlock/wait-for-dependencies
+    command: sftp:22
+    depends_on:
+      - sftp
