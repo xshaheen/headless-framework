@@ -87,8 +87,9 @@ public sealed class LocalResourceLockProvider(
         // Expire the lock when the expiration token source is triggered
         resourceLock.ExpireSource.Token.Register(() =>
         {
-            // TODO: this expiration can be triggered parallel with the renew of the same lock id
-            // which can make the lock to be released even if it is renewed
+            // TODO:
+            //  this expiration can be triggered parallel with the renew of the same lock id
+            //  which can make the lock to be released even if it is renewed
 
             if (_resources.TryRemove(normalizeResource, out var value))
             {
