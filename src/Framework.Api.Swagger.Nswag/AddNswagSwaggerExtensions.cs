@@ -25,9 +25,9 @@ public static class AddNswagSwaggerExtensions
 
     /*
      * TODO: Problems with Nswag:
-     * - Generic types of T can't detect nullability of T (e.g. T?) like DataEnvelope<T>
-     * - query parameters should be camelCase
-     * - form data parameters should be camelCase
+     *  - Generic types of T can't detect nullability of T (e.g. T?) like DataEnvelope<T>
+     *  - query parameters should be camelCase
+     *  - form data parameters should be camelCase
      */
 
     public static IServiceCollection AddFrameworkNswagSwagger(this IServiceCollection services)
