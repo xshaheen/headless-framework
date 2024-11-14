@@ -10,7 +10,7 @@ public sealed class NextPageResult : INextPageResult
 
     public required bool HasMore { get; init; }
 
-    public required IReadOnlyCollection<BlobSpecification> Blobs { get; init; }
+    public required IReadOnlyCollection<BlobInfo> Blobs { get; init; }
 
     public Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc { get; init; }
 }

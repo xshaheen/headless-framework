@@ -149,12 +149,12 @@ internal static class DapperSourceFilesGeneratorEmitter
             [
                 $"DateTime dateOnly => new {data.ClassName}(dateOnly)",
                 $"DateTimeOffset dateTimeOffset => new {data.ClassName}(dateTimeOffset.DateTime)",
-                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && DateTime.TryParseExact(stringValue, "o" global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new {data.ClassName}(result)""",
+                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && DateTime.TryParseExact(stringValue, "o", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new {data.ClassName}(result)""",
             ],
             PrimitiveUnderlyingType.DateTimeOffset =>
             [
                 $"DateTimeOffset dateTimeOffset => new {data.ClassName}(dateTimeOffset)",
-                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && DateTimeOffset.TryParseExact(stringValue, "o" global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new {data.ClassName}(result)""",
+                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && DateTimeOffset.TryParseExact(stringValue, "o", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new {data.ClassName}(result)""",
             ],
             PrimitiveUnderlyingType.DateOnly =>
             [

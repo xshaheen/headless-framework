@@ -69,17 +69,17 @@ public sealed class AzureBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
 
-        var (_, bucketUrl) = _BuildBucketUrl(container);
+        var containerUrl = _BuildContainerUrl(container).ContainerUrl;
 
-        if (_CreatedContainers.ContainsKey(bucketUrl))
+        if (_CreatedContainers.ContainsKey(containerUrl))
         {
             return;
         }
 
-        var containerClient = _GetContainerClient(bucketUrl);
+        var containerClient = _GetContainerClient(containerUrl);
         await containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob, cancellationToken: cancellationToken);
 
-        _CreatedContainers.TryAdd(bucketUrl, value: true);
+        _CreatedContainers.TryAdd(containerUrl, value: true);
     }
 
     #endregion
@@ -228,13 +228,8 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(newBlobName);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        var (oldBucket, _, oldBlobUrl) = _BuildUrls(blobName, blobContainer);
-        var (newBucket, _, newBlobUrl) = _BuildUrls(newBlobName, newBlobContainer);
-
-        if (string.Equals(oldBucket, newBucket, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("Cannot copy file to the same bucket.");
-        }
+        var oldBlobUrl = _BuildBlobUrl(blobName, blobContainer);
+        var newBlobUrl = _BuildBlobUrl(newBlobName, newBlobContainer);
 
         var newBlobClient = _GetBlobClient(newBlobUrl);
 
@@ -331,6 +326,30 @@ public sealed class AzureBlobStorage : IBlobStorage
         return new(memoryStream, blobName);
     }
 
+    public async ValueTask<BlobInfo?> GetBlobInfoAsync(
+        string[] container,
+        string blobName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var blobUrl = _BuildBlobUrl(blobName, container);
+        var blobClient = _GetBlobClient(blobUrl);
+        var blobProperties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
+
+        if (!blobProperties.HasValue)
+        {
+            return null;
+        }
+
+        return new BlobInfo
+        {
+            Path = blobName,
+            Size = blobProperties.Value.ContentLength,
+            Created = blobProperties.Value.CreatedOn,
+            Modified = blobProperties.Value.LastModified,
+        };
+    }
+
     #endregion
 
     #region Page
@@ -368,7 +387,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var blobs = new List<BlobSpecification>(previousNextPageResult?.ExtraLoadedBlobs ?? []);
+        var blobs = new List<BlobInfo>(previousNextPageResult?.ExtraLoadedBlobs ?? []);
 
         // If the previous result has more blobs than the page size, then return the result.
         if (previousNextPageResult is not null)
@@ -427,12 +446,12 @@ public sealed class AzureBlobStorage : IBlobStorage
                     continue;
                 }
 
-                var blobSpecification = new BlobSpecification
+                var blobSpecification = new BlobInfo
                 {
                     Path = blobItem.Name,
                     Size = blobItem.Properties.ContentLength.Value,
-                    Created = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
-                    Modified = blobItem.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue,
+                    Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
+                    Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
                 };
 
                 blobs.Add(blobSpecification);
@@ -452,7 +471,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             Success = true,
             HasMore = hasExtraLoadedBlobs,
             Blobs = blobs.Take(pageSize).ToList(),
-            ExtraLoadedBlobs = hasExtraLoadedBlobs ? blobs.Skip(pageSize).ToList() : Array.Empty<BlobSpecification>(),
+            ExtraLoadedBlobs = hasExtraLoadedBlobs ? blobs.Skip(pageSize).ToList() : Array.Empty<BlobInfo>(),
             ContinuationToken = continuationToken,
             AzureNextPageFunc = hasExtraLoadedBlobs
                 ? currentResult => _GetFiles(client, criteria, pageSize, currentResult, cancellationToken)
@@ -504,26 +523,12 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     #region Build URLs
 
-    private (string Bucket, string BucketUrl, string BlobUrl) _BuildUrls(
-        string blobName,
-        IReadOnlyList<string> containers
-    )
-    {
-        Argument.IsNotNullOrEmpty(containers);
-        Argument.IsNotNullOrWhiteSpace(blobName);
-
-        var (bucket, bucketUrl) = _BuildBucketUrl(containers);
-        var blobUrl = _BuildBlobUrl(blobName, containers);
-
-        return (bucket, bucketUrl, blobUrl);
-    }
-
     private string _BuildBlobUrl(string blobName, IReadOnlyList<string> containers)
     {
         return Url.Combine([_accountUrl, .. containers, blobName]);
     }
 
-    private (string Bucket, string BucketUrl) _BuildBucketUrl(IReadOnlyList<string> containers)
+    private (string Container, string ContainerUrl) _BuildContainerUrl(IReadOnlyList<string> containers)
     {
         var bucket = containers[0];
         var bucketUrl = Url.Combine(_accountUrl, containers[0]);

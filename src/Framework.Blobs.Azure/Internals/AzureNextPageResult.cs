@@ -8,9 +8,9 @@ public sealed class AzureNextPageResult : INextPageResult
 
     public required bool HasMore { get; init; }
 
-    public required IReadOnlyCollection<BlobSpecification> Blobs { get; init; }
+    public required IReadOnlyCollection<BlobInfo> Blobs { get; init; }
 
-    public required IReadOnlyCollection<BlobSpecification> ExtraLoadedBlobs { get; init; }
+    public required IReadOnlyCollection<BlobInfo> ExtraLoadedBlobs { get; init; }
 
     public required string? ContinuationToken { get; init; }
 
