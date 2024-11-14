@@ -2,11 +2,10 @@
 
 using System.Text.RegularExpressions;
 using Framework.Kernel.BuildingBlocks.Helpers.System;
-using Humanizer;
 
 namespace Framework.Blobs.Azure;
 
-public sealed class AzureBlobNamingNormalizer : IBlobNamingNormalizer
+public sealed partial class AzureBlobNamingNormalizer : IBlobNamingNormalizer
 {
     /// <summary>
     ///https://docs.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#container-names
@@ -25,20 +24,13 @@ public sealed class AzureBlobNamingNormalizer : IBlobNamingNormalizer
             }
 
             // Container names can contain only letters, numbers, and the dash (-) character.
-            containerName = Regex.Replace(
-                containerName,
-                "[^a-z0-9-]",
-                string.Empty,
-                RegexOptions.Compiled,
-                100.Milliseconds()
-            );
-
+            containerName = _OnlyLettersNumbersAndDash().Replace(containerName, string.Empty);
             // Every dash (-) character must be immediately preceded and followed by a letter or number;
             // consecutive dashes are not permitted in container names.
             // Container names must start or end with a letter or number
-            containerName = Regex.Replace(containerName, "-{2,}", "-", RegexOptions.Compiled, 100.Milliseconds());
-            containerName = Regex.Replace(containerName, "^-", string.Empty, RegexOptions.Compiled, 100.Milliseconds());
-            containerName = Regex.Replace(containerName, "-$", string.Empty, RegexOptions.Compiled, 100.Milliseconds());
+            containerName = _ConsecutiveDashes().Replace(containerName, "-");
+            containerName = _StartWithDash().Replace(containerName, string.Empty);
+            containerName = _EndWithDash().Replace(containerName, string.Empty);
 
             // Container names must be from 3 through 63 characters long.
             if (containerName.Length < 3)
@@ -62,4 +54,20 @@ public sealed class AzureBlobNamingNormalizer : IBlobNamingNormalizer
     {
         return blobName;
     }
+
+    #region Helpers
+
+    [GeneratedRegex("[^a-z0-9-]", RegexOptions.None, 100)]
+    private static partial Regex _OnlyLettersNumbersAndDash();
+
+    [GeneratedRegex("-{2,}", RegexOptions.None, 100)]
+    private static partial Regex _ConsecutiveDashes();
+
+    [GeneratedRegex("^-", RegexOptions.None, 100)]
+    private static partial Regex _StartWithDash();
+
+    [GeneratedRegex("-$", RegexOptions.None, 100)]
+    private static partial Regex _EndWithDash();
+
+    #endregion
 }

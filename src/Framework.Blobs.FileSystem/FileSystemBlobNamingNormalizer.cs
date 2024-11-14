@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
+using Cysharp.Text;
 using Framework.Kernel.BuildingBlocks.Helpers.IO;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
 
 namespace Framework.Blobs.FileSystem;
 
@@ -14,15 +13,10 @@ public sealed class FileSystemBlobNamingNormalizer : IBlobNamingNormalizer
 
     private static string _Normalize(string fileName)
     {
-        if (!OsHelper.IsWindows)
-        {
-            return fileName;
-        }
-
         // A filename cannot contain any of the following characters: \ / : * ? " < > |
         // In order to support the directory included in the blob name, remove / and \
 
-        var sb = new StringBuilder(fileName.Length);
+        var sb = ZString.CreateStringBuilder();
 
         foreach (var c in fileName)
         {

@@ -40,15 +40,25 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
 
     public async ValueTask UploadAsync(
         string[] container,
-        BlobUploadRequest blob,
+        string blobName,
+        Stream stream,
+        Dictionary<string, string?>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blob);
+        Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
 
         var directoryPath = _GetDirectoryPath(container);
-        await blob.Stream.SaveToLocalFileAsync(blob.FileName, directoryPath, cancellationToken);
+
+        try
+        {
+            await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error uploading {BlobName} to {DirectoryPath}", blobName, directoryPath);
+        }
     }
 
     #endregion

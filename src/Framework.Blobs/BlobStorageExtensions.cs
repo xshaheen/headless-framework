@@ -6,6 +6,16 @@ namespace Framework.Blobs;
 
 public static class BlobStorageExtensions
 {
+    public static ValueTask UploadAsync(
+        this IBlobStorage storage,
+        string[] container,
+        BlobUploadRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return storage.UploadAsync(container, request.FileName, request.Stream, request.Metadata, cancellationToken);
+    }
+
     public static async Task<IReadOnlyList<BlobInfo>> GetFileListAsync(
         this IBlobStorage storage,
         string[] container,

@@ -72,39 +72,42 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     public async ValueTask UploadAsync(
         string[] container,
-        BlobUploadRequest blob,
+        string blobName,
+        Stream stream,
+        Dictionary<string, string?>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blob);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         await CreateContainerAsync(container, cancellationToken);
-        var (bucket, objectKey) = _BuildObjectKey(blob.FileName, container);
+        var (bucket, objectKey) = _BuildObjectKey(blobName, container);
 
         var request = new PutObjectRequest
         {
             BucketName = bucket,
             Key = objectKey,
-            InputStream = blob.Stream.CanSeek ? blob.Stream : AmazonS3Util.MakeStreamSeekable(blob.Stream),
-            AutoCloseStream = !blob.Stream.CanSeek,
+            InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream),
+            AutoCloseStream = !stream.CanSeek,
             AutoResetStreamPosition = false,
-            ContentType = _mimeTypeProvider.GetMimeType(blob.FileName),
+            ContentType = _mimeTypeProvider.GetMimeType(blobName),
             UseChunkEncoding = _settings.UseChunkEncoding,
             CannedACL = _settings.CannedAcl,
             Headers = { CacheControl = _DefaultCacheControl },
         };
 
-        if (blob.Metadata is not null)
+        if (metadata is not null)
         {
-            foreach (var metadata in blob.Metadata)
+            foreach (var m in metadata)
             {
                 // Note: MetadataCollection automatically prefixed keys with "x-amz-meta-"
-                request.Metadata[metadata.Key] = metadata.Value;
+                request.Metadata[m.Key] = m.Value;
             }
         }
 
         request.Metadata[_UploadDateMetadataKey] = _clock.UtcNow.ToString("O");
-        request.Metadata[_ExtensionMetadataKey] = Path.GetExtension(blob.FileName);
+        request.Metadata[_ExtensionMetadataKey] = Path.GetExtension(blobName);
 
         var response = await _s3.PutObjectAsync(request, cancellationToken).AnyContext();
 
@@ -128,7 +131,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         {
             try
             {
-                await UploadAsync(container, blob, cancellationToken);
+                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
                 return Result<Exception>.Success();
             }
@@ -665,14 +668,14 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     #region Metadata Converters
 
-    private static Dictionary<string, object?>? _ToDictionary(MetadataCollection metadata)
+    private static Dictionary<string, string?>? _ToDictionary(MetadataCollection metadata)
     {
         if (metadata.Count == 0)
         {
             return null;
         }
 
-        var dictionary = new Dictionary<string, object?>(metadata.Count, StringComparer.Ordinal);
+        var dictionary = new Dictionary<string, string?>(metadata.Count, StringComparer.Ordinal);
 
         foreach (var awsMetadataKey in metadata.Keys)
         {
