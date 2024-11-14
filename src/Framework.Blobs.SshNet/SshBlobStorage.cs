@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
+using Cysharp.Text;
 using Framework.Kernel.BuildingBlocks;
 using Framework.Kernel.Checks;
 using Framework.Kernel.Primitives;
@@ -209,7 +210,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     public async ValueTask<int> DeleteAllAsync(
         string[] container,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -217,24 +218,24 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var containerPath = _BuildContainerPath(container);
 
-        if (searchPattern is null)
+        if (blobSearchPattern is null)
         {
             var directoryPath = Path.Combine(_client.WorkingDirectory, containerPath);
 
             return await DeleteDirectoryAsync(directoryPath, includeSelf: false, cancellationToken);
         }
 
-        searchPattern = Path.Combine(containerPath, _NormalizePath(searchPattern));
+        blobSearchPattern = Path.Combine(containerPath, _NormalizePath(blobSearchPattern));
 
-        if (searchPattern.EndsWith("/*", StringComparison.Ordinal))
+        if (blobSearchPattern.EndsWith("/*", StringComparison.Ordinal))
         {
-            return await DeleteDirectoryAsync(searchPattern[..^2], includeSelf: false, cancellationToken);
+            return await DeleteDirectoryAsync(blobSearchPattern[..^2], includeSelf: false, cancellationToken);
         }
 
-        var files = await _GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
+        var files = await _GetFileListAsync(blobSearchPattern, cancellationToken: cancellationToken);
         var count = 0;
 
-        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, searchPattern);
+        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, blobSearchPattern);
 
         foreach (var file in files)
         {
@@ -250,7 +251,7 @@ public sealed class SshBlobStorage : IBlobStorage
             }
         }
 
-        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, searchPattern);
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
 
         return count;
     }
@@ -480,7 +481,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] containers,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
@@ -491,10 +492,10 @@ public sealed class SshBlobStorage : IBlobStorage
         var directoryPath = _BuildContainerPath(containers);
 
         var result = new PagedFileListResult(_ =>
-            _GetFiles(directoryPath, searchPattern, 1, pageSize, cancellationToken)
+            _GetFiles(directoryPath, blobSearchPattern, 1, pageSize, cancellationToken)
         );
 
-        await result.NextPageAsync().AnyContext();
+        await result.NextPageAsync();
 
         return result;
     }
@@ -515,8 +516,7 @@ public sealed class SshBlobStorage : IBlobStorage
             pagingLimit++;
         }
 
-        var list = await _GetFileListAsync(directoryPath, searchPattern, pagingLimit, skip, cancellationToken)
-            .AnyContext();
+        var list = await _GetFileListAsync(directoryPath, searchPattern, pagingLimit, skip, cancellationToken);
         var hasMore = false;
 
         if (list.Count == pagingLimit)
@@ -551,23 +551,26 @@ public sealed class SshBlobStorage : IBlobStorage
 
         await _EnsureClientConnectedAsync(cancellationToken);
 
-        searchPattern = string.IsNullOrEmpty(searchPattern)
-            ? directoryPath
-            : Path.Combine(directoryPath, searchPattern);
-
-        var criteria = _GetRequestCriteria(searchPattern);
+        var criteria = _GetRequestCriteria(directoryPath, searchPattern);
 
         // NOTE: This could be expensive the larger the directory structure you have as we aren't efficiently doing paging.
         var recordsToReturn = limit.HasValue ? (skip.GetValueOrDefault() * limit) + limit : null;
 
         _logger.LogTrace(
             "Getting file list recursively matching {Prefix} and {Pattern}...",
-            criteria.Prefix,
+            criteria.PathPrefix,
             criteria.Pattern
         );
 
         var list = new List<BlobSpecification>();
-        await _GetFileListRecursivelyAsync(criteria.Prefix, criteria.Pattern, list, recordsToReturn, cancellationToken);
+
+        await _GetFileListRecursivelyAsync(
+            criteria.PathPrefix,
+            criteria.Pattern,
+            list,
+            recordsToReturn,
+            cancellationToken
+        );
 
         if (skip.HasValue)
         {
@@ -603,7 +606,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         try
         {
-            await foreach (var file in _client.ListDirectoryAsync(pathPrefix, cancellationToken).AnyContext())
+            await foreach (var file in _client.ListDirectoryAsync(pathPrefix, cancellationToken))
             {
                 files.Add(file);
             }
@@ -644,8 +647,7 @@ public sealed class SshBlobStorage : IBlobStorage
                     continue;
                 }
 
-                await _GetFileListRecursivelyAsync(path, pattern, list, recordsToReturn, cancellationToken)
-                    .AnyContext();
+                await _GetFileListRecursivelyAsync(path, pattern, list, recordsToReturn, cancellationToken);
 
                 continue;
             }
@@ -674,14 +676,16 @@ public sealed class SshBlobStorage : IBlobStorage
         }
     }
 
-    private static SearchCriteria _GetRequestCriteria(string? searchPattern)
+    private static SearchCriteria _GetRequestCriteria(string directoryPath, string? searchPattern)
     {
         if (string.IsNullOrEmpty(searchPattern))
         {
-            return new SearchCriteria { Prefix = string.Empty };
+            return new SearchCriteria { PathPrefix = directoryPath };
         }
 
-        var normalizedSearchPattern = _NormalizePath(searchPattern);
+        searchPattern = searchPattern.TrimStart('/').TrimStart('\\');
+
+        var normalizedSearchPattern = _NormalizePath($"{directoryPath}{searchPattern}");
         var wildcardPos = normalizedSearchPattern.IndexOf('*', StringComparison.Ordinal);
         var hasWildcard = wildcardPos >= 0;
 
@@ -711,22 +715,41 @@ public sealed class SshBlobStorage : IBlobStorage
         return new SearchCriteria(prefix, patternRegex);
     }
 
-    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
+    private sealed record SearchCriteria(string PathPrefix = "", Regex? Pattern = null);
 
     #endregion
 
     #region Build Paths
 
-    private string _BuildBlobPath(string[] container, string blobName)
+    private static string _BuildBlobPath(string[] container, string blobName)
     {
-        return _BuildContainerPath(container) + "/" + blobName;
+        if (container.Length == 0)
+        {
+            return blobName;
+        }
+
+        var sb = ZString.CreateStringBuilder();
+
+        sb.AppendJoin('/', container);
+        sb.Append('/');
+        sb.Append(blobName);
+
+        return sb.ToString();
     }
 
-    private string _BuildContainerPath(string[] container)
+    private static string _BuildContainerPath(string[] container)
     {
-        var wd = _client.WorkingDirectory;
+        if (container.Length == 0)
+        {
+            return "";
+        }
 
-        return wd.EndsWith('/') ? wd + string.Join('/', container) : wd + "/" + string.Join('/', container);
+        var sb = ZString.CreateStringBuilder();
+
+        sb.AppendJoin('/', container);
+        sb.Append('/');
+
+        return sb.ToString();
     }
 
     [return: NotNullIfNotNull(nameof(path))]

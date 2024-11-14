@@ -231,13 +231,13 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     public async ValueTask<int> DeleteAllAsync(
         string[] container,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
     )
     {
         const int pageSize = 100;
 
-        var criteria = _GetRequestCriteria(searchPattern);
+        var criteria = _GetRequestCriteria(blobSearchPattern);
         var (bucket, keyPrefix) = (container[0], Url.Combine([.. container.Skip(1).Append(criteria.Prefix)]));
 
         var listRequest = new ListObjectsV2Request
@@ -270,7 +270,11 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             deleteRequest.Objects.AddRange(keys);
 
-            _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", keys.Length, searchPattern);
+            _logger.LogInformation(
+                "Deleting {FileCount} files matching {SearchPattern}",
+                keys.Length,
+                blobSearchPattern
+            );
             var deleteResponse = await _s3.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
 
             if (deleteResponse.DeleteErrors.Count > 0)
@@ -294,7 +298,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             _logger.LogTrace(
                 "Deleted {FileCount} files matching {SearchPattern}",
                 deleteResponse.DeletedObjects.Count,
-                searchPattern
+                blobSearchPattern
             );
 
             count += deleteResponse.DeletedObjects.Count;
@@ -311,7 +315,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             );
         }
 
-        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, searchPattern);
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
 
         return count;
     }
@@ -493,7 +497,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] containers,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
@@ -502,7 +506,8 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsPositive(pageSize);
 
         var bucket = _BuildBucketName(containers);
-        var pattern = string.Join('/', containers.Skip(1)) + "/" + searchPattern?.Replace('\\', '/').RemovePrefix('/');
+        var pattern =
+            string.Join('/', containers.Skip(1)) + "/" + blobSearchPattern?.Replace('\\', '/').RemovePrefix('/');
         var criteria = _GetRequestCriteria(pattern);
 
         var result = new PagedFileListResult(_ =>

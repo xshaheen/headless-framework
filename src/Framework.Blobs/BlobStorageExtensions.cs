@@ -9,7 +9,7 @@ public static class BlobStorageExtensions
     public static async Task<IReadOnlyCollection<BlobSpecification>> GetFileListAsync(
         this IBlobStorage storage,
         string[] container,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         int? limit = null,
         CancellationToken cancellationToken = default
     )
@@ -18,7 +18,7 @@ public static class BlobStorageExtensions
 
         limit ??= int.MaxValue;
 
-        var result = await storage.GetPagedListAsync(container, searchPattern, limit.Value, cancellationToken);
+        var result = await storage.GetPagedListAsync(container, blobSearchPattern, limit.Value, cancellationToken);
 
         do
         {

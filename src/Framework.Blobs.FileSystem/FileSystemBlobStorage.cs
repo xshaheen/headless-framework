@@ -134,7 +134,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
 
     public ValueTask<int> DeleteAllAsync(
         string[] container,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -143,7 +143,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
         var directoryPath = _GetDirectoryPath(container);
 
         // No search pattern, delete the entire directory
-        if (string.IsNullOrEmpty(searchPattern) || string.Equals(searchPattern, "*", StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(blobSearchPattern) || string.Equals(blobSearchPattern, "*", StringComparison.Ordinal))
         {
             if (!Directory.Exists(directoryPath))
             {
@@ -160,8 +160,8 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
             return ValueTask.FromResult(count);
         }
 
-        searchPattern = searchPattern.NormalizePath();
-        var path = Path.Combine(directoryPath, searchPattern);
+        blobSearchPattern = blobSearchPattern.NormalizePath();
+        var path = Path.Combine(directoryPath, blobSearchPattern);
 
         // If the pattern is end with directory separator, delete the directory
         if (
@@ -199,18 +199,18 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
             return ValueTask.FromResult(count);
         }
 
-        _logger.LogInformation("Deleting files matching {SearchPattern}", searchPattern);
+        _logger.LogInformation("Deleting files matching {SearchPattern}", blobSearchPattern);
 
         var filesCount = 0;
 
-        foreach (var file in Directory.EnumerateFiles(directoryPath, searchPattern, SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
         {
             _logger.LogTrace("Deleting {Path}", file);
             File.Delete(file);
             filesCount++;
         }
 
-        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", filesCount, searchPattern);
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", filesCount, blobSearchPattern);
 
         return ValueTask.FromResult(filesCount);
     }
@@ -364,7 +364,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] containers,
-        string? searchPattern = null,
+        string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
@@ -373,25 +373,28 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings
         Argument.IsNotNullOrEmpty(containers);
         Argument.IsPositive(pageSize);
 
-        if (string.IsNullOrEmpty(searchPattern))
+        if (string.IsNullOrEmpty(blobSearchPattern))
         {
-            searchPattern = "*";
+            blobSearchPattern = "*";
         }
 
-        searchPattern = searchPattern.NormalizePath();
+        blobSearchPattern = blobSearchPattern.NormalizePath();
 
         var directoryPath = _GetDirectoryPath(containers);
-        var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, searchPattern));
+        var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, blobSearchPattern));
 
         if (!Directory.Exists(completePath))
         {
-            _logger.LogTrace("Returning empty file list matching {SearchPattern}: Directory Not Found", searchPattern);
+            _logger.LogTrace(
+                "Returning empty file list matching {SearchPattern}: Directory Not Found",
+                blobSearchPattern
+            );
 
             return PagedFileListResult.Empty;
         }
 
         var result = new PagedFileListResult(_ =>
-            ValueTask.FromResult<INextPageResult>(_GetFiles(directoryPath, searchPattern, 1, pageSize))
+            ValueTask.FromResult<INextPageResult>(_GetFiles(directoryPath, blobSearchPattern, 1, pageSize))
         );
 
         await result.NextPageAsync();
