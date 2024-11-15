@@ -14,6 +14,21 @@ public static class Disposable
     {
         return new DisposeAction<TState>(action, parameter);
     }
+
+    public static IAsyncDisposable Create(Func<Task> action)
+    {
+        return new AsyncDisposableAction(action);
+    }
+
+    public static IAsyncDisposable Create<TState>(TState parameter, Func<TState, Task> action)
+    {
+        return new AsyncDisposableAction<TState>(action, parameter);
+    }
+}
+
+file sealed class EmptyDisposable : IDisposable
+{
+    public void Dispose() { }
 }
 
 /// <summary>This class can be used to provide an action when the Dispose method is called.</summary>
@@ -40,7 +55,44 @@ file sealed class DisposeAction<TState>(Action<TState> action, TState parameter)
     }
 }
 
-file sealed class EmptyDisposable : IDisposable
+/// <summary>A class that will call an <see cref="Func{TResult}"/> when Disposed.</summary>
+/// <remarks>Initializes a new instance of the <see cref="AsyncDisposableAction"/> class.</remarks>
+/// <param name="exitTask">The exit action.</param>
+file sealed class AsyncDisposableAction(Func<Task> exitTask) : IAsyncDisposable
 {
-    public void Dispose() { }
+    private Func<Task>? _exitTask = exitTask;
+
+    /// <summary>
+    /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
+    /// </summary>
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        var exitAction = Interlocked.Exchange(ref _exitTask, value: null);
+
+        if (exitAction is not null)
+        {
+            await exitAction().AnyContext();
+        }
+    }
+}
+
+/// <summary>A class that will call an <see cref="Func{TResult}"/> when Disposed.</summary>
+/// <remarks>Initializes a new instance of the <see cref="AsyncDisposableAction"/> class.</remarks>
+/// <param name="exitTask">The exit action.</param>
+file sealed class AsyncDisposableAction<TState>(Func<TState, Task> exitTask, TState parameter) : IAsyncDisposable
+{
+    private Func<TState, Task>? _exitTask = exitTask;
+
+    /// <summary>
+    /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
+    /// </summary>
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        var exitAction = Interlocked.Exchange(ref _exitTask, value: null);
+
+        if (exitAction is not null)
+        {
+            await exitAction(parameter).AnyContext();
+        }
+    }
 }
