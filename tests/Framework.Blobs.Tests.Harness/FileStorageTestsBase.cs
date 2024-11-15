@@ -555,16 +555,15 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
         await ResetAsync(storage);
 
         var container = GetContainer();
+        const string blobName = "test.json";
 
         var shortIdPost = new Post { ProjectId = "123" };
         var longIdPost = new Post { ProjectId = "1234567890" };
 
-        const string path = "test.json";
+        await storage.UploadAsync(container, blobName, longIdPost);
+        await storage.UploadAsync(container, blobName, shortIdPost);
 
-        await storage.UploadAsync(container, path, longIdPost);
-        await storage.UploadAsync(container, path, shortIdPost);
-
-        var actualPost = await storage.GetFileContentsAsync<Post>(container, path);
+        var actualPost = await storage.GetFileContentsAsync<Post>(container, blobName);
         shortIdPost.Should().Be(actualPost);
     }
 
