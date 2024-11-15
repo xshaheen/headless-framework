@@ -30,7 +30,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Get Client
 
-    public async ValueTask<SftpClient> GetClient(CancellationToken cancellationToken)
+    public async ValueTask<SftpClient> GetClientAsync(CancellationToken cancellationToken = default)
     {
         await _EnsureClientConnectedAsync(cancellationToken);
 
@@ -219,22 +219,21 @@ public sealed class SshBlobStorage : IBlobStorage
         await _EnsureClientConnectedAsync(cancellationToken);
 
         var containerPath = _BuildContainerPath(container);
+        blobSearchPattern = _NormalizePath(blobSearchPattern);
 
         if (blobSearchPattern is null)
         {
-            var directoryPath = Path.Combine(_client.WorkingDirectory, containerPath);
-
-            return await DeleteDirectoryAsync(directoryPath, includeSelf: false, cancellationToken);
+            return await DeleteDirectoryAsync(containerPath, includeSelf: false, cancellationToken);
         }
-
-        blobSearchPattern = Path.Combine(containerPath, _NormalizePath(blobSearchPattern));
 
         if (blobSearchPattern.EndsWith("/*", StringComparison.Ordinal))
         {
-            return await DeleteDirectoryAsync(blobSearchPattern[..^2], includeSelf: false, cancellationToken);
+            blobSearchPattern = containerPath + blobSearchPattern[..^2].RemovePrefix('/');
+
+            return await DeleteDirectoryAsync(blobSearchPattern, includeSelf: false, cancellationToken);
         }
 
-        var files = await _GetFileListAsync(blobSearchPattern, cancellationToken: cancellationToken);
+        var files = await _GetFileListAsync(containerPath, blobSearchPattern, cancellationToken: cancellationToken);
         var count = 0;
 
         _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, blobSearchPattern);
@@ -676,7 +675,7 @@ public sealed class SshBlobStorage : IBlobStorage
             }
 
             // If the prefix (current directory) is empty, use the current working directory instead of a rooted path.
-            var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : $"{pathPrefix}/{file.Name}";
+            var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : $"{pathPrefix}{file.Name}";
 
             if (file.IsDirectory)
             {
@@ -708,15 +707,15 @@ public sealed class SshBlobStorage : IBlobStorage
 
     private static SearchCriteria _GetRequestCriteria(string directoryPath, string? searchPattern)
     {
+        searchPattern = searchPattern?.TrimStart('/').TrimStart('\\');
+
         if (string.IsNullOrEmpty(searchPattern))
         {
             return new SearchCriteria { PathPrefix = directoryPath };
         }
 
-        searchPattern = searchPattern.TrimStart('/').TrimStart('\\');
-
-        var normalizedSearchPattern = _NormalizePath($"{directoryPath}{searchPattern}");
-        var wildcardPos = normalizedSearchPattern.IndexOf('*', StringComparison.Ordinal);
+        searchPattern = _NormalizePath($"{directoryPath}{searchPattern}");
+        var wildcardPos = searchPattern.IndexOf('*', StringComparison.Ordinal);
         var hasWildcard = wildcardPos >= 0;
 
         string prefix;
@@ -724,22 +723,17 @@ public sealed class SshBlobStorage : IBlobStorage
 
         if (hasWildcard)
         {
-            var searchRegexText = Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
+            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
             patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
-            var beforeWildcard = normalizedSearchPattern[..wildcardPos];
+            var beforeWildcard = searchPattern[..wildcardPos];
             var slashPos = beforeWildcard.LastIndexOf('/');
-            prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
+            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
         }
         else
         {
-            patternRegex = new Regex(
-                $"^{normalizedSearchPattern}$",
-                RegexOptions.ExplicitCapture,
-                RegexPatterns.MatchTimeout
-            );
-
-            var slashPos = normalizedSearchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : string.Empty;
+            patternRegex = new Regex($"^{searchPattern}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
+            var slashPos = searchPattern.LastIndexOf('/');
+            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
         }
 
         return new SearchCriteria(prefix, patternRegex);
@@ -761,7 +755,12 @@ public sealed class SshBlobStorage : IBlobStorage
         var sb = ZString.CreateStringBuilder();
 
         sb.AppendJoin('/', container);
-        sb.Append('/');
+
+        if (!string.IsNullOrEmpty(blobName))
+        {
+            sb.Append('/');
+        }
+
         sb.Append(blobName);
 
         return sb.ToString();
