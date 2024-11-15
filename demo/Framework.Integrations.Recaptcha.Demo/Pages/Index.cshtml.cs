@@ -6,5 +6,8 @@ namespace Framework.Integrations.Recaptcha.Demo.Pages;
 
 internal sealed class IndexModel : PageModel
 {
-    public void OnGet() { }
+    public PageResult OnGet()
+    {
+        return Page();
+    }
 }
