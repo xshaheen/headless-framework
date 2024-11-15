@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text;
+using System.Text.Json;
+using Framework.Kernel.BuildingBlocks;
 
 namespace Framework.Blobs;
 
@@ -46,11 +48,29 @@ public static class BlobStorageExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await storage.UploadAsync(
-            container,
-            new BlobUploadRequest(new MemoryStream(Encoding.UTF8.GetBytes(contents ?? string.Empty)), blobName),
-            cancellationToken
+        await using var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(contents ?? string.Empty));
+
+        await storage.UploadAsync(container, new BlobUploadRequest(memoryStream, blobName), cancellationToken);
+    }
+
+    public static async ValueTask UploadAsync<T>(
+        this IBlobStorage storage,
+        string[] container,
+        string blobName,
+        T? contents,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var memoryStream = new MemoryStream();
+
+        await JsonSerializer.SerializeAsync(
+            memoryStream,
+            contents,
+            FrameworkJsonConstants.DefaultInternalJsonOptions,
+            cancellationToken: cancellationToken
         );
+
+        await storage.UploadAsync(container, new BlobUploadRequest(memoryStream, blobName), cancellationToken);
     }
 
     public static async ValueTask<string?> GetFileContentsAsync(
@@ -70,5 +90,26 @@ public static class BlobStorageExtensions
         using var reader = new StreamReader(result.Stream);
 
         return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    public static async ValueTask<T?> GetFileContentsAsync<T>(
+        this IBlobStorage storage,
+        string[] container,
+        string blobName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var result = await storage.DownloadAsync(container, blobName, cancellationToken);
+
+        if (result is null)
+        {
+            return default;
+        }
+
+        return await JsonSerializer.DeserializeAsync<T>(
+            result.Stream,
+            FrameworkJsonConstants.DefaultInternalJsonOptions,
+            cancellationToken: cancellationToken
+        );
     }
 }
