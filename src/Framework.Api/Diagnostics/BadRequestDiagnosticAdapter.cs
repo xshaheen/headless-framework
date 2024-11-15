@@ -22,19 +22,16 @@ public sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
 
         if (badRequestFeature is not null)
         {
-            Extensions.BadRequestEvent(logger, badRequestFeature.Error);
+            BadRequestEvent(logger, badRequestFeature.Error);
         }
     }
 
-    private static partial class Extensions
-    {
-        [LoggerMessage(
-            EventId = 5104,
-            EventName = "BadRequestEvent",
-            Level = LogLevel.Warning,
-            SkipEnabledCheck = true,
-            Message = "Bad request received"
-        )]
-        public static partial void BadRequestEvent(ILogger logger, Exception? exception);
-    }
+    [LoggerMessage(
+        EventId = 5104,
+        EventName = "BadRequestEvent",
+        Level = LogLevel.Warning,
+        SkipEnabledCheck = true,
+        Message = "Bad request received"
+    )]
+    public static partial void BadRequestEvent(ILogger logger, Exception? exception);
 }
