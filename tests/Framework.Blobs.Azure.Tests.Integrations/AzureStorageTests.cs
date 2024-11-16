@@ -3,12 +3,13 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Framework.Blobs;
-using Framework.Blobs.SshNet;
+using Framework.Blobs.Azure;
+using Framework.Kernel.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output), IAsyncLifetime
+public sealed class AzureStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output), IAsyncLifetime
 {
     private readonly IContainer _sftpContainer = new ContainerBuilder()
         .WithImage("atmoz/sftp:latest")
@@ -31,36 +32,13 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
 
     protected override IBlobStorage GetStorage()
     {
-        var options = new SshBlobStorageSettings { ConnectionString = "sftp://framework:password@localhost:2222" };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageSettings>(options);
+        var mimeTypeProvider = new MimeTypeProvider();
+        var clock = new Clock(TimeProvider.System);
 
-        return new SshBlobStorage(optionsWrapper);
-    }
+        var options = new AzureStorageSettings { AccountName = "", AccountKey = "" };
+        var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageSettings>(options);
 
-    [Fact]
-    public void CanCreateSshNetFileStorageWithoutConnectionStringPassword()
-    {
-        // given
-        var options = new SshBlobStorageSettings { ConnectionString = "sftp://framework@localhost:2222" };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageSettings>(options);
-
-        // when
-        using var storage = new SshBlobStorage(optionsWrapper);
-    }
-
-    [Fact]
-    public void CanCreateSshNetFileStorageWithoutProxyPassword()
-    {
-        // given
-        var options = new SshBlobStorageSettings
-        {
-            ConnectionString = "sftp://username@host",
-            Proxy = "proxy://username@host",
-        };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageSettings>(options);
-
-        // when
-        using var storage = new SshBlobStorage(optionsWrapper);
+        return new AzureBlobStorage(mimeTypeProvider, clock, optionsAccessor);
     }
 
     [Fact]
@@ -111,7 +89,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         return base.CanRenameFilesAsync();
     }
 
-    [Fact(Skip = "Doesn't work well with SFTP")]
+    [Fact]
     public override Task CanConcurrentlyManageFilesAsync()
     {
         return base.CanConcurrentlyManageFilesAsync();
@@ -169,53 +147,5 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
     public override Task CanSaveOverExistingStoredContent()
     {
         return base.CanSaveOverExistingStoredContent();
-    }
-
-    [Fact]
-    public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
-    {
-        var storage = GetStorage();
-
-        await ResetAsync(storage);
-
-        using (storage)
-        {
-            var container = GetContainer();
-
-            var result = await storage.GetPagedListAsync(container);
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
-            (await result.NextPageAsync()).Should().BeFalse();
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
-
-            const string directory = "EmptyDirectory";
-            var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync() : null;
-            client.Should().NotBeNull();
-
-            await client!.CreateDirectoryAsync($"storage/{directory}");
-
-            result = await storage.GetPagedListAsync(container);
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
-            (await result.NextPageAsync()).Should().BeFalse();
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
-
-            // Ensure the directory will not be returned via get file info
-            var info = await storage.GetBlobInfoAsync(container, directory);
-            info.Should().BeNull();
-
-            // Ensure delete files can remove all files including fake folders
-            var count = await storage.DeleteAllAsync(container, "*");
-
-            // Assert folder was removed by Delete Files
-            // count.Should().Be(1);
-            (await client.ExistsAsync($"storage/{directory}"))
-                .Should()
-                .BeFalse();
-
-            (await storage.GetBlobInfoAsync(container, directory)).Should().BeNull();
-        }
     }
 }
