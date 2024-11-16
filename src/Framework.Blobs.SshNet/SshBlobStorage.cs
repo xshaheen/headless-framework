@@ -674,15 +674,17 @@ public sealed class SshBlobStorage : IBlobStorage
                 break;
             }
 
+            if (file is { IsDirectory: true, Name: "." or ".." })
+            {
+                continue;
+            }
+
             // If the prefix (current directory) is empty, use the current working directory instead of a rooted path.
             var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : $"{pathPrefix}{file.Name}";
 
             if (file.IsDirectory)
             {
-                if (file.Name is "." or "..")
-                {
-                    continue;
-                }
+                path += "/";
 
                 await _GetFileListRecursivelyAsync(path, pattern, list, recordsToReturn, cancellationToken);
 
