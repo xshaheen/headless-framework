@@ -8,7 +8,7 @@ using Framework.Testing.Helpers;
 
 namespace Tests;
 
-public abstract class FileStorageTestsBase(ITestOutputHelper output)
+public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 {
     protected abstract IBlobStorage GetStorage();
 
@@ -557,14 +557,13 @@ public abstract class FileStorageTestsBase(ITestOutputHelper output)
         var container = GetContainer();
         const string blobName = "test.json";
 
-        var shortIdPost = new Post { ProjectId = "123" };
         var longIdPost = new Post { ProjectId = "1234567890" };
-
         await storage.UploadAsync(container, blobName, longIdPost);
-        await storage.UploadAsync(container, blobName, shortIdPost);
+        (await storage.GetFileContentsAsync<Post>(container, blobName)).Should().BeEquivalentTo(longIdPost);
 
-        var actualPost = await storage.GetFileContentsAsync<Post>(container, blobName);
-        shortIdPost.Should().Be(actualPost);
+        var shortIdPost = new Post { ProjectId = "123" };
+        await storage.UploadAsync(container, blobName, shortIdPost);
+        (await storage.GetFileContentsAsync<Post>(container, blobName)).Should().BeEquivalentTo(shortIdPost);
     }
 
     protected async Task ResetAsync(IBlobStorage? storage)
