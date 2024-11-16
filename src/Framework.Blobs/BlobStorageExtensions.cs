@@ -2,7 +2,6 @@
 
 using System.Text;
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks;
 
 namespace Framework.Blobs;
 
@@ -61,16 +60,9 @@ public static class BlobStorageExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var memoryStream = new MemoryStream();
+        var result = contents is null ? null : JsonSerializer.Serialize(contents);
 
-        await JsonSerializer.SerializeAsync(
-            memoryStream,
-            contents,
-            FrameworkJsonConstants.DefaultInternalJsonOptions,
-            cancellationToken: cancellationToken
-        );
-
-        await storage.UploadAsync(container, new BlobUploadRequest(memoryStream, blobName), cancellationToken);
+        await storage.UploadAsync(container, blobName, result, cancellationToken);
     }
 
     public static async ValueTask<string?> GetFileContentsAsync(
@@ -99,17 +91,15 @@ public static class BlobStorageExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var result = await storage.DownloadAsync(container, blobName, cancellationToken);
+        var content = await GetFileContentsAsync(storage, container, blobName, cancellationToken);
 
-        if (result is null)
+        if (content is null)
         {
             return default;
         }
 
-        return await JsonSerializer.DeserializeAsync<T>(
-            result.Stream,
-            FrameworkJsonConstants.DefaultInternalJsonOptions,
-            cancellationToken: cancellationToken
-        );
+        var result = JsonSerializer.Deserialize<T>(content);
+
+        return result;
     }
 }
