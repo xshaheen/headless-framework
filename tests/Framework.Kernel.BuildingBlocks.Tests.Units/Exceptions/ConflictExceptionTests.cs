@@ -17,7 +17,7 @@ public sealed class ConflictExceptionTests
 
         // then
         exception.Errors.Should().ContainSingle();
-        exception.Errors[0].Description.Should().Be("code1: description1");
+        exception.Errors[0].Description.Should().Be("description1");
         exception.Message.Should().Be("Conflict: code1: description1");
     }
 
@@ -32,8 +32,8 @@ public sealed class ConflictExceptionTests
 
         // then
         exception.Errors.Should().HaveCount(2);
-        exception.Errors[0].Description.Should().Be("code1: description1");
-        exception.Errors[1].Description.Should().Be("code2: description2");
+        exception.Errors[0].Description.Should().Be("description1");
+        exception.Errors[1].Description.Should().Be("description2");
         exception.Message.Should().Contain("code1: description1");
         exception.Message.Should().Contain("code2: description2");
     }
@@ -49,7 +49,7 @@ public sealed class ConflictExceptionTests
 
         // then
         exception.Errors.Should().ContainSingle();
-        exception.Errors[0].Description.Should().Be("error: An error occurred");
+        exception.Errors[0].Description.Should().Be("An error occurred");
         exception.Message.Should().Be("Conflict: An error occurred");
     }
 
@@ -65,7 +65,7 @@ public sealed class ConflictExceptionTests
 
         // then
         exception.Errors.Should().ContainSingle();
-        exception.Errors[0].Description.Should().Be("error: An error occurred");
+        exception.Errors[0].Description.Should().Be("An error occurred");
         exception.Message.Should().Be("Conflict: An error occurred");
         exception.InnerException.Should().Be(innerException);
     }

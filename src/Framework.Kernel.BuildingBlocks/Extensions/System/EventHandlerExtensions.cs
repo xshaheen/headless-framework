@@ -3,6 +3,7 @@
 namespace Framework.Kernel.BuildingBlocks.Extensions.System;
 
 /// <summary>Extension methods for <see cref="EventHandler"/>.</summary>
+[PublicAPI]
 public static class EventHandlerExtensions
 {
     /// <summary>Raises given event safely with given arguments.</summary>
