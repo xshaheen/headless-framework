@@ -59,13 +59,21 @@ public static class MobilePhoneNumberValidator
         return util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
     }
 
-    public static bool IsValid(string internationalPhoneNumber, [NotNullWhen(true)] out string? normalizedPhoneNumber)
+    public static bool IsValid(string? internationalNumber, [NotNullWhen(true)] out string? normalizedNumber)
     {
-        normalizedPhoneNumber = null;
+        normalizedNumber = null;
 
-        if (string.IsNullOrWhiteSpace(internationalPhoneNumber))
+        if (string.IsNullOrWhiteSpace(internationalNumber))
         {
             return false;
+        }
+
+        if (!internationalNumber.StartsWith('+'))
+        {
+            throw new ArgumentException(
+                "International phone number should not start with +",
+                nameof(internationalNumber)
+            );
         }
 
         var util = PhoneNumberUtil.GetInstance();
@@ -74,7 +82,7 @@ public static class MobilePhoneNumberValidator
 
         try
         {
-            maybePhoneNumber = util.Parse(internationalPhoneNumber.EnsureStartsWith('+'), defaultRegion: null);
+            maybePhoneNumber = util.Parse(internationalNumber, defaultRegion: null);
         }
         catch
         {
@@ -88,9 +96,9 @@ public static class MobilePhoneNumberValidator
             return false;
         }
 
-        FormattableString normalized = $"+${maybePhoneNumber.CountryCode}{maybePhoneNumber.NationalNumber}";
+        FormattableString normalized = $"+{maybePhoneNumber.CountryCode}{maybePhoneNumber.NationalNumber}";
 
-        normalizedPhoneNumber = normalized.ToString(CultureInfo.InvariantCulture);
+        normalizedNumber = normalized.ToString(CultureInfo.InvariantCulture);
 
         return true;
     }
