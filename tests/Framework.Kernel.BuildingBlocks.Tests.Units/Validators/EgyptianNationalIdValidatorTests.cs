@@ -14,7 +14,7 @@ public sealed class EgyptianNationalIdValidatorTests
     [InlineData("1234567890123a", false)] // Contains non-digit character
     [InlineData("00000000000000", false)] // Invalid date
     [InlineData("30000000000000", false)] // Invalid century indicator
-    [InlineData("29912312345678", false)] // Invalid governorate code
+    [InlineData("29912319945678", false)] // Invalid governorate code
     [InlineData("29901010123456", true)] // Valid national ID
     public void IsValid_ShouldReturnExpectedResult(string? nationalId, bool expected)
     {

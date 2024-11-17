@@ -28,7 +28,7 @@ public sealed class DateTimeOffsetPrimitiveDapperTypeHandler : global::Dapper.Sq
         return value switch
         {
             DateTimeOffset dateTimeOffset => new DateTimeOffsetPrimitive(dateTimeOffset)
-            string stringValue when !string.IsNullOrEmpty(stringValue) && DateTimeOffset.TryParseExact(stringValue, "o" global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new DateTimeOffsetPrimitive(result)
+            string stringValue when !string.IsNullOrEmpty(stringValue) && DateTimeOffset.TryParseExact(stringValue, "o", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new DateTimeOffsetPrimitive(result)
             _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to DateTimeOffsetPrimitive"),
         };
     }
