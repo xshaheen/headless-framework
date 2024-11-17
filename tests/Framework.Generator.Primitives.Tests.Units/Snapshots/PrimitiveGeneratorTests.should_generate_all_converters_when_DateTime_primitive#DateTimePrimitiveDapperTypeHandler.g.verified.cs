@@ -29,7 +29,7 @@ public sealed class DateTimePrimitiveDapperTypeHandler : global::Dapper.SqlMappe
         {
             DateTime dateOnly => new DateTimePrimitive(dateOnly)
             DateTimeOffset dateTimeOffset => new DateTimePrimitive(dateTimeOffset.DateTime)
-            string stringValue when !string.IsNullOrEmpty(stringValue) && DateTime.TryParseExact(stringValue, "o" global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new DateTimePrimitive(result)
+            string stringValue when !string.IsNullOrEmpty(stringValue) && DateTime.TryParseExact(stringValue, "o", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new DateTimePrimitive(result)
             _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to DateTimePrimitive"),
         };
     }
