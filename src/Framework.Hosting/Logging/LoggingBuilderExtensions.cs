@@ -9,6 +9,7 @@ namespace Microsoft.Extensions.Logging;
 /// <summary>
 /// <see cref="ILoggingBuilder"/> extension methods.
 /// </summary>
+[PublicAPI]
 public static class LoggingBuilderExtensions
 {
     /// <summary>

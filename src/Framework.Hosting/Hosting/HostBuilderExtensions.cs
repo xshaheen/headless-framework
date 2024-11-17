@@ -9,6 +9,7 @@ namespace Microsoft.Extensions.Hosting;
 /// <summary>
 /// <see cref="IHostBuilder"/> extension methods.
 /// </summary>
+[PublicAPI]
 public static class HostBuilderHelperExtensions
 {
     /// <summary>

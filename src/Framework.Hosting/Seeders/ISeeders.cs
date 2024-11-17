@@ -9,6 +9,7 @@ public interface ISeeder
     public ValueTask SeedAsync();
 }
 
+[PublicAPI]
 public static class DbSeedersExtensions
 {
     public static void AddDataSeeder<T>(this IServiceCollection services)

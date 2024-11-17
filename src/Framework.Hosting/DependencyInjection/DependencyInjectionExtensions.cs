@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary><see cref="IServiceCollection"/> extension methods.</summary>
+[PublicAPI]
 public static class DependencyInjectionExtensions
 {
     #region AddIf
