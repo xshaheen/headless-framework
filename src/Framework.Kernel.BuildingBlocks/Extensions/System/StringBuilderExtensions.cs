@@ -4,7 +4,8 @@ using System.Text;
 
 namespace Framework.Kernel.BuildingBlocks.Extensions.System;
 
-public static partial class StringBuilderExtensions
+[PublicAPI]
+public static class StringBuilderExtensions
 {
     [JetBrainsPure]
     [SystemPure]
