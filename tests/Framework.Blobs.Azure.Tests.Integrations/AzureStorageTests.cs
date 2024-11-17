@@ -11,23 +11,24 @@ namespace Tests;
 
 public sealed class AzureStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output), IAsyncLifetime
 {
-    private readonly IContainer _sftpContainer = new ContainerBuilder()
-        .WithImage("atmoz/sftp:latest")
-        .WithPortBinding(2222, 22)
-        .WithCommand("framework:password:::storage")
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(22))
+    private readonly IContainer _azuriteContainer = new ContainerBuilder()
+        .WithImage("mcr.microsoft.com/azure-storage/azurite:latest")
+        .WithPortBinding(10000, 10000)
+        .WithPortBinding(10001, 10001)
+        .WithPortBinding(10002, 10002)
+        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(10000))
         .Build();
 
     /// <summary>This runs before all the test run and Called just after the constructor</summary>
     public Task InitializeAsync()
     {
-        return _sftpContainer.StartAsync();
+        return _azuriteContainer.StartAsync();
     }
 
     /// <summary>This runs after all the test run and Called before Dispose()</summary>
     public Task DisposeAsync()
     {
-        return _sftpContainer.StopAsync();
+        return _azuriteContainer.StopAsync();
     }
 
     protected override IBlobStorage GetStorage()

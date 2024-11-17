@@ -8,6 +8,7 @@ using Framework.Kernel.Checks;
 namespace Microsoft.Extensions.Hosting;
 
 /// <summary>Extension methods for <see cref="IHostEnvironment"/>.</summary>
+[PublicAPI]
 public static class HostEnvironmentExtensions
 {
     /// <summary>Checks if the current host environment name is "Test".</summary>

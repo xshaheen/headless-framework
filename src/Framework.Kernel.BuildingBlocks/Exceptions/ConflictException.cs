@@ -10,7 +10,7 @@ public sealed class ConflictException : Exception
     public ConflictException(ErrorDescriptor error)
         : base("Conflict: " + _BuildErrorMessage(error))
     {
-        Errors = new[] { error };
+        Errors = [error];
     }
 
     public ConflictException(IReadOnlyList<ErrorDescriptor> errors)
@@ -22,13 +22,13 @@ public sealed class ConflictException : Exception
     public ConflictException([LocalizationRequired] string error)
         : base($"Conflict: {error}")
     {
-        Errors = new[] { new ErrorDescriptor("error", error) };
+        Errors = [new ErrorDescriptor("error", error)];
     }
 
     public ConflictException([LocalizationRequired] string error, Exception innerException)
         : base($"Conflict: {error}", innerException)
     {
-        Errors = new[] { new ErrorDescriptor("error", error) };
+        Errors = [new ErrorDescriptor("error", error)];
     }
 
     public IReadOnlyList<ErrorDescriptor> Errors { get; }

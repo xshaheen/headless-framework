@@ -12,6 +12,7 @@ services:
     volumes:
       - "localstackdata:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
+
   ready:
     image: andrewlock/wait-for-dependencies
     command: localstack:4566
