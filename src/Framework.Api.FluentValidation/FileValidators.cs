@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Framework.FluentValidation;
 
+[PublicAPI]
 public static class FileValidators
 {
     public static IRuleBuilderOptions<T, IFormFile?> FileNotEmpty<T>(this IRuleBuilder<T, IFormFile?> builder)

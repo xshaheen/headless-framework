@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Framework.Api.Mvc.Filters;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Rewrite;
@@ -20,15 +20,16 @@ namespace Framework.Api.Mvc.Middlewares;
 /// (See Google's comments at http://googlewebmastercentral.blogspot.co.uk/2010/04/to-slash-or-not-to-slash.html
 /// and Bing's at http://blogs.bing.com/webmaster/2012/01/26/moving-content-think-301-not-relcanonical).
 /// </summary>
+[PublicAPI]
 public sealed class RedirectToCanonicalUrlRule : IRule
 {
     private const char _SlashCharacter = '/';
 
-    public RedirectToCanonicalUrlRule(IOptions<RouteOptions> options)
+    public RedirectToCanonicalUrlRule(IOptions<RouteOptions> optionsAccessor)
     {
-        Argument.IsNotNull(options);
-        AppendTrailingSlash = options.Value.AppendTrailingSlash;
-        LowercaseUrls = options.Value.LowercaseUrls;
+        Argument.IsNotNull(optionsAccessor);
+        AppendTrailingSlash = optionsAccessor.Value.AppendTrailingSlash;
+        LowercaseUrls = optionsAccessor.Value.LowercaseUrls;
     }
 
     public RedirectToCanonicalUrlRule(bool appendTrailingSlash, bool lowercaseUrls)

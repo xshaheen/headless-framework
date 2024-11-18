@@ -3,8 +3,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
-using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.ResourceLocks;
 using Framework.Serializer.Json.Modifiers;
 using Framework.Settings.Entities;

@@ -2,8 +2,8 @@
 
 using System.Collections.Concurrent;
 using AsyncKeyedLock;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Checks;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

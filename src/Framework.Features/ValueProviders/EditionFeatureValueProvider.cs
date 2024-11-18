@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Features.Models;
 using Framework.Features.Values;
-using Framework.Kernel.BuildingBlocks.Abstractions;
 
 namespace Framework.Features.ValueProviders;
 

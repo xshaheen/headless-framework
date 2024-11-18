@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using Framework.Kernel.Domains;
+using Framework.Domains;
 using Microsoft.Extensions.DependencyInjection;
 using Nito.AsyncEx.Synchronous;
 

@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 // ReSharper disable once CheckNamespace
 namespace Framework.Sms;
 
+[PublicAPI]
 public sealed class SendSingleSmsResponse
 {
     private SendSingleSmsResponse() { }

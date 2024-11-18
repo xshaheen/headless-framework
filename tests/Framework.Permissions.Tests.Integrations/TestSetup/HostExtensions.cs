@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
-using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.Messaging;
 using Framework.Permissions;
 using Framework.Permissions.Seeders;

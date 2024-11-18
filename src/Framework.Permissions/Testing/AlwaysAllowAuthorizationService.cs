@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Abstractions;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Framework.Permissions.Testing;

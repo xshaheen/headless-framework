@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.Domains;
+using Framework.BuildingBlocks;
+using Framework.Domains;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -17,7 +17,7 @@ public static class AsyncFunctionAssertionsExtensions
         where TTask : Task
         where TAssertions : AsyncFunctionAssertions<TTask, TAssertions>
     {
-        return ThrowConflictExceptionAsync(action, new[] { errorDescriptor }, because, becauseArgs);
+        return ThrowConflictExceptionAsync(action, [errorDescriptor], because, becauseArgs);
     }
 
     public static async Task<ExceptionAssertions<ConflictException>> ThrowConflictExceptionAsync<TTask, TAssertions>(

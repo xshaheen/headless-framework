@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Sms;
 
+[PublicAPI]
 public sealed class SendSingleSmsRequest
 {
     public string? MessageId { get; init; }
@@ -15,6 +16,7 @@ public sealed class SendSingleSmsRequest
     public IDictionary<string, object>? Properties { get; init; }
 }
 
+[PublicAPI]
 public sealed record SmsRequestDestination(int Code, string Number)
 {
     public override string ToString() => $"+{Code}{Number}";

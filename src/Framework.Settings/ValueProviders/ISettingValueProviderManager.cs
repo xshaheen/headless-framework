@@ -22,11 +22,11 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
 
     public SettingValueProviderManager(
         IServiceProvider serviceProvider,
-        IOptions<SettingManagementProvidersOptions> options
+        IOptions<SettingManagementProvidersOptions> optionsAccessor
     )
     {
         _serviceProvider = serviceProvider;
-        _options = options.Value;
+        _options = optionsAccessor.Value;
         _lazyProviders = new(_GetProviders, isThreadSafe: true);
     }
 

@@ -4,7 +4,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Framework.Blobs;
 using Framework.Blobs.Azure;
-using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -36,8 +36,8 @@ public sealed class AzureStorageTests(ITestOutputHelper output) : BlobStorageTes
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
 
-        var options = new AzureStorageSettings { AccountName = "", AccountKey = "" };
-        var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageSettings>(options);
+        var options = new AzureStorageOptions { AccountName = "", AccountKey = "" };
+        var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageOptions>(options);
 
         return new AzureBlobStorage(mimeTypeProvider, clock, optionsAccessor);
     }

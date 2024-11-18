@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Foundatio.Caching;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 
 namespace Framework.Caching;
 

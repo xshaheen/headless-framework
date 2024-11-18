@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
 using Framework.Features;
 using Framework.Features.Seeders;
 using Framework.Features.Storage.EntityFramework;
-using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.ResourceLocks.Local;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text;
-using Framework.Kernel.BuildingBlocks.Helpers.Text;
+using Framework.BuildingBlocks.Helpers.Text;
 
 namespace Framework.Settings.Values;
 

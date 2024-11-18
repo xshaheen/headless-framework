@@ -3,7 +3,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using DotNetCore.CAP;
-using Framework.Kernel.Domains;
+using Framework.Domains;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Messaging;

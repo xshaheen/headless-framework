@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Domains;
 using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Framework.Features.Filters;
@@ -7,7 +8,6 @@ using Framework.Features.Models;
 using Framework.Features.Seeders;
 using Framework.Features.ValueProviders;
 using Framework.Features.Values;
-using Framework.Kernel.Domains;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

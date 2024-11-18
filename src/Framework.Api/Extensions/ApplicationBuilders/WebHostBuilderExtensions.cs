@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Microsoft.AspNetCore.Hosting;
 
 #pragma warning disable IDE0130
@@ -10,6 +10,7 @@ namespace Microsoft.AspNetCore.Builder;
 /// <summary>
 /// <see cref="IWebHostBuilder"/> extension methods.
 /// </summary>
+[PublicAPI]
 public static class WebHostBuilderExtensions
 {
     /// <summary>

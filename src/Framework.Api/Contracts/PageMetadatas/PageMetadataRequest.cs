@@ -2,9 +2,9 @@
 
 using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
+using Framework.BuildingBlocks.Models.Primitives;
 using Framework.FluentValidation;
-using Framework.Kernel.BuildingBlocks.Models.Primitives;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace

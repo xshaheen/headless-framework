@@ -5,6 +5,7 @@
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary><see cref="IHealthChecksBuilder"/> extension methods.</summary>
+[PublicAPI]
 public static class HealthChecksBuilderExtensions
 {
     /// <summary>

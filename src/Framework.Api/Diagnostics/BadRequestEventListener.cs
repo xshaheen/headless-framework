@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.Features;
 
 namespace Framework.Api.Diagnostics;
 
+[PublicAPI]
 public sealed class BadRequestEventListener : IObserver<KeyValuePair<string, object?>>, IDisposable
 {
     private static readonly Predicate<string> _IsEnabled = provider =>

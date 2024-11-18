@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Primitives;
 using Framework.Payments.Paymob.CashIn;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
 using Framework.Payments.Paymob.Services.CashIn.Requests;
 using Framework.Payments.Paymob.Services.CashIn.Responses;
 using Framework.Payments.Paymob.Services.Resources;
+using Framework.Primitives;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Payments.Paymob.Services.CashIn;

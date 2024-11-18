@@ -2,7 +2,7 @@
 
 using System.Reflection;
 using DotNetCore.CAP;
-using Framework.Kernel.Domains;
+using Framework.Domains;
 
 namespace Framework.Messaging;
 

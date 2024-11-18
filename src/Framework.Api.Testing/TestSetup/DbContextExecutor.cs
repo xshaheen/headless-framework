@@ -3,7 +3,7 @@
 using System.Data;
 using System.Linq.Expressions;
 using System.Security.Claims;
-using Framework.Kernel.Domains;
+using Framework.Domains;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.BuildingBlocks.Helpers.Collections;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks;
+using Framework.BuildingBlocks.Helpers.Collections;
+using Framework.Primitives;
 using Framework.Serializer.Json.Converters;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;

@@ -26,7 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Generator.Primitives.Abstractions\Framework.Generator.Primitives.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\src\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
   </ItemGroup>
 
   <ItemGroup>

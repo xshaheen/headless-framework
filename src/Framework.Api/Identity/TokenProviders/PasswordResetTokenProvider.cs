@@ -9,7 +9,7 @@ namespace Framework.Api.Identity.TokenProviders;
 
 public sealed class PasswordResetTokenProvider<TUser>(
     IDataProtectionProvider dataProtectionProvider,
-    IOptions<PasswordResetTokenProviderOptions> options,
+    IOptions<PasswordResetTokenProviderOptions> optionsAccessor,
     ILogger<PasswordResetTokenProvider<TUser>> logger
-) : DataProtectorTokenProvider<TUser>(dataProtectionProvider, options, logger)
+) : DataProtectorTokenProvider<TUser>(dataProtectionProvider, optionsAccessor, logger)
     where TUser : class;

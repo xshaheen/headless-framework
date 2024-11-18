@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Helpers.System;
 using Framework.Features.Models;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
 
 namespace Framework.Features.ValueProviders;
 

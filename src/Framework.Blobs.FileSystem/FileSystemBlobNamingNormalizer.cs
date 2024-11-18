@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Cysharp.Text;
-using Framework.Kernel.BuildingBlocks.Helpers.IO;
+using Framework.BuildingBlocks.Helpers.IO;
 
 namespace Framework.Blobs.FileSystem;
 

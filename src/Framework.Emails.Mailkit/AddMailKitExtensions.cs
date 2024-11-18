@@ -10,17 +10,17 @@ public static class AddMailKitExtensions
 {
     public static IServiceCollection AddMailKitEmailSender(this IServiceCollection services, IConfiguration config)
     {
-        services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(config);
+        services.ConfigureSingleton<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(config);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddMailKitEmailSender(
         this IServiceCollection services,
-        Action<MailkitSmtpSettings> configure
+        Action<MailkitSmtpOptions> configure
     )
     {
-        services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(configure);
+        services.ConfigureSingleton<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure);
         services.AddSingleton<IEmailSender, MailkitEmailSender>();
 
         return _AddCore(services);
@@ -28,10 +28,10 @@ public static class AddMailKitExtensions
 
     public static IServiceCollection AddMailKitEmailSender(
         this IServiceCollection services,
-        Action<MailkitSmtpSettings, IServiceProvider> configure
+        Action<MailkitSmtpOptions, IServiceProvider> configure
     )
     {
-        services.ConfigureSingleton<MailkitSmtpSettings, MailkitSmtpSettingsValidator>(configure);
+        services.ConfigureSingleton<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure);
         services.AddSingleton<IEmailSender, MailkitEmailSender>();
 
         return _AddCore(services);

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Framework.BuildingBlocks;
 using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
-using Framework.Kernel.BuildingBlocks;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Framework.Kernel.BuildingBlocks.Models.Primitives;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks.Models.Primitives;
+using Framework.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 #pragma warning disable IDE0130

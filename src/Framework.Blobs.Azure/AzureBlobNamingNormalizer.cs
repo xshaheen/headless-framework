@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
+using Framework.BuildingBlocks.Helpers.System;
 
 namespace Framework.Blobs.Azure;
 

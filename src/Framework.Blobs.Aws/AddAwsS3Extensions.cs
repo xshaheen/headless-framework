@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Blobs.Aws;
 
+[PublicAPI]
 public static class AddAwsS3Extensions
 {
     /// <summary>
@@ -24,10 +25,10 @@ public static class AddAwsS3Extensions
     public static IServiceCollection AddAwsS3BlobStorage(
         this IServiceCollection services,
         AWSOptions? awsOptions = null,
-        Action<AwsBlobStorageSettings>? setupAction = null
+        Action<AwsBlobStorageOptions>? setupAction = null
     )
     {
-        var optionsBuilder = services.AddOptions<AwsBlobStorageSettings>();
+        var optionsBuilder = services.AddOptions<AwsBlobStorageOptions>();
 
         if (setupAction is not null)
         {

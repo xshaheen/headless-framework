@@ -1,10 +1,10 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Api.Resources;
+using Framework.Checks;
 using Framework.Features.Models;
 using Framework.Features.ValueProviders;
-using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 
 namespace Framework.Features.Values;
 

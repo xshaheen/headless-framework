@@ -10,10 +10,10 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Flurl;
 using Framework.Blobs.Azure.Internals;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.Checks;
+using Framework.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -37,7 +37,7 @@ public sealed class AzureBlobStorage : IBlobStorage
     public AzureBlobStorage(
         IMimeTypeProvider mimeTypeProvider,
         IClock clock,
-        IOptionsSnapshot<AzureStorageSettings> configOptions
+        IOptionsSnapshot<AzureStorageOptions> configOptions
     )
     {
         var settings = configOptions.Value;

@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks;
+using Framework.BuildingBlocks;
 using Framework.Logging.Serilog;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -12,6 +12,7 @@ using Serilog.Formatting.Display;
 
 namespace Framework.Api.Logging.Serilog;
 
+[PublicAPI]
 public static class ApiSerilogFactory
 {
     public const string OutputTemplate = SerilogFactory.OutputTemplate;

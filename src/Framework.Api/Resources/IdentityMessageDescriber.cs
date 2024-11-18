@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 using Humanizer;
 
 namespace Framework.Api.Resources;

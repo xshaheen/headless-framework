@@ -4,6 +4,7 @@ using DeviceDetectorNET;
 
 namespace Framework.Api.Extensions.Web;
 
+[PublicAPI]
 public static class WebHelper
 {
     public static string? GetDeviceInfo(string? userAgent)

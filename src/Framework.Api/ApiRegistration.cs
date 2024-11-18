@@ -9,9 +9,9 @@ using Framework.Api.Diagnostics;
 using Framework.Api.Middlewares;
 using Framework.Api.Security.Claims;
 using Framework.Api.Security.Jwt;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
+using Framework.BuildingBlocks;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Helpers.System;
 using Framework.Serializer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Features;
@@ -76,10 +76,10 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IClock, Clock>();
         builder.Services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
 
-        builder.Services.AddSingletonOptions<StringHashSettings, StringHashSettingsValidator>();
+        builder.Services.AddSingletonOptions<StringHashOptions, StringHashOptionsValidator>();
         builder.Services.TryAddSingleton<IStringHashService, StringHashService>();
 
-        builder.Services.AddSingletonOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
+        builder.Services.AddSingletonOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
         builder.Services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
     }
 

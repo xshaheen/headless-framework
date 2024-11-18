@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Framework.Api.Mvc.Extensions;
 
+[PublicAPI]
 public static class ActionDescriptorExtensions
 {
     public static ControllerActionDescriptor AsControllerActionDescriptor(this ActionDescriptor actionDescriptor)

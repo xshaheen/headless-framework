@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Microsoft.AspNetCore.Http;
 
 namespace Framework.Api.Middlewares;

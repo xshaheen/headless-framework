@@ -3,10 +3,10 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
 using Framework.Features.Entities;
 using Framework.Features.Models;
-using Framework.Kernel.BuildingBlocks.Abstractions;
 using Framework.ResourceLocks;
 using Framework.Serializer.Json.Modifiers;
 using Microsoft.Extensions.Options;

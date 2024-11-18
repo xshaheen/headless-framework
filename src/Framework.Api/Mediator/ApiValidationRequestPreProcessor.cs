@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Api.Mediator;
 
+[PublicAPI]
 public sealed class ApiValidationRequestPreProcessor<TMessage, TResponse>(
     IRequestContext requestContext,
     IEnumerable<IValidator<TMessage>> validators,

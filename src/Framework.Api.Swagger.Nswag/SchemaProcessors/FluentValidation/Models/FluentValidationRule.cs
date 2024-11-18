@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Validators;
-using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
+using Framework.BuildingBlocks.Helpers.Reflection;
 using NJsonSchema;
 
 namespace Framework.Api.Swagger.Nswag.SchemaProcessors.FluentValidation.Models;

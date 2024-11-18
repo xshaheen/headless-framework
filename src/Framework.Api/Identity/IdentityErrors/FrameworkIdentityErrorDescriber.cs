@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 
 namespace Framework.Api.Identity.IdentityErrors;
 
+[PublicAPI]
 public sealed class FrameworkIdentityErrorDescriber : IdentityErrorDescriber
 {
     public override IdentityError DefaultError()
