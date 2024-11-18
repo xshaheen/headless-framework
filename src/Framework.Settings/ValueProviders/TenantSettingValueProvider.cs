@@ -14,6 +14,6 @@ public sealed class TenantSettingValueProvider(ISettingValueStore store, ICurren
 
     protected override string? NormalizeProviderKey(string? providerKey)
     {
-        return providerKey ?? tenant.Id?.ToString();
+        return providerKey ?? tenant.Id;
     }
 }

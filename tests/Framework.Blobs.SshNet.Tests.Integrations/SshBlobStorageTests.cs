@@ -180,7 +180,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
 
         using (storage)
         {
-            var container = GetContainer();
+            var container = Container;
 
             var result = await storage.GetPagedListAsync(container);
             result.HasMore.Should().BeFalse();
@@ -207,7 +207,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
             info.Should().BeNull();
 
             // Ensure delete files can remove all files including fake folders
-            var count = await storage.DeleteAllAsync(container, "*");
+            await storage.DeleteAllAsync(container, "*");
 
             // Assert folder was removed by Delete Files
             // count.Should().Be(1);

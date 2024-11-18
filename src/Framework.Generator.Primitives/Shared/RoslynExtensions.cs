@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -162,7 +162,7 @@ public static class RoslynExtensions
             ); // set the child link (null initially)
 
             // Move to the next outer type
-            parentSyntax = (parentSyntax.Parent as TypeDeclarationSyntax);
+            parentSyntax = parentSyntax.Parent as TypeDeclarationSyntax;
         }
 
         // return a link to the outermost parent type

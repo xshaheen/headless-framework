@@ -65,15 +65,18 @@ internal static class MethodGeneratorEmitter
 
             if (hasMinValue || hasMaxValue)
             {
+                var minValueText = minValue.ToString(CultureInfo.InvariantCulture);
+                var maxValueText = maxValue.ToString(CultureInfo.InvariantCulture);
+
                 builder
                     .Append("if (value.Length is ")
-                    .AppendIf(hasMinValue, $"< {minValue}")
+                    .AppendIf(hasMinValue, $"< {minValueText}")
                     .AppendIf(hasMinValue && hasMaxValue, " or ")
-                    .AppendIf(hasMaxValue, $"> {maxValue}")
+                    .AppendIf(hasMaxValue, $"> {maxValueText}")
                     .AppendLine(")")
                     .OpenBracket()
                     .AppendLine("result = null;")
-                    .AppendLine($"errorMessage =\" String length is out of range {minValue}..{maxValue}\";")
+                    .AppendLine($"errorMessage =\" String length is out of range {minValueText}..{maxValueText}\";")
                     .AppendLine("return false;")
                     .CloseBracket();
             }

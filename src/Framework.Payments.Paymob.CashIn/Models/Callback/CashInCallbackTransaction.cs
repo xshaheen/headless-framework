@@ -255,7 +255,7 @@ public sealed class CashInCallbackTransaction
             _ => type,
         };
 
-        return (last4, type, bank == "-" ? null : bank);
+        return (last4, type, string.Equals(bank, "-", StringComparison.Ordinal) ? null : bank);
     }
 
     private string? _GetFromExtensions(string name)

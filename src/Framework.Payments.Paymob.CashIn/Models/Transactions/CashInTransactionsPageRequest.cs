@@ -86,7 +86,7 @@ public sealed class CashInTransactionsPageRequest
         if (from > to)
         {
             throw new ArgumentException(
-                $@"parameter 'from' must be less than parameter 'to' (from: {from}, to: {to}).",
+                $"parameter 'from' must be less than parameter 'to' (from: {from.Value.ToString(CultureInfo.InvariantCulture)}, to: {to.Value.ToString(CultureInfo.InvariantCulture)}).",
                 nameof(from)
             );
         }

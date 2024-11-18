@@ -34,7 +34,14 @@ public partial class PaymobCashInBroker
 
     private static string _ToLowerCaseHex(byte[] hashBytes)
     {
-        return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+        var sb = new StringBuilder(hashBytes.Length * 2);
+
+        foreach (var b in hashBytes)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $"{b:x2}");
+        }
+
+        return sb.ToString();
     }
 
     private static byte[] _GetHashBytes(byte[] textBytes, byte[] keyBytes)

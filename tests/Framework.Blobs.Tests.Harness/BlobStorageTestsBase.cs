@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
 using System.Text;
@@ -12,9 +12,9 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 {
     protected abstract IBlobStorage GetStorage();
 
-    protected string GetContainerName() => "storage";
+    protected static string ContainerName => "storage";
 
-    protected string[] GetContainer() => [GetContainerName()];
+    protected static string[] Container => [ContainerName];
 
     public virtual async Task CanGetEmptyFileListOnMissingDirectoryAsync()
     {
@@ -22,7 +22,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var list = await storage.GetFileListAsync(GetContainer(), $"{Guid.NewGuid()}\\*");
+        var list = await storage.GetFileListAsync(Container, $"{Guid.NewGuid()}\\*");
 
         list.Should().BeEmpty();
     }
@@ -33,8 +33,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var name = GetContainerName();
-        var container = GetContainer();
+        var name = ContainerName;
+        var container = Container;
 
         await storage.UploadAsync([name, "archived"], "archived.txt", "archived");
         await storage.UploadAsync([name, "q"], "new.txt", "new");
@@ -56,7 +56,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var name = GetContainerName();
+        var name = ContainerName;
 
         await storage.UploadAsync([name, "archived"], "archived.txt", "archived");
         await storage.UploadAsync([name, "archived"], "archived.csv", "archived");
@@ -77,8 +77,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var name = GetContainerName();
-        var container = GetContainer();
+        var name = ContainerName;
+        var container = Container;
 
         var result = await storage.GetPagedListAsync(container, pageSize: 1);
 
@@ -131,7 +131,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        string[] container = [GetContainerName(), "folder"];
+        string[] container = [ContainerName, "folder"];
 
         /* Not exist */
         var fileInfo = await storage.GetBlobInfoAsync(container, Guid.NewGuid().ToString());
@@ -188,7 +188,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
+        var container = Container;
 
         // ReSharper disable once AccessToDisposedClosure
         Func<Task> action = async () => _ = await storage.GetBlobInfoAsync(container, null!);
@@ -202,8 +202,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
-        var name = GetContainerName();
+        var container = Container;
+        var name = ContainerName;
 
         await storage.UploadAsync(container, "test.txt", "test");
         var file = (await storage.GetFileListAsync(container)).Single();
@@ -224,8 +224,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
-        var name = GetContainerName();
+        var container = Container;
+        var name = ContainerName;
 
         // Rename & Move
         await storage.UploadAsync(container, "test.txt", "test");
@@ -246,8 +246,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
-        var containerName = GetContainerName();
+        var container = Container;
+        var containerName = ContainerName;
 
         await storage.UploadAsync([containerName, "x"], "hello.txt", "hello");
         await storage.UploadAsync([containerName, "x", "nested"], "world.csv", "nested world");
@@ -262,8 +262,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
-        var containerName = GetContainerName();
+        var container = Container;
+        var containerName = ContainerName;
 
         await storage.UploadAsync([containerName, "x"], "hello.txt", "hello");
         await storage.UploadAsync([containerName, "x", "nested"], "world.csv", "nested world");
@@ -282,8 +282,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
-        var name = GetContainerName();
+        var container = Container;
+        var name = ContainerName;
         const int filesPerMonth = 5;
 
         for (var year = 2020; year <= 2021; year++)
@@ -327,8 +327,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
-        var name = GetContainerName();
+        var container = Container;
+        var name = ContainerName;
 
         await storage.UploadAsync([name, "x"], "hello.txt", "hello");
         await storage.UploadAsync([name, "x", "nested"], "world.csv", "nested world");
@@ -354,8 +354,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var name = GetContainerName();
-        var container = GetContainer();
+        var name = ContainerName;
+        var container = Container;
 
         await storage.UploadAsync([name, "x"], "hello.txt", "hello");
         await storage.UploadAsync([name, "x", "nested"], "world.csv", "nested world");
@@ -380,8 +380,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var name = GetContainerName();
-        var container = GetContainer();
+        var name = ContainerName;
+        var container = Container;
 
         await storage.UploadAsync([name, "x"], "hello.txt", "hello");
         await storage.UploadAsync([name, "x"], "world.csv", "world");
@@ -411,7 +411,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         await ResetAsync(storage);
 
         const string path = "user.xml";
-        var container = GetContainer();
+        var container = Container;
 
         var element = XElement.Parse("<user>Blake</user>");
 
@@ -441,7 +441,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         await ResetAsync(storage);
 
         const string blobName = "blake.txt";
-        var container = GetContainer();
+        var container = Container;
 
         await using var memoryStream = new MemoryStream();
 
@@ -469,13 +469,13 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
+        var container = Container;
 
         // Ensure is working
         var info = await storage.GetBlobInfoAsync(container, "nope");
         info.Should().BeNull();
 
-        string[] queueContainer = [GetContainerName(), "q"];
+        string[] queueContainer = [ContainerName, "q"];
         using var queueItems = new BlockingCollection<int>();
 
         // Parallel Upload 10 files
@@ -554,7 +554,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var container = GetContainer();
+        var container = Container;
         const string blobName = "test.json";
 
         var longIdPost = new Post { ProjectId = "1234567890" };
@@ -573,7 +573,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
             return;
         }
 
-        var containers = GetContainer();
+        var containers = Container;
 
         output.WriteLine("Deleting all files...");
         await storage.DeleteAllAsync(containers);

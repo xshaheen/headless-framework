@@ -17,3 +17,5 @@ dotnet_diagnostic.ca1308.severity = none
 dotnet_diagnostic.ma0003.severity = none
 # CA1515: Consider making public types internal
 dotnet_diagnostic.ca1515.severity = none
+# xUnit1044: Avoid using TheoryData type arguments that are not serializable (TODO: we should use it and read more about)
+dotnet_diagnostic.xunit1044.severity = none
