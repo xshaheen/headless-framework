@@ -36,12 +36,12 @@ public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasE
 
     public bool HasSameData(PermissionGroupDefinitionRecord otherRecord)
     {
-        if (Name != otherRecord.Name)
+        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (DisplayName != otherRecord.DisplayName)
+        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
         {
             return false;
         }
@@ -56,12 +56,12 @@ public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasE
 
     public void Patch(PermissionGroupDefinitionRecord otherRecord)
     {
-        if (Name != otherRecord.Name)
+        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
         {
             Name = otherRecord.Name;
         }
 
-        if (DisplayName != otherRecord.DisplayName)
+        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
         {
             DisplayName = otherRecord.DisplayName;
         }

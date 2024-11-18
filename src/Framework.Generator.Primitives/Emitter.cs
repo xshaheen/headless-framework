@@ -619,13 +619,16 @@ internal static class Emitter
 
         data.StringLengthAttributeValidation = (minValue, maxValue);
 
+        var minValueText = minValue.ToString(CultureInfo.InvariantCulture);
+        var maxValueText = maxValue.ToString(CultureInfo.InvariantCulture);
+
         sb.Append("if (value.Length is ")
-            .AppendIf(hasMinValue, $"< {minValue}")
+            .AppendIf(hasMinValue, $"< {minValueText}")
             .AppendIf(hasMinValue && hasMaxValue, " or ")
-            .AppendIf(hasMaxValue, $"> {maxValue}")
+            .AppendIf(hasMaxValue, $"> {maxValueText}")
             .AppendLine(")")
             .AppendLine(
-                $"\tthrow new InvalidPrimitiveValueException(\"String length is out of range {minValue}..{maxValue}\", this);"
+                $"\tthrow new InvalidPrimitiveValueException(\"String length is out of range {minValueText}..{maxValueText}\", this);"
             )
             .NewLine();
     }

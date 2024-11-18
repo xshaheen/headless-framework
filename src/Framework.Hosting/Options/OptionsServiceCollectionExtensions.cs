@@ -536,8 +536,8 @@ public static class OptionsServiceCollectionExtensions
     /// <typeparam name="TOptionValidator">The fluent validator of the options.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <param name="config">The configuration.</param>
-    /// <param name="validation">The validation function.</param>
     /// <param name="configureBinder">Used to configure the binder options.</param>
+    /// <param name="validation">The validation function.</param>
     /// <returns>The same services collection.</returns>
     public static IServiceCollection ConfigureSingleton<TOption, TOptionValidator>(
         this IServiceCollection services,

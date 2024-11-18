@@ -180,7 +180,7 @@ public sealed class CashInTransaction
     public bool IsDeclinedError()
     {
         // "data.message": may be "Do not honour", or "Invalid card number", ...
-        return Data?.TxnResponseCode == "DECLINED";
+        return string.Equals(Data?.TxnResponseCode, "DECLINED", StringComparison.Ordinal);
     }
 
     public bool IsRiskChecksError()
@@ -210,6 +210,6 @@ public sealed class CashInTransaction
             _ => type,
         };
 
-        return (last4, type, bank == "-" ? null : bank);
+        return (last4, type, string.Equals(bank, "-", StringComparison.Ordinal) ? null : bank);
     }
 }

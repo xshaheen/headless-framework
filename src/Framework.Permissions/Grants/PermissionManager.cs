@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
 using Framework.Checks;
@@ -66,7 +66,7 @@ public sealed class PermissionManager(
     {
         var permission = await definitionManager.GetOrDefaultAsync(permissionName, cancellationToken);
 
-        if (permission is null || !permission.IsEnabled)
+        if (permission?.IsEnabled != true)
         {
             return new(permissionName, isGranted: false);
         }

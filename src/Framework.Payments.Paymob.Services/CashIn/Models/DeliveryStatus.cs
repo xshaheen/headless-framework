@@ -93,7 +93,7 @@ internal static class DeliveryStatusExtensions
             "Delivery Failed" => DeliveryStatus.DeliveryFailed,
             "Return Scheduled" => DeliveryStatus.ReturnScheduled,
             "Package Returned" => DeliveryStatus.PackageReturned,
-            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, message: null),
         };
     }
 }

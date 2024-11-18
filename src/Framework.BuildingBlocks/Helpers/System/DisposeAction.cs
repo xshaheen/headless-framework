@@ -79,6 +79,7 @@ file sealed class AsyncDisposableAction(Func<Task> exitTask) : IAsyncDisposable
 /// <summary>A class that will call an <see cref="Func{TResult}"/> when Disposed.</summary>
 /// <remarks>Initializes a new instance of the <see cref="AsyncDisposableAction"/> class.</remarks>
 /// <param name="exitTask">The exit action.</param>
+/// <param name="parameter"></param>
 file sealed class AsyncDisposableAction<TState>(Func<TState, Task> exitTask, TState parameter) : IAsyncDisposable
 {
     private Func<TState, Task>? _exitTask = exitTask;

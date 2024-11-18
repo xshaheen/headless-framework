@@ -4,41 +4,29 @@ using System.Text.Json.Serialization;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
-internal sealed class CashInPaymentKeyInternalRequest
+internal sealed class CashInPaymentKeyInternalRequest(CashInPaymentKeyRequest request, string authToken, int defaultExpiration)
 {
-    public CashInPaymentKeyInternalRequest(CashInPaymentKeyRequest request, string authToken, int defaultExpiration)
-    {
-        AuthToken = authToken;
-        OrderId = request.OrderId;
-        IntegrationId = request.IntegrationId;
-        AmountCents = request.AmountCents.ToString(CultureInfo.InvariantCulture);
-        Expiration = request.Expiration ?? defaultExpiration;
-        Currency = request.Currency;
-        LockOrderWhenPaid = request.LockOrderWhenPaid ? "true" : "false";
-        BillingData = request.BillingData;
-    }
-
     [JsonPropertyName("auth_token")]
-    public string AuthToken { get; }
+    public string AuthToken { get; } = authToken;
 
     [JsonPropertyName("integration_id")]
-    public int IntegrationId { get; }
+    public int IntegrationId { get; } = request.IntegrationId;
 
     [JsonPropertyName("order_id")]
-    public int OrderId { get; }
+    public int OrderId { get; } = request.OrderId;
 
     [JsonPropertyName("amount_cents")]
-    public string AmountCents { get; }
+    public string AmountCents { get; } = request.AmountCents.ToString(CultureInfo.InvariantCulture);
 
     [JsonPropertyName("expiration")]
-    public int Expiration { get; }
+    public int Expiration { get; } = request.Expiration ?? defaultExpiration;
 
     [JsonPropertyName("currency")]
-    public string Currency { get; }
+    public string Currency { get; } = request.Currency;
 
     [JsonPropertyName("lock_order_when_paid")]
-    public string LockOrderWhenPaid { get; }
+    public string LockOrderWhenPaid { get; } = request.LockOrderWhenPaid ? "true" : "false";
 
     [JsonPropertyName("billing_data")]
-    public CashInBillingData BillingData { get; }
+    public CashInBillingData BillingData { get; } = request.BillingData;
 }

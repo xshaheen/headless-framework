@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Framework.Generator.Primitives;
 
@@ -26,12 +26,17 @@ public interface IPrimitive<T> : IPrimitive
     /// Validates the specified value against primitive-specific rules and returns a validation result.
     /// </summary>
     /// <param name="value">The value to be validated against primitive constraints.</param>
+#pragma warning disable CA1000 // Do not declare static members on generic types
     static abstract PrimitiveValidationResult Validate(T value);
+#pragma warning restore CA1000
 
     /// <summary>
     /// Retrieves a string representation of the specified primitive value.
     /// </summary>
     /// <param name="value">The primitive value to be represented as a string.</param>
     /// <returns>A string representation of the primitive value.</returns>
-    static virtual string ToString(T value) => value.ToString() ?? string.Empty;
+    static virtual string ToString(T value)
+    {
+        return value.ToString() ?? string.Empty;
+    }
 }
