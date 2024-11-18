@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.Features.Definitions;
 using Framework.Features.Models;
 using Framework.Features.ValueProviders;
-using Framework.Kernel.Checks;
 
 namespace Framework.Features.Values;
 

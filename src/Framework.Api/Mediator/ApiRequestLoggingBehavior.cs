@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Api.Mediator;
 
+[PublicAPI]
 public sealed class ApiRequestLoggingBehavior<TMessage, TResponse>(
     IRequestContext requestContext,
     ILogger<ApiRequestLoggingBehavior<TMessage, TResponse>> logger

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Framework.Api.Mvc.Filters;
 
+[PublicAPI]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
 public sealed class DevelopmentOnlyAttribute : Attribute, IResourceFilter
 {

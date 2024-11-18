@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Reflection;
 using Audit.Core;
 using Audit.EntityFramework;
-using Framework.Kernel.Domains;
+using Framework.Domains;
 using Framework.Orm.EntityFramework.AuditLogs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;

@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 using Microsoft.AspNetCore.Identity;
 
 namespace Framework.Api.Identity.IdentityErrors;
 
+[PublicAPI]
 public static class IdentityResultExtensions
 {
     public static ParamsIdentityError ToIdentityError(this ErrorDescriptor error)

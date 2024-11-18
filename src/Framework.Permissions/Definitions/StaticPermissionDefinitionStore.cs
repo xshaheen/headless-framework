@@ -26,11 +26,11 @@ public sealed class StaticPermissionDefinitionStore : IStaticPermissionDefinitio
 
     public StaticPermissionDefinitionStore(
         IServiceScopeFactory serviceScopeFactory,
-        IOptions<PermissionManagementProvidersOptions> options
+        IOptions<PermissionManagementProvidersOptions> optionsAccessor
     )
     {
         _serviceScopeFactory = serviceScopeFactory;
-        _options = options.Value;
+        _options = optionsAccessor.Value;
 
         _lazyPermissionDefinitions = new Lazy<Dictionary<string, PermissionDefinition>>(
             _CreatePermissionDefinitions,

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Domains;
-using Framework.Kernel.Primitives;
+using Framework.Domains;
 using Framework.Orm.EntityFramework.Configurations;
+using Framework.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 #pragma warning disable IDE0130

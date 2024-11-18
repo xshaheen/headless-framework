@@ -2,8 +2,8 @@
 
 using System.Diagnostics;
 using Framework.Api.Constants;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 

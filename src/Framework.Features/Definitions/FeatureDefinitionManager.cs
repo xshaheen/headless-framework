@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.Features.Models;
-using Framework.Kernel.Checks;
 
 namespace Framework.Features.Definitions;
 

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Api.Abstractions;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +14,7 @@ namespace Framework.Api.Mvc.Filters;
 /// E.g. /Robots.txt/ should not have a trailing slash and should be /Robots.txt. Note, that we also don't care if
 /// it is upper-case or lower-case in this instance.
 /// </summary>
+[PublicAPI]
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
 public sealed class NoTrailingSlashAttribute : Attribute, IResourceFilter
 {

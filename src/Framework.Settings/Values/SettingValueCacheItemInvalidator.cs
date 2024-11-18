@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Caching;
-using Framework.Kernel.Domains;
+using Framework.Domains;
 using Framework.Settings.Entities;
 
 namespace Framework.Settings.Values;

@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using Couchbase;
 using Couchbase.Transactions;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 

@@ -2,7 +2,7 @@
 
 using System.Net.Http.Json;
 using Flurl;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
 

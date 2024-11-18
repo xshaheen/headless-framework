@@ -2,12 +2,12 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Framework.Kernel.Primitives;
 using Framework.Payments.Paymob.CashOut;
 using Framework.Payments.Paymob.CashOut.Models;
 using Framework.Payments.Paymob.Services.CashOut.Requests;
 using Framework.Payments.Paymob.Services.CashOut.Responses;
 using Framework.Payments.Paymob.Services.Resources;
+using Framework.Primitives;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Payments.Paymob.Services.CashOut;

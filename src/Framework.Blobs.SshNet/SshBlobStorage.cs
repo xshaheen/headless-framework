@@ -3,9 +3,9 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Cysharp.Text;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks;
+using Framework.Checks;
+using Framework.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -20,9 +20,9 @@ public sealed class SshBlobStorage : IBlobStorage
     private readonly SftpClient _client;
     private readonly ILogger _logger;
 
-    public SshBlobStorage(IOptions<SshBlobStorageSettings> options)
+    public SshBlobStorage(IOptions<SshBlobStorageOptions> optionsAccessor)
     {
-        var sshOptions = options.Value;
+        var sshOptions = optionsAccessor.Value;
         var connectionInfo = _BuildConnectionInfo(sshOptions);
         _client = new SftpClient(connectionInfo);
         _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
@@ -812,12 +812,12 @@ public sealed class SshBlobStorage : IBlobStorage
         );
     }
 
-    private static ConnectionInfo _BuildConnectionInfo(SshBlobStorageSettings settings)
+    private static ConnectionInfo _BuildConnectionInfo(SshBlobStorageOptions options)
     {
-        Argument.IsNotNull(settings);
+        Argument.IsNotNull(options);
 
         if (
-            !Uri.TryCreate(settings.ConnectionString, UriKind.Absolute, out var uri)
+            !Uri.TryCreate(options.ConnectionString, UriKind.Absolute, out var uri)
             || string.IsNullOrEmpty(uri.UserInfo)
         )
         {
@@ -836,12 +836,12 @@ public sealed class SshBlobStorage : IBlobStorage
             authenticationMethods.Add(new PasswordAuthenticationMethod(username, password));
         }
 
-        if (settings.PrivateKey is not null)
+        if (options.PrivateKey is not null)
         {
             authenticationMethods.Add(
                 new PrivateKeyAuthenticationMethod(
                     username,
-                    new PrivateKeyFile(settings.PrivateKey, settings.PrivateKeyPassPhrase)
+                    new PrivateKeyFile(options.PrivateKey, options.PrivateKeyPassPhrase)
                 )
             );
         }
@@ -851,14 +851,13 @@ public sealed class SshBlobStorage : IBlobStorage
             authenticationMethods.Add(new NoneAuthenticationMethod(username));
         }
 
-        if (string.IsNullOrEmpty(settings.Proxy))
+        if (string.IsNullOrEmpty(options.Proxy))
         {
             return new ConnectionInfo(uri.Host, port, username, [.. authenticationMethods]);
         }
 
         if (
-            !Uri.TryCreate(settings.Proxy, UriKind.Absolute, out var proxyUri)
-            || string.IsNullOrEmpty(proxyUri.UserInfo)
+            !Uri.TryCreate(options.Proxy, UriKind.Absolute, out var proxyUri) || string.IsNullOrEmpty(proxyUri.UserInfo)
         )
         {
             throw new InvalidOperationException("Unable to parse proxy uri");
@@ -868,7 +867,7 @@ public sealed class SshBlobStorage : IBlobStorage
         var proxyUsername = proxyParts[0];
         var proxyPassword = proxyParts.Length > 1 ? proxyParts[1] : null;
 
-        var proxyType = settings.ProxyType;
+        var proxyType = options.ProxyType;
 
         if (proxyType is ProxyTypes.None && proxyUri.Scheme.StartsWith("http", StringComparison.Ordinal))
         {

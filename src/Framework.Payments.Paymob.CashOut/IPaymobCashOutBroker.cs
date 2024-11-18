@@ -4,7 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Flurl;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Framework.Payments.Paymob.CashOut.Models;
 
 namespace Framework.Payments.Paymob.CashOut;

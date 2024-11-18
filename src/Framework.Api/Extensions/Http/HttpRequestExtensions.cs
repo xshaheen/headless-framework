@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Microsoft.Net.Http.Headers;
 
 #pragma warning disable IDE0130
@@ -9,6 +9,7 @@ using Microsoft.Net.Http.Headers;
 namespace Microsoft.AspNetCore.Http;
 
 /// <summary><see cref="HttpRequest"/> extension methods.</summary>
+[PublicAPI]
 public static class HttpRequestExtensions
 {
     private const string _XmlHttpRequest = "XMLHttpRequest";

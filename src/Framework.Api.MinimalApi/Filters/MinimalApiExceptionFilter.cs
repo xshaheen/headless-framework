@@ -5,7 +5,7 @@ using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Resources;
 using Framework.FluentValidation;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
@@ -14,6 +14,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Framework.Api.MinimalApi.Filters;
 
+[PublicAPI]
 public sealed partial class MinimalApiExceptionFilter(
     IProblemDetailsCreator problemDetailsCreator,
     IHostEnvironment environment,

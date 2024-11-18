@@ -3,8 +3,8 @@
 using System.Security.Claims;
 using System.Text;
 using Framework.Api.Security.Claims;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks;
+using Framework.BuildingBlocks.Abstractions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 

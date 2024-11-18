@@ -11,15 +11,19 @@ namespace Framework.Sms.Infobip;
 public sealed class InfobipSmsSender : ISmsSender
 {
     private readonly string _sender;
-    private readonly ILogger<InfobipSmsSender> _logger;
     private readonly SmsApi _smsApi;
+    private readonly ILogger<InfobipSmsSender> _logger;
 
-    public InfobipSmsSender(HttpClient httpClient, IOptions<InfobipSettings> options, ILogger<InfobipSmsSender> logger)
+    public InfobipSmsSender(
+        HttpClient httpClient,
+        IOptions<InfobipOptions> optionsAccessor,
+        ILogger<InfobipSmsSender> logger
+    )
     {
-        var value = options.Value;
+        var value = optionsAccessor.Value;
         _sender = value.Sender;
-        _logger = logger;
         _smsApi = new SmsApi(httpClient, new Configuration { BasePath = value.BasePath, ApiKey = value.ApiKey });
+        _logger = logger;
     }
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(

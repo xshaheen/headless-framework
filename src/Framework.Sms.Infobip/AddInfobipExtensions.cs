@@ -16,31 +16,31 @@ public static class AddInfobipExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<InfobipSettings, InfobipSettingsValidator>(config);
+        services.ConfigureSingleton<InfobipOptions, InfobipOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddInfobipSmsSender(
         this IServiceCollection services,
-        Action<InfobipSettings> setupAction,
+        Action<InfobipOptions> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<InfobipSettings, InfobipSettingsValidator>(setupAction);
+        services.ConfigureSingleton<InfobipOptions, InfobipOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddInfobipSmsSender(
         this IServiceCollection services,
-        Action<InfobipSettings, IServiceProvider> setupAction,
+        Action<InfobipOptions, IServiceProvider> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<InfobipSettings, InfobipSettingsValidator>(setupAction);
+        services.ConfigureSingleton<InfobipOptions, InfobipOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }

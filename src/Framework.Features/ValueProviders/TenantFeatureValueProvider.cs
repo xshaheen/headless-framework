@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Helpers.Threading;
 using Framework.Features.Models;
 using Framework.Features.Values;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.BuildingBlocks.Helpers.Threading;
 
 namespace Framework.Features.ValueProviders;
 

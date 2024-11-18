@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Api.Identity.TokenProviders;
 
+[PublicAPI]
 public static class IdentityBuilderExtensions
 {
     #region Password Reset

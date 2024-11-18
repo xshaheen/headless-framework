@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.Imaging.Contracts;
-using Framework.Kernel.Checks;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Imaging;
@@ -17,11 +17,11 @@ public interface IImageResizer
 
 public sealed class ImageResizer(
     IEnumerable<IImageResizerContributor> imageResizerContributors,
-    IOptions<ImagingOptions> imageResizeOptions
+    IOptions<ImagingOptions> optionsAccessor
 ) : IImageResizer
 {
     private readonly IEnumerable<IImageResizerContributor> _resizerContributors = imageResizerContributors.Reverse();
-    private readonly ImagingOptions _imagingOptions = imageResizeOptions.Value;
+    private readonly ImagingOptions _imagingOptions = optionsAccessor.Value;
 
     public async Task<ImageStreamResizeResult> ResizeAsync(
         Stream stream,

@@ -7,11 +7,11 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Flurl;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.BuildingBlocks.Helpers.IO;
-using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Helpers.IO;
+using Framework.Checks;
+using Framework.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -29,24 +29,23 @@ public sealed class AwsBlobStorage : IBlobStorage
     private readonly IAmazonS3 _s3;
     private readonly IMimeTypeProvider _mimeTypeProvider;
     private readonly IClock _clock;
-    private readonly AwsBlobStorageSettings _settings;
+    private readonly AwsBlobStorageOptions _options;
     private readonly ILogger _logger;
 
     public AwsBlobStorage(
         IAmazonS3 s3,
         IMimeTypeProvider mimeTypeProvider,
         IClock clock,
-        IOptions<AwsBlobStorageSettings> options
+        IOptions<AwsBlobStorageOptions> optionsAccessor
     )
     {
         _s3 = s3;
         _mimeTypeProvider = mimeTypeProvider;
         _clock = clock;
-        _settings = options.Value;
+        _options = optionsAccessor.Value;
 
         _logger =
-            _settings.LoggerFactory?.CreateLogger<AwsBlobStorageSettings>()
-            ?? NullLogger<AwsBlobStorageSettings>.Instance;
+            _options.LoggerFactory?.CreateLogger<AwsBlobStorageOptions>() ?? NullLogger<AwsBlobStorageOptions>.Instance;
     }
 
     #region Create Container
@@ -92,8 +91,8 @@ public sealed class AwsBlobStorage : IBlobStorage
             AutoCloseStream = !stream.CanSeek,
             AutoResetStreamPosition = false,
             ContentType = _mimeTypeProvider.GetMimeType(blobName),
-            UseChunkEncoding = _settings.UseChunkEncoding,
-            CannedACL = _settings.CannedAcl,
+            UseChunkEncoding = _options.UseChunkEncoding,
+            CannedACL = _options.CannedAcl,
             Headers = { CacheControl = _DefaultCacheControl },
         };
 
@@ -348,7 +347,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         var request = new CopyObjectRequest
         {
-            CannedACL = _settings.CannedAcl,
+            CannedACL = _options.CannedAcl,
             SourceBucket = oldBucket,
             SourceKey = oldKey,
             DestinationBucket = newBucket,
@@ -382,7 +381,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         var request = new CopyObjectRequest
         {
-            CannedACL = _settings.CannedAcl,
+            CannedACL = _options.CannedAcl,
             SourceBucket = oldBucket,
             SourceKey = oldKey,
             DestinationBucket = newBucket,

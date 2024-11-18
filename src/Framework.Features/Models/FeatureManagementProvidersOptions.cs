@@ -2,7 +2,7 @@
 
 using Framework.Features.Definitions;
 using Framework.Features.ValueProviders;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 
 namespace Framework.Features.Models;
 

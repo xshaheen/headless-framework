@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks.Helpers.Ids;
-using Framework.Kernel.Checks;
+using Framework.BuildingBlocks.Helpers.Ids;
+using Framework.Checks;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.ValueGeneration;

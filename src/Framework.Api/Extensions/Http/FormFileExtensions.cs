@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
+using Framework.Checks;
+using Framework.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Http;
 
+[PublicAPI]
 public static class FormFileExtensions
 {
     /// <summary>Save a the file to the <paramref name="directoryPath"/> and return file name.</summary>

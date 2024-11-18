@@ -7,7 +7,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Framework.Blobs;
 using Framework.Blobs.Aws;
-using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -54,8 +54,8 @@ public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
 
-        var options = new AwsBlobStorageSettings();
-        var optionsWrapper = new OptionsWrapper<AwsBlobStorageSettings>(options);
+        var options = new AwsBlobStorageOptions();
+        var optionsWrapper = new OptionsWrapper<AwsBlobStorageOptions>(options);
 
         return new AwsBlobStorage(amazonS3Client, mimeTypeProvider, clock, optionsWrapper);
     }

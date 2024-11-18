@@ -22,11 +22,11 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
 
     public StaticSettingDefinitionStore(
         IServiceProvider serviceProvider,
-        IOptions<SettingManagementProvidersOptions> options
+        IOptions<SettingManagementProvidersOptions> optionsAccessor
     )
     {
         _serviceProvider = serviceProvider;
-        _options = options.Value;
+        _options = optionsAccessor.Value;
         _settingDefinitions = new(_CreateSettingDefinitions, isThreadSafe: true);
     }
 

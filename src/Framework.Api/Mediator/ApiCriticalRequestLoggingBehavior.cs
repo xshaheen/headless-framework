@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.Api.Mediator;
 
+[PublicAPI]
 public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse>(
     IRequestContext requestContext,
     ILogger<ApiCriticalRequestLoggingBehavior<TMessage, TResponse>> logger

@@ -2,19 +2,19 @@
 
 using Framework.Sms.Dev;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Framework.Sms;
 
+[PublicAPI]
 public static class AddDevSmsExtensions
 {
-    public static void AddDevSmsSender(this IHostApplicationBuilder builder)
+    public static void AddDevSmsSender(this IServiceCollection services)
     {
-        builder.Services.AddSingleton<ISmsSender, DevSmsSender>();
+        services.AddSingleton<ISmsSender, DevSmsSender>();
     }
 
-    public static void AddNoopSmsSender(this IHostApplicationBuilder builder)
+    public static void AddNoopSmsSender(this IServiceCollection services)
     {
-        builder.Services.AddSingleton<ISmsSender, NoopSmsSender>();
+        services.AddSingleton<ISmsSender, NoopSmsSender>();
     }
 }

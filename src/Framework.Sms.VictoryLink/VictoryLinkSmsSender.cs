@@ -9,13 +9,11 @@ namespace Framework.Sms.VictoryLink;
 
 public sealed class VictoryLinkSmsSender(
     HttpClient httpClient,
-    IOptions<VictoryLinkSettings> options,
+    IOptions<VictoryLinkOptions> optionsAccessor,
     ILogger<VictoryLinkSmsSender> logger
 ) : ISmsSender
 {
-    private readonly HttpClient _httpClient = httpClient;
-    private readonly ILogger<VictoryLinkSmsSender> _logger = logger;
-    private readonly VictoryLinkSettings _settings = options.Value;
+    private readonly VictoryLinkOptions _options = optionsAccessor.Value;
 
     private readonly Uri _uri =
         new("https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS");
@@ -41,28 +39,28 @@ public sealed class VictoryLinkSmsSender(
     {
         var victoryLinkRequest = new VictoryLinkRequest
         {
-            UserName = _settings.UserName,
-            Password = _settings.Password,
+            UserName = _options.UserName,
+            Password = _options.Password,
             SmsText = request.Text,
             SmsLang = request.Text.IsRtlText() ? "a" : "e",
-            SmsSender = _settings.Sender,
+            SmsSender = _options.Sender,
             SmsReceiver = request.Destination.Number,
             SmsId = request.MessageId ?? Guid.NewGuid().ToString(),
         };
 
-        var response = await _httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);
+        var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);
         var content = await response.Content.ReadAsStringAsync(token);
 
         if (string.IsNullOrWhiteSpace(content))
         {
-            _logger.LogError("Empty response from VictoryLink API");
+            logger.LogError("Empty response from VictoryLink API");
 
             return SendSingleSmsResponse.Failed("Empty response from VictoryLink API");
         }
 
         if (!_responseCodeMap.TryGetValue(content, out var message))
         {
-            _logger.LogError("Unknown response code from VictoryLink API: {ResponseCode}", content);
+            logger.LogError("Unknown response code from VictoryLink API: {ResponseCode}", content);
 
             return SendSingleSmsResponse.Failed("Unknown response code from VictoryLink API");
         }
@@ -74,7 +72,7 @@ public sealed class VictoryLinkSmsSender(
 
         var codeMessage = _responseCodeMap.GetOrDefault(content) ?? content;
 
-        _logger.LogError(
+        logger.LogError(
             "Failed to send VictoryLink SMS={Message} ResponseContent={Content} CodeMessage={Code}",
             message,
             content,

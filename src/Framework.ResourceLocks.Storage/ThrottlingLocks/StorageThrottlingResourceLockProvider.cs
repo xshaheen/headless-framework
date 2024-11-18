@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Framework.ResourceLocks.Storage.RegularLocks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

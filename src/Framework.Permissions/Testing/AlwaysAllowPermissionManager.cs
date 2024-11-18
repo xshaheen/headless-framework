@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Results;
+using Framework.Primitives;
 
 namespace Framework.Permissions.Testing;
 

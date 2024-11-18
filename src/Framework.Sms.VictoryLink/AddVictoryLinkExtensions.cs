@@ -16,31 +16,31 @@ public static class AddVictoryLinkExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSettings, VictoryLinkSettingsValidator>(config);
+        services.ConfigureSingleton<VictoryLinkOptions, VictoryLinkOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddVictoryLinkSmsSender(
         this IServiceCollection services,
-        Action<VictoryLinkSettings, IServiceProvider> setupAction,
+        Action<VictoryLinkOptions, IServiceProvider> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSettings, VictoryLinkSettingsValidator>(setupAction);
+        services.ConfigureSingleton<VictoryLinkOptions, VictoryLinkOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddVictoryLinkSmsSender(
         this IServiceCollection services,
-        Action<VictoryLinkSettings> setupAction,
+        Action<VictoryLinkOptions> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSettings, VictoryLinkSettingsValidator>(setupAction);
+        services.ConfigureSingleton<VictoryLinkOptions, VictoryLinkOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }

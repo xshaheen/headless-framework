@@ -1,0 +1,23 @@
+@page
+@using Framework.Recaptcha.V2.TagHelpers
+@using Microsoft.AspNetCore.Mvc.TagHelpers
+@model V2InvisibleModel
+@{
+    ViewData["Title"] = "V2 Invisible";
+}
+
+<pre>@Model.Result</pre>
+
+<script>
+    function callback(token) {
+        document.getElementById("token").value = token;
+        document.getElementById("demo-form").submit();
+    }
+</script>
+
+<recaptcha-script-v2 hide-badge="true"/>
+
+<form id="demo-form" method="POST">
+    <input id="token" name="token" type="text"/>
+    <button recaptcha-v2-callback="callback" recaptcha-v2-size="invisible">Submit</button>
+</form>

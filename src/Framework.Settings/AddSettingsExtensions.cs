@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Domains;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.Domains;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Helpers;
@@ -96,7 +96,7 @@ public static class AddSettingsExtensions
 
     private static void _AddSettingEncryption(this IServiceCollection services)
     {
-        services.AddSingletonOptions<StringEncryptionSettings, StringEncryptionOptionsValidator>();
+        services.AddSingletonOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
         services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
     }

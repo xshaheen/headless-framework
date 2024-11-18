@@ -8,7 +8,7 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Framework.Emails.Mailkit;
 
-internal sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpSettings> options) : IEmailSender
+public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> options) : IEmailSender
 {
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
@@ -80,7 +80,7 @@ internal sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpSettings> op
     }
 
     private static async Task<SmtpClient> _BuildClientAsync(
-        MailkitSmtpSettings settings,
+        MailkitSmtpOptions options,
         CancellationToken cancellationToken
     )
     {
@@ -88,7 +88,7 @@ internal sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpSettings> op
 
         try
         {
-            await _ConfigureClient(client, settings, cancellationToken);
+            await _ConfigureClient(client, options, cancellationToken);
 
             return client;
         }
@@ -102,20 +102,20 @@ internal sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpSettings> op
 
     private static async Task _ConfigureClient(
         SmtpClient client,
-        MailkitSmtpSettings settings,
+        MailkitSmtpOptions options,
         CancellationToken cancellationToken
     )
     {
         await client.ConnectAsync(
-            host: settings.Server,
-            port: settings.Port,
-            options: settings.SocketOptions ?? SecureSocketOptions.Auto,
+            host: options.Server,
+            port: options.Port,
+            options: options.SocketOptions ?? SecureSocketOptions.Auto,
             cancellationToken: cancellationToken
         );
 
-        if (settings.RequiresAuthentication)
+        if (options.RequiresAuthentication)
         {
-            await client.AuthenticateAsync(settings.User, settings.Password, cancellationToken);
+            await client.AuthenticateAsync(options.User, options.Password, cancellationToken);
         }
     }
 }

@@ -11,27 +11,27 @@ namespace Framework.Sms.Cequens;
 
 public sealed class CequensSmsSender(
     HttpClient httpClient,
-    IOptions<CequensSettings> options,
+    IOptions<CequensOptions> optionsAccessor,
     ILogger<CequensSmsSender> logger
 ) : ISmsSender
 {
-    private readonly CequensSettings _settings = options.Value;
+    private readonly CequensOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
         CancellationToken token = default
     )
     {
-        httpClient.BaseAddress = new Uri(_settings.Uri);
+        httpClient.BaseAddress = new Uri(_options.Uri);
 
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
-            await _GetTokenRequest(token) ?? _settings.Token
+            await _GetTokenRequest(token) ?? _options.Token
         );
 
         var apiRequest = new
         {
-            senderName = _settings.SenderName,
+            senderName = _options.SenderName,
             messageType = "text",
             acknowledgement = 0,
             flashing = 0,
@@ -61,7 +61,7 @@ public sealed class CequensSmsSender(
 
     private async Task<string?> _GetTokenRequest(CancellationToken cancellationToken)
     {
-        var request = new { apiKey = _settings.ApiKey, userName = _settings.UserName };
+        var request = new { apiKey = _options.ApiKey, userName = _options.UserName };
         var response = await httpClient.PostAsJsonAsync("auth/v1/tokens", request, cancellationToken);
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
 

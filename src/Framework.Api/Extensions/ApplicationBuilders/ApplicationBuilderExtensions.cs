@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Checks;
+using Framework.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Builder;
 
 /// <summary><see cref="IApplicationBuilder"/> extension methods.</summary>
+[PublicAPI]
 public static class ApplicationBuilderHelperExtensions
 {
     /// <summary>

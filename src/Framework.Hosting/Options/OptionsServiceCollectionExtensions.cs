@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Framework.Checks;
 using Framework.Hosting.Options;
-using Framework.Kernel.Checks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -291,29 +291,29 @@ public static class OptionsServiceCollectionExtensions
     #region Configure Singleton & Validate DI Fluent Validation
 
     /// <summary>
-    /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOptions"/> to the services container.
+    /// Registers <see cref="IOptions{TOptions}"/> and <typeparamref name="TOption"/> to the services container.
     /// Also runs data annotation validation and custom validation using the default failure message on application startup.
     /// </summary>
-    /// <typeparam name="TOptions">The type of the options.</typeparam>
+    /// <typeparam name="TOption">The type of the options.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <param name="config">The configuration.</param>
     /// <param name="validation">The validation function.</param>
     /// <param name="configureBinder">Used to configure the binder options.</param>
     /// <returns>The same services collection.</returns>
-    public static IServiceCollection ConfigureSingletonAndValidateFluentValidation<TOptions>(
+    public static IServiceCollection ConfigureSingletonAndValidateFluentValidation<TOption>(
         this IServiceCollection services,
         IConfiguration config,
-        Func<TOptions, bool>? validation = null,
+        Func<TOption, bool>? validation = null,
         Action<BinderOptions>? configureBinder = null
     )
-        where TOptions : class
+        where TOption : class
     {
         Argument.IsNotNull(services);
         Argument.IsNotNull(config);
 
         var builder = services
-            .AddSingleton(x => x.GetRequiredService<IOptions<TOptions>>().Value)
-            .AddOptions<TOptions>()
+            .AddSingleton(x => x.GetRequiredService<IOptions<TOption>>().Value)
+            .AddOptions<TOption>()
             .Bind(config, configureBinder)
             .ValidateFluentValidation();
 

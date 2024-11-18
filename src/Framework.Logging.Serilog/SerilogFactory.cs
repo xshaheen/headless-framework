@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
+using Framework.BuildingBlocks.Helpers.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Serilog;

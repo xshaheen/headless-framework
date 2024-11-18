@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
+using Framework.BuildingBlocks.Helpers.System;
 using Framework.Queueing.Internals;
 
 namespace Framework.Queueing;

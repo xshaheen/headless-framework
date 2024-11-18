@@ -26,11 +26,11 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
 
     public StaticFeatureDefinitionStore(
         IServiceProvider serviceProvider,
-        IOptions<FeatureManagementProvidersOptions> options
+        IOptions<FeatureManagementProvidersOptions> optionsAccessor
     )
     {
         _serviceProvider = serviceProvider;
-        _options = options.Value;
+        _options = optionsAccessor.Value;
         _lazyFeatureDefinitions = new(_CreateFeatureDefinitions, isThreadSafe: true);
         _lazyFeatureGroupDefinitions = new(_CreateFeatureGroupDefinitions, isThreadSafe: true);
     }

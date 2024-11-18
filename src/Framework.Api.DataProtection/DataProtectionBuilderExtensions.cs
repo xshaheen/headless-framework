@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Api.DataProtection;
 
+[PublicAPI]
 public static class DataProtectionBuilderExtensions
 {
     /// <summary>Configures the data protection system to persist keys to file storage.</summary>

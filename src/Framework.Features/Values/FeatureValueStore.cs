@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
 using Framework.Features.Definitions;
 using Framework.Features.Entities;
-using Framework.Kernel.BuildingBlocks.Abstractions;
 using Humanizer;
 
 namespace Framework.Features.Values;

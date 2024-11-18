@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 
 namespace Framework.Payments.Paymob.Services.CashOut.Responses;
 

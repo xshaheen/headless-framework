@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using Framework.Kernel.Checks;
-using Framework.Kernel.Domains;
+using Framework.Checks;
+using Framework.Domains;
 
 namespace Framework.Features.Entities;
 

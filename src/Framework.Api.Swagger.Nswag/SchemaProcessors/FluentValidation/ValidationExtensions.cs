@@ -3,7 +3,7 @@
 using FluentValidation;
 using FluentValidation.Validators;
 using Framework.Api.Swagger.Nswag.SchemaProcessors.FluentValidation.Models;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
+using Framework.BuildingBlocks.Helpers.System;
 
 namespace Framework.Api.Swagger.Nswag.SchemaProcessors.FluentValidation;
 

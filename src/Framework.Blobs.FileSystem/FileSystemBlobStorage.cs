@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Blobs.FileSystem.Internals;
-using Framework.Kernel.BuildingBlocks.Helpers.IO;
-using Framework.Kernel.Checks;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks.Helpers.IO;
+using Framework.Checks;
+using Framework.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -12,13 +12,13 @@ using File = System.IO.File;
 
 namespace Framework.Blobs.FileSystem;
 
-public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageSettings> options) : IBlobStorage
+public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> optionsAccessor) : IBlobStorage
 {
     private readonly AsyncLock _lock = new();
-    private readonly string _basePath = options.Value.BaseDirectoryPath;
+    private readonly string _basePath = optionsAccessor.Value.BaseDirectoryPath;
 
     private readonly ILogger _logger =
-        options.Value.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
+        optionsAccessor.Value.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
 
     #region Create Container
 

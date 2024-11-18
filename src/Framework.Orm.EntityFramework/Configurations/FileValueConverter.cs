@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
-using Framework.Kernel.BuildingBlocks;
+using Framework.BuildingBlocks;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using File = Framework.Kernel.Primitives.File;
+using File = Framework.Primitives.File;
 
 namespace Framework.Orm.EntityFramework.Configurations;
 

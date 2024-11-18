@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.Primitives;
 
 namespace Framework.Api.Abstractions;
 

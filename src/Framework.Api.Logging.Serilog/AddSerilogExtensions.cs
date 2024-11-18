@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Api.Logging.Serilog;
 
+[PublicAPI]
 public static class AddSerilogExtensions
 {
     /// <summary>Adds the serilog enrichers middleware.</summary>

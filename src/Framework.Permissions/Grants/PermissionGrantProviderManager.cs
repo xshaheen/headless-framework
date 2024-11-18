@@ -23,10 +23,10 @@ public sealed class PermissionGrantProviderManager : IPermissionGrantProviderMan
 
     public PermissionGrantProviderManager(
         IServiceProvider serviceProvider,
-        IOptions<PermissionManagementProvidersOptions> options
+        IOptions<PermissionManagementProvidersOptions> optionsAccessor
     )
     {
-        _options = options.Value;
+        _options = optionsAccessor.Value;
         _serviceProvider = serviceProvider;
         _lazyProviders = new Lazy<List<IPermissionGrantProvider>>(_GetProviders, isThreadSafe: true);
     }
