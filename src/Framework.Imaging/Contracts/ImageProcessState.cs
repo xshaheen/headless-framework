@@ -4,7 +4,7 @@ namespace Framework.Imaging.Contracts;
 
 public enum ImageProcessState
 {
+    Unsupported = 0,
     Done = 1,
-    Unsupported = 2,
-    Failed = 3,
+    Failed = 2,
 }

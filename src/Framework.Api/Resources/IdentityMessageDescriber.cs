@@ -3,6 +3,7 @@
 using Framework.Primitives;
 using Humanizer;
 
+#pragma warning disable CA1863 // Use 'CompositeFormat'
 namespace Framework.Api.Resources;
 
 public static class IdentityMessageDescriber

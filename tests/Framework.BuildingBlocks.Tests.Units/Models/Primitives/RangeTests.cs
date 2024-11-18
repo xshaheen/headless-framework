@@ -99,7 +99,7 @@ public sealed class RangeTests
 
     #region Is Overlap
 
-    public static readonly TheoryData<Range<int>, Range<int>, bool> IsOverlapData =
+    public static TheoryData<Range<int>, Range<int>, bool> IsOverlapData =>
         new()
         {
             { new(1, 10), new(5, 15), true }, // Middle

@@ -72,7 +72,7 @@ public sealed class CashInOrdersPageRequest
         if (from > to)
         {
             throw new ArgumentException(
-                $@"parameter 'from' must be less than parameter 'to' (from: {from}, to: {to}).",
+                $"parameter 'from' must be less than parameter 'to' (from: {from}, to: {to}).",
                 nameof(from)
             );
         }
@@ -95,7 +95,7 @@ public sealed class CashInOrdersPageRequest
         if (from > to)
         {
             throw new ArgumentException(
-                @"parameter 'from' must be less than parameter 'to' (from: {from}, to: {to}).",
+                $"parameter 'from' must be less than parameter 'to' (from: {from}, to: {to}).",
                 nameof(from)
             );
         }

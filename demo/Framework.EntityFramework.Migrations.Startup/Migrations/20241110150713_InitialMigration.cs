@@ -1,4 +1,3 @@
-﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -15,7 +14,6 @@ internal sealed partial class InitialMigration : Migration
 
         migrationBuilder.CreateTable(
             name: "PermissionDefinitions",
-            schema: "permissions",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -27,6 +25,7 @@ internal sealed partial class InitialMigration : Migration
                 Providers = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
                 ExtraProperties = table.Column<string>(type: "text", nullable: false),
             },
+            schema: "permissions",
             constraints: table =>
             {
                 table.PrimaryKey("PK_PermissionDefinitions", x => x.Id);
@@ -35,7 +34,6 @@ internal sealed partial class InitialMigration : Migration
 
         migrationBuilder.CreateTable(
             name: "PermissionGrants",
-            schema: "permissions",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -44,6 +42,7 @@ internal sealed partial class InitialMigration : Migration
                 ProviderKey = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                 TenantId = table.Column<string>(type: "character varying(41)", maxLength: 41, nullable: true),
             },
+            schema: "permissions",
             constraints: table =>
             {
                 table.PrimaryKey("PK_PermissionGrants", x => x.Id);
@@ -52,7 +51,6 @@ internal sealed partial class InitialMigration : Migration
 
         migrationBuilder.CreateTable(
             name: "PermissionGroupDefinitions",
-            schema: "permissions",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -60,6 +58,7 @@ internal sealed partial class InitialMigration : Migration
                 DisplayName = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                 ExtraProperties = table.Column<string>(type: "text", nullable: false),
             },
+            schema: "permissions",
             constraints: table =>
             {
                 table.PrimaryKey("PK_PermissionGroupDefinitions", x => x.Id);
@@ -68,32 +67,32 @@ internal sealed partial class InitialMigration : Migration
 
         migrationBuilder.CreateIndex(
             name: "IX_PermissionDefinitions_GroupName",
-            schema: "permissions",
             table: "PermissionDefinitions",
             column: "GroupName"
-        );
+,
+            schema: "permissions");
 
         migrationBuilder.CreateIndex(
             name: "IX_PermissionDefinitions_Name",
-            schema: "permissions",
             table: "PermissionDefinitions",
             column: "Name",
+            schema: "permissions",
             unique: true
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey",
-            schema: "permissions",
             table: "PermissionGrants",
-            columns: new[] { "TenantId", "Name", "ProviderName", "ProviderKey" },
+            columns: ["TenantId", "Name", "ProviderName", "ProviderKey"],
+            schema: "permissions",
             unique: true
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_PermissionGroupDefinitions_Name",
-            schema: "permissions",
             table: "PermissionGroupDefinitions",
             column: "Name",
+            schema: "permissions",
             unique: true
         );
     }

@@ -2,7 +2,6 @@
 
 using System.Text.RegularExpressions;
 
-#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Framework.BuildingBlocks;
 
