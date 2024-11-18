@@ -11,8 +11,8 @@ using NetTopologySuite.IO.Converters;
 
 namespace Framework.Api.MinimalApi.Options;
 
-public sealed class ConfigureMinimalApiJsonOptions(IWebHostEnvironment webHostEnvironment)
-    : IConfigureOptions<JsonOptions>
+[PublicAPI]
+public sealed class ConfigureMinimalApiJsonOptions(IWebHostEnvironment environment) : IConfigureOptions<JsonOptions>
 {
     public void Configure(JsonOptions options)
     {
@@ -28,7 +28,7 @@ public sealed class ConfigureMinimalApiJsonOptions(IWebHostEnvironment webHostEn
         jsonOptions.IgnoreReadOnlyProperties = false;
         jsonOptions.PropertyNameCaseInsensitive = false;
         // Pretty print the JSON in development for easier debugging.
-        jsonOptions.WriteIndented = webHostEnvironment.IsDevelopmentOrTest();
+        jsonOptions.WriteIndented = environment.IsDevelopmentOrTest();
 
         jsonOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         jsonOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;

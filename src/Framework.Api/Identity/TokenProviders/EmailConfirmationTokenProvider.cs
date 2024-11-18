@@ -9,7 +9,7 @@ namespace Framework.Api.Identity.TokenProviders;
 
 public sealed class EmailConfirmationTokenProvider<TUser>(
     IDataProtectionProvider dataProtectionProvider,
-    IOptions<EmailConfirmationTokenProviderOptions> options,
+    IOptions<EmailConfirmationTokenProviderOptions> optionsAccessor,
     ILogger<EmailConfirmationTokenProvider<TUser>> logger
-) : DataProtectorTokenProvider<TUser>(dataProtectionProvider, options, logger)
+) : DataProtectorTokenProvider<TUser>(dataProtectionProvider, optionsAccessor, logger)
     where TUser : class;

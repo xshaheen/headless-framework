@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Orm.EntityFramework.DataGrid.Pagination;

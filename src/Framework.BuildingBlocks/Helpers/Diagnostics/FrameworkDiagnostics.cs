@@ -1,0 +1,24 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Reflection;
+
+#pragma warning disable IDE0130 // Namespace does not match folder structure
+// ReSharper disable once CheckNamespace
+namespace Framework.BuildingBlocks;
+
+public static class FrameworkDiagnostics
+{
+    public static ActivitySource ActivitySource { get; }
+
+    public static Meter Meter { get; }
+
+    static FrameworkDiagnostics()
+    {
+        var packageVersion = typeof(FrameworkDiagnostics).Assembly.GetAssemblyVersion();
+
+        ActivitySource = new("Framework", packageVersion);
+        Meter = new("Framework", packageVersion);
+    }
+}

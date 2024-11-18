@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Framework.BuildingBlocks;
 using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
-using Framework.Kernel.BuildingBlocks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp.Formats;
@@ -12,11 +12,11 @@ using Image = SixLabors.ImageSharp.Image;
 namespace Framework.Imaging.ImageSharp;
 
 public sealed class ImageSharpImageCompressorContributor(
-    IOptions<ImageSharpOptions> options,
+    IOptions<ImageSharpOptions> optionsAccessor,
     ILogger<ImageSharpImageCompressorContributor> logger
 ) : IImageCompressorContributor
 {
-    private readonly ImageSharpOptions _options = options.Value;
+    private readonly ImageSharpOptions _options = optionsAccessor.Value;
 
     public async Task<ImageStreamCompressResult> TryCompressAsync(
         Stream stream,

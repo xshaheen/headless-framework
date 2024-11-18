@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Domains;
-using Framework.Kernel.Primitives;
+using Framework.Domains;
 using Framework.Orm.EntityFramework.Configurations;
-using File = Framework.Kernel.Primitives.File;
+using Framework.Primitives;
+using File = Framework.Primitives.File;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

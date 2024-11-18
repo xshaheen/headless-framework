@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.Checks;
+using Framework.BuildingBlocks;
+using Framework.Checks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
@@ -12,6 +12,7 @@ using Microsoft.Net.Http.Headers;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Http;
 
+[PublicAPI]
 public static class HttpContextExtensions
 {
     private static readonly ActionDescriptor _EmptyActionDescriptor = new();

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Builder;
 
+[PublicAPI]
 public static class EndpointsExtensions
 {
     public static void RedirectHosts(this WebApplication app, string mainHost, string[]? redirectHosts)

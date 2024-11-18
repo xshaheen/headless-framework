@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.Domains;
+using Framework.Domains;
 
 namespace Framework.Permissions.Events;
 

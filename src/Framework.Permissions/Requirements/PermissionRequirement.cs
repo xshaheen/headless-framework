@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Checks;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.Checks;
 using Framework.Permissions.Grants;
 using Microsoft.AspNetCore.Authorization;
 

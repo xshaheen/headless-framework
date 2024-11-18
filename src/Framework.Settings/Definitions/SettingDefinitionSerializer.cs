@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Helpers.System;
+using Framework.Primitives;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
 

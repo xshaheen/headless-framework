@@ -16,8 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
-    <ProjectReference Include="..\Framework.Kernel.Domains\Framework.Kernel.Domains.csproj" />
-    <ProjectReference Include="..\Framework.Kernel.BuildingBlocks\Framework.Kernel.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Domains\Framework.Domains.csproj" />
+    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
   </ItemGroup>
 
 </Project>

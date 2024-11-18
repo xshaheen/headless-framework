@@ -2,7 +2,7 @@
 
 using FluentValidation.Results;
 using Framework.Api.Abstractions;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 using Mediator;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Api.Mvc.Controllers;
 
+[PublicAPI]
 [ApiController]
 public abstract class ApiControllerBase : ControllerBase
 {
@@ -112,7 +113,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(ErrorDescriptor errorDescriptor)
     {
-        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, new[] { errorDescriptor });
+        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, [errorDescriptor]);
 
         return base.Conflict(problemDetails);
     }

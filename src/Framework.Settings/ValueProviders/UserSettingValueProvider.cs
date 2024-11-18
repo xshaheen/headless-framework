@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Settings.Values;
 
 namespace Framework.Settings.ValueProviders;

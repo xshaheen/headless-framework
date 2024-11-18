@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Api.MinimalApi.Filters;
 
+[PublicAPI]
 public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)

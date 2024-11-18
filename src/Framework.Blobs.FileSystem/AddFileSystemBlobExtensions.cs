@@ -10,20 +10,20 @@ public static class AddFileSystemBlobExtensions
 {
     public static IServiceCollection AddFileSystemBlobStorage(
         this IServiceCollection services,
-        Action<FileSystemBlobStorageSettings, IServiceProvider> setupAction
+        Action<FileSystemBlobStorageOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(setupAction);
+        services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
 
         return _AddBaseServices(services);
     }
 
     public static IServiceCollection AddFileSystemBlobStorage(
         this IServiceCollection services,
-        Action<FileSystemBlobStorageSettings> setupAction
+        Action<FileSystemBlobStorageOptions> setupAction
     )
     {
-        services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(setupAction);
+        services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
 
         return _AddBaseServices(services);
     }
@@ -33,7 +33,7 @@ public static class AddFileSystemBlobExtensions
         IConfigurationSection config
     )
     {
-        services.ConfigureSingleton<FileSystemBlobStorageSettings, FileSystemBlobStorageSettingsValidator>(config);
+        services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(config);
 
         return _AddBaseServices(services);
     }

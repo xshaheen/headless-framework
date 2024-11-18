@@ -19,9 +19,9 @@ public static class JwtTokenHelper
             SetDefaultTimesOnTokenCreation = false,
             // Default lifetime of tokens created.
             // When creating tokens, if 'expires', 'notbefore' or 'issuedat' are null, then a default will be set to:
-            // issuedat = DateTime.UtcNow,
-            // notbefore = DateTime.UtcNow,
-            // expires = DateTime.UtcNow + TimeSpan.FromMinutes(TokenLifetimeInMinutes).
+            // - issuedat = DateTime.UtcNow,
+            // - notbefore = DateTime.UtcNow,
+            // - expires = DateTime.UtcNow + TimeSpan.FromMinutes(TokenLifetimeInMinutes).
             TokenLifetimeInMinutes = 60,
             MaximumTokenSizeInBytes = 256_000,
         };

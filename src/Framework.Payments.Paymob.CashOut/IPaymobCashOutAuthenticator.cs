@@ -2,7 +2,7 @@
 
 using System.Net.Http.Json;
 using Flurl;
-using Framework.Kernel.BuildingBlocks.Helpers.Network;
+using Framework.BuildingBlocks.Helpers.Network;
 using Framework.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Options;
 

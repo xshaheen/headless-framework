@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using Framework.Kernel.Checks;
-using Framework.Kernel.Domains;
-using Framework.Kernel.Primitives;
+using Framework.Checks;
+using Framework.Domains;
+using Framework.Primitives;
 
 namespace Framework.Permissions.Entities;
 

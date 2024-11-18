@@ -21,10 +21,10 @@ public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
 
     public FeatureValueProviderManager(
         IServiceProvider serviceProvider,
-        IOptions<FeatureManagementProvidersOptions> options
+        IOptions<FeatureManagementProvidersOptions> optionsAccessor
     )
     {
-        _providerOptions = options.Value;
+        _providerOptions = optionsAccessor.Value;
         _serviceProvider = serviceProvider;
         _lazyProviders = new(_GetProviders, isThreadSafe: true);
     }

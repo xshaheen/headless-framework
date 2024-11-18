@@ -2,7 +2,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Framework.Payments.Paymob.CashIn.Models.Callback;
 
 namespace Framework.Payments.Paymob.CashIn;

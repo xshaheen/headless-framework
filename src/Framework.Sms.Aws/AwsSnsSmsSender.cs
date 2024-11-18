@@ -9,13 +9,11 @@ namespace Framework.Sms.Aws;
 
 public sealed class AwsSnsSmsSender(
     IAmazonSimpleNotificationService client,
-    IOptions<AwsSnsSmsSettings> options,
+    IOptions<AwsSnsSmsOptions> optionsAccessor,
     ILogger<AwsSnsSmsSender> logger
 ) : ISmsSender
 {
-    private readonly IAmazonSimpleNotificationService _client = client;
-    private readonly AwsSnsSmsSettings _settings = options.Value;
-    private readonly ILogger<AwsSnsSmsSender> _logger = logger;
+    private readonly AwsSnsSmsOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -26,7 +24,7 @@ public sealed class AwsSnsSmsSender(
         {
             {
                 "AWS.SNS.SMS.SenderID",
-                new() { StringValue = _settings.SenderId, DataType = "String" }
+                new() { StringValue = _options.SenderId, DataType = "String" }
             },
             {
                 "AWS.SNS.SMS.MaxPrice",
@@ -47,14 +45,14 @@ public sealed class AwsSnsSmsSender(
 
         try
         {
-            var publishResponse = await _client.PublishAsync(publishRequest, token);
+            var publishResponse = await client.PublishAsync(publishRequest, token);
 
             if (publishResponse.HttpStatusCode.IsSuccessStatusCode())
             {
                 return SendSingleSmsResponse.Succeeded();
             }
 
-            _logger.LogError("Failed to send SMS {@Request} {@Response}", publishRequest, publishResponse);
+            logger.LogError("Failed to send SMS {@Request} {@Response}", publishRequest, publishResponse);
 
             return SendSingleSmsResponse.Failed(
                 $"Failed to send SMS with status code {publishResponse.HttpStatusCode}"
@@ -62,7 +60,7 @@ public sealed class AwsSnsSmsSender(
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Failed to send SMS {@Request}", publishRequest);
+            logger.LogError(e, "Failed to send SMS {@Request}", publishRequest);
 
             return SendSingleSmsResponse.Failed(e.Message);
         }

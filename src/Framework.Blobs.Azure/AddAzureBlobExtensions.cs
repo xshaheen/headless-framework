@@ -10,27 +10,27 @@ public static class AddAzureBlobExtensions
 {
     public static IServiceCollection AddAzureBlobStorage(
         this IServiceCollection services,
-        Action<AzureStorageSettings, IServiceProvider> setupAction
+        Action<AzureStorageOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(setupAction);
+        services.ConfigureSingleton<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddAzureBlobStorage(
         this IServiceCollection services,
-        Action<AzureStorageSettings> setupAction
+        Action<AzureStorageOptions> setupAction
     )
     {
-        services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(setupAction);
+        services.ConfigureSingleton<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddAzureBlobStorage(this IServiceCollection services, IConfiguration config)
     {
-        services.ConfigureSingleton<AzureStorageSettings, AzureStorageSettingsValidator>(config);
+        services.ConfigureSingleton<AzureStorageOptions, AzureStorageOptionsValidator>(config);
 
         return _AddCore(services);
     }

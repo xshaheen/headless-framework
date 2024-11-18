@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Framework.BuildingBlocks.Helpers.Reflection;
 using Framework.Generator.Primitives;
-using Framework.Kernel.BuildingBlocks.Helpers.Reflection;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

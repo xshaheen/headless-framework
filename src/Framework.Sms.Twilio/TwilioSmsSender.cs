@@ -9,12 +9,12 @@ namespace Framework.Sms.Twilio;
 
 public sealed class TwilioSmsSender : ISmsSender
 {
-    private readonly TwilioSettings _settings;
+    private readonly TwilioOptions _options;
 
-    public TwilioSmsSender(IOptions<TwilioSettings> options)
+    public TwilioSmsSender(IOptions<TwilioOptions> optionsAccessor)
     {
-        _settings = options.Value;
-        TwilioClient.Init(_settings.Sid, _settings.AuthToken);
+        _options = optionsAccessor.Value;
+        TwilioClient.Init(_options.Sid, _options.AuthToken);
     }
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -24,7 +24,7 @@ public sealed class TwilioSmsSender : ISmsSender
     {
         var respond = await MessageResource.CreateAsync(
             to: new PhoneNumber(request.Destination.ToString()),
-            from: new PhoneNumber(_settings.PhoneNumber),
+            from: new PhoneNumber(_options.PhoneNumber),
             body: request.Text,
             maxPrice: 0.5m
         );

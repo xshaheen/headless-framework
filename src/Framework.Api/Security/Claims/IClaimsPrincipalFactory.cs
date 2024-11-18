@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.Kernel.BuildingBlocks;
+using Framework.BuildingBlocks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
@@ -14,9 +14,9 @@ public interface IClaimsPrincipalFactory
     ClaimsIdentity CreateClaimsIdentity(IEnumerable<Claim> claims);
 }
 
-public sealed class ClaimsPrincipalFactory(IOptions<IdentityOptions> options) : IClaimsPrincipalFactory
+public sealed class ClaimsPrincipalFactory(IOptions<IdentityOptions> optionsAccessor) : IClaimsPrincipalFactory
 {
-    private readonly IdentityOptions _options = options.Value;
+    private readonly IdentityOptions _options = optionsAccessor.Value;
 
     public ClaimsPrincipal CreateClaimsPrincipal(IEnumerable<Claim> claims)
     {

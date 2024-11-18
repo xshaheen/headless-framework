@@ -11,6 +11,7 @@ using NetTopologySuite.IO.Converters;
 
 namespace Framework.Api.Mvc.Options;
 
+[PublicAPI]
 public sealed class ConfigureMvcJsonOptions(IWebHostEnvironment webHostEnvironment) : IConfigureOptions<JsonOptions>
 {
     public void Configure(JsonOptions options)

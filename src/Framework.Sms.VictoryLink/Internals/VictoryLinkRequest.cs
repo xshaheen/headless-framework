@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Framework.Sms.VictoryLink.Internals;
 
-public sealed class VictoryLinkRequest
+internal sealed class VictoryLinkRequest
 {
     [JsonPropertyName("UserName")]
     public required string UserName { get; init; }

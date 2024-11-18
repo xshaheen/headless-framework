@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.Imaging.Contracts;
-using Framework.Kernel.Checks;
 
 namespace Framework.Imaging;
 

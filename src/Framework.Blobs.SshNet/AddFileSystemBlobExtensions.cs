@@ -10,27 +10,27 @@ public static class AddFileSystemBlobExtensions
 {
     public static IServiceCollection AddSshBlobStorage(
         this IServiceCollection services,
-        Action<SshBlobStorageSettings, IServiceProvider> setupAction
+        Action<SshBlobStorageOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(setupAction);
+        services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddSshBlobStorage(
         this IServiceCollection services,
-        Action<SshBlobStorageSettings> setupAction
+        Action<SshBlobStorageOptions> setupAction
     )
     {
-        services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(setupAction);
+        services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddSshBlobStorage(this IServiceCollection services, IConfigurationSection config)
     {
-        services.ConfigureSingleton<SshBlobStorageSettings, SshBlobStorageSettingsValidator>(config);
+        services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(config);
 
         return _AddCore(services);
     }

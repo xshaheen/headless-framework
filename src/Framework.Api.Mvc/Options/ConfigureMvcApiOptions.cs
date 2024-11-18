@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Api.Mvc.Options;
 
+[PublicAPI]
 public sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, IConfigureOptions<ApiBehaviorOptions>
 {
     public void Configure(MvcOptions options)

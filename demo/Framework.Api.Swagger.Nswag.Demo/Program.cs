@@ -3,7 +3,7 @@
 using System.Text;
 using Asp.Versioning;
 using Framework.Api.Swagger.Nswag;
-using Framework.Kernel.BuildingBlocks;
+using Framework.BuildingBlocks;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 

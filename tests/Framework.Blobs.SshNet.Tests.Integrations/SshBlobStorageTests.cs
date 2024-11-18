@@ -31,8 +31,8 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
 
     protected override IBlobStorage GetStorage()
     {
-        var options = new SshBlobStorageSettings { ConnectionString = "sftp://framework:password@localhost:2222" };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageSettings>(options);
+        var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework:password@localhost:2222" };
+        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         return new SshBlobStorage(optionsWrapper);
     }
@@ -41,8 +41,8 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
     public void CanCreateSshNetFileStorageWithoutConnectionStringPassword()
     {
         // given
-        var options = new SshBlobStorageSettings { ConnectionString = "sftp://framework@localhost:2222" };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageSettings>(options);
+        var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework@localhost:2222" };
+        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
         using var storage = new SshBlobStorage(optionsWrapper);
@@ -52,12 +52,12 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
     public void CanCreateSshNetFileStorageWithoutProxyPassword()
     {
         // given
-        var options = new SshBlobStorageSettings
+        var options = new SshBlobStorageOptions
         {
             ConnectionString = "sftp://username@host",
             Proxy = "proxy://username@host",
         };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageSettings>(options);
+        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
         using var storage = new SshBlobStorage(optionsWrapper);

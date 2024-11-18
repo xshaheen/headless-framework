@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Domains;
+using Framework.Domains;
 using Framework.Permissions.Entities;
 
 namespace Framework.Permissions.Grants;

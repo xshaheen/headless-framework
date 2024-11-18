@@ -5,9 +5,9 @@ using System.Text.RegularExpressions;
 using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Resources;
+using Framework.BuildingBlocks;
 using Framework.FluentValidation;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.Primitives;
+using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -18,6 +18,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Framework.Api.Mvc.Filters;
 
+[PublicAPI]
 public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 {
     private readonly IProblemDetailsCreator _problemDetailsCreator;

@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.Checks;
+using Framework.Checks;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Models;

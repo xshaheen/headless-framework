@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Kernel.BuildingBlocks.Abstractions;
-using Framework.Kernel.BuildingBlocks.Helpers.System;
-using Framework.Kernel.Primitives;
+using Framework.BuildingBlocks.Abstractions;
+using Framework.BuildingBlocks.Helpers.System;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Models;
+using Framework.Primitives;
 
 namespace Framework.Permissions.Definitions;
 

@@ -2,12 +2,11 @@
 
 using System.Security.Cryptography;
 using System.Text;
-using Framework.Kernel.BuildingBlocks;
-using Framework.Kernel.Checks;
+using Framework.BuildingBlocks;
+using Framework.Checks;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130
@@ -17,11 +16,11 @@ namespace Microsoft.Extensions.DependencyInjection;
 [PublicAPI]
 public static class ServiceCollectionExtensions
 {
-    public static IHostApplicationBuilder AddCustomAntiforgery(this IHostApplicationBuilder builder)
+    public static IServiceCollection AddCustomAntiforgery(this IServiceCollection services)
     {
-        builder.Services.AddTransient<IConfigureOptions<AntiforgeryOptions>, AntiforgeryOptionsConfiguration>();
+        services.AddTransient<IConfigureOptions<AntiforgeryOptions>, AntiforgeryOptionsConfiguration>();
 
-        builder.Services.AddAntiforgery(options =>
+        services.AddAntiforgery(options =>
         {
             options.HeaderName = HttpHeaderNames.Antiforgery;
             options.Cookie.HttpOnly = true;
@@ -29,14 +28,14 @@ public static class ServiceCollectionExtensions
             options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         });
 
-        return builder;
+        return services;
     }
 
     [UsedImplicitly]
-    private sealed class AntiforgeryOptionsConfiguration(IOptions<DataProtectionOptions> options)
+    private sealed class AntiforgeryOptionsConfiguration(IOptions<DataProtectionOptions> optionsAccessor)
         : IConfigureOptions<AntiforgeryOptions>
     {
-        private readonly DataProtectionOptions _dataProtectionOptions = options.Value;
+        private readonly DataProtectionOptions _dataProtectionOptions = optionsAccessor.Value;
 
         public void Configure(AntiforgeryOptions options)
         {

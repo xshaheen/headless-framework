@@ -9,20 +9,20 @@ public static class AddTwilioExtensions
 {
     public static IServiceCollection AddTwilioSmsSender(
         this IServiceCollection services,
-        Action<TwilioSettings, IServiceProvider> setupAction
+        Action<TwilioOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<TwilioSettings, TwilioSettingsValidator>(setupAction);
+        services.ConfigureSingleton<TwilioOptions, TwilioOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddTwilioSmsSender(
         this IServiceCollection services,
-        Action<TwilioSettings> setupAction
+        Action<TwilioOptions> setupAction
     )
     {
-        services.ConfigureSingleton<TwilioSettings, TwilioSettingsValidator>(setupAction);
+        services.ConfigureSingleton<TwilioOptions, TwilioOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
