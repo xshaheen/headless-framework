@@ -5,16 +5,18 @@
 - Kernel
   - Specifications
   - Hosting
-  - Checks (low)
+  - Checks
   - BuildingBlocks
+  - Serializers
 - Api
-  - Framework.Api.FluentValidation
-- Serializers unit tests
+  - FluentValidation
 - Imaging
-- Test blobs like foundatio
-- Settings/Permissions/Features integration test like abp
-- Resource lock like foundatio & abp
 - Entity framework integration tests
 - CapDistributedMessageHandlerFactory unit tests
 - Media indexing integration tests
 - Databases projects
+- Advanced
+  - Blobs
+  - Resource lock like foundatio & abp
+  - Settings/Permissions/Features integration test like abp
+

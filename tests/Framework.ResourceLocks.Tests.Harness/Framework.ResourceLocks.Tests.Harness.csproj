@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsTestProject>false</IsTestProject>
+    <RootNamespace>Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Testcontainers" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

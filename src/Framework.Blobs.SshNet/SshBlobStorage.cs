@@ -729,13 +729,13 @@ public sealed class SshBlobStorage : IBlobStorage
             patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
             var beforeWildcard = searchPattern[..wildcardPos];
             var slashPos = beforeWildcard.LastIndexOf('/');
-            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
+            prefix = slashPos >= 0 ? searchPattern[..(slashPos + 1)] : string.Empty;
         }
         else
         {
             patternRegex = new Regex($"^{searchPattern}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
             var slashPos = searchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
+            prefix = slashPos >= 0 ? searchPattern[..(slashPos + 1)] : string.Empty;
         }
 
         return new SearchCriteria(prefix, patternRegex);
