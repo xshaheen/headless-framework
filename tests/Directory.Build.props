@@ -2,6 +2,15 @@
 
   <Import Project="../Directory.Build.props" />
 
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
+  </ItemGroup>
+
   <ItemGroup Label="Global usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
