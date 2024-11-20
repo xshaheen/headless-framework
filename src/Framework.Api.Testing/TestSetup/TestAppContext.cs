@@ -60,7 +60,10 @@ public sealed class TestAppContext<TEntryPoint> : ITestOutputHelperAccessor, IDi
     #region Factories
 
     public DbContextExecutor<TDbContext> GetDbExecutor<TDbContext>()
-        where TDbContext : DbContext => new(ScopeFactory);
+        where TDbContext : DbContext
+    {
+        return new(ScopeFactory);
+    }
 
     public WebApplicationFactory<TEntryPoint> CreateDefaultFactory(
         Action<WebHostBuilderContext, IServiceCollection>? configureServices,
@@ -126,9 +129,9 @@ public sealed class TestAppContext<TEntryPoint> : ITestOutputHelperAccessor, IDi
         Factory.Dispose();
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        await Factory.DisposeAsync().ConfigureAwait(false);
+        return Factory.DisposeAsync();
     }
 
     #endregion

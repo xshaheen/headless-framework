@@ -57,7 +57,10 @@ public static class DbContextOptionsBuilderExtensions
     {
         public override bool GeneratesTemporaryValues { get; } = value;
 
-        public override string Next(EntityEntry entry) => SequentialGuid.NextSequentialAtEnd().ToString("N");
+        public override string Next(EntityEntry entry)
+        {
+            return SequentialGuid.NextSequentialAtEnd().ToString("N");
+        }
     }
 
     #endregion

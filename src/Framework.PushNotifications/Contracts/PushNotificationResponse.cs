@@ -20,10 +20,16 @@ public sealed record PushNotificationResponse
     public PushNotificationResponseStatus Status { get; private init; }
 
     [MemberNotNullWhen(true, nameof(MessageId))]
-    public bool IsSucceeded() => Status is PushNotificationResponseStatus.Success;
+    public bool IsSucceeded()
+    {
+        return Status is PushNotificationResponseStatus.Success;
+    }
 
     [MemberNotNullWhen(true, nameof(FailureError))]
-    public bool IsFailed() => Status is PushNotificationResponseStatus.Failure;
+    public bool IsFailed()
+    {
+        return Status is PushNotificationResponseStatus.Failure;
+    }
 
     public static PushNotificationResponse Succeeded(string token, string messageId)
     {

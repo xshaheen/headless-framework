@@ -5,6 +5,7 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false;NoWarning</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

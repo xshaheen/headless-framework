@@ -64,8 +64,8 @@ public sealed class SourceCodeBuilder
     /// <returns>The length of this instance.</returns>
     public int Length
     {
-        get { return _sb.Length; }
-        set { _sb.Length = value; }
+        get => _sb.Length;
+        set => _sb.Length = value;
     }
 
     /// <summary>Appends indentation to the current string.</summary>
@@ -166,10 +166,16 @@ public sealed class SourceCodeBuilder
     }
 
     /// <summary>Appends open XML tag to the source code builder.</summary>
-    public SourceCodeBuilder AppendXmlOpenTag(string tag) => Append("<").Append(tag).Append(">");
+    public SourceCodeBuilder AppendXmlOpenTag(string tag)
+    {
+        return Append("<").Append(tag).Append(">");
+    }
 
     /// <summary>Appends close XML tag to the source code builder.</summary>
-    public SourceCodeBuilder AppendXmlCloseTag(string tag) => Append("</").Append(tag).Append(">");
+    public SourceCodeBuilder AppendXmlCloseTag(string tag)
+    {
+        return Append("</").Append(tag).Append(">");
+    }
 
     /// <summary>Appends a comment line to the source code builder.</summary>
     /// <param name="commentLine">The comment line to append.</param>

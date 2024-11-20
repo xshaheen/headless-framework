@@ -74,12 +74,12 @@ public static class CurrencyConfiguration
             propertyExpression,
             b =>
             {
-                b.Property(x => x!.CurrencyCode)
+                b.Property(x => x.CurrencyCode)
                     .IsRequired(isRequired)
                     .HasColumnName(codeColumnName)
                     .HasMaxLength(codeMaxLength);
 
-                b.Property(x => x!.Amount).HasPrecision(32, 10).IsRequired(isRequired).HasColumnName(amountColumnName);
+                b.Property(x => x.Amount).HasPrecision(32, 10).IsRequired(isRequired).HasColumnName(amountColumnName);
             }
         );
     }
