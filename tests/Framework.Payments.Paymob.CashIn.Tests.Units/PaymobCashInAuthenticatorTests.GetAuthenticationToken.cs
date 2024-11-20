@@ -51,7 +51,7 @@ public partial class PaymobCashInAuthenticatorTests
         var config = fixture.CashInOptions with { ApiKey = apiKey };
         fixture.OptionsAccessor.CurrentValue.Returns(config);
         var request = new CashInAuthenticationTokenRequest { ApiKey = apiKey };
-        var requestJson = JsonSerializer.Serialize<CashInAuthenticationTokenRequest>(request);
+        var requestJson = JsonSerializer.Serialize(request);
 
         fixture
             .Server.Given(Request.Create().WithPath("/auth/tokens").UsingPost().WithBody(requestJson))

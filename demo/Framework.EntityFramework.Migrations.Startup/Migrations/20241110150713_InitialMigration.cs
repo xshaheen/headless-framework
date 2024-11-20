@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -68,9 +70,9 @@ internal sealed partial class InitialMigration : Migration
         migrationBuilder.CreateIndex(
             name: "IX_PermissionDefinitions_GroupName",
             table: "PermissionDefinitions",
-            column: "GroupName"
-,
-            schema: "permissions");
+            column: "GroupName",
+            schema: "permissions"
+        );
 
         migrationBuilder.CreateIndex(
             name: "IX_PermissionDefinitions_Name",
