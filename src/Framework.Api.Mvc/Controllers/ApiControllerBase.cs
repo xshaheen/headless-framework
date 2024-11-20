@@ -66,7 +66,10 @@ public abstract class ApiControllerBase : ControllerBase
     }
 
     [NonAction]
-    protected OkResult Ok(Unit _) => Ok();
+    protected OkResult Ok(Unit _)
+    {
+        return Ok();
+    }
 
     [NonAction]
     protected BadRequestObjectResult MalformedSyntax()
@@ -79,13 +82,13 @@ public abstract class ApiControllerBase : ControllerBase
     {
         var errors = failures
             .GroupBy(
-                failure => failure.PropertyName,
-                failure => new ErrorDescriptor(failure.ErrorCode, failure.ErrorMessage),
+                static failure => failure.PropertyName,
+                static failure => new ErrorDescriptor(failure.ErrorCode, failure.ErrorMessage),
                 StringComparer.Ordinal
             )
             .ToDictionary(
-                failureGroup => failureGroup.Key,
-                failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
+                static failureGroup => failureGroup.Key,
+                static failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
                 StringComparer.Ordinal
             );
 

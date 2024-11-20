@@ -150,7 +150,6 @@ internal static class Emitter
             if (globalOptions.GenerateDapperConverters && dapperConverterTypes.Count > 0)
             {
                 context.AddDapperTypeHandlersHelper(assemblyName, dapperConverterTypes, addAssemblyAttribute);
-                addAssemblyAttribute = false;
             }
         }
         catch (Exception ex)
