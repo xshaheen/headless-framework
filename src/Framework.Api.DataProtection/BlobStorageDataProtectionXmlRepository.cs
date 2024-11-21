@@ -34,7 +34,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     {
         _logger.LogTrace("Loading elements...");
 
-        var files = (await _storage.GetFileListAsync(_Containers, "*.xml")).ToList();
+        var files = (await _storage.GetBlobsListAsync(_Containers, "*.xml")).ToList();
 
         if (files.Count == 0)
         {

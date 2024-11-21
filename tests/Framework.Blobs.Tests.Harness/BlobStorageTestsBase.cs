@@ -22,7 +22,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         await ResetAsync(storage);
 
-        var list = await storage.GetFileListAsync(Container, $"{Guid.NewGuid()}\\*");
+        var list = await storage.GetBlobsListAsync(Container, $"{Guid.NewGuid()}\\*");
 
         list.Should().BeEmpty();
     }
@@ -36,18 +36,18 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var name = ContainerName;
         var container = Container;
 
-        await storage.UploadAsync([name, "archived"], "archived.txt", "archived");
-        await storage.UploadAsync([name, "q"], "new.txt", "new");
-        await storage.UploadAsync([name, "long", "path", "in", "here"], "1.hey.stuff-2.json", "archived");
+        await storage.UploadContentAsync([name, "archived"], "archived.txt", "archived");
+        await storage.UploadContentAsync([name, "q"], "new.txt", "new");
+        await storage.UploadContentAsync([name, "long", "path", "in", "here"], "1.hey.stuff-2.json", "archived");
 
-        (await storage.GetFileListAsync(container)).Should().HaveCount(3);
-        (await storage.GetFileListAsync(container, limit: 1)).Should().ContainSingle();
-        (await storage.GetFileListAsync(container, @"long\path\in\here\*stuff*.json")).Should().ContainSingle();
-        (await storage.GetFileListAsync(container, @"archived\*")).Should().ContainSingle();
-        (await storage.GetFileListAsync(container, @"q\*")).Should().ContainSingle();
-        (await storage.GetFileContentsAsync([name, "archived"], "archived.txt")).Should().Be("archived");
-        (await storage.GetFileContentsAsync([name, "q"], "new.txt")).Should().Be("new");
-        (await storage.GetFileListAsync(container, @"q\*")).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container, limit: 1)).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container, @"long\path\in\here\*stuff*.json")).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container, @"archived\*")).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container, @"q\*")).Should().ContainSingle();
+        (await storage.GetBlobContentAsync([name, "archived"], "archived.txt")).Should().Be("archived");
+        (await storage.GetBlobContentAsync([name, "q"], "new.txt")).Should().Be("new");
+        (await storage.GetBlobsListAsync(container, @"q\*")).Should().ContainSingle();
     }
 
     public virtual async Task CanGetFileListForSingleFileAsync()
@@ -58,12 +58,12 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         var name = ContainerName;
 
-        await storage.UploadAsync([name, "archived"], "archived.txt", "archived");
-        await storage.UploadAsync([name, "archived"], "archived.csv", "archived");
-        await storage.UploadAsync([name, "q"], "new.txt", "new");
-        await storage.UploadAsync([name, "long", "path", "in", "here"], "1.hey.stuff-2.json", "archived");
+        await storage.UploadContentAsync([name, "archived"], "archived.txt", "archived");
+        await storage.UploadContentAsync([name, "archived"], "archived.csv", "archived");
+        await storage.UploadContentAsync([name, "q"], "new.txt", "new");
+        await storage.UploadContentAsync([name, "long", "path", "in", "here"], "1.hey.stuff-2.json", "archived");
 
-        var list = await storage.GetFileListAsync([name, "archived"], "archived.txt");
+        var list = await storage.GetBlobsListAsync([name, "archived"], "archived.txt");
 
         list.Should().ContainSingle();
         list[0].Path.Should().Be("storage/archived/archived.txt");
@@ -88,7 +88,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().BeEmpty();
 
-        await storage.UploadAsync([name, "archived"], "archived.txt", "archived");
+        await storage.UploadContentAsync([name, "archived"], "archived.txt", "archived");
         result = await storage.GetPagedListAsync([name], pageSize: 1);
 
         result.HasMore.Should().BeFalse();
@@ -97,7 +97,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().ContainSingle();
 
-        await storage.UploadAsync([name, "q"], "new.txt", "new");
+        await storage.UploadContentAsync([name, "q"], "new.txt", "new");
         result = await storage.GetPagedListAsync([name], pageSize: 1);
 
         result.HasMore.Should().BeTrue();
@@ -107,22 +107,22 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         result.Blobs.Should().ContainSingle();
 
         string[] longContainer = [name, "long", "path", "in", "here"];
-        await storage.UploadAsync(longContainer, "1.hey.stuff-2.json", "long data");
+        await storage.UploadContentAsync(longContainer, "1.hey.stuff-2.json", "long data");
 
         (await storage.GetPagedListAsync(container, pageSize: 100)).Blobs.Should().HaveCount(3);
         (await storage.GetPagedListAsync(container, pageSize: 1)).Blobs.Should().ContainSingle();
 
         var list = await storage.GetPagedListAsync(container, @"long\path\in\here\*stuff*.json", pageSize: 2);
         list.Blobs.Should().ContainSingle();
-        (await storage.GetFileContentsAsync(longContainer, "1.hey.stuff-2.json")).Should().Be("long data");
+        (await storage.GetBlobContentAsync(longContainer, "1.hey.stuff-2.json")).Should().Be("long data");
 
         list = await storage.GetPagedListAsync(container, blobSearchPattern: @"archived\*", pageSize: 2);
         list.Blobs.Should().ContainSingle();
-        (await storage.GetFileContentsAsync([name, "archived"], "archived.txt")).Should().Be("archived");
+        (await storage.GetBlobContentAsync([name, "archived"], "archived.txt")).Should().Be("archived");
 
         list = await storage.GetPagedListAsync(container, blobSearchPattern: @"q\*", pageSize: 2);
         list.Blobs.Should().ContainSingle();
-        (await storage.GetFileContentsAsync([name, "q"], "new.txt")).Should().Be("new");
+        (await storage.GetBlobContentAsync([name, "q"], "new.txt")).Should().Be("new");
     }
 
     public virtual async Task CanGetFileInfoAsync()
@@ -140,7 +140,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         /* Exist one */
         var startTime = DateTimeOffset.UtcNow.Subtract(TimeSpan.FromMinutes(1));
         var blobName = $"{Guid.NewGuid()}-nested.txt";
-        await storage.UploadAsync(container, blobName, "test");
+        await storage.UploadContentAsync(container, blobName, "test");
 
         fileInfo = await storage.GetBlobInfoAsync(container, blobName);
         fileInfo.Should().NotBeNull();
@@ -163,7 +163,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         /* Exist multiple */
         blobName = $"{Guid.NewGuid()}-test.txt";
-        await storage.UploadAsync(container, blobName, "test");
+        await storage.UploadContentAsync(container, blobName, "test");
         fileInfo = await storage.GetBlobInfoAsync(container, blobName);
 
         fileInfo.Should().NotBeNull();
@@ -205,17 +205,17 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var container = Container;
         var name = ContainerName;
 
-        await storage.UploadAsync(container, "test.txt", "test");
-        var file = (await storage.GetFileListAsync(container)).Single();
+        await storage.UploadContentAsync(container, "test.txt", "test");
+        var file = (await storage.GetBlobsListAsync(container)).Single();
         file.Should().NotBeNull();
         file.Path.Should().Be($"{name}/test.txt");
 
-        var content = await storage.GetFileContentsAsync(container, "test.txt");
+        var content = await storage.GetBlobContentAsync(container, "test.txt");
         content.Should().Be("test");
         (await storage.RenameAsync(container, "test.txt", container, "new.txt")).Should().BeTrue();
-        (await storage.GetFileListAsync(container)).Should().ContainSingle(x => x.Path == $"{name}/new.txt");
+        (await storage.GetBlobsListAsync(container)).Should().ContainSingle(x => x.Path == $"{name}/new.txt");
         (await storage.DeleteAsync(container, "new.txt")).Should().BeTrue();
-        (await storage.GetFileListAsync(container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
     }
 
     public virtual async Task CanRenameFilesAsync()
@@ -228,16 +228,16 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var name = ContainerName;
 
         // Rename & Move
-        await storage.UploadAsync(container, "test.txt", "test");
+        await storage.UploadContentAsync(container, "test.txt", "test");
         (await storage.RenameAsync(container, "test.txt", [name, "archive"], "new.txt")).Should().BeTrue();
-        (await storage.GetFileContentsAsync([name, "archive"], "new.txt")).Should().Be("test");
-        (await storage.GetFileListAsync(container)).Should().ContainSingle();
+        (await storage.GetBlobContentAsync([name, "archive"], "new.txt")).Should().Be("test");
+        (await storage.GetBlobsListAsync(container)).Should().ContainSingle();
 
         // Rename & Overwrite
-        await storage.UploadAsync(container, "test2.txt", "test2");
+        await storage.UploadContentAsync(container, "test2.txt", "test2");
         (await storage.RenameAsync(container, "test2.txt", [name, "archive"], "new.txt")).Should().BeTrue();
-        (await storage.GetFileContentsAsync([name, "archive"], "new.txt")).Should().Be("test2");
-        (await storage.GetFileListAsync(container)).Should().ContainSingle();
+        (await storage.GetBlobContentAsync([name, "archive"], "new.txt")).Should().Be("test2");
+        (await storage.GetBlobsListAsync(container)).Should().ContainSingle();
     }
 
     public virtual async Task CanDeleteEntireFolderAsync()
@@ -249,11 +249,11 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var container = Container;
         var containerName = ContainerName;
 
-        await storage.UploadAsync([containerName, "x"], "hello.txt", "hello");
-        await storage.UploadAsync([containerName, "x", "nested"], "world.csv", "nested world");
-        (await storage.GetFileListAsync(container)).Should().HaveCount(2);
+        await storage.UploadContentAsync([containerName, "x"], "hello.txt", "hello");
+        await storage.UploadContentAsync([containerName, "x", "nested"], "world.csv", "nested world");
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(2);
         (await storage.DeleteAllAsync(container, @"x\*")).Should().Be(2);
-        (await storage.GetFileListAsync(container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
     }
 
     public virtual async Task CanDeleteEntireFolderWithWildcardAsync()
@@ -265,15 +265,15 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var container = Container;
         var containerName = ContainerName;
 
-        await storage.UploadAsync([containerName, "x"], "hello.txt", "hello");
-        await storage.UploadAsync([containerName, "x", "nested"], "world.csv", "nested world");
-        (await storage.GetFileListAsync(container)).Should().HaveCount(2);
-        (await storage.GetFileListAsync(container, limit: 1)).Should().ContainSingle();
-        (await storage.GetFileListAsync(container, blobSearchPattern: @"x\*")).Should().HaveCount(2);
-        (await storage.GetFileListAsync(container, blobSearchPattern: @"x\nested\*")).Should().ContainSingle();
+        await storage.UploadContentAsync([containerName, "x"], "hello.txt", "hello");
+        await storage.UploadContentAsync([containerName, "x", "nested"], "world.csv", "nested world");
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(2);
+        (await storage.GetBlobsListAsync(container, limit: 1)).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container, blobSearchPattern: @"x\*")).Should().HaveCount(2);
+        (await storage.GetBlobsListAsync(container, blobSearchPattern: @"x\nested\*")).Should().ContainSingle();
 
         await storage.DeleteAllAsync(container, @"x\*");
-        (await storage.GetFileListAsync(container)).Should().BeEmpty();
+        (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
     }
 
     public virtual async Task CanDeleteFolderWithMultiFolderWildcardsAsync()
@@ -292,7 +292,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
             {
                 for (var index = 0; index < filesPerMonth; index++)
                 {
-                    await storage.UploadAsync(
+                    await storage.UploadContentAsync(
                         [
                             name,
                             "archive",
@@ -307,18 +307,18 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         }
 
         output.WriteLine(@"List by pattern: archive\*");
-        (await storage.GetFileListAsync(container, @"archive\*")).Should().HaveCount(2 * 12 * filesPerMonth);
+        (await storage.GetBlobsListAsync(container, @"archive\*")).Should().HaveCount(2 * 12 * filesPerMonth);
 
         output.WriteLine(@"List by pattern: archive\*month-01*");
-        (await storage.GetFileListAsync(container, @"archive\*month-01*")).Should().HaveCount(2 * filesPerMonth);
+        (await storage.GetBlobsListAsync(container, @"archive\*month-01*")).Should().HaveCount(2 * filesPerMonth);
 
         output.WriteLine(@"List by pattern: archive\year-2020\*month-01*");
 
-        (await storage.GetFileListAsync(container, @"archive\year-2020\*month-01*")).Should().HaveCount(filesPerMonth);
+        (await storage.GetBlobsListAsync(container, @"archive\year-2020\*month-01*")).Should().HaveCount(filesPerMonth);
 
         output.WriteLine(@"Delete by pattern: archive\*month-01*");
         await storage.DeleteAllAsync(container, @"archive\*month-01*");
-        (await storage.GetFileListAsync(container)).Should().HaveCount(2 * 11 * filesPerMonth);
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(2 * 11 * filesPerMonth);
     }
 
     public virtual async Task CanDeleteSpecificFilesAsync()
@@ -330,19 +330,19 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var container = Container;
         var name = ContainerName;
 
-        await storage.UploadAsync([name, "x"], "hello.txt", "hello");
-        await storage.UploadAsync([name, "x", "nested"], "world.csv", "nested world");
-        await storage.UploadAsync([name, "x", "nested"], "hello.txt", "nested hello");
+        await storage.UploadContentAsync([name, "x"], "hello.txt", "hello");
+        await storage.UploadContentAsync([name, "x", "nested"], "world.csv", "nested world");
+        await storage.UploadContentAsync([name, "x", "nested"], "hello.txt", "nested hello");
 
-        (await storage.GetFileListAsync(container)).Should().HaveCount(3);
-        (await storage.GetFileListAsync(container, limit: 1)).Should().ContainSingle();
-        (await storage.GetFileListAsync(container, @"x\*")).Should().HaveCount(3);
-        (await storage.GetFileListAsync(container, @"x\nested\*")).Should().HaveCount(2);
-        (await storage.GetFileListAsync(container, @"x\*.txt")).Should().HaveCount(2);
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container, limit: 1)).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container, @"x\*")).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container, @"x\nested\*")).Should().HaveCount(2);
+        (await storage.GetBlobsListAsync(container, @"x\*.txt")).Should().HaveCount(2);
 
         await storage.DeleteAllAsync(container, @"x\*.txt");
 
-        (await storage.GetFileListAsync(container)).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container)).Should().ContainSingle();
         (await storage.ExistsAsync([name, "x"], "hello.txt")).Should().BeFalse();
         (await storage.ExistsAsync([name, "x", "nested"], "hello.txt")).Should().BeFalse();
         (await storage.ExistsAsync([name, "x", "nested"], "world.csv")).Should().BeTrue();
@@ -357,18 +357,18 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var name = ContainerName;
         var container = Container;
 
-        await storage.UploadAsync([name, "x"], "hello.txt", "hello");
-        await storage.UploadAsync([name, "x", "nested"], "world.csv", "nested world");
-        await storage.UploadAsync([name, "x", "nested"], "hello.txt", "nested hello");
-        (await storage.GetFileListAsync(container)).Should().HaveCount(3);
-        (await storage.GetFileListAsync(container, limit: 1)).Should().ContainSingle();
-        (await storage.GetFileListAsync(container, @"x\*")).Should().HaveCount(3);
-        (await storage.GetFileListAsync(container, @"x\nested\*")).Should().HaveCount(2);
-        (await storage.GetFileListAsync(container, @"x\*.txt")).Should().HaveCount(2);
+        await storage.UploadContentAsync([name, "x"], "hello.txt", "hello");
+        await storage.UploadContentAsync([name, "x", "nested"], "world.csv", "nested world");
+        await storage.UploadContentAsync([name, "x", "nested"], "hello.txt", "nested hello");
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container, limit: 1)).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container, @"x\*")).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container, @"x\nested\*")).Should().HaveCount(2);
+        (await storage.GetBlobsListAsync(container, @"x\*.txt")).Should().HaveCount(2);
 
         await storage.DeleteAllAsync(container, @"x\nested\*");
 
-        (await storage.GetFileListAsync(container)).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container)).Should().ContainSingle();
         (await storage.ExistsAsync([name, "x"], "hello.txt")).Should().BeTrue();
         (await storage.ExistsAsync([name, "x", "nested"], "hello.txt")).Should().BeFalse();
         (await storage.ExistsAsync([name, "x", "nested"], "world.csv")).Should().BeFalse();
@@ -383,20 +383,20 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var name = ContainerName;
         var container = Container;
 
-        await storage.UploadAsync([name, "x"], "hello.txt", "hello");
-        await storage.UploadAsync([name, "x"], "world.csv", "world");
-        await storage.UploadAsync([name, "x", "nested"], "world.csv", "nested world");
-        await storage.UploadAsync([name, "x", "nested"], "hello.txt", "nested hello");
-        await storage.UploadAsync([name, "x", "nested"], "again.txt", "nested again");
+        await storage.UploadContentAsync([name, "x"], "hello.txt", "hello");
+        await storage.UploadContentAsync([name, "x"], "world.csv", "world");
+        await storage.UploadContentAsync([name, "x", "nested"], "world.csv", "nested world");
+        await storage.UploadContentAsync([name, "x", "nested"], "hello.txt", "nested hello");
+        await storage.UploadContentAsync([name, "x", "nested"], "again.txt", "nested again");
 
-        (await storage.GetFileListAsync(container)).Should().HaveCount(5);
-        (await storage.GetFileListAsync(container, limit: 1)).Should().ContainSingle();
-        (await storage.GetFileListAsync(container, @"x\*")).Should().HaveCount(5);
-        (await storage.GetFileListAsync(container, @"x\nested\*")).Should().HaveCount(3);
-        (await storage.GetFileListAsync(container, @"x\*.txt")).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(5);
+        (await storage.GetBlobsListAsync(container, limit: 1)).Should().ContainSingle();
+        (await storage.GetBlobsListAsync(container, @"x\*")).Should().HaveCount(5);
+        (await storage.GetBlobsListAsync(container, @"x\nested\*")).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container, @"x\*.txt")).Should().HaveCount(3);
 
         await storage.DeleteAllAsync(container, @"x\nested\*.txt");
-        (await storage.GetFileListAsync(container)).Should().HaveCount(3);
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(3);
         (await storage.ExistsAsync([name, "x"], "hello.txt")).Should().BeTrue();
         (await storage.ExistsAsync([name, "x"], "world.csv")).Should().BeTrue();
         (await storage.ExistsAsync([name, "x", "nested"], "hello.txt")).Should().BeFalse();
@@ -460,7 +460,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var blob = new BlobUploadRequest(memoryStream, blobName);
         await storage.UploadAsync(container, blob);
 
-        (await storage.GetFileContentsAsync(container, blobName)).Should().Be("Blake");
+        (await storage.GetBlobContentAsync(container, blobName)).Should().Be("Blake");
     }
 
     public virtual async Task CanConcurrentlyManageFilesAsync()
@@ -497,7 +497,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
                     UserAgent = "test",
                 };
 
-                await storage.UploadAsync(
+                await storage.UploadContentAsync(
                     queueContainer,
                     $"{projectId}.json",
                     post,
@@ -508,7 +508,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
             }
         );
 
-        (await storage.GetFileListAsync(container)).Should().HaveCount(10);
+        (await storage.GetBlobsListAsync(container)).Should().HaveCount(10);
 
         await Parallel.ForEachAsync(
             Enumerable.Range(1, 10),
@@ -558,12 +558,12 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         const string blobName = "test.json";
 
         var longIdPost = new Post { ProjectId = "1234567890" };
-        await storage.UploadAsync(container, blobName, longIdPost);
-        (await storage.GetFileContentsAsync<Post>(container, blobName)).Should().BeEquivalentTo(longIdPost);
+        await storage.UploadContentAsync(container, blobName, longIdPost);
+        (await storage.GetBlobContentAsync<Post>(container, blobName)).Should().BeEquivalentTo(longIdPost);
 
         var shortIdPost = new Post { ProjectId = "123" };
-        await storage.UploadAsync(container, blobName, shortIdPost);
-        (await storage.GetFileContentsAsync<Post>(container, blobName)).Should().BeEquivalentTo(shortIdPost);
+        await storage.UploadContentAsync(container, blobName, shortIdPost);
+        (await storage.GetBlobContentAsync<Post>(container, blobName)).Should().BeEquivalentTo(shortIdPost);
     }
 
     protected async Task ResetAsync(IBlobStorage? storage)
@@ -579,7 +579,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         await storage.DeleteAllAsync(containers);
 
         output.WriteLine("Asserting empty files...");
-        var list = await storage.GetFileListAsync(containers, limit: 10000);
+        var list = await storage.GetBlobsListAsync(containers, limit: 10000);
 
         list.Should().BeEmpty();
     }
@@ -592,7 +592,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         if (!await storage.ExistsAsync(container, markerName))
         {
-            await storage.UploadAsync(container, markerName, string.Empty);
+            await storage.UploadContentAsync(container, markerName, string.Empty);
         }
     }
 
@@ -625,7 +625,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         try
         {
-            eventPost = await storage.GetFileContentsAsync<Post?>(container, blobName);
+            eventPost = await storage.GetBlobContentAsync<Post?>(container, blobName);
 
             if (eventPost is null)
             {
