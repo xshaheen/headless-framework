@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.IO;
@@ -8,6 +10,37 @@ namespace System.IO;
 [PublicAPI]
 public static class StreamExtensions
 {
+    [MustUseReturnValue]
+    public static string GetAllText(this Stream stream, Encoding? encoding = null)
+    {
+        using var reader = new StreamReader(stream, encoding ?? Encoding.UTF8);
+
+        return reader.ReadToEnd();
+    }
+
+    [MustUseReturnValue]
+    public static async Task<string> GetAllTextAsync(
+        this Stream stream,
+        Encoding? encoding = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+        }
+
+        using var reader = new StreamReader(stream, encoding ?? Encoding.UTF8);
+
+        return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    [MustUseReturnValue]
+    public static async Task<string> GetAllTextAsync(this Stream stream, CancellationToken cancellationToken = default)
+    {
+        return await stream.GetAllTextAsync(Encoding.UTF8, cancellationToken);
+    }
+
     [MustUseReturnValue]
     public static byte[] GetAllBytes(this Stream stream)
     {
@@ -54,6 +87,7 @@ public static class StreamExtensions
         }
 
         memoryStream.Position = 0;
+
         return memoryStream;
     }
 
@@ -74,6 +108,7 @@ public static class StreamExtensions
         }
 
         memoryStream.Position = 0;
+
         return memoryStream;
     }
 
@@ -86,7 +121,7 @@ public static class StreamExtensions
 
         return source.CopyToAsync(
             destination,
-            81920, //this is already the default value, but needed to set to be able to pass the cancellationToken
+            81920, // this is already the default value, but needed to set to be able to pass the cancellationToken
             cancellationToken
         );
     }

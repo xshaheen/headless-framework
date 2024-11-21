@@ -2,6 +2,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Framework.BuildingBlocks;
 
 namespace Framework.Blobs;
 
@@ -17,7 +18,7 @@ public static class BlobStorageExtensions
         return storage.UploadAsync(container, request.FileName, request.Stream, request.Metadata, cancellationToken);
     }
 
-    public static async Task<IReadOnlyList<BlobInfo>> GetFileListAsync(
+    public static async Task<IReadOnlyList<BlobInfo>> GetBlobsListAsync(
         this IBlobStorage storage,
         string[] container,
         string? blobSearchPattern = null,
@@ -39,7 +40,7 @@ public static class BlobStorageExtensions
         return files;
     }
 
-    public static async ValueTask UploadAsync(
+    public static async ValueTask UploadContentAsync(
         this IBlobStorage storage,
         string[] container,
         string blobName,
@@ -47,12 +48,13 @@ public static class BlobStorageExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(contents ?? string.Empty));
-
+        await using var memoryStream = new MemoryStream();
+        await using var streamWriter = new StreamWriter(memoryStream, Encoding.UTF8);
+        await streamWriter.WriteAsync(contents);
         await storage.UploadAsync(container, new BlobUploadRequest(memoryStream, blobName), cancellationToken);
     }
 
-    public static async ValueTask UploadAsync<T>(
+    public static async ValueTask UploadContentAsync<T>(
         this IBlobStorage storage,
         string[] container,
         string blobName,
@@ -60,12 +62,22 @@ public static class BlobStorageExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var result = contents is null ? null : JsonSerializer.Serialize(contents);
+        await using var memoryStream = new MemoryStream();
 
-        await storage.UploadAsync(container, blobName, result, cancellationToken);
+        if (contents is not null)
+        {
+            await JsonSerializer.SerializeAsync(
+                utf8Json: memoryStream,
+                value: contents,
+                options: FrameworkJsonConstants.DefaultInternalJsonOptions,
+                cancellationToken: cancellationToken
+            );
+        }
+
+        await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
     }
 
-    public static async ValueTask<string?> GetFileContentsAsync(
+    public static async ValueTask<string?> GetBlobContentAsync(
         this IBlobStorage storage,
         string[] container,
         string blobName,
@@ -79,26 +91,26 @@ public static class BlobStorageExtensions
             return null;
         }
 
-        using var reader = new StreamReader(result.Stream);
+        var contents = await result.Stream.GetAllTextAsync(cancellationToken);
 
-        return await reader.ReadToEndAsync(cancellationToken);
+        return contents;
     }
 
-    public static async ValueTask<T?> GetFileContentsAsync<T>(
+    public static async ValueTask<T?> GetBlobContentAsync<T>(
         this IBlobStorage storage,
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
     )
     {
-        var content = await GetFileContentsAsync(storage, container, blobName, cancellationToken);
+        var content = await GetBlobContentAsync(storage, container, blobName, cancellationToken);
 
         if (content is null)
         {
             return default;
         }
 
-        var result = JsonSerializer.Deserialize<T>(content);
+        var result = JsonSerializer.Deserialize<T>(content, FrameworkJsonConstants.DefaultInternalJsonOptions);
 
         return result;
     }

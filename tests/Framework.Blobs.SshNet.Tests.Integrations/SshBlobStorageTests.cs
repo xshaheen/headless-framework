@@ -174,12 +174,10 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
     [Fact]
     public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
     {
-        var storage = GetStorage();
+        using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        using (storage)
-        {
             var container = Container;
 
             var result = await storage.GetPagedListAsync(container);
@@ -216,6 +214,5 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
                 .BeFalse();
 
             (await storage.GetBlobInfoAsync(container, directory)).Should().BeNull();
-        }
     }
 }
