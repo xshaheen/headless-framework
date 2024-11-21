@@ -18,7 +18,7 @@
     <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
     <!-- 👇 Enable faster restore times -->
     <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
-    <!-- 👇 Provides warnings during restore if any packages used by your project have known vulnerabilities (direct|all)-->
+    <!-- 👇 Provides warnings during restore if any packages used by your project have known vulnerabilities (direct|all) -->
     <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
 
