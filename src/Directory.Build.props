@@ -5,6 +5,7 @@
   <PropertyGroup Label="Packages Compiler settings">
     <NoWarn>$(NoWarn);1591</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <GenerateSBOM>true</GenerateSBOM>
   </PropertyGroup>
 
   <PropertyGroup Label="Packages Source Link">
@@ -54,6 +55,7 @@
   <ItemGroup Label="Package References">
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="MinVer" PrivateAssets="All" />
+    <PackageReference Condition="'$(ExcludeSbomPackage)' != 'true'" Include="Microsoft.Sbom.Tool" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

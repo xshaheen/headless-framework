@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- Exclude SBOM package -->
+    <ExcludeSbomPackage>true</ExcludeSbomPackage>
     <!-- Indicates that this project is a Roslyn component -->
     <IsRoslynComponent>true</IsRoslynComponent>
     <!-- This ensures the output of this project is treated as an analyzer by projects that reference it -->
