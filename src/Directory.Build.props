@@ -3,8 +3,6 @@
   <Import Project="../Directory.Build.props" />
 
   <PropertyGroup Label="Packages Compiler settings">
-    <NoWarn>$(NoWarn);1591</NoWarn>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <GenerateSBOM>true</GenerateSBOM>
   </PropertyGroup>
 
