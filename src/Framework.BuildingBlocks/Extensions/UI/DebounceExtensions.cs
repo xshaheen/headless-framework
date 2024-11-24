@@ -2,6 +2,7 @@
 
 namespace Framework.BuildingBlocks.Extensions.UI;
 
+[PublicAPI]
 public static class DebounceExtensions
 {
     public static Action Debounce(this Action action, TimeSpan interval)

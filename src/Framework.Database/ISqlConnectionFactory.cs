@@ -4,6 +4,7 @@ using System.Data;
 
 namespace Framework.Database;
 
+[PublicAPI]
 public interface ISqlConnectionFactory
 {
     string GetConnectionString();
