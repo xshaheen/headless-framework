@@ -1,34 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
 using Framework.Blobs;
 using Framework.Blobs.SshNet;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output), IAsyncLifetime
+[Collection(nameof(SshBlobTestFixture))]
+public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
 {
-    private readonly IContainer _sftpContainer = new ContainerBuilder()
-        .WithImage("atmoz/sftp:latest")
-        .WithPortBinding(2222, 22)
-        .WithCommand("framework:password:::storage")
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(22))
-        .Build();
-
-    /// <summary>This runs before all the test run and Called just after the constructor</summary>
-    public Task InitializeAsync()
-    {
-        return _sftpContainer.StartAsync();
-    }
-
-    /// <summary>This runs after all the test run and Called before Dispose()</summary>
-    public Task DisposeAsync()
-    {
-        return _sftpContainer.StopAsync();
-    }
-
     protected override IBlobStorage GetStorage()
     {
         var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework:password@localhost:2222" };
@@ -178,41 +158,41 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
 
         await ResetAsync(storage);
 
-            var container = Container;
+        var container = Container;
 
-            var result = await storage.GetPagedListAsync(container);
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
-            (await result.NextPageAsync()).Should().BeFalse();
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
+        var result = await storage.GetPagedListAsync(container);
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
+        (await result.NextPageAsync()).Should().BeFalse();
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
 
-            const string directory = "EmptyDirectory";
-            var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync() : null;
-            client.Should().NotBeNull();
+        const string directory = "EmptyDirectory";
+        var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync() : null;
+        client.Should().NotBeNull();
 
-            await client!.CreateDirectoryAsync($"storage/{directory}");
+        await client!.CreateDirectoryAsync($"storage/{directory}");
 
-            result = await storage.GetPagedListAsync(container);
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
-            (await result.NextPageAsync()).Should().BeFalse();
-            result.HasMore.Should().BeFalse();
-            result.Blobs.Should().BeEmpty();
+        result = await storage.GetPagedListAsync(container);
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
+        (await result.NextPageAsync()).Should().BeFalse();
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
 
-            // Ensure the directory will not be returned via get file info
-            var info = await storage.GetBlobInfoAsync(container, directory);
-            info.Should().BeNull();
+        // Ensure the directory will not be returned via get file info
+        var info = await storage.GetBlobInfoAsync(container, directory);
+        info.Should().BeNull();
 
-            // Ensure delete files can remove all files including fake folders
-            await storage.DeleteAllAsync(container, "*");
+        // Ensure delete files can remove all files including fake folders
+        await storage.DeleteAllAsync(container, "*");
 
-            // Assert folder was removed by Delete Files
-            // count.Should().Be(1);
-            (await client.ExistsAsync($"storage/{directory}"))
-                .Should()
-                .BeFalse();
+        // Assert folder was removed by Delete Files
+        // count.Should().Be(1);
+        (await client.ExistsAsync($"storage/{directory}"))
+            .Should()
+            .BeFalse();
 
-            (await storage.GetBlobInfoAsync(container, directory)).Should().BeNull();
+        (await storage.GetBlobInfoAsync(container, directory)).Should().BeNull();
     }
 }

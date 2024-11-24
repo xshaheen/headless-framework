@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
+[PublicAPI]
 public static class QueueExtensions
 {
     public static void EnqueueRange<T>(this Queue<T> queue, params T[] items)
