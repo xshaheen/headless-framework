@@ -59,7 +59,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add([_SettingDefinition]);
+            context.Add(_SettingDefinition);
         }
     }
 }
