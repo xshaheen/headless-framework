@@ -121,6 +121,8 @@ public static class ClaimsPrincipalExtensions
 
     public static ImmutableHashSet<string> GetRoles(this ClaimsPrincipal principal)
     {
+        Argument.IsNotNull(principal);
+
         var roles = principal
             .Claims.Where(claim => string.Equals(claim.Type, FrameworkClaimTypes.Roles, StringComparison.Ordinal))
             .Select(claim => claim.Value)
@@ -144,6 +146,7 @@ public static class ClaimsPrincipalExtensions
     public static ClaimsIdentity AddOrReplace(this ClaimsIdentity claimsIdentity, Claim claim)
     {
         Argument.IsNotNull(claimsIdentity);
+        Argument.IsNotNull(claim);
 
         foreach (var x in claimsIdentity.FindAll(claim.Type).ToList())
         {

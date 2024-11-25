@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Framework.BuildingBlocks;
+using Framework.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -56,7 +57,7 @@ public static class ObjectExtensions
     [return: NotNullIfNotNull(nameof(obj))]
     public static string? ToInvariantString(this object? obj)
     {
-        // Taken from Flurl which inspired by: http://stackoverflow.com/a/19570016/62600
+        // Taken from Flurl, which inspired by: http://stackoverflow.com/a/19570016/62600
         return obj switch
         {
             null => null,
@@ -81,6 +82,8 @@ public static class ObjectExtensions
     /// </returns>
     public static T If<T>(this T obj, bool condition, Action<T> action)
     {
+        Argument.IsNotNull(action);
+
         if (condition)
         {
             action(obj);
@@ -105,6 +108,8 @@ public static class ObjectExtensions
     /// </returns>
     public static T If<T>(this T obj, bool condition, Func<T, T> func)
     {
+        Argument.IsNotNull(func);
+
         return condition ? func(obj) : obj;
     }
 
@@ -125,6 +130,8 @@ public static class ObjectExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool In<T>(this T item, ICollection<T> collection)
     {
+        Argument.IsNotNull(collection);
+
         return collection.Contains(item);
     }
 
@@ -151,7 +158,7 @@ public static class ObjectExtensions
     }
 
     /// <summary>
-    /// Converts given object to a value type using <see cref="Convert.ChangeType(object,Type)"/> method.
+    /// Converts given an object to a value type using <see cref="Convert.ChangeType(object,Type)"/> method.
     /// </summary>
     /// <param name="obj">Object to be converted</param>
     /// <typeparam name="T">Type of the target object</typeparam>

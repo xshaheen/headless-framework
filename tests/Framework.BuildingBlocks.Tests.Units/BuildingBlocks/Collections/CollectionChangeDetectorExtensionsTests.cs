@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Tests.BuildingBlocks.Collections;
 
@@ -84,7 +84,7 @@ public class CollectionChangeDetectorExtensionsTests
         var (addedItems, removedItems, updatedItems, sameItems) = oldItems.DetectChanges(
             newItems,
             (x, y) => x.Id == y.Id,
-            (x, y) => x.Name != y.Name
+            (x, y) => !string.Equals(x.Name, y.Name, StringComparison.Ordinal)
         );
 
         // Assert

@@ -22,7 +22,7 @@
   </PropertyGroup>
 
   <PropertyGroup Label="Packages Information">
-    <Product>Zad</Product>
+    <Product>Framework</Product>
     <Authors>Mahmoud Shaheen</Authors>
     <Company>Mahmoud Shaheen</Company>
     <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>

@@ -24,7 +24,7 @@ public static class DateTimeExtensions
     /// </returns>
     /// <remarks>
     /// Note that the end result might be in the future relative to the original <paramref name="date" />. <see cref="DateTimeOffset.Millisecond" /> represents
-    /// a rounded value for ticks — so 10 milliseconds might internally be 9.6 milliseconds. However this information is lost after this method, and
+    /// a rounded value for ticks—so 10 milliseconds might internally be 9.6 milliseconds. However, this information is lost after this method, and
     /// the value would be replaced with 10 milliseconds.
     /// </remarks>
     [SystemPure]

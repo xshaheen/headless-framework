@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>Framework.Caching</RootNamespace>
-    <AssemblyName>$(Product).$(RootNamespace).Foundatio.Redis</AssemblyName>
+    <AssemblyName>$(RootNamespace).Foundatio.Redis</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
