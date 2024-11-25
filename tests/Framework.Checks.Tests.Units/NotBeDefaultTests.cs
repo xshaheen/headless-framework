@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
 
@@ -9,7 +9,7 @@ public sealed class NotBeDefaultTests
     [Fact]
     public void should_throw_argument_exception_when_pass_default_value()
     {
-        var zero = 0;
+        const int zero = 0;
         Assert.Throws<ArgumentException>(nameof(zero), () => Argument.IsNotDefault(zero));
         int? nullableZero = 0;
         Assert.Throws<ArgumentException>(nameof(nullableZero), () => Argument.IsNotDefault(nullableZero));

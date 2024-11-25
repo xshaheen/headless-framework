@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
-    <RootNamespace>Framework.Domains</RootNamespace>
   </PropertyGroup>
 
 </Project>

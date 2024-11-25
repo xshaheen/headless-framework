@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+#pragma warning disable CA1000 // Do not declare static members on generic types
 namespace Framework.Generator.Primitives;
 
 /// <summary>Represents an interface for primitive values.</summary>
@@ -26,9 +27,7 @@ public interface IPrimitive<T> : IPrimitive
     /// Validates the specified value against primitive-specific rules and returns a validation result.
     /// </summary>
     /// <param name="value">The value to be validated against primitive constraints.</param>
-#pragma warning disable CA1000 // Do not declare static members on generic types
     static abstract PrimitiveValidationResult Validate(T value);
-#pragma warning restore CA1000
 
     /// <summary>
     /// Retrieves a string representation of the specified primitive value.

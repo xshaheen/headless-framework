@@ -2,9 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <AssemblyName>$(Product).$(RootNamespace)</AssemblyName>
   </PropertyGroup>
-  
+
   <ItemGroup>
     <ProjectReference Include="..\Framework.Blobs\Framework.Blobs.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
