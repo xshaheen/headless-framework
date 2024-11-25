@@ -1,7 +1,8 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
 
+#pragma warning disable CA1000 // Do not declare static members on generic types
 namespace Framework.Specifications;
 
 /// <summary>

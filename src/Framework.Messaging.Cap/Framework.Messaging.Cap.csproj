@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>Framework.Messaging</RootNamespace>
-    <AssemblyName>$(Product).$(RootNamespace).Cap</AssemblyName>
+    <AssemblyName>$(RootNamespace).Cap</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

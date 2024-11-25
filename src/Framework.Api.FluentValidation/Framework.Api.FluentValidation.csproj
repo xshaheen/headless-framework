@@ -3,13 +3,13 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>Framework.FluentValidation</RootNamespace>
-    <AssemblyName>$(Product).$(RootNamespace).FormFile</AssemblyName>
+    <AssemblyName>$(RootNamespace).FormFile</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="FileSignatures" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
