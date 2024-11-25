@@ -133,7 +133,7 @@ file sealed class Build : NukeBuild
     Target Pack =>
         x =>
             x.Description("Creates NuGet packages and outputs them to the artifacts directory.")
-                .DependsOn(Test)
+                .DependsOn(Compile)
                 .Executes(() =>
                 {
                     DotNetPack(settings =>
@@ -146,6 +146,34 @@ file sealed class Build : NukeBuild
                             // .EnableIncludeSymbols()
                             .SetOutputDirectory(PackagesResults)
                             .SetContinuousIntegrationBuild(!IsLocalBuild)
+                    );
+                });
+
+    #endregion
+
+    #region Push to Github Packages
+
+    Target PushPackages =>
+        x =>
+            x.Description("Pushes NuGet packages to Github Packages.")
+                .DependsOn(Pack)
+                .Executes(() =>
+                {
+                    DotNetNuGetPush(settings =>
+                        settings
+                            .SetSource("GitHub")
+                            .EnableSkipDuplicate()
+                            .SetApiKey(Environment.GetEnvironmentVariable("GITHUB_TOKEN"))
+                            .SetTargetPath(PackagesResults / "*.nupkg")
+                    );
+
+                    // Push symbols
+                    DotNetNuGetPush(settings =>
+                        settings
+                            .SetSource("GitHub")
+                            .EnableSkipDuplicate()
+                            .SetApiKey(Environment.GetEnvironmentVariable("GITHUB_TOKEN"))
+                            .SetTargetPath(PackagesResults / "*.snupkg")
                     );
                 });
 

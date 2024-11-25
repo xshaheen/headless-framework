@@ -3,6 +3,8 @@
   <Import Project="../Directory.Build.props" />
 
   <PropertyGroup Label="Packages Compiler settings">
+    <IsPackable>true</IsPackable>
+    <IsTestProject>false</IsTestProject>
     <GenerateSBOM>true</GenerateSBOM>
   </PropertyGroup>
 
