@@ -23,7 +23,7 @@ public class FileValidatorsTests
         // given
         FileNotEmptyWithSpecificMinimumSizeValidator validator = new();
         var file = Substitute.For<IFormFile>();
-        file.Length.Returns(1024);
+        file.Length.Returns(_MinimalFileSize);
 
         var model = new FileUploadTestModel
         {
@@ -298,11 +298,14 @@ public class FileValidatorsTests
     }
 
     #region Helper Classes
+
     private class FileUploadTestModel
     {
         public IFormFile? UploadedFile { get; init; }
     }
+
     private class TestFileFormat(byte[] signature) : FileFormat(signature, "application/test", ".test");
+
     #endregion
 
     #region Helper Validator Classes
