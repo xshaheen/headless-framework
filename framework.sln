@@ -254,6 +254,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{AD2A502D
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Serializer.Tests.Units", "Framework.Serializer.Tests.Units\Framework.Serializer.Tests.Units.csproj", "{C3CE5F05-97E1-4FCE-8039-E1A35491A215}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{DDF1B30C-75F6-4576-8139-69C552397A5E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.FluentValidation.Units", "Framework.Api.FluentValidation.Units\Framework.Api.FluentValidation.Units.csproj", "{C5EEDD69-F796-440C-B399-B2DCC0247B3B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -634,6 +638,10 @@ Global
 		{C3CE5F05-97E1-4FCE-8039-E1A35491A215}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C3CE5F05-97E1-4FCE-8039-E1A35491A215}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C3CE5F05-97E1-4FCE-8039-E1A35491A215}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5EEDD69-F796-440C-B399-B2DCC0247B3B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5EEDD69-F796-440C-B399-B2DCC0247B3B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5EEDD69-F796-440C-B399-B2DCC0247B3B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5EEDD69-F796-440C-B399-B2DCC0247B3B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -733,6 +741,8 @@ Global
 		{70456612-825D-47C2-84E8-7AE09BDBD9ED} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{AD2A502D-83BB-49D4-88E6-8C098C588269} = {23C60C26-82FF-428D-956D-D504541EB8D2}
 		{C3CE5F05-97E1-4FCE-8039-E1A35491A215} = {AD2A502D-83BB-49D4-88E6-8C098C588269}
+		{DDF1B30C-75F6-4576-8139-69C552397A5E} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
+		{C5EEDD69-F796-440C-B399-B2DCC0247B3B} = {DDF1B30C-75F6-4576-8139-69C552397A5E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
