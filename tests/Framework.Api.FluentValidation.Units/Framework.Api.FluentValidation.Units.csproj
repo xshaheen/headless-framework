@@ -13,10 +13,11 @@
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="FileSignatures" />
+    <PackageReference Include="Microsoft.AspNetCore.Http" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
   </ItemGroup>
-
 </Project>
