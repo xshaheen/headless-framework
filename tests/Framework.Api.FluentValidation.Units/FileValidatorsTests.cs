@@ -1,13 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FileSignatures;
-using FluentAssertions;
 using FluentValidation;
 using FluentValidation.TestHelper;
 using Framework.FluentValidation;
 using Microsoft.AspNetCore.Http;
-using NSubstitute;
-using Xunit;
 
 namespace Tests;
 
@@ -280,10 +277,10 @@ public class FileValidatorsTests
         var fileInspectorMock = Substitute.For<IFileFormatInspector>();
         FileSignatureUploadValidator validator = new(fileInspectorMock);
 
-        var fileStream = new MemoryStream([1, 2]);
+        var fileStream = new MemoryStream(_FileSignatureBytes);
         var mockFile = Substitute.For<IFormFile>();
         mockFile.OpenReadStream().Returns(fileStream);
-        var fileFormat = new TestFileFormat([1, 5]);
+        var fileFormat = new TestFileFormat(_FileSignatureBytes.Where((_, i) => i != 2).ToArray());
         fileInspectorMock.DetermineFileFormat(Arg.Any<Stream>()).Returns(fileFormat);
 
         var model = new FileUploadTestModel { UploadedFile = mockFile };
