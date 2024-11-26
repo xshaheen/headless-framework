@@ -3,6 +3,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Xunit;
 
 namespace Framework.Serializer.Tests.Units.Tests;
 

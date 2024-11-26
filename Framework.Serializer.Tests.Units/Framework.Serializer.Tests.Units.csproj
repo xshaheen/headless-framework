@@ -10,20 +10,10 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Using Include="Xunit"/>
+    <PackageReference Include="FluentAssertions" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\src\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="FluentAssertions">
-      <HintPath>..\..\..\.nuget\packages\fluentassertions\6.12.2\lib\net6.0\FluentAssertions.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
 </Project>
