@@ -254,6 +254,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.FluentValidat
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Serializer.Tests.Unit", "tests\Framework.Serializer.Tests.Unit\Framework.Serializer.Tests.Unit.csproj", "{93AF912A-FEAF-4CF9-82A6-3F0DB629B410}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Hosting.Units", "tests\Framework.Hosting.Units\Framework.Hosting.Units.csproj", "{DFF05727-A773-4760-8FD3-FDAC7E3A1468}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -638,6 +640,10 @@ Global
 		{93AF912A-FEAF-4CF9-82A6-3F0DB629B410}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{93AF912A-FEAF-4CF9-82A6-3F0DB629B410}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{93AF912A-FEAF-4CF9-82A6-3F0DB629B410}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DFF05727-A773-4760-8FD3-FDAC7E3A1468}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DFF05727-A773-4760-8FD3-FDAC7E3A1468}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DFF05727-A773-4760-8FD3-FDAC7E3A1468}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DFF05727-A773-4760-8FD3-FDAC7E3A1468}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -737,6 +743,7 @@ Global
 		{70456612-825D-47C2-84E8-7AE09BDBD9ED} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{F2F6363E-F52B-4A33-8167-182FD03AB6D9} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{93AF912A-FEAF-4CF9-82A6-3F0DB629B410} = {23C60C26-82FF-428D-956D-D504541EB8D2}
+		{DFF05727-A773-4760-8FD3-FDAC7E3A1468} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
