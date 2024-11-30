@@ -254,7 +254,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.FluentValidat
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Serializer.Tests.Unit", "tests\Framework.Serializer.Tests.Unit\Framework.Serializer.Tests.Unit.csproj", "{93AF912A-FEAF-4CF9-82A6-3F0DB629B410}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Hosting.Units", "tests\Framework.Hosting.Units\Framework.Hosting.Units.csproj", "{DFF05727-A773-4760-8FD3-FDAC7E3A1468}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Hosting.Tests.Units", "tests\Framework.Hosting.Tests.Units\Framework.Hosting.Tests.Units.csproj", "{DFF05727-A773-4760-8FD3-FDAC7E3A1468}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
