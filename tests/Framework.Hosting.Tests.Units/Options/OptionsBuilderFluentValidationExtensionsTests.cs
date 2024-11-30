@@ -5,12 +5,12 @@ using Framework.Hosting.Options;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Tests;
+namespace Tests.Options;
 
-public class OptionsBuilderFluentValidationExtensionsTests
+public sealed class OptionsBuilderFluentValidationExtensionsTests
 {
     [Fact]
-    public void validate_fluent_validation_should_register_is_validate_options()
+    public void should_register_valid_options_when_validate_fluent_validation()
     {
         // given
         var serviceCollection = new ServiceCollection();
@@ -20,9 +20,7 @@ public class OptionsBuilderFluentValidationExtensionsTests
         serviceCollection.AddOptions<MyOptions>().ValidateFluentValidation();
 
         // when
-        serviceCollection.Configure<MyOptions>(
-            options => options.PropertyName = "Test"
-        );
+        serviceCollection.Configure<MyOptions>(options => options.PropertyName = "Test");
 
         var serviceProvider = serviceCollection.BuildServiceProvider();
         var result = serviceProvider.GetRequiredService<IOptions<MyOptions>>();
@@ -32,31 +30,30 @@ public class OptionsBuilderFluentValidationExtensionsTests
     }
 
     [Fact]
-    public void validate_fluent_validation_should_fail_for_invalid_options()
+    public void should_fail_for_invalid_options_when_validate_fluent_validation()
     {
         // given
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddSingleton<IValidator<MyOptions>, MyOptionsValidator>();
 
-        serviceCollection.AddOptions<MyOptions>()
-            .ValidateFluentValidation();
+        serviceCollection.AddOptions<MyOptions>().ValidateFluentValidation();
 
         // when
-        serviceCollection.Configure<MyOptions>(
-            options => options.PropertyName = null
-        );
+        serviceCollection.Configure<MyOptions>(options => options.PropertyName = null);
 
         var serviceProvider = serviceCollection.BuildServiceProvider();
         var result = serviceProvider.GetRequiredService<IOptions<MyOptions>>();
 
         // then
-        result.Invoking(r => r.Value)
-            .Should().Throw<OptionsValidationException>();
+        var assertions = result.Invoking(r => r.Value).Should().Throw<OptionsValidationException>();
+        assertions.And.OptionsType.Should().Be(typeof(MyOptions));
+        assertions.And.Failures.Should().ContainSingle("Property MyOptions.PropertyName: Name is required.");
+        assertions.And.Message.Should().Be("Property MyOptions.PropertyName: Name is required.");
     }
 
     #region Helper Classes
 
-    private class MyOptions
+    private sealed class MyOptions
     {
         public string? PropertyName { get; set; }
     }
@@ -65,11 +62,11 @@ public class OptionsBuilderFluentValidationExtensionsTests
 
     #region Helper Validators
 
-    private class MyOptionsValidator : AbstractValidator<MyOptions>
+    private sealed class MyOptionsValidator : AbstractValidator<MyOptions>
     {
         public MyOptionsValidator()
         {
-            RuleFor(x => x.PropertyName).NotNull().NotEmpty().WithMessage("Name is required.");
+            RuleFor(x => x.PropertyName).NotEmpty().WithMessage("Name is required.");
         }
     }
 
