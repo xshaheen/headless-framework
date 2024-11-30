@@ -17,4 +17,5 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
+
 </Project>
