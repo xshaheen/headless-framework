@@ -41,7 +41,6 @@ indent_size = 2
 [*.{yml,yaml}]
 indent_size = 2
 tab_width = 2
-indent_style = space
 
 # Markdown Files
 [*.{md,mdx}]
@@ -53,7 +52,7 @@ indent_size = 2
 insert_final_newline = true
 
 # .NET
-[*.{cs, csx, cake, vb, vbx}]
+[*.{cs,csx,cake,vb,vbx}]
 file_header_template=Copyright (c) Mahmoud Shaheen. All rights reserved.
 insert_final_newline = true
 
@@ -79,7 +78,7 @@ insert_final_newline = false
 # https://docs.microsoft.com/dotnet/fundamentals/code-analysis/configuration-options#scope
 ##########################################
 
-[*.{cs, csx, cake, vb, vbx}]
+[*.{cs,csx,cake,vb,vbx}]
 # Default Severity for all .NET Code Style rules below
 dotnet_analyzer_diagnostic.severity = default
 
@@ -280,7 +279,7 @@ dotnet_diagnostic.ma0026.severity = suggestion
 dotnet_diagnostic.ma0022.severity = error
 # MA0038: Make method static (deprecated, use CA1822 instead)
 dotnet_diagnostic.ma0038.severity = none
-# AsyncFixer05: Downcasting from a nested task to an outer task.
+# AsyncFixer05: Down-casting from a nested task to an outer task.
 dotnet_diagnostic.asyncfixer05.severity = error
 # VSTHRD114: Avoid returning a null Task
 dotnet_diagnostic.vsthrd114.severity = error
@@ -332,7 +331,7 @@ dotnet_style_predefined_type_for_member_access = true:warning
 # Modifier preferences
 dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
 # noinspection EditorConfigValueCorrectness
-csharp_preferred_modifier_order = public, private, protected, internal, file, static, extern, new, virtual, abstract, sealed, override, readonly, unsafe, volatile, async:warning
+csharp_preferred_modifier_order = file, public, private, protected, internal, new, static, abstract, virtual, sealed, readonly, override, extern, unsafe, volatile, async:suggestion
 dotnet_style_readonly_field = true:warning
 # Parentheses preferences
 dotnet_style_parentheses_in_arithmetic_binary_operators = always_for_clarity:suggestion
@@ -343,6 +342,8 @@ dotnet_style_parentheses_in_other_operators = always_for_clarity:suggestion
 dotnet_style_object_initializer = true:warning
 dotnet_style_collection_initializer = true:warning
 dotnet_style_explicit_tuple_names = true:warning
+# IDE0033: Use explicitly provided tuple name
+dotnet_diagnostic.ide0033.severity = warning
 dotnet_style_prefer_inferred_tuple_names = true:warning
 dotnet_style_prefer_inferred_anonymous_type_member_names = true:warning
 dotnet_style_prefer_auto_properties = true:warning
@@ -410,36 +411,11 @@ csharp_style_prefer_primary_constructors = true:suggestion
 [*.{cs,csx,cake,vb,vbx}]
 dotnet_code_quality_unused_parameters = all:suggestion
 dotnet_remove_unnecessary_suppression_exclusions = none:suggestion
-dotnet_style_operator_placement_when_wrapping = end_of_line
-dotnet_style_coalesce_expression = true:suggestion
-dotnet_style_null_propagation = true:suggestion
-dotnet_style_prefer_auto_properties = true:warning
-dotnet_style_prefer_is_null_check_over_reference_equality_method = true:suggestion
 dotnet_style_prefer_collection_expression = true:suggestion
-dotnet_style_object_initializer = true:warning
-dotnet_style_prefer_simplified_boolean_expressions = true:warning
-dotnet_style_collection_initializer = true:warning
-dotnet_style_prefer_inferred_tuple_names = true:warning
-dotnet_style_explicit_tuple_names = true:warning
-dotnet_diagnostic.ide0033.severity = warning
-dotnet_style_prefer_compound_assignment = true:warning
-dotnet_style_prefer_inferred_anonymous_type_member_names = true:warning
+
 dotnet_style_namespace_match_folder = true:suggestion
-dotnet_style_prefer_simplified_interpolation = true:warning
-dotnet_style_readonly_field = true:warning
-dotnet_style_predefined_type_for_locals_parameters_members = true:warning
-dotnet_style_predefined_type_for_member_access = true:warning
-dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
 dotnet_style_allow_multiple_blank_lines_experimental = true:silent
 dotnet_style_allow_statement_immediately_after_block_experimental = true:silent
-dotnet_style_parentheses_in_arithmetic_binary_operators = always_for_clarity:suggestion
-dotnet_style_parentheses_in_other_binary_operators = always_for_clarity:suggestion
-dotnet_style_parentheses_in_relational_binary_operators = always_for_clarity:suggestion
-dotnet_style_parentheses_in_other_operators = always_for_clarity:suggestion
-dotnet_style_qualification_for_field = false:warning
-dotnet_style_qualification_for_property = false:warning
-dotnet_style_qualification_for_method = false:warning
-dotnet_style_qualification_for_event = false:warning
 dotnet_diagnostic.ca1823.severity = suggestion
 
 # C# Unnecessary code rules
@@ -460,7 +436,7 @@ csharp_using_directive_placement = outside_namespace:silent
 dotnet_style_namespace_match_folder = true:suggestion
 dotnet_diagnostic.ide0130.severity = suggestion
 
-[*.{cs, csx, cake}]
+[*.{cs,csx,cake}]
 # Newline options
 csharp_new_line_before_open_brace = all
 csharp_new_line_before_else = true
@@ -478,7 +454,6 @@ csharp_indent_case_contents_when_block = false
 # Spacing options
 csharp_space_after_cast = true
 csharp_space_after_keywords_in_control_flow_statements = true
-csharp_space_between_parentheses = false
 csharp_space_before_colon_in_inheritance_clause = true
 csharp_space_after_colon_in_inheritance_clause = true
 csharp_space_around_binary_operators = before_and_after
@@ -507,7 +482,7 @@ csharp_preserve_single_line_blocks = true
 # https://docs.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/naming-rules
 ##########################################
 
-[*.{cs, csx, cake, vb, vbx}]
+[*.{cs,csx,cake,vb,vbx}]
 
 # Styles
 
@@ -521,8 +496,6 @@ dotnet_naming_style.pascal_case_style.capitalization = pascal_case
 # pascal_case_style - Define the _PascalCase style
 dotnet_naming_style._pascal_case_style.capitalization = pascal_case
 dotnet_naming_style._pascal_case_style.required_prefix = _
-# first_upper_style - The first character must start with an upper-case character
-dotnet_naming_style.first_upper_style.capitalization = first_word_upper
 # prefix_interface_with_i_style - Interfaces must be PascalCase and the first character of an interface must be an 'I'
 dotnet_naming_style.prefix_interface_with_i_style.capitalization = pascal_case
 dotnet_naming_style.prefix_interface_with_i_style.required_prefix = I
