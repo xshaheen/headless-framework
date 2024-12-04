@@ -14,7 +14,7 @@ public class IpAddressJsonConverterTests
     };
 
     [Fact]
-    public void given_valid_ip_string_when_read_then_should_return_ip_address()
+    public void reading_valid_ip_should_return_valid_ip_address_object()
     {
         // given
         const string json = "\"192.168.1.1\"";
@@ -27,7 +27,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void given_null_ip_string_when_read_then_should_return_null()
+    public void given_null_json_ip_should_return_null_object()
     {
         // given
         const string json = "null";
@@ -40,7 +40,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void given_valid_ip_address_when_write_then_should_return_ip_string()
+    public void converter_should_write_valid_ip_address_to_json()
     {
         // given
         var ip = IPAddress.Parse("192.168.1.1");
@@ -53,7 +53,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void given_null_ip_address_when_write_then_should_return_null()
+    public void converter_should_write_null_when_given_null_ip_object()
     {
         // given
         IPAddress? ip = null;
@@ -66,7 +66,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void given_invalid_ip_string_when_read_then_should_throw_format_exception()
+    public void reading_invalid_ip_string_should_throw_exception()
     {
         // given
         const string json = "\"999.999.999.999\"";
@@ -79,15 +79,15 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void given_empty_string_when_read_then_should_return_null()
+    public void given_empty_string_when_read_then_should_throw_exception()
     {
         // given
         const string json = "\"\"";
 
         // when
-        var result = JsonSerializer.Deserialize<IPAddress?>(json, _options);
+        Action act = () => JsonSerializer.Deserialize<IPAddress?>(json, _options);
 
         // then
-        result.Should().BeNull();
+        act.Should().Throw<FormatException>();
     }
 }
