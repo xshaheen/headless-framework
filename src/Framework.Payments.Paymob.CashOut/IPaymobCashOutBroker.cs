@@ -87,7 +87,10 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         using var request = new HttpRequestMessage();
 
         request.Method = HttpMethod.Get;
-        request.RequestUri = new Uri($"transaction/inquire/?page={page.ToString(CultureInfo.InvariantCulture)}", UriKind.Relative);
+        request.RequestUri = new Uri(
+            $"transaction/inquire/?page={page.ToString(CultureInfo.InvariantCulture)}",
+            UriKind.Relative
+        );
         request.Headers.Add("Authorization", $"Bearer {accessToken}");
 
         request.Content = JsonContent.Create(

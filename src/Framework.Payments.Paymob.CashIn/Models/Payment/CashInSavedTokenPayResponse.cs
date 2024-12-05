@@ -125,6 +125,8 @@ public sealed class CashInSavedTokenPayResponse
 
     public bool IsCreatedSuccessfully()
     {
-        return string.Equals(Success, "false", StringComparison.Ordinal) && string.Equals(Pending, "true", StringComparison.Ordinal) && string.Equals(ErrorOccured, "false", StringComparison.Ordinal);
+        return string.Equals(Success, "false", StringComparison.Ordinal)
+            && string.Equals(Pending, "true", StringComparison.Ordinal)
+            && string.Equals(ErrorOccured, "false", StringComparison.Ordinal);
     }
 }
