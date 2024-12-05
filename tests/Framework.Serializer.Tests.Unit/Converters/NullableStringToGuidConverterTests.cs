@@ -39,7 +39,7 @@ public class NullableStringToGuidConverterTests
     }
 
     [Fact]
-    public void guid_convertor_returns_null_when_the_json_is_null()
+    public void guid_convertor_should_returns_null_when_the_json_is_null()
     {
         // given
         const string json = "null";
@@ -52,7 +52,7 @@ public class NullableStringToGuidConverterTests
     }
 
     [Fact]
-    public void should_return_guid_for_empty_string()
+    public void guid_convertor_should_throw_while_reading_empty_json()
     {
         // given
         const string json = "\"\"";
@@ -65,7 +65,7 @@ public class NullableStringToGuidConverterTests
     }
 
     [Fact]
-    public void should_throw_json_exception_for_invalid_guid_format()
+    public void guid_convertor_should_throw_while_reading_invalid_guid_format_in_json()
     {
         // given
         const string json = "\"invalid-guid-format\"";
