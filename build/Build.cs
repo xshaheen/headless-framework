@@ -153,6 +153,9 @@ file sealed class Build : NukeBuild
 
     #region Push to Github Packages
 
+    [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
+    readonly string GithubToken = Environment.GetEnvironmentVariable("GITHUB_TOKEN")!;
+
     Target PushPackages =>
         x =>
             x.Description("Pushes NuGet packages to Github Packages.")
@@ -162,8 +165,8 @@ file sealed class Build : NukeBuild
                     DotNetNuGetPush(settings =>
                         settings
                             .SetSource("GitHub")
+                            .SetApiKey(GithubToken)
                             .EnableSkipDuplicate()
-                            .SetApiKey(Environment.GetEnvironmentVariable("GITHUB_TOKEN"))
                             .SetTargetPath(PackagesResults / "*.nupkg")
                     );
 
@@ -171,8 +174,8 @@ file sealed class Build : NukeBuild
                     DotNetNuGetPush(settings =>
                         settings
                             .SetSource("GitHub")
+                            .SetApiKey(GithubToken)
                             .EnableSkipDuplicate()
-                            .SetApiKey(Environment.GetEnvironmentVariable("GITHUB_TOKEN"))
                             .SetTargetPath(PackagesResults / "*.snupkg")
                     );
                 });
