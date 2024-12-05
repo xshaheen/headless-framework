@@ -32,6 +32,8 @@ env:
   PACKAGES_DIR: ./artifacts/packages-results
   # Set the NuGet packages restore cache directory.
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  # Disable the Husky pre-commit hooks.
+  HUSKY: 0
 
 jobs:
   build:
