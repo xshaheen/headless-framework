@@ -4,7 +4,11 @@ using System.Text.Json.Serialization;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
-internal sealed class CashInPaymentKeyInternalRequest(CashInPaymentKeyRequest request, string authToken, int defaultExpiration)
+internal sealed class CashInPaymentKeyInternalRequest(
+    CashInPaymentKeyRequest request,
+    string authToken,
+    int defaultExpiration
+)
 {
     [JsonPropertyName("auth_token")]
     public string AuthToken { get; } = authToken;

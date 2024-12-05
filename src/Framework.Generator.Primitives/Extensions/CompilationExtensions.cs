@@ -28,10 +28,10 @@ internal static class CompilationExtensions
     /// <param name="type">The named type symbol for which to retrieve the underlying primitive type information.</param>
     /// <param name="domainTypes">A list of named type symbols representing domain types to track recursion.</param>
     /// <returns>A tuple containing the <see cref="PrimitiveUnderlyingType"/> enum value representing the primitive type and the corresponding named type symbol.</returns>
-    public static (
-        PrimitiveUnderlyingType underlyingType,
-        INamedTypeSymbol typeSymbol
-    ) GetUnderlyingPrimitiveType(this INamedTypeSymbol type, List<INamedTypeSymbol> domainTypes)
+    public static (PrimitiveUnderlyingType underlyingType, INamedTypeSymbol typeSymbol) GetUnderlyingPrimitiveType(
+        this INamedTypeSymbol type,
+        List<INamedTypeSymbol> domainTypes
+    )
     {
         while (true)
         {
@@ -63,9 +63,7 @@ internal static class CompilationExtensions
     /// <summary>Gets the Swagger type and format for a given primitive type.</summary>
     /// <param name="primitiveType">The named type symbol representing the primitive type.</param>
     /// <returns>A tuple containing the Swagger type and format as strings.</returns>
-    public static (string type, string format) GetSwashbuckleSwaggerTypeAndFormat(
-        this INamedTypeSymbol primitiveType
-    )
+    public static (string type, string format) GetSwashbuckleSwaggerTypeAndFormat(this INamedTypeSymbol primitiveType)
     {
         var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
 
