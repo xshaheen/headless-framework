@@ -4,7 +4,7 @@ using System.Net;
 using System.Text.Json;
 using Framework.Serializer.Json.Converters;
 
-namespace Tests;
+namespace Tests.Converters;
 
 public class IpAddressJsonConverterTests
 {

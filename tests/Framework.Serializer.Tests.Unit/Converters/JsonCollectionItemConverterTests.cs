@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Framework.Serializer.Json.Converters;
 
-namespace Tests;
+namespace Tests.Converters;
 
 
 public class JsonCollectionItemConverterTests
