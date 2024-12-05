@@ -3,6 +3,7 @@
 using Framework.Blobs;
 using Framework.Blobs.SshNet;
 using Microsoft.Extensions.Options;
+using Tests.TestSetup;
 
 namespace Tests;
 

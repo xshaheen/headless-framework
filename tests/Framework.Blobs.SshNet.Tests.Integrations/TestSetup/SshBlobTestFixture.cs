@@ -3,7 +3,7 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 
-namespace Tests;
+namespace Tests.TestSetup;
 
 public sealed class SshBlobTestFixture : IAsyncLifetime
 {
