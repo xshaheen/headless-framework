@@ -12,7 +12,26 @@ public class FileValidatorsTests
 {
     private const int _MinimalFileSize = 512;
     private const int _MaximalFileSize = 2048;
-    private static readonly byte[] _FileSignatureBytes = [0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x11, 0x62, 0x61, 0x20, 0xA0, 0xC9, 0x6, 0xE, 0x0, 0x25, 0x5];
+
+    private static readonly byte[] _FileSignatureBytes =
+    [
+        0x25,
+        0xE2,
+        0xE3,
+        0xCF,
+        0xD3,
+        0x11,
+        0x62,
+        0x61,
+        0x20,
+        0xA0,
+        0xC9,
+        0x6,
+        0xE,
+        0x0,
+        0x25,
+        0x5,
+    ];
 
     [Fact]
     public void file_not_empty_should_pass_validation()
@@ -22,10 +41,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(_MinimalFileSize);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -44,10 +60,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(0);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -66,10 +79,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(_MinimalFileSize - 1);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -88,10 +98,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(_MinimalFileSize + 1);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -110,10 +117,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(_MinimalFileSize);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -132,10 +136,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(_MaximalFileSize + 1);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -154,10 +155,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(_MaximalFileSize - 1);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -176,10 +174,7 @@ public class FileValidatorsTests
         var file = Substitute.For<IFormFile>();
         file.Length.Returns(_MaximalFileSize);
 
-        var model = new FileUploadTestModel
-        {
-            UploadedFile = file,
-        };
+        var model = new FileUploadTestModel { UploadedFile = file };
 
         // when
         var result = validator.TestValidate(model);
@@ -296,52 +291,50 @@ public class FileValidatorsTests
 
     #region Helper Classes
 
-    private class FileUploadTestModel
+    private sealed class FileUploadTestModel
     {
         public IFormFile? UploadedFile { get; init; }
     }
 
-    private class TestFileFormat(byte[] signature) : FileFormat(signature, "application/test", ".test");
+    private sealed class TestFileFormat(byte[] signature) : FileFormat(signature, "application/test", ".test");
 
     #endregion
 
     #region Helper Validator Classes
 
-    private class FileNotEmptyWithSpecificMinimumSizeValidator : AbstractValidator<FileUploadTestModel>
+    private sealed class FileNotEmptyWithSpecificMinimumSizeValidator : AbstractValidator<FileUploadTestModel>
     {
         public FileNotEmptyWithSpecificMinimumSizeValidator()
         {
-            RuleFor(x => x.UploadedFile)
-                .FileNotEmpty()
-                .GreaterThanOrEqualTo(_MinimalFileSize);
+            RuleFor(x => x.UploadedFile).FileNotEmpty().GreaterThanOrEqualTo(_MinimalFileSize);
         }
     }
 
-    private class FileNotEmptyWithSpecificMaximumSizeValidator : AbstractValidator<FileUploadTestModel>
+    private sealed class FileNotEmptyWithSpecificMaximumSizeValidator : AbstractValidator<FileUploadTestModel>
     {
         public FileNotEmptyWithSpecificMaximumSizeValidator()
         {
-            RuleFor(x => x.UploadedFile)
-                .FileNotEmpty()
-                .LessThanOrEqualTo(_MaximalFileSize);
+            RuleFor(x => x.UploadedFile).FileNotEmpty().LessThanOrEqualTo(_MaximalFileSize);
         }
     }
 
-    private class FileContentUploadValidator : AbstractValidator<FileUploadTestModel>
+    private sealed class FileContentUploadValidator : AbstractValidator<FileUploadTestModel>
     {
         public FileContentUploadValidator()
         {
-            RuleFor(x => x.UploadedFile)
-                .ContentTypes(["image/jpeg", "image/png"]);
+            RuleFor(x => x.UploadedFile).ContentTypes(["image/jpeg", "image/png"]);
         }
     }
 
-    private class FileSignatureUploadValidator : AbstractValidator<FileUploadTestModel>
+    private sealed class FileSignatureUploadValidator : AbstractValidator<FileUploadTestModel>
     {
         public FileSignatureUploadValidator(IFileFormatInspector inspector)
         {
             RuleFor(x => x.UploadedFile)
-                .HaveSignatures(inspector, format => format?.Signature.ToList().SequenceEqual(_FileSignatureBytes) == true);
+                .HaveSignatures(
+                    inspector,
+                    format => format?.Signature.ToList().SequenceEqual(_FileSignatureBytes) == true
+                );
         }
     }
 

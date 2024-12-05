@@ -19,4 +19,3 @@
   - Blobs
   - Resource lock like foundatio & abp
   - Settings/Permissions/Features integration test like abp
-

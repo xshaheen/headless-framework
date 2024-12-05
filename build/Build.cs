@@ -16,17 +16,17 @@ file sealed class Build : NukeBuild
 {
     public static int Main() => Execute<Build>(x => x.Compile);
 
-    [Solution]
-    readonly Solution Solution = default!;
-
-    [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
-    readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
-
     static readonly AbsolutePath SourceDirectory = RootDirectory / "src";
     static readonly AbsolutePath TestsDirectory = RootDirectory / "tests";
     static readonly AbsolutePath OutputDirectory = RootDirectory / "artifacts";
     static readonly AbsolutePath TestResults = OutputDirectory / "test-results";
     static readonly AbsolutePath PackagesResults = OutputDirectory / "packages-results";
+
+    [Solution]
+    readonly Solution Solution = default!;
+
+    [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
+    readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
     #region Build
 

@@ -77,7 +77,7 @@ public class SystemJsonSerializerTests
         act.Should().Throw<JsonException>();
     }
 
-    private class TestClass
+    private sealed class TestClass
     {
         public required string Name { get; init; }
 
