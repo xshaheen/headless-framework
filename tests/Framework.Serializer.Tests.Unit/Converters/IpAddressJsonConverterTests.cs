@@ -14,7 +14,7 @@ public class IpAddressJsonConverterTests
     };
 
     [Fact]
-    public void reading_valid_ip_should_return_valid_ip_address_object()
+    public void ip_json_converter_should_return_valid_ip_object_when_reading_valid_ip_json()
     {
         // given
         const string json = "\"192.168.1.1\"";
@@ -27,7 +27,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void given_null_json_ip_should_return_null_object()
+    public void ip_json_converter_should_return_null_ip_object_when_reading_null_json_string()
     {
         // given
         const string json = "null";
@@ -40,7 +40,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void converter_should_write_valid_ip_address_to_json()
+    public void ip_json_converter_should_write_valid_ip_string_json_when_writing_valid_ip()
     {
         // given
         var ip = IPAddress.Parse("192.168.1.1");
@@ -53,7 +53,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void converter_should_write_null_when_given_null_ip_object()
+    public void ip_json_converter_should_write_null_json_string_when_writing_null_ip_object()
     {
         // given
         IPAddress? ip = null;
@@ -66,7 +66,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void reading_invalid_ip_string_should_throw_exception()
+    public void ip_json_converter_should_throw_when_reading_invalid_ip_json_string()
     {
         // given
         const string json = "\"999.999.999.999\"";
@@ -79,7 +79,7 @@ public class IpAddressJsonConverterTests
     }
 
     [Fact]
-    public void given_empty_string_when_read_then_should_throw_exception()
+    public void ip_json_converter_should_throw_when_reading_empty_json_string()
     {
         // given
         const string json = "\"\"";
