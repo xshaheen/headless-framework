@@ -3,40 +3,17 @@
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
 using Framework.Blobs;
 using Framework.Blobs.Aws;
 using Framework.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Options;
+using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output), IAsyncLifetime
+[Collection(nameof(AwsBlobTestFixture))]
+public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
 {
-    private readonly IContainer _localstackContainer = new ContainerBuilder()
-        .WithImage("localstack/localstack:3.0.2")
-        .WithPortBinding("4563-4599", "4563-4599")
-        .WithPortBinding(8055, 8080)
-        .WithEnvironment("SERVICES", "s3")
-        .WithEnvironment("DEBUG", "1")
-        .WithBindMount("localstackdata", "/var/lib/localstack")
-        .WithBindMount("/var/run/docker.sock", "/var/run/docker.sock")
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(8080))
-        .Build();
-
-    /// <summary>This runs before all the test run and Called just after the constructor</summary>
-    public Task InitializeAsync()
-    {
-        return _localstackContainer.StartAsync();
-    }
-
-    /// <summary>This runs after all the test run and Called before Dispose()</summary>
-    public Task DisposeAsync()
-    {
-        return _localstackContainer.StopAsync();
-    }
-
     protected override IBlobStorage GetStorage()
     {
         var s3Config = new AmazonS3Config

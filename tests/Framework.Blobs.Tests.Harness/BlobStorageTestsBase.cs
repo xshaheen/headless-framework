@@ -690,8 +690,6 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         await _DeleteWorkMarkerAsync(storage, container, blobName);
     }
 
-    #endregion
-
     private sealed record Post
     {
         public int ApiVersion { get; init; }
@@ -710,4 +708,6 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         public string? UserAgent { get; init; }
     }
+
+    #endregion
 }
