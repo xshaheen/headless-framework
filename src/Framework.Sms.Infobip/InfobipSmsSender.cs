@@ -31,13 +31,13 @@ public sealed class InfobipSmsSender : ISmsSender
         CancellationToken token = default
     )
     {
-        FormattableString to = $"{request.Destination.Code}{request.Destination.Number}";
+        var messageId = request.MessageId ?? Guid.NewGuid().ToString();
 
         var smsMessage = new SmsTextualMessage
         {
             From = _sender,
-            Destinations = [new(messageId: Guid.NewGuid().ToString(), to: to.ToInvariantString())],
             Text = request.Text,
+            Destinations = [new(messageId, to: $"{request.Destination.Code.ToString(CultureInfo.InvariantCulture)}{request.Destination.Number}")],
         };
 
         var smsRequest = new SmsAdvancedTextualRequest { Messages = [smsMessage] };
@@ -45,7 +45,7 @@ public sealed class InfobipSmsSender : ISmsSender
         try
         {
             var smsResponse = await _smsApi.SendSmsMessageAsync(smsRequest, token);
-            _logger.LogInformation("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
+            _logger.LogTrace("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
 
             return SendSingleSmsResponse.Succeeded();
         }

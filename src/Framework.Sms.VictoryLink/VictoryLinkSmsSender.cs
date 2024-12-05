@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using Framework.Checks;
 using Framework.Sms.VictoryLink.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,71 +15,49 @@ public sealed class VictoryLinkSmsSender(
 ) : ISmsSender
 {
     private readonly VictoryLinkOptions _options = optionsAccessor.Value;
-
-    private readonly Uri _uri =
-        new("https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS");
-
-    private readonly Dictionary<string, string> _responseCodeMap =
-        new(StringComparer.Ordinal)
-        {
-            { "0", "Message Sent Successfully" },
-            { "-1", "User is not subscribed" },
-            { "-5", "Out of credit." },
-            { "-10", "Queued Message, no need to send it again." },
-            { "-11", "Invalid language." },
-            { "-12", "SMS is empty." },
-            { "-13", "Invalid fake sender exceeded 12 chars or empty." },
-            { "-25", "Sending rate greater than receiving rate (only for send/receive accounts)." },
-            { "-100", "Other error" },
-        };
+    private readonly Uri _uri = new(optionsAccessor.Value.SendSmsEndpointUrl);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
         CancellationToken token = default
     )
     {
+        Argument.IsNotNull(request);
+
         var victoryLinkRequest = new VictoryLinkRequest
         {
+            SmsId = request.MessageId ?? Guid.NewGuid().ToString(),
             UserName = _options.UserName,
             Password = _options.Password,
             SmsText = request.Text,
             SmsLang = request.Text.IsRtlText() ? "a" : "e",
             SmsSender = _options.Sender,
             SmsReceiver = request.Destination.Number,
-            SmsId = request.MessageId ?? Guid.NewGuid().ToString(),
         };
 
         var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);
-        var content = await response.Content.ReadAsStringAsync(token);
+        var responseContent = await response.Content.ReadAsStringAsync(token);
 
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(responseContent))
         {
             logger.LogError("Empty response from VictoryLink API");
 
             return SendSingleSmsResponse.Failed("Empty response from VictoryLink API");
         }
 
-        if (!_responseCodeMap.TryGetValue(content, out var message))
-        {
-            logger.LogError("Unknown response code from VictoryLink API: {ResponseCode}", content);
-
-            return SendSingleSmsResponse.Failed("Unknown response code from VictoryLink API");
-        }
-
-        if (string.Equals(content, "0", StringComparison.Ordinal))
+        if (VictoryLinkResponseCodes.IsSuccess(responseContent))
         {
             return SendSingleSmsResponse.Succeeded();
         }
 
-        var codeMessage = _responseCodeMap.GetOrDefault(content) ?? content;
+        var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(responseContent);
 
         logger.LogError(
-            "Failed to send VictoryLink SMS={Message} ResponseContent={Content} CodeMessage={Code}",
-            message,
-            content,
-            codeMessage
+            "Failed to send VictoryLink - ResponseContent={Content} - Message SMS={Message}",
+            responseMessage,
+            responseContent
         );
 
-        return SendSingleSmsResponse.Failed(message);
+        return SendSingleSmsResponse.Failed(responseMessage);
     }
 }
