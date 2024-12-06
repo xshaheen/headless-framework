@@ -25,6 +25,27 @@ max_line_length = 120
 [*.sln]
 indent_style = tab
 
+# Verify settings
+# https://github.com/VerifyTests/Verify?tab=readme-ov-file#text-file-settings
+[*.{received,verified}.{txt,xml,json}]
+charset = utf-8-bom
+end_of_line = lf
+indent_size = unset
+indent_style = unset
+insert_final_newline = false
+tab_width = unset
+trim_trailing_whitespace = false
+
+# Generated code
+[*{_AssemblyInfo.cs,.notsupported.cs,.generated.cs}]
+generated_code = true
+
+# Razor and cshtml files
+# UTF-8-BOM is set as default, as all official template files use UTF-8-BOM
+# See https://github.com/dotnet/aspnetcore/pull/23502 and https://github.com/dotnet/aspnetcore/issues/22753
+[*.{razor,cshtml}]
+charset = utf-8-bom
+
 # Visual Studio XML Project Files
 [*.{csproj,vbproj,vcxproj.filters,proj,projitems,shproj}]
 indent_size = 2
@@ -447,7 +468,7 @@ csharp_new_line_between_query_expression_clauses = true
 # Indentation options
 csharp_indent_case_contents = true
 csharp_indent_switch_labels = true
-csharp_indent_labels = no_change
+csharp_indent_labels = one_less_than_current
 csharp_indent_block_contents = true
 csharp_indent_braces = false
 csharp_indent_case_contents_when_block = false
@@ -745,5 +766,21 @@ resharper_suggest_var_or_type_simple_types_highlighting = hint
 resharper_unused_auto_property_accessor_global_highlighting = suggestion
 resharper_unused_auto_property_accessor_local_highlighting = suggestion
 resharper_unused_type_parameter_highlighting = suggestion
+
+# [CSharpier] Incompatible rules deactivated
+# https://csharpier.com/docs/IntegratingWithLinters#code-analysis-rules
+dotnet_diagnostic.IDE0055.severity                                      = none
+dotnet_diagnostic.SA1000.severity                                       = none
+dotnet_diagnostic.SA1009.severity                                       = none
+dotnet_diagnostic.SA1111.severity                                       = none
+dotnet_diagnostic.SA1118.severity                                       = none
+dotnet_diagnostic.SA1137.severity                                       = none
+dotnet_diagnostic.SA1413.severity                                       = none
+dotnet_diagnostic.SA1500.severity                                       = none
+dotnet_diagnostic.SA1501.severity                                       = none
+dotnet_diagnostic.SA1502.severity                                       = none
+dotnet_diagnostic.SA1504.severity                                       = none
+dotnet_diagnostic.SA1515.severity                                       = none
+dotnet_diagnostic.SA1516.severity                                       = none
 
 # Inspired by: https://github.com/RehanSaeed/EditorConfig commit d06930296a9e8fbb6f2d8ea39f4c789c3e5399ff
