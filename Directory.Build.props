@@ -23,27 +23,16 @@
     <NoWarn>$(NoWarn),1573,1591,1712</NoWarn>
   </PropertyGroup>
 
-  <PropertyGroup Label="Nuget settings">
-    <!-- 👇 Use directory.packages.props for nuget package versions -->
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <!-- 👇 Enable deterministic restore -->
-    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
-    <!-- 👇 Enable faster restore times -->
-    <RestoreUseStaticGraphEvaluation>true</RestoreUseStaticGraphEvaluation>
-    <!-- 👇 Provides warnings during restore if any packages used by your project have known vulnerabilities (direct|all) -->
-    <NuGetAuditMode>direct</NuGetAuditMode>
-  </PropertyGroup>
+  <ItemGroup Label="Json Config">
+    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectRequiredConstructorParametersDefault" Value="true" />
+    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectNullableAnnotationsDefault" Value="true" />
+  </ItemGroup>
 
   <ItemGroup Label="Global usings">
     <Using Include="System.Collections.Frozen" />
     <Using Include="System.Collections.Immutable" />
     <Using Include="System.Globalization" />
     <Using Include="JetBrains.Annotations" />
-  </ItemGroup>
-
-  <ItemGroup Label="Global Json Config">
-    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectRequiredConstructorParametersDefault" Value="true" />
-    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectNullableAnnotationsDefault" Value="true" />
   </ItemGroup>
 
   <ItemGroup Label="Package References">
