@@ -259,6 +259,22 @@ public static class StringExtensions
         return input.EndsWith(postfix) ? input[..^1] : input;
     }
 
+    [SystemPure]
+    [JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(input))]
+    public static string? RemoveCharacter(this string? input, char character)
+    {
+        return string.IsNullOrEmpty(input) ? null : string.Concat(input.Split(character));
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(input))]
+    public static string? RemoveCharacters(this string? input, params char[] unwantedCharacters)
+    {
+        return string.IsNullOrEmpty(input) ? null : string.Concat(input.Split(unwantedCharacters));
+    }
+
     /// <summary>
     /// Removes the first occurrence of the given prefixes from the beginning of the given string.
     /// </summary>
@@ -686,6 +702,7 @@ public static class StringExtensions
         var data = MD5.HashData(Encoding.UTF8.GetBytes(str));
 
         var sb = new StringBuilder();
+
         foreach (var d in data)
         {
             sb.Append(d.ToString("X2", CultureInfo.InvariantCulture));
@@ -701,6 +718,7 @@ public static class StringExtensions
         var data = SHA256.HashData(Encoding.UTF8.GetBytes(str));
 
         var sb = new StringBuilder();
+
         foreach (var d in data)
         {
             sb.Append(d.ToString("x2", CultureInfo.InvariantCulture));
@@ -716,6 +734,7 @@ public static class StringExtensions
         var data = SHA512.HashData(Encoding.UTF8.GetBytes(str));
 
         var sb = new StringBuilder();
+
         foreach (var d in data)
         {
             sb.Append(d.ToString("x2", CultureInfo.InvariantCulture));
