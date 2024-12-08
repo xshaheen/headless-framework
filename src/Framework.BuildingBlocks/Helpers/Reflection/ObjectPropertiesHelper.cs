@@ -9,8 +9,9 @@ namespace Framework.BuildingBlocks.Helpers.Reflection;
 [PublicAPI]
 public static class ObjectPropertiesHelper
 {
-    private static readonly ConcurrentDictionary<string, PropertyInfo?> _CachedObjectProperties =
-        new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, PropertyInfo?> _CachedObjectProperties = new(
+        StringComparer.Ordinal
+    );
 
     public static void TrySetProperty<TObject, TValue>(
         TObject obj,

@@ -36,8 +36,10 @@ public interface ICashOutService
 public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
     : ICashOutService
 {
-    private static readonly JsonSerializerOptions _Options =
-        new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+    private static readonly JsonSerializerOptions _Options = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(VodafoneCashOutRequest request)
     {

@@ -15,8 +15,9 @@ namespace Framework.Orm.EntityFramework.AuditLogs;
 
 public static class AuditLogCreator
 {
-    private static readonly ConcurrentDictionary<string, List<TrackedEntity>> _EntityTrackedPropertiesMap =
-        new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, List<TrackedEntity>> _EntityTrackedPropertiesMap = new(
+        StringComparer.Ordinal
+    );
 
     public static IEnumerable<AuditLog> CreateAudit(IAuditScope auditScope)
     {

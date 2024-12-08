@@ -8,24 +8,23 @@ namespace Framework.Testing.Helpers;
 
 public static class TestHelpers
 {
-    public static readonly JsonSerializerOptions JsonSerializerOptions =
-        new()
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            NumberHandling = JsonNumberHandling.Strict,
-            ReadCommentHandling = JsonCommentHandling.Disallow,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            PropertyNamingPolicy = null,
-            DictionaryKeyPolicy = null,
-            PropertyNameCaseInsensitive = false,
-            IgnoreReadOnlyProperties = false,
-            IncludeFields = false,
-            IgnoreReadOnlyFields = false,
-            WriteIndented = true,
-            AllowTrailingCommas = false,
-            ReferenceHandler = null,
-            Converters = { new JsonStringEnumConverter(allowIntegerValues: false) },
-        };
+    public static readonly JsonSerializerOptions JsonSerializerOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        NumberHandling = JsonNumberHandling.Strict,
+        ReadCommentHandling = JsonCommentHandling.Disallow,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNamingPolicy = null,
+        DictionaryKeyPolicy = null,
+        PropertyNameCaseInsensitive = false,
+        IgnoreReadOnlyProperties = false,
+        IncludeFields = false,
+        IgnoreReadOnlyFields = false,
+        WriteIndented = true,
+        AllowTrailingCommas = false,
+        ReferenceHandler = null,
+        Converters = { new JsonStringEnumConverter(allowIntegerValues: false) },
+    };
 
     public static string PrettyPrintJson(this string json)
     {

@@ -11,8 +11,10 @@ namespace Tests;
 
 public partial class PaymobCashInBrokerTests
 {
-    private static readonly JsonSerializerOptions _IgnoreNullOptions =
-        new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+    private static readonly JsonSerializerOptions _IgnoreNullOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
     [Fact]
     public async Task should_make_call_and_return_response_when_create_order()

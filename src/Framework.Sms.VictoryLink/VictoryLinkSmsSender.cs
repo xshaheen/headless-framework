@@ -10,11 +10,11 @@ namespace Framework.Sms.VictoryLink;
 
 public sealed class VictoryLinkSmsSender(
     HttpClient httpClient,
-    IOptions<VictoryLinkOptions> optionsAccessor,
+    IOptions<VictoryLinkSmsOptions> optionsAccessor,
     ILogger<VictoryLinkSmsSender> logger
 ) : ISmsSender
 {
-    private readonly VictoryLinkOptions _options = optionsAccessor.Value;
+    private readonly VictoryLinkSmsOptions _options = optionsAccessor.Value;
     private readonly Uri _uri = new(optionsAccessor.Value.SendSmsEndpointUrl);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -36,26 +36,26 @@ public sealed class VictoryLinkSmsSender(
         };
 
         var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);
-        var responseContent = await response.Content.ReadAsStringAsync(token);
+        var rawContent = await response.Content.ReadAsStringAsync(token);
 
-        if (string.IsNullOrWhiteSpace(responseContent))
+        if (string.IsNullOrWhiteSpace(rawContent))
         {
-            logger.LogError("Empty response from VictoryLink API");
+            logger.LogError("Empty response from VictoryLink SMS API");
 
-            return SendSingleSmsResponse.Failed("Empty response from VictoryLink API");
+            return SendSingleSmsResponse.Failed("Failed to send.");
         }
 
-        if (VictoryLinkResponseCodes.IsSuccess(responseContent))
+        if (VictoryLinkResponseCodes.IsSuccess(rawContent))
         {
             return SendSingleSmsResponse.Succeeded();
         }
 
-        var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(responseContent);
+        var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(rawContent);
 
         logger.LogError(
-            "Failed to send VictoryLink - ResponseContent={Content} - Message SMS={Message}",
+            "Failed to send SMS using VictoryLink. ResponseContent={Content} - ResponseContent={RawContent}",
             responseMessage,
-            responseContent
+            rawContent
         );
 
         return SendSingleSmsResponse.Failed(responseMessage);

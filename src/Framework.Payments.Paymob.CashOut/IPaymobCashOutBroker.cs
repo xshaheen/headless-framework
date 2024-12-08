@@ -24,8 +24,10 @@ public interface IPaymobCashOutBroker
 public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAuthenticator authenticator)
     : IPaymobCashOutBroker
 {
-    private static readonly JsonSerializerOptions _Options =
-        new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+    private static readonly JsonSerializerOptions _Options = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
     public async Task<CashOutTransaction> Disburse(CashOutDisburseRequest request)
     {

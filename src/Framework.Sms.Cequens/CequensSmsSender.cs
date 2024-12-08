@@ -23,11 +23,8 @@ public sealed class CequensSmsSender(
     )
     {
         httpClient.BaseAddress = new Uri(_options.Uri);
-
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            await _GetTokenRequest(token) ?? _options.Token
-        );
+        var jwtToken = await _GetTokenRequest(token) ?? _options.Token;
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwtToken);
 
         var apiRequest = new
         {
@@ -40,24 +37,26 @@ public sealed class CequensSmsSender(
         };
 
         var response = await httpClient.PostAsJsonAsync("sms/v1/messages", apiRequest, token);
-        var content = await response.Content.ReadAsStringAsync(token);
+        var rawContent = await response.Content.ReadAsStringAsync(token);
 
-        if (!response.IsSuccessStatusCode)
+        if (response.IsSuccessStatusCode)
         {
-            var error = string.IsNullOrEmpty(content) ? "Failed to send SMS using Cequens API" : content;
-            logger.LogError("Failed to send SMS using Cequens API: {StatusCode}, {Body}", response.StatusCode, error);
+            logger.LogTrace(
+                "SMS sent successfully using Cequens API: {StatusCode}, {Body}",
+                response.StatusCode,
+                rawContent
+            );
 
-            return SendSingleSmsResponse.Failed(error);
+            return SendSingleSmsResponse.Succeeded();
         }
 
-        logger.LogInformation(
-            "SMS sent successfully using Cequens API: {StatusCode}, {Body}",
-            response.StatusCode,
-            content
-        );
+        var error = string.IsNullOrEmpty(rawContent) ? "Failed to send SMS using Cequens API" : rawContent;
+        logger.LogError("Failed to send SMS using Cequens API: {StatusCode}, {Body}", response.StatusCode, error);
 
-        return SendSingleSmsResponse.Succeeded();
+        return SendSingleSmsResponse.Failed(error);
     }
+
+    #region Helpers
 
     private async Task<string?> _GetTokenRequest(CancellationToken cancellationToken)
     {
@@ -89,4 +88,6 @@ public sealed class CequensSmsSender(
             public required string AccessToken { get; init; }
         }
     }
+
+    #endregion
 }

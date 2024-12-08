@@ -4,43 +4,43 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http.Resilience;
 
-namespace Framework.Sms.VictoryLink;
+namespace Framework.Sms.Connekio;
 
 [PublicAPI]
-public static class AddVictoryLinkExtensions
+public static class AddConnekioSmsExtensions
 {
-    public static IServiceCollection AddVictoryLinkSmsSender(
+    public static IServiceCollection AddConnekioSmsSender(
         this IServiceCollection services,
         IConfiguration config,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(config);
+        services.ConfigureSingleton<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
-    public static IServiceCollection AddVictoryLinkSmsSender(
+    public static IServiceCollection AddConnekioSmsSender(
         this IServiceCollection services,
-        Action<VictoryLinkSmsOptions, IServiceProvider> setupAction,
+        Action<ConnekioSmsOptions, IServiceProvider> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(setupAction);
+        services.ConfigureSingleton<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
-    public static IServiceCollection AddVictoryLinkSmsSender(
+    public static IServiceCollection AddConnekioSmsSender(
         this IServiceCollection services,
-        Action<VictoryLinkSmsOptions> setupAction,
+        Action<ConnekioSmsOptions> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(setupAction);
+        services.ConfigureSingleton<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -51,11 +51,11 @@ public static class AddVictoryLinkExtensions
         Action<HttpStandardResilienceOptions>? configureResilience
     )
     {
-        services.AddSingleton<ISmsSender, VictoryLinkSmsSender>();
+        services.AddSingleton<ISmsSender, ConnekioSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, VictoryLinkSmsSender>()
-            : services.AddHttpClient<ISmsSender, VictoryLinkSmsSender>(configureClient);
+            ? services.AddHttpClient<ISmsSender, ConnekioSmsSender>()
+            : services.AddHttpClient<ISmsSender, ConnekioSmsSender>(configureClient);
 
         if (configureResilience is not null)
         {

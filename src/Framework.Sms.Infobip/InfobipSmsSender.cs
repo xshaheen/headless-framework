@@ -37,7 +37,13 @@ public sealed class InfobipSmsSender : ISmsSender
         {
             From = _sender,
             Text = request.Text,
-            Destinations = [new(messageId, to: $"{request.Destination.Code.ToString(CultureInfo.InvariantCulture)}{request.Destination.Number}")],
+            Destinations =
+            [
+                new(
+                    messageId,
+                    to: $"{request.Destination.Code.ToString(CultureInfo.InvariantCulture)}{request.Destination.Number}"
+                ),
+            ],
         };
 
         var smsRequest = new SmsAdvancedTextualRequest { Messages = [smsMessage] };

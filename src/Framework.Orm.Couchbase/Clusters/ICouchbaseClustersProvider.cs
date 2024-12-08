@@ -22,8 +22,9 @@ public sealed class CouchbaseClustersProvider(
     ILogger<CouchbaseClustersProvider> logger
 ) : ICouchbaseClustersProvider
 {
-    private static readonly ConcurrentDictionary<string, AsyncLazy<GetClusterResult>> _Clusters =
-        new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, AsyncLazy<GetClusterResult>> _Clusters = new(
+        StringComparer.Ordinal
+    );
 
     public async ValueTask<GetClusterResult> GetClusterAsync(string clusterKey)
     {

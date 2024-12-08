@@ -6,20 +6,19 @@ namespace Tests.BuildingBlocks.Helpers;
 
 public sealed class FileHelperTests
 {
-    public static readonly TheoryData<string, string> SanitizeFileNameData =
-        new()
-        {
-            { "_", "_" },
-            { "hello-word", "hello-word" },
-            // Remove invalid file name chars
-            { "/hello/-/word/", "hello-word" },
-            { "%hello\nword___)..", "%helloword___).." },
-            { "شاهين", "شاهين" },
-            // Remove duplicated spaces
-            { "hello   \n\t word", "hello word" },
-            // HTML encode
-            { "<>@hello \n   word&", "@hello word&amp;" },
-        };
+    public static readonly TheoryData<string, string> SanitizeFileNameData = new()
+    {
+        { "_", "_" },
+        { "hello-word", "hello-word" },
+        // Remove invalid file name chars
+        { "/hello/-/word/", "hello-word" },
+        { "%hello\nword___)..", "%helloword___).." },
+        { "شاهين", "شاهين" },
+        // Remove duplicated spaces
+        { "hello   \n\t word", "hello word" },
+        // HTML encode
+        { "<>@hello \n   word&", "@hello word&amp;" },
+    };
 
     [Theory]
     [MemberData(nameof(SanitizeFileNameData))]
