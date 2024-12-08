@@ -4,7 +4,7 @@ namespace Framework.Sitemaps;
 
 /// <summary>Represents sitemap URL node.</summary>
 [PublicAPI]
-public sealed record SitemapUrl
+public sealed class SitemapUrl
 {
     /// <summary>Create a sitemap URL.</summary>
     /// <param name="location"></param>
@@ -15,13 +15,15 @@ public sealed record SitemapUrl
         Uri location,
         DateTime? lastModified = null,
         ChangeFrequency? changeFrequency = null,
-        float? priority = null
+        float? priority = null,
+        IEnumerable<SitemapImage>? images = null
     )
     {
         Location = location;
         LastModified = lastModified;
         ChangeFrequency = changeFrequency;
         Priority = priority;
+        Images = images;
     }
 
     /// <summary>Create a sitemap URL that with its alternates.</summary>
@@ -33,20 +35,19 @@ public sealed record SitemapUrl
         IEnumerable<SitemapAlternateUrl> alternateLocations,
         DateTime? lastModified = null,
         ChangeFrequency? changeFrequency = null,
-        float? priority = null
+        float? priority = null,
+        IEnumerable<SitemapImage>? images = null
     )
     {
         AlternateLocations = alternateLocations;
         LastModified = lastModified;
         ChangeFrequency = changeFrequency;
         Priority = priority;
+        Images = images;
     }
 
     /// <summary>Gets the full URL of the page.</summary>
     public Uri? Location { get; }
-
-    /// <summary>Gets alternate localized URLs of the page.</summary>
-    public IEnumerable<SitemapAlternateUrl>? AlternateLocations { get; }
 
     /// <summary>The date of the last modification of the page. Currently (2021) Google ignores it.</summary>
     public float? Priority { get; }
@@ -60,4 +61,12 @@ public sealed record SitemapUrl
     /// </summary>
     /// <remarks>Currently (2021) Google ignore it.</remarks>
     public ChangeFrequency? ChangeFrequency { get; }
+
+    /// <summary>Gets alternate localized URLs of the page.</summary>
+    public IEnumerable<SitemapAlternateUrl>? AlternateLocations { get; }
+
+    /// <summary>
+    /// Encloses all information about a single image. Each &lt;url&gt; tag can contain up to 1,000 image tags.
+    /// </summary>
+    public IEnumerable<SitemapImage>? Images { get; }
 }

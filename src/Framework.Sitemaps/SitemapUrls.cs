@@ -36,6 +36,16 @@ public static class SitemapUrls
     /// <summary>Write a sitemap file into the stream.</summary>
     public static async Task WriteToAsync(this IReadOnlyCollection<SitemapUrl> sitemapUrls, Stream output)
     {
+        /*
+         * <?xml version="1.0" encoding="UTF-8"?>
+         * <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+         *   <url>
+         *     <loc>https://www.example.com/foo.html</loc>
+         *     <lastmod>2022-06-04</lastmod>
+         *   </url>
+         * </urlset>
+         */
+
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
         await writer.WriteStartDocumentAsync();
 
@@ -45,13 +55,29 @@ public static class SitemapUrls
             ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
         );
 
-        if (sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null))
+        // Add xmlns:xhtml attribute if there are alternate URLs
+        var hasAlternateUrls = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null);
+
+        if (hasAlternateUrls)
         {
             await writer.WriteAttributeStringAsync(
                 prefix: "xmlns",
                 localName: "xhtml",
                 ns: null,
                 value: "http://www.w3.org/1999/xhtml"
+            );
+        }
+
+        // Add xmlns:image attribute if there are images
+        var hasImages = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.Images is not null);
+
+        if (hasImages)
+        {
+            await writer.WriteAttributeStringAsync(
+                prefix: "xmlns",
+                localName: "image",
+                ns: null,
+                value: "http://www.google.com/schemas/sitemap-image/1.1"
             );
         }
 
@@ -64,6 +90,8 @@ public static class SitemapUrls
         await writer.WriteEndElementAsync();
     }
 
+    #region Helpers
+
     private static async Task _WriteUrlNodeAsync(XmlWriter writer, SitemapUrl sitemapUrl)
     {
         var hasAlternates = sitemapUrl.AlternateLocations is not null;
@@ -71,12 +99,19 @@ public static class SitemapUrls
         if (!hasAlternates)
         {
             await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null);
+
             await writer.WriteElementStringAsync(
                 prefix: null,
                 localName: "loc",
                 ns: null,
                 value: sitemapUrl.Location!.AbsoluteUri
             );
+
+            if (sitemapUrl.Images is not null)
+            {
+                await _WriteImagesAsync(writer, sitemapUrl.Images);
+            }
+
             _WriteOtherNodes(writer, sitemapUrl);
             await writer.WriteEndElementAsync();
 
@@ -88,14 +123,26 @@ public static class SitemapUrls
         foreach (var url in sitemapUrl.AlternateLocations!)
         {
             await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null);
+
             await writer.WriteElementStringAsync(
                 prefix: null,
                 localName: "loc",
                 ns: null,
                 value: url.Location.AbsoluteUri
             );
+
+            // Write images in each alternate URL
+            if (sitemapUrl.Images is not null)
+            {
+                await _WriteImagesAsync(writer, sitemapUrl.Images);
+            }
+
+            // Write alternate URLs
             await _WriteAlternateUrlsReferenceAsync(writer, sitemapUrl.AlternateLocations);
+
+            // Write properties
             _WriteOtherNodes(writer, sitemapUrl);
+
             await writer.WriteEndElementAsync();
         }
     }
@@ -109,18 +156,47 @@ public static class SitemapUrls
         {
             await writer.WriteStartElementAsync(prefix: "xhtml", localName: "link", ns: null);
             await writer.WriteAttributeStringAsync(prefix: null, localName: "rel", ns: null, value: "alternate");
+
             await writer.WriteAttributeStringAsync(
                 prefix: null,
                 localName: "hreflang",
                 ns: null,
                 value: alternate.LanguageCode
             );
+
             await writer.WriteAttributeStringAsync(
                 prefix: null,
                 localName: "href",
                 ns: null,
                 value: alternate.Location.AbsoluteUri
             );
+
+            await writer.WriteEndElementAsync();
+        }
+    }
+
+    private static async Task _WriteImagesAsync(
+        XmlWriter writer,
+        IEnumerable<SitemapImage> images
+    )
+    {
+        /*
+         * <image:image>
+         *     <image:loc>https://example.com/image.jpg</image:loc>
+         * </image:image>
+         */
+
+        foreach (var image in images)
+        {
+            await writer.WriteStartElementAsync(prefix: "image", localName: "image", ns: null);
+
+            await writer.WriteElementStringAsync(
+                prefix: "image",
+                localName: "loc",
+                ns: null,
+                value: image.Location.AbsoluteUri
+            );
+
             await writer.WriteEndElementAsync();
         }
     }
@@ -149,4 +225,6 @@ public static class SitemapUrls
             writer.WriteElementString(localName: "lastmod", value);
         }
     }
+
+    #endregion
 }

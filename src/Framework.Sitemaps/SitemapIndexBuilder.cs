@@ -9,9 +9,22 @@ namespace Framework.Sitemaps;
 [PublicAPI]
 public static class SitemapIndexBuilder
 {
-    /// <summary>Write sitemap index file into the stream.</summary>
+    /// <summary>Write a sitemap index file into the stream.</summary>
     public static async Task WriteToAsync(this IEnumerable<SitemapReference> sitemapReferences, Stream output)
     {
+        /*
+         * <?xml version="1.0" encoding="UTF-8"?>
+         * <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+         *   <sitemap>
+         *     <loc>https://www.example.com/sitemap1.xml.gz</loc>
+         *     <lastmod>2004-10-01T18:23:17+00:00</lastmod>
+         *   </sitemap>
+         *   <sitemap>
+         *     <loc>https://www.example.com/sitemap2.xml.gz</loc>
+         *   </sitemap>
+         * </sitemapindex>
+         */
+
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
         await writer.WriteStartDocumentAsync();
 
@@ -33,6 +46,7 @@ public static class SitemapIndexBuilder
     private static async Task _WriteSitemapRefNodeAsync(XmlWriter writer, SitemapReference sitemapRef)
     {
         await writer.WriteStartElementAsync(prefix: null, localName: "sitemap", ns: null);
+
         await writer.WriteElementStringAsync(
             prefix: null,
             localName: "loc",
