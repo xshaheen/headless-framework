@@ -26,8 +26,8 @@ public sealed class ConnekioSmsSender : ISmsSender
         _httpClient = httpClient;
         _logger = logger;
         _options = optionsAccessor.Value;
-        _singleSmsEndpoint = new(_options.SingleSmsEndpointUrl);
-        _batchSmsEndpoint = new(_options.BatchSmsEndpointUrl);
+        _singleSmsEndpoint = new(_options.SingleSmsEndpoint);
+        _batchSmsEndpoint = new(_options.BatchSmsEndpoint);
     }
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(

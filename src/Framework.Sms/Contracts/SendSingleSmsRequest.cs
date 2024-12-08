@@ -23,9 +23,20 @@ public sealed class SendSingleSmsRequest
 [PublicAPI]
 public sealed record SmsRequestDestination(int Code, string Number)
 {
-    public override string ToString()
+    public override string ToString() => ToString(hasPlusPrefix: false);
+
+    public string ToString(bool hasPlusPrefix)
     {
-        FormattableString format = $"+{Code}{Number}";
+        FormattableString format;
+
+        if (hasPlusPrefix)
+        {
+            format = $"+{Code}{Number}";
+        }
+        else
+        {
+            format = $"{Code}{Number}";
+        }
 
         return format.ToString(CultureInfo.InvariantCulture);
     }

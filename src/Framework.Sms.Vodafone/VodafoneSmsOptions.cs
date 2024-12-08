@@ -7,7 +7,7 @@ namespace Framework.Sms.Vodafone;
 
 public sealed class VodafoneSmsOptions
 {
-    public required string SendSmsEndpointUrl { get; init; } = "https://e3len.vodafone.com.eg/web2sms/sms/submit/";
+    public required string SendSmsEndpoint { get; init; } = "https://e3len.vodafone.com.eg/web2sms/sms/submit/";
 
     public required string Sender { get; init; }
 
@@ -22,7 +22,7 @@ internal sealed class VodafoneSmsOptionsValidator : AbstractValidator<VodafoneSm
 {
     public VodafoneSmsOptionsValidator()
     {
-        RuleFor(x => x.SendSmsEndpointUrl).NotEmpty().HttpUrl();
+        RuleFor(x => x.SendSmsEndpoint).NotEmpty().HttpUrl();
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.AccountId).NotEmpty();
         RuleFor(x => x.Password).NotEmpty();
