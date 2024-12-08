@@ -3,40 +3,48 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using Framework.Sms.Cequens.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.Cequens;
 
+/*
+ * Docs: https://developer.cequens.com/reference/sending-sms
+ */
 public sealed class CequensSmsSender(
     HttpClient httpClient,
-    IOptions<CequensOptions> optionsAccessor,
+    IOptions<CequensSmsOptions> optionsAccessor,
     ILogger<CequensSmsSender> logger
 ) : ISmsSender
 {
-    private readonly CequensOptions _options = optionsAccessor.Value;
+    private readonly CequensSmsOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
         CancellationToken token = default
     )
     {
-        httpClient.BaseAddress = new Uri(_options.Uri);
-        var jwtToken = await _GetTokenRequest(token) ?? _options.Token;
+        var jwtToken = await _GetTokenRequestAsync(token) ?? _options.Token;
+
+        if (string.IsNullOrEmpty(jwtToken))
+        {
+            logger.LogError("Failed to get token from Cequens API");
+
+            return SendSingleSmsResponse.Failed("Failed to get token from Cequens API");
+        }
+
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwtToken);
 
-        var apiRequest = new
+        var apiRequest = new SendSmsRequest
         {
-            senderName = _options.SenderName,
-            messageType = "text",
-            acknowledgement = 0,
-            flashing = 0,
-            messageText = request.Text,
-            recipients = request.Destination.ToString(),
+            ClientMessageId = request.MessageId is not null && int.TryParse(request.MessageId, CultureInfo.InvariantCulture, out var id) ? id : null,
+            SenderName = _options.SenderName,
+            MessageText = request.Text,
+            Recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString(),
         };
 
-        var response = await httpClient.PostAsJsonAsync("sms/v1/messages", apiRequest, token);
+        var response = await httpClient.PostAsJsonAsync(_options.SingleSmsEndpoint, apiRequest, token);
         var rawContent = await response.Content.ReadAsStringAsync(token);
 
         if (response.IsSuccessStatusCode)
@@ -58,35 +66,36 @@ public sealed class CequensSmsSender(
 
     #region Helpers
 
-    private async Task<string?> _GetTokenRequest(CancellationToken cancellationToken)
+    private string? _cachedToken;
+    private DateTime _tokenExpiration;
+
+    private async Task<string?> _GetTokenRequestAsync(CancellationToken cancellationToken)
     {
-        var request = new { apiKey = _options.ApiKey, userName = _options.UserName };
-        var response = await httpClient.PostAsJsonAsync("auth/v1/tokens", request, cancellationToken);
+        if (_cachedToken != null && _tokenExpiration > DateTime.UtcNow)
+        {
+            return _cachedToken;
+        }
+
+        var request = new SigningInRequest(_options.ApiKey, _options.UserName);
+        var response = await httpClient.PostAsJsonAsync(_options.TokenEndpoint, request, cancellationToken);
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
-            var error = string.IsNullOrEmpty(content) ? "Failed to get token from Cequens API" : content;
-            logger.LogError("Failed to get token from Cequens API: {StatusCode}, {Body}", response.StatusCode, error);
+            logger.LogError("Failed to get token from Cequens API: {StatusCode}, {Body}", response.StatusCode, response);
 
             return null;
         }
 
-        var token = JsonSerializer.Deserialize<CequensAuthResponse>(content);
+        var token = JsonSerializer.Deserialize<SigningInResponse>(content)?.Data?.AccessToken;
 
-        return token?.Data?.AccessToken;
-    }
-
-    [UsedImplicitly]
-    private sealed class CequensAuthResponse
-    {
-        public DataResponse? Data { get; init; }
-
-        public sealed class DataResponse
+        if (token != null)
         {
-            [JsonPropertyName("access_token")]
-            public required string AccessToken { get; init; }
+            _cachedToken = token;
+            _tokenExpiration = DateTime.UtcNow.AddMinutes(10);
         }
+
+        return token;
     }
 
     #endregion

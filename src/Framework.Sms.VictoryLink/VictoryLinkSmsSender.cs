@@ -34,7 +34,7 @@ public sealed class VictoryLinkSmsSender(
             SmsSender = _options.Sender,
             SmsReceiver = request.IsBatch
                 ? string.Join(',', request.Destinations.Select(x => x.Number))
-                : request.Destination.Number,
+                : request.Destinations[0].Number,
         };
 
         var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);

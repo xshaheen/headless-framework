@@ -87,7 +87,7 @@ public sealed class ConnekioSmsSender : ISmsSender
         }
         else
         {
-            payload["msisdn"] = request.Destination.ToString();
+            payload["msisdn"] = request.Destinations[0].ToString();
         }
 
         return JsonSerializer.Serialize(payload);
