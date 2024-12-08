@@ -22,7 +22,7 @@ public interface IReCaptchaSiteVerifyV2
     /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
     [SystemPure]
     [JetBrainsPure]
-    Task<ReCaptchaSiteVerifyV2Response> Verify(ReCaptchaSiteVerifyRequest request);
+    Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(ReCaptchaSiteVerifyRequest request);
 }
 
 public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
@@ -45,7 +45,7 @@ public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
         _logger = logger;
     }
 
-    public async Task<ReCaptchaSiteVerifyV2Response> Verify(ReCaptchaSiteVerifyRequest request)
+    public async Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(ReCaptchaSiteVerifyRequest request)
     {
         List<KeyValuePair<string, string>> formData =
         [

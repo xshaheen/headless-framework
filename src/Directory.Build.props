@@ -9,8 +9,6 @@
   </PropertyGroup>
 
   <PropertyGroup Label="Packages Source Link">
-    <!-- Ensures consistent, reproducible builds -->
-    <Deterministic>true</Deterministic>
     <!-- Specifies that the symbol package should be generated in the `.snupkg` format instead of the legacy `.nupkg` -->
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <!--  Ensures that debugging symbols `.pdb` are generated -->
@@ -46,36 +44,40 @@
       Detect TeamCity
       https://www.jetbrains.com/help/teamcity/predefined-build-parameters.html#Server+Build+Properties
     -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(TEAMCITY_VERSION)' != ''">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(TEAMCITY_VERSION)' != ''">true</ContinuousIntegrationBuild>
     <!-- Detect Wrench -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(BUILD_COMMAND)' != ''">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(BUILD_COMMAND)' != ''">true</ContinuousIntegrationBuild>
     <!-- Detect AppVeyor -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(APPVEYOR)' != ''">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(APPVEYOR)' != ''">true</ContinuousIntegrationBuild>
     <!-- Detect Travis -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(TRAVIS)' == 'true'">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(TRAVIS)' == 'true'">true</ContinuousIntegrationBuild>
     <!-- Detect Circle CI -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(CIRCLECI)' == 'true'">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(CIRCLECI)' == 'true'">true</ContinuousIntegrationBuild>
     <!-- Detect AWS CodeBuild -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(CODEBUILD_BUILD_ID)' != '' and '$(AWS_REGION)' != ''">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(CODEBUILD_BUILD_ID)' != '' and '$(AWS_REGION)' != ''">true</ContinuousIntegrationBuild>
     <!--
       Detect Jenkins
       https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#using-environment-variables
     -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(JENKINS_URL)' != ''">true</IsCIBuild>
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(BUILD_ID)' != '' and '$(BUILD_URL)' != ''">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(JENKINS_URL)' != ''">true</ContinuousIntegrationBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(BUILD_ID)' != '' and '$(BUILD_URL)' != ''">true</ContinuousIntegrationBuild>
     <!--
       Google Cloud Build
       https://cloud.google.com/build/docs/configuring-builds/substitute-variable-values
     -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(BUILD_ID)' != '' and '$(PROJECT_ID)' != ''">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(BUILD_ID)' != '' and '$(PROJECT_ID)' != ''">true</ContinuousIntegrationBuild>
     <!--
       JetBrains Space
       https://www.jetbrains.com/help/space/automation-environment-variables.html#general
     -->
-    <IsCIBuild Condition="'$(IsCIBuild)' == 'false' and '$(JB_SPACE_API_URL)' != ''">true</IsCIBuild>
+    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(JB_SPACE_API_URL)' != ''">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
 
-    <!-- Ensures consistent, reproducible builds -->
-    <Deterministic Condition=" '$(IsCIBuild)' == 'true' ">true</Deterministic>
+  <PropertyGroup Condition="'$(ContinuousIntegrationBuild)' == 'true'">
+    <!-- 👇 Ensures consistent, reproducible builds -->
+    <Deterministic>true</Deterministic>
+    <!-- 👇 Enable deterministic restore -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <PropertyGroup Label="Repository">

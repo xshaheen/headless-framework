@@ -20,7 +20,7 @@ internal sealed class V2CheckboxModel(IReCaptchaSiteVerifyV2 siteVerify) : PageM
             RemoteIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
         };
 
-        var response = await siteVerify.Verify(request);
+        var response = await siteVerify.VerifyAsync(request);
 
         Result = JsonSerializer.Serialize(response, FrameworkJsonConstants.DefaultPrettyJsonOptions);
     }
