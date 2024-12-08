@@ -7,9 +7,9 @@ namespace Framework.Sms.Connekio;
 
 public sealed class ConnekioSmsOptions
 {
-    public required string SingleSmsEndpointUrl { get; init; } = "https://api.connekio.com/sms/single";
+    public required string SingleSmsEndpoint { get; init; } = "https://api.connekio.com/sms/single";
 
-    public required string BatchSmsEndpointUrl { get; init; } = "https://api.connekio.com/sms/batch";
+    public required string BatchSmsEndpoint { get; init; } = "https://api.connekio.com/sms/batch";
 
     public required string Sender { get; init; }
 
@@ -24,8 +24,8 @@ internal sealed class ConnekioSmsOptionsValidator : AbstractValidator<ConnekioSm
 {
     public ConnekioSmsOptionsValidator()
     {
-        RuleFor(x => x.SingleSmsEndpointUrl).NotEmpty().HttpUrl();
-        RuleFor(x => x.BatchSmsEndpointUrl).NotEmpty().HttpUrl();
+        RuleFor(x => x.SingleSmsEndpoint).NotEmpty().HttpUrl();
+        RuleFor(x => x.BatchSmsEndpoint).NotEmpty().HttpUrl();
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.AccountId).NotEmpty();
         RuleFor(x => x.UserName).NotEmpty();

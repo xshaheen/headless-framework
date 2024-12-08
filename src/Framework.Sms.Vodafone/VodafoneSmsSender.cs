@@ -26,7 +26,7 @@ public sealed class VodafoneSmsSender : ISmsSender
         _httpClient = httpClient;
         _logger = logger;
         _options = optionsAccessor.Value;
-        _uri = new(_options.SendSmsEndpointUrl);
+        _uri = new(_options.SendSmsEndpoint);
         _secureHash = Encoding.UTF8.GetBytes(_options.SecureHash);
     }
 
@@ -66,6 +66,7 @@ public sealed class VodafoneSmsSender : ISmsSender
     {
         var hashableKey = _BuildHashableKey(request);
         var secureHash = _ComputeHash(hashableKey);
+        var recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString();
 
         // Simulate XML payload building.
         return "<Payload>"
@@ -73,27 +74,39 @@ public sealed class VodafoneSmsSender : ISmsSender
             + $"<Password>{_options.Password}</Password>"
             + $"<SenderName>{_options.Sender}</SenderName>"
             + $"<SecureHash>{secureHash}</SecureHash>"
-            +
-            // For multiple recipients use comma separated values.
-            $"<Recipients>{request.Destination}</Recipients>"
+            + $"<Recipients>{recipients}</Recipients>"
             + $"<Message>{request.Text}</Message>"
             + "</Payload>";
     }
 
     private string _BuildHashableKey(SendSingleSmsRequest request)
     {
-        var hashableKey = $"AccountId={_options.AccountId}&Password={_options.Password}";
+        var hashableKey = new StringBuilder();
 
-        // For a single recipient
-        hashableKey += $"&SenderName={_options.Sender}&ReceiverMSISDN={request.Destination}&SMSText={request.Text}";
+        hashableKey.Append(
+            CultureInfo.InvariantCulture,
+            $"AccountId={_options.AccountId}&Password={_options.Password}"
+        );
 
-        // For multiple recipients
-        // foreach (var recipient in recipients)
-        // {
-        //     hashableKey += $"&SenderName={_options.Sender}&ReceiverMSISDN={recipient}&SMSText={request.Text}";
-        // }
+        if (request.IsBatch)
+        {
+            foreach (var recipient in request.Destinations)
+            {
+                hashableKey.Append(
+                    CultureInfo.InvariantCulture,
+                    $"&SenderName={_options.Sender}&ReceiverMSISDN={recipient}&SMSText={request.Text}"
+                );
+            }
+        }
+        else
+        {
+            hashableKey.Append(
+                CultureInfo.InvariantCulture,
+                $"&SenderName={_options.Sender}&ReceiverMSISDN={request.Destination}&SMSText={request.Text}"
+            );
+        }
 
-        return hashableKey;
+        return hashableKey.ToString();
     }
 
     private string _ComputeHash(string input)
