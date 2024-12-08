@@ -79,6 +79,8 @@ public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> optio
         return SendSingleEmailResponse.Succeeded();
     }
 
+    #region Helpers
+
     private static async Task<SmtpClient> _BuildClientAsync(
         MailkitSmtpOptions options,
         CancellationToken cancellationToken
@@ -118,4 +120,6 @@ public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> optio
             await client.AuthenticateAsync(options.User, options.Password, cancellationToken);
         }
     }
+
+    #endregion
 }

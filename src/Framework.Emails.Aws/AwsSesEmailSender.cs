@@ -12,9 +12,10 @@ namespace Framework.Emails.Aws;
  * API Docs
  * https://docs.aws.amazon.com/ses/latest/APIReference/Welcome.html
  */
-public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 client, ILogger<AwsSesEmailSender> logger)
-    : IEmailSender
+public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<AwsSesEmailSender> logger) : IEmailSender
 {
+    private const string _Charset = "UTF-8";
+
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default
@@ -22,7 +23,7 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 client, ILogge
     {
         if (request.Attachments.Count == 0)
         {
-            var simpleRequest = _CreateSimpleEmail(request);
+            var simpleRequest = _MapToSendEmailRequest(request);
 
             return await _SendAsync(simpleRequest, cancellationToken);
         }
@@ -39,37 +40,7 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 client, ILogge
         return await _SendAsync(rawRequest, cancellationToken);
     }
 
-    private static SendEmailRequest _CreateSimpleEmail(SendSingleEmailRequest request)
-    {
-        const string charset = "UTF-8";
-
-        return new SendEmailRequest
-        {
-            FromEmailAddress = request.From.EmailAddress,
-            Destination = new Destination
-            {
-                ToAddresses = request.Destination.ToAddresses.Select(x => x.EmailAddress).ToList(),
-                CcAddresses = request.Destination.CcAddresses.Select(x => x.EmailAddress).ToList(),
-                BccAddresses = request.Destination.BccAddresses.Select(x => x.EmailAddress).ToList(),
-            },
-            Content = new EmailContent
-            {
-                Simple = new Message
-                {
-                    Subject = new Content { Charset = charset, Data = request.Subject },
-                    Body = new Body
-                    {
-                        Html = string.IsNullOrWhiteSpace(request.MessageHtml)
-                            ? default
-                            : new Content { Charset = charset, Data = request.MessageHtml },
-                        Text = string.IsNullOrWhiteSpace(request.MessageText)
-                            ? default
-                            : new Content { Charset = charset, Data = request.MessageText },
-                    },
-                },
-            },
-        };
-    }
+    #region Helpers
 
     private async Task<SendSingleEmailResponse> _SendAsync(
         SendEmailRequest request,
@@ -80,19 +51,19 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 client, ILogge
 
         try
         {
-            response = await client.SendEmailAsync(request, cancellationToken);
+            response = await ses.SendEmailAsync(request, cancellationToken);
         }
         catch (Exception ex)
             when (ex
-                    is MessageRejectedException
-                        or BadRequestException
-                        or NotFoundException
-                        or AccountSuspendedException
-                        or MailFromDomainNotVerifiedException
-                        or LimitExceededException
-                        or TooManyRequestsException
-                        or SendingPausedException
-            )
+                      is MessageRejectedException
+                      or BadRequestException
+                      or NotFoundException
+                      or AccountSuspendedException
+                      or MailFromDomainNotVerifiedException
+                      or LimitExceededException
+                      or TooManyRequestsException
+                      or SendingPausedException
+                 )
         {
             throw;
         }
@@ -106,4 +77,39 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 client, ILogge
 
         return SendSingleEmailResponse.Failed("Failed to send an email to the recipient.");
     }
+
+    private static SendEmailRequest _MapToSendEmailRequest(SendSingleEmailRequest request)
+    {
+        return new SendEmailRequest
+        {
+            ConfigurationSetName = null,
+            ReplyToAddresses = null,
+            FeedbackForwardingEmailAddress = null,
+            FromEmailAddress = request.From.ToString(),
+            Destination = new Destination
+            {
+                ToAddresses = request.Destination.ToAddresses.Select(address => address.ToString()).ToList(),
+                CcAddresses = request.Destination.CcAddresses.Select(address => address.ToString()).ToList(),
+                BccAddresses = request.Destination.BccAddresses.Select(address => address.ToString()).ToList(),
+            },
+            Content = new EmailContent
+            {
+                Simple = new Message
+                {
+                    Subject = new Content { Charset = _Charset, Data = request.Subject },
+                    Body = new Body
+                    {
+                        Html = string.IsNullOrWhiteSpace(request.MessageHtml)
+                            ? default
+                            : new Content { Charset = _Charset, Data = request.MessageHtml },
+                        Text = string.IsNullOrWhiteSpace(request.MessageText)
+                            ? default
+                            : new Content { Charset = _Charset, Data = request.MessageText },
+                    },
+                },
+            },
+        };
+    }
+
+    #endregion
 }
