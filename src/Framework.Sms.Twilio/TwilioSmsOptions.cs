@@ -5,21 +5,24 @@ using Framework.FluentValidation;
 
 namespace Framework.Sms.Twilio;
 
-public sealed class TwilioOptions
+public sealed class TwilioSmsOptions
 {
     public required string Sid { get; init; }
 
     public required string AuthToken { get; init; }
 
     public required string PhoneNumber { get; init; }
+
+    public required decimal? MaxPrice { get; set; }
 }
 
-internal sealed class TwilioOptionsValidator : AbstractValidator<TwilioOptions>
+internal sealed class TwilioSmsOptionsValidator : AbstractValidator<TwilioSmsOptions>
 {
-    public TwilioOptionsValidator()
+    public TwilioSmsOptionsValidator()
     {
         RuleFor(x => x.Sid).NotEmpty();
         RuleFor(x => x.AuthToken).NotEmpty();
         RuleFor(x => x.PhoneNumber).NotEmpty().InternationalPhoneNumber();
+        RuleFor(x => x.MaxPrice).GreaterThanOrEqualTo(0);
     }
 }

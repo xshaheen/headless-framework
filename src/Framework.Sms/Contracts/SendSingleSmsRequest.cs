@@ -11,13 +11,22 @@ public sealed class SendSingleSmsRequest
 
     public required SmsRequestDestination Destination { get; init; }
 
+    public required List<SmsRequestDestination> Destinations { get; init; }
+
     public required string Text { get; init; }
 
     public IDictionary<string, object>? Properties { get; init; }
+
+    public bool IsBatch => Destinations.Count > 1;
 }
 
 [PublicAPI]
 public sealed record SmsRequestDestination(int Code, string Number)
 {
-    public override string ToString() => $"+{Code}{Number}";
+    public override string ToString()
+    {
+        FormattableString format = $"+{Code}{Number}";
+
+        return format.ToString(CultureInfo.InvariantCulture);
+    }
 }

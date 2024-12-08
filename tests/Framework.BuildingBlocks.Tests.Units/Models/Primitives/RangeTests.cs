@@ -41,15 +41,14 @@ public sealed class RangeTests
 
     #region Value Inclusive Has
 
-    public static readonly TheoryData<Range<int>, int, bool> ValueInclusiveHasData =
-        new()
-        {
-            { new(1, 10), 5, true }, // Middle
-            { new(1, 10), 1, true }, // From Edge
-            { new(1, 10), 10, true }, // To Edge
-            { new(1, 10), 0, false }, // Below
-            { new(1, 10), 11, false }, // Above
-        };
+    public static readonly TheoryData<Range<int>, int, bool> ValueInclusiveHasData = new()
+    {
+        { new(1, 10), 5, true }, // Middle
+        { new(1, 10), 1, true }, // From Edge
+        { new(1, 10), 10, true }, // To Edge
+        { new(1, 10), 0, false }, // Below
+        { new(1, 10), 11, false }, // Above
+    };
 
     [Theory]
     [MemberData(nameof(ValueInclusiveHasData))]
@@ -70,15 +69,14 @@ public sealed class RangeTests
 
     #region Exclusive Has
 
-    public static readonly TheoryData<Range<int>, int, bool> ValueExclusiveHasData =
-        new()
-        {
-            { new(1, 10), 5, true }, // Middle
-            { new(1, 10), 1, false }, // From Edge
-            { new(1, 10), 10, false }, // To Edge
-            { new(1, 10), 0, false }, // Below
-            { new(1, 10), 11, false }, // Above
-        };
+    public static readonly TheoryData<Range<int>, int, bool> ValueExclusiveHasData = new()
+    {
+        { new(1, 10), 5, true }, // Middle
+        { new(1, 10), 1, false }, // From Edge
+        { new(1, 10), 10, false }, // To Edge
+        { new(1, 10), 0, false }, // Below
+        { new(1, 10), 11, false }, // Above
+    };
 
     [Theory]
     [MemberData(nameof(ValueExclusiveHasData))]
@@ -127,19 +125,18 @@ public sealed class RangeTests
 
     #region RemoveConflictRangeParts
 
-    public static readonly TheoryData<Range<int>, Range<int>, Range<int>[]> RemoveOverlapData =
-        new()
-        {
-            // Same range
-            { new(1, 10), new(1, 10), [] },
-            { new(1, 10), new(1, 5), [new(6, 10)] }, // From Edge
-            { new(1, 10), new(5, 10), [new(1, 4)] }, // To Edge
-            { new(1, 10), new(11, 15), [new(1, 10)] }, // After
-            { new(1, 10), new(15, 20), [new(1, 10)] }, // Far After
-            { new(1, 10), new(5, 15), [new(1, 4)] }, // Middle
-            { new(1, 10), new(0, 5), [new(6, 10)] }, // Below
-            { new(1, 10), new(5, 11), [new(1, 4)] }, // Above
-        };
+    public static readonly TheoryData<Range<int>, Range<int>, Range<int>[]> RemoveOverlapData = new()
+    {
+        // Same range
+        { new(1, 10), new(1, 10), [] },
+        { new(1, 10), new(1, 5), [new(6, 10)] }, // From Edge
+        { new(1, 10), new(5, 10), [new(1, 4)] }, // To Edge
+        { new(1, 10), new(11, 15), [new(1, 10)] }, // After
+        { new(1, 10), new(15, 20), [new(1, 10)] }, // Far After
+        { new(1, 10), new(5, 15), [new(1, 4)] }, // Middle
+        { new(1, 10), new(0, 5), [new(6, 10)] }, // Below
+        { new(1, 10), new(5, 11), [new(1, 4)] }, // Above
+    };
 
     [Theory]
     [MemberData(nameof(RemoveOverlapData))]

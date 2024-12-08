@@ -7,18 +7,16 @@ namespace Tests.Internal;
 
 public sealed class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverterTests
 {
-    public static readonly TheoryData<DateTimeOffset, string> WriteTestsData =
-        new()
-        {
-            { new DateTimeOffset(2021, 8, 8, 6, 26, 21, 457, TimeSpan.Zero), "\"2021-08-08T06:26:21.457+00:00\"" },
-            {
-                new DateTimeOffset(2021, 8, 8, 6, 26, 21, 457, TimeSpan.FromHours(2)),
-                "\"2021-08-08T04:26:21.457+00:00\""
-            },
-        };
+    public static readonly TheoryData<DateTimeOffset, string> WriteTestsData = new()
+    {
+        { new DateTimeOffset(2021, 8, 8, 6, 26, 21, 457, TimeSpan.Zero), "\"2021-08-08T06:26:21.457+00:00\"" },
+        { new DateTimeOffset(2021, 8, 8, 6, 26, 21, 457, TimeSpan.FromHours(2)), "\"2021-08-08T04:26:21.457+00:00\"" },
+    };
 
-    private static readonly JsonSerializerOptions _Options =
-        new() { Converters = { new AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter() } };
+    private static readonly JsonSerializerOptions _Options = new()
+    {
+        Converters = { new AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter() },
+    };
 
     [Theory]
     // without offset => consider it egypt time

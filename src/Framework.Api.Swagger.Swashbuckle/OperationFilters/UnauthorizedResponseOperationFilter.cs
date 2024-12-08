@@ -17,11 +17,10 @@ public sealed class UnauthorizedResponseOperationFilter : IOperationFilter
 {
     private const string _UnauthorizedStatusCode = "401";
 
-    private static readonly OpenApiResponse _UnauthorizedResponse =
-        new()
-        {
-            Description = "Unauthorized - The user has not supplied the necessary credentials to access the resource.",
-        };
+    private static readonly OpenApiResponse _UnauthorizedResponse = new()
+    {
+        Description = "Unauthorized - The user has not supplied the necessary credentials to access the resource.",
+    };
 
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {

@@ -13,12 +13,11 @@ public static class SitemapConstants
     /// <summary>Max urls in single sitemap according to Google.</summary>
     public const int MaxSitemapUrls = 50_000;
 
-    internal static readonly XmlWriterSettings WriterSettings =
-        new()
-        {
-            Async = true,
-            Indent = true,
-            Encoding = StringHelper.Utf8WithoutBom,
-            NewLineChars = "\n",
-        };
+    internal static readonly XmlWriterSettings WriterSettings = new()
+    {
+        Async = true,
+        Indent = true,
+        Encoding = StringHelper.Utf8WithoutBom,
+        NewLineChars = "\n",
+    };
 }

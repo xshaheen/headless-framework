@@ -45,9 +45,9 @@ public sealed class VodafoneSmsSender : ISmsSender
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
-            _logger.LogError("Empty response from VictoryLink API");
+            _logger.LogError("Empty response from Vodafone API");
 
-            return SendSingleSmsResponse.Failed("Empty response from VictoryLink API");
+            return SendSingleSmsResponse.Failed("Failed to send.");
         }
 
         var isSuccess = rawContent.Contains("<Success>true</Success>", StringComparison.Ordinal);
@@ -57,7 +57,7 @@ public sealed class VodafoneSmsSender : ISmsSender
             return SendSingleSmsResponse.Succeeded();
         }
 
-        _logger.LogError("Failed to send VictoryLink - Message SMS={Message}", rawContent);
+        _logger.LogError("Failed to send SMS using Vodafone API. Response={RawContent}", rawContent);
 
         return SendSingleSmsResponse.Failed("Failed to send.");
     }
@@ -68,15 +68,16 @@ public sealed class VodafoneSmsSender : ISmsSender
         var secureHash = _ComputeHash(hashableKey);
 
         // Simulate XML payload building.
-        return "<Payload>" +
-            $"<AccountId>{_options.AccountId}</AccountId>" +
-            $"<Password>{_options.Password}</Password>" +
-            $"<SenderName>{_options.Sender}</SenderName>" +
-            $"<SecureHash>{secureHash}</SecureHash>" +
+        return "<Payload>"
+            + $"<AccountId>{_options.AccountId}</AccountId>"
+            + $"<Password>{_options.Password}</Password>"
+            + $"<SenderName>{_options.Sender}</SenderName>"
+            + $"<SecureHash>{secureHash}</SecureHash>"
+            +
             // For multiple recipients use comma separated values.
-            $"<Recipients>{request.Destination}</Recipients>" +
-            $"<Message>{request.Text}</Message>" +
-            "</Payload>";
+            $"<Recipients>{request.Destination}</Recipients>"
+            + $"<Message>{request.Text}</Message>"
+            + "</Payload>";
     }
 
     private string _BuildHashableKey(SendSingleSmsRequest request)

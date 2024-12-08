@@ -7,74 +7,70 @@ namespace Tests;
 
 public sealed class SitemapUrlsTests : TestBase
 {
-    public static readonly TheoryData<List<SitemapUrl>, string> TestData =
-        new()
+    public static readonly TheoryData<List<SitemapUrl>, string> TestData = new()
+    {
+        // basic
         {
-            // basic
-            {
-
-                [
-                    new(location: new Uri("https://www.example.com")),
-                    new(location: new Uri("https://www.example.com/contact-us")),
-                ],
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-                    + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
-                    + "  <url>"
-                    + "    <loc>https://www.example.com/</loc>"
-                    + "  </url>"
-                    + "  <url>"
-                    + "    <loc>https://www.example.com/contact-us</loc>"
-                    + "  </url>"
-                    + "</urlset>"
-            },
-            // with priority, last modified, change frequency
-            {
-
-                [
-                    new(
-                        location: new Uri("https://www.example.com"),
-                        lastModified: new DateTime(year: 2021, month: 3, day: 15),
-                        changeFrequency: ChangeFrequency.Daily,
-                        priority: 0.8f
-                    ),
-                ],
-                "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
-                    + "  <url>"
-                    + "   <loc>https://www.example.com/</loc>"
-                    + "   <priority>0.8</priority>"
-                    + "   <changefreq>daily</changefreq>"
-                    + "   <lastmod>2021-03-15</lastmod>"
-                    + "  </url>"
-                    + "</urlset>"
-            },
-            // Urls follow RFC-3986
-            {
-
-                [
-                    new(location: new Uri("https://www.Example.com/ümlaT.html")),
-                    new(location: new Uri("https://www.example.com/اداره-اعلانات")),
-                ],
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-                    + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
-                    + "  <url>"
-                    + "    <loc>https://www.example.com/%C3%BCmlaT.html</loc>"
-                    + "  </url>"
-                    + "  <url>"
-                    + "    <loc>https://www.example.com/%D8%A7%D8%AF%D8%A7%D8%B1%D9%87-%D8%A7%D8%B9%D9%84%D8%A7%D9%86%D8%A7%D8%AA</loc>"
-                    + "  </url>"
-                    + "</urlset>"
-            },
-            // XML entity escape URLs
-            {
-                [new(location: new Uri("https://www.example.com/ümlat.html&q=name"))],
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-                    + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
-                    + "  <url>"
-                    + "    <loc>https://www.example.com/%C3%BCmlat.html&amp;q=name</loc>"
-                    + "  </url>"
-                    + "</urlset>"
-            },
-        };
+            [
+                new(location: new Uri("https://www.example.com")),
+                new(location: new Uri("https://www.example.com/contact-us")),
+            ],
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+                + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
+                + "  <url>"
+                + "    <loc>https://www.example.com/</loc>"
+                + "  </url>"
+                + "  <url>"
+                + "    <loc>https://www.example.com/contact-us</loc>"
+                + "  </url>"
+                + "</urlset>"
+        },
+        // with priority, last modified, change frequency
+        {
+            [
+                new(
+                    location: new Uri("https://www.example.com"),
+                    lastModified: new DateTime(year: 2021, month: 3, day: 15),
+                    changeFrequency: ChangeFrequency.Daily,
+                    priority: 0.8f
+                ),
+            ],
+            "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
+                + "  <url>"
+                + "   <loc>https://www.example.com/</loc>"
+                + "   <priority>0.8</priority>"
+                + "   <changefreq>daily</changefreq>"
+                + "   <lastmod>2021-03-15</lastmod>"
+                + "  </url>"
+                + "</urlset>"
+        },
+        // Urls follow RFC-3986
+        {
+            [
+                new(location: new Uri("https://www.Example.com/ümlaT.html")),
+                new(location: new Uri("https://www.example.com/اداره-اعلانات")),
+            ],
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+                + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
+                + "  <url>"
+                + "    <loc>https://www.example.com/%C3%BCmlaT.html</loc>"
+                + "  </url>"
+                + "  <url>"
+                + "    <loc>https://www.example.com/%D8%A7%D8%AF%D8%A7%D8%B1%D9%87-%D8%A7%D8%B9%D9%84%D8%A7%D9%86%D8%A7%D8%AA</loc>"
+                + "  </url>"
+                + "</urlset>"
+        },
+        // XML entity escape URLs
+        {
+            [new(location: new Uri("https://www.example.com/ümlat.html&q=name"))],
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+                + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
+                + "  <url>"
+                + "    <loc>https://www.example.com/%C3%BCmlat.html&amp;q=name</loc>"
+                + "  </url>"
+                + "</urlset>"
+        },
+    };
 
     [Theory]
     [MemberData(memberName: nameof(TestData))]

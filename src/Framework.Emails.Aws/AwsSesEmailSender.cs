@@ -55,15 +55,15 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
         }
         catch (Exception ex)
             when (ex
-                      is MessageRejectedException
-                      or BadRequestException
-                      or NotFoundException
-                      or AccountSuspendedException
-                      or MailFromDomainNotVerifiedException
-                      or LimitExceededException
-                      or TooManyRequestsException
-                      or SendingPausedException
-                 )
+                    is MessageRejectedException
+                        or BadRequestException
+                        or NotFoundException
+                        or AccountSuspendedException
+                        or MailFromDomainNotVerifiedException
+                        or LimitExceededException
+                        or TooManyRequestsException
+                        or SendingPausedException
+            )
         {
             throw;
         }

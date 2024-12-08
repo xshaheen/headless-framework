@@ -11,17 +11,16 @@ public sealed class PrimitiveGeneratorTests
 {
     private const int _GenerateAllFileCounts = 9;
 
-    private readonly PrimitiveGlobalOptions _generateAllOptions =
-        new()
-        {
-            GenerateJsonConverters = true, // generate 1 files
-            GenerateTypeConverters = true, // generate 1 files
-            GenerateSwashbuckleSwaggerConverters = true, // generate 1 files
-            GenerateNswagSwaggerConverters = true, // generate 1 files
-            GenerateXmlConverters = true, // generate methods for XML serialization
-            GenerateEntityFrameworkValueConverters = true, // generate 2 files
-            GenerateDapperConverters = true, // generate 2 files
-        };
+    private readonly PrimitiveGlobalOptions _generateAllOptions = new()
+    {
+        GenerateJsonConverters = true, // generate 1 files
+        GenerateTypeConverters = true, // generate 1 files
+        GenerateSwashbuckleSwaggerConverters = true, // generate 1 files
+        GenerateNswagSwaggerConverters = true, // generate 1 files
+        GenerateXmlConverters = true, // generate methods for XML serialization
+        GenerateEntityFrameworkValueConverters = true, // generate 2 files
+        GenerateDapperConverters = true, // generate 2 files
+    };
 
     [Fact]
     public Task should_generate_all_converters_when_string_primitive()

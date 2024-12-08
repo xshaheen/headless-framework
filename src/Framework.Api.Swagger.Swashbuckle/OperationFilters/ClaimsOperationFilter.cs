@@ -14,11 +14,10 @@ public sealed class ClaimsOperationFilter : IOperationFilter
 {
     private const string _OAuth2OpenApiReferenceId = "oauth2";
 
-    private static readonly OpenApiSecurityScheme _OAuth2OpenApiSecurityScheme =
-        new()
-        {
-            Reference = new OpenApiReference { Id = _OAuth2OpenApiReferenceId, Type = ReferenceType.SecurityScheme },
-        };
+    private static readonly OpenApiSecurityScheme _OAuth2OpenApiSecurityScheme = new()
+    {
+        Reference = new OpenApiReference { Id = _OAuth2OpenApiReferenceId, Type = ReferenceType.SecurityScheme },
+    };
 
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {

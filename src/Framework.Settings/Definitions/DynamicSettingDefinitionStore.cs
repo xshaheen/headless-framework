@@ -241,17 +241,16 @@ public sealed class DynamicSettingDefinitionStore(
 
     #region Save Helpers
 
-    private readonly JsonSerializerOptions _jsonSerializerOptions =
-        new()
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new()
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver
         {
-            TypeInfoResolver = new DefaultJsonTypeInfoResolver
+            Modifiers =
             {
-                Modifiers =
-                {
-                    JsonPropertiesModifiers<SettingDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
-                },
+                JsonPropertiesModifiers<SettingDefinitionRecord>.CreateIgnorePropertyModifyAction(x => x.Id),
             },
-        };
+        },
+    };
 
     private async Task<(
         List<SettingDefinitionRecord> NewRecords,

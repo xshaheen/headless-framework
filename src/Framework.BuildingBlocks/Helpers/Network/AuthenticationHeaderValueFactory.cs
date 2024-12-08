@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using System.Net.Http.Headers;
 using System.Text;
 using Framework.Checks;
@@ -8,8 +6,6 @@ namespace Framework.BuildingBlocks.Helpers.Network;
 
 public static class AuthenticationHeaderValueFactory
 {
-    public const string BasicScheme = "Basic";
-
     public static AuthenticationHeaderValue CreateBasic(string userName, string password)
     {
         Argument.IsNotNullOrWhiteSpace(userName);
@@ -20,6 +16,22 @@ public static class AuthenticationHeaderValueFactory
             Base64FormattingOptions.None
         );
 
-        return new(BasicScheme, encodedCredential);
+        return new(BasicAuthenticationValue.BasicScheme, encodedCredential);
+    }
+
+    public static AuthenticationHeaderValue CreateBasic(string value)
+    {
+        Argument.IsNotNullOrWhiteSpace(value);
+
+        var encodedCredential = Convert.ToBase64String(Encoding.UTF8.GetBytes(value), Base64FormattingOptions.None);
+
+        return new(BasicAuthenticationValue.BasicScheme, encodedCredential);
+    }
+
+    public static AuthenticationHeaderValue CreateBasic(ReadOnlySpan<byte> value)
+    {
+        var encodedCredential = Convert.ToBase64String(value);
+
+        return new(BasicAuthenticationValue.BasicScheme, encodedCredential);
     }
 }

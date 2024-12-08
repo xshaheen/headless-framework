@@ -9,9 +9,9 @@ namespace Framework.Sms.Twilio;
 
 public sealed class TwilioSmsSender : ISmsSender
 {
-    private readonly TwilioOptions _options;
+    private readonly TwilioSmsOptions _options;
 
-    public TwilioSmsSender(IOptions<TwilioOptions> optionsAccessor)
+    public TwilioSmsSender(IOptions<TwilioSmsOptions> optionsAccessor)
     {
         _options = optionsAccessor.Value;
         TwilioClient.Init(_options.Sid, _options.AuthToken);
@@ -26,7 +26,7 @@ public sealed class TwilioSmsSender : ISmsSender
             to: new PhoneNumber(request.Destination.ToString()),
             from: new PhoneNumber(_options.PhoneNumber),
             body: request.Text,
-            maxPrice: 0.5m
+            maxPrice: _options.MaxPrice
         );
 
         return respond.ErrorCode.HasValue

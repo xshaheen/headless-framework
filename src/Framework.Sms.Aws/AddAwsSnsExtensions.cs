@@ -2,6 +2,7 @@
 
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.SimpleNotificationService;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Sms.Aws;
@@ -22,7 +23,42 @@ public static class AddAwsSnsExtensions
     /// // or pass null to use the default AWSOptions registered in the DI container
     /// </code>
     /// </summary>
-    public static IServiceCollection AddAwsSnsSmsSender(this IServiceCollection services, AWSOptions? awsOptions = null)
+    public static IServiceCollection AddAwsSnsSmsSender(
+        this IServiceCollection services,
+        IConfiguration config,
+        AWSOptions? awsOptions = null
+    )
+    {
+        services.ConfigureSingleton<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(config);
+
+        return _AddCore(services, awsOptions);
+    }
+
+    /// <inheritdoc cref="AddAwsSnsSmsSender(IServiceCollection,IConfiguration,AWSOptions?)"/>
+    public static IServiceCollection AddAwsSnsSmsSender(
+        this IServiceCollection services,
+        Action<AwsSnsSmsOptions> setupAction,
+        AWSOptions? awsOptions = null
+    )
+    {
+        services.ConfigureSingleton<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
+
+        return _AddCore(services, awsOptions);
+    }
+
+    /// <inheritdoc cref="AddAwsSnsSmsSender(IServiceCollection,IConfiguration,AWSOptions?)"/>
+    public static IServiceCollection AddAwsSnsSmsSender(
+        this IServiceCollection services,
+        Action<AwsSnsSmsOptions, IServiceProvider> setupAction,
+        AWSOptions? awsOptions = null
+    )
+    {
+        services.ConfigureSingleton<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
+
+        return _AddCore(services, awsOptions);
+    }
+
+    private static IServiceCollection _AddCore(IServiceCollection services, AWSOptions? awsOptions)
     {
         services.TryAddAWSService<IAmazonSimpleNotificationService>(awsOptions);
         services.AddSingleton<ISmsSender, AwsSnsSmsSender>();

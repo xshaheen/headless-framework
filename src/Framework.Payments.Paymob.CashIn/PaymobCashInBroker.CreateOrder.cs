@@ -11,8 +11,10 @@ namespace Framework.Payments.Paymob.CashIn;
 
 public partial class PaymobCashInBroker
 {
-    private static readonly JsonSerializerOptions _IgnoreNullOptions =
-        new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+    private static readonly JsonSerializerOptions _IgnoreNullOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
 
     /// <summary>Create order. Order is a logical container for a transaction(s).</summary>
     public async Task<CashInCreateOrderResponse> CreateOrderAsync(CashInCreateOrderRequest request)

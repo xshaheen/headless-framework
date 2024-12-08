@@ -5,9 +5,10 @@ using Framework.FluentValidation;
 
 namespace Framework.Sms.VictoryLink;
 
-public sealed class VictoryLinkOptions
+public sealed class VictoryLinkSmsOptions
 {
-    public required string SendSmsEndpointUrl { get; init; } = "https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS";
+    public required string SendSmsEndpointUrl { get; init; } =
+        "https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS";
 
     public required string Sender { get; init; }
 
@@ -16,9 +17,9 @@ public sealed class VictoryLinkOptions
     public required string Password { get; init; }
 }
 
-internal sealed class VictoryLinkOptionsValidator : AbstractValidator<VictoryLinkOptions>
+internal sealed class VictoryLinkSmsOptionsValidator : AbstractValidator<VictoryLinkSmsOptions>
 {
-    public VictoryLinkOptionsValidator()
+    public VictoryLinkSmsOptionsValidator()
     {
         RuleFor(x => x.SendSmsEndpointUrl).NotEmpty().HttpUrl();
         RuleFor(x => x.Sender).NotEmpty();

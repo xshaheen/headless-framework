@@ -27,14 +27,22 @@ public sealed class AwsSnsSmsSender(
                 new() { StringValue = _options.SenderId, DataType = "String" }
             },
             {
-                "AWS.SNS.SMS.MaxPrice",
-                new() { StringValue = "0.50", DataType = "Number" }
-            },
-            {
                 "AWS.SNS.SMS.SMSType",
                 new() { StringValue = "Transactional", DataType = "String" }
             },
         };
+
+        if (_options.MaxPrice.HasValue)
+        {
+            attributes.Add(
+                "AWS.SNS.SMS.MaxPrice",
+                new()
+                {
+                    StringValue = _options.MaxPrice.Value.ToString(CultureInfo.InvariantCulture),
+                    DataType = "Number",
+                }
+            );
+        }
 
         var publishRequest = new PublishRequest
         {
@@ -55,12 +63,12 @@ public sealed class AwsSnsSmsSender(
             logger.LogError("Failed to send SMS {@Request} {@Response}", publishRequest, publishResponse);
 
             return SendSingleSmsResponse.Failed(
-                $"Failed to send SMS with status code {publishResponse.HttpStatusCode}"
+                $"Failed to send SMS using AWS with status code {publishResponse.HttpStatusCode}"
             );
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to send SMS {@Request}", publishRequest);
+            logger.LogError(e, "Failed to send using AWS SMS {@Request}", publishRequest);
 
             return SendSingleSmsResponse.Failed(e.Message);
         }

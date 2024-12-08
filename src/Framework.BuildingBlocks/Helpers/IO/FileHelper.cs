@@ -68,16 +68,15 @@ public static partial class FileHelper
 
     #region Pipeline
 
-    public static readonly RetryStrategyOptions IoRetryStrategyOptions =
-        new()
-        {
-            Name = "BlobToLocalFileRetryPolicy",
-            MaxRetryAttempts = 3,
-            BackoffType = DelayBackoffType.Exponential,
-            UseJitter = false,
-            Delay = 0.5.Seconds(),
-            ShouldHandle = new PredicateBuilder().Handle<IOException>(),
-        };
+    public static readonly RetryStrategyOptions IoRetryStrategyOptions = new()
+    {
+        Name = "BlobToLocalFileRetryPolicy",
+        MaxRetryAttempts = 3,
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = false,
+        Delay = 0.5.Seconds(),
+        ShouldHandle = new PredicateBuilder().Handle<IOException>(),
+    };
 
     public static readonly ResiliencePipeline IoRetryPipeline = new ResiliencePipelineBuilder()
         .AddRetry(IoRetryStrategyOptions)
