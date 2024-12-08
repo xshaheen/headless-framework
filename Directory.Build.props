@@ -4,11 +4,29 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Features>strict</Features>
     <WarningsAsErrors>nullable</WarningsAsErrors>
     <AnalysisLevel>latest</AnalysisLevel>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <WarningLevel>9999</WarningLevel>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <ReportAnalyzer>true</ReportAnalyzer>
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+    <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
+    <_SkipUpgradeNetAnalyzersNuGetWarning>true</_SkipUpgradeNetAnalyzersNuGetWarning>
+    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
+
+    <CheckEolTargetFramework Condition="'$(Configuration)' == 'Release'">false</CheckEolTargetFramework>
+    <SuppressTfmSupportBuildWarnings Condition="'$(Configuration)' == 'Release'">true</SuppressTfmSupportBuildWarnings>
+
+    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Error Handling" Condition=" '$(Configuration)' == 'Release' ">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <PropertyGroup Label="Packages Compiler settings">
@@ -23,12 +41,7 @@
     <NoWarn>$(NoWarn),1573,1591,1712</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup Label="Json Config">
-    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectRequiredConstructorParametersDefault" Value="true" />
-    <RuntimeHostConfigurationOption Include="System.Text.Json.Serialization.RespectNullableAnnotationsDefault" Value="true" />
-  </ItemGroup>
-
-  <ItemGroup Label="Global usings">
+  <ItemGroup Label="Global Usings">
     <Using Include="System.Collections.Frozen" />
     <Using Include="System.Collections.Immutable" />
     <Using Include="System.Globalization" />

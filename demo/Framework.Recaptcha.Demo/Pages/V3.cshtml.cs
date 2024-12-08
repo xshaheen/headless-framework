@@ -20,7 +20,7 @@ internal sealed class V3Model(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
             RemoteIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
         };
 
-        var response = await siteVerify.Verify(request);
+        var response = await siteVerify.VerifyAsync(request);
 
         Result = JsonSerializer.Serialize(response, FrameworkJsonConstants.DefaultPrettyJsonOptions);
     }
