@@ -26,28 +26,25 @@ public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> optio
 
         message.Subject = request.Subject;
 
-        var fromAddress = new MailboxAddress(
-            name: request.From.DisplayName ?? request.From.EmailAddress,
-            address: request.From.EmailAddress
-        );
+        var fromAddress = _MapToMailboxAddress(request.From);
 
         message.From.Add(fromAddress);
 
         foreach (var to in request.Destination.ToAddresses)
         {
-            var toAddress = new MailboxAddress(name: to.DisplayName ?? to.EmailAddress, address: to.EmailAddress);
+            var toAddress = _MapToMailboxAddress(to);
             message.To.Add(toAddress);
         }
 
         foreach (var cc in request.Destination.CcAddresses)
         {
-            var ccAddress = new MailboxAddress(name: cc.DisplayName ?? cc.EmailAddress, address: cc.EmailAddress);
+            var ccAddress = _MapToMailboxAddress(cc);
             message.Cc.Add(ccAddress);
         }
 
         foreach (var bcc in request.Destination.BccAddresses)
         {
-            var bccAddress = new MailboxAddress(name: bcc.DisplayName ?? bcc.EmailAddress, address: bcc.EmailAddress);
+            var bccAddress = _MapToMailboxAddress(bcc);
             message.Bcc.Add(bccAddress);
         }
 
@@ -119,6 +116,11 @@ public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> optio
         {
             await client.AuthenticateAsync(options.User, options.Password, cancellationToken);
         }
+    }
+
+    private static MailboxAddress _MapToMailboxAddress(EmailRequestAddress address)
+    {
+        return new MailboxAddress(address.DisplayName, address.EmailAddress);
     }
 
     #endregion
