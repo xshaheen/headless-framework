@@ -13,9 +13,13 @@ public sealed class DevSmsSender : ISmsSender
     )
     {
         token.ThrowIfCancellationRequested();
-        await using var logger = _CreateLogger(request.Destination.ToString());
 
-        logger.Information("Sms: {@Request}", request);
+        foreach (var destination in request.Destinations)
+        {
+            await using var logger = _CreateLogger(destination.ToString());
+
+            logger.Information("Sms: {@Request}", request);
+        }
 
         return SendSingleSmsResponse.Succeeded();
     }

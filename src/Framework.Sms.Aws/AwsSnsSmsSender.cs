@@ -2,6 +2,7 @@
 
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
+using Framework.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -20,6 +21,14 @@ public sealed class AwsSnsSmsSender(
         CancellationToken token = default
     )
     {
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
+
+        if (request.Destinations.Count > 1)
+        {
+            return SendSingleSmsResponse.Failed("AWS SNS does not support sending SMS to multiple destinations");
+        }
+
         var attributes = new Dictionary<string, MessageAttributeValue>(StringComparer.Ordinal)
         {
             {
@@ -46,7 +55,7 @@ public sealed class AwsSnsSmsSender(
 
         var publishRequest = new PublishRequest
         {
-            PhoneNumber = request.Destination.ToString(),
+            PhoneNumber = request.Destinations[0].ToString(),
             Message = request.Text,
             MessageAttributes = attributes,
         };

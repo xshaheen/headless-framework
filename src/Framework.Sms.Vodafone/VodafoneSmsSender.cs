@@ -102,7 +102,7 @@ public sealed class VodafoneSmsSender : ISmsSender
         {
             hashableKey.Append(
                 CultureInfo.InvariantCulture,
-                $"&SenderName={_options.Sender}&ReceiverMSISDN={request.Destination}&SMSText={request.Text}"
+                $"&SenderName={_options.Sender}&ReceiverMSISDN={request.Destinations[0]}&SMSText={request.Text}"
             );
         }
 

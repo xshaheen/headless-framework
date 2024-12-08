@@ -48,7 +48,7 @@ public sealed class InfobipSmsSender : ISmsSender
             [
                 new SmsDestination(
                     request.MessageId,
-                    to: request.Destination.Code.ToString(CultureInfo.InvariantCulture) + request.Destination
+                    to: request.Destinations[0].ToString(hasPlusPrefix: false)
                 ),
             ];
 
