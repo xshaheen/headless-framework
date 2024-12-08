@@ -7,7 +7,7 @@ namespace Framework.Sms.VictoryLink;
 
 public sealed class VictoryLinkSmsOptions
 {
-    public required string SendSmsEndpointUrl { get; init; } =
+    public required string Endpoint { get; init; } =
         "https://smsvas.vlserv.com/VLSMSPlatformResellerAPI/NewSendingAPI/api/SMSSender/SendSMS";
 
     public required string Sender { get; init; }
@@ -21,7 +21,7 @@ internal sealed class VictoryLinkSmsOptionsValidator : AbstractValidator<Victory
 {
     public VictoryLinkSmsOptionsValidator()
     {
-        RuleFor(x => x.SendSmsEndpointUrl).NotEmpty().HttpUrl();
+        RuleFor(x => x.Endpoint).NotEmpty().HttpUrl();
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.UserName).NotEmpty();
         RuleFor(x => x.Password).NotEmpty();

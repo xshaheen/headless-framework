@@ -15,7 +15,7 @@ public sealed class VictoryLinkSmsSender(
 ) : ISmsSender
 {
     private readonly VictoryLinkSmsOptions _options = optionsAccessor.Value;
-    private readonly Uri _uri = new(optionsAccessor.Value.SendSmsEndpointUrl);
+    private readonly Uri _uri = new(optionsAccessor.Value.Endpoint);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -32,7 +32,9 @@ public sealed class VictoryLinkSmsSender(
             SmsText = request.Text,
             SmsLang = request.Text.IsRtlText() ? "a" : "e",
             SmsSender = _options.Sender,
-            SmsReceiver = request.Destination.Number,
+            SmsReceiver = request.IsBatch
+                ? string.Join(',', request.Destinations.Select(x => x.Number))
+                : request.Destination.Number,
         };
 
         var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);
