@@ -31,19 +31,32 @@ public sealed class InfobipSmsSender : ISmsSender
         CancellationToken token = default
     )
     {
-        var messageId = request.MessageId ?? Guid.NewGuid().ToString();
+        var destination = request.IsBatch
+            ? request
+                .Destinations.Select(
+                    (item, index) =>
+                    {
+                        var messageId = request.MessageId is null
+                            ? null
+                            : request.MessageId + (index + 1).ToString(CultureInfo.InvariantCulture);
+
+                        return new SmsDestination(messageId, to: item.ToString(hasPlusPrefix: false));
+                    }
+                )
+                .ToList()
+            :
+            [
+                new SmsDestination(
+                    request.MessageId,
+                    to: request.Destination.Code.ToString(CultureInfo.InvariantCulture) + request.Destination
+                ),
+            ];
 
         var smsMessage = new SmsTextualMessage
         {
             From = _sender,
             Text = request.Text,
-            Destinations =
-            [
-                new(
-                    messageId,
-                    to: $"{request.Destination.Code.ToString(CultureInfo.InvariantCulture)}{request.Destination.Number}"
-                ),
-            ],
+            Destinations = destination,
         };
 
         var smsRequest = new SmsAdvancedTextualRequest { Messages = [smsMessage] };
