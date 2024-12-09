@@ -59,7 +59,6 @@
     <PackageVersion Include="Flurl" Version="4.0.0" />
     <PackageVersion Include="Foundatio" Version="11.0.5" />
     <PackageVersion Include="Foundatio.Redis" Version="11.0.5" />
-    <PackageVersion Include="Framework.Defaults" Version="0.0.1" />
     <PackageVersion Include="Humanizer.Core" Version="2.14.1" />
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="3.0.1" />
@@ -181,15 +180,16 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="ZString" Version="2.6.0" />
   </ItemGroup>
-  <ItemGroup Label="Analyzers">
-    <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
-    <PackageVersion Include="AsyncFixer" Version="1.6.0" />
-    <PackageVersion Include="Asyncify" Version="0.9.7" />
-    <PackageVersion Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
-    <PackageVersion Include="Roslynator.Analyzers" Version="4.12.9" />
-    <PackageVersion Include="ReflectionAnalyzers" Version="0.3.1" />
-    <PackageVersion Include="Meziantou.Analyzer" Version="2.0.179" />
-    <PackageVersion Include="SerilogAnalyzer" Version="0.15.0" />
-    <PackageVersion Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
+  <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <GlobalPackageReference Include="AsyncFixer" Version="1.6.0" />
+    <GlobalPackageReference Include="Asyncify" Version="0.9.7" />
+    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.1" />
+    <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
+    <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
+    <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.9" />
+    <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.179" />
+    <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
+    <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
 </Project>
