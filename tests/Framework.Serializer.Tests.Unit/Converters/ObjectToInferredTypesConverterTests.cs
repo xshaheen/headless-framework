@@ -89,20 +89,19 @@ public class ObjectToInferredTypesConverterTests
         result.Should().Be("hello world");
     }
 
-    // TODO: warning this is throwing stack overflow exception, ask Shaheen about it.
-    // [Fact]
-    // public void object_to_types_converter_should_convert_valid_object_type_successfully()
-    // {
-    //     // given
-    //     const string json = "{\"property\": \"value\"}";
-    //
-    //     // when
-    //     var result = JsonSerializer.Deserialize<object?>(json, _jsonOptions);
-    //
-    //     // then
-    //     result.Should().NotBeNull();
-    //     result.Should().BeOfType<object>();
-    // }
+    [Fact]
+    public void object_to_types_converter_should_convert_valid_object_type_successfully()
+    {
+        // given
+        const string json = "{\"property\": \"value\"}";
+
+        // when
+        var result = JsonSerializer.Deserialize<object?>(json, _jsonOptions);
+
+        // then
+        result.Should().NotBeNull();
+        result.Should().BeOfType<JsonElement>();
+    }
 
     [Fact]
     public void object_to_types_converter_should_throw_when_trying_to_convert_invalid_json()
@@ -131,7 +130,7 @@ public class ObjectToInferredTypesConverterTests
     }
 
     [Fact]
-    public void object_to_types_converter_should_write_valid_object_types_sucessfully()
+    public void object_to_types_converter_should_write_valid_object_types_successfully()
     {
         // given
         var value = new { Name = "Test", Age = 30 };
