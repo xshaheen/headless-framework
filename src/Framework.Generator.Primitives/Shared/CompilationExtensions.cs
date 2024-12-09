@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -158,7 +159,7 @@ public static class CompilationExtensions
     }
 
     /// <summary>
-    /// A dictionary that provides aliases for common .NET framework types, mapping their full names to shorter aliases.
+    /// A dictionary that provides aliases for common .NET types, mapping their full names to shorter aliases.
     /// </summary>
     private static readonly FrozenDictionary<string, string> _TypeAliases = new Dictionary<string, string>(
         StringComparer.Ordinal

@@ -2,24 +2,6 @@
 
   <Import Project="../Directory.Build.props" />
 
-  <PropertyGroup Label="Compiler settings">
-    <IsTestProject>true</IsTestProject>
-    <IsPublishable>false</IsPublishable>
-    <IsPackable>false</IsPackable>
-    <!--
-      1591: Missing XML comment for publicly visible type or member
-      CA1707: Identifiers should not contain underscores
-      IDE1006: Code-style naming rules
-      VSTHRD200 Use Async suffix for async methods
-      CA1822: Mark members as static
-      CA1515: Consider making public types internal
-      CA2007: Do not directly await a Task
-      CS8604: Possible null reference argument
-      S4144: Methods should not have identical implementations
-    -->
-    <NoWarn>$(NoWarn);1591;CA1707;IDE1006;IDE0022;VSTHRD200;CA1822;CA1515;CA2007;CS8604;S4144;CA5394;CA1308</NoWarn>
-  </PropertyGroup>
-
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
@@ -38,23 +20,13 @@
   </ItemGroup>
 
   <ItemGroup Label="Global Analyzers">
-    <PackageReference Include="FluentAssertions.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="NSubstitute.Analyzers.CSharp">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <GlobalPackageReference Include="FluentAssertions.Analyzers" />
+    <GlobalPackageReference Include="NSubstitute.Analyzers.CSharp" />
   </ItemGroup>
 
   <ItemGroup Label="Verify">
     <None Remove="Snapshots\*.received.txt" />
     <None Remove="Snapshots\*.received.cs" />
-  </ItemGroup>
-
-  <ItemGroup Label="Coverage">
-    <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
   </ItemGroup>
 
 </Project>

@@ -26,70 +26,13 @@
     <Authors>Mahmoud Shaheen</Authors>
     <Company>Mahmoud Shaheen</Company>
     <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>
-    <NeutralLanguage>en</NeutralLanguage>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
-  <PropertyGroup Label="CI">
-    <ContinuousIntegrationBuild>false</ContinuousIntegrationBuild>
-    <!-- Detect CI -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <!-- Detect Azure DevOps / TFS -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(TF_BUILD)' == 'true'">true</ContinuousIntegrationBuild>
-    <!-- Detect GitHub Actions -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-    <!-- Detect GitLab CI -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(GITLAB_CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <!--
-      Detect TeamCity
-      https://www.jetbrains.com/help/teamcity/predefined-build-parameters.html#Server+Build+Properties
-    -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(TEAMCITY_VERSION)' != ''">true</ContinuousIntegrationBuild>
-    <!-- Detect Wrench -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(BUILD_COMMAND)' != ''">true</ContinuousIntegrationBuild>
-    <!-- Detect AppVeyor -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(APPVEYOR)' != ''">true</ContinuousIntegrationBuild>
-    <!-- Detect Travis -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(TRAVIS)' == 'true'">true</ContinuousIntegrationBuild>
-    <!-- Detect Circle CI -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(CIRCLECI)' == 'true'">true</ContinuousIntegrationBuild>
-    <!-- Detect AWS CodeBuild -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(CODEBUILD_BUILD_ID)' != '' and '$(AWS_REGION)' != ''">true</ContinuousIntegrationBuild>
-    <!--
-      Detect Jenkins
-      https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#using-environment-variables
-    -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(JENKINS_URL)' != ''">true</ContinuousIntegrationBuild>
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(BUILD_ID)' != '' and '$(BUILD_URL)' != ''">true</ContinuousIntegrationBuild>
-    <!--
-      Google Cloud Build
-      https://cloud.google.com/build/docs/configuring-builds/substitute-variable-values
-    -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(BUILD_ID)' != '' and '$(PROJECT_ID)' != ''">true</ContinuousIntegrationBuild>
-    <!--
-      JetBrains Space
-      https://www.jetbrains.com/help/space/automation-environment-variables.html#general
-    -->
-    <ContinuousIntegrationBuild Condition="'$(ContinuousIntegrationBuild)' == 'false' and '$(JB_SPACE_API_URL)' != ''">true</ContinuousIntegrationBuild>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(ContinuousIntegrationBuild)' == 'true'">
-    <!-- 👇 Ensures consistent, reproducible builds -->
-    <Deterministic>true</Deterministic>
-    <!-- 👇 Enable deterministic restore -->
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-  </PropertyGroup>
-
   <PropertyGroup Label="Repository">
-    <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/xshaheen/framework.git</RepositoryUrl>
     <PackageProjectUrl>https://github.com/xshaheen/framework</PackageProjectUrl>
     <PackageReleaseNotes>https://github.com/xshaheen/framework/releases</PackageReleaseNotes>
-  </PropertyGroup>
-
-  <PropertyGroup Label="License">
-    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 
   <ItemGroup Label="Package References">
@@ -98,20 +41,8 @@
     <PackageReference Condition="'$(ExcludeSbomPackage)' != 'true'" Include="Microsoft.Sbom.Tool" PrivateAssets="All" />
   </ItemGroup>
 
-  <ItemGroup Label="Test Compability">
-    <InternalsVisibleTo Include="$(MSBuildProjectName).Tests.Architectures" />
-    <InternalsVisibleTo Include="$(MSBuildProjectName).Tests.Units" />
-    <InternalsVisibleTo Include="$(MSBuildProjectName).Tests.Integrations" />
-  </ItemGroup>
-
   <ItemGroup Label="README Files">
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <AssemblyAttribute Include="System.CLSCompliantAttribute">
-      <_Parameter1>false</_Parameter1>
-    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

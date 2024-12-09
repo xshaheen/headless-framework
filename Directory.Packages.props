@@ -59,6 +59,7 @@
     <PackageVersion Include="Flurl" Version="4.0.0" />
     <PackageVersion Include="Foundatio" Version="11.0.5" />
     <PackageVersion Include="Foundatio.Redis" Version="11.0.5" />
+    <PackageVersion Include="Framework.Defaults" Version="0.0.1" />
     <PackageVersion Include="Humanizer.Core" Version="2.14.1" />
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="3.0.1" />
