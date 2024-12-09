@@ -2,93 +2,24 @@
 
   <PropertyGroup Label="Compiler settings">
     <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <Features>strict</Features>
-    <WarningsAsErrors>nullable</WarningsAsErrors>
-    <AnalysisLevel>latest</AnalysisLevel>
-    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
-    <EnableNETAnalyzers>true</EnableNETAnalyzers>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-
-    <WarningLevel>9999</WarningLevel>
-    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
-    <ReportAnalyzer>true</ReportAnalyzer>
-    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
-    <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
-    <_SkipUpgradeNetAnalyzersNuGetWarning>true</_SkipUpgradeNetAnalyzersNuGetWarning>
-    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
-
-    <CheckEolTargetFramework Condition="'$(Configuration)' == 'Release'">false</CheckEolTargetFramework>
-    <SuppressTfmSupportBuildWarnings Condition="'$(Configuration)' == 'Release'">true</SuppressTfmSupportBuildWarnings>
-
-    <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
   </PropertyGroup>
-
-  <PropertyGroup Label="Error Handling" Condition=" '$(Configuration)' == 'Release' ">
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-  </PropertyGroup>
-
-  <PropertyGroup Label="Packages Compiler settings">
-    <!--
-      Make sure any documentation comments which are included in code get checked for syntax during the build, but do
-      not report warnings for missing comments.
-      CS1573: Parameter 'parameter' has no matching param tag in the XML comment for 'parameter' (but other parameters do)
-      CS1591: Missing XML comment for publicly visible type or member 'Type_or_Member'
-      CS1712: Type parameter 'type_parameter' has no matching typeparam tag in the XML comment on 'type_or_member' (but other type parameters do)
-    -->
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn),1573,1591,1712</NoWarn>
-  </PropertyGroup>
-
-  <ItemGroup Label="Global Usings">
-    <Using Include="System.Collections.Frozen" />
-    <Using Include="System.Collections.Immutable" />
-    <Using Include="System.Globalization" />
-    <Using Include="JetBrains.Annotations" />
-  </ItemGroup>
 
   <ItemGroup Label="Package References">
     <PackageReference Include="JetBrains.Annotations" />
+    <Using Include="JetBrains.Annotations" />
   </ItemGroup>
 
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
-    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="AsyncFixer">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Asyncify">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="SmartAnalyzers.MultithreadingAnalyzer">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Roslynator.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="ReflectionAnalyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Meziantou.Analyzer">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="SerilogAnalyzer">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="ErrorProne.NET.CoreAnalyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
+    <GlobalPackageReference Include="Framework.Defaults" />
+    <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" />
+    <GlobalPackageReference Include="AsyncFixer" />
+    <GlobalPackageReference Include="Asyncify" />
+    <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" />
+    <GlobalPackageReference Include="Roslynator.Analyzers" />
+    <GlobalPackageReference Include="ReflectionAnalyzers" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" />
+    <GlobalPackageReference Include="SerilogAnalyzer" />
+    <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" />
   </ItemGroup>
 
 </Project>

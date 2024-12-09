@@ -1,4 +1,4 @@
-﻿##########################################
+##########################################
 # Common Settings
 ##########################################
 
@@ -782,5 +782,3 @@ dotnet_diagnostic.SA1502.severity                                       = none
 dotnet_diagnostic.SA1504.severity                                       = none
 dotnet_diagnostic.SA1515.severity                                       = none
 dotnet_diagnostic.SA1516.severity                                       = none
-
-# Inspired by: https://github.com/RehanSaeed/EditorConfig commit d06930296a9e8fbb6f2d8ea39f4c789c3e5399ff
