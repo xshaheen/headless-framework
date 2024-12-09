@@ -101,7 +101,7 @@ public class SingleOrCollectionConverterTests
         result.Should().NotBeNull();
         result.Should().ContainSingle();
         result![0].Id.Should().Be(1);
-        result![0].Name.Should().Be("Item 1");
+        result[0].Name.Should().Be("Item 1");
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public class SingleOrCollectionConverterTests
         act.Should().Throw<JsonException>();
     }
 
-    private class MyItem
+    private sealed class MyItem
     {
         public int Id { get; init; }
 

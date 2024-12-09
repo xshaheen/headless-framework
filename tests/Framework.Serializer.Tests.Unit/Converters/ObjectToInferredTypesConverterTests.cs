@@ -90,7 +90,7 @@ public class ObjectToInferredTypesConverterTests
         result.Should().Be("hello world");
     }
 
-    # warning this is throwing stack overflow exception, ask Shaheen about it.
+    // TODO: warning this is throwing stack overflow exception, ask Shaheen about it.
     // [Fact]
     // public void object_to_types_converter_should_convert_valid_object_type_successfully()
     // {

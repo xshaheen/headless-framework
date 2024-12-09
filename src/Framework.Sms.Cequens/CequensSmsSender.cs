@@ -38,7 +38,11 @@ public sealed class CequensSmsSender(
 
         var apiRequest = new SendSmsRequest
         {
-            ClientMessageId = request.MessageId is not null && int.TryParse(request.MessageId, CultureInfo.InvariantCulture, out var id) ? id : null,
+            ClientMessageId =
+                request.MessageId is not null
+                && int.TryParse(request.MessageId, CultureInfo.InvariantCulture, out var id)
+                    ? id
+                    : null,
             SenderName = _options.SenderName,
             MessageText = request.Text,
             Recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString(),
@@ -82,7 +86,11 @@ public sealed class CequensSmsSender(
 
         if (!response.IsSuccessStatusCode)
         {
-            logger.LogError("Failed to get token from Cequens API: {StatusCode}, {Body}", response.StatusCode, response);
+            logger.LogError(
+                "Failed to get token from Cequens API: {StatusCode}, {Body}",
+                response.StatusCode,
+                response
+            );
 
             return null;
         }

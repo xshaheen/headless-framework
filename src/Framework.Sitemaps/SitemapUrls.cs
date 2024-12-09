@@ -175,10 +175,7 @@ public static class SitemapUrls
         }
     }
 
-    private static async Task _WriteImagesAsync(
-        XmlWriter writer,
-        IEnumerable<SitemapImage> images
-    )
+    private static async Task _WriteImagesAsync(XmlWriter writer, IEnumerable<SitemapImage> images)
     {
         /*
          * <image:image>
