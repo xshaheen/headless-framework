@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using NSwag;
 using NSwag.Generation.AspNetCore;

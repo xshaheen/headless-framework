@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Framework.BuildingBlocks;
 using Framework.Primitives;
 using Microsoft.EntityFrameworkCore.ChangeTracking;

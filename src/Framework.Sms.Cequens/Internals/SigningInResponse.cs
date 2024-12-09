@@ -1,7 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json.Serialization;
-
 namespace Framework.Sms.Cequens.Internals;
 
 internal sealed class SigningInResponse

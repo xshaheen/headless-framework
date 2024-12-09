@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
 namespace Framework.Payments.Paymob.CashIn.Internal;
 
 internal sealed class AddNullableAmountConverter : JsonConverter<string>

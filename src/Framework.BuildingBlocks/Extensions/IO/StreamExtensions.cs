@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
-
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.IO;

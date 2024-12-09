@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text;
 using Couchbase;
 using Couchbase.Core.Exceptions;
 using Couchbase.KeyValue;

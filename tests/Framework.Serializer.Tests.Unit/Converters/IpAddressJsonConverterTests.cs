@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Text.Json;
 using Framework.Serializer.Json.Converters;
 
 namespace Tests.Converters;

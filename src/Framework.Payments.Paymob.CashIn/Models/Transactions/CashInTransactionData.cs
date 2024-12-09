@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json.Serialization;
 using Framework.Payments.Paymob.CashIn.Internal;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Transactions;

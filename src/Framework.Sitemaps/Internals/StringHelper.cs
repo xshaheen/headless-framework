@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Framework.Sitemaps.Internals;

@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
-using System.Text;
 using Framework.Checks;
 using Framework.Primitives;
 using FileHelper = Framework.BuildingBlocks.Helpers.IO.FileHelper;

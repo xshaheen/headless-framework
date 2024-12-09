@@ -3,7 +3,6 @@
 using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text;
 
 namespace Framework.BuildingBlocks.Extensions.System;
 

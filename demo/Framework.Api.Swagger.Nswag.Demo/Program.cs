@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using Asp.Versioning;
 using Framework.Api.Swagger.Nswag;
 using Framework.BuildingBlocks;

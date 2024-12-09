@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Text;
 using System.Xml.Linq;
 using Framework.Blobs;
 using Framework.Testing.Helpers;
