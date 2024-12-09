@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using FluentValidation;
 
 #pragma warning disable IDE0130

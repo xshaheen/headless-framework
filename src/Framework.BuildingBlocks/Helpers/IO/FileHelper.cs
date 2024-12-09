@@ -3,7 +3,6 @@
 using System.Buffers;
 using System.Net;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 using Framework.BuildingBlocks.Helpers.System;
 using Humanizer;

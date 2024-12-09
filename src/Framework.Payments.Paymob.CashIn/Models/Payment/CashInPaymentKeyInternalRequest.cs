@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json.Serialization;
-
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
 internal sealed class CashInPaymentKeyInternalRequest(

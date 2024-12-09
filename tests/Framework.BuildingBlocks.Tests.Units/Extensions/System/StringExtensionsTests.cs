@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using Framework.BuildingBlocks.Helpers.System;
 
 namespace Tests.Extensions.System;

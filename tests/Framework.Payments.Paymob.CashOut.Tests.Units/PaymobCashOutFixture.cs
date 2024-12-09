@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using AutoFixture;
 using Framework.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Options;

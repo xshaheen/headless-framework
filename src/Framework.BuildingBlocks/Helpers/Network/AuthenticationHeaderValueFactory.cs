@@ -1,5 +1,4 @@
 using System.Net.Http.Headers;
-using System.Text;
 using Framework.Checks;
 
 namespace Framework.BuildingBlocks.Helpers.Network;

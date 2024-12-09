@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
-
 namespace Framework.BuildingBlocks.Helpers.Text;
 
 internal static class FormatStringTokenizer

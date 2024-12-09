@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Cryptography;
-using System.Text;
 using Framework.Checks;
 using Framework.Payments.Paymob.CashIn.Models.Callback;
 

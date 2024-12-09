@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Encodings.Web;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

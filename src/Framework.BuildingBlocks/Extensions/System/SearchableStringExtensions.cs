@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
 using static Framework.BuildingBlocks.Helpers.Ar.ArabicLetters;
 
 #pragma warning disable IDE0130

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Text.Json;
 using Framework.BuildingBlocks;
 using Framework.Domains;
 

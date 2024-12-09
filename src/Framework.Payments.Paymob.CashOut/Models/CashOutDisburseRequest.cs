@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json.Serialization;
 using Framework.Checks;
 
 namespace Framework.Payments.Paymob.CashOut.Models;

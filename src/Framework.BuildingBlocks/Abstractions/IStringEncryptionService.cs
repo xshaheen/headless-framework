@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
-using System.Text;
 using FluentValidation;
 
 namespace Framework.BuildingBlocks.Abstractions;

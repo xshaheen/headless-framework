@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Framework.BuildingBlocks;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using File = Framework.Primitives.File;

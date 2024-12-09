@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Framework.Recaptcha.Contracts;
 using Framework.Recaptcha.Internals;
 using Microsoft.Extensions.Logging;

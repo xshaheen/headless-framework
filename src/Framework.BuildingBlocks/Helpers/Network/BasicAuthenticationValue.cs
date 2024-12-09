@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Headers;
-using System.Text;
 
 namespace Framework.BuildingBlocks.Helpers.Network;
 

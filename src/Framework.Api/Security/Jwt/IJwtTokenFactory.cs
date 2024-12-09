@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using System.Text;
 using Framework.Api.Security.Claims;
 using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;

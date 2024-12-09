@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Framework.BuildingBlocks.Abstractions;
 using Framework.Caching;
