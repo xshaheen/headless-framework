@@ -9,17 +9,4 @@
     <Using Include="JetBrains.Annotations" />
   </ItemGroup>
 
-  <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
-    <GlobalPackageReference Include="Framework.Defaults" />
-    <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" />
-    <GlobalPackageReference Include="AsyncFixer" />
-    <GlobalPackageReference Include="Asyncify" />
-    <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" />
-    <GlobalPackageReference Include="Roslynator.Analyzers" />
-    <GlobalPackageReference Include="ReflectionAnalyzers" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" />
-    <GlobalPackageReference Include="SerilogAnalyzer" />
-    <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" />
-  </ItemGroup>
-
 </Project>
