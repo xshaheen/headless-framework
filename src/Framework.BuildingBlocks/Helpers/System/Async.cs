@@ -3,7 +3,7 @@
 using System.Runtime.ExceptionServices;
 
 namespace Framework.BuildingBlocks.Helpers.System;
-
+[PublicAPI]
 public static class Async
 {
     public static async Task<TReturn?> Using<TResource, TReturn>(

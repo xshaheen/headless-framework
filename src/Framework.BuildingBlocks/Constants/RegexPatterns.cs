@@ -238,5 +238,13 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Date();
+    public static partial Regex Date();//46494941649
+
+    /// <summary>Represent IpAddressRange.</summary>
+    [GeneratedRegex(
+        pattern: @"^(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:-\d{1,3})?|\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2})$",
+        options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
+    )]
+    public static partial Regex IpAddressRange();
 }

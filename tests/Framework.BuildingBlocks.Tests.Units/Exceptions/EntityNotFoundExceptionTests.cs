@@ -10,7 +10,7 @@ public sealed class EntityNotFoundExceptionTests
     public void should_set_properties_correctly_when_use_guid_key()
     {
         // given
-        const string entity = "TestEntity";
+        const string entity = "QueryableTestEntity";
         var key = Guid.NewGuid();
 
         // when
@@ -26,7 +26,7 @@ public sealed class EntityNotFoundExceptionTests
     public void should_set_properties_correctly_when_use_string_key()
     {
         // given
-        const string entity = "TestEntity";
+        const string entity = "QueryableTestEntity";
         const string key = "TestKey";
 
         // when
@@ -42,7 +42,7 @@ public sealed class EntityNotFoundExceptionTests
     public void should_set_properties_correctly_when_use_int_key()
     {
         // given
-        const string entity = "TestEntity";
+        const string entity = "QueryableTestEntity";
         const int key = 123;
 
         // when
@@ -58,7 +58,7 @@ public sealed class EntityNotFoundExceptionTests
     public void should_set_properties_correctly_when_use_long_key()
     {
         // given
-        const string entity = "TestEntity";
+        const string entity = "QueryableTestEntity";
         const long key = 123L;
 
         // when

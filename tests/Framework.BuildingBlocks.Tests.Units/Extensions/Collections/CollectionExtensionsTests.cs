@@ -5,7 +5,7 @@ namespace Tests.Extensions.Collections;
 public sealed class CollectionExtensionsTests
 {
     [Fact]
-    public void AddIfNotContains_with_predicate()
+    public void add_if_not_contains_with_predicate()
     {
         List<int> collection = [4, 5, 6];
 
