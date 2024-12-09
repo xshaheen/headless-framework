@@ -8,10 +8,7 @@ namespace Tests.Converters;
 
 public class IpAddressJsonConverterTests
 {
-    private readonly JsonSerializerOptions _options = new()
-    {
-        Converters = { new IpAddressJsonConverter() },
-    };
+    private readonly JsonSerializerOptions _options = new() { Converters = { new IpAddressJsonConverter() } };
 
     [Fact]
     public void ip_json_converter_should_return_valid_ip_object_when_reading_valid_ip_json()

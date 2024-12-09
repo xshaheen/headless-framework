@@ -7,10 +7,7 @@ namespace Tests.Converters;
 
 public class NullableStringToGuidConverterTests
 {
-    private readonly JsonSerializerOptions _options = new()
-    {
-        Converters = { new NullableStringToGuidConverter() },
-    };
+    private readonly JsonSerializerOptions _options = new() { Converters = { new NullableStringToGuidConverter() } };
 
     [Fact]
     public void guid_convertor_should_deserialize_valid_guild_normally()

@@ -7,10 +7,7 @@ namespace Tests.Converters;
 
 public class StringToBooleanConverterTests
 {
-    private readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        Converters = { new StringToBooleanConverter() },
-    };
+    private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToBooleanConverter() } };
 
     [Fact]
     public void string_to_bool_converter_should_convert_valid_true_boolean_successfully()

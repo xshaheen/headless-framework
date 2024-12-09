@@ -44,13 +44,7 @@ public sealed class InfobipSmsSender : ISmsSender
                     }
                 )
                 .ToList()
-            :
-            [
-                new SmsDestination(
-                    request.MessageId,
-                    to: request.Destinations[0].ToString(hasPlusPrefix: false)
-                ),
-            ];
+            : [new SmsDestination(request.MessageId, to: request.Destinations[0].ToString(hasPlusPrefix: false))];
 
         var smsMessage = new SmsTextualMessage
         {

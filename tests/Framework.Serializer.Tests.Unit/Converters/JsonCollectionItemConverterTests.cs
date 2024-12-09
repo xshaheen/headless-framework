@@ -6,7 +6,6 @@ using Framework.Serializer.Json.Converters;
 
 namespace Tests.Converters;
 
-
 public class JsonCollectionItemConverterTests
 {
     private readonly JsonSerializerOptions _options;
@@ -113,13 +112,13 @@ public class JsonCollectionItemConverterTests
         result.Should().BeEmpty();
     }
 
-    private class SampleType
+    private sealed class SampleType
     {
         public string? Name { get; init; }
     }
 
     [PublicAPI]
-    private class SampleConverter : JsonConverter<SampleType>
+    private sealed class SampleConverter : JsonConverter<SampleType>
     {
         public override SampleType Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
