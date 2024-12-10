@@ -22,7 +22,7 @@ public static class StringHelper
 
         encoding ??= Encoding.UTF8;
 
-        var hasBom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+        var hasBom = bytes is [0xEF, 0xBB, 0xBF, ..];
 
         return hasBom ? encoding.GetString(bytes, 3, bytes.Length - 3) : encoding.GetString(bytes);
     }

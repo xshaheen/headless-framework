@@ -70,6 +70,7 @@ public static class FileStreamExtensions
 
         static async ValueTask writeFileAsync((string FilePath, Stream BlobStream) state, CancellationToken token)
         {
+            state.BlobStream.ResetPosition();
             await using var fileStream = File.Open(state.FilePath, FileMode.Create, FileAccess.Write);
             await state.BlobStream.CopyToAsync(fileStream, token);
             await state.BlobStream.FlushAsync(token);
