@@ -183,14 +183,12 @@ public static class StreamExtensions
 
     #region Reset Position
 
-    public static long ResetPosition(this Stream stream, int position = 0)
+    public static void ResetPosition(this Stream stream, int position = 0)
     {
         if (stream.CanSeek)
         {
             stream.Position = position;
         }
-
-        return stream.Position;
     }
 
     #endregion

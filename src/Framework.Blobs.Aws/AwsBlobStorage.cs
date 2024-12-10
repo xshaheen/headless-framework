@@ -161,7 +161,17 @@ public sealed class AwsBlobStorage : IBlobStorage
         }
 
         var request = new DeleteObjectRequest { BucketName = bucket, Key = key };
-        var response = await _s3.DeleteObjectAsync(request, cancellationToken);
+
+        DeleteObjectResponse? response;
+
+        try
+        {
+            response = await _s3.DeleteObjectAsync(request, cancellationToken);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return true;
+        }
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
 
@@ -265,7 +275,15 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         do
         {
-            listResponse = await _s3.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
+            try
+            {
+                listResponse = await _s3.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
+            }
+            catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+            {
+                return 0; // If the bucket doesn't exist, there are no files to delete.
+            }
+
             listRequest.ContinuationToken = listResponse.NextContinuationToken;
 
             var keys = _MatchesPattern(listResponse.S3Objects, criteria.Pattern)
@@ -284,6 +302,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 keys.Length,
                 blobSearchPattern
             );
+
             var deleteResponse = await _s3.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
 
             if (deleteResponse.DeleteErrors.Count > 0)
@@ -358,7 +377,16 @@ public sealed class AwsBlobStorage : IBlobStorage
             DestinationKey = newKey,
         };
 
-        var response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
+        CopyObjectResponse? response;
+
+        try
+        {
+            response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return false;
+        }
 
         return response.HttpStatusCode.IsSuccessStatusCode();
     }
@@ -392,7 +420,16 @@ public sealed class AwsBlobStorage : IBlobStorage
             DestinationKey = newKey,
         };
 
-        var response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
+        CopyObjectResponse? response;
+
+        try
+        {
+            response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return false;
+        }
 
         if (!response.HttpStatusCode.IsSuccessStatusCode())
         {
@@ -513,7 +550,16 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         var request = new GetObjectMetadataRequest { BucketName = bucket, Key = key };
 
-        var response = await _s3.GetObjectMetadataAsync(request, cancellationToken);
+        GetObjectMetadataResponse? response;
+
+        try
+        {
+            response = await _s3.GetObjectMetadataAsync(request, cancellationToken);
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return null;
+        }
 
         if (response.HttpStatusCode is HttpStatusCode.NotFound)
         {
@@ -554,7 +600,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         var criteria = _GetRequestCriteria(pattern);
 
         var result = new PagedFileListResult(_ =>
-            _GetFiles(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
+            _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
         );
 
         await result.NextPageAsync().AnyContext();
@@ -562,7 +608,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         return result;
     }
 
-    private async ValueTask<INextPageResult> _GetFiles(
+    private async ValueTask<INextPageResult> _GetFilesAsync(
         string bucket,
         SearchCriteria criteria,
         int pageSize,
@@ -580,7 +626,21 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         _logger.LogTrace("Getting file list matching {Prefix} and {Pattern}...", criteria.Prefix, criteria.Pattern);
 
-        var response = await _s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
+        ListObjectsV2Response? response;
+
+        try
+        {
+            response = await _s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
+        }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return new NextPageResult
+            {
+                Success = false,
+                HasMore = false,
+                Blobs = Array.Empty<BlobInfo>(),
+            };
+        }
 
         return new NextPageResult
         {
@@ -591,7 +651,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 .Where(spec => !_IsDirectory(spec))
                 .ToList(),
             NextPageFunc = response.IsTruncated
-                ? _ => _GetFiles(bucket, criteria, pageSize, response.NextContinuationToken, cancellationToken)
+                ? _ => _GetFilesAsync(bucket, criteria, pageSize, response.NextContinuationToken, cancellationToken)
                 : null,
         };
     }
