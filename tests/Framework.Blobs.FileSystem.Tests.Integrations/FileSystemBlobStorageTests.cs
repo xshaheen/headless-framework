@@ -8,12 +8,15 @@ namespace Tests;
 
 public sealed class FileSystemBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
 {
+    private readonly string _baseDirectoryPath = Directory.CreateTempSubdirectory().FullName;
+
     protected override IBlobStorage GetStorage()
     {
         var options = new FileSystemBlobStorageOptions
         {
-            BaseDirectoryPath = Directory.CreateTempSubdirectory().FullName,
+            BaseDirectoryPath = _baseDirectoryPath,
         };
+
         var optionsWrapper = new OptionsWrapper<FileSystemBlobStorageOptions>(options);
 
         return new FileSystemBlobStorage(optionsWrapper);
@@ -125,5 +128,44 @@ public sealed class FileSystemBlobStorageTests(ITestOutputHelper output) : BlobS
     public override Task CanSaveOverExistingStoredContent()
     {
         return base.CanSaveOverExistingStoredContent();
+    }
+
+    [Fact]
+    public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
+    {
+        var container = Container;
+        var containerName = ContainerName;
+        using var storage = (FileSystemBlobStorage) GetStorage();
+        await ResetAsync(storage);
+
+        var result = await storage.GetPagedListAsync(container);
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
+        (await result.NextPageAsync()).Should().BeFalse();
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
+
+        const string directory = "EmptyDirectory/";
+        Directory.CreateDirectory(Path.Combine(_baseDirectoryPath, containerName, directory));
+
+        result = await storage.GetPagedListAsync(container);
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
+        (await result.NextPageAsync()).Should().BeFalse();
+        result.HasMore.Should().BeFalse();
+        result.Blobs.Should().BeEmpty();
+
+        // Ensure the directory will not be returned via get file info
+        var info = await storage.GetBlobInfoAsync(container, directory);
+        info.Should().BeNull();
+
+        // Ensure delete files can remove all files including fake folders
+        await storage.DeleteAllAsync(container, "*");
+
+        // Assert folder was removed by Delete Files
+        Directory.Exists(Path.Combine(_baseDirectoryPath, containerName, directory)).Should().BeFalse();
+
+        info = await storage.GetBlobInfoAsync(container, directory);
+        info.Should().BeNull();
     }
 }
