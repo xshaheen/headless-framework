@@ -2,6 +2,7 @@
 
 namespace Tests.Helpers;
 
+#pragma warning disable MA0096 // A class that implements IComparable<T> should also implement IEquatable<T>
 internal sealed class InputsTestArgument : IComparable, IComparable<InputsTestArgument>
 {
     public int IntValue { get; set; } = 5;
@@ -27,29 +28,39 @@ internal sealed class InputsTestArgument : IComparable, IComparable<InputsTestAr
     public int CompareTo(InputsTestArgument? other)
     {
         if (other == null)
+        {
             return 1;
+        }
 
-        int intComparison = IntValue.CompareTo(other.IntValue);
+        var intComparison = IntValue.CompareTo(other.IntValue);
 
         if (intComparison != 0)
+        {
             return intComparison;
+        }
 
-        int doubleComparison = DoubleValue.CompareTo(other.DoubleValue);
+        var doubleComparison = DoubleValue.CompareTo(other.DoubleValue);
 
         if (doubleComparison != 0)
+        {
             return doubleComparison;
+        }
 
-        int floatComparison = FloatValue.CompareTo(other.FloatValue);
+        var floatComparison = FloatValue.CompareTo(other.FloatValue);
 
         if (floatComparison != 0)
+        {
             return floatComparison;
+        }
 
-        int decimalComparison = DecimalValue.CompareTo(other.DecimalValue);
+        var decimalComparison = DecimalValue.CompareTo(other.DecimalValue);
 
         if (decimalComparison != 0)
+        {
             return decimalComparison;
+        }
 
-        int timeSpanComparison = TimeSpanValue.CompareTo(other.TimeSpanValue);
+        var timeSpanComparison = TimeSpanValue.CompareTo(other.TimeSpanValue);
 
         return timeSpanComparison;
     }
