@@ -221,7 +221,7 @@ public sealed class SshBlobStorage : IBlobStorage
         var containerPath = _BuildContainerPath(container);
         blobSearchPattern = _NormalizePath(blobSearchPattern);
 
-        if (blobSearchPattern is null)
+        if (blobSearchPattern is null or "*")
         {
             return await DeleteDirectoryAsync(containerPath, includeSelf: false, cancellationToken);
         }
@@ -486,9 +486,8 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(container);
 
         await _EnsureClientConnectedAsync(cancellationToken);
-
-        var blobPath = _BuildBlobPath(container, blobName);
-
+        var directoryPath = _BuildContainerPath(container);
+        var blobPath = directoryPath + blobName;
         _logger.LogTrace("Getting blob info for {Path}", blobPath);
 
         try
@@ -502,7 +501,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 return null;
             }
 
-            return _ToBlobInfo(file, blobPath);
+            return _ToBlobInfo(file, blobPath.Replace(directoryPath, string.Empty, StringComparison.Ordinal));
         }
         catch (SftpPathNotFoundException ex)
         {
@@ -603,6 +602,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         await _GetFileListRecursivelyAsync(
             criteria.PathPrefix,
+            criteria.PathPrefix,
             criteria.Pattern,
             list,
             recordsToReturn,
@@ -623,14 +623,15 @@ public sealed class SshBlobStorage : IBlobStorage
     }
 
     private async Task _GetFileListRecursivelyAsync(
-        string pathPrefix,
+        string originalPathPrefix,
+        string currentPathPrefix,
         Regex? pattern,
         ICollection<BlobInfo> list,
         int? recordsToReturn = null,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(pathPrefix);
+        Argument.IsNotNullOrEmpty(currentPathPrefix);
 
         if (cancellationToken.IsCancellationRequested)
         {
@@ -643,14 +644,14 @@ public sealed class SshBlobStorage : IBlobStorage
 
         try
         {
-            await foreach (var file in _client.ListDirectoryAsync(pathPrefix, cancellationToken))
+            await foreach (var file in _client.ListDirectoryAsync(currentPathPrefix, cancellationToken))
             {
                 files.Add(file);
             }
         }
         catch (SftpPathNotFoundException)
         {
-            _logger.LogDebug("Directory not found with {PathPrefix}", pathPrefix);
+            _logger.LogDebug("Directory not found with {PathPrefix}", currentPathPrefix);
 
             return;
         }
@@ -680,13 +681,13 @@ public sealed class SshBlobStorage : IBlobStorage
             }
 
             // If the prefix (current directory) is empty, use the current working directory instead of a rooted path.
-            var path = string.IsNullOrEmpty(pathPrefix) ? file.Name : $"{pathPrefix}{file.Name}";
+            var path = string.IsNullOrEmpty(currentPathPrefix) ? file.Name : $"{currentPathPrefix}{file.Name}";
 
             if (file.IsDirectory)
             {
                 path += "/";
 
-                await _GetFileListRecursivelyAsync(path, pattern, list, recordsToReturn, cancellationToken);
+                await _GetFileListRecursivelyAsync(originalPathPrefix, path, pattern, list, recordsToReturn, cancellationToken);
 
                 continue;
             }
@@ -703,7 +704,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 continue;
             }
 
-            list.Add(_ToBlobInfo(file, path));
+            list.Add(_ToBlobInfo(file, path.Replace(originalPathPrefix, string.Empty, StringComparison.Ordinal)));
         }
     }
 
