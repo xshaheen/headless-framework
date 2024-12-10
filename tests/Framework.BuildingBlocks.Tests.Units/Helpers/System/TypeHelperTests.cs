@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Tests.BuildingBlocks.Helpers;
+namespace Tests.Helpers.System;
 
 public sealed class TypeHelperTests
 {
     [Fact]
-    public void GetDefaultValue_test()
+    public void get_default_value_should_work_as_expected()
     {
         typeof(bool).GetDefaultValue().Should().Be(false);
         typeof(byte).GetDefaultValue().Should().Be(0);
