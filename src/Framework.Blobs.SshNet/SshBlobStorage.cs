@@ -89,7 +89,7 @@ public sealed class SshBlobStorage : IBlobStorage
         {
             await using var sftpFileStream = await _client.OpenAsync(
                 blobPath,
-                FileMode.OpenOrCreate,
+                FileMode.Create,
                 FileAccess.Write,
                 cancellationToken
             );
