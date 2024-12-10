@@ -93,6 +93,7 @@ public static class CollectionChangeDetectorExtensions
         return (addedItems, removedItems, updatedItems, sameItems);
     }
 
+    /// <summary>Compare each tuple items with the given function to detect the updated items.</summary>
     [MustUseReturnValue]
     public static (List<(T1, T2)> UpdatedItems, List<(T1, T2)> SameItems) DetectUpdates<T1, T2>(
         this List<(T1, T2)> existItems,

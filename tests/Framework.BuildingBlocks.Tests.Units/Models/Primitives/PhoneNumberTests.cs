@@ -52,9 +52,8 @@ public sealed class PhoneNumberTests
     [Fact]
     public void normalize_single_string_should_return_correct_format()
     {
-        // bug here because "\0" on normalize
         // given
-        string number = " 010 18541 323";
+        const string number = " 010 18541 323";
 
         // when
         var normalized = PhoneNumber.Normalize(number);
