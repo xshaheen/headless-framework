@@ -532,7 +532,7 @@ public sealed class SshBlobStorage : IBlobStorage
         var directoryPath = _BuildContainerPath(containers);
 
         var result = new PagedFileListResult(_ =>
-            _GetFiles(directoryPath, blobSearchPattern, 1, pageSize, cancellationToken)
+            _GetFilesAsync(directoryPath, blobSearchPattern, 1, pageSize, cancellationToken)
         );
 
         await result.NextPageAsync();
@@ -540,7 +540,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return result;
     }
 
-    private async ValueTask<INextPageResult> _GetFiles(
+    private async ValueTask<INextPageResult> _GetFilesAsync(
         string directoryPath,
         string? searchPattern,
         int page,
@@ -571,7 +571,7 @@ public sealed class SshBlobStorage : IBlobStorage
             HasMore = hasMore,
             Blobs = list,
             NextPageFunc = hasMore
-                ? _ => _GetFiles(directoryPath, searchPattern, page + 1, pageSize, cancellationToken)
+                ? _ => _GetFilesAsync(directoryPath, searchPattern, page + 1, pageSize, cancellationToken)
                 : null,
         };
     }
