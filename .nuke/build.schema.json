@@ -27,6 +27,7 @@
         "Clean",
         "Compile",
         "Pack",
+        "PushPackages",
         "Restore",
         "Test",
         "TestCoverage"
@@ -110,6 +111,10 @@
             "Debug",
             "Release"
           ]
+        },
+        "GithubToken": {
+          "type": "string",
+          "description": "Configuration to build - Default is 'Debug' (local) or 'Release' (server)"
         },
         "Solution": {
           "type": "string",
