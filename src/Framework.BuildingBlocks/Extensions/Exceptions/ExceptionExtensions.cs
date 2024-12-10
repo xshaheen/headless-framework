@@ -9,6 +9,7 @@ using Framework.Primitives;
 // ReSharper disable once CheckNamespace
 namespace System;
 
+[PublicAPI]
 public static class ExceptionExtensions
 {
     /// <summary>Uses <see cref="Capture"/> method to re-throws exception while preserving stack trace.</summary>

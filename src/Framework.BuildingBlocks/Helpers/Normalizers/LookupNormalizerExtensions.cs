@@ -23,7 +23,7 @@ public static class LookupNormalizerExtensions
     {
         return number
             ?.NullableTrim()
-            ?.Replace(' ', '\0')
+            ?.RemoveCharacter(' ')
             .ToInvariantDigits()
             .RemovePostfix(StringComparison.Ordinal, "0");
     }

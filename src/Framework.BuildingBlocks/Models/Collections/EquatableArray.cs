@@ -9,6 +9,7 @@ namespace Framework.Primitives;
 /// <summary>An immutable, equatable array. This is equivalent to <see cref="Array"/> but with value equality support.</summary>
 /// <typeparam name="T">The type of values in the array.</typeparam>
 /// <remarks>Initializes a new instance of the <see cref="EquatableArray{T}"/> struct.</remarks>
+[PublicAPI]
 public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equalityComparer = null)
     : IEquatable<EquatableArray<T>>,
         IEnumerable<T>
