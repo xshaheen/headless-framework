@@ -29,19 +29,19 @@ public sealed class ArgumentIsPositiveTests
         switch (argument)
         {
             case int:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((int) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((int)argument));
 
                 break;
             case float:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((float) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((float)argument));
 
                 break;
             case decimal:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((decimal) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((decimal)argument));
 
                 break;
             case TimeSpan:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((TimeSpan) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((TimeSpan)argument));
 
                 break;
         }

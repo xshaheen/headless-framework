@@ -39,7 +39,6 @@ public class ArgumentIsOneOfTests
         Argument.IsOneOf(argument, validValues).Should().Be(argument);
     }
 
-
     [Fact]
     public void is_one_of_decimal_should_return_argument_when_valid()
     {

@@ -37,6 +37,6 @@ public partial class PaymobCashInBrokerTests
         var invocation = FluentActions.Awaiting(() => func(broker));
 
         // then
-        await _ShouldThrowPaymobRequestException(invocation, HttpStatusCode.InternalServerError, body);
+        await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);
     }
 }

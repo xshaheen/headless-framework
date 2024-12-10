@@ -128,7 +128,13 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(container);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (blobNames.Count == 0)
+        {
+            return ValueTask.FromResult<IReadOnlyList<Result<bool, Exception>>>(Array.Empty<Result<bool, Exception>>());
+        }
 
         IReadOnlyList<Result<bool, Exception>> results = blobNames
             .Select(fileName =>
@@ -379,6 +385,9 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(blobName);
+        Argument.IsNotNull(container);
+
         var directoryPath = _GetDirectoryPath(container);
         var filePath = Path.Combine(directoryPath, blobName);
 

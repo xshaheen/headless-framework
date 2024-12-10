@@ -59,12 +59,14 @@ public sealed class CollectionChangeDetectorExtensionsTests
         addedItems.Should().BeEquivalentTo([new KeyValue(4, "David")]);
         removedItems.Should().BeEquivalentTo([new KeyValue(1, "Alice")]);
 
-        existItems.Should().BeEquivalentTo(
-            [
-                (new KeyValue(2, "Bob"), new KeyValue(2, "Bob")),
-                (new KeyValue(3, "Charlie"), new KeyValue(3, "Charlie")),
-            ]
-        );
+        existItems
+            .Should()
+            .BeEquivalentTo(
+                [
+                    (new KeyValue(2, "Bob"), new KeyValue(2, "Bob")),
+                    (new KeyValue(3, "Charlie"), new KeyValue(3, "Charlie")),
+                ]
+            );
     }
 
     private sealed record KeyValue(int Id, string Value);

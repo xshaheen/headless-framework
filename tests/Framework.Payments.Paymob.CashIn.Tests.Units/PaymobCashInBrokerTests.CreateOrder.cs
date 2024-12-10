@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using System.Text.Json.Serialization;
 using Framework.Payments.Paymob.CashIn;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 using WireMock.RequestBuilders;
@@ -61,7 +60,7 @@ public partial class PaymobCashInBrokerTests
         var invocation = FluentActions.Awaiting(() => broker.CreateOrderAsync(request));
 
         // then
-        await _ShouldThrowPaymobRequestException(invocation, HttpStatusCode.InternalServerError, body);
+        await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);
         _ = await authenticator.Received(1).GetAuthenticationTokenAsync();
     }
 

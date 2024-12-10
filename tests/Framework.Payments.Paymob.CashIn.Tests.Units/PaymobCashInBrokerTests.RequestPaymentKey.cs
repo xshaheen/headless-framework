@@ -64,7 +64,7 @@ public partial class PaymobCashInBrokerTests
         var invocation = FluentActions.Awaiting(() => broker.RequestPaymentKeyAsync(request));
 
         // then
-        await _ShouldThrowPaymobRequestException(invocation, HttpStatusCode.InternalServerError, body);
+        await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);
         _ = await authenticator.Received(1).GetAuthenticationTokenAsync();
     }
 
