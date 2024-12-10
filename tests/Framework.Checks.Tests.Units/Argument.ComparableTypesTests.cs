@@ -23,13 +23,11 @@ public sealed class ArgumentComparableTypesTests
     {
         // given
         InputsTestArgument inputsTestArgument = new();
-        InputsTestArgument expected = new()
-        {
-            IntValue = 20,
-        };
+        InputsTestArgument expected = new() { IntValue = 20 };
 
         // when & then
-        Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsEqualTo(inputsTestArgument, expected));
+        var action = () => Argument.IsEqualTo(inputsTestArgument, expected);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -48,7 +46,8 @@ public sealed class ArgumentComparableTypesTests
     public void is_less_than_or_equal_to_should_throw_argument_out_of_range_exception_when_greater_than()
     {
         // when & then
-        Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsLessThanOrEqualTo(15, 10));
+        var action = () => Argument.IsLessThanOrEqualTo(15, 10);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -62,7 +61,8 @@ public sealed class ArgumentComparableTypesTests
     public void is_greater_than_or_equal_to_should_throw_argument_out_of_range_exception_when_less_than()
     {
         // when & then
-        Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsGreaterThanOrEqualTo(3, 5));
+        var action = () => Argument.IsGreaterThanOrEqualTo(3, 5);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -77,6 +77,7 @@ public sealed class ArgumentComparableTypesTests
             FloatValue = 1,
             TimeSpanValue = TimeSpan.Zero,
         };
+
         InputsTestArgument expected = new();
 
         // when & then
@@ -87,7 +88,8 @@ public sealed class ArgumentComparableTypesTests
     public void is_less_than_should_throw_argument_out_of_range_exception_when_greater_than_or_equal()
     {
         // when & then
-        Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsLessThan(5, 5));
+        var action = () => Argument.IsLessThan(5, 5);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -101,14 +103,16 @@ public sealed class ArgumentComparableTypesTests
     public void is_greater_than_should_throw_argument_out_of_range_exception_when_less_than_or()
     {
         // when & then
-        Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsGreaterThan(3, 5));
+        var action = () => Argument.IsGreaterThan(3, 5);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
     public void range_should_throw_argument_exception_when_minimum_is_greater_than_maximum()
     {
         // when & then
-        Assert.Throws<ArgumentException>(() => Argument.Range(10, 5));
+        var action = () => Argument.Range(10, 5);
+        action.Should().ThrowExactly<ArgumentException>();
     }
 
     [Fact]
@@ -122,7 +126,8 @@ public sealed class ArgumentComparableTypesTests
     public void is_inclusive_between_should_throw_argument_out_of_range_exception_when_out_of_range()
     {
         // when & then
-        Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsInclusiveBetween(15, 3, 10));
+        var action = () => Argument.IsInclusiveBetween(15, 3, 10);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -136,6 +141,7 @@ public sealed class ArgumentComparableTypesTests
     public void is_exclusive_between_should_throw_argument_out_of_range_exception_when_out_of_range()
     {
         // when & then
-        Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsExclusiveBetween(1, 3, 10));
+        var action = () => Argument.IsExclusiveBetween(1, 3, 10);
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 }

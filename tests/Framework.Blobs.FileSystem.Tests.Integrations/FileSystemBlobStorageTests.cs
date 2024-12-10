@@ -12,10 +12,7 @@ public sealed class FileSystemBlobStorageTests(ITestOutputHelper output) : BlobS
 
     protected override IBlobStorage GetStorage()
     {
-        var options = new FileSystemBlobStorageOptions
-        {
-            BaseDirectoryPath = _baseDirectoryPath,
-        };
+        var options = new FileSystemBlobStorageOptions { BaseDirectoryPath = _baseDirectoryPath };
 
         var optionsWrapper = new OptionsWrapper<FileSystemBlobStorageOptions>(options);
 
@@ -135,7 +132,7 @@ public sealed class FileSystemBlobStorageTests(ITestOutputHelper output) : BlobS
     {
         var container = Container;
         var containerName = ContainerName;
-        using var storage = (FileSystemBlobStorage) GetStorage();
+        using var storage = (FileSystemBlobStorage)GetStorage();
         await ResetAsync(storage);
 
         var result = await storage.GetPagedListAsync(container);

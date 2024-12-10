@@ -18,7 +18,7 @@ public partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture) : ICla
         return (authenticator, token);
     }
 
-    private static async Task _ShouldThrowPaymobRequestException<T>(
+    private static async Task _ShouldThrowPaymobRequestExceptionAsync<T>(
         Func<Task<T>> invocation,
         HttpStatusCode statusCode,
         string? body

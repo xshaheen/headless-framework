@@ -106,7 +106,10 @@ public static class TimeUnit
         if (normalized.EndsWith("ms", StringComparison.Ordinal))
         {
             if (
-                int.TryParse(normalized.AsSpan(0, normalized.Length - 2), CultureInfo.InvariantCulture, out var milliseconds
+                int.TryParse(
+                    normalized.AsSpan(0, normalized.Length - 2),
+                    CultureInfo.InvariantCulture,
+                    out var milliseconds
                 )
             )
             {

@@ -23,7 +23,7 @@ public sealed class AwsBlobStorage : IBlobStorage
     private static readonly ConcurrentDictionary<string, bool> _CreatedBuckets = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
-    private const string _UploadDateMetadataKey = "upload-date";
+    private const string _UploadDateMetadataKey = "uploadDate";
     private const string _ExtensionMetadataKey = "extension";
 
     private readonly IAmazonS3 _s3;
@@ -178,8 +178,12 @@ public sealed class AwsBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobNames);
         Argument.IsNotNullOrEmpty(container);
+
+        if (blobNames.Count == 0)
+        {
+            return Array.Empty<Result<bool, Exception>>();
+        }
 
         var (bucket, keyPrefix) = (container[0], Url.Combine([.. container.Skip(1)]));
 
@@ -502,6 +506,9 @@ public sealed class AwsBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(blobName);
+        Argument.IsNotNull(container);
+
         var (bucket, key) = _BuildObjectKey(blobName, container);
 
         var request = new GetObjectMetadataRequest { BucketName = bucket, Key = key };

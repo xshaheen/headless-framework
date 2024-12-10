@@ -24,6 +24,8 @@ public sealed class AzureBlobStorage : IBlobStorage
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedContainers = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "max-age=7776000, must-revalidate";
+    private const string _UploadDateMetadataKey = "uploadDate";
+    private const string _ExtensionMetadataKey = "extension";
 
     private readonly string _accountUrl;
     private readonly SpecializedBlobClientOptions _blobClientOptions;
@@ -58,7 +60,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             },
         };
 
-        _accountUrl = $"https://{settings.AccountName}.blob.core.windows.net";
+        _accountUrl = settings.AccountUrl;
         _keyCredential = new(settings.AccountName, settings.AccountKey);
         _serviceClient = new(new Uri(_accountUrl, UriKind.Absolute), _keyCredential, _blobClientOptions);
     }
@@ -109,8 +111,8 @@ public sealed class AzureBlobStorage : IBlobStorage
         };
 
         metadata ??= new Dictionary<string, string?>(StringComparer.Ordinal);
-        metadata["upload-date"] = _clock.UtcNow.ToString("O");
-        metadata["extension"] = Path.GetExtension(blobName);
+        metadata[_UploadDateMetadataKey] = _clock.UtcNow.ToString("O");
+        metadata[_ExtensionMetadataKey] = Path.GetExtension(blobName);
 
         await blobClient.UploadAsync(stream, httpHeader, metadata, cancellationToken: cancellationToken);
     }
@@ -176,8 +178,12 @@ public sealed class AzureBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobNames);
         Argument.IsNotNullOrEmpty(container);
+
+        if (blobNames.Count == 0)
+        {
+            return Array.Empty<Result<bool, Exception>>();
+        }
 
         var batch = _serviceClient.GetBlobBatchClient();
         var blobUrls = blobNames.Select(blobName => new Uri(_BuildBlobUrl(blobName, container), UriKind.Absolute));
@@ -334,9 +340,22 @@ public sealed class AzureBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var blobUrl = _BuildBlobUrl(blobName, container);
+        Argument.IsNotNull(blobName);
+        Argument.IsNotNull(container);
+
+        var blobUrl = _BuildBlobUrl(blobName, [.. container, "any"]);
         var blobClient = _GetBlobClient(blobUrl);
-        var blobProperties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
+
+        Response<BlobProperties>? blobProperties;
+
+        try
+        {
+            blobProperties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
+        }
+        catch (RequestFailedException e) when (e.Status == 404)
+        {
+            return null;
+        }
 
         if (!blobProperties.HasValue)
         {
@@ -364,12 +383,14 @@ public sealed class AzureBlobStorage : IBlobStorage
     )
     {
         Argument.IsNotNullOrEmpty(containers);
-        Argument.IsExclusiveBetween(pageSize, 1, 5000);
+        Argument.IsPositive(pageSize);
 
         var containerUrl = Url.Combine(_accountUrl, containers[0]);
         var client = _GetContainerClient(containerUrl);
+
         var pattern =
             string.Join('/', containers.Skip(1)) + "/" + blobSearchPattern?.Replace('\\', '/').RemovePrefix('/');
+
         var criteria = _GetRequestCriteria(pattern);
 
         var result = new PagedFileListResult(async _ =>

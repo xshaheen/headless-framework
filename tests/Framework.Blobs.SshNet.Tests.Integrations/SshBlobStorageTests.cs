@@ -190,7 +190,9 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         await storage.DeleteAllAsync(container, "*");
 
         // Assert folder was removed by Delete Files
-        (await client.ExistsAsync($"{containerName}/{directory}")).Should().BeFalse();
+        (await client.ExistsAsync($"{containerName}/{directory}"))
+            .Should()
+            .BeFalse();
         (await storage.GetBlobInfoAsync(container, directory)).Should().BeNull();
     }
 }

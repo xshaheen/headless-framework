@@ -215,7 +215,8 @@ public static partial class Argument
             ? argument
             : throw new ArgumentOutOfRangeException(
                 argumentParamName,
-                message ?? $"Input {argumentParamName} was out of range"
+                message
+                    ?? $"The input {argumentParamName}={argument} must be between {minimumValueParamName} and {maximumValueParamName} [{minimumValueParamName}, {maximumValueParamName}]."
             );
     }
 
@@ -251,7 +252,8 @@ public static partial class Argument
             ? argument
             : throw new ArgumentOutOfRangeException(
                 argumentParamName,
-                message ?? $"Input {argumentParamName} was out of range"
+                message
+                    ?? $"The input {argumentParamName}={argument} must be between {minimumValueParamName} and {maximumValueParamName} exclusively ({minimumValueParamName}, {maximumValueParamName})."
             );
     }
 
@@ -287,7 +289,8 @@ public static partial class Argument
             ? argument
             : throw new ArgumentOutOfRangeException(
                 argumentParamName,
-                message ?? $"Input {argumentParamName} was out of range"
+                message
+                    ?? $"The input {argumentParamName}={argument} must be between {minimumValueParamName} and {maximumValueParamName} ({minimumValueParamName}, {maximumValueParamName}]."
             );
     }
 
@@ -323,7 +326,8 @@ public static partial class Argument
             ? argument
             : throw new ArgumentOutOfRangeException(
                 argumentParamName,
-                message ?? $"Input {argumentParamName} was out of range"
+                message
+                    ?? $"The input {argumentParamName}={argument} must be between {minimumValueParamName} and {maximumValueParamName} [{minimumValueParamName}, {maximumValueParamName})."
             );
     }
 
@@ -365,7 +369,7 @@ public static partial class Argument
         {
             throw new ArgumentOutOfRangeException(
                 argumentParamName,
-                message ?? $"Argument {argumentParamName} had out of range item(s)"
+                message ?? $"Argument {argumentParamName}={argument} had out of range item(s)"
             );
         }
 

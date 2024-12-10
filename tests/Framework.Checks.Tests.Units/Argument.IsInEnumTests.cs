@@ -27,7 +27,7 @@ public class ArgumentIsInEnumTests
     public void is_in_enum_generic_should_throw_for_invalid_enum_value()
     {
         // given
-        var invalidValue = (SampleEnum) 999;
+        var invalidValue = (SampleEnum)999;
 
         // when & then
         Assert.Throws<InvalidEnumArgumentException>(() => Argument.IsInEnum(invalidValue));

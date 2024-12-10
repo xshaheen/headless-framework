@@ -36,19 +36,19 @@ public class ArgumentIsNegativeOrZeroTests
         switch (argument)
         {
             case int:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((int) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((int)argument));
 
                 break;
             case float:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((float) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((float)argument));
 
                 break;
             case decimal:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((decimal) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((decimal)argument));
 
                 break;
             case TimeSpan:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((TimeSpan) argument));
+                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((TimeSpan)argument));
 
                 break;
         }

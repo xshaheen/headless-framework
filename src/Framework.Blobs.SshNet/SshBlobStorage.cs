@@ -192,8 +192,12 @@ public sealed class SshBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobNames);
         Argument.IsNotNullOrEmpty(container);
+
+        if (blobNames.Count == 0)
+        {
+            return Array.Empty<Result<bool, Exception>>();
+        }
 
         var tasks = blobNames.Select(async fileName =>
         {
@@ -687,7 +691,14 @@ public sealed class SshBlobStorage : IBlobStorage
             {
                 path += "/";
 
-                await _GetFileListRecursivelyAsync(originalPathPrefix, path, pattern, list, recordsToReturn, cancellationToken);
+                await _GetFileListRecursivelyAsync(
+                    originalPathPrefix,
+                    path,
+                    pattern,
+                    list,
+                    recordsToReturn,
+                    cancellationToken
+                );
 
                 continue;
             }
