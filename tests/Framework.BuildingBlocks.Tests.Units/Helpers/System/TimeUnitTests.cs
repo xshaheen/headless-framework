@@ -4,7 +4,7 @@ using Framework.BuildingBlocks.Helpers.System;
 
 namespace Tests.Helpers.System;
 
-public class TimeUnitTests
+public sealed class TimeUnitTests
 {
     [Theory]
     [InlineData("5m", 0, 0, 5)]
@@ -33,7 +33,7 @@ public class TimeUnitTests
     [Theory]
     [InlineData(null, "Required argument \"value\" was null. (Parameter 'value')")]
     [InlineData("", "Required argument \"value\" was empty. (Parameter 'value')")]
-    public void parse_invalid_input_should_throw_argument_exception(string value, string expectedMessage)
+    public void parse_invalid_input_should_throw_argument_exception(string? value, string expectedMessage)
     {
         // when
         Action action = () => TimeUnit.Parse(value);
@@ -49,7 +49,7 @@ public class TimeUnitTests
     [InlineData("", false, 0, 0, 0)]
     [InlineData(null, false, 0, 0, 0)]
     public void try_parse_should_return_correct_result(
-        string value,
+        string? value,
         bool expectedSuccess,
         int expectedDays = 0,
         int expectedHours = 0,

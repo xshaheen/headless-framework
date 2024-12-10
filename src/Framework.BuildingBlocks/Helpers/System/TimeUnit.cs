@@ -34,99 +34,100 @@ public static class TimeUnit
         return time.HasValue;
     }
 
-    // TODO bug on int parse
     private static TimeSpan? _ParseTime(string value)
     {
         // compare using the original value as uppercase M could mean months.
         var normalized = value.ToLowerInvariant().Trim();
+
         if (value.EndsWith('m'))
         {
-            var minutes = int.Parse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture);
-            return new TimeSpan(0, minutes, 0);
+            if (
+                int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var minutes)
+            )
+            {
+                return new TimeSpan(0, minutes, 0);
+            }
+
+            return null;
         }
 
         if (normalized.EndsWith('h'))
         {
-            var hours = int.Parse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture);
-            return new TimeSpan(hours, 0, 0);
+            if (int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var hours))
+            {
+                return new TimeSpan(hours, 0, 0);
+            }
+
+            return null;
         }
 
         if (normalized.EndsWith('d'))
         {
-            var days = int.Parse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture);
-            return new TimeSpan(days, 0, 0, 0);
+            if (int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var days))
+            {
+                return new TimeSpan(days, 0, 0, 0);
+            }
+
+            return null;
         }
 
         if (normalized.EndsWith("nanos", StringComparison.Ordinal))
         {
-            var nanoseconds = long.Parse(normalized.AsSpan(0, normalized.Length - 5), CultureInfo.InvariantCulture);
-            return new TimeSpan((int)Math.Round(nanoseconds / 100d));
+            if (
+                long.TryParse(
+                    normalized.AsSpan(0, normalized.Length - 5),
+                    CultureInfo.InvariantCulture,
+                    out var nanoseconds
+                )
+            )
+            {
+                return new TimeSpan((int)Math.Round(nanoseconds / 100d));
+            }
+
+            return null;
         }
 
         if (normalized.EndsWith("micros", StringComparison.Ordinal))
         {
-            var microseconds = long.Parse(normalized.AsSpan(0, normalized.Length - 6), CultureInfo.InvariantCulture);
-            return new TimeSpan(microseconds * 10);
+            if (
+                long.TryParse(
+                    normalized.AsSpan(0, normalized.Length - 6),
+                    CultureInfo.InvariantCulture,
+                    out var microseconds
+                )
+            )
+            {
+                return new TimeSpan(microseconds * 10);
+            }
+
+            return null;
         }
 
         if (normalized.EndsWith("ms", StringComparison.Ordinal))
         {
-            var milliseconds = int.Parse(normalized.AsSpan(0, normalized.Length - 2), CultureInfo.InvariantCulture);
-            return new TimeSpan(0, 0, 0, 0, milliseconds);
+            if (
+                int.TryParse(normalized.AsSpan(0, normalized.Length - 2), CultureInfo.InvariantCulture, out var milliseconds
+                )
+            )
+            {
+                return new TimeSpan(0, 0, 0, 0, milliseconds);
+            }
+
+            return null;
         }
 
         if (normalized.EndsWith('s'))
         {
-            var seconds = int.Parse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture);
-            return new TimeSpan(0, 0, seconds);
+            if (
+                int.TryParse(normalized.AsSpan(0, normalized.Length - 1), CultureInfo.InvariantCulture, out var seconds)
+            )
+            {
+                return new TimeSpan(0, 0, seconds);
+            }
+
+            return null;
         }
 
         return null;
     }
-    // private static TimeSpan? _ParseTime(string value)
-    // {
-    //     // Normalize and trim the input
-    //     var normalized = value.ToLowerInvariant().Trim();
-    //
-    //     if (normalized.EndsWith('m') && int.TryParse(normalized.AsSpan(0, normalized.Length - 1), out var minutes))
-    //     {
-    //         return new TimeSpan(0, minutes, 0);
-    //     }
-    //
-    //     if (normalized.EndsWith('h') && int.TryParse(normalized.AsSpan(0, normalized.Length - 1), out var hours))
-    //     {
-    //         return new TimeSpan(hours, 0, 0);
-    //     }
-    //
-    //     if (normalized.EndsWith('d') && int.TryParse(normalized.AsSpan(0, normalized.Length - 1), out var days))
-    //     {
-    //         return new TimeSpan(days, 0, 0, 0);
-    //     }
-    //
-    //     if (normalized.EndsWith("nanos", StringComparison.Ordinal) &&
-    //         long.TryParse(normalized.AsSpan(0, normalized.Length - 5), out var nanoseconds))
-    //     {
-    //         return new TimeSpan((int)Math.Round(nanoseconds / 100d));
-    //     }
-    //
-    //     if (normalized.EndsWith("micros", StringComparison.Ordinal) &&
-    //         long.TryParse(normalized.AsSpan(0, normalized.Length - 6), out var microseconds))
-    //     {
-    //         return new TimeSpan(microseconds * 10);
-    //     }
-    //
-    //     if (normalized.EndsWith("ms", StringComparison.Ordinal) &&
-    //         int.TryParse(normalized.AsSpan(0, normalized.Length - 2), out var milliseconds))
-    //     {
-    //         return new TimeSpan(0, 0, 0, 0, milliseconds);
-    //     }
-    //
-    //     if (normalized.EndsWith('s') && int.TryParse(normalized.AsSpan(0, normalized.Length - 1), out var seconds))
-    //     {
-    //         return new TimeSpan(0, 0, seconds);
-    //     }
-    //
-    //     // If no valid match, return null
-    //     return null;
-    // }
 }
