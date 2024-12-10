@@ -160,6 +160,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         await ResetAsync(storage);
 
         var container = Container;
+        var containerName = ContainerName;
 
         var result = await storage.GetPagedListAsync(container);
         result.HasMore.Should().BeFalse();
@@ -172,7 +173,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync() : null;
         client.Should().NotBeNull();
 
-        await client!.CreateDirectoryAsync($"storage/{directory}");
+        await client!.CreateDirectoryAsync($"{containerName}/{directory}");
 
         result = await storage.GetPagedListAsync(container);
         result.HasMore.Should().BeFalse();
@@ -189,11 +190,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         await storage.DeleteAllAsync(container, "*");
 
         // Assert folder was removed by Delete Files
-        // count.Should().Be(1);
-        (await client.ExistsAsync($"storage/{directory}"))
-            .Should()
-            .BeFalse();
-
+        (await client.ExistsAsync($"{containerName}/{directory}")).Should().BeFalse();
         (await storage.GetBlobInfoAsync(container, directory)).Should().BeNull();
     }
 }
