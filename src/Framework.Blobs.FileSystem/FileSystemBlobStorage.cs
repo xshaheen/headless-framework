@@ -12,13 +12,18 @@ using File = System.IO.File;
 
 namespace Framework.Blobs.FileSystem;
 
-public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> optionsAccessor) : IBlobStorage
+public sealed class FileSystemBlobStorage : IBlobStorage
 {
     private readonly AsyncLock _lock = new();
-    private readonly string _basePath = optionsAccessor.Value.BaseDirectoryPath;
+    private readonly string _basePath;
+    private readonly ILogger _logger;
 
-    private readonly ILogger _logger =
-        optionsAccessor.Value.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
+    public FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> optionsAccessor)
+    {
+        var options = optionsAccessor.Value;
+        _basePath = options.BaseDirectoryPath.NormalizePath().EnsureEndsWith(Path.DirectorySeparatorChar);
+        _logger = options.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
+    }
 
     #region Create Container
 
@@ -374,10 +379,11 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
         CancellationToken cancellationToken = default
     )
     {
-        var filePath = _BuildBlobPath(container, blobName);
+        var directoryPath = _GetDirectoryPath(container);
+        var filePath = Path.Combine(directoryPath, blobName);
 
         _logger.LogTrace("Getting file stream for {Path}", filePath);
-        var fileInfo = new FileInfo(Path.Combine(_basePath, filePath));
+        var fileInfo = new FileInfo(filePath);
 
         if (!fileInfo.Exists)
         {
@@ -386,15 +392,15 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
             return ValueTask.FromResult<BlobInfo?>(null);
         }
 
-        return ValueTask.FromResult<BlobInfo?>(
-            new BlobInfo
-            {
-                Path = filePath.Replace(_basePath, string.Empty, StringComparison.Ordinal),
-                Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
-                Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
-                Size = fileInfo.Length,
-            }
-        );
+        var blobInfo = new BlobInfo
+        {
+            Path = filePath.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
+            Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+            Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
+            Size = fileInfo.Length,
+        };
+
+        return ValueTask.FromResult<BlobInfo?>(blobInfo);
     }
 
     #endregion
@@ -474,15 +480,15 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
                 continue;
             }
 
-            list.Add(
-                new()
-                {
-                    Path = fileInfo.FullName.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
-                    Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
-                    Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
-                    Size = fileInfo.Length,
-                }
-            );
+            var blobInfo = new BlobInfo
+            {
+                Path = fileInfo.FullName.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
+                Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+                Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
+                Size = fileInfo.Length,
+            };
+
+            list.Add(blobInfo);
         }
 
         var hasMore = false;
@@ -525,7 +531,7 @@ public sealed class FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions>
 
         var filePath = Path.Combine(_basePath, Path.Combine(container));
 
-        return filePath;
+        return filePath.EnsureEndsWith(Path.DirectorySeparatorChar);
     }
 
     #endregion
