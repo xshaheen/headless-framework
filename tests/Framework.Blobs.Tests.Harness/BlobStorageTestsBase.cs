@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Xml.Linq;
 using Framework.Blobs;
+using Framework.BuildingBlocks.Helpers.System;
 using Framework.Testing.Helpers;
 
 namespace Tests;
@@ -65,7 +66,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var list = await storage.GetBlobsListAsync([name, "archived"], "archived.txt");
 
         list.Should().ContainSingle();
-        list[0].Path.Should().Be("storage/archived/archived.txt");
+        list[0].Path.Should().Be("archived.txt");
         list[0].Size.Should().BePositive();
         list[0].Created.Should().BeAfter(DateTimeOffset.MinValue);
     }
@@ -144,7 +145,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         fileInfo = await storage.GetBlobInfoAsync(container, blobName);
         fileInfo.Should().NotBeNull();
         fileInfo!.Path.Should().EndWith("nested.txt", "Incorrect file");
-        fileInfo.Size.Should().BePositive("Incorrect file size");
+        fileInfo.Size.Should().BePositive("Should have file size");
 
         // NOTE: File creation time might not be accurate:
         // http://stackoverflow.com/questions/2109152/unbelievable-strange-file-creation-time-problem
@@ -207,12 +208,12 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         await storage.UploadContentAsync(container, "test.txt", "test");
         var file = (await storage.GetBlobsListAsync(container)).Single();
         file.Should().NotBeNull();
-        file.Path.Should().Be($"{name}/test.txt");
+        file.Path.Should().Be("test.txt");
 
         var content = await storage.GetBlobContentAsync(container, "test.txt");
         content.Should().Be("test");
         (await storage.RenameAsync(container, "test.txt", container, "new.txt")).Should().BeTrue();
-        (await storage.GetBlobsListAsync(container)).Should().ContainSingle(x => x.Path == $"{name}/new.txt");
+        (await storage.GetBlobsListAsync(container)).Should().ContainSingle(x => x.Path == "new.txt");
         (await storage.DeleteAsync(container, "new.txt")).Should().BeTrue();
         (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
     }
@@ -446,7 +447,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         long offset;
 
-        await using (var writer = new StreamWriter(memoryStream, Encoding.UTF8, 1024, true))
+        await using (var writer = new StreamWriter(memoryStream, StringHelper.Utf8WithoutBom, 1024, true))
         {
             writer.AutoFlush = true;
             await writer.WriteAsync("Eric");

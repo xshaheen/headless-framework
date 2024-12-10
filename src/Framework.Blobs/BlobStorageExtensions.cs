@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Framework.BuildingBlocks;
 
 namespace Framework.Blobs;
@@ -38,7 +39,8 @@ public static class BlobStorageExtensions
         return files;
     }
 
-    public static async ValueTask UploadContentAsync(
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ValueTask UploadContentAsync(
         this IBlobStorage storage,
         string[] container,
         string blobName,
@@ -46,10 +48,23 @@ public static class BlobStorageExtensions
         CancellationToken cancellationToken = default
     )
     {
+        return storage.UploadContentAsync(container, blobName, contents, metadata: null, cancellationToken);
+    }
+
+    public static async ValueTask UploadContentAsync(
+        this IBlobStorage storage,
+        string[] container,
+        string blobName,
+        string? contents,
+        Dictionary<string, string?>? metadata,
+        CancellationToken cancellationToken = default
+    )
+    {
         await using var memoryStream = new MemoryStream();
-        await using var streamWriter = new StreamWriter(memoryStream, Encoding.UTF8);
-        await streamWriter.WriteAsync(contents);
-        await storage.UploadAsync(container, new BlobUploadRequest(memoryStream, blobName), cancellationToken);
+        await memoryStream.WriteTextAsync(contents, cancellationToken);
+        memoryStream.ResetPosition();
+
+        await storage.UploadAsync(container, blobName, memoryStream, metadata, cancellationToken);
     }
 
     public static async ValueTask UploadContentAsync<T>(
@@ -70,6 +85,8 @@ public static class BlobStorageExtensions
                 options: FrameworkJsonConstants.DefaultInternalJsonOptions,
                 cancellationToken: cancellationToken
             );
+
+            memoryStream.ResetPosition();
         }
 
         await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
