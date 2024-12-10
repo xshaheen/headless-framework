@@ -19,7 +19,7 @@ public sealed class SnowFlakIdUniqueLongGeneratorTests
             generator.Create(),
             generator.Create(),
             generator.Create(),
-            generator.Create()
+            generator.Create(),
         };
 
         // Sort the IDs

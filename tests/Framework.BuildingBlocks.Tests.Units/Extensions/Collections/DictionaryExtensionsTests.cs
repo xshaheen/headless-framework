@@ -8,19 +8,9 @@ public sealed class DictionaryExtensionsTests
     public void dictionary_equal_should_return_true_when_dictionaries_are_equal()
     {
         // given
-        var first = new Dictionary<string, int>
-            (StringComparer.Ordinal)
-            {
-                { "one", 1 },
-                { "two", 2 },
-            };
+        var first = new Dictionary<string, int>(StringComparer.Ordinal) { { "one", 1 }, { "two", 2 } };
 
-        var second = new Dictionary<string, int>
-            (StringComparer.Ordinal)
-            {
-                { "one", 1 },
-                { "two", 2 },
-            };
+        var second = new Dictionary<string, int>(StringComparer.Ordinal) { { "one", 1 }, { "two", 2 } };
 
         // when
         var result = first.DictionaryEqual(second);
@@ -33,19 +23,9 @@ public sealed class DictionaryExtensionsTests
     public void dictionary_equal_should_return_false_when_dictionaries_have_different_values()
     {
         // given
-        var first = new Dictionary<string, int>
-            (StringComparer.Ordinal)
-            {
-                { "one", 1 },
-                { "two", 2 },
-            };
+        var first = new Dictionary<string, int>(StringComparer.Ordinal) { { "one", 1 }, { "two", 2 } };
 
-        var second = new Dictionary<string, int>
-            (StringComparer.Ordinal)
-            {
-                { "one", 1 },
-                { "two", 3 },
-            };
+        var second = new Dictionary<string, int>(StringComparer.Ordinal) { { "one", 1 }, { "two", 3 } };
 
         // when
         var result = first.DictionaryEqual(second);
@@ -71,11 +51,7 @@ public sealed class DictionaryExtensionsTests
     public void get_or_add_should_return_existing_value_if_key_exists()
     {
         // given
-        var dictionary = new Dictionary<string, int>
-            (StringComparer.Ordinal)
-            {
-                { "key", 42 },
-            };
+        var dictionary = new Dictionary<string, int>(StringComparer.Ordinal) { { "key", 42 } };
 
         // when
         var result = dictionary.GetOrAdd("key", _ => 100);

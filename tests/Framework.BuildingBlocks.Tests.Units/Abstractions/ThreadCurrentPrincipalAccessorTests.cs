@@ -41,10 +41,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
 
         var newPrincipal = new ClaimsPrincipal(
             new ClaimsIdentity(
-                [
-                    new Claim(FrameworkClaimTypes.Name, nameValue),
-                    new Claim(FrameworkClaimTypes.Email, emailValue),
-                ]
+                [new Claim(FrameworkClaimTypes.Name, nameValue), new Claim(FrameworkClaimTypes.Email, emailValue)]
             )
         );
 
@@ -52,8 +49,12 @@ public sealed class ThreadCurrentPrincipalAccessorTests
         _accessor.Change(newPrincipal);
 
         // then
-        var name = _accessor.Principal.Claims.First(x => string.Equals(x.Type, FrameworkClaimTypes.Name, StringComparison.Ordinal)).Value;
-        var email = _accessor.Principal.Claims.First(x => string.Equals(x.Type, FrameworkClaimTypes.Email, StringComparison.Ordinal)).Value;
+        var name = _accessor
+            .Principal.Claims.First(x => string.Equals(x.Type, FrameworkClaimTypes.Name, StringComparison.Ordinal))
+            .Value;
+        var email = _accessor
+            .Principal.Claims.First(x => string.Equals(x.Type, FrameworkClaimTypes.Email, StringComparison.Ordinal))
+            .Value;
 
         name.Should().Be(nameValue);
         email.Should().Be(emailValue);
@@ -81,10 +82,11 @@ public sealed class ThreadCurrentPrincipalAccessorTests
         };
 
         // then
-        action.Should().Throw<InvalidOperationException>()
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
             .WithMessage("Thread.CurrentPrincipal is null or not a ClaimsPrincipal.");
     }
-
 
     [Fact]
     public void change_should_restore_original_principal_when_disposed()
@@ -96,13 +98,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
 
         Thread.CurrentPrincipal = originalPrincipal;
 
-        var newPrincipal = new ClaimsPrincipal(
-            new ClaimsIdentity(
-                [
-                    new Claim(ClaimTypes.Name, newName),
-                ]
-            )
-        );
+        var newPrincipal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, newName)]));
 
         // when
         var disposable = _accessor.Change(newPrincipal);

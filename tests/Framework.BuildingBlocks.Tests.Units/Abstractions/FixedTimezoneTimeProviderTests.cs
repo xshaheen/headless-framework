@@ -7,12 +7,12 @@ namespace Tests.Abstractions;
 public sealed class FixedTimezoneTimeProviderTests
 {
     public static readonly TheoryData<string> SystemTimeZoneIds =
-        [
-            "China Standard Time",
-            "America/Los_Angeles",
-            "Central European Standard Time",
-            "Pacific Standard Time",
-        ];
+    [
+        "China Standard Time",
+        "America/Los_Angeles",
+        "Central European Standard Time",
+        "Pacific Standard Time",
+    ];
 
     [Theory]
     [MemberData(nameof(SystemTimeZoneIds))]

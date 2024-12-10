@@ -7,7 +7,9 @@ namespace Tests.Models.Collections;
 public sealed class TypeListTests
 {
     private interface IShape;
+
     private sealed class Rectangle : IShape;
+
     private sealed class Circle : IShape;
 
     private readonly TypeList<IShape> _shapeTypeList = [];
@@ -43,9 +45,7 @@ public sealed class TypeListTests
         Action act = () => _shapeTypeList.Add(typeof(string));
 
         // then
-        act.Should()
-            .Throw<ArgumentException>()
-            .WithMessage("*should be instance of*IShape*");
+        act.Should().Throw<ArgumentException>().WithMessage("*should be instance of*IShape*");
     }
 
     [Fact]

@@ -39,17 +39,21 @@ public class PasswordGeneratorTests
     public void generate_password_should_throw_if_invalid_configuration()
     {
         // when
-        Action act = () => _passwordGenerator.GeneratePassword(
-            10,
-            useDigitsInRemaining: false,
-            useLowercaseInRemaining: false,
-            useUppercaseInRemaining: false,
-            useNonAlphanumericInRemaining: false
-        );
+        Action act = () =>
+            _passwordGenerator.GeneratePassword(
+                10,
+                useDigitsInRemaining: false,
+                useLowercaseInRemaining: false,
+                useUppercaseInRemaining: false,
+                useNonAlphanumericInRemaining: false
+            );
 
         // then
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("Invalid password configuration provided. At least one character set must be used in remaining characters.");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Invalid password configuration provided. At least one character set must be used in remaining characters."
+            );
     }
 
     [Fact]
@@ -59,8 +63,12 @@ public class PasswordGeneratorTests
         Action action = () => _passwordGenerator.GeneratePassword(12, 200);
 
         // then
-        action.Should().Throw<InvalidOperationException>()
-            .WithMessage("Invalid password configuration provided. Required unique characters count is greater than the total available characters.");
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Invalid password configuration provided. Required unique characters count is greater than the total available characters."
+            );
     }
 
     [Fact]

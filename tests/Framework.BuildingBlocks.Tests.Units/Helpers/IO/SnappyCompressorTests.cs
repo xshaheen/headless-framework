@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Framework.BuildingBlocks.Abstractions;
 using Framework.BuildingBlocks.Helpers.IO;
 
@@ -19,6 +18,7 @@ public class SnappyCompressorTests
         sutTimeProvider.LocalTimeZone.Returns(TimeZoneInfo.Local);
         _clock = new Clock(sutTimeProvider);
     }
+
     [Fact]
     public void compress_should_compress_and_return_valid_memory()
     {

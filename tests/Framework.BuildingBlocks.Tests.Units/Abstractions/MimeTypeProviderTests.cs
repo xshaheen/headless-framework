@@ -6,9 +6,9 @@ namespace Tests.Abstractions;
 
 public sealed class MimeTypeProviderTests
 {
-     private readonly MimeTypeProvider _mimeTypeProvider = new();
+    private readonly MimeTypeProvider _mimeTypeProvider = new();
 
-     [Fact]
+    [Fact]
     public void get_mime_type_should_return_correct_mime_type_for_known_file_extension()
     {
         // given
@@ -43,7 +43,10 @@ public sealed class MimeTypeProviderTests
     [InlineData("image.tiff", "image/tiff")]
     [InlineData("image.tif", "image/tiff")]
     [InlineData("image.svg", "image/svg+xml")]
-    public void try_get_mime_type_should_return_true_and_correct_mime_type_for_known_image_extensions(string fileName, string expectedMimeType)
+    public void try_get_mime_type_should_return_true_and_correct_mime_type_for_known_image_extensions(
+        string fileName,
+        string expectedMimeType
+    )
     {
         // when
         var result = _mimeTypeProvider.TryGetMimeType(fileName, out var mimeType);
@@ -69,15 +72,18 @@ public sealed class MimeTypeProviderTests
 
     [Theory]
     [InlineData("text/html", new[] { "html", "htm" })]
-    [InlineData("text/plain", new[] { "txt","log","ini","in","list" })]
-    [InlineData("application/json", new[] { "json","map" })]
-    [InlineData("application/xml", new[] { "xml","rng","xsd","xsl"})]
-    [InlineData("image/jpeg", new[] { "jpeg", "jpg","jpe" })]
+    [InlineData("text/plain", new[] { "txt", "log", "ini", "in", "list" })]
+    [InlineData("application/json", new[] { "json", "map" })]
+    [InlineData("application/xml", new[] { "xml", "rng", "xsd", "xsl" })]
+    [InlineData("image/jpeg", new[] { "jpeg", "jpg", "jpe" })]
     [InlineData("image/png", new[] { "png" })]
     [InlineData("application/pdf", new[] { "pdf" })]
     [InlineData("text/css", new[] { "css" })]
     [InlineData("application/javascript", new[] { "js" })]
-    public void get_mime_type_extensions_should_return_correct_extensions_for_known_mime_types(string mimeType, string[] expectedExtensions)
+    public void get_mime_type_extensions_should_return_correct_extensions_for_known_mime_types(
+        string mimeType,
+        string[] expectedExtensions
+    )
     {
         // when
         var extensions = _mimeTypeProvider.GetMimeTypeExtensions(mimeType);
@@ -85,5 +91,4 @@ public sealed class MimeTypeProviderTests
         // then
         extensions.Should().Contain(expectedExtensions);
     }
-
 }

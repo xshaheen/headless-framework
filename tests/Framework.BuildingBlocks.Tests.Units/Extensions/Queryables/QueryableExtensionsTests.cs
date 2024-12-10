@@ -38,9 +38,7 @@ public sealed class QueryableExtensionsTests
         Expression<Func<QueryableTestEntity, bool>> predicate = entity => entity.Id > 1;
 
         // when
-        var result = query.WhereIf(true, predicate)
-                          .Select(e => e.Name)
-                          .ToList();
+        var result = query.WhereIf(true, predicate).Select(e => e.Name).ToList();
 
         // then
         result.Should().HaveCount(2);
@@ -55,13 +53,10 @@ public sealed class QueryableExtensionsTests
         Expression<Func<QueryableTestEntity, bool>> predicate = entity => entity.Id > 1;
 
         // when
-        var result = query.WhereIf(false, predicate)
-                          .OrderBy(e => e.Name)
-                          .ToList();
+        var result = query.WhereIf(false, predicate).OrderBy(e => e.Name).ToList();
 
         // then
         result.Should().HaveCount(3);
         result.Select(e => e.Name).Should().BeEquivalentTo("Framework", "Storm", "Zad-charities");
     }
 }
-

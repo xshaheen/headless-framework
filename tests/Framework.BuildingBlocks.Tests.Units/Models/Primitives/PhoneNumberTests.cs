@@ -63,7 +63,6 @@ public sealed class PhoneNumberTests
         normalized.Should().Be("01018541323");
     }
 
-
     [Fact]
     public void from_international_format_should_return_valid_phone_number()
     {

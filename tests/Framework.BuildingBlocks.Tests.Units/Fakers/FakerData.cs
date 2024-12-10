@@ -9,6 +9,7 @@ public static class FakerData
         var faker = new Faker();
         return faker.Name.FullName();
     }
+
     public static string GenerateEmail()
     {
         var faker = new Faker();

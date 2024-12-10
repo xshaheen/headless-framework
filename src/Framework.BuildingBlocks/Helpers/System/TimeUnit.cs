@@ -33,6 +33,7 @@ public static class TimeUnit
         time = _ParseTime(value);
         return time.HasValue;
     }
+
     // TODO bug on int parse
     private static TimeSpan? _ParseTime(string value)
     {

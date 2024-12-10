@@ -238,7 +238,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Date();//46494941649
+    public static partial Regex Date(); //46494941649
 
     /// <summary>Represent IpAddressRange.</summary>
     [GeneratedRegex(

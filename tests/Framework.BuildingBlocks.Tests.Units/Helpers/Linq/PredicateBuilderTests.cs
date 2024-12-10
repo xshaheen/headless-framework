@@ -117,12 +117,7 @@ public class PredicateBuilderTests
     public void or_with_multiple_expressions_should_combine_them_correctly()
     {
         // given
-        var predicates = new List<Expression<Func<int, bool>>>
-        {
-            x => x % 2 == 0,
-            x => x > 5,
-            x => x < 0,
-        };
+        var predicates = new List<Expression<Func<int, bool>>> { x => x % 2 == 0, x => x > 5, x => x < 0 };
 
         var combinedOr = predicates.Or();
 
@@ -143,12 +138,7 @@ public class PredicateBuilderTests
     public void and_with_multiple_expressions_should_combine_them_correctly()
     {
         // given
-        var predicates = new List<Expression<Func<int, bool>>>
-        {
-            x => x % 2 == 0,
-            x => x > 5,
-            x => x < 10,
-        };
+        var predicates = new List<Expression<Func<int, bool>>> { x => x % 2 == 0, x => x > 5, x => x < 10 };
 
         var combinedAnd = predicates.And();
 

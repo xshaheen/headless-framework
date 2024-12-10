@@ -30,60 +30,37 @@ public sealed class CollectionChangeDetectorExtensionsTests
     public void detect_changes_with_update_logic_should_identify_added_removed_updated_and_same_items()
     {
         // given
-        var oldItems = new List<ItemDetectorExtensionsTTest>
-        {
-            new(1, "A"),
-            new(2, "B"),
-            new(3, "C"),
-        };
+        var oldItems = new List<ItemDetectorExtensionsTTest> { new(1, "A"), new(2, "B"), new(3, "C") };
 
-        var newItems = new List<ItemDetectorExtensionsTTest>
-        {
-            new(3, "C"),
-            new(4, "D"),
-            new(2, "Updated B")
-        };
+        var newItems = new List<ItemDetectorExtensionsTTest> { new(3, "C"), new(4, "D"), new(2, "Updated B") };
 
-        Func<ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest, bool> areSameEntity = (oldItem, newItem) => oldItem.Id == newItem.Id;
-        Func<ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest, bool> hasChange = (oldItem, newItem) => oldItem.Value != newItem.Value;
+        Func<ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest, bool> areSameEntity = (oldItem, newItem) =>
+            oldItem.Id == newItem.Id;
+        Func<ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest, bool> hasChange = (oldItem, newItem) =>
+            oldItem.Value != newItem.Value;
 
         // when
         var result = oldItems.DetectChanges(newItems, areSameEntity, hasChange);
 
         // then
-        result.AddedItems.Should().BeEquivalentTo(
-            new List<ItemDetectorExtensionsTTest>
-            {
-                new(4, "D"),
-            }
-        );
+        result.AddedItems.Should().BeEquivalentTo(new List<ItemDetectorExtensionsTTest> { new(4, "D") });
 
-        result.RemovedItems.Should().BeEquivalentTo(
-            new List<ItemDetectorExtensionsTTest>
-            {
-                new(1, "A"),
-            }
-        );
+        result.RemovedItems.Should().BeEquivalentTo(new List<ItemDetectorExtensionsTTest> { new(1, "A") });
 
-        result.UpdatedItems.Should().BeEquivalentTo(
-            new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)>
-            {
-                (
-                    new(2, "B"),
-                    new(2, "Updated B")
-                ),
-            }
-        );
+        result
+            .UpdatedItems.Should()
+            .BeEquivalentTo(
+                new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)>
+                {
+                    (new(2, "B"), new(2, "Updated B")),
+                }
+            );
 
-        result.SameItems.Should().BeEquivalentTo(
-            new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)>
-            {
-                (
-                    new(3, "C"),
-                    new(3, "C")
-                ),
-            }
-        );
+        result
+            .SameItems.Should()
+            .BeEquivalentTo(
+                new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)> { (new(3, "C"), new(3, "C")) }
+            );
     }
 
     [Fact]
@@ -92,40 +69,30 @@ public sealed class CollectionChangeDetectorExtensionsTests
         // given
         var existItems = new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)>
         {
-            (
-                new(1, "A"),
-                new(1, "Updated A")
-            ),
-            (
-                new(2, "B"),
-                new(2, "B")
-            ),
+            (new(1, "A"), new(1, "Updated A")),
+            (new(2, "B"), new(2, "B")),
         };
 
-        Func<ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest, bool> hasChange = (oldItem, newItem) => oldItem.Value != newItem.Value;
+        Func<ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest, bool> hasChange = (oldItem, newItem) =>
+            oldItem.Value != newItem.Value;
 
         // when
         var result = existItems.DetectUpdates(hasChange);
 
         // then
-        result.UpdatedItems.Should().BeEquivalentTo(
-            new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)>
-            {
-                (
-                    new(1, "A"),
-                    new(1, "Updated A")
-                ),
-            }
-        );
+        result
+            .UpdatedItems.Should()
+            .BeEquivalentTo(
+                new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)>
+                {
+                    (new(1, "A"), new(1, "Updated A")),
+                }
+            );
 
-        result.SameItems.Should().BeEquivalentTo(
-            new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)>
-            {
-                (
-                    new(2, "B"),
-                    new(2, "B")
-                ),
-            }
-        );
+        result
+            .SameItems.Should()
+            .BeEquivalentTo(
+                new List<(ItemDetectorExtensionsTTest, ItemDetectorExtensionsTTest)> { (new(2, "B"), new(2, "B")) }
+            );
     }
 }

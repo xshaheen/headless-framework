@@ -19,14 +19,12 @@ public sealed class StringEncryptionOptionsValidatorTests
         // then
         result.IsValid.Should().BeTrue();
     }
+
     [Fact]
     public void should_fail_when_set_property_as_empty_settings()
     {
         // given
-        var defaultSettings = new StringEncryptionOptions
-        {
-            DefaultPassPhrase = string.Empty,
-        };
+        var defaultSettings = new StringEncryptionOptions { DefaultPassPhrase = string.Empty };
 
         var validator = new StringEncryptionOptionsValidator();
 
@@ -36,6 +34,7 @@ public sealed class StringEncryptionOptionsValidatorTests
         // then
         result.IsValid.Should().BeFalse();
     }
+
     [Fact]
     public void should_fail_when_set_property_keySize_by_zero_settings()
     {
@@ -56,6 +55,7 @@ public sealed class StringEncryptionOptionsValidatorTests
         // then
         result.IsValid.Should().BeFalse();
     }
+
     [Fact]
     public void should_return_true_when_size_initVectorBytes_length_equal_result_keySize_dividend_on_16()
     {
