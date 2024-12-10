@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.BuildingBlocks.Helpers.System;
+using Framework.Checks;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.IO;
@@ -8,40 +11,54 @@ namespace System.IO;
 [PublicAPI]
 public static class StreamExtensions
 {
+    #region Get All Text
+
     [MustUseReturnValue]
     public static string GetAllText(this Stream stream, Encoding? encoding = null)
     {
-        using var reader = new StreamReader(stream, encoding ?? Encoding.UTF8);
+        Argument.IsNotNull(stream);
 
-        return reader.ReadToEnd();
+        stream.ResetPosition();
+        using var reader = new StreamReader(stream, encoding ?? StringHelper.Utf8WithoutBom, leaveOpen: true);
+        var text = reader.ReadToEnd();
+
+        return text;
     }
 
     [MustUseReturnValue]
     public static async Task<string> GetAllTextAsync(
         this Stream stream,
-        Encoding? encoding = null,
+        Encoding encoding,
         CancellationToken cancellationToken = default
     )
     {
-        if (stream.CanSeek)
-        {
-            stream.Position = 0;
-        }
+        Argument.IsNotNull(stream);
+        Argument.IsNotNull(encoding);
 
-        using var reader = new StreamReader(stream, encoding ?? Encoding.UTF8);
+        stream.ResetPosition();
+        using var reader = new StreamReader(stream, encoding, leaveOpen: true);
+        var text = await reader.ReadToEndAsync(cancellationToken);
 
-        return await reader.ReadToEndAsync(cancellationToken);
+        return text;
     }
 
     [MustUseReturnValue]
-    public static async Task<string> GetAllTextAsync(this Stream stream, CancellationToken cancellationToken = default)
+    public static Task<string> GetAllTextAsync(this Stream stream, CancellationToken cancellationToken = default)
     {
-        return await stream.GetAllTextAsync(Encoding.UTF8, cancellationToken);
+        return stream.GetAllTextAsync(StringHelper.Utf8WithoutBom, cancellationToken);
     }
+
+    #endregion
+
+    #region Get All Bytes
 
     [MustUseReturnValue]
     public static byte[] GetAllBytes(this Stream stream)
     {
+        Argument.IsNotNull(stream);
+
+        stream.ResetPosition();
+
         if (stream is MemoryStream s)
         {
             return s.ToArray();
@@ -55,6 +72,8 @@ public static class StreamExtensions
     [MustUseReturnValue]
     public static async Task<byte[]> GetAllBytesAsync(this Stream stream, CancellationToken cancellationToken = default)
     {
+        Argument.IsNotNull(stream);
+
         if (stream is MemoryStream s)
         {
             return s.ToArray();
@@ -65,57 +84,93 @@ public static class StreamExtensions
         return ms.ToArray();
     }
 
+    #endregion
+
+    #region Write Text
+
+    public static void WriteText(this Stream stream, string? text, Encoding? encoding = null)
+    {
+        Argument.IsNotNull(stream);
+
+        if (text is null)
+        {
+            return;
+        }
+
+        using var writer = new StreamWriter(stream, encoding ?? StringHelper.Utf8WithoutBom, leaveOpen: true);
+
+        writer.Write(text);
+    }
+
+    public static async ValueTask WriteTextAsync(
+        this Stream stream,
+        string? text,
+        Encoding encoding,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(stream);
+        Argument.IsNotNull(encoding);
+
+        if (text is null)
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var writer = new StreamWriter(stream, encoding, leaveOpen: true);
+        await writer.WriteAsync(text);
+    }
+
+    public static ValueTask WriteTextAsync(
+        this Stream stream,
+        string? text,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return stream.WriteTextAsync(text, StringHelper.Utf8WithoutBom, cancellationToken);
+    }
+
+    #endregion
+
+    #region Create Memory Stream
+
+    /// <summary>At the end of the method, the position of both streams will be at the end.</summary>
+    [MustUseReturnValue]
+    public static MemoryStream CreateMemoryStream(this Stream stream)
+    {
+        Argument.IsNotNull(stream);
+
+        stream.ResetPosition();
+        var memoryStream = new MemoryStream();
+        stream.CopyTo(memoryStream);
+
+        return memoryStream;
+    }
+
+    /// <summary>At the end of the method, the position of both streams will be at the end.</summary>
     [MustUseReturnValue]
     public static async Task<MemoryStream> CreateMemoryStreamAsync(
         this Stream stream,
         CancellationToken cancellationToken = default
     )
     {
-        if (stream.CanSeek)
-        {
-            stream.Position = 0;
-        }
+        Argument.IsNotNull(stream);
 
+        stream.ResetPosition();
         var memoryStream = new MemoryStream();
         await stream.CopyToAsync(memoryStream, cancellationToken);
 
-        if (stream.CanSeek)
-        {
-            stream.Position = 0;
-        }
-
-        memoryStream.Position = 0;
-
         return memoryStream;
     }
 
-    [MustUseReturnValue]
-    public static MemoryStream CreateMemoryStream(this Stream stream)
-    {
-        if (stream.CanSeek)
-        {
-            stream.Position = 0;
-        }
+    #endregion
 
-        var memoryStream = new MemoryStream();
-        stream.CopyTo(memoryStream);
-
-        if (stream.CanSeek)
-        {
-            stream.Position = 0;
-        }
-
-        memoryStream.Position = 0;
-
-        return memoryStream;
-    }
+    #region Copy To
 
     public static Task CopyToAsync(this Stream source, Stream destination, CancellationToken cancellationToken)
     {
-        if (source.CanSeek)
-        {
-            source.Position = 0;
-        }
+        Argument.IsNotNull(source);
 
         return source.CopyToAsync(
             destination,
@@ -123,4 +178,20 @@ public static class StreamExtensions
             cancellationToken
         );
     }
+
+    #endregion
+
+    #region Reset Position
+
+    public static long ResetPosition(this Stream stream, int position = 0)
+    {
+        if (stream.CanSeek)
+        {
+            stream.Position = position;
+        }
+
+        return stream.Position;
+    }
+
+    #endregion
 }
