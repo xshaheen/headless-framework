@@ -1,4 +1,5 @@
-[*.cs]
+[*.{cs,csx,cake,vb,vbx}]
+file_header_template=Copyright (c) Mahmoud Shaheen. All rights reserved.
 # RCS1046: Asynchronous method name should end with 'Async'. Justification: No async suffixes are okay for tests
 dotnet_diagnostic.rcs1046.severity = none
 # MA0003: Add parameter name to improve readability
