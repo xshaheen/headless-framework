@@ -1,0 +1,3 @@
+# .NET
+[*.{cs,csx,cake,vb,vbx}]
+file_header_template=Copyright (c) Mahmoud Shaheen. All rights reserved.
