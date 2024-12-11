@@ -80,26 +80,30 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var name = ContainerName;
         var container = Container;
 
+        // Should be empty
         var result = await storage.GetPagedListAsync(container, pageSize: 1);
-
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().BeEmpty();
         (await result.NextPageAsync()).Should().BeFalse();
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().BeEmpty();
 
+        // Add one
         await storage.UploadContentAsync([name, "archived"], "archived.txt", "archived");
-        result = await storage.GetPagedListAsync([name], pageSize: 1);
 
+        // Should have one
+        result = await storage.GetPagedListAsync([name], pageSize: 1);
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().ContainSingle();
         (await result.NextPageAsync()).Should().BeFalse();
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().ContainSingle();
 
+        // Add another
         await storage.UploadContentAsync([name, "q"], "new.txt", "new");
-        result = await storage.GetPagedListAsync([name], pageSize: 1);
 
+        // Should have two
+        result = await storage.GetPagedListAsync([name], pageSize: 1);
         result.HasMore.Should().BeTrue();
         result.Blobs.Should().ContainSingle();
         (await result.NextPageAsync()).Should().BeTrue();
@@ -413,24 +417,23 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         const string path = "user.xml";
         var container = Container;
 
+        // Create a stream of XML
         var element = XElement.Parse("<user>Blake</user>");
+        await using var memoryStream = new MemoryStream();
+        output.WriteLine("Saving xml to stream with position {0}.", memoryStream.Position);
+        await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, default);
+        memoryStream.Seek(0, SeekOrigin.Begin);
 
-        await using (var memoryStream = new MemoryStream())
-        {
-            output.WriteLine("Saving xml to stream with position {0}.", memoryStream.Position);
+        // Save the stream to storage
+        output.WriteLine("Saving contents with position {0}", memoryStream.Position);
+        await storage.UploadAsync(container, path, memoryStream);
+        output.WriteLine("Saved contents with position {0}.", memoryStream.Position);
 
-            await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, default);
-            memoryStream.Seek(0, SeekOrigin.Begin);
-
-            output.WriteLine("Saving contents with position {0}", memoryStream.Position);
-            await storage.UploadAsync(container, path, memoryStream);
-            output.WriteLine("Saved contents with position {0}.", memoryStream.Position);
-        }
-
-        await using var stream = (await storage.DownloadAsync(container, path))!.Stream;
-
+        // Download the stream from storage
+        var downloadResult = await storage.DownloadAsync(container, path);
+        downloadResult.Should().NotBeNull();
+        await using var stream = downloadResult!.Stream;
         var actual = XElement.Load(stream);
-
         actual.ToString(SaveOptions.DisableFormatting).Should().Be(element.ToString(SaveOptions.DisableFormatting));
     }
 
