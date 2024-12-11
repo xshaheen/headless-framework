@@ -354,6 +354,8 @@ public sealed class AzureBlobStorage : IBlobStorage
             return null;
         }
 
+        memoryStream.Seek(0, SeekOrigin.Begin);
+
         return new(memoryStream, blobName);
     }
 
@@ -366,7 +368,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        var blobUrl = _BuildBlobUrl(blobName, [.. container, "any"]);
+        var blobUrl = _BuildBlobUrl(blobName, container);
         var blobClient = _GetBlobClient(blobUrl);
 
         Response<BlobProperties>? blobProperties;
@@ -387,7 +389,7 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         return new BlobInfo
         {
-            BlobKey = blobName,
+            BlobKey = Url.Combine([.. container.Skip(1).Append(blobName)]),
             Size = blobProperties.Value.ContentLength,
             Created = blobProperties.Value.CreatedOn,
             Modified = blobProperties.Value.LastModified,
@@ -583,9 +585,9 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     #region Build URLs
 
-    private string _BuildBlobUrl(string blobName, IReadOnlyList<string> containers)
+    private string _BuildBlobUrl(string blobName, IReadOnlyList<string> container)
     {
-        return Url.Combine([_accountUrl, .. containers, blobName]);
+        return Url.Combine([_accountUrl, .. container, blobName]);
     }
 
     private (string Container, string ContainerUrl) _BuildContainerUrl(IReadOnlyList<string> containers)
