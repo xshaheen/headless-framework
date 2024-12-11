@@ -188,9 +188,24 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         var batch = _serviceClient.GetBlobBatchClient();
         var blobUrls = blobNames.Select(blobName => new Uri(_BuildBlobUrl(blobName, container), UriKind.Absolute));
-        var results = await batch.DeleteBlobsAsync(blobUrls, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken);
 
-        return results.ConvertAll(result => Result<bool, Exception>.Success(!result.IsError));
+        try
+        {
+            var results = await batch.DeleteBlobsAsync(
+                blobUrls,
+                DeleteSnapshotsOption.IncludeSnapshots,
+                cancellationToken
+            );
+
+            return results.ConvertAll(result => Result<bool, Exception>.Success(!result.IsError));
+        }
+        catch (AggregateException e)
+            when (e.InnerException is RequestFailedException { Status: 404 } inner
+                && string.Equals(inner.ErrorCode, "ContainerNotFound", StringComparison.Ordinal)
+            )
+        {
+            return blobNames.Select(_ => Result<bool, Exception>.Fail(inner)).ToList();
+        }
     }
 
     public async ValueTask<int> DeleteAllAsync(
@@ -239,17 +254,24 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         var oldBlobUrl = _BuildBlobUrl(blobName, blobContainer);
         var newBlobUrl = _BuildBlobUrl(newBlobName, newBlobContainer);
-
         var newBlobClient = _GetBlobClient(newBlobUrl);
 
-        var copyResult = await newBlobClient.StartCopyFromUriAsync(
-            new Uri(oldBlobUrl, UriKind.Absolute),
-            cancellationToken: cancellationToken
-        );
+        try
+        {
+            var copyResult = await newBlobClient.StartCopyFromUriAsync(
+                new Uri(oldBlobUrl, UriKind.Absolute),
+                cancellationToken: cancellationToken
+            );
 
-        await copyResult.WaitForCompletionAsync(cancellationToken);
+            await copyResult.WaitForCompletionAsync(cancellationToken);
 
-        return copyResult.HasCompleted;
+            return copyResult.HasCompleted;
+        }
+        catch (RequestFailedException e)
+            when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
+        {
+            return false;
+        }
     }
 
     #endregion
@@ -446,42 +468,58 @@ public sealed class AzureBlobStorage : IBlobStorage
         // will return a continuation token for retrieving the remainder of the results.
         // For this reason, it is possible that the service will return fewer results than the specified.
 
-        await foreach (var page in pages.WithCancellation(cancellationToken))
+        try
         {
-            continuationToken = page.ContinuationToken;
-
-            foreach (var blobItem in page.Values)
+            await foreach (var page in pages.WithCancellation(cancellationToken))
             {
-                // Check if the blob name matches the pattern.
-                if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
-                {
-                    _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
+                continuationToken = page.ContinuationToken;
 
-                    continue;
+                foreach (var blobItem in page.Values)
+                {
+                    // Check if the blob name matches the pattern.
+                    if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
+                    {
+                        _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
+
+                        continue;
+                    }
+
+                    // Skip empty blobs.
+                    if (blobItem.Properties.ContentLength is not > 0)
+                    {
+                        continue;
+                    }
+
+                    var blobSpecification = new BlobInfo
+                    {
+                        BlobKey = blobItem.Name,
+                        Size = blobItem.Properties.ContentLength.Value,
+                        Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
+                        Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
+                    };
+
+                    blobs.Add(blobSpecification);
                 }
 
-                // Skip empty blobs.
-                if (blobItem.Properties.ContentLength is not > 0)
+                // If the continuation token is null or the blob count is greater than or equal to the page size hint, then break.
+                if (page.ContinuationToken is null || blobs.Count >= pageSizeToLoad)
                 {
-                    continue;
+                    break;
                 }
-
-                var blobSpecification = new BlobInfo
-                {
-                    BlobKey = blobItem.Name,
-                    Size = blobItem.Properties.ContentLength.Value,
-                    Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
-                    Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
-                };
-
-                blobs.Add(blobSpecification);
             }
-
-            // If the continuation token is null or the blob count is greater than or equal to the page size hint, then break.
-            if (page.ContinuationToken is null || blobs.Count >= pageSizeToLoad)
+        }
+        catch (RequestFailedException e)
+            when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
+        {
+            return new AzureNextPageResult
             {
-                break;
-            }
+                Success = true,
+                HasMore = false,
+                Blobs = Array.Empty<BlobInfo>(),
+                ExtraLoadedBlobs = Array.Empty<BlobInfo>(),
+                ContinuationToken = null,
+                AzureNextPageFunc = null,
+            };
         }
 
         var hasExtraLoadedBlobs = blobs.Count > pageSize;

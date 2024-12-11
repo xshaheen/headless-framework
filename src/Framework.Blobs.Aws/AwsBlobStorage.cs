@@ -639,9 +639,10 @@ public sealed class AwsBlobStorage : IBlobStorage
         {
             return new NextPageResult
             {
-                Success = false,
+                Success = true,
                 HasMore = false,
                 Blobs = Array.Empty<BlobInfo>(),
+                NextPageFunc = null,
             };
         }
 
