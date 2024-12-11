@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Flurl;
 using Framework.Blobs.FileSystem.Internals;
 using Framework.BuildingBlocks.Helpers.IO;
 using Framework.Checks;
@@ -403,7 +404,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         var blobInfo = new BlobInfo
         {
-            Path = filePath.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
+            BlobKey = Url.Combine([.. container.Skip(1).Append(blobName)]),
             Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
             Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
             Size = fileInfo.Length,
@@ -417,14 +418,14 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     #region List
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] containers,
+        string[] container,
         string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
 
         if (string.IsNullOrEmpty(blobSearchPattern))
@@ -434,7 +435,8 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
 
-        var directoryPath = _GetDirectoryPath(containers);
+        var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
+        var directoryPath = _GetDirectoryPath(container);
         var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, blobSearchPattern));
 
         if (!Directory.Exists(completePath))
@@ -448,7 +450,9 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         }
 
         var result = new PagedFileListResult(_ =>
-            ValueTask.FromResult<INextPageResult>(_GetFiles(directoryPath, blobSearchPattern, 1, pageSize))
+            ValueTask.FromResult<INextPageResult>(
+                _GetFiles(baseDirectoryPath, directoryPath, blobSearchPattern, 1, pageSize)
+            )
         );
 
         await result.NextPageAsync();
@@ -456,7 +460,13 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         return result;
     }
 
-    private NextPageResult _GetFiles(string directoryPath, string searchPattern, int page, int pageSize)
+    private NextPageResult _GetFiles(
+        string baseDirectoryPath,
+        string directoryPath,
+        string searchPattern,
+        int page,
+        int pageSize
+    )
     {
         var list = new List<BlobInfo>();
 
@@ -489,9 +499,13 @@ public sealed class FileSystemBlobStorage : IBlobStorage
                 continue;
             }
 
+            var blobKey = fileInfo
+                .FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal)
+                .Replace('\\', '/');
+
             var blobInfo = new BlobInfo
             {
-                Path = fileInfo.FullName.Replace(directoryPath, string.Empty, StringComparison.Ordinal),
+                BlobKey = blobKey,
                 Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
                 Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
                 Size = fileInfo.Length,
@@ -515,7 +529,9 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             Blobs = list,
             NextPageFunc = hasMore
                 ? _ =>
-                    ValueTask.FromResult<INextPageResult>(_GetFiles(directoryPath, searchPattern, page + 1, pageSize))
+                    ValueTask.FromResult<INextPageResult>(
+                        _GetFiles(baseDirectoryPath, directoryPath, searchPattern, page + 1, pageSize)
+                    )
                 : null,
         };
     }

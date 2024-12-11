@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Azure;
 using Azure.Core;
@@ -203,7 +204,7 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         do
         {
-            var names = files.Blobs.Select(file => file.Path).ToArray();
+            var names = files.Blobs.Select(file => file.BlobKey).ToArray();
             var results = await BulkDeleteAsync(container, names, cancellationToken);
             count += results.Count(x => x.Succeeded);
             await files.NextPageAsync().AnyContext();
@@ -364,7 +365,7 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         return new BlobInfo
         {
-            Path = blobName,
+            BlobKey = blobName,
             Size = blobProperties.Value.ContentLength,
             Created = blobProperties.Value.CreatedOn,
             Modified = blobProperties.Value.LastModified,
@@ -376,22 +377,18 @@ public sealed class AzureBlobStorage : IBlobStorage
     #region Page
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] containers,
+        string[] container,
         string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
 
-        var containerUrl = Url.Combine(_accountUrl, containers[0]);
+        var containerUrl = _BuildContainerUrl(container).ContainerUrl;
         var client = _GetContainerClient(containerUrl);
-
-        var pattern =
-            string.Join('/', containers.Skip(1)) + "/" + blobSearchPattern?.Replace('\\', '/').RemovePrefix('/');
-
-        var criteria = _GetRequestCriteria(pattern);
+        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
         var result = new PagedFileListResult(async _ =>
             await _GetFilesAsync(client, criteria, pageSize, previousNextPageResult: null, cancellationToken)
@@ -471,7 +468,7 @@ public sealed class AzureBlobStorage : IBlobStorage
 
                 var blobSpecification = new BlobInfo
                 {
-                    Path = blobItem.Name,
+                    BlobKey = blobItem.Name,
                     Size = blobItem.Properties.ContentLength.Value,
                     Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
                     Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
@@ -502,8 +499,10 @@ public sealed class AzureBlobStorage : IBlobStorage
         };
     }
 
-    private static SearchCriteria _GetRequestCriteria(string? searchPattern)
+    private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
     {
+        searchPattern = Url.Combine(string.Join('/', directories), _NormalizePath(searchPattern));
+
         if (string.IsNullOrEmpty(searchPattern))
         {
             return new();
@@ -520,7 +519,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
 
             var slashPos = searchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
+            prefix = slashPos >= 0 ? searchPattern[..(slashPos + 1)] : string.Empty;
         }
 
         return new(prefix, patternRegex);
@@ -557,6 +556,12 @@ public sealed class AzureBlobStorage : IBlobStorage
         var bucketUrl = Url.Combine(_accountUrl, containers[0]);
 
         return (bucket, bucketUrl);
+    }
+
+    [return: NotNullIfNotNull(nameof(path))]
+    private static string? _NormalizePath(string? path)
+    {
+        return path?.Replace('\\', '/');
     }
 
     #endregion
