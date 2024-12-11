@@ -6,10 +6,10 @@ using System.Diagnostics;
 // ReSharper disable once CheckNamespace
 namespace Framework.Blobs;
 
-[DebuggerDisplay("Path = {Path}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]
+[DebuggerDisplay("BlobKey = {BlobKey}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]
 public sealed class BlobInfo
 {
-    public required string Path { get; init; }
+    public required string BlobKey { get; init; }
 
     public required DateTimeOffset Created { get; init; }
 

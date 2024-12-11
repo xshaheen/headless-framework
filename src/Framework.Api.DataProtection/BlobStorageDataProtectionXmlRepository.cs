@@ -49,12 +49,12 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
         foreach (var file in files)
         {
-            _logger.LogTrace("Loading element: {File}", file.Path);
-            var downloadResult = await _storage.DownloadAsync(_Containers, file.Path);
+            _logger.LogTrace("Loading element: {File}", file.BlobKey);
+            var downloadResult = await _storage.DownloadAsync(_Containers, file.BlobKey);
 
             if (downloadResult is null)
             {
-                _logger.LogWarning("Failed to load element: {File}", file.Path);
+                _logger.LogWarning("Failed to load element: {File}", file.BlobKey);
 
                 continue;
             }
@@ -64,7 +64,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 elements.Add(XElement.Load(stream));
             }
 
-            _logger.LogTrace("Loaded element: {File}", file.Path);
+            _logger.LogTrace("Loaded element: {File}", file.BlobKey);
         }
 
         return elements.AsReadOnly();

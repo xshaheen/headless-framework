@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Text.RegularExpressions;
 using Amazon.S3;
@@ -153,14 +154,14 @@ public sealed class AwsBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var (bucket, key) = _BuildObjectKey(blobName, container);
+        var (bucket, objectKey) = _BuildObjectKey(blobName, container);
 
-        if (!await _ExistsAsync(bucket, key, cancellationToken))
+        if (!await _ExistsAsync(bucket, objectKey, cancellationToken))
         {
             return false;
         }
 
-        var request = new DeleteObjectRequest { BucketName = bucket, Key = key };
+        var request = new DeleteObjectRequest { BucketName = bucket, Key = objectKey };
 
         DeleteObjectResponse? response;
 
@@ -214,6 +215,10 @@ public sealed class AwsBlobStorage : IBlobStorage
         {
             response = await _s3.DeleteObjectsAsync(request, cancellationToken);
         }
+        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+        {
+            return objectKeys.ConvertAll(_ => Result<bool, Exception>.Success(operand: true));
+        }
         catch (DeleteObjectsException e) // This exception is thrown when some items fail to delete.
         {
             var results = new List<Result<bool, Exception>>(blobNames.Count);
@@ -256,13 +261,13 @@ public sealed class AwsBlobStorage : IBlobStorage
     {
         const int pageSize = 100;
 
-        var criteria = _GetRequestCriteria(blobSearchPattern);
-        var (bucket, keyPrefix) = (container[0], Url.Combine([.. container.Skip(1).Append(criteria.Prefix)]));
+        var (bucket, directories) = (container[0], container.Skip(1));
+        var criteria = _GetRequestCriteria(directories, blobSearchPattern);
 
         var listRequest = new ListObjectsV2Request
         {
             BucketName = bucket,
-            Prefix = keyPrefix,
+            Prefix = criteria.Prefix,
             MaxKeys = pageSize,
         };
 
@@ -546,9 +551,9 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        var (bucket, key) = _BuildObjectKey(blobName, container);
+        var (bucket, objectKey) = _BuildObjectKey(blobName, container);
 
-        var request = new GetObjectMetadataRequest { BucketName = bucket, Key = key };
+        var request = new GetObjectMetadataRequest { BucketName = bucket, Key = objectKey };
 
         GetObjectMetadataResponse? response;
 
@@ -573,7 +578,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         return new BlobInfo
         {
-            Path = key,
+            BlobKey = objectKey,
             Created = created,
             Modified = modified,
             Size = response.ContentLength,
@@ -585,19 +590,17 @@ public sealed class AwsBlobStorage : IBlobStorage
     #region Page
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] containers,
+        string[] container,
         string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
 
-        var bucket = _BuildBucketName(containers);
-        var pattern =
-            string.Join('/', containers.Skip(1)) + "/" + blobSearchPattern?.Replace('\\', '/').RemovePrefix('/');
-        var criteria = _GetRequestCriteria(pattern);
+        var bucket = _BuildBucketName(container);
+        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
         var result = new PagedFileListResult(_ =>
             _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
@@ -662,7 +665,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         return new()
         {
-            Path = blob.Key,
+            BlobKey = blob.Key,
             Created = modified,
             Modified = modified,
             Size = blob.Size,
@@ -671,7 +674,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     private static bool _IsDirectory(BlobInfo file)
     {
-        return file.Size is 0 && file.Path.EndsWith('/');
+        return file.Size is 0 && file.BlobKey.EndsWith('/');
     }
 
     private static IEnumerable<S3Object> _MatchesPattern(IEnumerable<S3Object?> blobs, Regex? pattern)
@@ -684,8 +687,10 @@ public sealed class AwsBlobStorage : IBlobStorage
         })!;
     }
 
-    private static SearchCriteria _GetRequestCriteria(string? searchPattern)
+    private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
     {
+        searchPattern = Url.Combine(string.Join('/', directories), _NormalizePath(searchPattern));
+
         if (string.IsNullOrEmpty(searchPattern))
         {
             return new();
@@ -719,15 +724,21 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        var bucket = _BuildBucketName(container);
-        var key = Url.Combine([.. container.Skip(1).Append(blobName)]);
+        var bucket = container[0];
+        var objectKey = Url.Combine([.. container.Skip(1).Append(blobName)]);
 
-        return (bucket, key);
+        return (bucket, objectKey);
     }
 
     private static string _BuildBucketName(IReadOnlyList<string> container)
     {
         return container[0];
+    }
+
+    [return: NotNullIfNotNull(nameof(path))]
+    private static string? _NormalizePath(string? path)
+    {
+        return path?.Replace('\\', '/');
     }
 
     #endregion

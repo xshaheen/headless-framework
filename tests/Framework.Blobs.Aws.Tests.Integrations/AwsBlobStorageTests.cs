@@ -85,7 +85,7 @@ public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         return base.CanRenameFilesAsync();
     }
 
-    [Fact(Skip = "Doesn't work well with SFTP")]
+    [Fact]
     public override Task CanConcurrentlyManageFilesAsync()
     {
         return base.CanConcurrentlyManageFilesAsync();
@@ -143,5 +143,59 @@ public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageT
     public override Task CanSaveOverExistingStoredContent()
     {
         return base.CanSaveOverExistingStoredContent();
+    }
+
+    [Fact]
+    public override Task CanCallDeleteWithEmptyContainerAsync()
+    {
+        return base.CanCallDeleteWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallBulkDeleteWithEmptyContainerAsync()
+    {
+        return base.CanCallBulkDeleteWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallDeleteAllAsyncWithEmptyContainerAsync()
+    {
+        return base.CanCallDeleteAllAsyncWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallCopyWithEmptyContainerAsync()
+    {
+        return base.CanCallCopyWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallRenameWithEmptyContainerAsync()
+    {
+        return base.CanCallRenameWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallExistsWithEmptyContainerAsync()
+    {
+        return base.CanCallExistsWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallDownloadWithEmptyContainerAsync()
+    {
+        return base.CanCallDownloadWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallGetBlobInfoWithEmptyContainerAsync()
+    {
+        return base.CanCallGetBlobInfoWithEmptyContainerAsync();
+    }
+
+    [Fact]
+    public override Task CanCallGetPagedListWithEmptyContainerAsync()
+    {
+        return base.CanCallGetPagedListWithEmptyContainerAsync();
     }
 }

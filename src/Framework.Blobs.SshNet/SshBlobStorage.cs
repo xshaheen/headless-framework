@@ -244,7 +244,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         foreach (var file in files)
         {
-            var result = await _DeleteAsync(file.Path, cancellationToken);
+            var result = await _DeleteAsync(file.BlobKey, cancellationToken);
 
             if (result)
             {
@@ -252,7 +252,7 @@ public sealed class SshBlobStorage : IBlobStorage
             }
             else
             {
-                _logger.LogWarning("Failed to delete {Path}", file.Path);
+                _logger.LogWarning("Failed to delete {Path}", file.BlobKey);
             }
         }
 
@@ -520,16 +520,16 @@ public sealed class SshBlobStorage : IBlobStorage
     #region List
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] containers,
+        string[] container,
         string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(containers);
+        Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
 
-        var directoryPath = _BuildContainerPath(containers);
+        var directoryPath = _BuildContainerPath(container);
 
         var result = new PagedFileListResult(_ =>
             _GetFilesAsync(directoryPath, blobSearchPattern, 1, pageSize, cancellationToken)
@@ -725,7 +725,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         if (string.IsNullOrEmpty(searchPattern))
         {
-            return new SearchCriteria { PathPrefix = directoryPath };
+            return new(directoryPath);
         }
 
         searchPattern = _NormalizePath($"{directoryPath}{searchPattern}");
@@ -750,7 +750,7 @@ public sealed class SshBlobStorage : IBlobStorage
             prefix = slashPos >= 0 ? searchPattern[..(slashPos + 1)] : string.Empty;
         }
 
-        return new SearchCriteria(prefix, patternRegex);
+        return new(prefix, patternRegex);
     }
 
     private sealed record SearchCriteria(string PathPrefix = "", Regex? Pattern = null);
@@ -909,7 +909,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         return new BlobInfo
         {
-            Path = blobPath,
+            BlobKey = blobPath,
             // SFTP doesn't provide creation time, so we use modified time.
             Created = modified,
             Modified = modified,

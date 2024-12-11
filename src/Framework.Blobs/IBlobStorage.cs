@@ -129,7 +129,7 @@ public interface IBlobStorage : IDisposable
     #region List
 
     /// <summary>Get page</summary>
-    /// <param name="containers">Container directory to paginate.</param>
+    /// <param name="container">Container directory to paginate.</param>
     /// <param name="blobSearchPattern">
     /// The search string to match against the names of files in a path. This parameter can contain
     /// a combination of valid literal path and wildcard (* and ?) characters, but it doesn't
@@ -140,7 +140,7 @@ public interface IBlobStorage : IDisposable
     [SystemPure]
     [JetBrainsPure]
     ValueTask<PagedFileListResult> GetPagedListAsync(
-        string[] containers,
+        string[] container,
         string? blobSearchPattern = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default
