@@ -93,5 +93,5 @@ jobs:
         shell: pwsh
 
       - name: ".NET NuGet Push"
-        run: dotnet nuget push .\*.nupkg --api-key ${{ github.token }} --source github.com --skip-duplicate
+        run: dotnet nuget push .\*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source github.com --skip-duplicate
         shell: pwsh

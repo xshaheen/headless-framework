@@ -409,6 +409,7 @@ public sealed class AzureBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
+        Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var containerUrl = _BuildContainerUrl(container).ContainerUrl;
         var client = _GetContainerClient(containerUrl);
@@ -436,6 +437,21 @@ public sealed class AzureBlobStorage : IBlobStorage
         // If the previous result has more blobs than the page size, then return the result.
         if (previousNextPageResult is not null)
         {
+            // No more blobs to load.
+            if (string.IsNullOrEmpty(previousNextPageResult.ContinuationToken))
+            {
+                return new AzureNextPageResult
+                {
+                    Success = true,
+                    HasMore = false,
+                    Blobs = blobs,
+                    ExtraLoadedBlobs = Array.Empty<BlobInfo>(),
+                    ContinuationToken = null,
+                    AzureNextPageFunc = null,
+                };
+            }
+
+            // has the exact number of blobs as the page size
             var remainingBlobsCount = pageSize - blobs.Count;
 
             if (remainingBlobsCount <= 0)
@@ -443,7 +459,7 @@ public sealed class AzureBlobStorage : IBlobStorage
                 return new AzureNextPageResult
                 {
                     Success = true,
-                    HasMore = remainingBlobsCount != 0 || previousNextPageResult.ContinuationToken is not null,
+                    HasMore = remainingBlobsCount != 0,
                     Blobs = blobs.Take(pageSize).ToList(),
                     ExtraLoadedBlobs = blobs.Skip(pageSize).ToList(),
                     ContinuationToken = previousNextPageResult.ContinuationToken,
@@ -453,7 +469,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             }
         }
 
-        var pageSizeToLoad = pageSize - blobs.Count;
+        var pageSizeToLoad = pageSize - blobs.Count + 1;
         var continuationToken = previousNextPageResult?.ContinuationToken;
 
         var pages = client
@@ -522,6 +538,17 @@ public sealed class AzureBlobStorage : IBlobStorage
                 ContinuationToken = null,
                 AzureNextPageFunc = null,
             };
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(
+                e,
+                "Error while getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad} ContinuationToken={ContinuationToken}",
+                pageSizeToLoad,
+                continuationToken
+            );
+
+            throw;
         }
 
         var hasExtraLoadedBlobs = blobs.Count > pageSize;

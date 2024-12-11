@@ -427,6 +427,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         cancellationToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
+        Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         if (string.IsNullOrEmpty(blobSearchPattern))
         {

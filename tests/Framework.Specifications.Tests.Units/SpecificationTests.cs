@@ -12,12 +12,60 @@ public sealed class SpecificationTests
 
     private readonly List<Product> _products =
     [
-        new() { Name = "Red Chair", Price = 49.99m, Category = "Furniture", Stock = 5, Color = Color.Red, Available = true },
-        new() { Name = "Green Table", Price = 18.99m, Category = "Furniture", Stock = 9, Color = Color.Default, Available = false },
-        new() { Name = "Black Sofa", Price = 299.99m, Category = "Furniture", Stock = 0, Color = Color.Black, Available = false },
-        new() { Name = "White Lamp", Price = 19.99m, Category = "Lighting", Stock = 0, Color = Color.White, Available = false },
-        new() { Name = "Red Mug", Price = 9.99m, Category = "Kitchenware", Stock = 15, Color = Color.Red, Available = true },
-        new() { Name = "Green Plate", Price = 4.99m, Category = "Kitchenware", Stock = 20, Color = Color.Green, Available = true },
+        new()
+        {
+            Name = "Red Chair",
+            Price = 49.99m,
+            Category = "Furniture",
+            Stock = 5,
+            Color = Color.Red,
+            Available = true,
+        },
+        new()
+        {
+            Name = "Green Table",
+            Price = 18.99m,
+            Category = "Furniture",
+            Stock = 9,
+            Color = Color.Default,
+            Available = false,
+        },
+        new()
+        {
+            Name = "Black Sofa",
+            Price = 299.99m,
+            Category = "Furniture",
+            Stock = 0,
+            Color = Color.Black,
+            Available = false,
+        },
+        new()
+        {
+            Name = "White Lamp",
+            Price = 19.99m,
+            Category = "Lighting",
+            Stock = 0,
+            Color = Color.White,
+            Available = false,
+        },
+        new()
+        {
+            Name = "Red Mug",
+            Price = 9.99m,
+            Category = "Kitchenware",
+            Stock = 15,
+            Color = Color.Red,
+            Available = true,
+        },
+        new()
+        {
+            Name = "Green Plate",
+            Price = 4.99m,
+            Category = "Kitchenware",
+            Stock = 20,
+            Color = Color.Green,
+            Available = true,
+        },
     ];
 
     #endregion
@@ -34,9 +82,7 @@ public sealed class SpecificationTests
         var andNotSpec = new AndSpecification<Product>(priceSpec, colorSpec).ToExpression().Compile();
 
         // when
-        var result = _products
-            .Where(p => andNotSpec(p))
-            .ToList();
+        var result = _products.Where(p => andNotSpec(p)).ToList();
 
         // then
         result.Should().ContainSingle();
@@ -56,9 +102,7 @@ public sealed class SpecificationTests
         var andNotSpec = new AndNotSpecification<Product>(priceSpec, discontinuedSpec).ToExpression().Compile();
 
         // when
-        var result = _products
-            .Where(p => andNotSpec(p))
-            .ToList();
+        var result = _products.Where(p => andNotSpec(p)).ToList();
 
         // then
         result.Should().ContainSingle();
@@ -113,9 +157,7 @@ public sealed class SpecificationTests
         var orSpec = new OrSpecification<Product>(stockSpec, availableSpec).ToExpression().Compile();
 
         // when
-        var result = _products
-            .Where(p => orSpec(p))
-            .ToList();
+        var result = _products.Where(p => orSpec(p)).ToList();
 
         // then
         result.Should().HaveCount(4);
@@ -134,14 +176,13 @@ public sealed class SpecificationTests
         var result = _products.Where(specification).ToList();
 
         // then
-        result.Should().HaveCount(2)
-            .And.OnlyContain(p => p.Color == Color.Red);
+        result.Should().HaveCount(2).And.OnlyContain(p => p.Color == Color.Red);
     }
     #endregion
 
     #region Specfications helper Classes
 
-    private class PriceGreaterThanSpecification(decimal price) : Specification<Product>
+    private sealed class PriceGreaterThanSpecification(decimal price) : Specification<Product>
     {
         public override Expression<Func<Product, bool>> ToExpression()
         {
@@ -149,7 +190,7 @@ public sealed class SpecificationTests
         }
     }
 
-    private class IsAvailableSpecSpecification : Specification<Product>
+    private sealed class IsAvailableSpecSpecification : Specification<Product>
     {
         public override Expression<Func<Product, bool>> ToExpression()
         {
@@ -157,14 +198,15 @@ public sealed class SpecificationTests
         }
     }
 
-    private class ColorSpecification(Color color) : Specification<Product>
+    private sealed class ColorSpecification(Color color) : Specification<Product>
     {
         public override Expression<Func<Product, bool>> ToExpression()
         {
             return p => p.Color == color;
         }
     }
-    private class InStockSpecification : Specification<Product>
+
+    private sealed class InStockSpecification : Specification<Product>
     {
         public override Expression<Func<Product, bool>> ToExpression()
         {

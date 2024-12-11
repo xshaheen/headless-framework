@@ -27,7 +27,7 @@ public static class BlobStorageExtensions
     {
         var files = new List<BlobInfo>();
 
-        limit ??= int.MaxValue;
+        limit ??= 1_000_000;
 
         var result = await storage.GetPagedListAsync(container, blobSearchPattern, limit.Value, cancellationToken);
 

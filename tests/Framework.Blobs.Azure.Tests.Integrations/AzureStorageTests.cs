@@ -9,15 +9,17 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(AzureBlobTestFixture))]
-public sealed class AzureStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
+public sealed class AzureStorageTests(AzureBlobTestFixture fixture, ITestOutputHelper output)
+    : BlobStorageTestsBase(output)
 {
     protected override IBlobStorage GetStorage()
     {
+        fixture.Container.GetBlobEndpoint();
         var options = new AzureStorageOptions
         {
             AccountName = "devstoreaccount1",
             AccountKey = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-            AccountUrl = "http://127.0.0.1:10000/devstoreaccount1",
+            AccountUrl = fixture.Container.GetBlobEndpoint(),
         };
 
         var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageOptions>(options);

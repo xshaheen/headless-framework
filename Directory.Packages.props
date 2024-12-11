@@ -105,7 +105,7 @@
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.2.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="Microsoft.OpenApi" Version="1.6.17" />
     <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.0.0" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
@@ -164,9 +164,11 @@
     <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="6.9.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.9.0" />
     <PackageVersion Include="System.Reactive" Version="6.0.1" />
-    <PackageVersion Include="Testcontainers" Version="4.0.0" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.0.0" />
-    <PackageVersion Include="Testcontainers.Redis" Version="3.9.0" />
+    <PackageVersion Include="Testcontainers" Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.Azurite" Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.Xunit" Version="4.1.0" />
     <PackageVersion Include="TimeZoneConverter" Version="6.1.0" />
     <PackageVersion Include="Twilio" Version="6.2.4" />
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.0.2" />
@@ -188,7 +190,7 @@
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.9" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.179" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.182" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
