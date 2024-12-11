@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Framework.Specifications;
-
+[PublicAPI]
 public static class SpecificationExtensions
 {
     /// <summary>

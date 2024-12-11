@@ -262,6 +262,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sms.Vodafone", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sms.Connekio", "src\Framework.Sms.Connekio\Framework.Sms.Connekio.csproj", "{98F0E346-741A-4F06-8CDC-A3F290BDA6D9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Specifications.Tests.Units", "tests\Framework.Specifications.Tests.Units\Framework.Specifications.Tests.Units.csproj", "{1C1D852D-CD0F-4C05-BBB3-3019162E96F4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -658,6 +660,10 @@ Global
 		{98F0E346-741A-4F06-8CDC-A3F290BDA6D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{98F0E346-741A-4F06-8CDC-A3F290BDA6D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{98F0E346-741A-4F06-8CDC-A3F290BDA6D9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1C1D852D-CD0F-4C05-BBB3-3019162E96F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1C1D852D-CD0F-4C05-BBB3-3019162E96F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1C1D852D-CD0F-4C05-BBB3-3019162E96F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1C1D852D-CD0F-4C05-BBB3-3019162E96F4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -760,6 +766,7 @@ Global
 		{DFF05727-A773-4760-8FD3-FDAC7E3A1468} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{778FD47A-393F-45B8-9184-63DD8B373CEB} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
 		{98F0E346-741A-4F06-8CDC-A3F290BDA6D9} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
+		{1C1D852D-CD0F-4C05-BBB3-3019162E96F4} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
