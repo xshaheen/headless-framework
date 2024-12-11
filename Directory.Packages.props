@@ -170,8 +170,8 @@
     <PackageVersion Include="Testcontainers.Redis" Version="4.1.0" />
     <PackageVersion Include="Testcontainers.Xunit" Version="4.1.0" />
     <PackageVersion Include="TimeZoneConverter" Version="6.1.0" />
-    <PackageVersion Include="Twilio" Version="6.2.4" />
-    <PackageVersion Include="Twilio.AspNet.Core" Version="8.0.2" />
+    <PackageVersion Include="Twilio" Version="7.8.0" />
+    <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.1" />
     <PackageVersion Include="UnitsNet" Version="5.60.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
     <PackageVersion Include="Verify.Xunit" Version="28.2.1" />
