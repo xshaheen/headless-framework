@@ -528,6 +528,7 @@ public sealed class SshBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
+        Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var directoryPath = _BuildContainerPath(container);
 

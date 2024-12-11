@@ -598,6 +598,7 @@ public sealed class AwsBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
         Argument.IsPositive(pageSize);
+        Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var bucket = _BuildBucketName(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
