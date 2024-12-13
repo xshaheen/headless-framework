@@ -91,4 +91,24 @@ public sealed class PhoneNumberTests
         resultGetInternationalFormat.Should().BeNull();
         resultGetNationalFormat.Should().BeNull();
     }
+
+    [Fact]
+    public void get_international_format_should_work_as_expected()
+    {
+        var phoneNumber = new PhoneNumber(20, "01018541323");
+
+        var result = phoneNumber.GetInternationalFormat();
+
+        result.Should().Be("+20 10 18541323");
+    }
+
+    [Fact]
+    public void get_national_format_should_work_as_expected()
+    {
+        var phoneNumber = new PhoneNumber(20, "1018541323");
+
+        var result = phoneNumber.GetNationalFormat();
+
+        result.Should().Be("010 18541323");
+    }
 }
