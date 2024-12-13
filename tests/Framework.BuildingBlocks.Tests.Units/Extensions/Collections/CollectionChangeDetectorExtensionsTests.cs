@@ -69,5 +69,5 @@ public sealed class CollectionChangeDetectorExtensionsTests
             );
     }
 
-    private sealed record KeyValue(int Id, string Value);
+    private sealed record KeyValue(int Id, string Value, string[]? Skills = null);
 }

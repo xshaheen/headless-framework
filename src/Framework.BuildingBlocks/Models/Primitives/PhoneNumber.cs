@@ -47,7 +47,7 @@ public sealed class PhoneNumber : ValueObject
         return validationResult switch
         {
             PhoneNumberUtil.ValidationResult.IS_POSSIBLE or PhoneNumberUtil.ValidationResult.IS_POSSIBLE_LOCAL_ONLY =>
-                util.Format(maybePhoneNumber, PhoneNumberFormat.INTERNATIONAL),
+                util.Format(maybePhoneNumber, PhoneNumberFormat.NATIONAL),
             _ => null,
         };
     }
@@ -94,7 +94,7 @@ public sealed class PhoneNumber : ValueObject
         yield return Number;
     }
 
-    public override string ToString() => $"({CountryCode}) {Number}";
+    public override string ToString() => GetInternationalFormat() ?? $"+{CountryCode} {Number}";
 
     public string Normalize() => Normalize(CountryCode, Number);
 
