@@ -19,7 +19,7 @@ public sealed class PhoneNumberTests
         // then
         phoneNumber.CountryCode.Should().Be(20);
         phoneNumber.Number.Should().Be("1018541323");
-        phoneNumber.ToString().Should().Be("(20) 1018541323");
+        phoneNumber.ToString().Should().Be("+20 10 18541323");
     }
 
     [Fact]
