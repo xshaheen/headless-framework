@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
 
@@ -23,7 +23,7 @@ public sealed class SnowFlakIdUniqueLongGeneratorTests
         };
 
         // Sort the IDs
-        var orderedIds = ids.OrderBy(id => id).ToArray();
+        var orderedIds = ids.Order().ToArray();
 
         // Compare each ID to ensure the original and ordered lists match
         for (var i = 0; i < ids.Length; i++)

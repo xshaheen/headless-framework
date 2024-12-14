@@ -22,15 +22,18 @@ public sealed class ArgumentIsNotEmptyTests
         // given
         var collection = new List<int>();
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.IsNotEmpty(collection));
+        // when
+        var action = () => Argument.IsNotEmpty(collection);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
     }
 
     [Fact]
     public void is_not_empty_string_with_value_does_not_throw()
     {
         // given
-        var str = "test";
+        const string str = "test";
 
         // when & then
         Argument.IsNotEmpty(str).Should().NotBeNull(str);

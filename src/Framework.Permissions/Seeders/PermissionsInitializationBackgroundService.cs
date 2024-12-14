@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
@@ -110,7 +110,7 @@ public sealed class PermissionsInitializationBackgroundService(
         );
     }
 
-    private async Task _PreCacheDynamicPermissionsAsync(IServiceScope scope, CancellationToken cancellationToken)
+    private async Task _PreCacheDynamicPermissionsAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
     {
         if (!_options.IsDynamicPermissionStoreEnabled)
         {

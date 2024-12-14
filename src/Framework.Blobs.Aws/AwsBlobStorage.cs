@@ -721,7 +721,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     #region Build Urls
 
-    private static (string Bucket, string ObjectKey) _BuildObjectKey(string blobName, IReadOnlyList<string> container)
+    private static (string Bucket, string ObjectKey) _BuildObjectKey(string blobName, string[] container)
     {
         Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrEmpty(container);
@@ -732,7 +732,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         return (bucket, objectKey);
     }
 
-    private static string _BuildBucketName(IReadOnlyList<string> container)
+    private static string _BuildBucketName(string[] container)
     {
         return container[0];
     }

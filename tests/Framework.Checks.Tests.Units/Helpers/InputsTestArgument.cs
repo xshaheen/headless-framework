@@ -13,7 +13,7 @@ internal sealed class InputsTestArgument : IComparable, IComparable<InputsTestAr
 
     public decimal DecimalValue { get; set; } = 25.5m;
 
-    public TimeSpan TimeSpanValue { get; set; } = TimeSpan.Parse("00:00:10");
+    public TimeSpan TimeSpanValue { get; set; } = TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture);
 
     public int CompareTo(object? obj)
     {

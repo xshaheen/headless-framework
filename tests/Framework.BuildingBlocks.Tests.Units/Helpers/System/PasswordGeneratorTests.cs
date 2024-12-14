@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Helpers.System;
 
@@ -12,27 +12,27 @@ public class PasswordGeneratorTests
     public void generate_password_should_return_password_of_specified_length()
     {
         // given
-        int length = 12;
+        const int length = 12;
 
         // when
         var password = _passwordGenerator.GeneratePassword(length);
 
         // then
-        password.Length.Should().Be(length);
+        password.Should().HaveLength(length);
     }
 
     [Fact]
     public void generate_password_should_contain_required_unique_characters()
     {
         // given
-        int length = 10;
-        int requiredUniqueChars = 10;
+        const int length = 10;
+        const int requiredUniqueChars = 10;
 
         // when
         var password = _passwordGenerator.GeneratePassword(length, requiredUniqueChars);
 
         // then
-        password.Distinct().Count().Should().BeGreaterOrEqualTo(requiredUniqueChars);
+        password.Distinct().Should().HaveCountGreaterOrEqualTo(requiredUniqueChars);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class PasswordGeneratorTests
     public void generate_password_should_throw_argument_out_of_range_exception()
     {
         // given
-        int length = -1;
+        const int length = -1;
 
         // when
         Action action = () => _passwordGenerator.GeneratePassword(length);

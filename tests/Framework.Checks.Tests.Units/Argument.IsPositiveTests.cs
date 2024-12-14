@@ -26,24 +26,15 @@ public sealed class ArgumentIsPositiveTests
     [InlineData("-00:00:10")]
     public void is_positive_should_throw_argument_out_of_range_exception_when_negative(object argument)
     {
-        switch (argument)
+        Action action = argument switch
         {
-            case int:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((int)argument));
+            int => () => Argument.IsPositive((int) argument),
+            float => () => Argument.IsPositive((float) argument),
+            decimal => () => Argument.IsPositive((decimal) argument),
+            TimeSpan => () => Argument.IsPositive((TimeSpan) argument),
+            _ => throw new InvalidOperationException("Unsupported argument type"),
+        };
 
-                break;
-            case float:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((float)argument));
-
-                break;
-            case decimal:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((decimal)argument));
-
-                break;
-            case TimeSpan:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositive((TimeSpan)argument));
-
-                break;
-        }
+        action.Should().Throw<ArgumentOutOfRangeException>();
     }
 }

@@ -11,7 +11,7 @@ public class StringHelperTests
     {
         // given
         var bytesWithBom = new byte[] { 0xEF, 0xBB, 0xBF, 0x48, 0x65, 0x6C, 0x6C, 0x6F };
-        var expected = "Hello";
+        const string expected = "Hello";
 
         // when
         var result = StringHelper.ConvertFromBytesWithoutBom(bytesWithBom);
@@ -25,7 +25,7 @@ public class StringHelperTests
     {
         // given
         var bytesWithoutBom = "BuildingBlocks"u8.ToArray();
-        var expected = "BuildingBlocks";
+        const string expected = "BuildingBlocks";
 
         // when
         var result = StringHelper.ConvertFromBytesWithoutBom(bytesWithoutBom);

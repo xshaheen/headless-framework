@@ -12,7 +12,7 @@ public sealed class MimeTypeProviderTests
     public void get_mime_type_should_return_correct_mime_type_for_known_file_extension()
     {
         // given
-        var fileName = "example.txt";
+        const string fileName = "example.txt";
 
         // when
         var mimeType = _mimeTypeProvider.GetMimeType(fileName);
@@ -25,7 +25,7 @@ public sealed class MimeTypeProviderTests
     public void get_mime_type_should_return_octet_stream_for_unknown_file_extension()
     {
         // given
-        var fileName = "unknownfile.unknown";
+        const string fileName = "unknownfile.unknown";
 
         // when
         var mimeType = _mimeTypeProvider.GetMimeType(fileName);
@@ -60,7 +60,7 @@ public sealed class MimeTypeProviderTests
     public void try_get_mime_type_should_return_false_and_null_for_unknown_file_extension()
     {
         // given
-        var fileName = "unknownfile.unknown";
+        const string fileName = "unknownfile.unknown";
 
         // when
         var result = _mimeTypeProvider.TryGetMimeType(fileName, out var mimeType);

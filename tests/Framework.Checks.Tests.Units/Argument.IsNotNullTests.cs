@@ -22,15 +22,18 @@ public class ArgumentIsNotNullTests
         // given
         List<int>? collection = null;
 
-        // when & then
-        Assert.Throws<ArgumentNullException>(() => Argument.IsNotNull(collection));
+        // when
+        Action act = () => Argument.IsNotNull(collection);
+
+        // then
+        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void is_not_null_string_with_value_does_not_throw()
     {
         // given
-        var str = "test";
+        const string str = "test";
 
         // when & then
         Argument.IsNotNull(str).Should().NotBeNull(str);

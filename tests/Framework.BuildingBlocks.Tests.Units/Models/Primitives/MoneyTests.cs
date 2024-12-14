@@ -34,7 +34,7 @@ public sealed class MoneyTests
     public void validate_should_return_ok_for_valid_value()
     {
         // given
-        decimal value = 10m;
+        const decimal value = 10m;
 
         // when
         var result = Money.Validate(value);

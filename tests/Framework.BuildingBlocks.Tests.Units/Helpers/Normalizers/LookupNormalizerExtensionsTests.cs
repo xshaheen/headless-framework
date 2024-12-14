@@ -11,8 +11,8 @@ public class LookupNormalizerExtensionsTests
     public void normalize_name_should_return_uppercase_trimmed_name()
     {
         // given
-        string input = "  John Doe  ";
-        string expected = "JOHN DOE";
+        const string input = "  John Doe  ";
+        const string expected = "JOHN DOE";
 
         // when
         var result = input.NormalizeName();
@@ -25,7 +25,7 @@ public class LookupNormalizerExtensionsTests
     public void normalize_name_should_return_null_when_input_is_null()
     {
         // given
-        string? input = null;
+        const string? input = null;
 
         // when
         var result = input.NormalizeName();
@@ -38,8 +38,8 @@ public class LookupNormalizerExtensionsTests
     public void normalize_email_should_return_normalized_name_for_email()
     {
         // given
-        string email = FakerData.GenerateEmail();
-        string expected = email.ToUpper(CultureInfo.CurrentCulture);
+        var email = FakerData.GenerateEmail();
+        var expected = email.ToUpper(CultureInfo.CurrentCulture);
 
         // when
         var result = email.NormalizeEmail();
@@ -52,7 +52,7 @@ public class LookupNormalizerExtensionsTests
     public void normalize_email_should_return_null_when_email_is_null()
     {
         // given
-        string? email = null;
+        const string? email = null;
 
         // when
         var result = email.NormalizeEmail();
@@ -66,8 +66,8 @@ public class LookupNormalizerExtensionsTests
     public void normalize_phone_number_should_remove_spaces_and_return_invariant_digits()
     {
         // given
-        string phoneNumber = " 123 456 789 ";
-        string expected = "123456789";
+        const string phoneNumber = " 123 456 789 ";
+        const string expected = "123456789";
 
         // when
         var result = phoneNumber.NormalizePhoneNumber();
@@ -80,7 +80,7 @@ public class LookupNormalizerExtensionsTests
     public void normalize_phone_number_should_return_null_when_input_is_null()
     {
         // given
-        string? phoneNumber = null;
+        const string? phoneNumber = null;
 
         // when
         var result = phoneNumber.NormalizePhoneNumber();

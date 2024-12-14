@@ -82,12 +82,12 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     private async Task _StoreElementAsync(XElement element, string fileName)
     {
         _logger.LogTrace("Saving element: {File}", fileName);
-        await FileHelper.IoRetryPipeline.ExecuteAsync(storeElement, (_storage, element, fileName));
+        await FileHelper.IoRetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName));
         _logger.LogTrace("Saved element: {File}", fileName);
 
         return;
 
-        static async ValueTask storeElement(
+        static async ValueTask storeElementAsync(
             (IBlobStorage Storage, XElement Element, string FileName) state,
             CancellationToken cancellationToken
         )

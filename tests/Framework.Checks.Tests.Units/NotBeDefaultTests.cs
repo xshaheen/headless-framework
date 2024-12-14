@@ -10,13 +10,20 @@ public sealed class NotBeDefaultTests
     public void should_throw_argument_exception_when_pass_default_value()
     {
         const int zero = 0;
-        Assert.Throws<ArgumentException>(nameof(zero), () => Argument.IsNotDefault(zero));
+        Action act1 = () => Argument.IsNotDefault(zero);
+        act1.Should().Throw<ArgumentException>().WithParameterName(nameof(zero));
+
         int? nullableZero = 0;
-        Assert.Throws<ArgumentException>(nameof(nullableZero), () => Argument.IsNotDefault(nullableZero));
+        Action act2 = () => Argument.IsNotDefault(nullableZero);
+        act2.Should().Throw<ArgumentException>().WithParameterName(nameof(nullableZero));
+
         var emptyGuid = Guid.Empty;
-        Assert.Throws<ArgumentException>(nameof(emptyGuid), () => Argument.IsNotDefault(emptyGuid));
+        Action act3 = () => Argument.IsNotDefault(emptyGuid);
+        act3.Should().Throw<ArgumentException>().WithParameterName(nameof(emptyGuid));
+
         var defaultDateTime = default(DateTime);
-        Assert.Throws<ArgumentException>(nameof(defaultDateTime), () => Argument.IsNotDefault(defaultDateTime));
+        Action act4 = () => Argument.IsNotDefault(defaultDateTime);
+        act4.Should().Throw<ArgumentException>().WithParameterName(nameof(defaultDateTime));
     }
 
     [Fact]

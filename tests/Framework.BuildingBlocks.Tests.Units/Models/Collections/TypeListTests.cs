@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Primitives;
 
@@ -21,7 +21,7 @@ public sealed class TypeListTests
         _shapeTypeList.Add<Rectangle>();
 
         // then
-        _shapeTypeList.Count.Should().Be(1);
+        _shapeTypeList.Should().ContainSingle();
         _shapeTypeList.Contains<Rectangle>().Should().BeTrue();
     }
 
@@ -35,7 +35,7 @@ public sealed class TypeListTests
         // then
         firstAdd.Should().BeTrue();
         secondAdd.Should().BeFalse();
-        _shapeTypeList.Count.Should().Be(1);
+        _shapeTypeList.Should().ContainSingle();
     }
 
     [Fact]
@@ -72,6 +72,6 @@ public sealed class TypeListTests
 
         // then
         _shapeTypeList.Contains<Rectangle>().Should().BeFalse();
-        _shapeTypeList.Count.Should().Be(0);
+        _shapeTypeList.Should().BeEmpty();
     }
 }

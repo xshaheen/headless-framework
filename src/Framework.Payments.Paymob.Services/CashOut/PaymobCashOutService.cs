@@ -102,13 +102,14 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
 
         if (!result.Succeeded)
         {
-            return CashOutResult<KioskCashOutResponse>.Failure(result.Error, result.Response);
+            return CashOutResult.Failure<KioskCashOutResponse>(result.Error, result.Response);
         }
 
         if (result.Data.AmanCashingDetails?.BillingReference is null)
         {
             logger.LogCritical("Unexpected response to Accept CashOut {Response}", result.Data);
-            return CashOutResult<KioskCashOutResponse>.Failure(
+
+            return CashOutResult.Failure<KioskCashOutResponse>(
                 PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
                 result.Response
             );
@@ -120,7 +121,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
         );
         var data = new KioskCashOutResponse(result.Data.TransactionId!, status, billingReference);
 
-        return CashOutResult<KioskCashOutResponse>.Success(data, result.Response);
+        return CashOutResult.Success(data, result.Response);
     }
 
     #region Helpers
@@ -136,7 +137,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
         catch (PaymobCashOutException e)
         {
             logger.LogCritical(e, "Failed to start cash out {Response}", e.Body);
-            return CashOutResult<CashOutTransaction>.Failure(
+            return CashOutResult.Failure<CashOutTransaction>(
                 PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
                 response: null
             );
@@ -144,10 +145,10 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
 
         if (result.IsPending() || result.IsSuccess())
         {
-            return CashOutResult<CashOutTransaction>.Success(result, JsonSerializer.Serialize(result, _Options));
+            return CashOutResult.Success(result, JsonSerializer.Serialize(result, _Options));
         }
 
-        return CashOutResult<CashOutTransaction>.Failure(_GetError(result), JsonSerializer.Serialize(result, _Options));
+        return CashOutResult.Failure<CashOutTransaction>(_GetError(result), JsonSerializer.Serialize(result, _Options));
     }
 
     private ErrorDescriptor _GetError(CashOutTransaction result)
@@ -210,13 +211,13 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
     {
         if (!result.Succeeded)
         {
-            return CashOutResult<CashOutResponse>.Failure(result.Error, result.Response);
+            return CashOutResult.Failure<CashOutResponse>(result.Error, result.Response);
         }
 
         var status = result.Data.IsSuccess() ? CashOutResponseStatus.Success : CashOutResponseStatus.Pending;
         var response = new CashOutResponse(result.Data.TransactionId!, status);
 
-        return CashOutResult<CashOutResponse>.Success(response, result.Response);
+        return CashOutResult.Success(response, result.Response);
     }
 
     #endregion

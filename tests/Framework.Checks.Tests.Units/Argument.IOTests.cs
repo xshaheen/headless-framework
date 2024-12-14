@@ -26,7 +26,10 @@ public sealed class ArgumentIoTests
         stream.Write([0x01]);
         stream.Position = 1;
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.IsAtStartPosition(stream));
+        // when
+        var action = () => Argument.IsAtStartPosition(stream);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
     }
 }

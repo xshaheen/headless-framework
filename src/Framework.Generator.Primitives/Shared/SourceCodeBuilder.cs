@@ -48,10 +48,6 @@ public sealed class SourceCodeBuilder
     /// <summary>Represents the length of a new line character sequence.</summary>
     public static readonly int NewLineLength = PlainNewLine.Length;
 
-    /// <summary>Returns the length of the new line character(s) used in the current environment.</summary>
-    /// <returns>The length of the new line character(s).</returns>
-    public static int GetNewLineLength() => NewLineLength;
-
     /// <summary>Returns a string that represents the specified number of indentation chars.</summary>
     /// <param name="count">The number of indentation strings to generate. Default is 1.</param>
     public static string GetIndentation(int count = 1)

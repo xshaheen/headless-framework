@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
 
@@ -7,7 +7,7 @@ namespace Tests.Abstractions;
 public sealed class ClockTests
 {
     private readonly TimeProvider _sutTimeProvider;
-    private readonly IClock _clock;
+    private readonly Clock _clock;
 
     public ClockTests()
     {

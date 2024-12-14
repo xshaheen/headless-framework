@@ -86,7 +86,7 @@ public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : 
         return records.Select(Deserialize).ToList();
     }
 
-    private static string? _SerializeProviders(ICollection<string> providers)
+    private static string? _SerializeProviders(List<string> providers)
     {
         return providers.Count != 0 ? providers.JoinAsString(",") : null;
     }

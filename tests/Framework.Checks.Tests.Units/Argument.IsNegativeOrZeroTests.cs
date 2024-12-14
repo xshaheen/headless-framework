@@ -33,24 +33,15 @@ public class ArgumentIsNegativeOrZeroTests
     [InlineData("00:00:10")]
     public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_negative(object argument)
     {
-        switch (argument)
+        Action action = argument switch
         {
-            case int:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((int)argument));
+            int => () => Argument.IsNegativeOrZero((int) argument),
+            float => () => Argument.IsNegativeOrZero((float) argument),
+            decimal => () => Argument.IsNegativeOrZero((decimal) argument),
+            TimeSpan => () => Argument.IsNegativeOrZero((TimeSpan) argument),
+            _ => throw new InvalidOperationException("Unsupported argument type"),
+        };
 
-                break;
-            case float:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((float)argument));
-
-                break;
-            case decimal:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((decimal)argument));
-
-                break;
-            case TimeSpan:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegativeOrZero((TimeSpan)argument));
-
-                break;
-        }
+        action.Should().Throw<ArgumentOutOfRangeException>();
     }
 }

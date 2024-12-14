@@ -112,7 +112,8 @@ public static class RoslynExtensions
             while (namespaceParent.Parent is NamespaceDeclarationSyntax parent)
             {
                 // Add the outer namespace as a prefix to the final namespace
-                nameSpace = $"{namespaceParent.Name}.{nameSpace}";
+                FormattableString format = $"{namespaceParent.Name}.{nameSpace}";
+                nameSpace = format.ToString(CultureInfo.InvariantCulture);
                 namespaceParent = parent;
             }
         }
@@ -156,7 +157,7 @@ public static class RoslynExtensions
             // Record the parent type keyword (class/struct etc.), name, and constraints
             parentClassInfo = new ParentClass(
                 keyword: parentSyntax.Keyword.ValueText,
-                name: parentSyntax.Identifier.ToString() + parentSyntax.TypeParameterList,
+                name: parentSyntax.Identifier.ToString() + parentSyntax.TypeParameterList?.ToString(),
                 constraints: parentSyntax.ConstraintClauses.ToString(),
                 child: parentClassInfo
             ); // set the child link (null initially)
