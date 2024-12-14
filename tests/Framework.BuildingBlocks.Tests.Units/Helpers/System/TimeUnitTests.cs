@@ -46,6 +46,9 @@ public sealed class TimeUnitTests
     [InlineData("5m", true, 0, 0, 5)]
     [InlineData("2h", true, 0, 2, 0)]
     [InlineData("ddddd", false, 0, 0, 0)]
+    [InlineData("mm", false, 0, 0, 0)]
+    [InlineData("hhhh", false, 0, 0, 0)]
+    [InlineData("xnanos", false, 0, 0, 0)]
     [InlineData("", false, 0, 0, 0)]
     [InlineData(null, false, 0, 0, 0)]
     public void try_parse_should_return_correct_result(
