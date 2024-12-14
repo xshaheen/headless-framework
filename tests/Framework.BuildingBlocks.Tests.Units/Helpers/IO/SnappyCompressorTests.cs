@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
 using Framework.BuildingBlocks.Helpers.IO;
@@ -9,7 +9,7 @@ public class SnappyCompressorTests
 {
     private sealed record SnappyCompressorEntityTest(int Id, string Name, DateTimeOffset DateCreated);
 
-    private readonly IClock _clock;
+    private readonly Clock _clock;
 
     public SnappyCompressorTests()
     {
@@ -30,7 +30,7 @@ public class SnappyCompressorTests
         var compressedData = SnappyCompressor.Compress(testObject, jsonOptions);
 
         // then
-        compressedData.Length.Should().BeGreaterThan(0);
+        compressedData.Length.Should().BePositive();
     }
 
     [Fact]
@@ -46,8 +46,8 @@ public class SnappyCompressorTests
 
         // then
         decompressedObject.Should().NotBeNull();
-        decompressedObject?.Id.Should().Be(1);
-        decompressedObject?.Name.Should().Be("Framework");
-        decompressedObject?.DateCreated.Should().Be(_clock.UtcNow);
+        decompressedObject!.Id.Should().Be(1);
+        decompressedObject.Name.Should().Be("Framework");
+        decompressedObject.DateCreated.Should().Be(_clock.UtcNow);
     }
 }

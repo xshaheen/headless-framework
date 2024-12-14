@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
 
@@ -55,7 +55,7 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     where TEvent : EventArgs
 {
     private readonly List<Func<object, TEvent, Task>> _eventHandlers = [];
-    private readonly object _lockObject = new();
+    private readonly Lock _lockObject = new();
 
     public bool ParallelInvoke { get; } = parallelInvoke;
 

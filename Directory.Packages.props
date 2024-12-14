@@ -1,3 +1,4 @@
+<!-- All csproj package references should not include version numbers. The version numbers are set using this props file. -->
 <Project>
   <PropertyGroup Label="Nuget settings">
     <!-- 👇 Use directory.packages.props for nuget package versions -->
@@ -10,21 +11,21 @@
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc" Version="8.1.0" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />
-    <PackageVersion Include="AsyncKeyedLock" Version="7.1.3" />
+    <PackageVersion Include="AsyncKeyedLock" Version="7.1.4" />
     <PackageVersion Include="Audit.EntityFramework.Core" Version="27.3.2" />
     <PackageVersion Include="AutoBogus" Version="2.13.1" />
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
     <PackageVersion Include="AutoFixture" Version="5.0.0-preview0011" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.301" />
-    <PackageVersion Include="AWSSDK.S3" Version="3.7.410.1" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.404.5" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.59" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.3.4" />
+    <PackageVersion Include="AWSSDK.S3" Version="3.7.410.6" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.406.2" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.64" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.4.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.23.0" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.20.0" />
     <PackageVersion Include="Bogus" Version="35.6.1" />
     <PackageVersion Include="ByteSize" Version="2.1.2" />
-    <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.3.2" />
+    <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
     <PackageVersion Include="Couchbase.Extensions.Compression.Snappier" Version="3.0.1-beta.1" />
     <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.6.4" />
     <PackageVersion Include="Couchbase.Extensions.MultiOp" Version="1.0.0" />
@@ -34,10 +35,10 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="Dapper" Version="2.1.35" />
     <PackageVersion Include="DeepCloner" Version="0.10.4" />
-    <PackageVersion Include="DeviceDetector.NET" Version="6.3.3" />
-    <PackageVersion Include="DeviceId" Version="6.7.0" />
-    <PackageVersion Include="DeviceId.Linux" Version="6.4.0" />
-    <PackageVersion Include="DeviceId.Windows.Wmi" Version="6.6.0" />
+    <PackageVersion Include="DeviceDetector.NET" Version="6.4.2" />
+    <PackageVersion Include="DeviceId" Version="6.8.0" />
+    <PackageVersion Include="DeviceId.Linux" Version="6.8.0" />
+    <PackageVersion Include="DeviceId.Windows.Wmi" Version="6.8.0" />
     <PackageVersion Include="DistributedLock.Core" Version="1.0.7" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.2.0" />
     <PackageVersion Include="DotNetCore.CAP" Version="8.3.2" />
@@ -45,11 +46,11 @@
     <PackageVersion Include="DotNetCore.CAP.InMemoryStorage" Version="8.3.2" />
     <PackageVersion Include="DotNetCore.CAP.OpenTelemetry" Version="8.3.2" />
     <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.3.2" />
-    <PackageVersion Include="EFCore.CheckConstraints" Version="8.0.1" />
+    <PackageVersion Include="EFCore.CheckConstraints" Version="9.0.0" />
     <PackageVersion Include="FileSignatures" Version="5.1.1" />
     <PackageVersion Include="FirebaseAdmin" Version="3.1.0" />
-    <PackageVersion Include="FluentAssertions" Version="6.12.2" />
-    <PackageVersion Include="FluentAssertions.Analyzers" Version="0.33.0" />
+    <PackageVersion Include="FluentAssertions" Version="7.0.0" />
+    <PackageVersion Include="FluentAssertions.Analyzers" Version="0.34.1" />
     <PackageVersion Include="FluentAssertions.Extensions" Version="1.0.18" />
     <PackageVersion Include="FluentAssertions.Json" Version="6.1.0" />
     <PackageVersion Include="FluentValidation" Version="11.11.0" />
@@ -62,49 +63,49 @@
     <PackageVersion Include="Infobip.Api.Client" Version="3.0.1" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.3.0" />
     <PackageVersion Include="Jitbit.FastCache" Version="1.1.0" />
-    <PackageVersion Include="libphonenumber-csharp" Version="8.13.51" />
+    <PackageVersion Include="libphonenumber-csharp" Version="8.13.52" />
     <PackageVersion Include="Linq2Couchbase" Version="2.1.0" />
-    <PackageVersion Include="LinqKit.Microsoft.EntityFrameworkCore" Version="8.1.5" />
-    <PackageVersion Include="MailKit" Version="4.8.0" />
+    <PackageVersion Include="LinqKit.Microsoft.EntityFrameworkCore" Version="9.0.7" />
+    <PackageVersion Include="MailKit" Version="4.9.0" />
     <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.4.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
     <PackageVersion Include="MessagePack" Version="3.1.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="4.10.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.10.0" />
-    <PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0.1" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="8.10.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
-    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.0.0" />
-    <PackageVersion Include="MicroElements.Swashbuckle.FluentValidation" Version="6.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.AspNetCore.OData" Version="9.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.11" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" Version="8.0.11" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="4.12.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.12.0" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="9.0.0" />
+    <PackageVersion Include="MicroElements.Swashbuckle.FluentValidation" Version="6.1.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.OData" Version="9.1.1" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.9.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Extensions.DiagnosticAdapter" Version="3.1.32" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
-    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="5.2.2" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.2.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.3.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-    <PackageVersion Include="Microsoft.OpenApi" Version="1.6.17" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="1.6.22" />
     <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.0.0" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
@@ -114,39 +115,38 @@
     <PackageVersion Include="NetEscapades.EnumGenerators" Version="1.0.0-beta11" />
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
-    <PackageVersion Include="NJsonSchema" Version="11.0.2" />
-    <PackageVersion Include="Npgsql" Version="8.0.6" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
+    <PackageVersion Include="NJsonSchema" Version="11.1.0" />
+    <PackageVersion Include="Npgsql" Version="9.0.2" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
-    <PackageVersion Include="NSwag.Annotations" Version="14.1.0" />
-    <PackageVersion Include="NSwag.AspNetCore" Version="14.1.0" />
+    <PackageVersion Include="NSwag.Annotations" Version="14.2.0" />
+    <PackageVersion Include="NSwag.AspNetCore" Version="14.2.0" />
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
-    <PackageVersion Include="Nuke.Common" Version="8.1.4" />
-    <PackageVersion Include="OneOf" Version="3.0.263" />
-    <PackageVersion Include="OpenTelemetry" Version="1.9.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.9.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.9.0" />
+    <PackageVersion Include="Nuke.Common" Version="9.0.3" />
+    <PackageVersion Include="OpenTelemetry" Version="1.10.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.10.1" />
     <PackageVersion Include="PdfPig" Version="0.1.9" />
     <PackageVersion Include="Polly.Core" Version="8.5.0" />
     <PackageVersion Include="Polly.Extensions" Version="8.5.0" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.5.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.36" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.55" />
     <PackageVersion Include="Scrutor" Version="5.0.2" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
-    <PackageVersion Include="Serilog.AspNetCore" Version="8.0.3" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.1.2" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Span" Version="3.1.0" />
     <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     <PackageVersion Include="Serilog.Expressions" Version="5.0.0" />
-    <PackageVersion Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageVersion Include="Serilog.Extensions.Hosting" Version="9.0.0" />
     <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
     <PackageVersion Include="Serilog.Formatting.Elasticsearch" Version="10.0.0" />
-    <PackageVersion Include="Serilog.Settings.Configuration" Version="8.0.4" />
+    <PackageVersion Include="Serilog.Settings.Configuration" Version="9.0.0" />
     <PackageVersion Include="Serilog.Sinks.ApplicationInsights" Version="4.0.0" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
@@ -154,13 +154,13 @@
     <PackageVersion Include="Serilog.Sinks.Elasticsearch" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageVersion Include="Serilog.Sinks.Seq" Version="8.0.0" />
-    <PackageVersion Include="Serilog.Sinks.XUnit" Version="3.0.5" />
-    <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.5" />
+    <PackageVersion Include="Serilog.Sinks.XUnit" Version="3.0.19" />
+    <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.6" />
     <PackageVersion Include="Snappier" Version="1.1.6" />
     <PackageVersion Include="SSH.NET" Version="2024.2.0" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.9.0" />
-    <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="6.9.0" />
-    <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.9.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="7.2.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="7.2.0" />
     <PackageVersion Include="System.Reactive" Version="6.0.1" />
     <PackageVersion Include="Testcontainers" Version="4.1.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.1.0" />
@@ -172,10 +172,10 @@
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.1" />
     <PackageVersion Include="UnitsNet" Version="5.60.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.Xunit" Version="28.4.0" />
-    <PackageVersion Include="WireMock.Net" Version="1.6.7" />
-    <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.7" />
-    <PackageVersion Include="WireMock.Net.xUnit" Version="1.6.7" />
+    <PackageVersion Include="Verify.Xunit" Version="28.5.0" />
+    <PackageVersion Include="WireMock.Net" Version="1.6.9" />
+    <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.9" />
+    <PackageVersion Include="WireMock.Net.xUnit" Version="1.6.9" />
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="ZString" Version="2.6.0" />
@@ -183,7 +183,7 @@
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <GlobalPackageReference Include="AsyncFixer" Version="1.6.0" />
     <GlobalPackageReference Include="Asyncify" Version="0.9.7" />
-    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.5" />
+    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.6" />
     <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.9" />

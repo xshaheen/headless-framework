@@ -80,7 +80,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
     {
         var exception = context.Exception as ValidationException;
 
-        Debug.Assert(exception is not null, nameof(exception) + " is not null");
+        Debug.Assert(exception is not null);
 
         var errors = exception
             .Errors.GroupBy(
@@ -116,7 +116,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
     private void _HandleEntityNotFoundException(ExceptionContext context)
     {
         var exception = context.Exception as EntityNotFoundException;
-        Debug.Assert(exception is not null, nameof(exception) + " is not null");
+        Debug.Assert(exception is not null);
 
         var details = _problemDetailsCreator.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
         context.Result = new NotFoundObjectResult(details);
@@ -127,7 +127,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
     private void _HandleConflictException(ExceptionContext context)
     {
         var exception = context.Exception as ConflictException;
-        Debug.Assert(exception is not null, nameof(exception) + " is not null");
+        Debug.Assert(exception is not null);
 
         var details = _problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
         context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict };

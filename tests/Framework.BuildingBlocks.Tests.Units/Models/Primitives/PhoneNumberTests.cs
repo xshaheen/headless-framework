@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Primitives;
 
@@ -10,8 +10,8 @@ public sealed class PhoneNumberTests
     public void phone_number_should_be_correctly_initialized()
     {
         // given
-        int countryCode = 20;
-        string number = "1018541323";
+        const int countryCode = 20;
+        const string number = "1018541323";
 
         // when
         var phoneNumber = new PhoneNumber(countryCode, number);
@@ -26,8 +26,8 @@ public sealed class PhoneNumberTests
     public void normalize_should_return_correct_format()
     {
         // given
-        int countryCode = 20;
-        string number = "1018541323";
+        const int countryCode = 20;
+        const string number = "1018541323";
 
         // when
         var normalized = PhoneNumber.Normalize(countryCode, number);
@@ -66,7 +66,7 @@ public sealed class PhoneNumberTests
     public void from_international_format_should_return_valid_phone_number()
     {
         // given
-        string internationalNumber = "+20 101-854-1323";
+        const string internationalNumber = "+20 101-854-1323";
 
         // when
         var phoneNumber = PhoneNumber.FromInternationalFormat(internationalNumber);

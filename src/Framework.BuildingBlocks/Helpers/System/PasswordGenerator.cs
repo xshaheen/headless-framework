@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
 
@@ -217,7 +217,9 @@ public sealed class PasswordGenerator : IPasswordGenerator
 
     private static char _GetCharInclusiveBetween(int min, int max) => (char)_GetIntInclusiveBetween(min, max);
 
+#pragma warning disable CA5394 // Do not use insecure randomness
     private static int _GetIntInclusiveBetween(int min, int max) => Random.Shared.Next(min, max + 1);
+#pragma warning restore CA5394
 
     #endregion
 }

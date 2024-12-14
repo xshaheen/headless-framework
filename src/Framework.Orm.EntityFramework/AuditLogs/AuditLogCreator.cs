@@ -313,8 +313,8 @@ public static class AuditLogCreator
             return true;
         }
 
-        Debug.Assert(change.OriginalValue is not null, "change.OriginalValue is not null");
-        Debug.Assert(change.NewValue is not null, "change.NewValue is not null");
+        Debug.Assert(change.OriginalValue is not null);
+        Debug.Assert(change.NewValue is not null);
 
         if (trackedProperty.PropertyType == typeof(decimal) || trackedProperty.PropertyType == typeof(decimal?))
         {

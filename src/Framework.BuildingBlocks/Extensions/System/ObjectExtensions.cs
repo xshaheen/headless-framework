@@ -174,7 +174,7 @@ public static class ObjectExtensions
         }
 
         var text = obj.ToString();
-        Debug.Assert(text is not null, nameof(text) + " is not null");
+        Debug.Assert(text is not null);
 
         var baseType = typeof(T);
         var underlyingType = Nullable.GetUnderlyingType(baseType) ?? baseType;

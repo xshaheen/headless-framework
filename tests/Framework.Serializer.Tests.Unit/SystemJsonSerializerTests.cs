@@ -62,7 +62,7 @@ public class SystemJsonSerializerTests
     public void deserialize_invalid_Json_should_throw_json_exception()
     {
         // given
-        var invalidJson = "{\"Name\":\"Test\",\"Age\":}";
+        const string invalidJson = "{\"Name\":\"Test\",\"Age\":}";
 
         // when
         var act = () =>

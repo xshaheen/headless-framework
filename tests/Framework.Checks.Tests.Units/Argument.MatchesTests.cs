@@ -26,8 +26,11 @@ public class ArgumentMatchesTests
         const string argument = "sleem@123";
         var pattern = new Regex("^[a-zA-Z0-9]+$", RegexOptions.None, 1.Seconds());
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.Matches(argument, pattern));
+        // when
+        Action action = () => Argument.Matches(argument, pattern);
+
+        // then
+        action.Should().Throw<ArgumentException>();
     }
 
     [Fact]

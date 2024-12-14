@@ -202,8 +202,6 @@ dotnet_diagnostic.ide0055.severity = silent
 dotnet_diagnostic.ide0010.severity = none
 # IDE0072: Add missing cases to switch expression
 dotnet_diagnostic.IDE0072.severity = none
-# CA1724: Type names should not match namespaces
-dotnet_diagnostic.ca1724.severity = suggestion
 # CA1851: Possible multiple enumerations of 'IEnumerable' collection
 dotnet_diagnostic.ca1851.severity = suggestion
 # CA1812 Avoid uninstantiated internal classes

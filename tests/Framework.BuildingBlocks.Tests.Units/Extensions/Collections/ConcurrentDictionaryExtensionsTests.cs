@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
 
@@ -28,10 +28,11 @@ public sealed class ConcurrentDictionaryExtensionsTests
 
         // when
         var updated = dictionary.TryUpdate("key", (key, oldValue) => oldValue + 1);
+        var value = dictionary["key"];
 
         // then
         updated.Should().BeTrue();
-        dictionary["key"].Should().Be(43);
+        value.Should().Be(43);
     }
 
     [Fact]

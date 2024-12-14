@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <RootNamespace>Tests</RootNamespace>
   </PropertyGroup>
@@ -13,6 +13,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Blobs\Framework.Blobs.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="FluentAssertions.Analyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
 </Project>

@@ -26,52 +26,36 @@ public class ArgumentIsNegativeTests
         Argument.IsNegative(_validValues.TimeSpanValue).Should().Be(_validValues.TimeSpanValue);
     }
 
-    public static readonly TheoryData<object> Data = new() { (short)5, 5, 5L, 5.5f, 7.5, TimeSpan.Parse("00:00:10") };
+    public static readonly TheoryData<object> Data = [(short)5, 5, 5L, 5.5f, 7.5, TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture)];
 
     [Theory]
     [MemberData(nameof(Data))]
     public void is_negative_should_throw_argument_out_of_range_exception_when_negative(object argument)
     {
-        switch (argument)
+        Action act = argument switch
         {
-            case short:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegative((short)argument));
-                break;
+            short => () => Argument.IsNegative((short)argument),
+            int => () => Argument.IsNegative((int)argument),
+            long => () => Argument.IsNegative((long)argument),
+            float => () => Argument.IsNegative((float)argument),
+            decimal => () => Argument.IsNegative((decimal)argument),
+            TimeSpan => () => Argument.IsNegative((TimeSpan)argument),
+            _ => throw new InvalidOperationException("Unsupported argument type"),
+        };
 
-            case int:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegative((int)argument));
-                break;
-
-            case long:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegative((long)argument));
-
-                break;
-            case float:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegative((float)argument));
-
-                break;
-            case decimal:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegative((decimal)argument));
-
-                break;
-            case TimeSpan:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegative((TimeSpan)argument));
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsNegative((TimeSpan?)argument));
-
-                break;
-        }
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Fact]
-    public void IsNotOfType_ShouldThrowArgumentException_WhenArgumentIsOfType()
+    public void is_not_of_type_should_throw_argument_exception_when_argument_is_of_type()
     {
-        // Arrange
+        // given
         object argument = "test";
 
-        // Act
-        var exception = Assert.Throws<ArgumentException>(() => Argument.IsNotOfType<string>(argument));
+        // when
+        var action = () => Argument.IsNotOfType<string>(argument);
 
-        // Assert
-        exception.Message.Should().NotBeNull();
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
     }
 }

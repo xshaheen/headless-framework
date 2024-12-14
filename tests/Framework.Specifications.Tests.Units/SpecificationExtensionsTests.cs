@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Specifications;
 using Tests.Models;
@@ -77,7 +77,7 @@ public class SpecificationExtensionsTests
         var result = _products.Where(combinedSpec).ToList();
 
         // then
-        result.Should().HaveCount(1).And.ContainSingle(p => p.Name == "Red Mug");
+        result.Should().ContainSingle().And.ContainSingle(p => p.Name == "Red Mug");
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class SpecificationExtensionsTests
         var result = _products.Where(combinedSpec).ToList();
 
         // then
-        result.Should().HaveCount(1).And.ContainSingle(p => p.Name == "Green Table");
+        result.Should().ContainSingle().And.ContainSingle(p => p.Name == "Green Table");
     }
 
     [Fact]

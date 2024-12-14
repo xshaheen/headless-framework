@@ -12,8 +12,11 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNulls(argument));
+        // when
+        var action = () => Argument.HasNoNulls(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
     }
 
     [Fact]
@@ -35,8 +38,11 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", "", "value3" };
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrEmptyElements(argument));
+        // when
+        var action = () => Argument.HasNoNullOrEmptyElements(argument);
+
+        // then
+        action.Should().Throw<ArgumentException>();
     }
 
     [Fact]
@@ -58,8 +64,11 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", " ", "value3" };
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrWhiteSpaceElements(argument));
+        // when
+        var action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
+
+        // then
+        action.Should().Throw<ArgumentException>();
     }
 
     [Fact]
@@ -81,7 +90,10 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrWhiteSpaceElements(argument));
+        // when
+        var action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
     }
 }

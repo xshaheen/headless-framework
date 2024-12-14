@@ -7,23 +7,26 @@ namespace Framework.Payments.Paymob.Services.CashOut.Responses;
 
 public sealed class CashOutResult<T>
 {
-    private CashOutResult() { }
+    internal CashOutResult() { }
 
     /// <summary>Flag indicating whether if the operation succeeded or not.</summary>
     /// <value>True if the operation succeeded, otherwise false.</value>
     [MemberNotNullWhen(true, nameof(Data), nameof(Response))]
     [MemberNotNullWhen(false, nameof(Error))]
-    public bool Succeeded { get; private set; }
+    public bool Succeeded { get; init; }
 
     /// <summary>Success data. Not null when success otherwise will be.</summary>
-    public T? Data { get; private set; }
+    public T? Data { get; init; }
 
     /// <summary>Error message. Not null when failed otherwise will be.</summary>
-    public ErrorDescriptor? Error { get; private set; }
+    public ErrorDescriptor? Error { get; init; }
 
-    public string? Response { get; private set; }
+    public string? Response { get; init; }
+}
 
-    public static CashOutResult<T> Success(T data, string response)
+public static class CashOutResult
+{
+    public static CashOutResult<T> Success<T>(T data, string response)
     {
         return new()
         {
@@ -33,7 +36,7 @@ public sealed class CashOutResult<T>
         };
     }
 
-    public static CashOutResult<T> Failure(ErrorDescriptor error, string? response)
+    public static CashOutResult<T> Failure<T>(ErrorDescriptor error, string? response)
     {
         return new()
         {

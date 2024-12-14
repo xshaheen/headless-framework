@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.Payments.Paymob.CashIn.Models.Constants;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Orders;
@@ -69,12 +70,9 @@ public sealed class CashInOrdersPageRequest
 
     public CashInOrdersPageRequest WithAmountFilter(int? from, int? to)
     {
-        if (from > to)
+        if (from.HasValue && to.HasValue)
         {
-            throw new ArgumentException(
-                $"parameter 'from' must be less than parameter 'to' (from: {from}, to: {to}).",
-                nameof(from)
-            );
+            Argument.Range(from.Value, to.Value);
         }
 
         if (from is not null)
@@ -92,12 +90,9 @@ public sealed class CashInOrdersPageRequest
 
     public CashInOrdersPageRequest WithPaidAmountFilter(int? from, int? to)
     {
-        if (from > to)
+        if (from.HasValue && to.HasValue)
         {
-            throw new ArgumentException(
-                $"parameter 'from' must be less than parameter 'to' (from: {from}, to: {to}).",
-                nameof(from)
-            );
+            Argument.Range(from.Value, to.Value);
         }
 
         if (from is not null)

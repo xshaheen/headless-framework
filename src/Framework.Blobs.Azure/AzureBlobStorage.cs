@@ -612,12 +612,12 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     #region Build URLs
 
-    private string _BuildBlobUrl(string blobName, IReadOnlyList<string> container)
+    private string _BuildBlobUrl(string blobName, string[] container)
     {
         return Url.Combine([_accountUrl, .. container, blobName]);
     }
 
-    private (string Container, string ContainerUrl) _BuildContainerUrl(IReadOnlyList<string> containers)
+    private (string Container, string ContainerUrl) _BuildContainerUrl(string[] containers)
     {
         var bucket = containers[0];
         var bucketUrl = Url.Combine(_accountUrl, containers[0]);
