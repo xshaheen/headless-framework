@@ -46,7 +46,7 @@ public sealed class OptionsBuilderFluentValidationExtensionsTests
 
         // then
         var assertions = result.Invoking(r => r.Value).Should().Throw<OptionsValidationException>();
-        assertions.And.OptionsType.Should().Be(typeof(MyOptions));
+        assertions.And.OptionsType.Should().Be<MyOptions>();
         assertions.And.Failures.Should().ContainSingle("Property MyOptions.PropertyName: Name is required.");
         assertions.And.Message.Should().Be("Property MyOptions.PropertyName: Name is required.");
     }
