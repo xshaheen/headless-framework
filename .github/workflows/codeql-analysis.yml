@@ -37,10 +37,8 @@ jobs:
       - name: "Checkout"
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
           fetch-depth: 0
-          submodules: true
-          token: ${{ secrets.SUBMODULES_ACCESS_TOKEN }}
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
