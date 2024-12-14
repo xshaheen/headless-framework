@@ -2,6 +2,7 @@
 
 # Automatically normalize line endings on check-in
 * text=auto encoding=UTF-8
+* text eol=lf
 
 # Set file behavior to: treat as text
 *.sln                text       eol=crlf
@@ -39,7 +40,7 @@
 
 ### Git Large File System (LFS) / Binary ###
 # To ues Git LFS: *.7z filter=lfs diff=lfs merge=lfs -text
-# To ues binary: *.7z binary
+# To ues binary: *.7z binary # (binary is a macro for -text -diff)
 
 # Archives
 *.7z    binary
@@ -55,12 +56,30 @@
 *.gif   binary
 *.ico   binary
 *.jpg   binary
+*.jpeg  binary
 *.png   binary
 *.psd   binary
 *.webp  binary
 
+# Audio
+*.mov binary
+*.mp4 binary
+*.mp3 binary
+*.flv binary
+*.fla binary
+*.swf binary
+
 # Fonts
 *.woff2 binary
+*.woff  binary
+*.ttf   binary
+*.eot   binary
 
 # Other
 *.exe   binary
+*.pyc   binary
+
+# https://github.com/VerifyTests/Verify?tab=readme-ov-file#text-file-settings
+*.verified.txt text eol=lf working-tree-encoding=UTF-8
+*.verified.xml text eol=lf working-tree-encoding=UTF-8
+*.verified.json text eol=lf working-tree-encoding=UTF-8
