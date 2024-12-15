@@ -1,13 +1,13 @@
- <Project>
+<Project>
 
-	<ItemGroup>
-		<CompilerVisibleProperty Include="PrimitiveJsonConverters" />
-		<CompilerVisibleProperty Include="PrimitiveXmlConverters" />
-		<CompilerVisibleProperty Include="PrimitiveTypeConverters" />
-		<CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
-		<CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
+  <ItemGroup>
+    <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
+    <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
+    <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
+    <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
     <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
-	</ItemGroup>
+  </ItemGroup>
 
 </Project>
