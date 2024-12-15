@@ -5,6 +5,7 @@ using Framework.BuildingBlocks;
 
 namespace Framework.Blobs;
 
+[PublicAPI]
 public static class BlobStorageExtensions
 {
     public static ValueTask UploadAsync(

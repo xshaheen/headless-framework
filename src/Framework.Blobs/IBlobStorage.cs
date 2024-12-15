@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Primitives;
+using JetBrainsPure = JetBrains.Annotations.PureAttribute;
+using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
 namespace Framework.Blobs;
-
-using JetBrainsPure = PureAttribute;
-using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
 [PublicAPI]
 public interface IBlobStorage : IDisposable

@@ -73,13 +73,7 @@ public sealed class GoogleCloudMessagingPushNotificationService(
         Argument.IsNotNullOrWhiteSpace(title);
         Argument.IsNotNullOrWhiteSpace(body);
 
-        if (
-            data is not null
-            && (data.ContainsKey("from") || data.ContainsKey("notification") || data.ContainsKey("message_type"))
-        )
-        {
-            throw new InvalidOperationException("Notification data contain reserved word(s).");
-        }
+        _EnsureDataNotContainReservedWords(data);
 
         var message = new MulticastMessage
         {
@@ -90,10 +84,7 @@ public sealed class GoogleCloudMessagingPushNotificationService(
         };
 
         var batchResponse = await FirebaseMessaging.DefaultInstance.SendEachForMulticastAsync(message);
-        Debug.Assert(
-            batchResponse.Responses.Count == clientTokens.Count,
-            "batchResponse.Responses.Count == clientToken.Count"
-        );
+        Debug.Assert(batchResponse.Responses.Count == clientTokens.Count);
 
         return new BatchPushNotificationResponse
         {
@@ -122,6 +113,17 @@ public sealed class GoogleCloudMessagingPushNotificationService(
                 })
                 .ToList(),
         };
+    }
+
+    private static void _EnsureDataNotContainReservedWords(IReadOnlyDictionary<string, string>? data)
+    {
+        if (
+            data is not null
+            && (data.ContainsKey("from") || data.ContainsKey("notification") || data.ContainsKey("message_type"))
+        )
+        {
+            throw new InvalidOperationException("Notification data contain reserved word(s).");
+        }
     }
 
     private static string _FirebaseMessagingExceptionToString(FirebaseMessagingException exception)
