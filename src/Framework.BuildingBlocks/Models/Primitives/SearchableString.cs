@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
@@ -31,7 +31,7 @@ public sealed class SearchableString : ValueObject
         }
     }
 
-    public string Normalized { get; private set; } = default!;
+    public string Normalized { get; private set; } = null!;
 
     protected override IEnumerable<object> EqualityComponents()
     {

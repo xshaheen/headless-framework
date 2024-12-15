@@ -18,7 +18,7 @@ public static class ReflectionHelper
     /// <param name="inherit">Inherit attribute from base classes</param>
     public static TAttribute? GetFirstOrDefaultAttribute<TAttribute>(
         this MemberInfo memberInfo,
-        TAttribute? defaultValue = default,
+        TAttribute? defaultValue = null,
         bool inherit = true
     )
         where TAttribute : Attribute
@@ -54,7 +54,7 @@ public static class ReflectionHelper
     /// <param name="inherit">Inherit attribute from base classes</param>
     public static TAttribute? GetSingleAttributeOfMemberOrDeclaringTypeOrDefault<TAttribute>(
         this MemberInfo memberInfo,
-        TAttribute? defaultValue = default,
+        TAttribute? defaultValue = null,
         bool inherit = true
     )
         where TAttribute : class

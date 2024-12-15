@@ -100,10 +100,10 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
                     Body = new Body
                     {
                         Html = string.IsNullOrWhiteSpace(request.MessageHtml)
-                            ? default
+                            ? null
                             : new Content { Charset = _Charset, Data = request.MessageHtml },
                         Text = string.IsNullOrWhiteSpace(request.MessageText)
-                            ? default
+                            ? null
                             : new Content { Charset = _Charset, Data = request.MessageText },
                     },
                 },

@@ -95,10 +95,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
         // null case
         const string? nullValue = null;
 
-        nullValue
-            .RemovePrefix(StringComparison.Ordinal, "Test")
-            .Should()
-            .BeNull();
+        nullValue.RemovePrefix(StringComparison.Ordinal, "Test").Should().BeNull();
 
         // Simple case
         "MyTestAppService".RemovePostfix(StringComparison.Ordinal, "AppService").Should().Be("MyTest");

@@ -16,7 +16,7 @@ public sealed class ConcurrentDictionaryExtensionsTests
         var result = dictionary.GetOrDefault("key");
 
         // then
-        result.Should().Be(default);
+        result.Should().Be(0);
     }
 
     [Fact]

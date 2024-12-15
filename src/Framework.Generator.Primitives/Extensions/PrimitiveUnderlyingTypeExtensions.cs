@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
@@ -13,65 +13,32 @@ internal static class PrimitiveUnderlyingTypeExtensions
     /// <returns>The PrimitiveUnderlyingType of the given type.</returns>
     public static PrimitiveUnderlyingType GetPrimitiveUnderlyingType(this INamedTypeSymbol type)
     {
-        switch (type.SpecialType)
+        return type.SpecialType switch
         {
-            case SpecialType.System_String:
-                return PrimitiveUnderlyingType.String;
-
-            case SpecialType.System_Boolean:
-                return PrimitiveUnderlyingType.Boolean;
-
-            case SpecialType.System_Char:
-                return PrimitiveUnderlyingType.Char;
-
-            case SpecialType.System_SByte:
-                return PrimitiveUnderlyingType.SByte;
-
-            case SpecialType.System_Byte:
-                return PrimitiveUnderlyingType.Byte;
-
-            case SpecialType.System_Int16:
-                return PrimitiveUnderlyingType.Int16;
-
-            case SpecialType.System_UInt16:
-                return PrimitiveUnderlyingType.UInt16;
-
-            case SpecialType.System_Int32:
-                return PrimitiveUnderlyingType.Int32;
-
-            case SpecialType.System_UInt32:
-                return PrimitiveUnderlyingType.UInt32;
-
-            case SpecialType.System_Int64:
-                return PrimitiveUnderlyingType.Int64;
-
-            case SpecialType.System_UInt64:
-                return PrimitiveUnderlyingType.UInt64;
-
-            case SpecialType.System_Decimal:
-                return PrimitiveUnderlyingType.Decimal;
-
-            case SpecialType.System_Single:
-                return PrimitiveUnderlyingType.Single;
-
-            case SpecialType.System_Double:
-                return PrimitiveUnderlyingType.Double;
-
-            case SpecialType.System_DateTime:
-                return PrimitiveUnderlyingType.DateTime;
-
-            default:
-                break;
-        }
-
-        return type.ToDisplayString() switch
-        {
-            "System.Guid" => PrimitiveUnderlyingType.Guid,
-            "System.DateOnly" => PrimitiveUnderlyingType.DateOnly,
-            "System.TimeOnly" => PrimitiveUnderlyingType.TimeOnly,
-            "System.TimeSpan" => PrimitiveUnderlyingType.TimeSpan,
-            "System.DateTimeOffset" => PrimitiveUnderlyingType.DateTimeOffset,
-            _ => PrimitiveUnderlyingType.Other,
+            SpecialType.System_String => PrimitiveUnderlyingType.String,
+            SpecialType.System_Boolean => PrimitiveUnderlyingType.Boolean,
+            SpecialType.System_Char => PrimitiveUnderlyingType.Char,
+            SpecialType.System_SByte => PrimitiveUnderlyingType.SByte,
+            SpecialType.System_Byte => PrimitiveUnderlyingType.Byte,
+            SpecialType.System_Int16 => PrimitiveUnderlyingType.Int16,
+            SpecialType.System_UInt16 => PrimitiveUnderlyingType.UInt16,
+            SpecialType.System_Int32 => PrimitiveUnderlyingType.Int32,
+            SpecialType.System_UInt32 => PrimitiveUnderlyingType.UInt32,
+            SpecialType.System_Int64 => PrimitiveUnderlyingType.Int64,
+            SpecialType.System_UInt64 => PrimitiveUnderlyingType.UInt64,
+            SpecialType.System_Decimal => PrimitiveUnderlyingType.Decimal,
+            SpecialType.System_Single => PrimitiveUnderlyingType.Single,
+            SpecialType.System_Double => PrimitiveUnderlyingType.Double,
+            SpecialType.System_DateTime => PrimitiveUnderlyingType.DateTime,
+            _ => type.ToDisplayString() switch
+            {
+                "System.Guid" => PrimitiveUnderlyingType.Guid,
+                "System.DateOnly" => PrimitiveUnderlyingType.DateOnly,
+                "System.TimeOnly" => PrimitiveUnderlyingType.TimeOnly,
+                "System.TimeSpan" => PrimitiveUnderlyingType.TimeSpan,
+                "System.DateTimeOffset" => PrimitiveUnderlyingType.DateTimeOffset,
+                _ => PrimitiveUnderlyingType.Other,
+            },
         };
     }
 
@@ -153,28 +120,28 @@ internal static class PrimitiveUnderlyingTypeExtensions
     {
         return underlyingType switch
         {
-            PrimitiveUnderlyingType.String => default(string?),
+            PrimitiveUnderlyingType.String => null,
             PrimitiveUnderlyingType.Boolean => false,
-            PrimitiveUnderlyingType.Char => default(char),
-            PrimitiveUnderlyingType.Guid => default(Guid),
+            PrimitiveUnderlyingType.Char => '\0',
+            PrimitiveUnderlyingType.Guid => Guid.Empty,
 
-            PrimitiveUnderlyingType.Byte => default(byte),
-            PrimitiveUnderlyingType.SByte => default(sbyte),
-            PrimitiveUnderlyingType.Int16 => default(short),
-            PrimitiveUnderlyingType.Int32 => default(int),
-            PrimitiveUnderlyingType.Int64 => default(long),
-            PrimitiveUnderlyingType.UInt16 => default(ushort),
-            PrimitiveUnderlyingType.UInt32 => default(uint),
-            PrimitiveUnderlyingType.UInt64 => default(ulong),
-            PrimitiveUnderlyingType.Decimal => default(decimal),
-            PrimitiveUnderlyingType.Double => default(double),
-            PrimitiveUnderlyingType.Single => default(float),
+            PrimitiveUnderlyingType.Byte => 0,
+            PrimitiveUnderlyingType.SByte => 0,
+            PrimitiveUnderlyingType.Int16 => 0,
+            PrimitiveUnderlyingType.Int32 => 0,
+            PrimitiveUnderlyingType.Int64 => 0,
+            PrimitiveUnderlyingType.UInt16 => 0,
+            PrimitiveUnderlyingType.UInt32 => 0,
+            PrimitiveUnderlyingType.UInt64 => 0,
+            PrimitiveUnderlyingType.Decimal => 0,
+            PrimitiveUnderlyingType.Double => 0,
+            PrimitiveUnderlyingType.Single => 0,
 
             PrimitiveUnderlyingType.DateTime => default(DateTime),
             PrimitiveUnderlyingType.DateOnly => new DateTime(1, 1, 1),
             PrimitiveUnderlyingType.TimeOnly => new DateTime(1, 1, 1, 0, 0, 0),
             PrimitiveUnderlyingType.DateTimeOffset => default(DateTimeOffset),
-            PrimitiveUnderlyingType.TimeSpan => default(TimeSpan),
+            PrimitiveUnderlyingType.TimeSpan => TimeSpan.Zero,
             _ => new DummyValueObject(),
         };
     }

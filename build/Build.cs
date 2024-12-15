@@ -23,7 +23,7 @@ file sealed class Build : NukeBuild
     static readonly AbsolutePath PackagesResults = OutputDirectory / "packages-results";
 
     [Solution]
-    readonly Solution Solution = default!;
+    readonly Solution Solution = null!;
 
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;

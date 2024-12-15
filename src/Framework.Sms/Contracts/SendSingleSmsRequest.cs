@@ -25,7 +25,7 @@ public sealed record SmsRequestDestination(int Code, string Number)
 
     public string ToString(bool hasPlusPrefix)
     {
-        var format = hasPlusPrefix ?  $"+{Code}{Number}" : (FormattableString) $"{Code}{Number}";
+        var format = hasPlusPrefix ? $"+{Code}{Number}" : (FormattableString)$"{Code}{Number}";
 
         return format.ToString(CultureInfo.InvariantCulture);
     }

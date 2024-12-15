@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
@@ -24,11 +24,12 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
 
     public ExtraProperties ExtraProperties { get; private set; } = [];
 
+    [UsedImplicitly]
     private PermissionDefinitionRecord()
     {
-        GroupName = default!;
-        Name = default!;
-        DisplayName = default!;
+        GroupName = null!;
+        Name = null!;
+        DisplayName = null!;
         ExtraProperties = [];
     }
 

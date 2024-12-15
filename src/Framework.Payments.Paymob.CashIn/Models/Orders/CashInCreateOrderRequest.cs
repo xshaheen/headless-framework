@@ -11,7 +11,7 @@ public sealed class CashInCreateOrderRequest
 
     public int AmountCents { get; private init; }
 
-    public string Currency { get; private init; } = default!;
+    public string Currency { get; private init; } = null!;
 
     public string? MerchantOrderId { get; private init; }
 

@@ -26,7 +26,15 @@ public class ArgumentIsNegativeTests
         Argument.IsNegative(_validValues.TimeSpanValue).Should().Be(_validValues.TimeSpanValue);
     }
 
-    public static readonly TheoryData<object> Data = [(short)5, 5, 5L, 5.5f, 7.5, TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture)];
+    public static readonly TheoryData<object> Data =
+    [
+        (short)5,
+        5,
+        5L,
+        5.5f,
+        7.5,
+        TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture),
+    ];
 
     [Theory]
     [MemberData(nameof(Data))]

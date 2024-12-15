@@ -1,14 +1,14 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Tests.Models;
 
 public sealed class Product
 {
-    public string Name { get; set; } = default!;
+    public required string Name { get; set; }
 
     public decimal Price { get; set; }
 
-    public string Category { get; set; } = default!;
+    public required string Category { get; set; }
 
     public int Stock { get; set; }
 

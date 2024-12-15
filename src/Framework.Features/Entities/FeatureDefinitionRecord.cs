@@ -11,9 +11,9 @@ public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
 {
     public FeatureDefinitionRecord()
     {
-        GroupName = default!;
-        Name = default!;
-        DisplayName = default!;
+        GroupName = null!;
+        Name = null!;
+        DisplayName = null!;
         ExtraProperties = [];
     }
 

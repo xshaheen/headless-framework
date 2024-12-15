@@ -16,7 +16,7 @@ public sealed class PermissionsTestFixture : IAsyncLifetime, IDisposable
     private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
     private AsyncLazy<Respawner>? _respawner;
 
-    public string ConnectionString { get; private set; } = default!;
+    public string ConnectionString { get; private set; } = null!;
 
     /// <summary>This runs before all tests finished and Called just after the constructor</summary>
     public async Task InitializeAsync()

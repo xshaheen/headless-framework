@@ -147,7 +147,7 @@ public static partial class EnumerableExtensions
         return string.Join(separator, source);
     }
 
-        /// <summary>
+    /// <summary>
     /// Concatenates the members of a constructed <see cref="IEnumerable{T}"/> collection of type
     /// System.String, using the
     /// specified separator between each member.
@@ -190,7 +190,7 @@ public static partial class EnumerableExtensions
         return string.Join(separator, source);
     }
 
-        /// <summary>
+    /// <summary>
     /// Concatenates the members of a collection, using the specified separator between each member.
     /// This is a shortcut for string.Join(...)
     /// </summary>

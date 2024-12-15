@@ -11,7 +11,7 @@ public sealed record PushNotificationResponse
 {
     private PushNotificationResponse() { }
 
-    public string Token { get; private init; } = default!;
+    public string Token { get; private init; } = null!;
 
     public string? MessageId { get; private init; }
 
