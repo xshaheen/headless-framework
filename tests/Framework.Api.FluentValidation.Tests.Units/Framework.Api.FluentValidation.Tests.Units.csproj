@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
     <RootNamespace>Tests</RootNamespace>
   </PropertyGroup>
 
@@ -16,10 +14,4 @@
     <ProjectReference Include="..\..\src\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Update="FluentAssertions.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-  </ItemGroup>
 </Project>

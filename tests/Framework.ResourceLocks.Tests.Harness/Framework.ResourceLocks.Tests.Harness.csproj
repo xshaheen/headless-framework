@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <IsTestProject>false</IsTestProject>
     <RootNamespace>Tests</RootNamespace>
   </PropertyGroup>
 
@@ -13,13 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Update="FluentAssertions.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
   </ItemGroup>
 
 </Project>

@@ -2,8 +2,9 @@
 
 using FluentValidation;
 using FluentValidation.TestHelper;
+using Framework.FluentValidation;
 
-namespace Framework.FluentValidation.Tests.Unit;
+namespace Tests;
 
 public sealed class CollectionValidators_UniqueElementsWithSelectorTests
 {

@@ -3,18 +3,10 @@
   <Import Project="../Directory.Build.props" />
 
   <PropertyGroup Label="Packages Compiler settings">
-    <IsPackable>true</IsPackable>
-    <IsTestProject>false</IsTestProject>
     <GenerateSBOM>true</GenerateSBOM>
   </PropertyGroup>
 
   <PropertyGroup Label="Packages Source Link">
-    <!-- Specifies that the symbol package should be generated in the `.snupkg` format instead of the legacy `.nupkg` -->
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <!--  Ensures that debugging symbols `.pdb` are generated -->
-    <IncludeSymbols>true</IncludeSymbols>
-    <!-- Optional: Declare that the Repository URL can be published to NuSpec -->
-    <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <!-- Optional: Embed source files that are not tracked by the source control manager to the PDB -->
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <!-- Optional: Include PDB in the built .nupkg -->
