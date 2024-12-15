@@ -5,7 +5,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ByteSize" />
     <PackageReference Include="CommunityToolkit.HighPerformance" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Flurl" />
@@ -15,7 +14,7 @@
     <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="morelinq" />
-    <PackageReference Include="NetEscapades.EnumGenerators" />
+    <PackageReference Include="NetEscapades.EnumGenerators" PrivateAssets="true" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
     <PackageReference Include="Nito.AsyncEx" />
@@ -24,7 +23,6 @@
     <PackageReference Include="Snappier" />
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
-    <PackageReference Include="UnitsNet" />
     <PackageReference Include="ZString" />
   </ItemGroup>
 
