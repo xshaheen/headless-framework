@@ -55,8 +55,11 @@ public sealed class AwsBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
 
-        var bucketName = _BuildBucketName(container);
+        await _CreateBucketAsync(_BuildBucketName(container), cancellationToken);
+    }
 
+    private async Task _CreateBucketAsync(string bucketName, CancellationToken cancellationToken)
+    {
         if (_CreatedBuckets.ContainsKey(bucketName) || await AmazonS3Util.DoesS3BucketExistV2Async(_s3, bucketName))
         {
             return;
@@ -127,19 +130,21 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(async blob =>
-        {
-            try
+        var tasks = blobs.Select(
+            async blob =>
             {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+                try
+                {
+                    await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                return Result<Exception>.Success();
+                    return Result<Exception>.Success();
+                }
+                catch (Exception e)
+                {
+                    return Result<Exception>.Fail(e);
+                }
             }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        );
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
@@ -225,8 +230,9 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             foreach (var objectKey in objectKeys)
             {
-                var deleteError = e.Response.DeleteErrors.Find(x =>
-                    string.Equals(x.Key, objectKey.Key, StringComparison.Ordinal)
+                var deleteError = e.Response.DeleteErrors.Find(
+                    x =>
+                        string.Equals(x.Key, objectKey.Key, StringComparison.Ordinal)
                 );
 
                 if (deleteError is not null)
@@ -373,6 +379,9 @@ public sealed class AwsBlobStorage : IBlobStorage
         var (oldBucket, oldKey) = _BuildObjectKey(blobName, blobContainer);
         var (newBucket, newKey) = _BuildObjectKey(newBlobName, newBlobContainer);
 
+        // Ensure new bucket exists
+        await _CreateBucketAsync(newBucket, cancellationToken);
+
         var request = new CopyObjectRequest
         {
             CannedACL = _options.CannedAcl,
@@ -416,6 +425,9 @@ public sealed class AwsBlobStorage : IBlobStorage
         var (oldBucket, oldKey) = _BuildObjectKey(blobName, blobContainer);
         var (newBucket, newKey) = _BuildObjectKey(newBlobName, newBlobContainer);
 
+        // Ensure new bucket exists
+        await _CreateBucketAsync(newBucket, cancellationToken);
+
         var request = new CopyObjectRequest
         {
             CannedACL = _options.CannedAcl,
@@ -450,7 +462,6 @@ public sealed class AwsBlobStorage : IBlobStorage
         }
 
         var deleteRequest = new DeleteObjectRequest { BucketName = oldBucket, Key = oldKey };
-
         var deleteResponse = await _s3.DeleteObjectAsync(deleteRequest, cancellationToken).AnyContext();
 
         return deleteResponse.HttpStatusCode.IsSuccessStatusCode();
@@ -537,7 +548,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             throw;
         }
 
-        var stream = new ActionableStream(response.ResponseStream, () => response.Dispose());
+        var stream = new ActionableStream(response.ResponseStream, response.Dispose);
 
         return new(stream, blobName, _ToDictionary(response.Metadata));
     }
@@ -603,8 +614,9 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult(_ =>
-            _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
+        var result = new PagedFileListResult(
+            _ =>
+                _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
         );
 
         await result.NextPageAsync().AnyContext();
@@ -681,12 +693,14 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     private static IEnumerable<S3Object> _MatchesPattern(IEnumerable<S3Object?> blobs, Regex? pattern)
     {
-        return blobs.Where(blob =>
-        {
-            var path = blob?.Key;
+        return blobs.Where(
+            blob =>
+            {
+                var path = blob?.Key;
 
-            return path is not null && pattern?.IsMatch(path) != false;
-        })!;
+                return path is not null && pattern?.IsMatch(path) != false;
+            }
+        )!;
     }
 
     private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
