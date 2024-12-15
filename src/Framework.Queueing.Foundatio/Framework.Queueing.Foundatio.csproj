@@ -3,7 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>Framework.Queueing</RootNamespace>
-    <AssemblyName>$(RootNamespace).Foundatio</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

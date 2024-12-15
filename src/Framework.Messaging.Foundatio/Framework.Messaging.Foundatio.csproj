@@ -3,7 +3,6 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>Framework.Messaging</RootNamespace>
-    <AssemblyName>$(RootNamespace).Foundatio</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
