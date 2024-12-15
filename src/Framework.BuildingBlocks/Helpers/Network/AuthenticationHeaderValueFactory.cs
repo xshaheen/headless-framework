@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Net.Http.Headers;
 using Framework.Checks;
 
