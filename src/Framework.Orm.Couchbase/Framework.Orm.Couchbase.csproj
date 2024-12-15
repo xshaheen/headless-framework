@@ -8,7 +8,6 @@
     <PackageReference Include="Couchbase.Extensions.Compression.Snappier" />
     <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
     <PackageReference Include="Couchbase.Extensions.MultiOp" />
-    <PackageReference Include="Couchbase.Extensions.OpenTelemetry" />
     <PackageReference Include="Couchbase.Transactions" />
     <PackageReference Include="Linq2Couchbase" />
   </ItemGroup>

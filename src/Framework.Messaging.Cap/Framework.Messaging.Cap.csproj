@@ -9,7 +9,6 @@
   <ItemGroup>
     <PackageReference Include="DotNetCore.CAP" />
     <PackageReference Include="DotNetCore.CAP.Dashboard" />
-    <PackageReference Include="DotNetCore.CAP.OpenTelemetry" />
   </ItemGroup>
 
   <ItemGroup>

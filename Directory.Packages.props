@@ -29,7 +29,6 @@
     <PackageVersion Include="Couchbase.Extensions.Compression.Snappier" Version="3.0.1-beta.1" />
     <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.6.4" />
     <PackageVersion Include="Couchbase.Extensions.MultiOp" Version="1.0.0" />
-    <PackageVersion Include="Couchbase.Extensions.OpenTelemetry" Version="3.6.4" />
     <PackageVersion Include="Couchbase.Transactions" Version="3.6.2" />
     <PackageVersion Include="CouchbaseNetClient" Version="3.6.4" />
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
@@ -44,7 +43,6 @@
     <PackageVersion Include="DotNetCore.CAP" Version="8.3.2" />
     <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.3.2" />
     <PackageVersion Include="DotNetCore.CAP.InMemoryStorage" Version="8.3.2" />
-    <PackageVersion Include="DotNetCore.CAP.OpenTelemetry" Version="8.3.2" />
     <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.3.2" />
     <PackageVersion Include="EFCore.CheckConstraints" Version="9.0.0" />
     <PackageVersion Include="FileSignatures" Version="5.1.1" />
@@ -124,9 +122,6 @@
     <PackageVersion Include="NSwag.AspNetCore" Version="14.2.0" />
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
     <PackageVersion Include="Nuke.Common" Version="9.0.3" />
-    <PackageVersion Include="OpenTelemetry" Version="1.10.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.10.1" />
     <PackageVersion Include="PdfPig" Version="0.1.9" />
     <PackageVersion Include="Polly.Core" Version="8.5.0" />
     <PackageVersion Include="Polly.Extensions" Version="8.5.0" />

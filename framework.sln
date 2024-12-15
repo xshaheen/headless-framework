@@ -130,7 +130,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Features", "Features", "{DD
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Features", "src\Framework.Features\Framework.Features.csproj", "{19D2BF87-02D2-4D46-862C-69DBD51D99DF}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Logging", "Logging", "{661CFF04-0F0C-4F0A-A61D-5FCF7DB29D15}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Observability", "Observability", "{661CFF04-0F0C-4F0A-A61D-5FCF7DB29D15}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Logging.Serilog", "src\Framework.Logging.Serilog\Framework.Logging.Serilog.csproj", "{52138F3C-512F-492C-9771-7147AF3B3660}"
 EndProject
