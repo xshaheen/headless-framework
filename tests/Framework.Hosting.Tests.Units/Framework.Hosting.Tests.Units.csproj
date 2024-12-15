@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
     <RootNamespace>Tests</RootNamespace>
   </PropertyGroup>
 
@@ -16,13 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Hosting\Framework.Hosting.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Update="FluentAssertions.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
   </ItemGroup>
 
 </Project>

@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
     <RootNamespace>Tests</RootNamespace>
   </PropertyGroup>
 
@@ -20,13 +18,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Blobs.Azure\Framework.Blobs.Azure.csproj" />
     <ProjectReference Include="..\Framework.Blobs.Tests.Harness\Framework.Blobs.Tests.Harness.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Update="FluentAssertions.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
   </ItemGroup>
 
 </Project>
