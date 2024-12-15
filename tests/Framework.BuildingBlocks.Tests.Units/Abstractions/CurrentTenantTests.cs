@@ -1,4 +1,6 @@
-﻿using Framework.BuildingBlocks.Abstractions;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.BuildingBlocks.Abstractions;
 using Framework.BuildingBlocks.Models.Primitives;
 
 namespace Tests.Abstractions;
