@@ -23,6 +23,6 @@ public static class CancellationTokenProviderExtensions
         CancellationToken prefferedValue = default
     )
     {
-        return prefferedValue == default || prefferedValue == CancellationToken.None ? provider.Token : prefferedValue;
+        return prefferedValue == CancellationToken.None ? provider.Token : prefferedValue;
     }
 }

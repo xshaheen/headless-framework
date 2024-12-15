@@ -46,7 +46,9 @@ public static class DbContextOptionsBuilderExtensions
             if (propertyType == typeof(string))
             {
                 // Generate temporary value if GetDefaultValueSql is set
-                valueGenerator = new StringSequentialAtEndCompactGuidValueGenerator(property.GetDefaultValueSql() is not null);
+                valueGenerator = new StringSequentialAtEndCompactGuidValueGenerator(
+                    property.GetDefaultValueSql() is not null
+                );
 
                 return true;
             }

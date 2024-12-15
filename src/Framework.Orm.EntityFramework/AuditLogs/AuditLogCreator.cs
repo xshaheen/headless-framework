@@ -460,11 +460,11 @@ public static class AuditLogCreator
     private sealed record TrackedEntity
     {
         /// <summary>Column name if <see cref="PropertyKind"/> is <see cref="TrackedEntityKind.Primitive"/>, otherwise table name.</summary>
-        public string StorageName { get; init; } = default!;
+        public required string StorageName { get; init; }
 
-        public string PropertyName { get; init; } = default!;
+        public required string PropertyName { get; init; }
 
-        public Type PropertyType { get; init; } = default!;
+        public required Type PropertyType { get; init; }
 
         public TrackedEntityKind PropertyKind { get; init; }
 

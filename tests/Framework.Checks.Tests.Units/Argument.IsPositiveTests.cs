@@ -28,10 +28,10 @@ public sealed class ArgumentIsPositiveTests
     {
         Action action = argument switch
         {
-            int => () => Argument.IsPositive((int) argument),
-            float => () => Argument.IsPositive((float) argument),
-            decimal => () => Argument.IsPositive((decimal) argument),
-            TimeSpan => () => Argument.IsPositive((TimeSpan) argument),
+            int => () => Argument.IsPositive((int)argument),
+            float => () => Argument.IsPositive((float)argument),
+            decimal => () => Argument.IsPositive((decimal)argument),
+            TimeSpan => () => Argument.IsPositive((TimeSpan)argument),
             _ => throw new InvalidOperationException("Unsupported argument type"),
         };
 

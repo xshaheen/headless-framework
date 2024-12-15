@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.CodeAnalysis;
 
@@ -10,7 +10,7 @@ internal sealed class GeneratorData
     /// <summary>
     /// Gets or sets the field name.
     /// </summary>
-    public string FieldName { get; set; } = default!;
+    public string FieldName { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets a value indicating whether to generate GetHashCode method.
@@ -20,12 +20,12 @@ internal sealed class GeneratorData
     /// <summary>
     /// Gets or sets the friendly name of the primitive type.
     /// </summary>
-    public string PrimitiveTypeFriendlyName { get; set; } = default!;
+    public string PrimitiveTypeFriendlyName { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets the type symbol.
     /// </summary>
-    public INamedTypeSymbol TypeSymbol { get; set; } = default!;
+    public INamedTypeSymbol TypeSymbol { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets the Primitive type.
@@ -35,17 +35,17 @@ internal sealed class GeneratorData
     /// <summary>
     /// Gets or sets the named type symbol of the primitive type.
     /// </summary>
-    public INamedTypeSymbol PrimitiveTypeSymbol { get; set; } = default!;
+    public INamedTypeSymbol PrimitiveTypeSymbol { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets the list of parent symbols.
     /// </summary>
-    public List<INamedTypeSymbol> ParentSymbols { get; set; } = default!;
+    public List<INamedTypeSymbol> ParentSymbols { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets the namespace.
     /// </summary>
-    public string Namespace { get; set; } = default!;
+    public string Namespace { get; set; } = null!;
 
     /// <summary>
     /// Gets the class name.

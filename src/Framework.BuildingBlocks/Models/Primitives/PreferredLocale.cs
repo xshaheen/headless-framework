@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
@@ -10,28 +10,19 @@ namespace Framework.Primitives;
 [PublicAPI]
 [ComplexType]
 [DebuggerDisplay("{" + nameof(Language) + "}-{" + nameof(Country) + "}")]
-public sealed class PreferredLocale : IEquatable<PreferredLocale>
+public sealed class PreferredLocale(string country, string language) : IEquatable<PreferredLocale>
 {
     public static readonly PreferredLocale ArEg = new("EG", "ar");
     public static readonly PreferredLocale EnUs = new("US", "en");
 
     private PreferredLocale()
-    {
-        Country = default!;
-        Language = default!;
-    }
-
-    public PreferredLocale(string country, string language)
-    {
-        Country = country;
-        Language = language;
-    }
+        : this(null!, null!) { }
 
     /// <summary>Three-letter ISO country code in uppercase.</summary>
-    public string Country { get; private init; }
+    public string Country { get; private init; } = country;
 
     /// <summary>Two-letter ISO language code in lowercase.</summary>
-    public string Language { get; private init; }
+    public string Language { get; private init; } = language;
 
     public override string ToString() => $"{Language}-{Country}";
 

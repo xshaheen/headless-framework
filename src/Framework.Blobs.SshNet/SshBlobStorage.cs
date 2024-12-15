@@ -238,7 +238,12 @@ public sealed class SshBlobStorage : IBlobStorage
             return await DeleteDirectoryAsync(blobSearchPattern, includeSelf: false, cancellationToken);
         }
 
-        var files = await _GetFileListAsync(container[0], containerPath, blobSearchPattern, cancellationToken: cancellationToken);
+        var files = await _GetFileListAsync(
+            container[0],
+            containerPath,
+            blobSearchPattern,
+            cancellationToken: cancellationToken
+        );
         var count = 0;
 
         _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, blobSearchPattern);
@@ -570,7 +575,14 @@ public sealed class SshBlobStorage : IBlobStorage
             pagingLimit++;
         }
 
-        var list = await _GetFileListAsync(baseContainer, directoryPath, searchPattern, pagingLimit, skip, cancellationToken);
+        var list = await _GetFileListAsync(
+            baseContainer,
+            directoryPath,
+            searchPattern,
+            pagingLimit,
+            skip,
+            cancellationToken
+        );
         var hasMore = false;
 
         if (list.Count == pagingLimit)
@@ -585,7 +597,8 @@ public sealed class SshBlobStorage : IBlobStorage
             HasMore = hasMore,
             Blobs = list,
             NextPageFunc = hasMore
-                ? _ => _GetFilesAsync(baseContainer, directoryPath, searchPattern, page + 1, pageSize, cancellationToken)
+                ? _ =>
+                    _GetFilesAsync(baseContainer, directoryPath, searchPattern, page + 1, pageSize, cancellationToken)
                 : null,
         };
     }
@@ -631,7 +644,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         if (skip is null && limit is null)
         {
-             return items;
+            return items;
         }
 
         IEnumerable<BlobInfo> page = items;

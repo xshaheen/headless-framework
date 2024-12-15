@@ -9,11 +9,12 @@ namespace Framework.Settings.Entities;
 
 public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
 {
-    public SettingDefinitionRecord()
+    [UsedImplicitly]
+    private SettingDefinitionRecord()
     {
-        Name = default!;
-        DisplayName = default!;
-        Providers = default!;
+        Name = null!;
+        DisplayName = null!;
+        Providers = null!;
         ExtraProperties = [];
     }
 

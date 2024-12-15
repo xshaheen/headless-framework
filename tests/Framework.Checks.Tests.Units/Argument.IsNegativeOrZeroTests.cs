@@ -35,10 +35,10 @@ public class ArgumentIsNegativeOrZeroTests
     {
         Action action = argument switch
         {
-            int => () => Argument.IsNegativeOrZero((int) argument),
-            float => () => Argument.IsNegativeOrZero((float) argument),
-            decimal => () => Argument.IsNegativeOrZero((decimal) argument),
-            TimeSpan => () => Argument.IsNegativeOrZero((TimeSpan) argument),
+            int => () => Argument.IsNegativeOrZero((int)argument),
+            float => () => Argument.IsNegativeOrZero((float)argument),
+            decimal => () => Argument.IsNegativeOrZero((decimal)argument),
+            TimeSpan => () => Argument.IsNegativeOrZero((TimeSpan)argument),
             _ => throw new InvalidOperationException("Unsupported argument type"),
         };
 

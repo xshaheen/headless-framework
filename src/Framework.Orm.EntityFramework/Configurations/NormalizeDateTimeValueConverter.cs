@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;

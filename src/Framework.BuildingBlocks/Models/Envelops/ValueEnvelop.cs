@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 #pragma warning disable CA2225, IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace

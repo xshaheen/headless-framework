@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
@@ -16,11 +16,12 @@ public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant<st
 
     public string? TenantId { get; private set; }
 
+    [UsedImplicitly]
     private PermissionGrantRecord()
     {
-        Name = default!;
-        ProviderName = default!;
-        ProviderKey = default!;
+        Name = null!;
+        ProviderName = null!;
+        ProviderKey = null!;
     }
 
     [SetsRequiredMembers]

@@ -130,21 +130,19 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(
-            async blob =>
+        var tasks = blobs.Select(async blob =>
+        {
+            try
             {
-                try
-                {
-                    await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                    return Result<Exception>.Success();
-                }
-                catch (Exception e)
-                {
-                    return Result<Exception>.Fail(e);
-                }
+                return Result<Exception>.Success();
             }
-        );
+            catch (Exception e)
+            {
+                return Result<Exception>.Fail(e);
+            }
+        });
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
@@ -230,9 +228,8 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             foreach (var objectKey in objectKeys)
             {
-                var deleteError = e.Response.DeleteErrors.Find(
-                    x =>
-                        string.Equals(x.Key, objectKey.Key, StringComparison.Ordinal)
+                var deleteError = e.Response.DeleteErrors.Find(x =>
+                    string.Equals(x.Key, objectKey.Key, StringComparison.Ordinal)
                 );
 
                 if (deleteError is not null)
@@ -614,9 +611,8 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult(
-            _ =>
-                _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
+        var result = new PagedFileListResult(_ =>
+            _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
         );
 
         await result.NextPageAsync().AnyContext();
@@ -693,14 +689,12 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     private static IEnumerable<S3Object> _MatchesPattern(IEnumerable<S3Object?> blobs, Regex? pattern)
     {
-        return blobs.Where(
-            blob =>
-            {
-                var path = blob?.Key;
+        return blobs.Where(blob =>
+        {
+            var path = blob?.Key;
 
-                return path is not null && pattern?.IsMatch(path) != false;
-            }
-        )!;
+            return path is not null && pattern?.IsMatch(path) != false;
+        })!;
     }
 
     private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
