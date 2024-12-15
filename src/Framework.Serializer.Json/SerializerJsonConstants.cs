@@ -10,7 +10,7 @@ public static class SerializerJsonConstants
 {
     public static JsonSerializerOptions ConfigureWebJsonOptions(JsonSerializerOptions options)
     {
-        options.Encoder = JavaScriptEncoder.Default;
+        options.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
         options.PropertyNameCaseInsensitive = true;
         options.NumberHandling = JsonNumberHandling.AllowReadingFromString;
         options.ReadCommentHandling = JsonCommentHandling.Disallow;
@@ -21,6 +21,9 @@ public static class SerializerJsonConstants
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip;
         options.IgnoreReadOnlyProperties = false;
         options.WriteIndented = false;
+        options.RespectNullableAnnotations = true;
+        options.RespectRequiredConstructorParameters = true;
+        options.AllowTrailingCommas = true;
         options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
 
@@ -46,6 +49,8 @@ public static class SerializerJsonConstants
         options.IncludeFields = false;
         options.IgnoreReadOnlyFields = false;
         options.WriteIndented = false;
+        options.RespectNullableAnnotations = true;
+        options.RespectRequiredConstructorParameters = true;
         options.AllowTrailingCommas = false;
         options.ReferenceHandler = null;
 

@@ -10,12 +10,6 @@ namespace Framework.BuildingBlocks;
 
 public static class FrameworkJsonConstants
 {
-    private static readonly List<JsonConverter> _DefaultConverters =
-    [
-        new GeoJsonConverterFactory(),
-        new IpAddressJsonConverter(),
-    ];
-
     public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
     public static readonly JsonSerializerOptions DefaultInternalJsonOptions = CreateInternalJsonOptions();
     public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = new() { WriteIndented = true };
@@ -33,11 +27,7 @@ public static class FrameworkJsonConstants
     public static JsonSerializerOptions ConfigureWebJsonOptions(JsonSerializerOptions options)
     {
         SerializerJsonConstants.ConfigureWebJsonOptions(options);
-
-        foreach (var converter in _DefaultConverters)
-        {
-            options.Converters.Add(converter);
-        }
+        _AddDefaultConverters(options);
 
         return options;
     }
@@ -45,12 +35,14 @@ public static class FrameworkJsonConstants
     public static JsonSerializerOptions ConfigureInternalJsonOptions(JsonSerializerOptions options)
     {
         SerializerJsonConstants.ConfigureInternalJsonOptions(options);
-
-        foreach (var converter in _DefaultConverters)
-        {
-            options.Converters.Add(converter);
-        }
+        _AddDefaultConverters(options);
 
         return options;
+    }
+
+    private static void _AddDefaultConverters(JsonSerializerOptions options)
+    {
+        options.Converters.Add(new GeoJsonConverterFactory());
+        options.Converters.Add(new IpAddressJsonConverter());
     }
 }
