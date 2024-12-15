@@ -421,7 +421,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         var element = XElement.Parse("<user>Blake</user>");
         await using var memoryStream = new MemoryStream();
         output.WriteLine("Saving xml to stream with position {0}.", memoryStream.Position);
-        await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, default);
+        await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, CancellationToken.None);
         memoryStream.Seek(0, SeekOrigin.Begin);
 
         // Save the stream to storage

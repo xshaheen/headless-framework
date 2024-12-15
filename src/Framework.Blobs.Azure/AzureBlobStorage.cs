@@ -252,6 +252,9 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(newBlobName);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
+        // Ensure the new container exists
+        await CreateContainerAsync(newBlobContainer, cancellationToken);
+
         var oldBlobUrl = _BuildBlobUrl(blobName, blobContainer);
         var newBlobUrl = _BuildBlobUrl(newBlobName, newBlobContainer);
         var newBlobClient = _GetBlobClient(newBlobUrl);
@@ -267,8 +270,7 @@ public sealed class AzureBlobStorage : IBlobStorage
 
             return copyResult.HasCompleted;
         }
-        catch (RequestFailedException e)
-            when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
+        catch (RequestFailedException e) when (e.Status == 404)
         {
             return false;
         }
