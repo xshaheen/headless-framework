@@ -2,6 +2,7 @@
 
 namespace Framework.Blobs;
 
+[PublicAPI]
 public interface IBlobNamingNormalizer
 {
     string NormalizeBlobName(string blobName);

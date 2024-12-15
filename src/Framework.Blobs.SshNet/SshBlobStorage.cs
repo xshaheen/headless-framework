@@ -3,6 +3,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Cysharp.Text;
+using Flurl;
 using Framework.BuildingBlocks;
 using Framework.Checks;
 using Framework.Primitives;
@@ -237,14 +238,14 @@ public sealed class SshBlobStorage : IBlobStorage
             return await DeleteDirectoryAsync(blobSearchPattern, includeSelf: false, cancellationToken);
         }
 
-        var files = await _GetFileListAsync(containerPath, blobSearchPattern, cancellationToken: cancellationToken);
+        var files = await _GetFileListAsync(container[0], containerPath, blobSearchPattern, cancellationToken: cancellationToken);
         var count = 0;
 
         _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, blobSearchPattern);
 
         foreach (var file in files)
         {
-            var result = await _DeleteAsync(file.BlobKey, cancellationToken);
+            var result = await _DeleteAsync(Url.Combine(container[0], file.BlobKey), cancellationToken);
 
             if (result)
             {
@@ -352,9 +353,18 @@ public sealed class SshBlobStorage : IBlobStorage
                 targetPath
             );
 
-            await CreateContainerAsync(newBlobContainer, cancellationToken);
-            _logger.LogTrace("Renaming {Path} to {NewPath}", blobPath, targetPath);
-            await _client.RenameFileAsync(blobPath, targetPath, cancellationToken);
+            try
+            {
+                await CreateContainerAsync(newBlobContainer, cancellationToken);
+                _logger.LogTrace("Renaming {Path} to {NewPath}", blobPath, targetPath);
+                await _client.RenameFileAsync(blobPath, targetPath, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error renaming {Path} to {NewPath}", blobPath, targetPath);
+
+                return false;
+            }
         }
         catch (Exception e)
         {
@@ -535,7 +545,7 @@ public sealed class SshBlobStorage : IBlobStorage
         var directoryPath = _BuildContainerPath(container);
 
         var result = new PagedFileListResult(_ =>
-            _GetFilesAsync(directoryPath, blobSearchPattern, 1, pageSize, cancellationToken)
+            _GetFilesAsync(container[0], directoryPath, blobSearchPattern, 1, pageSize, cancellationToken)
         );
 
         await result.NextPageAsync();
@@ -544,6 +554,7 @@ public sealed class SshBlobStorage : IBlobStorage
     }
 
     private async ValueTask<INextPageResult> _GetFilesAsync(
+        string baseContainer,
         string directoryPath,
         string? searchPattern,
         int page,
@@ -559,7 +570,7 @@ public sealed class SshBlobStorage : IBlobStorage
             pagingLimit++;
         }
 
-        var list = await _GetFileListAsync(directoryPath, searchPattern, pagingLimit, skip, cancellationToken);
+        var list = await _GetFileListAsync(baseContainer, directoryPath, searchPattern, pagingLimit, skip, cancellationToken);
         var hasMore = false;
 
         if (list.Count == pagingLimit)
@@ -574,12 +585,13 @@ public sealed class SshBlobStorage : IBlobStorage
             HasMore = hasMore,
             Blobs = list,
             NextPageFunc = hasMore
-                ? _ => _GetFilesAsync(directoryPath, searchPattern, page + 1, pageSize, cancellationToken)
+                ? _ => _GetFilesAsync(baseContainer, directoryPath, searchPattern, page + 1, pageSize, cancellationToken)
                 : null,
         };
     }
 
     private async Task<List<BlobInfo>> _GetFileListAsync(
+        string baseContainer,
         string directoryPath,
         string? searchPattern = null,
         int? limit = null,
@@ -596,7 +608,8 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var criteria = _GetRequestCriteria(directoryPath, searchPattern);
 
-        // NOTE: This could be expensive the larger the directory structure you have as we aren't efficiently doing paging.
+        // ALERT: This could be expensive the larger the directory structure you have
+        // as we aren't efficiently doing paging.
         var recordsToReturn = limit.HasValue ? (skip.GetValueOrDefault() * limit) + limit : null;
 
         _logger.LogTrace(
@@ -605,32 +618,39 @@ public sealed class SshBlobStorage : IBlobStorage
             criteria.Pattern
         );
 
-        var list = new List<BlobInfo>();
+        var items = new List<BlobInfo>();
 
         await _GetFileListRecursivelyAsync(
-            criteria.PathPrefix,
+            baseContainer,
             criteria.PathPrefix,
             criteria.Pattern,
-            list,
+            items,
             recordsToReturn,
             cancellationToken
         );
 
+        if (skip is null && limit is null)
+        {
+             return items;
+        }
+
+        IEnumerable<BlobInfo> page = items;
+
         if (skip.HasValue)
         {
-            list = list.Skip(skip.Value).ToList();
+            page = page.Skip(skip.Value);
         }
 
         if (limit.HasValue)
         {
-            list = list.Take(limit.Value).ToList();
+            page = page.Take(limit.Value);
         }
 
-        return list;
+        return page.ToList();
     }
 
     private async Task _GetFileListRecursivelyAsync(
-        string originalPathPrefix,
+        string baseContainer,
         string currentPathPrefix,
         Regex? pattern,
         ICollection<BlobInfo> list,
@@ -695,7 +715,7 @@ public sealed class SshBlobStorage : IBlobStorage
                 path += "/";
 
                 await _GetFileListRecursivelyAsync(
-                    originalPathPrefix,
+                    baseContainer,
                     path,
                     pattern,
                     list,
@@ -718,7 +738,8 @@ public sealed class SshBlobStorage : IBlobStorage
                 continue;
             }
 
-            list.Add(_ToBlobInfo(file, path.Replace(originalPathPrefix, string.Empty, StringComparison.Ordinal)));
+            var objectKey = path.Replace(baseContainer, string.Empty, StringComparison.Ordinal).TrimStart('/');
+            list.Add(_ToBlobInfo(file, objectKey));
         }
     }
 
