@@ -6,6 +6,8 @@ using FileSignatures;
 using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Diagnostics;
+using Framework.Api.Identity.Normalizer;
+using Framework.Api.Identity.Schemes;
 using Framework.Api.Middlewares;
 using Framework.Api.Security.Claims;
 using Framework.Api.Security.Jwt;
@@ -13,9 +15,11 @@ using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;
 using Framework.BuildingBlocks.Helpers.System;
 using Framework.Serializer;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpsPolicy;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
@@ -51,6 +55,9 @@ public static class ApiRegistration
         builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
         builder.Services.TryAddScoped<IRequestTime, RequestTime>();
         builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
+
+        builder.Services.ReplaceSingleton<ILookupNormalizer, FrameworkLookupNormalizer>();
+        builder.Services.ReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
 
         builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
         builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);
