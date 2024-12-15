@@ -486,8 +486,8 @@ public sealed class SshBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrEmpty(container);
         Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
 
         await _EnsureClientConnectedAsync(cancellationToken);
         var directoryPath = _BuildContainerPath(container);
@@ -505,7 +505,9 @@ public sealed class SshBlobStorage : IBlobStorage
                 return null;
             }
 
-            return _ToBlobInfo(file, blobPath.Replace(directoryPath, string.Empty, StringComparison.Ordinal));
+            var objectKey = blobPath.Replace(container[0], string.Empty, StringComparison.Ordinal).TrimStart('/');
+
+            return _ToBlobInfo(file, objectKey);
         }
         catch (SftpPathNotFoundException ex)
         {
@@ -904,13 +906,13 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Mappers
 
-    private static BlobInfo _ToBlobInfo(ISftpFile file, string blobPath)
+    private static BlobInfo _ToBlobInfo(ISftpFile file, string objectKey)
     {
         var modified = new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
 
         return new BlobInfo
         {
-            BlobKey = blobPath,
+            BlobKey = objectKey,
             // SFTP doesn't provide creation time, so we use modified time.
             Created = modified,
             Modified = modified,
