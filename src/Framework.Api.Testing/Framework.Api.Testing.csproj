@@ -10,11 +10,8 @@
     <PackageReference Include="Bogus" />
     <PackageReference Include="DeepCloner" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="FluentAssertions.Extensions" />
-    <PackageReference Include="FluentAssertions.Json" />
     <PackageReference Include="MartinCostello.Logging.XUnit" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="NSubstitute" />
@@ -25,6 +22,11 @@
     <PackageReference Include="WireMock.Net" />
     <PackageReference Include="WireMock.Net.FluentAssertions" />
     <PackageReference Include="WireMock.Net.xUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
