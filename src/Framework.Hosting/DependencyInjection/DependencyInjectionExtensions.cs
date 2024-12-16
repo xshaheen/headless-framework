@@ -154,11 +154,9 @@ public static class DependencyInjectionExtensions
 
     public static bool Unregister<TService>(this IServiceCollection services)
     {
-        var descriptors = services.Where(d => d.ServiceType == typeof(TService));
-
         var unregistered = false;
 
-        foreach (var descriptor in descriptors)
+        foreach (var descriptor in services.Where(d => d.ServiceType == typeof(TService)).ToList())
         {
             services.Remove(descriptor);
 
