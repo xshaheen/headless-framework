@@ -17,9 +17,13 @@ public static class ApiSerilogFactory
 {
     public const string OutputTemplate = SerilogFactory.OutputTemplate;
 
-    public static LoggerConfiguration CreateApiBootstrapLoggerConfiguration() =>
-        SerilogFactory.CreateBootstrapLoggerConfiguration();
+    /// <inheritdoc cref="SerilogFactory.CreateBootstrapLoggerConfiguration"/>
+    public static LoggerConfiguration CreateApiBootstrapLoggerConfiguration()
+    {
+        return SerilogFactory.CreateBootstrapLoggerConfiguration();
+    }
 
+    /// <inheritdoc cref="ConfigureApiBaseReloadableLoggerConfiguration"/>
     public static LoggerConfiguration CreateApiBaseReloadableLoggerConfiguration(
         IServiceProvider? services,
         IConfiguration configuration,
