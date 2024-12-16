@@ -44,7 +44,7 @@
   <PropertyGroup Label="Primitives Generator Settings">
     <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
     <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
-    <PrimitiveXmlConverters>true</PrimitiveXmlConverters>
+    <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
     <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
     <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
     <PrimitiveEntityFrameworkValueConverters>false</PrimitiveEntityFrameworkValueConverters>
