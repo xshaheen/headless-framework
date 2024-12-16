@@ -7,6 +7,8 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Enrichers.Span;
 using Serilog.Events;
+using Serilog.Formatting;
+using Serilog.Formatting.Compact;
 using Serilog.Formatting.Display;
 using Serilog.Sinks.SystemConsole.Themes;
 
@@ -16,7 +18,16 @@ namespace Framework.Logging.Serilog;
 public static class SerilogFactory
 {
     public const string OutputTemplate =
-        "[{Timestamp:HH:mm:ss.fff zzz} {Level:u3}] ({RequestPath}) <src:{SourceContext}>{NewLine}{Message:lj}{NewLine}{Exception}{NewLine}";
+        "[{Timestamp:HH:mm:ss.fff zzz} {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}";
+
+    /// <inheritdoc cref="CreateBootstrapLoggerConfiguration"/>
+    public static LoggerConfiguration CreateBootstrapLoggerConfiguration()
+    {
+        var loggerConfiguration = new LoggerConfiguration();
+
+        loggerConfiguration.ConfigureBootstrapLoggerConfiguration();
+        return loggerConfiguration;
+    }
 
     /// <summary>
     /// Creates a bootstrap logger configuration with various enrichers and sinks.
@@ -31,9 +42,11 @@ public static class SerilogFactory
     /// </list>
     /// </remarks>
     /// <returns>A <see cref="LoggerConfiguration"/> instance configured for bootstrap logging.</returns>
-    public static LoggerConfiguration CreateBootstrapLoggerConfiguration()
+    private static LoggerConfiguration ConfigureBootstrapLoggerConfiguration(
+        this LoggerConfiguration loggerConfiguration
+    )
     {
-        var loggerConfiguration = new LoggerConfiguration()
+        loggerConfiguration
             .Destructure.ByTransforming<IPAddress?>(ip => ip?.ToString() ?? "")
             .Enrich.WithEnvironmentName()
             .Enrich.WithEnvironmentUserName()
@@ -60,15 +73,13 @@ public static class SerilogFactory
             );
         });
 
-#if DEBUG
-        loggerConfiguration.WriteTo.Debug(formatProvider: CultureInfo.InvariantCulture);
-#endif
+        loggerConfiguration._WriteToDebug();
 
         return loggerConfiguration;
     }
 
-    /// <inheritdoc cref="ConfigureBaseReloadableLoggerConfiguration"/>
-    public static LoggerConfiguration CreateBaseReloadableLoggerConfiguration(
+    /// <inheritdoc cref="ConfigureReloadableLoggerConfiguration"/>
+    public static LoggerConfiguration CreateReloadableLoggerConfiguration(
         IServiceProvider? services,
         IConfiguration configuration,
         IHostEnvironment environment
@@ -76,7 +87,7 @@ public static class SerilogFactory
     {
         var loggerConfiguration = new LoggerConfiguration();
 
-        return loggerConfiguration.ConfigureBaseReloadableLoggerConfiguration(services, configuration, environment);
+        return loggerConfiguration.ConfigureReloadableLoggerConfiguration(services, configuration, environment);
     }
 
     /// <summary>
@@ -92,11 +103,12 @@ public static class SerilogFactory
     ///   <item>In debug mode, adds a debug sink for logging to the debug output.</item>
     /// </list>
     /// </remarks>
-    public static LoggerConfiguration ConfigureBaseReloadableLoggerConfiguration(
+    public static LoggerConfiguration ConfigureReloadableLoggerConfiguration(
         this LoggerConfiguration loggerConfiguration,
         IServiceProvider? services,
         IConfiguration configuration,
-        IHostEnvironment environment
+        IHostEnvironment environment,
+        bool writeToFiles = true
     )
     {
         loggerConfiguration
@@ -119,18 +131,75 @@ public static class SerilogFactory
             loggerConfiguration.ReadFrom.Services(services);
         }
 
-        var isDevelopment = environment.IsDevelopment();
+        var isDev = environment.IsDevelopment();
 
+        loggerConfiguration._WriteToDebug();
+        loggerConfiguration._WriteToConsole(isDev ? AnsiConsoleTheme.Code : ConsoleTheme.None);
+
+        if (writeToFiles)
+        {
+            ITextFormatter textFormatter = isDev
+                ? new MessageTemplateTextFormatter(OutputTemplate)
+                : new CompactJsonFormatter();
+
+            loggerConfiguration._WriteToLogFiles(textFormatter);
+        }
+
+        return loggerConfiguration;
+    }
+
+    private static void _WriteToConsole(this LoggerConfiguration loggerConfiguration, ConsoleTheme theme)
+    {
         loggerConfiguration.WriteTo.Console(
             outputTemplate: OutputTemplate,
             formatProvider: CultureInfo.InvariantCulture,
-            theme: isDevelopment ? AnsiConsoleTheme.Code : ConsoleTheme.None
+            theme: theme
         );
+    }
 
+    private static void _WriteToDebug(this LoggerConfiguration loggerConfiguration)
+    {
 #if DEBUG
         loggerConfiguration.WriteTo.Debug(outputTemplate: OutputTemplate, formatProvider: CultureInfo.InvariantCulture);
 #endif
+    }
 
-        return loggerConfiguration;
+    private static void _WriteToLogFiles(this LoggerConfiguration loggerConfiguration, ITextFormatter textFormatter)
+    {
+        loggerConfiguration.WriteTo.Async(sink =>
+            sink.Logger(logger =>
+                    logger
+                        .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Fatal)
+                        .WriteTo.File(
+                            formatter: textFormatter,
+                            path: "Logs/fatal-.log",
+                            shared: true,
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileCountLimit: 5
+                        )
+                )
+                .WriteTo.Logger(logger =>
+                    logger
+                        .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Error)
+                        .WriteTo.File(
+                            formatter: textFormatter,
+                            path: "Logs/error-.log",
+                            shared: true,
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileCountLimit: 5
+                        )
+                )
+                .WriteTo.Logger(logger =>
+                    logger
+                        .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Warning)
+                        .WriteTo.File(
+                            formatter: textFormatter,
+                            path: "Logs/warning-.log",
+                            shared: true,
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileCountLimit: 5
+                        )
+                )
+        );
     }
 }

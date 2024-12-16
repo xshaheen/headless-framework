@@ -2,13 +2,11 @@
 
 using Framework.BuildingBlocks;
 using Framework.Logging.Serilog;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Serilog;
-using Serilog.Events;
-using Serilog.Formatting;
-using Serilog.Formatting.Compact;
-using Serilog.Formatting.Display;
+using Serilog.Core;
 
 namespace Framework.Api.Logging.Serilog;
 
@@ -17,36 +15,75 @@ public static class ApiSerilogFactory
 {
     public const string OutputTemplate = SerilogFactory.OutputTemplate;
 
+    #region Bootstrap
+
+    /// <inheritdoc cref="SerilogFactory.CreateBootstrapLoggerConfiguration"/>
+    public static Logger CreateApiBootstrapLogger()
+    {
+        return CreateApiBootstrapLoggerConfiguration().CreateLogger();
+    }
+
     /// <inheritdoc cref="SerilogFactory.CreateBootstrapLoggerConfiguration"/>
     public static LoggerConfiguration CreateApiBootstrapLoggerConfiguration()
     {
         return SerilogFactory.CreateBootstrapLoggerConfiguration();
     }
 
-    /// <inheritdoc cref="ConfigureApiBaseReloadableLoggerConfiguration"/>
-    public static LoggerConfiguration CreateApiBaseReloadableLoggerConfiguration(
+    #endregion
+
+    #region Reloadable
+
+    /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
+    public static Logger CreateApiLogger(WebApplication app, bool writeToFiles = true)
+    {
+        var configuration = CreateApiLoggerConfiguration(
+            app.Services,
+            app.Configuration,
+            app.Environment,
+            writeToFiles
+        );
+
+        return configuration.CreateLogger();
+    }
+
+    /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
+    public static Logger CreateApiLogger(
         IServiceProvider? services,
         IConfiguration configuration,
-        IHostEnvironment environment
+        IHostEnvironment environment,
+        bool writeToFiles = true
+    )
+    {
+        return CreateApiLoggerConfiguration(services, configuration, environment, writeToFiles).CreateLogger();
+    }
+
+    /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
+    public static LoggerConfiguration CreateApiLoggerConfiguration(
+        IServiceProvider? services,
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        bool writeToFiles = true
     )
     {
         var loggerConfiguration = new LoggerConfiguration();
 
-        return loggerConfiguration.ConfigureBaseReloadableLoggerConfiguration(services, configuration, environment);
+        return loggerConfiguration.ConfigureReloadableLoggerConfiguration(
+            services,
+            configuration,
+            environment,
+            writeToFiles
+        );
     }
 
-    public static LoggerConfiguration ConfigureApiBaseReloadableLoggerConfiguration(
+    public static LoggerConfiguration ConfigureApiLoggerConfiguration(
         this LoggerConfiguration loggerConfiguration,
         IServiceProvider? services,
         IConfiguration configuration,
-        IHostEnvironment environment
+        IHostEnvironment environment,
+        bool writeToFiles = true
     )
     {
-        loggerConfiguration.ConfigureBaseReloadableLoggerConfiguration(services, configuration, environment);
-
-        ITextFormatter textFormatter = environment.IsDevelopment()
-            ? new MessageTemplateTextFormatter(OutputTemplate)
-            : new CompactJsonFormatter();
+        loggerConfiguration.ConfigureReloadableLoggerConfiguration(services, configuration, environment, writeToFiles);
 
         loggerConfiguration
             .Enrich.WithThreadId()
@@ -54,43 +91,10 @@ public static class ApiSerilogFactory
             .Enrich.WithCorrelationId()
             .Enrich.WithRequestHeader(HttpHeaderNames.UserAgent)
             .Enrich.WithRequestHeader(HttpHeaderNames.ClientVersion)
-            .Enrich.WithRequestHeader(HttpHeaderNames.ApiVersion)
-            .WriteTo.Async(sink =>
-                sink.Logger(logger =>
-                        logger
-                            .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Fatal)
-                            .WriteTo.File(
-                                formatter: textFormatter,
-                                path: "Logs/fatal-.log",
-                                shared: true,
-                                rollingInterval: RollingInterval.Day,
-                                retainedFileCountLimit: 5
-                            )
-                    )
-                    .WriteTo.Logger(logger =>
-                        logger
-                            .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Error)
-                            .WriteTo.File(
-                                formatter: textFormatter,
-                                path: "Logs/error-.log",
-                                shared: true,
-                                rollingInterval: RollingInterval.Day,
-                                retainedFileCountLimit: 5
-                            )
-                    )
-                    .WriteTo.Logger(logger =>
-                        logger
-                            .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Warning)
-                            .WriteTo.File(
-                                formatter: textFormatter,
-                                path: "Logs/warning-.log",
-                                shared: true,
-                                rollingInterval: RollingInterval.Day,
-                                retainedFileCountLimit: 5
-                            )
-                    )
-            );
+            .Enrich.WithRequestHeader(HttpHeaderNames.ApiVersion);
 
         return loggerConfiguration;
     }
+
+    #endregion
 }
