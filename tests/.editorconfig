@@ -1,8 +1,0 @@
-[*.{cs,csx,cake,vb,vbx}]
-file_header_template=Copyright (c) Mahmoud Shaheen. All rights reserved.
-# RCS1046: Asynchronous method name should end with 'Async'. Justification: No async suffixes are okay for tests
-dotnet_diagnostic.rcs1046.severity = none
-# MA0003: Add parameter name to improve readability
-dotnet_diagnostic.ma0003.severity = none
-# xUnit1044: Avoid using TheoryData type arguments that are not serializable (TODO: we should use it and read more about)
-dotnet_diagnostic.xunit1044.severity = none

@@ -2,6 +2,13 @@
 
   <Import Project="../Directory.Build.props" />
 
+  <PropertyGroup>
+    <!--
+    xUnit1044: Avoid using TheoryData type arguments that are not serializable (TODO: Read more about)
+    -->
+    <NoWarn>$(NoWarn);xUnit1044</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
