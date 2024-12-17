@@ -15,9 +15,9 @@ public sealed class SnowFlakIdUniqueLongGenerator : IUniqueLongGenerator
 {
     private readonly IdGenerator _generator;
 
-    public SnowFlakIdUniqueLongGenerator(int generatorId)
+    public SnowFlakIdUniqueLongGenerator(int generatorId = 0)
     {
-        Argument.IsPositive(generatorId);
+        Argument.IsPositiveOrZero(generatorId);
 
         // Create an ID with 45 bits for timestamp, 2 for generator-id and 16 for sequence
         var structure = new IdStructure(timestampBits: 45, generatorIdBits: 2, sequenceBits: 16);
