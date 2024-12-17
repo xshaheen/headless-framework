@@ -39,7 +39,7 @@ public static class AddNswagSwaggerExtensions
 
                 settings.DocumentName = "v1";
                 settings.Version = "1.0.0";
-                settings.Title = productName is null ? "API" : productName + " API";
+                settings.Title = productName is null ? "API" : productName.EnsureEndsWith(" API");
                 settings.Description = SwaggerInformation.ResponsesDescription;
                 settings.DefaultResponseReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
                 settings.GenerateOriginalParameterNames = true;
@@ -73,8 +73,9 @@ public static class AddNswagSwaggerExtensions
     {
         app.MapScalarApiReference(b =>
         {
-            b.DarkMode = true;
             b.EndpointPathPrefix = "/scalar/{documentName}";
+            b.OpenApiRoutePattern = "/openapi/{documentName}.json";
+            b.DarkMode = true;
         });
 
         app.UseSwaggerUi(config =>

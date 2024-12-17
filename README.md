@@ -10,4 +10,4 @@
 
 - Advanced
   - Resource lock like foundatio & abp
-  - Settings/Permissions/Features integration test like abp
+- Settings/Permissions/Features integration test like abp
