@@ -17,6 +17,7 @@ public abstract class ResourceLockProviderTestsBase
             return;
         }
 
+        // Try to acquire a lock
         await using var lock1 = await locker.TryAcquireAsync(
             resource: "test",
             timeUntilExpires: TimeSpan.FromSeconds(1),
@@ -31,6 +32,7 @@ public abstract class ResourceLockProviderTestsBase
         lock1.TimeWaitedForLock.Should().BePositive();
         (await locker.IsLockedAsync("test")).Should().BeTrue();
 
+        // Try to acquire a lock on the same resource after it expires
         var lock2Task = locker.TryAcquireAsync(resource: "test", acquireTimeout: TimeSpan.FromMilliseconds(250));
         await Task.Delay(TimeSpan.FromMilliseconds(250));
         (await lock2Task).Should().BeNull();
@@ -43,8 +45,8 @@ public abstract class ResourceLockProviderTestsBase
             async (_, token) =>
             {
                 var success = await locker.TryUsingAsync(
-                    "test",
-                    () =>
+                    resource: "test",
+                    work: () =>
                     {
                         Interlocked.Increment(ref counter);
                     },
