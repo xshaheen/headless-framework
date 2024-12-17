@@ -88,6 +88,12 @@ public static class ApiRegistration
 
         builder.Services.AddSingletonOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
         builder.Services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
+
+        builder.Services.ConfigureHttpClientDefaults(http =>
+        {
+            // Turn on resilience by default
+            http.AddStandardResilienceHandler();
+        });
     }
 
     public static void UseFrameworkApi(this WebApplication app)

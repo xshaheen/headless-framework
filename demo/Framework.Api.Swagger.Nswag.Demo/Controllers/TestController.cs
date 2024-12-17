@@ -10,7 +10,7 @@ namespace Framework.Api.Swagger.Nswag.Demo.Controllers;
 [ApiController]
 [Route("console")]
 [ApiVersion(ApiVersions.V1)]
-internal sealed class TestController : ControllerBase
+public sealed class TestController : ControllerBase
 {
     [HttpGet("/get-endpoint")]
     [Authorize("PolicyName")]

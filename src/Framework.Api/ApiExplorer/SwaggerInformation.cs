@@ -8,7 +8,7 @@ public static class SwaggerInformation
 {
     [StringSyntax("markdown")]
     public const string ResponsesDescription = """
-        ### Success Response `2xx`
+        ## Success Response `2xx`
 
         <details>
         <summary>200 Ok</summary>
@@ -34,7 +34,7 @@ public static class SwaggerInformation
 
         </details>
 
-        ### Client Error `4xx`
+        ## Client Error `4xx`
 
         Requests made to our APIs can result in several different error responses.
         The following document describes the common errors values.

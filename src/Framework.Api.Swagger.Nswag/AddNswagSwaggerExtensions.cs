@@ -71,21 +71,37 @@ public static class AddNswagSwaggerExtensions
 
     public static WebApplication UseFrameworkNswagSwagger(this WebApplication app)
     {
-        app.MapScalarApiReference(b =>
+        app.MapScalarApiReference(options =>
         {
-            b.EndpointPathPrefix = "/scalar/{documentName}";
-            b.OpenApiRoutePattern = "/openapi/{documentName}.json";
-            b.DarkMode = true;
-        });
+            options.EndpointPathPrefix = "/scalar/{documentName}";
+            options.OpenApiRoutePattern = "/openapi/{documentName}.json";
+            options.DarkMode = true;
+            options.HideDarkModeToggle = false;
+            options.Layout = ScalarLayout.Classic;
+            options.OperationSorter = OperationSorter.Alpha;
+            options.TagSorter = TagSorter.Alpha;
 
-        app.UseSwaggerUi(config =>
-        {
-            config.Path = "/swagger";
-            config.DocumentPath = "/openapi/{documentName}.json";
-            config.PersistAuthorization = true;
-            config.EnableTryItOut = true;
-            config.TagsSorter = "alpha";
-            config.DocExpansion = "none";
+            options.EnabledTargets =
+            [
+                ScalarTarget.CSharp,
+                ScalarTarget.Go,
+                ScalarTarget.JavaScript,
+                ScalarTarget.Node,
+                ScalarTarget.PowerShell,
+                ScalarTarget.Shell,
+            ];
+
+            options.EnabledClients =
+            [
+                ScalarClient.HttpClient,
+                ScalarClient.Curl,
+                ScalarClient.Axios,
+                ScalarClient.Fetch,
+                ScalarClient.Xhr,
+                ScalarClient.WebRequest,
+                ScalarClient.Wget,
+                ScalarClient.Httpie,
+            ];
         });
 
         foreach (var apiVersionDescription in app.DescribeApiVersions().OrderByDescending(v => v.ApiVersion))
@@ -96,6 +112,16 @@ public static class AddNswagSwaggerExtensions
                 settings.Path = $"/openapi/{apiVersionDescription.GroupName}.json";
             });
         }
+
+        app.UseSwaggerUi(config =>
+        {
+            config.Path = "/swagger";
+            config.DocumentPath = "/openapi/{documentName}.json";
+            config.PersistAuthorization = true;
+            config.EnableTryItOut = true;
+            config.TagsSorter = "alpha";
+            config.DocExpansion = "none";
+        });
 
         return app;
     }
