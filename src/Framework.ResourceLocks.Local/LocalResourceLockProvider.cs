@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using AsyncKeyedLock;
 using Framework.BuildingBlocks.Abstractions;
 using Framework.Checks;
@@ -44,10 +45,12 @@ public sealed class LocalResourceLockProvider(
         }
 
         var normalizeResource = _options.KeyPrefix + resource;
+        var existResourceLock = _GetResourceLock(normalizeResource);
 
-        // Check if it has a current lock & the lock is expired remove it
-
-        if (_resources.TryGetValue(normalizeResource, out var existResourceLock)) { }
+        if (existResourceLock is not null)
+        {
+            return null;
+        }
 
         var timestamp = timeProvider.GetTimestamp();
         IDisposable lockReleaser;
@@ -74,8 +77,12 @@ public sealed class LocalResourceLockProvider(
 
         var elapsed = timeProvider.GetElapsedTime(timestamp);
 
-        var lockId = longGenerator.Create().ToString(CultureInfo.InvariantCulture);
-        var resourceLock = new ResourceLock(lockId, lockReleaser, timeUntilExpires.Value);
+        var resourceLock = new ResourceLock(
+            LockId: longGenerator.Create().ToString(CultureInfo.InvariantCulture),
+            lockReleaser,
+            timeUntilExpires.Value
+        );
+
         // Safe because the resource lock is acquired only by one thread
         var added = _resources.TryAdd(normalizeResource, resourceLock);
 
@@ -90,20 +97,7 @@ public sealed class LocalResourceLockProvider(
             return null;
         }
 
-        // Expire the lock when the expiration token source is triggered
-        resourceLock.ExpireSource.Token.Register(() =>
-        {
-            // TODO:
-            //  this expiration can be triggered parallel with the renew of the same lock id
-            //  which can make the lock to be released even if it is renewed
-
-            if (_resources.TryRemove(normalizeResource, out var value))
-            {
-                value.Dispose();
-            }
-        });
-
-        return new DisposableResourceLock(resource, lockId, elapsed, this, logger, timeProvider);
+        return new DisposableResourceLock(resource, resourceLock.LockId, elapsed, this, logger, timeProvider);
     }
 
     public Task<bool> RenewAsync(
@@ -113,6 +107,8 @@ public sealed class LocalResourceLockProvider(
         CancellationToken cancellationToken = default
     )
     {
+        // Normalize & Validate Arguments
+
         cancellationToken.ThrowIfCancellationRequested();
         timeUntilExpires ??= TimeSpan.FromMinutes(20);
 
@@ -123,26 +119,25 @@ public sealed class LocalResourceLockProvider(
             Argument.IsPositive(timeUntilExpires.Value);
         }
 
+        // Check if the lock is still valid
+
         var normalizeResource = _options.KeyPrefix + resource;
-        // If the lock is not found, then it is already released
-        if (!_resources.TryGetValue(normalizeResource, out var value))
+        var resourceLock = _GetResourceLock(normalizeResource);
+
+        if (resourceLock is null)
         {
             return Task.FromResult(false);
         }
 
         // If the lock id does not match, then it is not the lock that we are looking for
-        if (!string.Equals(value.LockId, lockId, StringComparison.Ordinal))
-        {
-            return Task.FromResult(false);
-        }
-
-        if (value.ExpireSource.IsCancellationRequested)
+        if (!string.Equals(resourceLock.LockId, lockId, StringComparison.Ordinal))
         {
             return Task.FromResult(false);
         }
 
         // Renew the lock
-        value.ExpireSource.CancelAfter(value.TimeUntilExpires);
+
+        resourceLock.Renew(timeUntilExpires.Value);
 
         return Task.FromResult(true);
     }
@@ -153,9 +148,9 @@ public sealed class LocalResourceLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
 
         var normalizeResource = _options.KeyPrefix + resource;
-        var isInUse = _locks.IsInUse(normalizeResource);
+        var resourceLock = _GetResourceLock(normalizeResource);
 
-        return Task.FromResult(isInUse);
+        return Task.FromResult(resourceLock is not null && _locks.IsInUse(normalizeResource));
     }
 
     public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
@@ -165,23 +160,22 @@ public sealed class LocalResourceLockProvider(
         Argument.IsNotNullOrWhiteSpace(lockId);
 
         var normalizeResource = _options.KeyPrefix + resource;
+        var resourceLock = _GetResourceLock(normalizeResource);
+
         // If the lock is not found, then it is already released
-        if (!_resources.TryGetValue(normalizeResource, out var value))
+        if (resourceLock is null)
         {
             return Task.CompletedTask;
         }
 
         // If the lock id does not match, then it is not the lock that we are looking for
-        if (!string.Equals(value.LockId, lockId, StringComparison.Ordinal))
+        if (!string.Equals(resourceLock.LockId, lockId, StringComparison.Ordinal))
         {
             return Task.CompletedTask;
         }
 
         // Release the lock
-        if (_resources.TryRemove(normalizeResource, out value))
-        {
-            value.Dispose();
-        }
+        _RemoveResourceLock(normalizeResource);
 
         return Task.CompletedTask;
     }
@@ -199,6 +193,31 @@ public sealed class LocalResourceLockProvider(
 
     #region Helpers
 
+    private ResourceLock? _GetResourceLock(string resource)
+    {
+        if (!_resources.TryGetValue(resource, out var existResourceLock))
+        {
+            return null;
+        }
+
+        if (existResourceLock.IsExpired)
+        {
+            _RemoveResourceLock(resource);
+
+            return null;
+        }
+
+        return existResourceLock;
+    }
+
+    private void _RemoveResourceLock(string resource)
+    {
+        if (_resources.TryRemove(resource, out var resourceLock))
+        {
+            resourceLock.Dispose();
+        }
+    }
+
     private static AsyncKeyedLocker<string> _CreateAsyncKeyedLocker()
     {
         return new(
@@ -212,15 +231,25 @@ public sealed class LocalResourceLockProvider(
         );
     }
 
-    private sealed record ResourceLock(string LockId, IDisposable LockReleaser, TimeSpan TimeUntilExpires) : IDisposable
+    private sealed record ResourceLock(string LockId, IDisposable LockReleaser, TimeSpan DateUntilExpires) : IDisposable
     {
-        public CancellationTokenSource ExpireSource { get; } =
-            TimeUntilExpires == Timeout.InfiniteTimeSpan ? new() : new(TimeUntilExpires);
+        public long TimestampAcquired { get; private set; } = Stopwatch.GetTimestamp();
+
+        public TimeSpan DateUntilExpires { get; private set; } = DateUntilExpires;
+
+        public bool IsExpired => DateUntilExpires != Timeout.InfiniteTimeSpan && Elapsed >= DateUntilExpires;
+
+        private TimeSpan Elapsed => Stopwatch.GetElapsedTime(TimestampAcquired);
+
+        public void Renew(TimeSpan timeUntilExpires)
+        {
+            TimestampAcquired = Stopwatch.GetTimestamp();
+            DateUntilExpires = timeUntilExpires;
+        }
 
         public void Dispose()
         {
             LockReleaser.Dispose();
-            ExpireSource.Dispose();
         }
     }
 
