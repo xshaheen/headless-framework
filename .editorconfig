@@ -18,6 +18,15 @@ indent_style = space
 max_line_length = 120
 
 ##########################################
+# Visual Studio Spell Checker
+# https://learn.microsoft.com/visualstudio/ide/text-spell-checker
+##########################################
+
+# Note that you must have the relevant Windows language pack installed on your machine for this to work.
+spelling_languages = en-us
+spelling_error_severity = information
+
+##########################################
 # File Extension Settings
 ##########################################
 
