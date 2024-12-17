@@ -95,3 +95,7 @@ jobs:
       - name: ".NET NuGet Push"
         run: dotnet nuget push .\*.nupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source github.com --skip-duplicate
         shell: pwsh
+
+      - name: ".NET Symbols Push"
+        run: dotnet nuget push .\*.snupkg --api-key ${{ secrets.GITHUB_TOKEN }} --source github.com --skip-duplicate
+        shell: pwsh
