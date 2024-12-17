@@ -2,12 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Bogus" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="xunit" />
   </ItemGroup>
 

@@ -4,6 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Bogus;
 
+[PublicAPI]
 public static class FakerExtensions
 {
     private static readonly bool?[] _Values = [true, false, null];

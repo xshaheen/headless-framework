@@ -74,7 +74,7 @@ file sealed class Build : NukeBuild
                 .Executes(() =>
                 {
                     Solution
-                        .AllProjects.Where(x => x.Name.Contains("Tests", StringComparison.Ordinal))
+                        .AllProjects.Where(x => x.Name.Contains(".Tests.", StringComparison.Ordinal))
                         .ForEach(project =>
                         {
                             DotNetTest(settings =>
