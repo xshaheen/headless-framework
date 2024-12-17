@@ -130,7 +130,7 @@
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.56" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.61" />
     <PackageVersion Include="Scrutor" Version="5.0.2" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
@@ -173,12 +173,12 @@
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.1" />
     <PackageVersion Include="UnitsNet" Version="5.60.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.Xunit" Version="28.5.0" />
+    <PackageVersion Include="Verify.Xunit" Version="28.6.0" />
     <PackageVersion Include="WireMock.Net" Version="1.6.10" />
     <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.10" />
     <PackageVersion Include="WireMock.Net.xUnit" Version="1.6.10" />
     <PackageVersion Include="xunit" Version="2.9.2" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.0" />
     <PackageVersion Include="ZString" Version="2.6.0" />
   </ItemGroup>
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
