@@ -33,7 +33,7 @@ public interface IResourceLock : IAsyncDisposable
     Task ReleaseAsync();
 
     /// <summary>Attempts to renew the lock.</summary>
-    Task<bool> RenewAsync(TimeSpan? timout = null);
+    Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null);
 }
 
 public sealed class DisposableResourceLock(
@@ -59,14 +59,14 @@ public sealed class DisposableResourceLock(
 
     public int RenewalCount { get; private set; }
 
-    public async Task<bool> RenewAsync(TimeSpan? timout = null)
+    public async Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null)
     {
         if (logger.IsEnabled(LogLevel.Trace))
         {
             logger.LogTrace("Renewing lock {Resource} ({LockId})", Resource, LockId);
         }
 
-        var result = await lockProvider.RenewAsync(Resource, LockId, timout).AnyContext();
+        var result = await lockProvider.RenewAsync(Resource, LockId, timeUntilExpires).AnyContext();
 
         if (!result)
         {
