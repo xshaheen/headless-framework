@@ -6,6 +6,7 @@ using Framework.Primitives;
 // ReSharper disable once CheckNamespace
 namespace FluentAssertions.Specialized;
 
+[PublicAPI]
 public static class AsyncFunctionAssertionsExtensions
 {
     public static Task<ExceptionAssertions<ConflictException>> ThrowConflictExceptionAsync<TTask, TAssertions>(

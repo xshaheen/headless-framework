@@ -4,6 +4,7 @@ using System.Text.Encodings.Web;
 
 namespace Framework.Testing.Helpers;
 
+[PublicAPI]
 public static class TestHelpers
 {
     public static readonly JsonSerializerOptions JsonSerializerOptions = new()
