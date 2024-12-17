@@ -188,16 +188,40 @@ public static class StringExtensions
         return input.StartsWith(c.ToString(), comparisonType) ? input : c + input;
     }
 
+    /// <summary>Adds a string to the beginning of given string if it doesn't start with the char.</summary>
+    [SystemPure]
+    [JetBrainsPure]
+    public static string EnsureStartsWith(
+        this string input,
+        string suffix,
+        StringComparison comparisonType = StringComparison.Ordinal
+    )
+    {
+        return input.StartsWith(suffix, comparisonType) ? input : suffix + input;
+    }
+
     /// <summary>Adds a char to the end of given string if it doesn't end with the char.</summary>
     [SystemPure]
     [JetBrainsPure]
     public static string EnsureEndsWith(
         this string input,
-        char c,
+        char suffix,
         StringComparison comparisonType = StringComparison.Ordinal
     )
     {
-        return input.EndsWith(c.ToString(), comparisonType) ? input : input + c;
+        return input.EndsWith(suffix.ToString(), comparisonType) ? input : input + suffix;
+    }
+
+    /// <summary>Adds a string to the end of given string if it doesn't end with the char.</summary>
+    [SystemPure]
+    [JetBrainsPure]
+    public static string EnsureEndsWith(
+        this string input,
+        string suffix,
+        StringComparison comparisonType = StringComparison.Ordinal
+    )
+    {
+        return input.EndsWith(suffix, comparisonType) ? input : input + suffix;
     }
 
     /// <summary>Removes the first occurrence of the given postfixes from the end of the given string.</summary>
