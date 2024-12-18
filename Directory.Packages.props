@@ -187,7 +187,7 @@
     <GlobalPackageReference Include="Framework.Defaults" Version="0.0.11" />
     <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
-    <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.9" />
+    <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.10" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
     <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.182" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
