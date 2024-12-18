@@ -146,8 +146,8 @@ public sealed class CashInCallbackTransaction
     [JsonPropertyName("transaction_processed_callback_responses")]
     public IReadOnlyList<TransactionProcessedCallbackResponse> TransactionProcessedCallbackResponses
     {
-        get => _transactionProcessedCallbackResponses ?? Array.Empty<TransactionProcessedCallbackResponse>();
-        init => _transactionProcessedCallbackResponses = value;
+        get { return _transactionProcessedCallbackResponses ?? Array.Empty<TransactionProcessedCallbackResponse>(); }
+        init { _transactionProcessedCallbackResponses = value; }
     }
 
     [JsonPropertyName("other_endpoint_reference")]
@@ -165,7 +165,10 @@ public sealed class CashInCallbackTransaction
     /// <summary>Return the concatenated string of transaction.</summary>
     public string ToConcatenatedString()
     {
-        static string toString(bool value) => value ? "true" : "false";
+        static string toString(bool value)
+        {
+            return value ? "true" : "false";
+        }
 
         return AmountCents.ToString(CultureInfo.InvariantCulture)
             + CreatedAt
@@ -202,23 +205,45 @@ public sealed class CashInCallbackTransaction
             : DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture);
     }
 
-    public bool IsCard() => string.Equals(SourceData?.Type, "card", StringComparison.Ordinal);
+    public bool IsCard()
+    {
+        return string.Equals(SourceData?.Type, "card", StringComparison.Ordinal);
+    }
 
-    public bool IsWallet() => string.Equals(SourceData?.Type, "wallet", StringComparison.Ordinal);
+    public bool IsWallet()
+    {
+        return string.Equals(SourceData?.Type, "wallet", StringComparison.Ordinal);
+    }
 
-    public bool IsCashCollection() => string.Equals(SourceData?.Type, "cash_present", StringComparison.Ordinal);
+    public bool IsCashCollection()
+    {
+        return string.Equals(SourceData?.Type, "cash_present", StringComparison.Ordinal);
+    }
 
-    public bool IsAcceptKiosk() => string.Equals(SourceData?.Type, "aggregator", StringComparison.Ordinal);
+    public bool IsAcceptKiosk()
+    {
+        return string.Equals(SourceData?.Type, "aggregator", StringComparison.Ordinal);
+    }
 
-    public bool IsFromIFrame() => string.Equals(ApiSource, "IFRAME", StringComparison.Ordinal);
+    public bool IsFromIFrame()
+    {
+        return string.Equals(ApiSource, "IFRAME", StringComparison.Ordinal);
+    }
 
-    public bool IsInvoice() => string.Equals(ApiSource, "INVOICE", StringComparison.Ordinal);
+    public bool IsInvoice()
+    {
+        return string.Equals(ApiSource, "INVOICE", StringComparison.Ordinal);
+    }
 
-    public bool IsInsufficientFundError() =>
-        string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.Ordinal);
+    public bool IsInsufficientFundError()
+    {
+        return string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.Ordinal);
+    }
 
-    public bool IsAuthenticationFailedError() =>
-        string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.Ordinal);
+    public bool IsAuthenticationFailedError()
+    {
+        return string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.Ordinal);
+    }
 
     public bool IsDeclinedError()
     {
