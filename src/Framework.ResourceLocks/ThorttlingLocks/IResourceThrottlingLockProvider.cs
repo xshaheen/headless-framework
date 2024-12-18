@@ -20,11 +20,16 @@ public interface IResourceThrottlingLockProvider
     /// <item>Value greater than 0.</item>
     /// </list>
     /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
     /// A task that represents the asynchronous operation.
     /// The task result contains the acquired lock or null if the lock could not be acquired.
     /// </returns>
-    Task<IResourceThrottlingLock?> TryAcquireAsync(string resource, TimeSpan? acquireTimeout = null);
+    Task<IResourceThrottlingLock?> TryAcquireAsync(
+        string resource,
+        TimeSpan? acquireTimeout = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Checks if a specified resource is currently locked.
