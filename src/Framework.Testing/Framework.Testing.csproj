@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Bogus" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Meziantou.Extensions.Logging.Xunit" />
     <PackageReference Include="xunit" />
   </ItemGroup>
 
