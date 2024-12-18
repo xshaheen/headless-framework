@@ -42,7 +42,7 @@ public static class SerilogFactory
     /// </list>
     /// </remarks>
     /// <returns>A <see cref="LoggerConfiguration"/> instance configured for bootstrap logging.</returns>
-    private static LoggerConfiguration ConfigureBootstrapLoggerConfiguration(
+    public static LoggerConfiguration ConfigureBootstrapLoggerConfiguration(
         this LoggerConfiguration loggerConfiguration
     )
     {
