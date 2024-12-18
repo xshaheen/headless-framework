@@ -17,8 +17,13 @@ public sealed class StorageThrottlingResourceLockProvider(
     private readonly ThrottlingResourceLockOptions _options = optionsAccessor.Value;
     private readonly ScopedThrottlingResourceLockStorage _storage = new(storage, optionsAccessor.Value);
 
-    public async Task<IResourceThrottlingLock?> TryAcquireAsync(string resource, TimeSpan? acquireTimeout = null)
+    public async Task<IResourceThrottlingLock?> TryAcquireAsync(
+        string resource,
+        TimeSpan? acquireTimeout = null,
+        CancellationToken cancellationToken = default
+    )
     {
+        // TODO: handle cancelation token
         Argument.IsNotNullOrWhiteSpace(resource);
         var normalizedAcquireTimeout = _NormalizeAcquireTimeout(acquireTimeout);
 

@@ -15,8 +15,13 @@ public sealed class LocalResourceThrottlingLockProvider(
 {
     private readonly FastCache<string, ResourceLock> _resources = new();
 
-    public async Task<IResourceThrottlingLock?> TryAcquireAsync(string resource, TimeSpan? acquireTimeout = null)
+    public async Task<IResourceThrottlingLock?> TryAcquireAsync(
+        string resource,
+        TimeSpan? acquireTimeout = null,
+        CancellationToken cancellationToken = default
+    )
     {
+        // TODO: handle cancelation token
         acquireTimeout ??= TimeSpan.FromSeconds(30);
         Argument.IsNotNullOrWhiteSpace(resource);
         logger.LogThrottlingLockTryingToAcquireLock(resource);

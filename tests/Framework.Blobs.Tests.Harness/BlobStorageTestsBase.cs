@@ -5,10 +5,12 @@ using System.Xml.Linq;
 using Framework.Blobs;
 using Framework.BuildingBlocks.Helpers.System;
 using Framework.Testing.Helpers;
+using Framework.Testing.Tests;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public abstract class BlobStorageTestsBase(ITestOutputHelper output)
+public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(output)
 {
     protected abstract IBlobStorage GetStorage();
 
@@ -310,17 +312,17 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
             }
         }
 
-        output.WriteLine(@"List by pattern: archive\*");
+        Logger.LogInformation(@"List by pattern: archive\*");
         (await storage.GetBlobsListAsync(container, @"archive\*")).Should().HaveCount(2 * 12 * filesPerMonth);
 
-        output.WriteLine(@"List by pattern: archive\*month-01*");
+        Logger.LogInformation(@"List by pattern: archive\*month-01*");
         (await storage.GetBlobsListAsync(container, @"archive\*month-01*")).Should().HaveCount(2 * filesPerMonth);
 
-        output.WriteLine(@"List by pattern: archive\year-2020\*month-01*");
+        Logger.LogInformation(@"List by pattern: archive\year-2020\*month-01*");
 
         (await storage.GetBlobsListAsync(container, @"archive\year-2020\*month-01*")).Should().HaveCount(filesPerMonth);
 
-        output.WriteLine(@"Delete by pattern: archive\*month-01*");
+        Logger.LogInformation(@"Delete by pattern: archive\*month-01*");
         await storage.DeleteAllAsync(container, @"archive\*month-01*");
         (await storage.GetBlobsListAsync(container)).Should().HaveCount(2 * 11 * filesPerMonth);
     }
@@ -420,14 +422,14 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         // Create a stream of XML
         var element = XElement.Parse("<user>Blake</user>");
         await using var memoryStream = new MemoryStream();
-        output.WriteLine("Saving xml to stream with position {0}.", memoryStream.Position);
+        Logger.LogInformation("Saving xml to stream with position {Position}.", memoryStream.Position);
         await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, CancellationToken.None);
         memoryStream.Seek(0, SeekOrigin.Begin);
 
         // Save the stream to storage
-        output.WriteLine("Saving contents with position {0}", memoryStream.Position);
+        Logger.LogInformation("Saving contents with position {Position}", memoryStream.Position);
         await storage.UploadAsync(container, path, memoryStream);
-        output.WriteLine("Saved contents with position {0}.", memoryStream.Position);
+        Logger.LogInformation("Saved contents with position {Position}.", memoryStream.Position);
 
         // Download the stream from storage
         var downloadResult = await storage.DownloadAsync(container, path);
@@ -522,8 +524,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
                 var eventPost = await _GetPostAndSetWorkMarkAsync(
                     storage,
                     container,
-                    TestConstants.F.Random.Int(0, 25).ToString(CultureInfo.InvariantCulture) + ".json",
-                    output
+                    TestConstants.F.Random.Int(0, 25).ToString(CultureInfo.InvariantCulture) + ".json"
                 );
 
                 if (eventPost == null)
@@ -533,19 +534,11 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
                 if (TestConstants.F.Random.Bool())
                 {
-                    await _CompletePostAsync(
-                        storage,
-                        container,
-                        blobName,
-                        eventPost.ProjectId,
-                        DateTime.UtcNow,
-                        true,
-                        output
-                    );
+                    await _CompletePostAsync(storage, container, blobName, eventPost.ProjectId, DateTime.UtcNow);
                 }
                 else
                 {
-                    await _DeleteWorkMarkerAsync(storage, container, blobName, output);
+                    await _DeleteWorkMarkerAsync(storage, container, blobName);
                 }
             }
         );
@@ -715,10 +708,10 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
 
         var containers = Container;
 
-        output.WriteLine("Deleting all files...");
+        Logger.LogInformation("Deleting all files...");
         await storage.DeleteAllAsync(containers);
 
-        output.WriteLine("Asserting empty files...");
+        Logger.LogInformation("Asserting empty files...");
         var list = await storage.GetBlobsListAsync(containers, limit: 10000);
 
         list.Should().BeEmpty();
@@ -736,12 +729,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         }
     }
 
-    private static async Task _DeleteWorkMarkerAsync(
-        IBlobStorage storage,
-        string[] container,
-        string blobName,
-        ITestOutputHelper? logger = null
-    )
+    private async Task _DeleteWorkMarkerAsync(IBlobStorage storage, string[] container, string blobName)
     {
         try
         {
@@ -750,16 +738,11 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         }
         catch (Exception e)
         {
-            logger?.WriteLine($"Error deleting work marker {blobName}: {e.ExpandExceptionMessage()}");
+            Logger.LogError(e, "Error deleting work marker {BlobName}", blobName);
         }
     }
 
-    private static async Task<Post?> _GetPostAndSetWorkMarkAsync(
-        IBlobStorage storage,
-        string[] container,
-        string blobName,
-        ITestOutputHelper? logger = null
-    )
+    private async Task<Post?> _GetPostAndSetWorkMarkAsync(IBlobStorage storage, string[] container, string blobName)
     {
         Post? eventPost;
 
@@ -776,7 +759,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         }
         catch (Exception e)
         {
-            logger?.WriteLine($"Error retrieving event post data {blobName}: {e.ExpandExceptionMessage()}");
+            Logger.LogError(e, "Error retrieving event post data {BlobName}", blobName);
 
             return null;
         }
@@ -784,14 +767,13 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
         return eventPost;
     }
 
-    private static async Task _CompletePostAsync(
+    private async Task _CompletePostAsync(
         IBlobStorage storage,
         string[] container,
         string blobName,
         string? projectId,
         DateTime created,
-        bool shouldArchive = true,
-        ITestOutputHelper? logger = null
+        bool shouldArchive = true
     )
     {
         // don't move files that are already in the archive
@@ -820,9 +802,9 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output)
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            logger?.WriteLine($"Error archiving event post data {blobName}: {ex.ExpandExceptionMessage()}");
+            Logger.LogError(e, "Error archiving event post data {BlobName}", blobName);
 
             return;
         }
