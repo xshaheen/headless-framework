@@ -130,7 +130,7 @@
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.61" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.63" />
     <PackageVersion Include="Scrutor" Version="5.0.2" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
