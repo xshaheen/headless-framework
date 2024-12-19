@@ -10,7 +10,7 @@ public sealed class EnsureTests
     public void ensure_true_and_false()
     {
         // given
-        const bool condition = true;
+        bool condition = true;
 
         // when & then
         Ensure.True(condition);
@@ -21,14 +21,14 @@ public sealed class EnsureTests
     public void should_throw_when_condition_is_reverse()
     {
         // given
-        const bool condition = false;
+        bool condition = false;
 
-        // when
-        var actionTrue = () => Ensure.True(condition);
-        var actionFalse = () => Ensure.False(!condition);
+        // when & then
+         Assert.Throws<InvalidOperationException>(() => Ensure.True(condition))
+            .Message.Should().Contain($"The condition \"{nameof(condition)}\" must be true");
 
-        // then
-        actionTrue.Should().Throw<InvalidOperationException>();
-        actionFalse.Should().Throw<InvalidOperationException>();
+        var reuslt = Assert.Throws<InvalidOperationException>(() => Ensure.False(!condition))
+            .Message.Should().Contain($"The condition \"!{nameof(condition)}\" must be false");
+
     }
 }

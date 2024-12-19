@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public sealed class ArgumentIoTests
+public sealed class IoTests
 {
     [Fact]
     public void can_read_and_write_and_seek()
@@ -26,10 +26,8 @@ public sealed class ArgumentIoTests
         stream.Write([0x01]);
         stream.Position = 1;
 
-        // when
-        var action = () => Argument.IsAtStartPosition(stream);
-
-        // then
-        action.Should().ThrowExactly<ArgumentException>();
+        // when & then
+        Assert.Throws<ArgumentException>(() => Argument.IsAtStartPosition(stream))
+            .Message.Should().Contain($"Stream \"{nameof(stream)}\" ({stream.GetType().Name}) is not at the starting position.");
     }
 }

@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class ArgumentIsOneOfTests
+public class IsOneOfTests
 {
     [Fact]
     public void is_one_of_int_should_return_argument_when_valid()

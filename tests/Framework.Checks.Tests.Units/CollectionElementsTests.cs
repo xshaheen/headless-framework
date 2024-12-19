@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public sealed class ArgumentCollectionElementsTests
+public sealed class CollectionElementsTests
 {
     [Fact]
     public void has_no_nulls_throws_exception_if_argument_contains_null()
@@ -12,11 +12,9 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
 
-        // when
-        var action = () => Argument.HasNoNulls(argument);
-
-        // then
-        action.Should().ThrowExactly<ArgumentException>();
+        // when & then
+        Assert.Throws<ArgumentException>(() => Argument.HasNoNulls(argument))
+            .Message.Should().Contain("cannot contains null elements.");
     }
 
     [Fact]
@@ -38,11 +36,9 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", "", "value3" };
 
-        // when
-        var action = () => Argument.HasNoNullOrEmptyElements(argument);
-
-        // then
-        action.Should().Throw<ArgumentException>();
+        // when & then
+        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrEmptyElements(argument))
+            .Message.Should().Contain("cannot contains empty elements.");
     }
 
     [Fact]
@@ -64,11 +60,9 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", " ", "value3" };
 
-        // when
-        var action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
-
-        // then
-        action.Should().Throw<ArgumentException>();
+        // when & then
+        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrWhiteSpaceElements(argument))
+            .Message.Should().Contain("cannot contains empty or white space elements.");
     }
 
     [Fact]
@@ -90,10 +84,8 @@ public sealed class ArgumentCollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
 
-        // when
-        var action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
-
-        // then
-        action.Should().ThrowExactly<ArgumentException>();
+        // when & then
+        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrWhiteSpaceElements(argument))
+            .Message.Should().Contain("cannot contains empty or white space elements.");
     }
 }

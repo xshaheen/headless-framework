@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public sealed class ArgumentIsNotEmptyTests
+public sealed class IsNotEmptyTests
 {
     [Fact]
     public void is_not_empty_collection_with_items_does_not_null()

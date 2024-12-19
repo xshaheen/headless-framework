@@ -5,7 +5,7 @@ using Tests.Helpers;
 
 namespace Tests;
 
-public sealed class ArgumentIsPositiveTests
+public sealed class IsPositiveTests
 {
     private readonly InputsTestArgument _validValues = new();
 
