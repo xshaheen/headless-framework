@@ -7,6 +7,5 @@ public sealed record PaymobWalletCashInRequest(
     string WalletPhoneNumber,
     PaymobCashInCustomerData Customer,
     int WalletIntegrationId,
-    int ExpirationSeconds = 60 * 60,
-    string IframeSrc = "75432"
+    int ExpirationSeconds = 60 * 60
 );

@@ -6,6 +6,5 @@ public sealed record PaymobKioskCashInRequest(
     decimal Amount,
     PaymobCashInCustomerData Customer,
     int KioskIntegrationId,
-    int ExpirationSeconds = 60 * 60,
-    string IframeSrc = "75432"
+    int ExpirationSeconds = 60 * 60
 );
