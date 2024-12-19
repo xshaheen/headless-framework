@@ -7,5 +7,6 @@ public sealed record PaymobWalletCashInRequest(
     string WalletPhoneNumber,
     PaymobCashInCustomerData Customer,
     int WalletIntegrationId,
+    string? MerchantOrderId = null,
     int ExpirationSeconds = 60 * 60
 );

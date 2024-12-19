@@ -4,7 +4,7 @@
 
 If you want to make a small change, go ahead and raise a pull request, otherwise follow these steps:
 
-1. View the [Issues](https://github.com/xshaheen/xdot-checks/issues) page to see a To-Do list of things to be
+1. View the [Issues](https://github.com/xshaheen/cs-framework/issues) page to see a To-Do list of things to be
    implemented.
 2. Raise an issue or comment on an existing issue with what you want to contribute if one does not already exist.
 3. When you get the go ahead, follow the coding guidelines and raise a pull request.

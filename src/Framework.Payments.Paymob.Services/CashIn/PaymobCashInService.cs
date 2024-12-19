@@ -17,6 +17,9 @@ public interface IPaymobCashInService
     Task<PaymobCardCashInResponse> StartAsync(PaymobCardCashInRequest request);
 
     [Pure]
+    Task<PaymobCardSavedTokenCashInResponse> StartAsync(PaymobCardSavedTokenCashInRequest request);
+
+    [Pure]
     Task<PaymobWalletCashInResponse> StartAsync(PaymobWalletCashInRequest request);
 
     [Pure]
@@ -32,7 +35,8 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             request.Customer,
             request.Amount,
             request.CardIntegrationId,
-            request.ExpirationSeconds
+            request.ExpirationSeconds,
+            request.MerchantOrderId
         );
 
         return new PaymobCardCashInResponse(
@@ -49,7 +53,8 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             request.Customer,
             request.Amount,
             request.WalletIntegrationId,
-            request.ExpirationSeconds
+            request.ExpirationSeconds,
+            request.MerchantOrderId
         );
 
         CashInWalletPayResponse payResponse;
@@ -65,7 +70,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
 
-        if (string.IsNullOrWhiteSpace(payResponse.RedirectUrl))
+        if (string.IsNullOrWhiteSpace(payResponse.RedirectUrl) || !payResponse.IsCreatedSuccessfully())
         {
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
@@ -83,7 +88,8 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             request.Customer,
             request.Amount,
             request.KioskIntegrationId,
-            request.ExpirationSeconds
+            request.ExpirationSeconds,
+            request.MerchantOrderId
         );
 
         CashInKioskPayResponse payResponse;
@@ -99,7 +105,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
 
-        if (payResponse.Data is null)
+        if (payResponse.Data is null || !payResponse.IsCreatedSuccessfully())
         {
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
@@ -111,17 +117,52 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         );
     }
 
+    public async Task<PaymobCardSavedTokenCashInResponse> StartAsync(PaymobCardSavedTokenCashInRequest request)
+    {
+        var (orderId, paymentKey) = await _StartAsync(
+            request.Customer,
+            request.Amount,
+            request.SavedTokenIntegrationId,
+            request.ExpirationSeconds,
+            request.MerchantOrderId
+        );
+
+        CashInSavedTokenPayResponse payResponse;
+
+        try
+        {
+            payResponse = await broker.CreateSavedTokenPayAsync(paymentKey, request.CardToken);
+        }
+        catch (Exception e)
+        {
+            logger.LogCritical(e, "Failed to create saved token cash in. {Request}", request);
+
+            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
+        }
+
+        if (payResponse.ErrorOccured.Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
+        }
+
+        return new PaymobCardSavedTokenCashInResponse(
+            IsSuccess: payResponse.Success.Equals("true", StringComparison.OrdinalIgnoreCase),
+            OrderId: orderId.ToString(CultureInfo.InvariantCulture)
+        );
+    }
+
     #region Helpers
 
     private async Task<(int OrderId, string PaymentKey)> _StartAsync(
         PaymobCashInCustomerData customer,
         decimal amount,
         int integrationId,
-        int expiration
+        int expiration,
+        string? merchantOrderId
     )
     {
         var amountCents = (int)Math.Ceiling(amount * 100);
-        var orderResponse = await _CreateOrderAsync(amountCents);
+        var orderResponse = await _CreateOrderAsync(amountCents, merchantOrderId);
 
         var paymentKeyResponse = await _CreatePaymentKeyAsync(
             customer,
@@ -177,9 +218,9 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
     }
 
-    private async Task<CashInCreateOrderResponse> _CreateOrderAsync(int amountCents)
+    private async Task<CashInCreateOrderResponse> _CreateOrderAsync(int amountCents, string? merchantOrderId)
     {
-        var request = CashInCreateOrderRequest.CreateOrder(amountCents);
+        var request = CashInCreateOrderRequest.CreateOrder(amountCents, merchantOrderId: merchantOrderId);
 
         CashInCreateOrderResponse response;
 
