@@ -10,7 +10,6 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
-    <PackageReference Include="Polly.Extensions" />
     <PackageReference Include="Scrutor" />
   </ItemGroup>
 

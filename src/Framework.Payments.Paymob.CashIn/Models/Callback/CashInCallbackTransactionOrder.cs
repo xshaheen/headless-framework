@@ -88,7 +88,7 @@ public sealed class CashInCallbackTransactionOrder
     public object? PickupData { get; init; }
 
     [JsonPropertyName("merchant_order_id")]
-    public object? MerchantOrderId { get; init; }
+    public string? MerchantOrderId { get; init; }
 
     [JsonPropertyName("wallet_notification")]
     public object? WalletNotification { get; init; }
