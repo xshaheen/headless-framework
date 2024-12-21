@@ -82,7 +82,7 @@ public static partial class Argument
         }
 
         throw new ArgumentException(
-            $"Stream {paramName.ToAssertString()} ({stream.GetType().Name}) is not at the starting position.",
+            $"The stream argument {paramName.ToAssertString()} of type <{stream.GetType().Name} must be at the starting position. (Actual Position {stream.Position})",
             paramName
         );
     }

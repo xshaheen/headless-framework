@@ -26,7 +26,7 @@ public static partial class Argument
         {
             throw new ArgumentNullException(
                 paramName,
-                message ?? $"The argument '{paramName.ToAssertString()}' must be null."
+                message ?? $"The argument {paramName.ToAssertString()} must be null."
             );
         }
 

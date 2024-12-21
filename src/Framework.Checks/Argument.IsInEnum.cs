@@ -3,6 +3,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Checks.Internals;
 
 namespace Framework.Checks;
 
@@ -29,14 +30,8 @@ public static partial class Argument
             return argument;
         }
 
-        if (string.IsNullOrEmpty(message))
-        {
-            throw new InvalidEnumArgumentException(
-                paramName,
-                Convert.ToInt32(argument, CultureInfo.InvariantCulture),
-                typeof(T)
-            );
-        }
+        message ??=
+            $"The argument {paramName.ToAssertString()} = {argument} is NOT invalid for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
 
 #pragma warning disable MA0015
         throw new InvalidEnumArgumentException(message);
@@ -58,14 +53,8 @@ public static partial class Argument
             return argument;
         }
 
-        if (string.IsNullOrEmpty(message))
-        {
-            throw new InvalidEnumArgumentException(
-                paramName,
-                Convert.ToInt32(argument, CultureInfo.InvariantCulture),
-                typeof(T)
-            );
-        }
+        message ??=
+            $"The argument {paramName.ToAssertString()} = {argument} is NOT invalid for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
 
 #pragma warning disable MA0015
         throw new InvalidEnumArgumentException(message);

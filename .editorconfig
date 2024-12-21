@@ -252,6 +252,11 @@ dotnet_diagnostic.ca1036.severity = suggestion
 # CA1515: Consider making public types internal
 dotnet_diagnostic.ca1515.severity = suggestion
 
+############ Tests
+
+# FAA0002: Use FluentAssertions equivalent
+dotnet_diagnostic.faa0002.severity = warning
+
 ############ Analyzers
 
 # RCS1175: Unused this parameter | Controlled by dotnet_code_quality_unused_parameters
