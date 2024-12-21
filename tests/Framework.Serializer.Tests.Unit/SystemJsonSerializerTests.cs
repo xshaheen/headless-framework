@@ -39,7 +39,7 @@ public class SystemJsonSerializerTests
         // then
         result.Should().NotBeNull();
         result!.Name.Should().NotBeNullOrWhiteSpace().And.Be("Test");
-        result!.Age.Should().Be(30);
+        result.Age.Should().Be(30);
     }
 
     [Fact]
