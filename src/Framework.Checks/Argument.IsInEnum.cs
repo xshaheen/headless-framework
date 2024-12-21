@@ -3,6 +3,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Framework.Checks.Internals;
 
 namespace Framework.Checks;
 
@@ -17,10 +18,10 @@ public static partial class Argument
     /// <exception cref="InvalidEnumArgumentException"><paramref name="argument" /> if the value is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static T IsInEnum<T>(T argument,
+    public static T IsInEnum<T>(
+        T argument,
         string? message = null,
-        [CallerArgumentExpression(nameof(argument))]
-        string? paramName = null
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
         where T : struct, Enum
     {
@@ -29,29 +30,21 @@ public static partial class Argument
             return argument;
         }
 
-        if (string.IsNullOrEmpty(message))
-        {
-            throw new InvalidEnumArgumentException(
-                paramName,
-                Convert.ToInt32(argument, CultureInfo.InvariantCulture),
-                typeof(T)
-            );
-        }
+        message ??=
+            $"The argument {paramName.ToAssertString()} = {argument} is NOT invalid for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
 
 #pragma warning disable MA0015
-        throw new InvalidEnumArgumentException(
-            $"{message} (Parameter: {paramName}, Value: {argument}, Enum Type: {typeof(T).Name})"
-        );
+        throw new InvalidEnumArgumentException(message);
 #pragma warning restore MA0015
     }
 
     /// <inheritdoc cref="IsInEnum{T}(T,string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IsInEnum<T>(int argument,
+    public static int IsInEnum<T>(
+        int argument,
         string? message = null,
-        [CallerArgumentExpression(nameof(argument))]
-        string? paramName = null
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
         where T : struct, Enum
     {
@@ -60,19 +53,11 @@ public static partial class Argument
             return argument;
         }
 
-        if (string.IsNullOrEmpty(message))
-        {
-            throw new InvalidEnumArgumentException(
-                paramName,
-                Convert.ToInt32(argument, CultureInfo.InvariantCulture),
-                typeof(T)
-            );
-        }
-#pragma warning disable MA0015
+        message ??=
+            $"The argument {paramName.ToAssertString()} = {argument} is NOT invalid for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
 
-        throw new InvalidEnumArgumentException(
-            $"{message} (Parameter: {paramName}, Value: {argument}, Enum Type: {typeof(T).Name})"
-        );
+#pragma warning disable MA0015
+        throw new InvalidEnumArgumentException(message);
 #pragma warning restore MA0015
     }
 }

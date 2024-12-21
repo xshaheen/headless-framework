@@ -26,8 +26,16 @@ public sealed class IoTests
         stream.Write([0x01]);
         stream.Position = 1;
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.IsAtStartPosition(stream))
-            .Message.Should().Contain($"Stream \"{nameof(stream)}\" ({stream.GetType().Name}) is not at the starting position.");
+        // when
+        // ReSharper disable once AccessToDisposedClosure
+        var action = () => Argument.IsAtStartPosition(stream);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                "The stream argument \"stream\" of type <MemoryStream must be at the starting position. (Actual Position 1) (Parameter 'stream')"
+            );
     }
 }

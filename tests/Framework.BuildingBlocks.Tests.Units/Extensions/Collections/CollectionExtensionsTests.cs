@@ -33,8 +33,7 @@ public sealed class CollectionExtensionsTests
         list.AddRange(values);
 
         // then
-        list.Should().HaveCount(5)
-            .And.Contain([3, 4, 5]);
+        list.Should().HaveCount(5).And.Contain([3, 4, 5]);
     }
 
     [Fact]
@@ -48,8 +47,7 @@ public sealed class CollectionExtensionsTests
         set.AddRange(values);
 
         // then
-        set.Should().HaveCount(4)
-            .And.Contain([1, 2, 3, 4]);
+        set.Should().HaveCount(4).And.Contain([1, 2, 3, 4]);
     }
 
     [Fact]
@@ -63,8 +61,7 @@ public sealed class CollectionExtensionsTests
         collection.AddRange(values);
 
         // then
-        collection.Should().HaveCount(4)
-            .And.Contain([1, 2, 3, 4]);
+        collection.Should().HaveCount(4).And.Contain([1, 2, 3, 4]);
     }
 
     [Fact]
@@ -72,6 +69,7 @@ public sealed class CollectionExtensionsTests
     {
         // given
         List<int>? collection = null;
+
         // when & then
         collection.IsNullOrEmpty().Should().BeTrue();
     }
@@ -81,6 +79,7 @@ public sealed class CollectionExtensionsTests
     {
         // given
         var collection = new List<int>();
+
         // then & when
         collection.IsNullOrEmpty().Should().BeTrue();
     }
@@ -90,6 +89,7 @@ public sealed class CollectionExtensionsTests
     {
         // give
         var collection = new List<int> { 1, 2, 2 };
+
         // when & then
         collection.IsNullOrEmpty().Should().BeFalse();
     }
@@ -99,8 +99,10 @@ public sealed class CollectionExtensionsTests
     {
         // given
         var list = new List<int> { 1, 2, 3 };
+
         // when
         var added = list.AddIfNotContains(4);
+
         // then
         added.Should().BeTrue();
         list.Should().Contain(4);
@@ -111,8 +113,10 @@ public sealed class CollectionExtensionsTests
     {
         // given
         var list = new List<int> { 1, 2, 3 };
+
         // when
         var added = list.AddIfNotContains(2);
+
         // then
         added.Should().BeFalse();
         list.Should().HaveCount(3);

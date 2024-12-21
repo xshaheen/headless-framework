@@ -10,18 +10,23 @@ public sealed class CollectionElementsTests
     public void has_no_nulls_throws_exception_if_argument_contains_null()
     {
         // given
-        IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
+        IReadOnlyCollection<string?> argument = ["value1", null, "value3"];
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNulls(argument))
-            .Message.Should().Contain("cannot contains null elements.");
+        // when
+        Action action = () => Argument.HasNoNulls(argument);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"argument\" cannot contains null elements. (Parameter 'argument')");
     }
 
     [Fact]
     public void has_no_nulls_returns_argument_if_no_null_elements()
     {
         // given
-        IReadOnlyCollection<string?> argument = new List<string?> { "value1", "value2", "value3" };
+        IReadOnlyCollection<string?> argument = ["value1", "value2", "value3"];
 
         // when
         var result = Argument.HasNoNulls(argument);
@@ -34,11 +39,16 @@ public sealed class CollectionElementsTests
     public void has_no_null_or_empty_elements_throws_exception_if_argument_contains_empty_element()
     {
         // given
-        IReadOnlyCollection<string?> argument = new List<string?> { "value1", "", "value3" };
+        IReadOnlyCollection<string?> argument = ["value1", "", "value3"];
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrEmptyElements(argument))
-            .Message.Should().Contain("cannot contains empty elements.");
+        // when
+        Action action = () => Argument.HasNoNullOrEmptyElements(argument);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"argument\" cannot contains empty elements. (Parameter 'argument')");
     }
 
     [Fact]
@@ -60,9 +70,16 @@ public sealed class CollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", " ", "value3" };
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrWhiteSpaceElements(argument))
-            .Message.Should().Contain("cannot contains empty or white space elements.");
+        // when
+        Action action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                "The argument \"argument\" cannot contains empty or white space elements. (Parameter 'argument')"
+            );
     }
 
     [Fact]
@@ -84,8 +101,15 @@ public sealed class CollectionElementsTests
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.HasNoNullOrWhiteSpaceElements(argument))
-            .Message.Should().Contain("cannot contains empty or white space elements.");
+        // when
+        Action action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                "The argument \"argument\" cannot contains empty or white space elements. (Parameter 'argument')"
+            );
     }
 }

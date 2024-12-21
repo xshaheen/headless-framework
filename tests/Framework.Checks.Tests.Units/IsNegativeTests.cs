@@ -46,6 +46,7 @@ public class IsNegativeTests
             int => () => Argument.IsNegative((int)argument),
             long => () => Argument.IsNegative((long)argument),
             float => () => Argument.IsNegative((float)argument),
+            double => () => Argument.IsNegative((double)argument),
             decimal => () => Argument.IsNegative((decimal)argument),
             TimeSpan => () => Argument.IsNegative((TimeSpan)argument),
             _ => throw new InvalidOperationException("Unsupported argument type"),

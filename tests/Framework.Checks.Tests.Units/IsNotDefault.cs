@@ -10,7 +10,7 @@ public class IsNotDefault
     public void is_default_should_not_throw_if_argument_is_default()
     {
         // given
-        int defaultValue = 0;
+        const int defaultValue = 0;
 
         // when & then
         Argument.IsDefault(defaultValue);
@@ -20,18 +20,23 @@ public class IsNotDefault
     public void is_default_should_throw_if_argument_is_not_default()
     {
         // given
-        int nonDefaultValue = 05;
+        const int argument = 05;
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.IsDefault(nonDefaultValue))
-            .Message.Should().Contain("must be default.");
+        // when
+        var action = () => Argument.IsDefault(argument);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"argument\" must be default. (Parameter 'argument')");
     }
 
     [Fact]
     public void is_not_default_should_return_argument_if_not_default()
     {
         // given
-        int nonDefaultValue = 10;
+        const int nonDefaultValue = 10;
 
         // when & then
         Argument.IsNotDefault(nonDefaultValue).Should().Be(nonDefaultValue);
@@ -41,11 +46,18 @@ public class IsNotDefault
     public void is_not_default_should_throw_if_argument_is_default()
     {
         // given
-        int defaultValue = default;
+        const int defaultValue = 0;
 
-        // when & then
-        Assert.Throws<ArgumentException>(() => Argument.IsNotDefault(defaultValue))
-            .Message.Should().Contain("cannot be the default value");
+        // when
+        Action action = () => Argument.IsNotDefault(defaultValue);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                "The argument \"defaultValue\" can NOT be the default value of <System.Int32>. (Parameter 'defaultValue')"
+            );
     }
 
     [Fact]
@@ -66,17 +78,21 @@ public class IsNotDefault
 
         // when & then
         Argument.IsNotDefaultOrNull(nonDefaultValue).Should().Be(nonDefaultValue);
-
     }
 
     [Fact]
     public void is_not_default_or_null_should_throw_if_argument_is_null()
     {
         // given
-        int? nullValue = null;
+        int? argument = null;
 
-        // when & then
-        Assert.Throws<ArgumentNullException>(() => Argument.IsNotDefaultOrNull(nullValue))
-            .Message.Should().Contain($"\"{nameof(nullValue)}\" was null.");
+        // when
+        Action action = () => Argument.IsNotDefaultOrNull(argument);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage("Required argument \"argument\" was null. (Parameter 'argument')");
     }
 }

@@ -26,31 +26,33 @@ public class IsPositiveOrZeroTests
         Argument.IsPositiveOrZero(_validValues.TimeSpanValue).Should().Be(_validValues.TimeSpanValue);
     }
 
+    public static readonly TheoryData<object> NegativeData =
+    [
+        (short)-3,
+        -3,
+        -5L,
+        -5.5f,
+        -7.5,
+        -7.5d,
+        TimeSpan.Parse("-00:00:10", CultureInfo.InvariantCulture),
+    ];
+
     [Theory]
-    [InlineData(-3)]
-    [InlineData(-5.5f)]
-    [InlineData(-7.5)]
-    [InlineData("-00:00:10")]
+    [MemberData(nameof(NegativeData))]
     public void is_positive_or_zero_should_throw_argument_out_of_range_exception_when_negative(object argument)
     {
-        switch (argument)
+        Action action = argument switch
         {
-            case int:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositiveOrZero((int)argument));
+            short => () => Argument.IsPositiveOrZero((short)argument),
+            int => () => Argument.IsPositiveOrZero((int)argument),
+            long => () => Argument.IsPositiveOrZero((long)argument),
+            float => () => Argument.IsPositiveOrZero((float)argument),
+            double => () => Argument.IsPositiveOrZero((double)argument),
+            decimal => () => Argument.IsPositiveOrZero((decimal)argument),
+            TimeSpan => () => Argument.IsPositiveOrZero((TimeSpan)argument),
+            _ => throw new InvalidOperationException("Unsupported argument type"),
+        };
 
-                break;
-            case float:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositiveOrZero((float)argument));
-
-                break;
-            case decimal:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositiveOrZero((decimal)argument));
-
-                break;
-            case TimeSpan:
-                Assert.Throws<ArgumentOutOfRangeException>(() => Argument.IsPositiveOrZero((TimeSpan)argument));
-
-                break;
-        }
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
     }
 }

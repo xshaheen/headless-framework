@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using Framework.Checks;
 
 namespace Tests;
@@ -22,10 +23,14 @@ public class IsOneOfTests
     {
         // given
         const int argument = 6;
-        var validValues = new List<int> { 1, 2, 5, 7 };
 
         // when
-        var action = () => Argument.IsOneOf(argument, validValues);
+        var action = () =>
+        {
+            ReadOnlySpan<int> validValues = [1, 2, 5, 7];
+
+            return Argument.IsOneOf(argument, validValues);
+        };
 
         // then
         action.Should().ThrowExactly<ArgumentException>();
@@ -94,13 +99,37 @@ public class IsOneOfTests
     {
         // given
         const string argument = "invalid";
-        var validValues = new List<string> { "zad", "framework", "storm" };
+        var values = new List<string> { "zad", "framework", "storm" };
 
         // when
-        var action = () => Argument.IsOneOf(argument, validValues);
+        var listAction = () => Argument.IsOneOf(argument, values);
+        var spanAction = () => Argument.IsOneOf(argument, CollectionsMarshal.AsSpan(values));
 
         // then
-        action.Should().ThrowExactly<ArgumentException>();
+        const string message =
+            "The argument \"argument\"=\"invalid\" must be one of [zad,framework,storm]. (Parameter 'argument')";
+
+        listAction.Should().ThrowExactly<ArgumentException>().WithMessage(message);
+        spanAction.Should().ThrowExactly<ArgumentException>().WithMessage(message);
+    }
+
+    [Fact]
+    public void is_one_of_string_should_throw_when_invalid_and_use_only_first_5_valid_items_in_the_message()
+    {
+        // given
+        const string argument = "invalid";
+        List<string> values = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
+        // when
+        var listAction = () => Argument.IsOneOf(argument, values);
+        var spanAction = () => Argument.IsOneOf(argument, CollectionsMarshal.AsSpan(values));
+
+        // then
+        const string message =
+            "The argument \"argument\"=\"invalid\" must be one of [1,2,3,4,5,...]. (Parameter 'argument')";
+
+        listAction.Should().ThrowExactly<ArgumentException>().WithMessage(message);
+        spanAction.Should().ThrowExactly<ArgumentException>().WithMessage(message);
     }
 
     [Fact]

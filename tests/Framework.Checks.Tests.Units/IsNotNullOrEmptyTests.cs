@@ -9,29 +9,28 @@ public class IsNotNullOrEmptyTests
     [Fact]
     public void is_not_null_or_empty_throws_for_null_string_or_empty_string()
     {
-        // given
-        string? argumentNull = null;
-        string argumentEmpty = "";
+        const string? argumentNull = null;
+        var nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
 
-        // when & then
-        Assert.Throws<ArgumentNullException>(
-                () =>
-                    Argument.IsNotNullOrEmpty(argumentNull)
-            )
-            .Message.Should().Contain($"\"{nameof(argumentNull)}\" was null.");
+        nullAction
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage("Required argument \"argumentNull\" was null. (Parameter 'argumentNull')");
 
-        Assert.Throws<ArgumentException>(
-                () =>
-                    Argument.IsNotNullOrEmpty(argumentEmpty)
-            )
-            .Message.Should().Contain($"\"{nameof(argumentEmpty)}\" was empty.");
+        const string argumentEmpty = "";
+        var emptyAction = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+
+        emptyAction
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("Required argument \"argumentEmpty\" was empty. (Parameter 'argumentEmpty')");
     }
 
     [Fact]
     public void is_not_null_or_empty_returns_string_for_valid_input()
     {
         // given
-        string input = "valid input";
+        const string input = "valid input";
 
         // when & then
         Argument.IsNotNullOrEmpty(input).Should().Be(input);
@@ -40,22 +39,21 @@ public class IsNotNullOrEmptyTests
     [Fact]
     public void is_not_null_or_empty_throws_for_null_or_empty_readonly_collection()
     {
-        // given
-        IReadOnlyCollection<int>? inputIsNull = null;
-        IReadOnlyCollection<int> inputIsEmpty = new List<int>();
+        IReadOnlyCollection<int>? argumentNull = null;
+        Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
 
-        // when & then
-        Assert.Throws<ArgumentNullException>(
-                () =>
-                    Argument.IsNotNullOrEmpty(inputIsNull)
-            )
-            .Message.Should().Contain($"\"{nameof(inputIsNull)}\" was null.");
+        nullAction
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage("Required argument \"argumentNull\" was null. (Parameter 'argumentNull')");
 
-        Assert.Throws<ArgumentException>(
-                () =>
-                    Argument.IsNotNullOrEmpty(inputIsEmpty)
-            )
-            .Message.Should().Contain($"\"{nameof(inputIsEmpty)}\" was empty.");
+        IReadOnlyCollection<int> argumentEmpty = new List<int>();
+        Action action = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("Required argument \"argumentEmpty\" was empty. (Parameter 'argumentEmpty')");
     }
 
     [Fact]
@@ -71,22 +69,21 @@ public class IsNotNullOrEmptyTests
     [Fact]
     public void is_not_null_or_empty_throws_for_empty_or_null_enumerable()
     {
-        // given
-        IEnumerable<int>? inputIsNull = null;
-        IEnumerable<int> inputIsEmpty = new List<int>();
+        IEnumerable<int>? argumentNull = null;
+        Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
 
-        // when & then
-        Assert.Throws<ArgumentNullException>(
-                () =>
-                    Argument.IsNotNullOrEmpty(inputIsNull)
-            )
-            .Message.Should().Contain($"\"{nameof(inputIsNull)}\" was null.");
+        nullAction
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage("Required argument \"argumentNull\" was null. (Parameter 'argumentNull')");
 
-        Assert.Throws<ArgumentException>(
-                () =>
-                    Argument.IsNotNullOrEmpty(inputIsEmpty)
-            )
-            .Message.Should().Contain($"\"{nameof(inputIsEmpty)}\" was empty.");
+        IEnumerable<int> argumentEmpty = new List<int>();
+        Action emptyAction = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+
+        emptyAction
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("Required argument \"argumentEmpty\" was empty. (Parameter 'argumentEmpty')");
     }
 
     [Fact]

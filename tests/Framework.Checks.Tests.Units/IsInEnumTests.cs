@@ -5,7 +5,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class IsInEnumTests
+public sealed class IsInEnumTests
 {
     private enum SampleEnum
     {
@@ -27,31 +27,39 @@ public class IsInEnumTests
     public void is_in_enum_generic_should_throw_without_custom_message()
     {
         // given
-        var invalidEnumValue = (SampleEnum)99;
+        const SampleEnum argument = (SampleEnum)99;
 
-        // when & then
-        Assert.Throws<InvalidEnumArgumentException>(() =>
-            Argument.IsInEnum(invalidEnumValue)
-        ).Message.Should().Contain($"The value of argument 'invalidEnumValue' ({invalidEnumValue}) is invalid for Enum type 'SampleEnum'.");
+        // when
+        Action action = () => Argument.IsInEnum(argument);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<InvalidEnumArgumentException>()
+            .WithMessage(
+                "The argument \"argument\" = 99 is NOT invalid for Enum type <SampleEnum>. (Parameter: 'argument')"
+            );
     }
 
     [Fact]
     public void is_in_enum_generic_should_throw_with_custom_message()
     {
         // given
-        var invalidEnumValue = (SampleEnum)99;
-        var customMessage = "Test custom message";
-        // when & then
-        Assert.Throws<InvalidEnumArgumentException>(() =>
-            Argument.IsInEnum(invalidEnumValue,customMessage)
-        ).Message.Should().Be($"Test custom message (Parameter: invalidEnumValue, Value: {invalidEnumValue}, Enum Type: SampleEnum)");
+        const SampleEnum invalidEnumValue = (SampleEnum)99;
+        const string customMessage = "Test custom message";
+
+        // when
+        Action action = () => Argument.IsInEnum(invalidEnumValue, customMessage);
+
+        // then
+        action.Should().ThrowExactly<InvalidEnumArgumentException>().WithMessage("Test custom message");
     }
 
     [Fact]
     public void is_in_enum_int_should_return_argument_when_valid()
     {
         // given
-        var validEnumValue = (int)SampleEnum.Value1;
+        const int validEnumValue = (int)SampleEnum.Value1;
 
         // when & then
         Argument.IsInEnum<SampleEnum>(validEnumValue).Should().Be(validEnumValue);
@@ -61,24 +69,31 @@ public class IsInEnumTests
     public void is_in_enum_int_should_throw_when_invalid_without_custom_message()
     {
         // given
-        var invalidEnumValue = 99;
+        const int invalidEnumValue = 99;
 
-        // when & then
-        Assert.Throws<InvalidEnumArgumentException>(() =>
-            Argument.IsInEnum<SampleEnum>(invalidEnumValue)
-        ).Message.Should().Contain($"The value of argument 'invalidEnumValue' ({99}) is invalid for Enum type 'SampleEnum'.");
+        // when
+        Action action = () => Argument.IsInEnum<SampleEnum>(invalidEnumValue);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<InvalidEnumArgumentException>()
+            .WithMessage(
+                "The argument \"invalidEnumValue\" = 99 is NOT invalid for Enum type <SampleEnum>. (Parameter: 'invalidEnumValue')"
+            );
     }
 
     [Fact]
     public void is_in_enum_int_should_throw_with_custom_message()
     {
-        // Arrange
-        var invalidEnumValue = 99;
-        var customMessage = "Test custom message";
+        // given
+        const int invalidEnumValue = 99;
+        const string customMessage = "Test custom message";
 
-        // Act & Assert
-        Assert.Throws<InvalidEnumArgumentException>(() =>
-            Argument.IsInEnum<SampleEnum>(invalidEnumValue,customMessage)
-        ).Message.Should().Be($"Test custom message (Parameter: invalidEnumValue, Value: {invalidEnumValue}, Enum Type: SampleEnum)");
+        // when
+        Action action = () => Argument.IsInEnum<SampleEnum>(invalidEnumValue, customMessage);
+
+        // then
+        action.Should().ThrowExactly<InvalidEnumArgumentException>().WithMessage("Test custom message");
     }
 }

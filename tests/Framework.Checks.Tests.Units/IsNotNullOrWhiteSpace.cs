@@ -9,43 +9,48 @@ public class IsNotNullOrWhiteSpace
     [Fact]
     public void is_not_null_or_white_space_should_throw_argument_null_exception_if_argument_is_null_or_empty()
     {
-        // given
-        string? argumentNull = null;
-        string argumentEmpty = "";
+        const string? nullArgument = null;
+        Action nullAction = () => Argument.IsNotNullOrWhiteSpace(nullArgument);
 
-        // when & then
-        Assert.Throws<ArgumentNullException>(
-                () =>
-                    Argument.IsNotNullOrWhiteSpace(argumentNull)
-            )
-            .Message.Should().Contain($"\"{nameof(argumentNull)}\" was null.");
+        nullAction
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage(
+                $"Required argument \"{nameof(nullArgument)}\" was null. (Parameter '{nameof(nullArgument)}')"
+            );
 
-        Assert.Throws<ArgumentException>(
-                () =>
-                    Argument.IsNotNullOrWhiteSpace(argumentEmpty)
-            )
-            .Message.Should().Contain($"\"{nameof(argumentEmpty)}\" was empty.");
+        const string emptyArgument = "";
+
+        Action emptyAction = () => Argument.IsNotNullOrWhiteSpace(emptyArgument);
+
+        emptyAction
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                $"Required argument \"{nameof(emptyArgument)}\" was empty. (Parameter '{nameof(emptyArgument)}')"
+            );
     }
 
     [Fact]
     public void is_not_null_or_white_space_should_throw_argument_exception_if_argument_is_white_space()
     {
         // given
-        string argument = "   ";
+        const string argument = "   ";
 
         // when & then
-        Assert.Throws<ArgumentException>(
-                () =>
-                    Argument.IsNotNullOrWhiteSpace(argument)
-            )
-            .Message.Should().Contain($"\"{nameof(argument)}\" was empty.");
+        Action action = () => Argument.IsNotNullOrWhiteSpace(argument);
+
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"Required argument \"{nameof(argument)}\" was empty. (Parameter '{nameof(argument)}')");
     }
 
     [Fact]
     public void is_not_null_or_white_space_should_return_argument_if_argument_is_valid()
     {
         // given
-        string argument = "valid";
+        const string argument = "valid";
 
         // when & then
         Argument.IsNotNullOrWhiteSpace(argument).Should().Be(argument);

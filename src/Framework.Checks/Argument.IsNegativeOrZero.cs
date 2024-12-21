@@ -27,8 +27,8 @@ public static partial class Argument
         return argument <= T.Zero
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -45,8 +45,8 @@ public static partial class Argument
         return argument is null ? null
             : argument <= T.Zero ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -62,8 +62,8 @@ public static partial class Argument
         return argument <= TimeSpan.Zero
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -79,8 +79,8 @@ public static partial class Argument
         return argument is null ? null
             : argument <= TimeSpan.Zero ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -96,8 +96,8 @@ public static partial class Argument
         return argument <= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -113,8 +113,8 @@ public static partial class Argument
         return argument <= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -130,8 +130,8 @@ public static partial class Argument
         return argument <= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -147,8 +147,8 @@ public static partial class Argument
         return argument <= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -164,8 +164,8 @@ public static partial class Argument
         return argument <= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 
@@ -181,8 +181,8 @@ public static partial class Argument
         return argument <= 0
             ? argument
             : throw new ArgumentOutOfRangeException(
-                message ?? $"The argument {paramName.ToAssertString()} cannot be positive.",
-                paramName
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be positive."
             );
     }
 }

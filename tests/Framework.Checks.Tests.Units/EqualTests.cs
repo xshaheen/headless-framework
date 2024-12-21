@@ -5,16 +5,17 @@ using Tests.Helpers;
 
 namespace Tests;
 
-public class EquailTests
+public sealed class EqualTests
 {
     [Fact]
     public void is_reference_equal_to_should_not_throw_when_instances_are_equal()
     {
         // given
         var obj1 = new InputsTestArgument();
+        // ReSharper disable once InlineTemporaryVariable
         var obj2 = obj1;
 
-        // Act & Assert
+        // when & then
         Argument.IsReferenceEqualTo(obj1, obj2);
     }
 
@@ -25,10 +26,14 @@ public class EquailTests
         var obj1 = new InputsTestArgument();
         var obj2 = new InputsTestArgument();
 
-        // when & then
-        Assert.Throws<ArgumentException>(() =>
-            Argument.IsReferenceEqualTo(obj1, obj2)
-        ).Message.Should().Contain("The argument \"obj1\" must be the same instance as \"obj2\".");
+        // when
+        var action = () => Argument.IsReferenceEqualTo(obj1, obj2);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"obj1\" must be the same instance as \"obj2\". (Parameter 'obj1')");
     }
 
     [Fact]
@@ -47,11 +52,16 @@ public class EquailTests
     {
         // given
         var obj1 = new InputsTestArgument();
+        // ReSharper disable once InlineTemporaryVariable
         var obj2 = obj1;
 
-        // Act & Assert
-        Assert.Throws<ArgumentException>(() =>
-            Argument.IsReferenceNotEqualTo(obj1, obj2)
-        ).Message.Should().Contain("The argument \"obj1\" must not be the same instance as \"obj2\"");
+        // when
+        var action = () => Argument.IsReferenceNotEqualTo(obj1, obj2);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"obj1\" must not be the same instance as \"obj2\". (Parameter 'obj1')");
     }
 }
