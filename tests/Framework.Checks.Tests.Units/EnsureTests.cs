@@ -20,15 +20,20 @@ public sealed class EnsureTests
     [Fact]
     public void should_throw_when_condition_is_reverse()
     {
-        // given
-        const bool condition = false;
+        const bool trueCondition = false;
+        var trueAction = () => Ensure.True(trueCondition);
 
-        // when
-        var actionTrue = () => Ensure.True(condition);
-        var actionFalse = () => Ensure.False(!condition);
+        trueAction
+            .Should()
+            .ThrowExactly<InvalidOperationException>()
+            .WithMessage("The condition \"trueCondition\" must be true.");
 
-        // then
-        actionTrue.Should().Throw<InvalidOperationException>();
-        actionFalse.Should().Throw<InvalidOperationException>();
+        const bool falseCondition = true;
+        var falseAction = () => Ensure.False(falseCondition);
+
+        falseAction
+            .Should()
+            .ThrowExactly<InvalidOperationException>()
+            .WithMessage("The condition \"falseCondition\" must be false.");
     }
 }

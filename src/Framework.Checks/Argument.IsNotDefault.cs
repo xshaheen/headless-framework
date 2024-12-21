@@ -28,10 +28,9 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(
-            message ?? $"The argument '{paramName.ToAssertString()}' must be default.",
-            paramName
-        );
+        message ??= $"The argument {paramName.ToAssertString()} must be default.";
+
+        throw new ArgumentException(message, paramName);
     }
 
     /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is default(T).</summary>
@@ -49,15 +48,15 @@ public static partial class Argument
     )
         where T : struct
     {
-        if (EqualityComparer<T>.Default.Equals(argument, default))
+        if (!EqualityComparer<T>.Default.Equals(argument, default))
         {
-            throw new ArgumentException(
-                message ?? $"{paramName.ToAssertString()} cannot be the default value of {typeof(T).Name}.",
-                paramName
-            );
+            return argument;
         }
 
-        return argument;
+        message ??=
+            $"The argument {paramName.ToAssertString()} can NOT be the default value of {typeof(T).ToAssertString()}.";
+
+        throw new ArgumentException(message, paramName);
     }
 
     /// <inheritdoc cref="IsNotDefault{T}(T,string?,string?)"/>

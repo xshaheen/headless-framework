@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Framework.Checks.Internals;
 
 namespace Framework.Checks;
@@ -9,143 +10,164 @@ namespace Framework.Checks;
 public static partial class Argument
 {
     /// <summary>
-    /// Throws an <see cref="ArgumentException" /> if <paramref name="argument"/> is not one of the <paramref name="validValues"/>.
+    /// Throws an <see cref="ArgumentException" /> if <paramref name="argument"/> is not one of the <paramref name="values"/>.
     /// </summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="validValues">The valid values.</param>
+    /// <param name="values">The valid values.</param>
     /// <param name="message">(Optional) Custom error message</param>
     /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if value is not one of the <paramref name="validValues"/>.</returns>
+    /// <returns><paramref name="argument" /> if value is not one of the <paramref name="values"/>.</returns>
     /// <exception cref="ArgumentException"></exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int IsOneOf(
-        int argument,
-        IReadOnlyCollection<int> validValues,
+    public static T IsOneOf<T>(
+        T argument,
+        ReadOnlySpan<T> values,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
+        where T : IEquatable<T>?
     {
-        if (validValues.Contains(argument))
+        if (values.Contains(argument))
         {
             return argument;
         }
 
-        throw new ArgumentException(
-            message
-                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
-            paramName
-        );
+        message ??= _GetDefaultOneOfMessage(paramName, argument, values);
+
+        throw new ArgumentException(message, paramName);
     }
 
-    /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
+    /// <inheritdoc cref="IsOneOf{T}(T,System.ReadOnlySpan{T},string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static long IsOneOf(
-        long argument,
-        IReadOnlyCollection<long> validValues,
+    public static T IsOneOf<T>(
+        T argument,
+        HashSet<T> values,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        if (validValues.Contains(argument))
+        if (values.Contains(argument))
         {
             return argument;
         }
 
-        throw new ArgumentException(
-            message
-                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
-            paramName
-        );
+        message ??= _GetDefaultOneOfMessage(paramName, argument, values);
+
+        throw new ArgumentException(message, paramName);
     }
 
-    /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
+    /// <inheritdoc cref="IsOneOf{T}(T,System.ReadOnlySpan{T},string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static decimal IsOneOf(
-        decimal argument,
-        IReadOnlyCollection<decimal> validValues,
+    public static T IsOneOf<T>(
+        T argument,
+        List<T> values,
+        IEqualityComparer<T>? comparer = null,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        if (validValues.Contains(argument))
+        if (comparer is null ? values.Contains(argument) : values.Contains(argument, comparer))
         {
             return argument;
         }
 
-        throw new ArgumentException(
-            message
-                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
-            paramName
-        );
+        message ??= _GetDefaultOneOfMessage(paramName, argument, CollectionsMarshal.AsSpan(values));
+
+        throw new ArgumentException(message, paramName);
     }
 
-    /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
+    /// <inheritdoc cref="IsOneOf{T}(T,List{T},IEqualityComparer{T}?,string?,string?)"/>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static double IsOneOf(
-        double argument,
-        IReadOnlyCollection<double> validValues,
+    public static T IsOneOf<T>(
+        T argument,
+        IReadOnlyCollection<T> validValues,
+        IEqualityComparer<T>? comparer = null,
         string? message = null,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
-        if (validValues.Contains(argument))
+        if (validValues.Contains(argument, comparer))
         {
             return argument;
         }
 
-        throw new ArgumentException(
-            message
-                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
-            paramName
-        );
+        throw new ArgumentException(message ?? _GetDefaultOneOfMessage(paramName, argument, validValues), paramName);
     }
 
-    /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float IsOneOf(
-        float argument,
-        IReadOnlyCollection<float> validValues,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
+    private const int _PrintableItems = 5;
+
+    private static string _GetDefaultOneOfMessage<T>(string? paramName, T argument, ReadOnlySpan<T> values)
     {
-        if (validValues.Contains(argument))
+        var sb = new StringBuilder("The argument ");
+
+        sb.Append(paramName.ToAssertString());
+        sb.Append('=');
+        sb.Append(argument.ToAssertString());
+
+        sb.Append(" must be one of [");
+
+        var loopBoundary = Math.Min(_PrintableItems, values.Length);
+
+        for (var i = 0; i < loopBoundary; i++)
         {
-            return argument;
+            sb.Append(values[i]);
+
+            if (i < loopBoundary - 1)
+            {
+                sb.Append(',');
+            }
         }
 
-        throw new ArgumentException(
-            message
-                ?? $"Expected {paramName.ToAssertString()} to be one of [{validValues.Aggregate("", (p, c) => p + "," + c.ToString(CultureInfo.InvariantCulture))}], but found {argument.ToString(CultureInfo.InvariantCulture)}.",
-            paramName
-        );
+        if (values.Length > _PrintableItems)
+        {
+            sb.Append(",...");
+        }
+
+        sb.Append("].");
+
+        return sb.ToString();
     }
 
-    /// <inheritdoc cref="IsOneOf(int,IReadOnlyCollection{int},string?,string?)"/>
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string IsOneOf(
-        string argument,
-        IReadOnlyList<string> validValues,
-        StringComparer? comparer = null,
-        string? message = null,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null
-    )
+    private static string _GetDefaultOneOfMessage<T>(string? paramName, T argument, IEnumerable<T> values)
     {
-        if (validValues.Contains(argument, comparer ?? StringComparer.Ordinal))
+        var sb = new StringBuilder("The argument ");
+
+        sb.Append(paramName.ToAssertString());
+        sb.Append('=');
+        sb.Append(argument.ToAssertString());
+
+        sb.Append(" must be one of [");
+
+        var i = 0;
+
+        foreach (var value in values)
         {
-            return argument;
+            if (i >= _PrintableItems)
+            {
+                break;
+            }
+
+            sb.Append(value);
+
+            if (i < _PrintableItems - 1)
+            {
+                sb.Append(',');
+            }
+
+            i++;
         }
 
-        throw new ArgumentException(
-            message
-                ?? $"Expected {paramName.ToAssertString()} was out of range to be one of [{validValues.Aggregate("", (p, c) => p + "," + c)}], but found {argument}.",
-            paramName
-        );
+        if (i >= _PrintableItems)
+        {
+            sb.Append(",...");
+        }
+
+        sb.Append("].");
+
+        return sb.ToString();
     }
 }

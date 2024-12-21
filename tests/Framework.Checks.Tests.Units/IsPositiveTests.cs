@@ -5,7 +5,7 @@ using Tests.Helpers;
 
 namespace Tests;
 
-public sealed class ArgumentIsPositiveTests
+public sealed class IsPositiveTests
 {
     private readonly InputsTestArgument _validValues = new();
 
@@ -19,11 +19,16 @@ public sealed class ArgumentIsPositiveTests
         Argument.IsPositive(_validValues.TimeSpanValue).Should().Be(_validValues.TimeSpanValue);
     }
 
+    public static readonly TheoryData<object> TestData =
+    [
+        -5,
+        -5.5f,
+        -7.5,
+        TimeSpan.Parse("-00:00:10", CultureInfo.InvariantCulture),
+    ];
+
     [Theory]
-    [InlineData(-5)]
-    [InlineData(-5.5f)]
-    [InlineData(-7.5)]
-    [InlineData("-00:00:10")]
+    [MemberData(nameof(TestData))]
     public void is_positive_should_throw_argument_out_of_range_exception_when_negative(object argument)
     {
         Action action = argument switch
@@ -31,6 +36,7 @@ public sealed class ArgumentIsPositiveTests
             int => () => Argument.IsPositive((int)argument),
             float => () => Argument.IsPositive((float)argument),
             decimal => () => Argument.IsPositive((decimal)argument),
+            double => () => Argument.IsPositive((double)argument),
             TimeSpan => () => Argument.IsPositive((TimeSpan)argument),
             _ => throw new InvalidOperationException("Unsupported argument type"),
         };

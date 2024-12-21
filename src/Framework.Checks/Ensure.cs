@@ -22,7 +22,7 @@ public static partial class Ensure
             return;
         }
 
-        throw new InvalidOperationException(message ?? $"The condition {expression.ToAssertString()} must be true");
+        throw new InvalidOperationException(message ?? $"The condition {expression.ToAssertString()} must be true.");
     }
 
     [DebuggerStepThrough]

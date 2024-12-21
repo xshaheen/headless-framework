@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public sealed class ArgumentIoTests
+public sealed class IoTests
 {
     [Fact]
     public void can_read_and_write_and_seek()
@@ -27,9 +27,15 @@ public sealed class ArgumentIoTests
         stream.Position = 1;
 
         // when
+        // ReSharper disable once AccessToDisposedClosure
         var action = () => Argument.IsAtStartPosition(stream);
 
         // then
-        action.Should().ThrowExactly<ArgumentException>();
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                "The stream argument \"stream\" of type <MemoryStream must be at the starting position. (Actual Position 1) (Parameter 'stream')"
+            );
     }
 }
