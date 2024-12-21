@@ -1,6 +1,15 @@
-﻿# ZAD Framework
+﻿# Headless Framework
 
-## Framework
+## To-Do
+
+- Add Nswag options
+- Separate the Scalar from Nswag
+- https://github.com/ZiggyCreatures/FusionCache/tree/main
+- Building Blocks need to be refactored
+- Api need to be refactored
+- Specification pattern
+
+## Test
 
 - Imaging
 - Media indexing integration tests
