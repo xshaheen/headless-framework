@@ -94,9 +94,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.Mvc", "src\Fr
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.Logging.Serilog", "src\Framework.Api.Logging.Serilog\Framework.Api.Logging.Serilog.csproj", "{590DF3E1-CC61-460A-9693-81D7128F75C3}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.Swagger.Nswag", "src\Framework.Api.Swagger.Nswag\Framework.Api.Swagger.Nswag.csproj", "{393BC744-61C8-4819-8D25-E1F2EDCF0A10}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.OpenApi.Nswag", "src\Framework.OpenApi.Nswag\Framework.OpenApi.Nswag.csproj", "{393BC744-61C8-4819-8D25-E1F2EDCF0A10}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.Swagger.Swashbuckle", "src\Framework.Api.Swagger.Swashbuckle\Framework.Api.Swagger.Swashbuckle.csproj", "{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.OpenApi.Swashbuckle", "src\Framework.OpenApi.Swashbuckle\Framework.OpenApi.Swashbuckle.csproj", "{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Orm.EntityFramework", "src\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj", "{4544F0BD-8441-485F-B25D-7FED64D2759E}"
 EndProject
@@ -194,15 +194,15 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Domains.Tests.Uni
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Generator.Primitives.Tests.Units", "tests\Framework.Generator.Primitives.Tests.Units\Framework.Generator.Primitives.Tests.Units.csproj", "{C483CA8E-2EC2-41F8-9F4E-C3B639D06808}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.Swagger.Nswag.Demo", "demo\Framework.Api.Swagger.Nswag.Demo\Framework.Api.Swagger.Nswag.Demo.csproj", "{39DF0C8B-5F8C-4A2A-A2CB-78F64C06483F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Nswag.Demo", "demo\Framework.OpenApi.Nswag.Demo\Framework.OpenApi.Nswag.Demo.csproj", "{39DF0C8B-5F8C-4A2A-A2CB-78F64C06483F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Storage.EntityFramework", "src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj", "{67E4FB80-6838-4D8B-96CE-EC225F2AD64F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Tests.Integrations", "tests\Framework.Settings.Tests.Integrations\Framework.Settings.Tests.Integrations.csproj", "{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api.Swagger", "Api.Swagger", "{85ED3E8C-AB65-4CE4-8514-14B0850986A2}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api.OpenApi", "Api.OpenApi", "{85ED3E8C-AB65-4CE4-8514-14B0850986A2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.Swagger.Swashbuckle.OData", "src\Framework.Api.Swagger.Swashbuckle.OData\Framework.Api.Swagger.Swashbuckle.OData.csproj", "{B91E5E8B-B5BB-471E-8068-8F927EBAD53F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Swashbuckle.OData", "src\Framework.OpenApi.Swashbuckle.OData\Framework.OpenApi.Swashbuckle.OData.csproj", "{B91E5E8B-B5BB-471E-8068-8F927EBAD53F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Storage.EntityFramework", "src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj", "{3A9266E7-A6CA-4C33-9E18-4501F9504816}"
 EndProject

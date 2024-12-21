@@ -422,14 +422,14 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         // Create a stream of XML
         var element = XElement.Parse("<user>Blake</user>");
         await using var memoryStream = new MemoryStream();
-        Logger.LogInformation("Saving xml to stream with position {Position}.", memoryStream.Position);
+        Logger.LogInformation("Saving xml to stream with position {Position}", memoryStream.Position);
         await element.SaveAsync(memoryStream, SaveOptions.DisableFormatting, CancellationToken.None);
         memoryStream.Seek(0, SeekOrigin.Begin);
 
         // Save the stream to storage
         Logger.LogInformation("Saving contents with position {Position}", memoryStream.Position);
         await storage.UploadAsync(container, path, memoryStream);
-        Logger.LogInformation("Saved contents with position {Position}.", memoryStream.Position);
+        Logger.LogInformation("Saved contents with position {Position}", memoryStream.Position);
 
         // Download the stream from storage
         var downloadResult = await storage.DownloadAsync(container, path);

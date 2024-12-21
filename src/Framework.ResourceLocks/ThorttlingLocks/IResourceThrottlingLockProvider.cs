@@ -16,7 +16,7 @@ public interface IResourceThrottlingLockProvider
     /// The amount of time to wait for the lock to be acquired. The allowed values are:
     /// <list type="bullet">
     /// <item><see langword="null"/>: means the default value (1 minute).</item>
-    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity wait to aquire</item>
+    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity wait to acquire</item>
     /// <item>Value greater than 0.</item>
     /// </list>
     /// </param>

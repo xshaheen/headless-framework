@@ -11,7 +11,7 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
     {
         // PdfPig requires the stream to be seekable, see:
         // https://github.com/UglyToad/PdfPig/blob/master/src/UglyToad.PdfPig.Core/StreamInputBytes.cs#L45.
-        // Thus if it isn't, which is the case with e.g. Azure Blob Storage, we need to copy it to a new, seekable
+        // Thus, if it isn't, which is the case with e.g. Azure Blob Storage, we need to copy it to a new, seekable
         // Stream.
         MemoryStream? seekableStream = null;
 

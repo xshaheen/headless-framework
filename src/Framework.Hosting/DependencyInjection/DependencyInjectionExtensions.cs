@@ -17,7 +17,7 @@ public static class DependencyInjectionExtensions
     /// Executes the specified action if the specified <paramref name="condition"/> is <see langword="true"/> which can be
     /// used to conditionally configure the MVC services.
     /// </summary>
-    /// <param name="services">The services collection.</param>
+    /// <param name="services">The service collection.</param>
     /// <param name="condition">If set to <see langword="true"/> the action is executed.</param>
     /// <param name="action">The action used to configure the MVC services.</param>
     /// <returns>The same services collection.</returns>
@@ -43,7 +43,7 @@ public static class DependencyInjectionExtensions
     /// <see langword="true"/>, otherwise executes the <paramref name="elseAction"/>. This can be used to conditionally
     /// configure the MVC services.
     /// </summary>
-    /// <param name="services">The services collection.</param>
+    /// <param name="services">The service collection.</param>
     /// <param name="condition">If set to <see langword="true"/> the <paramref name="ifAction"/> is executed, otherwise the
     /// <paramref name="elseAction"/> is executed.</param>
     /// <param name="ifAction">The action used to configure the MVC services if the condition is <see langword="true"/>.</param>

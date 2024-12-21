@@ -51,9 +51,9 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         builder.Services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
         builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
+
         builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
         builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
-        builder.Services.TryAddScoped<IRequestTime, RequestTime>();
         builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
 
         builder.Services.ReplaceSingleton<ILookupNormalizer, FrameworkLookupNormalizer>();
