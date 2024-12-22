@@ -1,5 +1,7 @@
 ﻿<Project>
 
+  <Import Project="../Directory.Build.targets" />
+
   <Target Name="Versioning" BeforeTargets="MinVer">
     <PropertyGroup Label="Build">
       <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>

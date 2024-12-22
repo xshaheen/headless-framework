@@ -113,10 +113,10 @@ dotnet_analyzer_diagnostic.severity = default
 
 ############ .NET Code Style Severities
 
+# CA2007: Consider calling ConfigureAwait on the awaited task
+dotnet_diagnostic.ca2007.severity = none
 # CA1848: Use the LoggerMessage delegates
 dotnet_diagnostic.ca1848.severity = silent
-# CA1724: Type names should not match namespaces
-dotnet_diagnostic.ca1724.severity = none
 # CA1863: Cache a 'CompositeFormat' for repeated use in this formatting operation
 dotnet_diagnostic.ca1863.severity = suggestion
 # CA5394: Do not use insecure randomness
@@ -125,22 +125,10 @@ dotnet_diagnostic.ca5394.severity = suggestion
 dotnet_diagnostic.ca1861.severity = suggestion
 # CA1716:Identifiers should not match keywords
 dotnet_diagnostic.ca1716.severity = silent
-# CA2007: Consider calling ConfigureAwait on the awaited task
-dotnet_diagnostic.ca2007.severity = none
-# CA1062: Validate arguments of public methods
-dotnet_diagnostic.ca1062.severity = none
 # CA1034: Nested types should not be visible
-dotnet_diagnostic.ca1034.severity = none
-# CA1054: URI parameters should not be strings
-dotnet_diagnostic.ca1054.severity = none
-# CA1056: URI properties should not be strings
-dotnet_diagnostic.ca1056.severity = none
-# CA1308: Normalize strings to uppercase
-dotnet_diagnostic.ca1308.severity = none
+dotnet_diagnostic.ca1034.severity = suggestion
 # CA1000: Do not declare static members on generic types
 dotnet_diagnostic.ca1000.severity = suggestion
-# CA1014: Mark assemblies with CLSCompliantAttribute
-dotnet_diagnostic.ca1014.severity = none
 # CA1031: Do not catch general exception types
 dotnet_diagnostic.ca1031.severity = silent
 # CA1032: Implement standard exception constructors
@@ -177,8 +165,6 @@ dotnet_diagnostic.ca1805.severity = suggestion
 dotnet_diagnostic.ca1707.severity = warning
 # CA1708: Identifiers should differ by more than case
 dotnet_diagnostic.ca1708.severity = warning
-# CA1711: Identifiers should not have incorrect suffix
-dotnet_diagnostic.ca1711.severity = none
 # CA1715: Identifiers should have correct prefix
 dotnet_diagnostic.ca1715.severity = warning
 # CA1712: Do not prefix enum values with type name
@@ -207,14 +193,8 @@ dotnet_diagnostic.ca5384.severity = warning
 dotnet_diagnostic.ca5385.severity = warning
 # IDE0055: Fix formatting
 dotnet_diagnostic.ide0055.severity = silent
-# IDE0010: Add missing cases to switch statement
-dotnet_diagnostic.ide0010.severity = none
-# IDE0072: Add missing cases to switch expression
-dotnet_diagnostic.IDE0072.severity = none
 # CA1851: Possible multiple enumerations of 'IEnumerable' collection
 dotnet_diagnostic.ca1851.severity = suggestion
-# CA1812 Avoid uninstantiated internal classes
-dotnet_diagnostic.ca1812.severity = none
 # CA1008: Enums should have zero value
 dotnet_diagnostic.ca1008.severity = suggestion
 # CA1819: Properties should not return arrays
@@ -259,10 +239,6 @@ dotnet_diagnostic.faa0002.severity = warning
 
 ############ Analyzers
 
-# RCS1175: Unused this parameter | Controlled by dotnet_code_quality_unused_parameters
-dotnet_diagnostic.rcs1175.severity = none
-# RCS1047: Non-asynchronous method name should not end with 'Async'
-dotnet_diagnostic.rcs1047.severity = none
 # RCS1170: Use read-only auto-implemented property
 dotnet_diagnostic.rcs1170.severity = silent
 # RCS1021: Convert lambda expression body to expression-body
@@ -287,40 +263,23 @@ dotnet_diagnostic.asyncfixer04.severity = error
 dotnet_diagnostic.vsthrd110.severity = error
 # VSTHRD002: Avoid problematic synchronous waits
 dotnet_diagnostic.vsthrd002.severity = none
-# MA0041: Make property static (deprecated, use CA1822 instead)
-dotnet_diagnostic.ma0041.severity = none
 # MA0045: Do not use blocking call (make method async)
 dotnet_diagnostic.ma0045.severity = suggestion
-# MA0097: A class that implements IComparable<T> or IComparable should override comparison operators. Justification: .NET has CA1036
-dotnet_diagnostic.ma0097.severity = none
 # AsyncifyInvocation: Use Task Async
 dotnet_diagnostic.asyncifyinvocation.severity = error
 # AsyncifyVariable: Use Task Async
 dotnet_diagnostic.asyncifyvariable.severity = error
-# MA0004: Use .ConfigureAwait(false)
-dotnet_diagnostic.ma0004.severity = none
-# VSTHRD111: Use ConfigureAwait(bool)
-dotnet_diagnostic.vsthrd111.severity = none
-# RCS1090: Add call to 'ConfigureAwait' (or vice versa)
 dotnet_diagnostic.rcs1090.severity = none
-# RCS1163: Unused parameter - Justification: .NET has IDE0060
-dotnet_diagnostic.rcs1163.severity = none
 # MA0025: Implement the functionality (or raise NotSupportedException or PlatformNotSupportedException)
 dotnet_diagnostic.ma0025.severity = suggestion
 # MA0026: TO-DO comment
 dotnet_diagnostic.ma0026.severity = suggestion
 # MA0022: Return Task.FromResult instead of returning null
 dotnet_diagnostic.ma0022.severity = error
-# MA0038: Make method static (deprecated, use CA1822 instead)
-dotnet_diagnostic.ma0038.severity = none
 # AsyncFixer05: Down-casting from a nested task to an outer task.
 dotnet_diagnostic.asyncfixer05.severity = error
 # VSTHRD114: Avoid returning a null Task
 dotnet_diagnostic.vsthrd114.severity = error
-# VSTHRD200: Use "Async" suffix for async methods
-dotnet_diagnostic.vsthrd200.severity = none
-# RCS1046: Asynchronous method name should end with 'Async'
-dotnet_diagnostic.rcs1046.severity = none
 # AsyncFixer01: Unnecessary async/await usage
 dotnet_diagnostic.asyncfixer01.severity = silent
 # MA0040: Specify a cancellation token
@@ -329,24 +288,10 @@ dotnet_diagnostic.ma0032.severity = warning
 dotnet_diagnostic.ma0079.severity = warning
 # MA0080: Use a cancellation token using .WithCancellation()
 dotnet_diagnostic.ma0080.severity = error
-# RCS1194: Implement exception constructors
-dotnet_diagnostic.rcs1194.severity = none
-# MA0032: Use an overload with a CancellationToken argument
-dotnet_diagnostic.ma0032.severity = none
-# MA0040: Flow the cancellation token when available
-dotnet_diagnostic.ma0040.severity = none
-# MA0048: File name must match type name
-dotnet_diagnostic.ma0048.severity = silent
-# MA0051: Method is too long
-dotnet_diagnostic.ma0051.severity = silent
 # MA0047: Declare types in namespaces
 dotnet_diagnostic.ma0047.severity = suggestion
 # MA0006: Use String.Equals instead of equality operator
 dotnet_diagnostic.ma0006.severity = suggestion
-# MA0016: Prefer returning collection abstraction instead of implementation
-dotnet_diagnostic.ma0016.severity = none
-# MA0018 Do not declare static members on generic types (deprecated CA1000 is a replacement for it0)
-dotnet_diagnostic.ma0018.severity = none
 dotnet_diagnostic.asyncifyinvocation.severity = error
 
 ##########################################
