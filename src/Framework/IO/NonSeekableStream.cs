@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Helpers.IO;
+namespace Framework.IO;
 
 public sealed class NonSeekableStream(Stream stream) : Stream
 {
@@ -10,14 +10,17 @@ public sealed class NonSeekableStream(Stream stream) : Stream
 
     public override bool CanWrite => stream.CanWrite;
 
-    public override void Flush() => stream.Flush();
-
     public override long Length => throw new NotSupportedException();
 
     public override long Position
     {
         get => stream.Position;
         set => throw new NotSupportedException();
+    }
+
+    public override void Flush()
+    {
+        stream.Flush();
     }
 
     public override int Read(byte[] buffer, int offset, int count)

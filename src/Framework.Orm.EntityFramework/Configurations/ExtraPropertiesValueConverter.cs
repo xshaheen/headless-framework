@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks;
-using Framework.BuildingBlocks.Helpers.Collections;
+using Framework.Collections;
 using Framework.Primitives;
 using Framework.Serializer.Json.Converters;
 using Microsoft.EntityFrameworkCore.ChangeTracking;

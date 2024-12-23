@@ -6,21 +6,15 @@ using System.Diagnostics.CodeAnalysis;
 // ReSharper disable once CheckNamespace
 namespace Framework.Primitives;
 
-public readonly struct DataResult<T> : IResult<T, IReadOnlyList<ErrorDescriptor>>, IEquatable<DataResult<T>>
+public readonly struct DataResult<T>() : IResult<T, IReadOnlyList<ErrorDescriptor>>, IEquatable<DataResult<T>>
 {
-    public DataResult()
-    {
-        Succeeded = false;
-        Data = default;
-    }
-
     [MemberNotNullWhen(true, nameof(Data))]
-    public bool Succeeded { get; init; }
+    public bool Succeeded { get; init; } = false;
 
     [MemberNotNullWhen(false, nameof(Data))]
     public bool Failed => !Succeeded;
 
-    public T? Data { get; init; }
+    public T? Data { get; init; } = default;
 
     public IReadOnlyList<ErrorDescriptor> Errors { get; init; } = Array.Empty<ErrorDescriptor>();
 
