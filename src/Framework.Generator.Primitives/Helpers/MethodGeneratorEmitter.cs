@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Generator.Primitives.Extensions;
 using Framework.Generator.Primitives.Models;
 using Framework.Generator.Primitives.Shared;
 
@@ -371,14 +372,16 @@ internal static class MethodGeneratorEmitter
 
     /// <summary>Generates methods required for implementing ISpanFormattable for the specified type.</summary>
     /// <param name="builder">The source code builder.</param>
-    /// <param name="fieldName">The name of the field.</param>
-    public static void GenerateSpanFormattable(this SourceCodeBuilder builder, string fieldName)
+    /// <param name="data">The <see cref="GeneratorData"/> object containing information about the data type.</param>
+    public static void GenerateSpanFormattable(this SourceCodeBuilder builder, GeneratorData data)
     {
+        var syntaxAttribute = data.PrimitiveTypeSymbol.GetStringSyntaxAttribute();
+
         builder
             .AppendInheritDoc()
             .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
-                $"public string ToString(string? format, {TypeNames.IFormatProvider}? formatProvider) => {fieldName}.ToString(format, formatProvider);"
+                $"public string ToString({syntaxAttribute}string? format, {TypeNames.IFormatProvider}? formatProvider) => {data.FieldName}.ToString(format, formatProvider);"
             )
             .NewLine();
 
@@ -386,30 +389,32 @@ internal static class MethodGeneratorEmitter
             .AppendInheritDoc()
             .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
-                $"public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, {TypeNames.IFormatProvider}? provider)"
+                $"public bool TryFormat({TypeNames.Span}<char> destination, out int charsWritten, {syntaxAttribute}{TypeNames.ReadOnlySpan}<char> format, {TypeNames.IFormatProvider}? provider)"
             )
             .OpenBracket()
-            .Append("return ((ISpanFormattable)")
-            .Append(fieldName)
+            .Append($"return (({TypeNames.ISpanFormattable})")
+            .Append(data.FieldName)
             .AppendLine(").TryFormat(destination, out charsWritten, format, provider);")
             .CloseBracket();
     }
 
     /// <summary>Generates a method for formatting to UTF-8 if the condition NET8_0_OR_GREATER is met.</summary>
-    /// <param name="builder">The SourceCodeBuilder to append the generated code.</param>
-    /// <param name="fieldName">The name of the field.</param>
-    internal static void GenerateUtf8Formattable(this SourceCodeBuilder builder, string fieldName)
+    /// <param name="builder">The <see cref="SourceCodeBuilder"/> used to build the source code.</param>
+    /// <param name="data">The <see cref="GeneratorData"/> object containing information about the data type.</param>
+    internal static void GenerateUtf8Formattable(this SourceCodeBuilder builder, GeneratorData data)
     {
+        var syntaxAttribute = data.PrimitiveTypeSymbol.GetStringSyntaxAttribute();
+
         builder
             .AppendPreProcessorDirective("if NET8_0_OR_GREATER")
-            .AppendInheritDoc("IUtf8SpanFormattable.TryFormat")
+            .AppendInheritDoc($"{TypeNames.IUtf8SpanFormattable}.TryFormat")
             .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
-                $"public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, {TypeNames.IFormatProvider}? provider)"
+                $"public bool TryFormat({TypeNames.Span}<byte> utf8Destination, out int bytesWritten, {syntaxAttribute}{TypeNames.ReadOnlySpan}<char> format, {TypeNames.IFormatProvider}? provider)"
             )
             .OpenBracket()
-            .Append("return ((IUtf8SpanFormattable)")
-            .Append(fieldName)
+            .Append($"return (({TypeNames.IUtf8SpanFormattable})")
+            .Append(data.FieldName)
             .AppendLine(").TryFormat(utf8Destination, out bytesWritten, format, provider);")
             .CloseBracket()
             .AppendPreProcessorDirective("endif");
@@ -436,7 +441,7 @@ internal static class MethodGeneratorEmitter
             .AppendInheritDoc()
             .AppendMethodAggressiveInliningAttribute()
             .Append(
-                $"public static {dataClassName} Parse(ReadOnlySpan<char> s, {TypeNames.IFormatProvider}? provider) => "
+                $"public static {dataClassName} Parse({TypeNames.ReadOnlySpan}<char> s, {TypeNames.IFormatProvider}? provider) => "
             );
 
         if (isString)
@@ -480,7 +485,7 @@ internal static class MethodGeneratorEmitter
         builder
             .AppendInheritDoc()
             .AppendLine(
-                $"public static bool TryParse(ReadOnlySpan<char> s, {TypeNames.IFormatProvider}? provider, [MaybeNullWhen(false)] out {dataClassName} result)"
+                $"public static bool TryParse({TypeNames.ReadOnlySpan}<char> s, {TypeNames.IFormatProvider}? provider, [MaybeNullWhen(false)] out {dataClassName} result)"
             )
             .OpenBracket();
 
@@ -710,119 +715,121 @@ internal static class MethodGeneratorEmitter
         builder.AppendMethodAggressiveInliningAttribute();
 
         builder
-            .Append("TypeCode IConvertible.GetTypeCode()")
-            .AppendLine($" => ((IConvertible){fieldName}).GetTypeCode();")
+            .Append($"{TypeNames.TypeCode} {TypeNames.IConvertible}.GetTypeCode()")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).GetTypeCode();")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"bool IConvertible.ToBoolean({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToBoolean(provider);")
+            .Append($"bool {TypeNames.IConvertible}.ToBoolean({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToBoolean(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"byte IConvertible.ToByte({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToByte(provider);")
+            .Append($"byte {TypeNames.IConvertible}.ToByte({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToByte(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"char IConvertible.ToChar({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToChar(provider);")
+            .Append($"char {TypeNames.IConvertible}.ToChar({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToChar(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"DateTime IConvertible.ToDateTime({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToDateTime(provider);")
+            .Append($"{TypeNames.DateTime} {TypeNames.IConvertible}.ToDateTime({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToDateTime(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"decimal IConvertible.ToDecimal({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToDecimal(provider);")
+            .Append($"decimal {TypeNames.IConvertible}.ToDecimal({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToDecimal(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"double IConvertible.ToDouble({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToDouble(provider);")
+            .Append($"double {TypeNames.IConvertible}.ToDouble({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToDouble(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"short IConvertible.ToInt16({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToInt16(provider);")
+            .Append($"short {TypeNames.IConvertible}.ToInt16({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToInt16(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"int IConvertible.ToInt32({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToInt32(provider);")
+            .Append($"int {TypeNames.IConvertible}.ToInt32({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToInt32(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"long IConvertible.ToInt64({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToInt64(provider);")
+            .Append($"long {TypeNames.IConvertible}.ToInt64({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToInt64(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"sbyte IConvertible.ToSByte({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToSByte(provider);")
+            .Append($"sbyte {TypeNames.IConvertible}.ToSByte({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToSByte(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"float IConvertible.ToSingle({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToSingle(provider);")
+            .Append($"float {TypeNames.IConvertible}.ToSingle({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToSingle(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"string IConvertible.ToString({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToString(provider);")
+            .Append($"string {TypeNames.IConvertible}.ToString({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToString(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"object IConvertible.ToType(Type conversionType, {TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToType(conversionType, provider);")
+            .Append(
+                $"object {TypeNames.IConvertible}.ToType(Type conversionType, {TypeNames.IFormatProvider}? provider)"
+            )
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToType(conversionType, provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"ushort IConvertible.ToUInt16({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToUInt16(provider);")
+            .Append($"ushort {TypeNames.IConvertible}.ToUInt16({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToUInt16(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"uint IConvertible.ToUInt32({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToUInt32(provider);")
+            .Append($"uint {TypeNames.IConvertible}.ToUInt32({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToUInt32(provider);")
             .NewLine();
 
         builder.AppendInheritDoc();
 
         builder
-            .Append($"ulong IConvertible.ToUInt64({TypeNames.IFormatProvider}? provider)")
-            .AppendLine($" => ((IConvertible){fieldName}).ToUInt64(provider);");
+            .Append($"ulong {TypeNames.IConvertible}.ToUInt64({TypeNames.IFormatProvider}? provider)")
+            .AppendLine($" => (({TypeNames.IConvertible}){fieldName}).ToUInt64(provider);");
     }
 }

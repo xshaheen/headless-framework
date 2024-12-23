@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.System;
 
 namespace Tests.Abstractions;
 

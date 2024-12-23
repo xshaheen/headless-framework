@@ -11,6 +11,9 @@ public static class TypeNames
     public const string DateOnly = "global::System.DateOnly";
     public const string DateTime = "global::System.DateTime";
     public const string DateTimeOffset = "global::System.DateTimeOffset";
+    public const string Span = "global::System.Span";
+    public const string ReadOnlySpan = "global::System.ReadOnlySpan";
+    public const string TypeCode = "global::System.TypeCode";
     public const string CultureInfo = "global::System.Globalization.CultureInfo";
     public const string DateTimeStyles = "global::System.Globalization.DateTimeStyles";
     public const string StringComparison = "global::System.StringComparison";

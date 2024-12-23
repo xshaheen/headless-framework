@@ -165,7 +165,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         {
             builder.NewLine();
             builder.AppendRegion("IFormattable Implementation");
-            builder.GenerateSpanFormattable(data.FieldName);
+            builder.GenerateSpanFormattable(data);
             builder.NewLine();
             builder.AppendEndRegion();
         }
@@ -174,7 +174,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         {
             builder.NewLine();
             builder.AppendRegion("IUtf8SpanFormattable Implementation");
-            builder.GenerateUtf8Formattable(data.FieldName);
+            builder.GenerateUtf8Formattable(data);
             builder.NewLine();
             builder.AppendEndRegion();
         }
