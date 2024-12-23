@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Exceptions;
 using Framework.Primitives;
 
 #pragma warning disable IDE0130

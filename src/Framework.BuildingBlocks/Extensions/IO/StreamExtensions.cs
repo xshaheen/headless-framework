@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.System;
 using Framework.Checks;
+using Framework.Core;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

@@ -3,7 +3,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
-using Framework.Primitives;
+using Framework.Exceptions;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

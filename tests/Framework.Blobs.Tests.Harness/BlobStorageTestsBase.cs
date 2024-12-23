@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Xml.Linq;
 using Framework.Blobs;
-using Framework.BuildingBlocks.Helpers.System;
+using Framework.Core;
 using Framework.Testing.Helpers;
 using Framework.Testing.Tests;
 using Microsoft.Extensions.Logging;

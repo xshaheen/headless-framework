@@ -2,9 +2,9 @@
 
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
-using Framework.BuildingBlocks.Helpers.Reflection;
 using Framework.Checks;
 using Framework.Primitives;
+using Framework.Reflection;
 
 namespace Framework.BuildingBlocks.Models.ExtraProperties;
 

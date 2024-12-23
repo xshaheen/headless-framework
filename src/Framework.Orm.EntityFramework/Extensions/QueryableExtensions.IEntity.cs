@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Domains;
-using Framework.Primitives;
+using Framework.Exceptions;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;

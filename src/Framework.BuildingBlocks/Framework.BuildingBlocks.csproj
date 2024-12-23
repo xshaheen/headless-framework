@@ -12,23 +12,18 @@
     <PackageReference Include="Jitbit.FastCache" />
     <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="morelinq" />
+    <PackageReference Include="MimeTypes">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
-    <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="Polly.RateLimiting" />
     <PackageReference Include="Snappier" />
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
     <PackageReference Include="ZString" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="MimeTypes">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

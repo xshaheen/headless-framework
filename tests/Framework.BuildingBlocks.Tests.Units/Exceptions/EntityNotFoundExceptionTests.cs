@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Primitives;
+using Framework.Exceptions;
 
 namespace Tests.Exceptions;
 

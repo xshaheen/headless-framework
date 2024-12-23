@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.Helpers.Threading;
+using Framework.Core;
 using Framework.Features.Models;
 using Framework.Features.Values;
 
@@ -28,7 +28,7 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
 
         var disposable = currentTenant.Change(providerKey);
 
-        var asyncDisposable = new AsyncDisposeFunc(() =>
+        var asyncDisposable = Disposable.Create(() =>
         {
             disposable.Dispose();
 
