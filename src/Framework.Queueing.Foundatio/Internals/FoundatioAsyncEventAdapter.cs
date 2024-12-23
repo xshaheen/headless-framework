@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.System;
+using Framework.Primitives;
 
 namespace Framework.Queueing.Internals;
 

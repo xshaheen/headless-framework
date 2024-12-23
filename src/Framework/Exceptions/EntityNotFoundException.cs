@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
-namespace Framework.Primitives;
+namespace Framework.Exceptions;
 
-/// <summary>An exception that is thrown if can not find an entity in database.</summary>
+/// <summary>An exception that is thrown when we can not find an entity in database.</summary>
 [PublicAPI]
 public sealed class EntityNotFoundException : Exception
 {

@@ -8,4 +8,9 @@
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="morelinq" />
+    <PackageReference Include="Nito.AsyncEx" />
+  </ItemGroup>
+
 </Project>

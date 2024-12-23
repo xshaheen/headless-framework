@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Resources;
+using Framework.Exceptions;
 using Framework.FluentValidation;
 using Framework.Primitives;
 using Microsoft.AspNetCore.Http;

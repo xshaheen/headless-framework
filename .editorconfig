@@ -8,6 +8,8 @@ root = true
 ############ Core Options
 
 [*]
+is_global = true
+global_level = 1000
 charset = utf-8
 end_of_line = lf
 trim_trailing_whitespace = true
@@ -113,8 +115,6 @@ dotnet_analyzer_diagnostic.severity = default
 
 ############ .NET Code Style Severities
 
-# CA2007: Consider calling ConfigureAwait on the awaited task
-dotnet_diagnostic.ca2007.severity = none
 # CA1848: Use the LoggerMessage delegates
 dotnet_diagnostic.ca1848.severity = silent
 # CA1863: Cache a 'CompositeFormat' for repeated use in this formatting operation
@@ -191,8 +191,6 @@ dotnet_diagnostic.ca5379.severity = warning
 dotnet_diagnostic.ca5384.severity = warning
 # CA5385: Use Rivest–Shamir–Adleman (RSA) algorithm with sufficient key size
 dotnet_diagnostic.ca5385.severity = warning
-# IDE0055: Fix formatting
-dotnet_diagnostic.ide0055.severity = silent
 # CA1851: Possible multiple enumerations of 'IEnumerable' collection
 dotnet_diagnostic.ca1851.severity = suggestion
 # CA1008: Enums should have zero value
@@ -269,7 +267,6 @@ dotnet_diagnostic.ma0045.severity = suggestion
 dotnet_diagnostic.asyncifyinvocation.severity = error
 # AsyncifyVariable: Use Task Async
 dotnet_diagnostic.asyncifyvariable.severity = error
-dotnet_diagnostic.rcs1090.severity = none
 # MA0025: Implement the functionality (or raise NotSupportedException or PlatformNotSupportedException)
 dotnet_diagnostic.ma0025.severity = suggestion
 # MA0026: TO-DO comment
@@ -724,19 +721,3 @@ resharper_suggest_var_or_type_simple_types_highlighting = hint
 resharper_unused_auto_property_accessor_global_highlighting = suggestion
 resharper_unused_auto_property_accessor_local_highlighting = suggestion
 resharper_unused_type_parameter_highlighting = suggestion
-
-# [CSharpier] Incompatible rules deactivated
-# https://csharpier.com/docs/IntegratingWithLinters#code-analysis-rules
-dotnet_diagnostic.IDE0055.severity                                      = none
-dotnet_diagnostic.SA1000.severity                                       = none
-dotnet_diagnostic.SA1009.severity                                       = none
-dotnet_diagnostic.SA1111.severity                                       = none
-dotnet_diagnostic.SA1118.severity                                       = none
-dotnet_diagnostic.SA1137.severity                                       = none
-dotnet_diagnostic.SA1413.severity                                       = none
-dotnet_diagnostic.SA1500.severity                                       = none
-dotnet_diagnostic.SA1501.severity                                       = none
-dotnet_diagnostic.SA1502.severity                                       = none
-dotnet_diagnostic.SA1504.severity                                       = none
-dotnet_diagnostic.SA1515.severity                                       = none
-dotnet_diagnostic.SA1516.severity                                       = none

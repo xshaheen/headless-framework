@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Framework.BuildingBlocks.Helpers.Reflection;
 using Framework.Generator.Primitives;
 using Framework.Primitives;
+using Framework.Reflection;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Framework.OpenApi.Swashbuckle.Extensions;
