@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "GuidPrimitive"/></summary>
-public sealed class GuidPrimitiveValueConverter : ValueConverter<GuidPrimitive, Guid>
+public sealed class GuidPrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<GuidPrimitive, Guid>
 {
     public GuidPrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public GuidPrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public GuidPrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

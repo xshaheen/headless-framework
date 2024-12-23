@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "TimeOnlyPrimitive"/></summary>
-public sealed class TimeOnlyPrimitiveValueConverter : ValueConverter<TimeOnlyPrimitive, TimeOnly>
+public sealed class TimeOnlyPrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<TimeOnlyPrimitive, TimeOnly>
 {
     public TimeOnlyPrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public TimeOnlyPrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public TimeOnlyPrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

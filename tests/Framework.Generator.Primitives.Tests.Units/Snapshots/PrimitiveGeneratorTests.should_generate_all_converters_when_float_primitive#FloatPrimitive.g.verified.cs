@@ -23,24 +23,24 @@ using System.Xml.Serialization;
 
 namespace Framework.Primitives;
 
-[JsonConverter(typeof(FloatPrimitiveJsonConverter))]
-[TypeConverter(typeof(FloatPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(float))]
-[DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
-        , IComparable
-        , IComparable<FloatPrimitive>
-        , IAdditionOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
-        , ISubtractionOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
-        , IMultiplyOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
-        , IDivisionOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
-        , IModulusOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
-        , IComparisonOperators<FloatPrimitive, FloatPrimitive, bool>
-        , ISpanParsable<FloatPrimitive>
-        , IConvertible
-        , IXmlSerializable
+[global::System.Diagnostics.DebuggerDisplay("{_value}")]
+[global::System.Text.Json.Serialization.JsonConverter(typeof(FloatPrimitiveJsonConverter))]
+[global::System.ComponentModel.TypeConverter(typeof(FloatPrimitiveTypeConverter))]
+public readonly partial struct FloatPrimitive : global::System.IEquatable<FloatPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<FloatPrimitive>
+        , global::System.Numerics.IAdditionOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
+        , global::System.Numerics.ISubtractionOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
+        , global::System.Numerics.IMultiplyOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
+        , global::System.Numerics.IDivisionOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
+        , global::System.Numerics.IModulusOperators<FloatPrimitive, FloatPrimitive, FloatPrimitive>
+        , global::System.Numerics.IComparisonOperators<FloatPrimitive, FloatPrimitive, bool>
+        , global::System.ISpanParsable<FloatPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>
@@ -51,10 +51,10 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
 
     private float _valueOrThrow => _isInitialized ? _value : throw new InvalidPrimitiveValueException("The domain value has not been initialized", this);
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly float _value;
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly bool _isInitialized;
 
     /// <summary>Initializes a new instance of the <see cref="FloatPrimitive"/> class by validating the specified <see cref="float"/> value using <see cref="Validate"/> static method.</summary>
@@ -122,11 +122,11 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
     #region IEquatable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override bool Equals(object? obj) => obj is FloatPrimitive other && Equals(other);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public bool Equals(FloatPrimitive other)
     {
         if (!_isInitialized || !other._isInitialized)
@@ -137,10 +137,10 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
         return _value.Equals(other._value);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(FloatPrimitive left, FloatPrimitive right) => left.Equals(right);
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator !=(FloatPrimitive left, FloatPrimitive right) => !(left == right);
 
     #endregion
@@ -179,15 +179,15 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
     #region IParsable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static FloatPrimitive Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => float.Parse(s, provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static FloatPrimitive Parse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider) => float.Parse(s, provider);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static FloatPrimitive Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static FloatPrimitive Parse(string s, global::System.IFormatProvider? provider) => Parse(s.AsSpan(), provider);
 
     /// <inheritdoc/>
-    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, [MaybeNullWhen(false)] out FloatPrimitive result)
+    public static bool TryParse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out FloatPrimitive result)
     {
         if (!float.TryParse(s, provider, out var value))
         {
@@ -206,18 +206,18 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
     }
 
     /// <inheritdoc/>
-    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out FloatPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
+    public static bool TryParse([NotNullWhen(true)] string? s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out FloatPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
 
     #endregion
 
     #region IUtf8SpanFormattable Implementation
 
 #if NET8_0_OR_GREATER
-    /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat"/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    /// <inheritdoc cref="global::System.IUtf8SpanFormattable.TryFormat"/>
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public bool TryFormat(global::System.Span<byte> utf8Destination, out int bytesWritten, [global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.NumericFormat)]global::System.ReadOnlySpan<char> format, global::System.IFormatProvider? provider)
     {
-        return ((IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
+        return ((global::System.IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
     }
 #endif
 
@@ -226,56 +226,56 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
     #region IConvertible Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    TypeCode IConvertible.GetTypeCode() => ((IConvertible)(Single)_valueOrThrow).GetTypeCode();
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    global::System.TypeCode global::System.IConvertible.GetTypeCode() => ((global::System.IConvertible)(Single)_valueOrThrow).GetTypeCode();
 
     /// <inheritdoc/>
-    bool IConvertible.ToBoolean(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToBoolean(provider);
+    bool global::System.IConvertible.ToBoolean(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToBoolean(provider);
 
     /// <inheritdoc/>
-    byte IConvertible.ToByte(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToByte(provider);
+    byte global::System.IConvertible.ToByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToByte(provider);
 
     /// <inheritdoc/>
-    char IConvertible.ToChar(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToChar(provider);
+    char global::System.IConvertible.ToChar(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToChar(provider);
 
     /// <inheritdoc/>
-    DateTime IConvertible.ToDateTime(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToDateTime(provider);
+    global::System.DateTime global::System.IConvertible.ToDateTime(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToDateTime(provider);
 
     /// <inheritdoc/>
-    decimal IConvertible.ToDecimal(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToDecimal(provider);
+    decimal global::System.IConvertible.ToDecimal(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToDecimal(provider);
 
     /// <inheritdoc/>
-    double IConvertible.ToDouble(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToDouble(provider);
+    double global::System.IConvertible.ToDouble(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToDouble(provider);
 
     /// <inheritdoc/>
-    short IConvertible.ToInt16(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToInt16(provider);
+    short global::System.IConvertible.ToInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToInt16(provider);
 
     /// <inheritdoc/>
-    int IConvertible.ToInt32(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToInt32(provider);
+    int global::System.IConvertible.ToInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToInt32(provider);
 
     /// <inheritdoc/>
-    long IConvertible.ToInt64(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToInt64(provider);
+    long global::System.IConvertible.ToInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToInt64(provider);
 
     /// <inheritdoc/>
-    sbyte IConvertible.ToSByte(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToSByte(provider);
+    sbyte global::System.IConvertible.ToSByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToSByte(provider);
 
     /// <inheritdoc/>
-    float IConvertible.ToSingle(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToSingle(provider);
+    float global::System.IConvertible.ToSingle(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToSingle(provider);
 
     /// <inheritdoc/>
-    string IConvertible.ToString(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToString(provider);
+    string global::System.IConvertible.ToString(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToString(provider);
 
     /// <inheritdoc/>
-    object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToType(conversionType, provider);
+    object global::System.IConvertible.ToType(Type conversionType, global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToType(conversionType, provider);
 
     /// <inheritdoc/>
-    ushort IConvertible.ToUInt16(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToUInt16(provider);
+    ushort global::System.IConvertible.ToUInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToUInt16(provider);
 
     /// <inheritdoc/>
-    uint IConvertible.ToUInt32(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToUInt32(provider);
+    uint global::System.IConvertible.ToUInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToUInt32(provider);
 
     /// <inheritdoc/>
-    ulong IConvertible.ToUInt64(IFormatProvider? provider) => ((IConvertible)(Single)_valueOrThrow).ToUInt64(provider);
+    ulong global::System.IConvertible.ToUInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(Single)_valueOrThrow).ToUInt64(provider);
 
     #endregion
 
@@ -301,20 +301,20 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
     #region Implicit Operators
 
     /// <summary>Implicit conversion from <see cref = "float"/> to <see cref = "FloatPrimitive"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator FloatPrimitive(float value) => new(value);
 
     /// <summary>Implicit conversion from <see cref = "float"/> (nullable) to <see cref = "FloatPrimitive"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator FloatPrimitive?(float? value) => value is null ? null : new(value.Value);
 
     /// <summary>Implicit conversion from <see cref = "FloatPrimitive"/> to <see cref = "float"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator float(FloatPrimitive value) => (float)value._valueOrThrow;
 
     /// <summary>Implicit conversion from <see cref = "FloatPrimitive"/> (nullable) to <see cref = "float"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator float?(FloatPrimitive? value) => value is null ? null : (float?)value.Value._valueOrThrow;
 
@@ -323,23 +323,23 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
     #region Math Operators
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static FloatPrimitive operator +(FloatPrimitive left, FloatPrimitive right) => new(left._valueOrThrow + right._valueOrThrow);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static FloatPrimitive operator -(FloatPrimitive left, FloatPrimitive right) => new(left._valueOrThrow - right._valueOrThrow);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static FloatPrimitive operator *(FloatPrimitive left, FloatPrimitive right) => new(left._valueOrThrow * right._valueOrThrow);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static FloatPrimitive operator /(FloatPrimitive left, FloatPrimitive right) => new(left._valueOrThrow / right._valueOrThrow);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static FloatPrimitive operator %(FloatPrimitive left, FloatPrimitive right) => new(left._valueOrThrow % right._valueOrThrow);
 
     #endregion
@@ -347,28 +347,28 @@ public readonly partial struct FloatPrimitive : IEquatable<FloatPrimitive>
     #region Comparison Operators
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <(FloatPrimitive left, FloatPrimitive right) => left._valueOrThrow < right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <=(FloatPrimitive left, FloatPrimitive right) => left._valueOrThrow <= right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >(FloatPrimitive left, FloatPrimitive right) => left._valueOrThrow > right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >=(FloatPrimitive left, FloatPrimitive right) => left._valueOrThrow >= right._valueOrThrow;
 
     #endregion
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override string ToString() => _valueOrThrow.ToString();
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override int GetHashCode() => _valueOrThrow.GetHashCode();
 }

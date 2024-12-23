@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "DecimalPrimitive"/></summary>
-public sealed class DecimalPrimitiveValueConverter : ValueConverter<DecimalPrimitive, decimal>
+public sealed class DecimalPrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DecimalPrimitive, decimal>
 {
     public DecimalPrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public DecimalPrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public DecimalPrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

@@ -23,10 +23,10 @@ using System.Xml.Serialization;
 
 namespace Framework.Primitives;
 
-[JsonConverter(typeof(DateOnlyPrimitiveJsonConverter))]
-[TypeConverter(typeof(DateOnlyPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(DateOnly))]
-[DebuggerDisplay("{" + nameof(_value) + "}")]
+[global::System.Diagnostics.DebuggerDisplay("{_value}")]
+[global::System.Text.Json.Serialization.JsonConverter(typeof(DateOnlyPrimitiveJsonConverter))]
+[global::System.ComponentModel.TypeConverter(typeof(DateOnlyPrimitiveTypeConverter))]
 public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<DateOnlyPrimitive>
         , global::System.IComparable
         , global::System.IComparable<DateOnlyPrimitive>
@@ -47,10 +47,10 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
 
     private DateOnly _valueOrThrow => _isInitialized ? _value : throw new InvalidPrimitiveValueException("The domain value has not been initialized", this);
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly DateOnly _value;
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly bool _isInitialized;
 
     /// <summary>Initializes a new instance of the <see cref="DateOnlyPrimitive"/> class by validating the specified <see cref="DateOnly"/> value using <see cref="Validate"/> static method.</summary>
@@ -118,11 +118,11 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
     #region IEquatable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override bool Equals(object? obj) => obj is DateOnlyPrimitive other && Equals(other);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public bool Equals(DateOnlyPrimitive other)
     {
         if (!_isInitialized || !other._isInitialized)
@@ -133,10 +133,10 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
         return _value.Equals(other._value);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(DateOnlyPrimitive left, DateOnlyPrimitive right) => left.Equals(right);
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator !=(DateOnlyPrimitive left, DateOnlyPrimitive right) => !(left == right);
 
     #endregion
@@ -175,15 +175,15 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
     #region IParsable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static DateOnlyPrimitive Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => DateOnly.Parse(s, provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static DateOnlyPrimitive Parse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider) => DateOnly.Parse(s, provider);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static DateOnlyPrimitive Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static DateOnlyPrimitive Parse(string s, global::System.IFormatProvider? provider) => Parse(s.AsSpan(), provider);
 
     /// <inheritdoc/>
-    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, [MaybeNullWhen(false)] out DateOnlyPrimitive result)
+    public static bool TryParse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out DateOnlyPrimitive result)
     {
         if (!DateOnly.TryParse(s, provider, out var value))
         {
@@ -202,21 +202,21 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
     }
 
     /// <inheritdoc/>
-    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out DateOnlyPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
+    public static bool TryParse([NotNullWhen(true)] string? s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out DateOnlyPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
 
     #endregion
 
     #region IFormattable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public string ToString(string? format, IFormatProvider? formatProvider) => _valueOrThrow.ToString(format, formatProvider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public string ToString([global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateOnlyFormat)]string? format, global::System.IFormatProvider? formatProvider) => _valueOrThrow.ToString(format, formatProvider);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public bool TryFormat(global::System.Span<char> destination, out int charsWritten, [global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateOnlyFormat)]global::System.ReadOnlySpan<char> format, global::System.IFormatProvider? provider)
     {
-        return ((ISpanFormattable)_valueOrThrow).TryFormat(destination, out charsWritten, format, provider);
+        return ((global::System.ISpanFormattable)_valueOrThrow).TryFormat(destination, out charsWritten, format, provider);
     }
 
     #endregion
@@ -224,11 +224,11 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
     #region IUtf8SpanFormattable Implementation
 
 #if NET8_0_OR_GREATER
-    /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat"/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    /// <inheritdoc cref="global::System.IUtf8SpanFormattable.TryFormat"/>
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public bool TryFormat(global::System.Span<byte> utf8Destination, out int bytesWritten, [global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateOnlyFormat)]global::System.ReadOnlySpan<char> format, global::System.IFormatProvider? provider)
     {
-        return ((IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
+        return ((global::System.IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
     }
 #endif
 
@@ -237,56 +237,56 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
     #region IConvertible Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    TypeCode IConvertible.GetTypeCode() => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).GetTypeCode();
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    global::System.TypeCode global::System.IConvertible.GetTypeCode() => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).GetTypeCode();
 
     /// <inheritdoc/>
-    bool IConvertible.ToBoolean(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToBoolean(provider);
+    bool global::System.IConvertible.ToBoolean(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToBoolean(provider);
 
     /// <inheritdoc/>
-    byte IConvertible.ToByte(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToByte(provider);
+    byte global::System.IConvertible.ToByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToByte(provider);
 
     /// <inheritdoc/>
-    char IConvertible.ToChar(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToChar(provider);
+    char global::System.IConvertible.ToChar(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToChar(provider);
 
     /// <inheritdoc/>
-    DateTime IConvertible.ToDateTime(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToDateTime(provider);
+    global::System.DateTime global::System.IConvertible.ToDateTime(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToDateTime(provider);
 
     /// <inheritdoc/>
-    decimal IConvertible.ToDecimal(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToDecimal(provider);
+    decimal global::System.IConvertible.ToDecimal(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToDecimal(provider);
 
     /// <inheritdoc/>
-    double IConvertible.ToDouble(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToDouble(provider);
+    double global::System.IConvertible.ToDouble(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToDouble(provider);
 
     /// <inheritdoc/>
-    short IConvertible.ToInt16(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToInt16(provider);
+    short global::System.IConvertible.ToInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToInt16(provider);
 
     /// <inheritdoc/>
-    int IConvertible.ToInt32(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToInt32(provider);
+    int global::System.IConvertible.ToInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToInt32(provider);
 
     /// <inheritdoc/>
-    long IConvertible.ToInt64(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToInt64(provider);
+    long global::System.IConvertible.ToInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToInt64(provider);
 
     /// <inheritdoc/>
-    sbyte IConvertible.ToSByte(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToSByte(provider);
+    sbyte global::System.IConvertible.ToSByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToSByte(provider);
 
     /// <inheritdoc/>
-    float IConvertible.ToSingle(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToSingle(provider);
+    float global::System.IConvertible.ToSingle(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToSingle(provider);
 
     /// <inheritdoc/>
-    string IConvertible.ToString(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToString(provider);
+    string global::System.IConvertible.ToString(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToString(provider);
 
     /// <inheritdoc/>
-    object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToType(conversionType, provider);
+    object global::System.IConvertible.ToType(Type conversionType, global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToType(conversionType, provider);
 
     /// <inheritdoc/>
-    ushort IConvertible.ToUInt16(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToUInt16(provider);
+    ushort global::System.IConvertible.ToUInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToUInt16(provider);
 
     /// <inheritdoc/>
-    uint IConvertible.ToUInt32(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToUInt32(provider);
+    uint global::System.IConvertible.ToUInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToUInt32(provider);
 
     /// <inheritdoc/>
-    ulong IConvertible.ToUInt64(IFormatProvider? provider) => ((IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToUInt64(provider);
+    ulong global::System.IConvertible.ToUInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)((DateOnly)_valueOrThrow).ToDateTime()).ToUInt64(provider);
 
     #endregion
 
@@ -312,29 +312,29 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
     #region Implicit Operators
 
     /// <summary>Implicit conversion from <see cref = "DateOnly"/> to <see cref = "DateOnlyPrimitive"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator DateOnlyPrimitive(DateOnly value) => new(value);
 
     /// <summary>Implicit conversion from <see cref = "DateOnly"/> (nullable) to <see cref = "DateOnlyPrimitive"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator DateOnlyPrimitive?(DateOnly? value) => value is null ? null : new(value.Value);
 
     /// <summary>Implicit conversion from <see cref = "DateOnlyPrimitive"/> to <see cref = "DateOnly"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator DateOnly(DateOnlyPrimitive value) => (DateOnly)value._valueOrThrow;
 
     /// <summary>Implicit conversion from <see cref = "DateOnlyPrimitive"/> (nullable) to <see cref = "DateOnly"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator DateOnly?(DateOnlyPrimitive? value) => value is null ? null : (DateOnly?)value.Value._valueOrThrow;
 
     /// <summary>Implicit conversion from <see cref = "DateOnlyPrimitive"/> to <see cref = "DateTime"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator DateTime(DateOnlyPrimitive value) => ((DateOnly)value._valueOrThrow).ToDateTime();
 
     /// <summary>Implicit conversion from <see cref = "DateTime"/> to <see cref = "DateOnlyPrimitive"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator DateOnlyPrimitive(DateTime value) => DateOnly.FromDateTime(value);
 
     #endregion
@@ -342,28 +342,28 @@ public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<Dat
     #region Comparison Operators
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <(DateOnlyPrimitive left, DateOnlyPrimitive right) => left._valueOrThrow < right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <=(DateOnlyPrimitive left, DateOnlyPrimitive right) => left._valueOrThrow <= right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >(DateOnlyPrimitive left, DateOnlyPrimitive right) => left._valueOrThrow > right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >=(DateOnlyPrimitive left, DateOnlyPrimitive right) => left._valueOrThrow >= right._valueOrThrow;
 
     #endregion
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override string ToString() => _valueOrThrow.ToString();
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override int GetHashCode() => _valueOrThrow.GetHashCode();
 }

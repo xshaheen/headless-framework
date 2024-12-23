@@ -23,10 +23,10 @@ using System.Xml.Serialization;
 
 namespace Framework.Primitives;
 
-[JsonConverter(typeof(StringPrimitiveJsonConverter))]
-[TypeConverter(typeof(StringPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(string))]
-[DebuggerDisplay("{" + nameof(_value) + "}")]
+[global::System.Diagnostics.DebuggerDisplay("{_value}")]
+[global::System.Text.Json.Serialization.JsonConverter(typeof(StringPrimitiveJsonConverter))]
+[global::System.ComponentModel.TypeConverter(typeof(StringPrimitiveTypeConverter))]
 public partial class StringPrimitive : global::System.IEquatable<StringPrimitive>
         , global::System.IComparable
         , global::System.IComparable<StringPrimitive>
@@ -42,10 +42,10 @@ public partial class StringPrimitive : global::System.IEquatable<StringPrimitive
 
     private string _valueOrThrow => _isInitialized ? _value : throw new InvalidPrimitiveValueException("The domain value has not been initialized", this);
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly string _value;
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly bool _isInitialized;
 
     /// <summary>Initializes a new instance of the <see cref="StringPrimitive"/> class by validating the specified <see cref="string"/> value using <see cref="Validate"/> static method.</summary>
@@ -135,25 +135,25 @@ public partial class StringPrimitive : global::System.IEquatable<StringPrimitive
     public int Length => _value.Length;
 
     /// <summary>Returns a substring of this string.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public string Substring(int startIndex, int length) => _value.Substring(startIndex, length);
 
     /// <summary>Returns a substring of this string.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public string Substring(int startIndex) => _value.Substring(startIndex);
 
     /// <summary>Returns the entire string as an array of characters.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public char[] ToCharArray() => _value.ToCharArray();
 
     #region IEquatable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override bool Equals(object? obj) => obj is StringPrimitive other && Equals(other);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public bool Equals(StringPrimitive? other)
     {
         if (other is null || !_isInitialized || !other._isInitialized)
@@ -164,7 +164,7 @@ public partial class StringPrimitive : global::System.IEquatable<StringPrimitive
         return _value.Equals(other._value);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(StringPrimitive? left, StringPrimitive? right)
     {
         if (ReferenceEquals(left, right))
@@ -175,7 +175,7 @@ public partial class StringPrimitive : global::System.IEquatable<StringPrimitive
     }
 
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator !=(StringPrimitive? left, StringPrimitive? right) => !(left == right);
 
     #endregion
@@ -214,15 +214,15 @@ public partial class StringPrimitive : global::System.IEquatable<StringPrimitive
     #region IParsable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StringPrimitive Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => s.ToString();
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static StringPrimitive Parse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider) => s.ToString();
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static StringPrimitive Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static StringPrimitive Parse(string s, global::System.IFormatProvider? provider) => Parse(s.AsSpan(), provider);
 
     /// <inheritdoc/>
-    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, [MaybeNullWhen(false)] out StringPrimitive result)
+    public static bool TryParse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out StringPrimitive result)
     {
         var value = s.ToString();
         if (s.IsEmpty)
@@ -235,63 +235,63 @@ public partial class StringPrimitive : global::System.IEquatable<StringPrimitive
     }
 
     /// <inheritdoc/>
-    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out StringPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
+    public static bool TryParse([NotNullWhen(true)] string? s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out StringPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
 
     #endregion
 
     #region IConvertible Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    TypeCode IConvertible.GetTypeCode() => ((IConvertible)(String)_valueOrThrow).GetTypeCode();
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    global::System.TypeCode global::System.IConvertible.GetTypeCode() => ((global::System.IConvertible)(String)_valueOrThrow).GetTypeCode();
 
     /// <inheritdoc/>
-    bool IConvertible.ToBoolean(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToBoolean(provider);
+    bool global::System.IConvertible.ToBoolean(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToBoolean(provider);
 
     /// <inheritdoc/>
-    byte IConvertible.ToByte(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToByte(provider);
+    byte global::System.IConvertible.ToByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToByte(provider);
 
     /// <inheritdoc/>
-    char IConvertible.ToChar(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToChar(provider);
+    char global::System.IConvertible.ToChar(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToChar(provider);
 
     /// <inheritdoc/>
-    DateTime IConvertible.ToDateTime(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToDateTime(provider);
+    global::System.DateTime global::System.IConvertible.ToDateTime(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToDateTime(provider);
 
     /// <inheritdoc/>
-    decimal IConvertible.ToDecimal(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToDecimal(provider);
+    decimal global::System.IConvertible.ToDecimal(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToDecimal(provider);
 
     /// <inheritdoc/>
-    double IConvertible.ToDouble(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToDouble(provider);
+    double global::System.IConvertible.ToDouble(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToDouble(provider);
 
     /// <inheritdoc/>
-    short IConvertible.ToInt16(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToInt16(provider);
+    short global::System.IConvertible.ToInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToInt16(provider);
 
     /// <inheritdoc/>
-    int IConvertible.ToInt32(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToInt32(provider);
+    int global::System.IConvertible.ToInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToInt32(provider);
 
     /// <inheritdoc/>
-    long IConvertible.ToInt64(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToInt64(provider);
+    long global::System.IConvertible.ToInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToInt64(provider);
 
     /// <inheritdoc/>
-    sbyte IConvertible.ToSByte(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToSByte(provider);
+    sbyte global::System.IConvertible.ToSByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToSByte(provider);
 
     /// <inheritdoc/>
-    float IConvertible.ToSingle(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToSingle(provider);
+    float global::System.IConvertible.ToSingle(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToSingle(provider);
 
     /// <inheritdoc/>
-    string IConvertible.ToString(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToString(provider);
+    string global::System.IConvertible.ToString(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToString(provider);
 
     /// <inheritdoc/>
-    object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToType(conversionType, provider);
+    object global::System.IConvertible.ToType(Type conversionType, global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToType(conversionType, provider);
 
     /// <inheritdoc/>
-    ushort IConvertible.ToUInt16(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToUInt16(provider);
+    ushort global::System.IConvertible.ToUInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToUInt16(provider);
 
     /// <inheritdoc/>
-    uint IConvertible.ToUInt32(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToUInt32(provider);
+    uint global::System.IConvertible.ToUInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToUInt32(provider);
 
     /// <inheritdoc/>
-    ulong IConvertible.ToUInt64(IFormatProvider? provider) => ((IConvertible)(String)_valueOrThrow).ToUInt64(provider);
+    ulong global::System.IConvertible.ToUInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(String)_valueOrThrow).ToUInt64(provider);
 
     #endregion
 
@@ -317,22 +317,22 @@ public partial class StringPrimitive : global::System.IEquatable<StringPrimitive
     #region Implicit Operators
 
     /// <summary>Implicit conversion from <see cref = "string"/> (nullable) to <see cref = "StringPrimitive"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator StringPrimitive?(string? value) => value is null ? null : new(value);
 
     /// <summary>Implicit conversion from <see cref = "StringPrimitive"/> (nullable) to <see cref = "string"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator string?(StringPrimitive? value) => value is null ? null : (string?)value._valueOrThrow;
 
     #endregion
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override string ToString() => _valueOrThrow.ToString();
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override int GetHashCode() => _valueOrThrow.GetHashCode(global::System.StringComparison.Ordinal);
 }

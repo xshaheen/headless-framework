@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "LongValue"/></summary>
-public sealed class LongValueValueConverter : ValueConverter<LongValue, ulong>
+public sealed class LongValueValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<LongValue, ulong>
 {
     public LongValueValueConverter() : base(v => v, v => v) { }
 
-    public LongValueValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public LongValueValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }
