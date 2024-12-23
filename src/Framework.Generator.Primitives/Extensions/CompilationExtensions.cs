@@ -131,4 +131,41 @@ internal static class CompilationExtensions
             PrimitiveUnderlyingType.Other or _ => (stringType, null),
         };
     }
+
+    public static string? GetStringSyntaxAttribute(this INamedTypeSymbol primitiveType)
+    {
+        var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
+
+        return underlyingType switch
+        {
+            PrimitiveUnderlyingType.String =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.CompositeFormat)]",
+            PrimitiveUnderlyingType.Guid =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.GuidFormat)]",
+            PrimitiveUnderlyingType.TimeSpan =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.TimeSpanFormat)]",
+            PrimitiveUnderlyingType.TimeOnly =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.TimeOnlyFormat)]",
+            PrimitiveUnderlyingType.DateOnly =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateOnlyFormat)]",
+            PrimitiveUnderlyingType.DateTime =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateTimeFormat)]",
+            PrimitiveUnderlyingType.DateTimeOffset =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.DateTimeFormat)]",
+            PrimitiveUnderlyingType.Byte
+            or PrimitiveUnderlyingType.SByte
+            or PrimitiveUnderlyingType.Int16
+            or PrimitiveUnderlyingType.UInt16
+            or PrimitiveUnderlyingType.Int32
+            or PrimitiveUnderlyingType.UInt32
+            or PrimitiveUnderlyingType.Int64
+            or PrimitiveUnderlyingType.UInt64
+            or PrimitiveUnderlyingType.Decimal
+            or PrimitiveUnderlyingType.Single
+            or PrimitiveUnderlyingType.Double =>
+                "[global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.NumericFormat)]",
+
+            _ => null,
+        };
+    }
 }
