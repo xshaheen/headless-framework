@@ -264,6 +264,131 @@ public class DependencyInjectionExtensionsTests
         resolvedService.Should().Be(newServiceMock);
         resolvedService!.Greet().Should().Be("replace");
     }
+
+    [Fact]
+    public void replace_transient_should_replace_service_when_it_exists()
+    {
+        // given
+        var services = new ServiceCollection();
+        var originalServiceMock = Substitute.For<IMyService>();
+        originalServiceMock.Greet().Returns("original");
+
+        var newServiceMock = Substitute.For<IMyService>();
+        newServiceMock.Greet().Returns("replace");
+
+        services.AddTransient<IMyService>(_ => originalServiceMock);
+
+        // when
+        var result = services.ReplaceTransient<IMyService>(_ => newServiceMock);
+
+        // then
+        result.Should().BeTrue();
+        var provider = services.BuildServiceProvider();
+        var resolvedService = provider.GetService<IMyService>();
+
+        resolvedService.Should().NotBeNull();
+        resolvedService.Should().Be(newServiceMock);
+        resolvedService!.Greet().Should().Be("replace");
+    }
+
+#warning Ask Shaheen about this. Should I be able to ReplaceTransient a Scope service?
+    [Fact]
+    public void replace_transient_should_replace_service_when_it_exists_as_another_lifetime()
+    {
+        // given
+        var services = new ServiceCollection();
+        var originalServiceMock = Substitute.For<IMyService>();
+        originalServiceMock.Greet().Returns("original");
+
+        var newServiceMock = Substitute.For<IMyService>();
+        newServiceMock.Greet().Returns("replace");
+
+        services.AddScoped<IMyService>(_ => originalServiceMock);
+
+        // when
+        var result = services.ReplaceTransient<IMyService>(_ => newServiceMock);
+
+        // then
+        result.Should().BeTrue();
+        var provider = services.BuildServiceProvider();
+        var resolvedService = provider.GetService<IMyService>();
+
+        resolvedService.Should().NotBeNull();
+        resolvedService.Should().Be(newServiceMock);
+        resolvedService!.Greet().Should().Be("replace");
+    }
+
+#warning Ask Shaheen about this. Same question as ReplaceScoped
+    [Fact]
+    public void replace_transient_should_replace_service_when_it_doesnt_exist()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        var newServiceMock = Substitute.For<IMyService>();
+        newServiceMock.Greet().Returns("replace");
+
+        // when
+        var result = services.ReplaceTransient<IMyService>(_ => newServiceMock);
+
+        // then
+        result.Should().BeFalse(); // TODO: - MINA - Ask Shaheen about this.
+        var provider = services.BuildServiceProvider();
+        var resolvedService = provider.GetService<IMyService>();
+
+        resolvedService.Should().NotBeNull();
+        resolvedService.Should().Be(newServiceMock);
+        resolvedService!.Greet().Should().Be("replace");
+    }
+
+    [Fact]
+    public void replace_singleton_should_replace_service_when_it_exists()
+    {
+        // given
+        var services = new ServiceCollection();
+        var originalServiceMock = Substitute.For<IMyService>();
+        originalServiceMock.Greet().Returns("original");
+
+        var newServiceMock = Substitute.For<IMyService>();
+        newServiceMock.Greet().Returns("replace");
+
+        services.AddSingleton<IMyService>(_ => originalServiceMock);
+
+        // when
+        var result = services.ReplaceSingleton<IMyService>(_ => newServiceMock);
+
+        // then
+        result.Should().BeTrue();
+        var provider = services.BuildServiceProvider();
+        var resolvedService = provider.GetService<IMyService>();
+
+        resolvedService.Should().NotBeNull();
+        resolvedService.Should().Be(newServiceMock);
+        resolvedService!.Greet().Should().Be("replace");
+    }
+
+#warning Ask Shaheen about this. Same question as ReplaceScoped
+    [Fact]
+    public void replace_singleton_should_replace_service_when_it_doesnt_exist()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        var newServiceMock = Substitute.For<IMyService>();
+        newServiceMock.Greet().Returns("replace");
+
+        // when
+        var result = services.ReplaceSingleton<IMyService>(_ => newServiceMock);
+
+        // then
+        result.Should().BeFalse(); // TODO: - MINA - Ask Shaheen about this.
+        var provider = services.BuildServiceProvider();
+        var resolvedService = provider.GetService<IMyService>();
+
+        resolvedService.Should().NotBeNull();
+        resolvedService.Should().Be(newServiceMock);
+        resolvedService!.Greet().Should().Be("replace");
+    }
 }
 
 public interface IMyService
