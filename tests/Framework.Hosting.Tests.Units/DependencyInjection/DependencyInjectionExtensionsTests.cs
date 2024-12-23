@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests.DependencyInjection;
 
@@ -170,11 +169,13 @@ public class DependencyInjectionExtensionsTests
             sc =>
             {
                 sc.Add(ifServiceDescriptor);
+
                 return sc;
             },
             sc =>
             {
                 sc.Add(elseServiceDescriptor);
+
                 return sc;
             }
         );
@@ -199,11 +200,13 @@ public class DependencyInjectionExtensionsTests
             sc =>
             {
                 sc.Add(ifServiceDescriptor);
+
                 return sc;
             },
             sc =>
             {
                 sc.Add(elseServiceDescriptor);
+
                 return sc;
             }
         );
@@ -212,4 +215,58 @@ public class DependencyInjectionExtensionsTests
         services.Should().Contain(elseServiceDescriptor);
         services.Should().NotContain(ifServiceDescriptor);
     }
+
+    [Fact]
+    public void replace_scoped_should_replace_service_when_it_exists()
+    {
+        // given
+        var services = new ServiceCollection();
+        var originalServiceMock = Substitute.For<IMyService>();
+        originalServiceMock.Greet().Returns("original");
+
+        var newServiceMock = Substitute.For<IMyService>();
+        newServiceMock.Greet().Returns("replace");
+
+        services.AddScoped<IMyService>(_ => originalServiceMock);
+
+        // when
+        var result = services.ReplaceScoped<IMyService>(_ => newServiceMock);
+
+        // then
+        result.Should().BeTrue();
+        var provider = services.BuildServiceProvider();
+        var resolvedService = provider.GetService<IMyService>();
+
+        resolvedService.Should().NotBeNull();
+        resolvedService.Should().Be(newServiceMock);
+        resolvedService!.Greet().Should().Be("replace");
+    }
+
+#warning Ask Shaheen about this. If the service doesn't exist, the ReplaceScoped method will return false but it will add the new service which might confuse the user and cause unintentional bug
+    [Fact]
+    public void replace_scoped_should_replace_service_when_it_doesnt_exist()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        var newServiceMock = Substitute.For<IMyService>();
+        newServiceMock.Greet().Returns("replace");
+
+        // when
+        var result = services.ReplaceScoped<IMyService>(_ => newServiceMock);
+
+        // then
+        result.Should().BeFalse(); // TODO: - MINA - Ask Shaheen about this.
+        var provider = services.BuildServiceProvider();
+        var resolvedService = provider.GetService<IMyService>();
+
+        resolvedService.Should().NotBeNull();
+        resolvedService.Should().Be(newServiceMock);
+        resolvedService!.Greet().Should().Be("replace");
+    }
+}
+
+public interface IMyService
+{
+    string Greet();
 }
