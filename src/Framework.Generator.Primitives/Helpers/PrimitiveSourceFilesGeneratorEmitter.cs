@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text;
-using System.Xml.Serialization;
 using Framework.Generator.Primitives.Extensions;
 using Framework.Generator.Primitives.Models;
 using Framework.Generator.Primitives.Shared;
@@ -76,22 +75,20 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         builder.AppendSourceHeader("Primitives Generator");
         builder.AppendUsings(usings);
         builder.AppendNamespace(data.Namespace);
+        builder.Append("[UnderlyingPrimitiveType(typeof(").Append(data.PrimitiveTypeFriendlyName).AppendLine("))]");
+        builder.AppendDebuggerDisplay("{_value}");
 
         if (options.GenerateJsonConverters)
         {
-            builder.AppendLine($"[JsonConverter(typeof({data.ClassName + "JsonConverter"}))]");
+            builder.AppendJsonConverterAttribute(data.ClassName + "JsonConverter");
         }
 
         if (options.GenerateTypeConverters)
         {
-            builder.AppendLine(
-                $"[TypeConverter(typeof({TypeConverterSourceFilesGeneratorEmitter.CreateClassName(data.ClassName)}))]"
+            builder.AppendTypeConverterAttribute(
+                TypeConverterSourceFilesGeneratorEmitter.CreateClassName(data.ClassName)
             );
         }
-
-        builder.Append("[UnderlyingPrimitiveType(typeof(").Append(data.PrimitiveTypeFriendlyName).AppendLine("))]");
-
-        builder.AppendLine("[DebuggerDisplay(\"{\" + nameof(_value) + \"}\")]");
 
         if (!data.TypeSymbol.IsValueType)
         {
@@ -283,7 +280,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
             builder.AppendLine(
                 data.IsPrimitiveUnderlyingTypString()
-                    ? $"public override int GetHashCode() => {data.FieldName}.GetHashCode(StringComparison.Ordinal);"
+                    ? $"public override int GetHashCode() => {data.FieldName}.GetHashCode({StaticValues.OrdinalStringComparison});"
                     : $"public override int GetHashCode() => {data.FieldName}.GetHashCode();"
             );
         }
@@ -298,14 +295,14 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         {
             var sb = new StringBuilder(8096);
 
-            sb.Append("IEquatable<").Append(className).Append('>');
-
-            appendInterface(sb, nameof(IComparable));
-            appendInterface(sb, "IComparable<").Append(className).Append('>');
+            sb.Append(TypeNames.IEquatable).Append('<').Append(className).Append('>');
+            appendInterface(sb, TypeNames.IComparable);
+            appendInterface(sb, TypeNames.IComparable).Append('<').Append(className).Append('>');
 
             if (data.GenerateAdditionOperators)
             {
-                appendInterface(sb, "IAdditionOperators<")
+                appendInterface(sb, TypeNames.IAdditionOperators)
+                    .Append('<')
                     .Append(className)
                     .Append(", ")
                     .Append(className)
@@ -316,7 +313,8 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
             if (data.GenerateSubtractionOperators)
             {
-                appendInterface(sb, "ISubtractionOperators<")
+                appendInterface(sb, TypeNames.ISubtractionOperators)
+                    .Append('<')
                     .Append(className)
                     .Append(", ")
                     .Append(className)
@@ -327,7 +325,8 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
             if (data.GenerateMultiplyOperators)
             {
-                appendInterface(sb, "IMultiplyOperators<")
+                appendInterface(sb, TypeNames.IMultiplyOperators)
+                    .Append('<')
                     .Append(className)
                     .Append(", ")
                     .Append(className)
@@ -338,7 +337,8 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
             if (data.GenerateDivisionOperators)
             {
-                appendInterface(sb, "IDivisionOperators<")
+                appendInterface(sb, TypeNames.IDivisionOperators)
+                    .Append('<')
                     .Append(className)
                     .Append(", ")
                     .Append(className)
@@ -349,7 +349,8 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
             if (data.GenerateModulusOperator)
             {
-                appendInterface(sb, "IModulusOperators<")
+                appendInterface(sb, TypeNames.IModulusOperators)
+                    .Append('<')
                     .Append(className)
                     .Append(", ")
                     .Append(className)
@@ -360,7 +361,8 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
             if (data.GenerateComparison)
             {
-                appendInterface(sb, "IComparisonOperators<")
+                appendInterface(sb, TypeNames.IComparisonOperators)
+                    .Append('<')
                     .Append(className)
                     .Append(", ")
                     .Append(className)
@@ -370,28 +372,28 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
             if (data.GenerateSpanFormattable)
             {
-                appendInterface(sb, "ISpanFormattable");
+                appendInterface(sb, TypeNames.ISpanFormattable);
             }
 
             if (data.GenerateParsable)
             {
-                appendInterface(sb, "ISpanParsable<").Append(className).Append('>');
+                appendInterface(sb, TypeNames.ISpanParsable).Append('<').Append(className).Append('>');
             }
 
             if (data.GenerateConvertibles)
             {
-                appendInterface(sb, nameof(IConvertible));
+                appendInterface(sb, TypeNames.IConvertible);
             }
 
             if (data.GenerateXmlSerializableMethods)
             {
-                appendInterface(sb, nameof(IXmlSerializable));
+                appendInterface(sb, TypeNames.IXmlSerializable);
             }
 
             if (data.GenerateUtf8SpanFormattable)
             {
                 sb.AppendLine().Append("#if NET8_0_OR_GREATER");
-                appendInterface(sb, "IUtf8SpanFormattable");
+                appendInterface(sb, TypeNames.IUtf8SpanFormattable);
                 sb.AppendLine().Append("#endif");
             }
 

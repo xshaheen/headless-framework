@@ -27,8 +27,8 @@ public sealed class TimeOnlyPrimitiveDapperTypeHandler : global::Dapper.SqlMappe
     {
         return value switch
         {
-            TimeOnly timeOnly => new TimeOnlyPrimitive(timeOnly)
-            string stringValue when !string.IsNullOrEmpty(stringValue) && TimeOnly.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new TimeOnlyPrimitive(result)
+            global::System.TimeOnly timeOnly => new TimeOnlyPrimitive(timeOnly)
+            string stringValue when !string.IsNullOrEmpty(stringValue) && global::System.TimeOnly.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new TimeOnlyPrimitive(result)
             _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to TimeOnlyPrimitive"),
         };
     }

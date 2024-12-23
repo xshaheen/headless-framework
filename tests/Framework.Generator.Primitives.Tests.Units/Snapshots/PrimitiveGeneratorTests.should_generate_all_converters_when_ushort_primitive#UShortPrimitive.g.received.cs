@@ -296,20 +296,20 @@ public readonly partial struct UShortPrimitive : global::System.IEquatable<UShor
     #region Implicit Operators
 
     /// <summary>Implicit conversion from <see cref = "ushort"/> to <see cref = "UShortPrimitive"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator UShortPrimitive(ushort value) => new(value);
 
     /// <summary>Implicit conversion from <see cref = "ushort"/> (nullable) to <see cref = "UShortPrimitive"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator UShortPrimitive?(ushort? value) => value is null ? null : new(value.Value);
 
     /// <summary>Implicit conversion from <see cref = "UShortPrimitive"/> to <see cref = "ushort"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator ushort(UShortPrimitive value) => (ushort)value._valueOrThrow;
 
     /// <summary>Implicit conversion from <see cref = "UShortPrimitive"/> (nullable) to <see cref = "ushort"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator ushort?(UShortPrimitive? value) => value is null ? null : (ushort?)value.Value._valueOrThrow;
 
@@ -318,28 +318,28 @@ public readonly partial struct UShortPrimitive : global::System.IEquatable<UShor
     #region Comparison Operators
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <(UShortPrimitive left, UShortPrimitive right) => left._valueOrThrow < right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <=(UShortPrimitive left, UShortPrimitive right) => left._valueOrThrow <= right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >(UShortPrimitive left, UShortPrimitive right) => left._valueOrThrow > right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >=(UShortPrimitive left, UShortPrimitive right) => left._valueOrThrow >= right._valueOrThrow;
 
     #endregion
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override string ToString() => _valueOrThrow.ToString();
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override int GetHashCode() => _valueOrThrow.GetHashCode();
 }

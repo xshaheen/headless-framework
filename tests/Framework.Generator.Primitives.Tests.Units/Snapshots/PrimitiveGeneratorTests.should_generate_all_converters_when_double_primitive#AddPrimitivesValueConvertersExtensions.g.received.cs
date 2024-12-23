@@ -21,7 +21,7 @@ public static class AddPrimitivesValueConvertersExtensions
     /// <param name="configurationBuilder">The ModelConfigurationBuilder instance to which converters are added.</param>
     public static global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder AddPrimitivePropertyConversions(this global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)
     {
-        configurationBuilder.Properties<UShortPrimitive>().HaveConversion<UShortPrimitiveValueConverter>();
+        configurationBuilder.Properties<DoublePrimitive>().HaveConversion<DoublePrimitiveValueConverter>();
         return configurationBuilder;
     }
 }

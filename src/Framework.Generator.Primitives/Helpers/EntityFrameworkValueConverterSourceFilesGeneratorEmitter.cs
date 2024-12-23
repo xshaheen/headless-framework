@@ -59,14 +59,14 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
             isRecord: false,
             "public sealed",
             converterName,
-            $"ValueConverter<{data.ClassName}, {data.PrimitiveTypeFriendlyName}>"
+            $"{TypeNames.ValueConverter}<{data.ClassName}, {data.PrimitiveTypeFriendlyName}>"
         );
 
         builder.AppendLine($"public {converterName}() : base(v => v, v => v)" + " { }");
         builder.NewLine();
 
         builder.AppendLine(
-            $"public {converterName}(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) {{ }}"
+            $"public {converterName}({TypeNames.ConverterMappingHints}? mappingHints = null) : base(v => v, v => v, mappingHints) {{ }}"
         );
 
         builder.CloseBracket();
@@ -118,7 +118,7 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
         builder
             .AppendLine(
-                $"public static ModelConfigurationBuilder {_HelperMethodName}(this ModelConfigurationBuilder configurationBuilder)"
+                $"public static {TypeNames.ModelConfigurationBuilder} {_HelperMethodName}(this {TypeNames.ModelConfigurationBuilder} configurationBuilder)"
             )
             .OpenBracket();
 

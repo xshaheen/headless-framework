@@ -209,8 +209,8 @@ public readonly partial struct BytePrimitive : global::System.IEquatable<BytePri
 
 #if NET8_0_OR_GREATER
     /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat"/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, global::System.IFormatProvider? provider)
     {
         return ((IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
     }
@@ -221,56 +221,56 @@ public readonly partial struct BytePrimitive : global::System.IEquatable<BytePri
     #region IConvertible Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     TypeCode IConvertible.GetTypeCode() => ((IConvertible)(Byte)_valueOrThrow).GetTypeCode();
 
     /// <inheritdoc/>
-    bool IConvertible.ToBoolean(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToBoolean(provider);
+    bool IConvertible.ToBoolean(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToBoolean(provider);
 
     /// <inheritdoc/>
-    byte IConvertible.ToByte(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToByte(provider);
+    byte IConvertible.ToByte(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToByte(provider);
 
     /// <inheritdoc/>
-    char IConvertible.ToChar(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToChar(provider);
+    char IConvertible.ToChar(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToChar(provider);
 
     /// <inheritdoc/>
-    DateTime IConvertible.ToDateTime(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToDateTime(provider);
+    DateTime IConvertible.ToDateTime(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToDateTime(provider);
 
     /// <inheritdoc/>
-    decimal IConvertible.ToDecimal(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToDecimal(provider);
+    decimal IConvertible.ToDecimal(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToDecimal(provider);
 
     /// <inheritdoc/>
-    double IConvertible.ToDouble(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToDouble(provider);
+    double IConvertible.ToDouble(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToDouble(provider);
 
     /// <inheritdoc/>
-    short IConvertible.ToInt16(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToInt16(provider);
+    short IConvertible.ToInt16(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToInt16(provider);
 
     /// <inheritdoc/>
-    int IConvertible.ToInt32(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToInt32(provider);
+    int IConvertible.ToInt32(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToInt32(provider);
 
     /// <inheritdoc/>
-    long IConvertible.ToInt64(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToInt64(provider);
+    long IConvertible.ToInt64(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToInt64(provider);
 
     /// <inheritdoc/>
-    sbyte IConvertible.ToSByte(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToSByte(provider);
+    sbyte IConvertible.ToSByte(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToSByte(provider);
 
     /// <inheritdoc/>
-    float IConvertible.ToSingle(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToSingle(provider);
+    float IConvertible.ToSingle(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToSingle(provider);
 
     /// <inheritdoc/>
-    string IConvertible.ToString(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToString(provider);
+    string IConvertible.ToString(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToString(provider);
 
     /// <inheritdoc/>
-    object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToType(conversionType, provider);
+    object IConvertible.ToType(Type conversionType, global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToType(conversionType, provider);
 
     /// <inheritdoc/>
-    ushort IConvertible.ToUInt16(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToUInt16(provider);
+    ushort IConvertible.ToUInt16(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToUInt16(provider);
 
     /// <inheritdoc/>
-    uint IConvertible.ToUInt32(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToUInt32(provider);
+    uint IConvertible.ToUInt32(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToUInt32(provider);
 
     /// <inheritdoc/>
-    ulong IConvertible.ToUInt64(IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToUInt64(provider);
+    ulong IConvertible.ToUInt64(global::System.IFormatProvider? provider) => ((IConvertible)(Byte)_valueOrThrow).ToUInt64(provider);
 
     #endregion
 
@@ -296,7 +296,7 @@ public readonly partial struct BytePrimitive : global::System.IEquatable<BytePri
     #region Implicit Operators
 
     /// <summary>Implicit conversion from <see cref = "byte"/> to <see cref = "BytePrimitive"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator BytePrimitive(byte value) => new(value);
 
     /// <summary>Implicit conversion from <see cref = "byte"/> (nullable) to <see cref = "BytePrimitive"/> (nullable)</summary>

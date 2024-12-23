@@ -154,10 +154,12 @@ public static class RoslynExtensions
         // Keep looping while we're in a supported nested type
         while (parentSyntax != null && isAllowedKind(parentSyntax.Kind()))
         {
+            FormattableString nameFormat = $"{parentSyntax.Identifier} + {parentSyntax.TypeParameterList}";
+
             // Record the parent type keyword (class/struct etc.), name, and constraints
             parentClassInfo = new ParentClass(
                 keyword: parentSyntax.Keyword.ValueText,
-                name: parentSyntax.Identifier.ToString() + parentSyntax.TypeParameterList?.ToString(),
+                name: nameFormat.ToString(CultureInfo.InvariantCulture),
                 constraints: parentSyntax.ConstraintClauses.ToString(),
                 child: parentClassInfo
             ); // set the child link (null initially)

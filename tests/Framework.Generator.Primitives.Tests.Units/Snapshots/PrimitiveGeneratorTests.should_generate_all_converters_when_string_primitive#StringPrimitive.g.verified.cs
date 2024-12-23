@@ -27,12 +27,12 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(StringPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(string))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public partial class StringPrimitive : IEquatable<StringPrimitive>
-        , IComparable
-        , IComparable<StringPrimitive>
-        , ISpanParsable<StringPrimitive>
-        , IConvertible
-        , IXmlSerializable
+public partial class StringPrimitive : global::System.IEquatable<StringPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<StringPrimitive>
+        , global::System.ISpanParsable<StringPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 {
     /// <inheritdoc/>
     public Type GetUnderlyingPrimitiveType() => typeof(string);
@@ -119,13 +119,13 @@ public partial class StringPrimitive : IEquatable<StringPrimitive>
     }
 
     /// <summary>Gets the character at the specified index.</summary>
-    public char this[Index index]
+    public char this[global::System.Index index]
     {
         get => _value[index];
     }
 
     /// <summary>Gets the substring by specified range.</summary>
-    public string this[System.Range range]
+    public string this[global::System.Range range]
     {
         get => _value[range];
     }
@@ -334,5 +334,5 @@ public partial class StringPrimitive : IEquatable<StringPrimitive>
 
     /// <inheritdoc/>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public override int GetHashCode() => _valueOrThrow.GetHashCode(StringComparison.Ordinal);
+    public override int GetHashCode() => _valueOrThrow.GetHashCode(global::System.StringComparison.Ordinal);
 }

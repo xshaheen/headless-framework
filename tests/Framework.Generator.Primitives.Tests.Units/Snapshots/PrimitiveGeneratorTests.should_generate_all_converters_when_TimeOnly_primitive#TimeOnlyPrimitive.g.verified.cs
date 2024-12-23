@@ -27,16 +27,16 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(TimeOnlyPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(TimeOnly))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct TimeOnlyPrimitive : IEquatable<TimeOnlyPrimitive>
-        , IComparable
-        , IComparable<TimeOnlyPrimitive>
-        , IComparisonOperators<TimeOnlyPrimitive, TimeOnlyPrimitive, bool>
-        , ISpanFormattable
-        , ISpanParsable<TimeOnlyPrimitive>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct TimeOnlyPrimitive : global::System.IEquatable<TimeOnlyPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<TimeOnlyPrimitive>
+        , global::System.Numerics.IComparisonOperators<TimeOnlyPrimitive, TimeOnlyPrimitive, bool>
+        , global::System.ISpanFormattable
+        , global::System.ISpanParsable<TimeOnlyPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>

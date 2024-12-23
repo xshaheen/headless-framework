@@ -15,13 +15,13 @@ using System.Runtime.CompilerServices;
 using Framework.Generator.Primitives;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-using Framework.Primitives.Outer.Nested.Converters;
+using Framework.Primitives.Converters;
 using System.ComponentModel;
 using System.Xml;
 using System.Xml.Schema;
 using System.Xml.Serialization;
 
-namespace Framework.Primitives.Outer.Nested;
+namespace Framework.Primitives;
 
 [JsonConverter(typeof(IntPrimitiveJsonConverter))]
 [TypeConverter(typeof(IntPrimitiveTypeConverter))]

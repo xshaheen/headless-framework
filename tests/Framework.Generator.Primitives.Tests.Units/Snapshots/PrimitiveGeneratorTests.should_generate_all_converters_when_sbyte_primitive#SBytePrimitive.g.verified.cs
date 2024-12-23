@@ -27,15 +27,15 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(SBytePrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(sbyte))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct SBytePrimitive : IEquatable<SBytePrimitive>
-        , IComparable
-        , IComparable<SBytePrimitive>
-        , IComparisonOperators<SBytePrimitive, SBytePrimitive, bool>
-        , ISpanParsable<SBytePrimitive>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct SBytePrimitive : global::System.IEquatable<SBytePrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<SBytePrimitive>
+        , global::System.Numerics.IComparisonOperators<SBytePrimitive, SBytePrimitive, bool>
+        , global::System.ISpanParsable<SBytePrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>

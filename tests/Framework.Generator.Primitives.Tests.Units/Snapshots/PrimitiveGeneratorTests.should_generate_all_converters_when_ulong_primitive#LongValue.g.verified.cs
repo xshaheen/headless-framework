@@ -27,20 +27,20 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(LongValueTypeConverter))]
 [UnderlyingPrimitiveType(typeof(ulong))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct LongValue : IEquatable<LongValue>
-        , IComparable
-        , IComparable<LongValue>
-        , IAdditionOperators<LongValue, LongValue, LongValue>
-        , ISubtractionOperators<LongValue, LongValue, LongValue>
-        , IMultiplyOperators<LongValue, LongValue, LongValue>
-        , IDivisionOperators<LongValue, LongValue, LongValue>
-        , IModulusOperators<LongValue, LongValue, LongValue>
-        , IComparisonOperators<LongValue, LongValue, bool>
-        , ISpanParsable<LongValue>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct LongValue : global::System.IEquatable<LongValue>
+        , global::System.IComparable
+        , global::System.IComparable<LongValue>
+        , global::System.Numerics.IAdditionOperators<LongValue, LongValue, LongValue>
+        , global::System.Numerics.ISubtractionOperators<LongValue, LongValue, LongValue>
+        , global::System.Numerics.IMultiplyOperators<LongValue, LongValue, LongValue>
+        , global::System.Numerics.IDivisionOperators<LongValue, LongValue, LongValue>
+        , global::System.Numerics.IModulusOperators<LongValue, LongValue, LongValue>
+        , global::System.Numerics.IComparisonOperators<LongValue, LongValue, bool>
+        , global::System.ISpanParsable<LongValue>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>
