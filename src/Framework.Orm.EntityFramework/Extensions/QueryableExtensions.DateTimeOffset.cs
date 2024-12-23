@@ -2,8 +2,8 @@
 
 using System.Linq.Expressions;
 using System.Reflection;
-using Framework.BuildingBlocks.Helpers.Linq;
 using Framework.Checks;
+using Framework.Extensions;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;

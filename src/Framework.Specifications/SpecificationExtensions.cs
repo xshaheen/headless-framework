@@ -45,6 +45,19 @@ public static class SpecificationExtensions
     }
 
     /// <summary>
+    /// Combines the current specification with another specification using a logical OR
+    /// operation, where the second specification must NOT be satisfied.
+    /// </summary>
+    /// <param name="specification">The current specification.</param>
+    /// <param name="other">The specification instance that must NOT be satisfied in combination with the current specification.</param>
+    /// <typeparam name="T">The type of the object to which the specification is applied.</typeparam>
+    /// <returns>A new specification that represents the logical OR-NOT combination.</returns>
+    public static ISpecification<T> OrNot<T>(this ISpecification<T> specification, ISpecification<T> other)
+    {
+        return new OrNotSpecification<T>(specification, other);
+    }
+
+    /// <summary>
     /// Reverses the current specification instance and returns a specification which represents
     /// the semantics opposite to the current specification.
     /// </summary>

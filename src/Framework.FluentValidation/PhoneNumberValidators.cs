@@ -4,13 +4,14 @@ using FluentValidation;
 using FluentValidation.Results;
 using Framework.FluentValidation.Resources;
 using PhoneNumbers;
+using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.PhoneAttribute;
 
 namespace Framework.FluentValidation;
 
 [PublicAPI]
 public static class PhoneNumberValidators
 {
-    private static readonly System.ComponentModel.DataAnnotations.PhoneAttribute _PhoneAttribute = new();
+    private static readonly DataAnnotationsPhoneAttribute _PhoneAttribute = new();
 
     public static IRuleBuilderOptions<T, int?> PhoneCountryCode<T>(this IRuleBuilder<T, int?> builder)
     {
@@ -25,7 +26,7 @@ public static class PhoneNumberValidators
     public static IRuleBuilderOptions<T, string?> BasicPhoneNumber<T>(this IRuleBuilder<T, string?> builder)
     {
         return builder
-            .Must(value => _PhoneAttribute.IsValid(value))
+            .Must(_PhoneAttribute.IsValid)
             .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber());
     }
 

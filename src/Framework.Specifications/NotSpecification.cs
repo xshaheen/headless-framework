@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Framework.Extensions;
 
 namespace Framework.Specifications;
 
@@ -18,7 +19,6 @@ public sealed class NotSpecification<T>(ISpecification<T> specification) : Speci
     /// <returns>The LINQ expression.</returns>
     public override Expression<Func<T, bool>> ToExpression()
     {
-        var expression = specification.ToExpression();
-        return Expression.Lambda<Func<T, bool>>(Expression.Not(expression.Body), expression.Parameters);
+        return specification.ToExpression().Not();
     }
 }

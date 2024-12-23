@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
+[PublicAPI]
 public static class MutableEntityTypeExtensions
 {
     public static void ConfigureFrameworkValueGenerated(this IMutableEntityType entityType)
