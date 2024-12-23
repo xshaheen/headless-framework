@@ -123,12 +123,16 @@ dotnet_diagnostic.ca1863.severity = suggestion
 dotnet_diagnostic.ca5394.severity = suggestion
 # CA1861: Avoid constant arrays as arguments
 dotnet_diagnostic.ca1861.severity = suggestion
-# CA1716: Identifiers should not match keywords
+# CA1716:Identifiers should not match keywords
 dotnet_diagnostic.ca1716.severity = silent
 # CA1034: Nested types should not be visible
 dotnet_diagnostic.ca1034.severity = suggestion
 # CA1000: Do not declare static members on generic types
 dotnet_diagnostic.ca1000.severity = suggestion
+# CA1031: Do not catch general exception types
+dotnet_diagnostic.ca1031.severity = silent
+# CA1032: Implement standard exception constructors
+dotnet_diagnostic.ca1032.severity = silent
 # CA2016: Forward the CancellationToken parameter to methods that take one
 dotnet_diagnostic.ca2016.severity = suggestion
 # CA1859: Use concrete types when possible for improved performance
@@ -225,8 +229,10 @@ dotnet_diagnostic.faa0002.severity = warning
 
 ############ Analyzers
 
-# AsyncFixer01: Unnecessary async/await usage
-dotnet_diagnostic.asyncfixer01.severity = suggestion
+# RCS1170: Use read-only auto-implemented property
+dotnet_diagnostic.rcs1170.severity = silent
+# RCS1021: Convert lambda expression body to expression-body
+dotnet_diagnostic.rcs1021.severity = suggestion
 # AsyncFixer02: Long-running or blocking operations inside an async method
 dotnet_diagnostic.asyncfixer02.severity = error
 # VSTHRD103: Call async methods when in an async method
@@ -261,6 +267,8 @@ dotnet_diagnostic.ma0022.severity = error
 dotnet_diagnostic.asyncfixer05.severity = error
 # VSTHRD114: Avoid returning a null Task
 dotnet_diagnostic.vsthrd114.severity = error
+# AsyncFixer01: Unnecessary async/await usage
+dotnet_diagnostic.asyncfixer01.severity = silent
 # MA0040: Specify a cancellation token
 dotnet_diagnostic.ma0032.severity = warning
 # MA0079: Use a cancellation token using .WithCancellation()

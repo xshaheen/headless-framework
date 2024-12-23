@@ -4,9 +4,14 @@ using Framework.Checks;
 
 namespace Framework.Core;
 
+/// <summary>Provides a set of static methods for creating <see cref="IDisposable" /> objects.</summary>
 public static class Disposable
 {
-    public static readonly IDisposable Empty = new EmptyDisposable();
+    /// <summary>Gets the disposable that does nothing when disposed.</summary>
+    public static IDisposable Empty { get; } = new EmptyDisposable();
+
+    /// <summary>Gets the disposable that does nothing when disposed.</summary>
+    public static IAsyncDisposable EmptyAsync { get; } = new EmptyAsyncDisposable();
 
     public static IDisposable Create(Action action) => new DisposeAction(action);
 
@@ -40,6 +45,11 @@ public static class Disposable
     private sealed class EmptyDisposable : IDisposable
     {
         public void Dispose() { }
+    }
+
+    private sealed class EmptyAsyncDisposable : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class DisposeAction(Action action) : IDisposable

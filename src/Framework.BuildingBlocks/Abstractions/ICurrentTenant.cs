@@ -24,7 +24,7 @@ public sealed class NullCurrentTenant : ICurrentTenant
 
     public string? Name => null;
 
-    public IDisposable Change(string? id, string? name = null) => NullDisposable.Instance;
+    public IDisposable Change(string? id, string? name = null) => Disposable.Empty;
 }
 
 public sealed class CurrentTenant(ICurrentTenantAccessor currentTenantAccessor) : ICurrentTenant
