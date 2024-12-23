@@ -3,9 +3,7 @@
 using System.Collections;
 using System.Reflection;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
-namespace Framework.Primitives;
+namespace Framework.Collections;
 
 /// <summary>A shortcut for <see cref="ITypeList{TBaseType}"/> to use object as base type.</summary>
 public interface ITypeList : ITypeList<object>;

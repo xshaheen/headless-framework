@@ -2,7 +2,7 @@
 
 using Framework.Checks;
 
-namespace Framework.BuildingBlocks.Helpers.System;
+namespace Framework.System;
 
 public static class Disposable
 {
@@ -71,7 +71,7 @@ file sealed class AsyncDisposableAction(Func<Task> exitTask) : IAsyncDisposable
 
         if (exitAction is not null)
         {
-            await exitAction().AnyContext();
+            await exitAction();
         }
     }
 }
@@ -93,7 +93,7 @@ file sealed class AsyncDisposableAction<TState>(Func<TState, Task> exitTask, TSt
 
         if (exitAction is not null)
         {
-            await exitAction(parameter).AnyContext();
+            await exitAction(parameter);
         }
     }
 }

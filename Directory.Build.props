@@ -1,6 +1,6 @@
 <Project>
 
-  <Import Project="Sdk.props" Sdk="Framework.Defaults" Version="0.0.14" />
+  <Import Project="Sdk.props" Sdk="Framework.Defaults" Version="0.0.15" />
 
   <PropertyGroup>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>

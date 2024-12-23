@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Collections;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.GrantProviders;
-using Framework.Primitives;
 
 namespace Framework.Permissions.Models;
 

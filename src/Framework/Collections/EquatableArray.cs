@@ -2,9 +2,7 @@
 
 using System.Collections;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
-namespace Framework.Primitives;
+namespace Framework.Collections;
 
 /// <summary>An immutable, equatable array. This is equivalent to <see cref="Array"/> but with value equality support.</summary>
 /// <typeparam name="T">The type of values in the array.</typeparam>

@@ -11,11 +11,14 @@ namespace Framework.BuildingBlocks.Helpers.Ids;
 [PublicAPI]
 public static class SnowFlakId
 {
-    static SnowFlakId() => Configure(1080);
+    static SnowFlakId()
+    {
+        Configure(3);
+    }
 
     private static IdGenerator? _generator;
 
-    public static void Configure(int generatorId)
+    public static void Configure(int generatorId = 0)
     {
         Argument.IsPositive(generatorId);
 
@@ -31,7 +34,7 @@ public static class SnowFlakId
 
         // Create an IdGenerator with it's generator-id set to 0, our custom epoch
         // and id-structure
-        _generator = new IdGenerator(0, options);
+        _generator = new IdGenerator(generatorId, options);
     }
 
     public static long NewId() =>

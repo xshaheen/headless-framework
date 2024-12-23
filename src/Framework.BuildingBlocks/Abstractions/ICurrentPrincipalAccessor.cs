@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.BuildingBlocks.Helpers.System;
+using Framework.System;
 
 namespace Framework.BuildingBlocks.Abstractions;
 

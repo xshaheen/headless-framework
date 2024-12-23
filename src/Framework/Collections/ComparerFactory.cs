@@ -2,7 +2,7 @@
 
 using Framework.Checks;
 
-namespace Framework.BuildingBlocks.Helpers.Collections;
+namespace Framework.Collections;
 
 [PublicAPI]
 public static class ComparerFactory

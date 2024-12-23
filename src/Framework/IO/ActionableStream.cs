@@ -2,7 +2,7 @@
 
 using Framework.Checks;
 
-namespace Framework.BuildingBlocks.Helpers.IO;
+namespace Framework.IO;
 
 public sealed class ActionableStream(Stream stream, Action disposeAction) : Stream
 {

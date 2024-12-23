@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Helpers.System;
+namespace Framework.System;
 
 [PublicAPI]
 public sealed class NullDisposable : IDisposable

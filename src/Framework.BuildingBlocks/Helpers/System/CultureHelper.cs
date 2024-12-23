@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
+using Framework.System;
 
 namespace Framework.BuildingBlocks.Helpers.System;
 
