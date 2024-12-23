@@ -64,7 +64,6 @@
     <PackageVersion Include="Jitbit.FastCache" Version="1.1.0" />
     <PackageVersion Include="libphonenumber-csharp" Version="8.13.52" />
     <PackageVersion Include="Linq2Couchbase" Version="2.1.0" />
-    <PackageVersion Include="LinqKit.Microsoft.EntityFrameworkCore" Version="9.0.7" />
     <PackageVersion Include="MailKit" Version="4.9.0" />
     <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.5.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
