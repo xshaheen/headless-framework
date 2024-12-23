@@ -267,7 +267,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         builder.NewLine();
         builder.AppendInheritDoc();
-        builder.AppendMethodImplAggressiveInliningAttribute();
+        builder.AppendMethodAggressiveInliningAttribute();
 
         builder.AppendLine(
             hasExplicitToStringMethod
@@ -279,18 +279,13 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         {
             builder.NewLine();
             builder.AppendInheritDoc();
-            builder.AppendMethodImplAggressiveInliningAttribute();
+            builder.AppendMethodAggressiveInliningAttribute();
 
-            if (data.IsPrimitiveUnderlyingTypString())
-            {
-                builder.AppendLine(
-                    $"public override int GetHashCode() => {data.FieldName}.GetHashCode(StringComparison.Ordinal);"
-                );
-            }
-            else
-            {
-                builder.AppendLine($"public override int GetHashCode() => {data.FieldName}.GetHashCode();");
-            }
+            builder.AppendLine(
+                data.IsPrimitiveUnderlyingTypString()
+                    ? $"public override int GetHashCode() => {data.FieldName}.GetHashCode(StringComparison.Ordinal);"
+                    : $"public override int GetHashCode() => {data.FieldName}.GetHashCode();"
+            );
         }
 
         builder.CloseBracket();

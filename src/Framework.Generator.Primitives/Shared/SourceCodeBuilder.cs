@@ -301,7 +301,7 @@ public sealed class SourceCodeBuilder
         return AppendLine("[DebuggerBrowsable(DebuggerBrowsableState.Never)]");
     }
 
-    public SourceCodeBuilder AppendMethodImplAggressiveInliningAttribute()
+    public SourceCodeBuilder AppendMethodAggressiveInliningAttribute()
     {
         return AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
     }
