@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "BoolPrimitive"/></summary>
-public sealed class BoolPrimitiveValueConverter : ValueConverter<BoolPrimitive, bool>
+public sealed class BoolPrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<BoolPrimitive, bool>
 {
     public BoolPrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public BoolPrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public BoolPrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

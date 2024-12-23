@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "DateTimePrimitive"/></summary>
-public sealed class DateTimePrimitiveValueConverter : ValueConverter<DateTimePrimitive, DateTime>
+public sealed class DateTimePrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTimePrimitive, DateTime>
 {
     public DateTimePrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public DateTimePrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public DateTimePrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

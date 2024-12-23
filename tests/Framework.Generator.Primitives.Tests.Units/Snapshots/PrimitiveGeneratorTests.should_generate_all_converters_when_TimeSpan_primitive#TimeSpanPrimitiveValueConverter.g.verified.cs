@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "TimeSpanPrimitive"/></summary>
-public sealed class TimeSpanPrimitiveValueConverter : ValueConverter<TimeSpanPrimitive, TimeSpan>
+public sealed class TimeSpanPrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<TimeSpanPrimitive, TimeSpan>
 {
     public TimeSpanPrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public TimeSpanPrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public TimeSpanPrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

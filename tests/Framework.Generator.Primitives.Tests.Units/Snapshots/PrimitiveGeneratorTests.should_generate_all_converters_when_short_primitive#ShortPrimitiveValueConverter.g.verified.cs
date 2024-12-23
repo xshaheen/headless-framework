@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "ShortPrimitive"/></summary>
-public sealed class ShortPrimitiveValueConverter : ValueConverter<ShortPrimitive, short>
+public sealed class ShortPrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<ShortPrimitive, short>
 {
     public ShortPrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public ShortPrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public ShortPrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "FloatPrimitive"/></summary>
-public sealed class FloatPrimitiveValueConverter : ValueConverter<FloatPrimitive, float>
+public sealed class FloatPrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<FloatPrimitive, float>
 {
     public FloatPrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public FloatPrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public FloatPrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

@@ -17,9 +17,9 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Primitives.Converters;
 
 /// <summary>ValueConverter for <see cref = "SBytePrimitive"/></summary>
-public sealed class SBytePrimitiveValueConverter : ValueConverter<SBytePrimitive, sbyte>
+public sealed class SBytePrimitiveValueConverter : global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<SBytePrimitive, sbyte>
 {
     public SBytePrimitiveValueConverter() : base(v => v, v => v) { }
 
-    public SBytePrimitiveValueConverter(ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
+    public SBytePrimitiveValueConverter(global::Microsoft.EntityFrameworkCore.Storage.ValueConversion.ConverterMappingHints? mappingHints = null) : base(v => v, v => v, mappingHints) { }
 }

@@ -23,10 +23,10 @@ using System.Xml.Serialization;
 
 namespace Framework.Primitives;
 
-[JsonConverter(typeof(GuidPrimitiveJsonConverter))]
-[TypeConverter(typeof(GuidPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(Guid))]
-[DebuggerDisplay("{" + nameof(_value) + "}")]
+[global::System.Diagnostics.DebuggerDisplay("{_value}")]
+[global::System.Text.Json.Serialization.JsonConverter(typeof(GuidPrimitiveJsonConverter))]
+[global::System.ComponentModel.TypeConverter(typeof(GuidPrimitiveTypeConverter))]
 public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPrimitive>
         , global::System.IComparable
         , global::System.IComparable<GuidPrimitive>
@@ -45,10 +45,10 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
 
     private Guid _valueOrThrow => _isInitialized ? _value : throw new InvalidPrimitiveValueException("The domain value has not been initialized", this);
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly Guid _value;
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly bool _isInitialized;
 
     /// <summary>Initializes a new instance of the <see cref="GuidPrimitive"/> class by validating the specified <see cref="Guid"/> value using <see cref="Validate"/> static method.</summary>
@@ -116,11 +116,11 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
     #region IEquatable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override bool Equals(object? obj) => obj is GuidPrimitive other && Equals(other);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public bool Equals(GuidPrimitive other)
     {
         if (!_isInitialized || !other._isInitialized)
@@ -131,10 +131,10 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
         return _value.Equals(other._value);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(GuidPrimitive left, GuidPrimitive right) => left.Equals(right);
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator !=(GuidPrimitive left, GuidPrimitive right) => !(left == right);
 
     #endregion
@@ -173,15 +173,15 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
     #region IParsable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static GuidPrimitive Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => Guid.Parse(s, provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static GuidPrimitive Parse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider) => Guid.Parse(s, provider);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static GuidPrimitive Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static GuidPrimitive Parse(string s, global::System.IFormatProvider? provider) => Parse(s.AsSpan(), provider);
 
     /// <inheritdoc/>
-    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, [MaybeNullWhen(false)] out GuidPrimitive result)
+    public static bool TryParse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out GuidPrimitive result)
     {
         if (!Guid.TryParse(s, provider, out var value))
         {
@@ -200,21 +200,21 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
     }
 
     /// <inheritdoc/>
-    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out GuidPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
+    public static bool TryParse([NotNullWhen(true)] string? s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out GuidPrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
 
     #endregion
 
     #region IFormattable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public string ToString(string? format, IFormatProvider? formatProvider) => _valueOrThrow.ToString(format, formatProvider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public string ToString([global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.GuidFormat)]string? format, global::System.IFormatProvider? formatProvider) => _valueOrThrow.ToString(format, formatProvider);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public bool TryFormat(global::System.Span<char> destination, out int charsWritten, [global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.GuidFormat)]global::System.ReadOnlySpan<char> format, global::System.IFormatProvider? provider)
     {
-        return ((ISpanFormattable)_valueOrThrow).TryFormat(destination, out charsWritten, format, provider);
+        return ((global::System.ISpanFormattable)_valueOrThrow).TryFormat(destination, out charsWritten, format, provider);
     }
 
     #endregion
@@ -222,11 +222,11 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
     #region IUtf8SpanFormattable Implementation
 
 #if NET8_0_OR_GREATER
-    /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat"/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    /// <inheritdoc cref="global::System.IUtf8SpanFormattable.TryFormat"/>
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public bool TryFormat(global::System.Span<byte> utf8Destination, out int bytesWritten, [global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.GuidFormat)]global::System.ReadOnlySpan<char> format, global::System.IFormatProvider? provider)
     {
-        return ((IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
+        return ((global::System.IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
     }
 #endif
 
@@ -254,30 +254,30 @@ public readonly partial struct GuidPrimitive : global::System.IEquatable<GuidPri
     #region Implicit Operators
 
     /// <summary>Implicit conversion from <see cref = "Guid"/> to <see cref = "GuidPrimitive"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator GuidPrimitive(Guid value) => new(value);
 
     /// <summary>Implicit conversion from <see cref = "Guid"/> (nullable) to <see cref = "GuidPrimitive"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator GuidPrimitive?(Guid? value) => value is null ? null : new(value.Value);
 
     /// <summary>Implicit conversion from <see cref = "GuidPrimitive"/> to <see cref = "Guid"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator Guid(GuidPrimitive value) => (Guid)value._valueOrThrow;
 
     /// <summary>Implicit conversion from <see cref = "GuidPrimitive"/> (nullable) to <see cref = "Guid"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator Guid?(GuidPrimitive? value) => value is null ? null : (Guid?)value.Value._valueOrThrow;
 
     #endregion
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override string ToString() => _valueOrThrow.ToString();
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override int GetHashCode() => _valueOrThrow.GetHashCode();
 }

@@ -23,10 +23,10 @@ using System.Xml.Serialization;
 
 namespace Framework.Primitives;
 
-[JsonConverter(typeof(SBytePrimitiveJsonConverter))]
-[TypeConverter(typeof(SBytePrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(sbyte))]
-[DebuggerDisplay("{" + nameof(_value) + "}")]
+[global::System.Diagnostics.DebuggerDisplay("{_value}")]
+[global::System.Text.Json.Serialization.JsonConverter(typeof(SBytePrimitiveJsonConverter))]
+[global::System.ComponentModel.TypeConverter(typeof(SBytePrimitiveTypeConverter))]
 public readonly partial struct SBytePrimitive : global::System.IEquatable<SBytePrimitive>
         , global::System.IComparable
         , global::System.IComparable<SBytePrimitive>
@@ -46,10 +46,10 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
 
     private sbyte _valueOrThrow => _isInitialized ? _value : throw new InvalidPrimitiveValueException("The domain value has not been initialized", this);
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly sbyte _value;
 
-    [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+    [global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]
     private readonly bool _isInitialized;
 
     /// <summary>Initializes a new instance of the <see cref="SBytePrimitive"/> class by validating the specified <see cref="sbyte"/> value using <see cref="Validate"/> static method.</summary>
@@ -117,11 +117,11 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
     #region IEquatable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override bool Equals(object? obj) => obj is SBytePrimitive other && Equals(other);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public bool Equals(SBytePrimitive other)
     {
         if (!_isInitialized || !other._isInitialized)
@@ -132,10 +132,10 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
         return _value.Equals(other._value);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(SBytePrimitive left, SBytePrimitive right) => left.Equals(right);
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator !=(SBytePrimitive left, SBytePrimitive right) => !(left == right);
 
     #endregion
@@ -174,15 +174,15 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
     #region IParsable Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SBytePrimitive Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => sbyte.Parse(s, provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static SBytePrimitive Parse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider) => sbyte.Parse(s, provider);
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static SBytePrimitive Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static SBytePrimitive Parse(string s, global::System.IFormatProvider? provider) => Parse(s.AsSpan(), provider);
 
     /// <inheritdoc/>
-    public static bool TryParse(ReadOnlySpan<char> s, IFormatProvider? provider, [MaybeNullWhen(false)] out SBytePrimitive result)
+    public static bool TryParse(global::System.ReadOnlySpan<char> s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out SBytePrimitive result)
     {
         if (!sbyte.TryParse(s, provider, out var value))
         {
@@ -201,18 +201,18 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
     }
 
     /// <inheritdoc/>
-    public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, [MaybeNullWhen(false)] out SBytePrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
+    public static bool TryParse([NotNullWhen(true)] string? s, global::System.IFormatProvider? provider, [MaybeNullWhen(false)] out SBytePrimitive result) => TryParse(s is null ? [] : s.AsSpan(), provider, out result);
 
     #endregion
 
     #region IUtf8SpanFormattable Implementation
 
 #if NET8_0_OR_GREATER
-    /// <inheritdoc cref="IUtf8SpanFormattable.TryFormat"/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+    /// <inheritdoc cref="global::System.IUtf8SpanFormattable.TryFormat"/>
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public bool TryFormat(global::System.Span<byte> utf8Destination, out int bytesWritten, [global::System.Diagnostics.CodeAnalysis.StringSyntax(global::System.Diagnostics.CodeAnalysis.StringSyntaxAttribute.NumericFormat)]global::System.ReadOnlySpan<char> format, global::System.IFormatProvider? provider)
     {
-        return ((IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
+        return ((global::System.IUtf8SpanFormattable)_valueOrThrow).TryFormat(utf8Destination, out bytesWritten, format, provider);
     }
 #endif
 
@@ -221,56 +221,56 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
     #region IConvertible Implementation
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    TypeCode IConvertible.GetTypeCode() => ((IConvertible)(SByte)_valueOrThrow).GetTypeCode();
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    global::System.TypeCode global::System.IConvertible.GetTypeCode() => ((global::System.IConvertible)(SByte)_valueOrThrow).GetTypeCode();
 
     /// <inheritdoc/>
-    bool IConvertible.ToBoolean(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToBoolean(provider);
+    bool global::System.IConvertible.ToBoolean(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToBoolean(provider);
 
     /// <inheritdoc/>
-    byte IConvertible.ToByte(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToByte(provider);
+    byte global::System.IConvertible.ToByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToByte(provider);
 
     /// <inheritdoc/>
-    char IConvertible.ToChar(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToChar(provider);
+    char global::System.IConvertible.ToChar(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToChar(provider);
 
     /// <inheritdoc/>
-    DateTime IConvertible.ToDateTime(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToDateTime(provider);
+    global::System.DateTime global::System.IConvertible.ToDateTime(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToDateTime(provider);
 
     /// <inheritdoc/>
-    decimal IConvertible.ToDecimal(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToDecimal(provider);
+    decimal global::System.IConvertible.ToDecimal(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToDecimal(provider);
 
     /// <inheritdoc/>
-    double IConvertible.ToDouble(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToDouble(provider);
+    double global::System.IConvertible.ToDouble(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToDouble(provider);
 
     /// <inheritdoc/>
-    short IConvertible.ToInt16(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToInt16(provider);
+    short global::System.IConvertible.ToInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToInt16(provider);
 
     /// <inheritdoc/>
-    int IConvertible.ToInt32(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToInt32(provider);
+    int global::System.IConvertible.ToInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToInt32(provider);
 
     /// <inheritdoc/>
-    long IConvertible.ToInt64(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToInt64(provider);
+    long global::System.IConvertible.ToInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToInt64(provider);
 
     /// <inheritdoc/>
-    sbyte IConvertible.ToSByte(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToSByte(provider);
+    sbyte global::System.IConvertible.ToSByte(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToSByte(provider);
 
     /// <inheritdoc/>
-    float IConvertible.ToSingle(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToSingle(provider);
+    float global::System.IConvertible.ToSingle(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToSingle(provider);
 
     /// <inheritdoc/>
-    string IConvertible.ToString(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToString(provider);
+    string global::System.IConvertible.ToString(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToString(provider);
 
     /// <inheritdoc/>
-    object IConvertible.ToType(Type conversionType, IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToType(conversionType, provider);
+    object global::System.IConvertible.ToType(Type conversionType, global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToType(conversionType, provider);
 
     /// <inheritdoc/>
-    ushort IConvertible.ToUInt16(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToUInt16(provider);
+    ushort global::System.IConvertible.ToUInt16(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToUInt16(provider);
 
     /// <inheritdoc/>
-    uint IConvertible.ToUInt32(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToUInt32(provider);
+    uint global::System.IConvertible.ToUInt32(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToUInt32(provider);
 
     /// <inheritdoc/>
-    ulong IConvertible.ToUInt64(IFormatProvider? provider) => ((IConvertible)(SByte)_valueOrThrow).ToUInt64(provider);
+    ulong global::System.IConvertible.ToUInt64(global::System.IFormatProvider? provider) => ((global::System.IConvertible)(SByte)_valueOrThrow).ToUInt64(provider);
 
     #endregion
 
@@ -296,20 +296,20 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
     #region Implicit Operators
 
     /// <summary>Implicit conversion from <see cref = "sbyte"/> to <see cref = "SBytePrimitive"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator SBytePrimitive(sbyte value) => new(value);
 
     /// <summary>Implicit conversion from <see cref = "sbyte"/> (nullable) to <see cref = "SBytePrimitive"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator SBytePrimitive?(sbyte? value) => value is null ? null : new(value.Value);
 
     /// <summary>Implicit conversion from <see cref = "SBytePrimitive"/> to <see cref = "sbyte"/></summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static implicit operator sbyte(SBytePrimitive value) => (sbyte)value._valueOrThrow;
 
     /// <summary>Implicit conversion from <see cref = "SBytePrimitive"/> (nullable) to <see cref = "sbyte"/> (nullable)</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(value))]
     public static implicit operator sbyte?(SBytePrimitive? value) => value is null ? null : (sbyte?)value.Value._valueOrThrow;
 
@@ -318,28 +318,28 @@ public readonly partial struct SBytePrimitive : global::System.IEquatable<SByteP
     #region Comparison Operators
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <(SBytePrimitive left, SBytePrimitive right) => left._valueOrThrow < right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator <=(SBytePrimitive left, SBytePrimitive right) => left._valueOrThrow <= right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >(SBytePrimitive left, SBytePrimitive right) => left._valueOrThrow > right._valueOrThrow;
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public static bool operator >=(SBytePrimitive left, SBytePrimitive right) => left._valueOrThrow >= right._valueOrThrow;
 
     #endregion
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override string ToString() => _valueOrThrow.ToString();
 
     /// <inheritdoc/>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     public override int GetHashCode() => _valueOrThrow.GetHashCode();
 }

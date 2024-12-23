@@ -19,7 +19,7 @@ public static class AddPrimitivesValueConvertersExtensions
 {
     /// <summary>Adds Entity Framework Value Converters for specific custom types to ensure proper mapping to EF ORM.</summary>
     /// <param name="configurationBuilder">The ModelConfigurationBuilder instance to which converters are added.</param>
-    public static ModelConfigurationBuilder AddPrimitivePropertyConversions(this ModelConfigurationBuilder configurationBuilder)
+    public static global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder AddPrimitivePropertyConversions(this global::Microsoft.EntityFrameworkCore.ModelConfigurationBuilder configurationBuilder)
     {
         configurationBuilder.Properties<DoublePrimitive>().HaveConversion<DoublePrimitiveValueConverter>();
         return configurationBuilder;
