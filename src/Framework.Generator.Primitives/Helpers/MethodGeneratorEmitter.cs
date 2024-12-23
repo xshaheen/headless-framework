@@ -132,7 +132,7 @@ internal static class MethodGeneratorEmitter
                 .AppendSummary(
                     $"Implicit conversion from <see cref = \"{underlyingFriendlyName}\"/> to <see cref = \"{primitiveName}\"/>"
                 )
-                .AppendMethodImplAggressiveInliningAttribute()
+                .AppendMethodAggressiveInliningAttribute()
                 .Append($"public static implicit operator {primitiveName}({underlyingFriendlyName} value)")
                 .AppendLine(" => new(value);")
                 .NewLine();
@@ -142,7 +142,7 @@ internal static class MethodGeneratorEmitter
             .AppendSummary(
                 $"Implicit conversion from <see cref = \"{underlyingFriendlyName}\"/> (nullable) to <see cref = \"{primitiveName}\"/> (nullable)"
             )
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
             .Append($"public static implicit operator {primitiveName}?({underlyingFriendlyName}? value)")
             .AppendLine($" => value is null ? null : new(value{(underlyingType.IsValueType ? ".Value" : "")});")
@@ -155,7 +155,7 @@ internal static class MethodGeneratorEmitter
                 .AppendSummary(
                     $"Implicit conversion from <see cref = \"{primitiveName}\"/> to <see cref = \"{underlyingFriendlyName}\"/>"
                 )
-                .AppendMethodImplAggressiveInliningAttribute()
+                .AppendMethodAggressiveInliningAttribute()
                 .Append($"public static implicit operator {underlyingFriendlyName}({primitiveName} value)")
                 .AppendLine($" => ({underlyingFriendlyName})value.{data.FieldName};")
                 .NewLine();
@@ -165,7 +165,7 @@ internal static class MethodGeneratorEmitter
             .AppendSummary(
                 $"Implicit conversion from <see cref = \"{primitiveName}\"/> (nullable) to <see cref = \"{underlyingFriendlyName}\"/> (nullable)"
             )
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
             .Append($"public static implicit operator {underlyingFriendlyName}?({primitiveName}? value)")
             .AppendLine(
@@ -183,7 +183,7 @@ internal static class MethodGeneratorEmitter
                     .AppendSummary(
                         $"Implicit conversion from <see cref = \"{parentClassName}\"/> to <see cref = \"{primitiveName}\"/>"
                     )
-                    .AppendMethodImplAggressiveInliningAttribute()
+                    .AppendMethodAggressiveInliningAttribute()
                     .Append($"public static implicit operator {primitiveName}({parentClassName} value)")
                     .AppendLine(" => new(value);")
                     .NewLine();
@@ -193,7 +193,7 @@ internal static class MethodGeneratorEmitter
                 .AppendSummary(
                     $"Implicit conversion from <see cref = \"{parentClassName}\"/> (nullable) to <see cref = \"{primitiveName}\"/> (nullable)"
                 )
-                .AppendMethodImplAggressiveInliningAttribute()
+                .AppendMethodAggressiveInliningAttribute()
                 .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
                 .Append($"public static implicit operator {primitiveName}?({parentClassName}? value)")
                 .AppendLine(
@@ -208,7 +208,7 @@ internal static class MethodGeneratorEmitter
                 .AppendSummary(
                     $"Implicit conversion from <see cref = \"{primitiveName}\"/> to <see cref = \"DateTime\"/>"
                 )
-                .AppendMethodImplAggressiveInliningAttribute()
+                .AppendMethodAggressiveInliningAttribute()
                 .Append($"public static implicit operator DateTime({primitiveName} value)")
                 .AppendLine($" => (({underlyingFriendlyName})value.{data.FieldName}).ToDateTime();")
                 .NewLine();
@@ -217,7 +217,7 @@ internal static class MethodGeneratorEmitter
                 .AppendSummary(
                     $"Implicit conversion from <see cref = \"DateTime\"/> to <see cref = \"{primitiveName}\"/>"
                 )
-                .AppendMethodImplAggressiveInliningAttribute()
+                .AppendMethodAggressiveInliningAttribute()
                 .Append($"public static implicit operator {primitiveName}(DateTime value)")
                 .AppendLine($" => {data.UnderlyingType}.FromDateTime(value);")
                 .NewLine();
@@ -232,28 +232,28 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static bool operator <({className} left, {className} right)")
             .AppendLine($" => left.{fieldName} < right.{fieldName};")
             .NewLine();
 
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static bool operator <=({className} left, {className} right)")
             .AppendLine($" => left.{fieldName} <= right.{fieldName};")
             .NewLine();
 
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static bool operator >({className} left, {className} right)")
             .AppendLine($" => left.{fieldName} > right.{fieldName};")
             .NewLine();
 
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static bool operator >=({className} left, {className} right)")
             .AppendLine($" => left.{fieldName} >= right.{fieldName};");
     }
@@ -266,7 +266,7 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static {className} operator +({className} left, {className} right)")
             .AppendLine($" => new(left.{fieldName} + right.{fieldName});");
     }
@@ -279,7 +279,7 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static {className} operator -({className} left, {className} right)")
             .AppendLine($" => new(left.{fieldName} - right.{fieldName});");
     }
@@ -292,7 +292,7 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static {className} operator /({className} left, {className} right)")
             .AppendLine($" => new(left.{fieldName} / right.{fieldName});");
     }
@@ -305,7 +305,7 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static {className} operator *({className} left, {className} right)")
             .AppendLine($" => new(left.{fieldName} * right.{fieldName});");
     }
@@ -318,7 +318,7 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static {className} operator %({className} left, {className} right)")
             .AppendLine($" => new(left.{fieldName} % right.{fieldName});");
     }
@@ -336,14 +336,14 @@ internal static class MethodGeneratorEmitter
             .NewLine();
         builder
             .AppendSummary("Gets the character at the specified index.")
-            .AppendLine("public char this[Index index]")
+            .AppendLine("public char this[global::System.Index index]")
             .OpenBracket()
             .AppendLine("get => _value[index];")
             .CloseBracket()
             .NewLine();
         builder
             .AppendSummary("Gets the substring by specified range.")
-            .AppendLine("public string this[System.Range range]")
+            .AppendLine("public string this[global::System.Range range]")
             .OpenBracket()
             .AppendLine("get => _value[range];")
             .CloseBracket()
@@ -355,17 +355,17 @@ internal static class MethodGeneratorEmitter
             .NewLine();
         builder
             .AppendSummary("Returns a substring of this string.")
-            .AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]")
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine("public string Substring(int startIndex, int length) => _value.Substring(startIndex, length);")
             .NewLine();
         builder
             .AppendSummary("Returns a substring of this string.")
-            .AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]")
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine("public string Substring(int startIndex) => _value.Substring(startIndex);")
             .NewLine();
         builder
             .AppendSummary("Returns the entire string as an array of characters.")
-            .AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]")
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine("public char[] ToCharArray() => _value.ToCharArray();");
     }
 
@@ -376,7 +376,7 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
                 $"public string ToString(string? format, IFormatProvider? formatProvider) => {fieldName}.ToString(format, formatProvider);"
             )
@@ -384,7 +384,7 @@ internal static class MethodGeneratorEmitter
 
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
                 "public bool TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)"
             )
@@ -403,7 +403,7 @@ internal static class MethodGeneratorEmitter
         builder
             .AppendPreProcessorDirective("if NET8_0_OR_GREATER")
             .AppendInheritDoc("IUtf8SpanFormattable.TryFormat")
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
                 "public bool TryFormat(Span<byte> utf8Destination, out int bytesWritten, ReadOnlySpan<char> format, IFormatProvider? provider)"
             )
@@ -434,7 +434,7 @@ internal static class MethodGeneratorEmitter
 
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static {dataClassName} Parse(ReadOnlySpan<char> s, IFormatProvider? provider) => ");
 
         if (isString)
@@ -464,7 +464,7 @@ internal static class MethodGeneratorEmitter
 
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
                 $"public static {dataClassName} Parse(string s, IFormatProvider? provider) => Parse(s.AsSpan(), provider);"
             );
@@ -587,7 +587,7 @@ internal static class MethodGeneratorEmitter
     {
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine($"public override bool Equals(object? obj) => obj is {className} other && Equals(other);")
             .NewLine();
 
@@ -595,7 +595,7 @@ internal static class MethodGeneratorEmitter
 
         builder
             .AppendInheritDoc()
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine($"public bool Equals({className}{nullable} other)")
             .OpenBracket()
             .Append("if (")
@@ -610,7 +610,7 @@ internal static class MethodGeneratorEmitter
             .NewLine();
 
         builder
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .Append($"public static bool operator ==({className}{nullable} left, {className}{nullable} right)");
 
         if (isValueType)
@@ -637,7 +637,7 @@ internal static class MethodGeneratorEmitter
         builder.NewLine();
 
         builder
-            .AppendMethodImplAggressiveInliningAttribute()
+            .AppendMethodAggressiveInliningAttribute()
             .AppendLine(
                 $"public static bool operator !=({className}{nullable} left, {className}{nullable} right) => !(left == right);"
             );
@@ -705,7 +705,7 @@ internal static class MethodGeneratorEmitter
         }
 
         builder.AppendInheritDoc();
-        builder.AppendMethodImplAggressiveInliningAttribute();
+        builder.AppendMethodAggressiveInliningAttribute();
 
         builder
             .Append("TypeCode IConvertible.GetTypeCode()")
