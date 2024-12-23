@@ -54,7 +54,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult<IAsyncDisposable>(NullAsyncDisposable.Instance);
+        return Task.FromResult(Disposable.EmptyAsync);
     }
 
     protected virtual Task<string?> NormalizeProviderKeyAsync(
