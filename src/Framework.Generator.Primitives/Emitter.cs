@@ -253,7 +253,7 @@ internal static class Emitter
 
         if (isNumeric)
         {
-            var supportedOperationsAttributeData = _GetSupportedOperationsAttributeData(
+            var supportedOperations = _GetSupportedOperationsAttributeData(
                 typeSymbol,
                 underlyingType,
                 parentSymbols,
@@ -261,39 +261,34 @@ internal static class Emitter
             );
 
             generatorData.GenerateAdditionOperators =
-                supportedOperationsAttributeData.Addition
-                && !typeSymbol.ImplementsInterface("System.Numerics.IAdditionOperators");
+                supportedOperations.Addition && !typeSymbol.ImplementsInterface(TypeNames.IAdditionOperators);
 
             generatorData.GenerateSubtractionOperators =
-                supportedOperationsAttributeData.Subtraction
-                && !typeSymbol.ImplementsInterface("System.Numerics.ISubtractionOperators");
+                supportedOperations.Subtraction && !typeSymbol.ImplementsInterface(TypeNames.ISubtractionOperators);
 
             generatorData.GenerateDivisionOperators =
-                supportedOperationsAttributeData.Division
-                && !typeSymbol.ImplementsInterface("System.Numerics.IDivisionOperators");
+                supportedOperations.Division && !typeSymbol.ImplementsInterface(TypeNames.IDivisionOperators);
 
             generatorData.GenerateMultiplyOperators =
-                supportedOperationsAttributeData.Multiplication
-                && !typeSymbol.ImplementsInterface("System.Numerics.IMultiplyOperators");
+                supportedOperations.Multiplication && !typeSymbol.ImplementsInterface(TypeNames.IMultiplyOperators);
 
             generatorData.GenerateModulusOperator =
-                supportedOperationsAttributeData.Modulus
-                && !typeSymbol.ImplementsInterface("System.Numerics.IModulusOperator");
+                supportedOperations.Modulus && !typeSymbol.ImplementsInterface(TypeNames.IModulusOperators);
         }
 
-        generatorData.GenerateParsable = !typeSymbol.ImplementsInterface("System.IParsable");
+        generatorData.GenerateParsable = !typeSymbol.ImplementsInterface(TypeNames.IParsable);
 
         generatorData.GenerateComparison =
             (isNumeric || underlyingType == PrimitiveUnderlyingType.Char || underlyingType.IsDateOrTime())
-            && !typeSymbol.ImplementsInterface("System.Numerics.IComparisonOperators");
+            && !typeSymbol.ImplementsInterface(TypeNames.IComparisonOperators);
 
         generatorData.GenerateSpanFormattable =
             (underlyingType == PrimitiveUnderlyingType.Guid || underlyingType.IsDateOrTime())
-            && !typeSymbol.ImplementsInterface("System.ISpanFormattable");
+            && !typeSymbol.ImplementsInterface(TypeNames.ISpanFormattable);
 
         generatorData.GenerateUtf8SpanFormattable =
-            primitiveType.ImplementsInterface("System.IUtf8SpanFormattable")
-            && !typeSymbol.ImplementsInterface("System.IUtf8SpanFormattable");
+            primitiveType.ImplementsInterface(TypeNames.IUtf8SpanFormattable)
+            && !typeSymbol.ImplementsInterface(TypeNames.IUtf8SpanFormattable);
 
         generatorData.GenerateXmlSerializableMethods = globalOptions.GenerateXmlConverters;
 
@@ -558,7 +553,7 @@ internal static class Emitter
 
         if (!primitiveTypeIsValueType)
         {
-            builder.AppendLine("#nullable disable");
+            builder.AppendNullableDisable();
         }
 
         builder.AppendLine("#pragma warning disable AL1003 // Should not have non obsolete empty constructors.");
@@ -573,7 +568,7 @@ internal static class Emitter
 
         if (!primitiveTypeIsValueType)
         {
-            builder.AppendLine("#nullable enable");
+            builder.AppendNullableEnable();
         }
 
         return true;

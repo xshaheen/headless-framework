@@ -27,8 +27,8 @@ public sealed class TimeSpanPrimitiveDapperTypeHandler : global::Dapper.SqlMappe
     {
         return value switch
         {
-            TimeSpan timeSpan => new TimeSpanPrimitive(timeSpan)
-            string stringValue when !string.IsNullOrEmpty(stringValue) && TimeSpan.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new TimeSpanPrimitive(result)
+            global::System.TimeSpan timeSpan => new TimeSpanPrimitive(timeSpan)
+            string stringValue when !string.IsNullOrEmpty(stringValue) && global::System.TimeSpan.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new TimeSpanPrimitive(result)
             _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to TimeSpanPrimitive"),
         };
     }

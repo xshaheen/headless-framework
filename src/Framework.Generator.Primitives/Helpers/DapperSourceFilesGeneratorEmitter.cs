@@ -57,7 +57,7 @@ internal static class DapperSourceFilesGeneratorEmitter
             isRecord: false,
             "public sealed",
             _CreateHandlerClassName(data.ClassName),
-            $"global::Dapper.SqlMapper.TypeHandler<{data.ClassName}>"
+            $"{TypeNames.DapperTypeHandler}<{data.ClassName}>"
         );
 
         var parameterTypeName = data.TypeSymbol.IsValueType ? data.ClassName : data.ClassName + '?';
@@ -65,7 +65,7 @@ internal static class DapperSourceFilesGeneratorEmitter
         // override SetValue method
         builder
             .AppendLine(
-                $"public override void SetValue(global::System.Data.IDbDataParameter parameter, {parameterTypeName} value)"
+                $"public override void SetValue({TypeNames.IDbDataParameter} parameter, {parameterTypeName} value)"
             )
             .OpenBracket()
             .AppendLine(
@@ -90,8 +90,8 @@ internal static class DapperSourceFilesGeneratorEmitter
             PrimitiveUnderlyingType.String => [$"string stringValue => new {data.ClassName}(stringValue),"],
             PrimitiveUnderlyingType.Guid =>
             [
-                $"global::System.Guid guidValue => new {data.ClassName}(guidValue),",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && global::System.Guid.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result),",
+                $"{TypeNames.Guid} guidValue => new {data.ClassName}(guidValue),",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.Guid}.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result),",
             ],
             PrimitiveUnderlyingType.Boolean =>
             [
@@ -105,7 +105,7 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"int intValue and < short.MaxValue and > short.MinValue => new {data.ClassName}((short)intValue)",
                 $"long longValue and < short.MaxValue and > short.MinValue => new {data.ClassName}((short)longValue)",
                 $"decimal decimalValue and < short.MaxValue and > short.MinValue => new {data.ClassName}((short)decimalValue)",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && short.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && short.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Int32 =>
             [
@@ -114,7 +114,7 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"short shortValue => new {data.ClassName}(shortValue)",
                 $"long longValue and < int.MaxValue and > int.MinValue => new {data.ClassName}((int)longValue)",
                 $"decimal decimalValue and < int.MaxValue and > int.MinValue => new {data.ClassName}((int)decimalValue)",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && int.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && int.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Int64 =>
             [
@@ -133,7 +133,7 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"short shortValue => new {data.ClassName}(shortValue)",
                 $"long longValue => new {data.ClassName}(longValue)",
                 $"int intValue => new {data.ClassName}(intValue)",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && float.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && float.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Double =>
             [
@@ -143,40 +143,40 @@ internal static class DapperSourceFilesGeneratorEmitter
                 $"short shortValue => new {data.ClassName}(shortValue)",
                 $"long longValue => new {data.ClassName}(longValue)",
                 $"int intValue => new {data.ClassName}(intValue)",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && double.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result)",
-            ],
-            PrimitiveUnderlyingType.DateTime =>
-            [
-                $"DateTime dateOnly => new {data.ClassName}(dateOnly)",
-                $"DateTimeOffset dateTimeOffset => new {data.ClassName}(dateTimeOffset.DateTime)",
-                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && DateTime.TryParseExact(stringValue, "o", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new {data.ClassName}(result)""",
-            ],
-            PrimitiveUnderlyingType.DateTimeOffset =>
-            [
-                $"DateTimeOffset dateTimeOffset => new {data.ClassName}(dateTimeOffset)",
-                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && DateTimeOffset.TryParseExact(stringValue, "o", global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.AssumeLocal, out var result) => new {data.ClassName}(result)""",
-            ],
-            PrimitiveUnderlyingType.DateOnly =>
-            [
-                $"DateOnly dateOnly => new {data.ClassName}(dateOnly)",
-                $"DateTime dateTime => new {data.ClassName}(DateOnly.FromDateTime(dateTime))",
-                $"DateTimeOffset dateTimeOffset => new {data.ClassName}(DateOnly.FromDateTime(dateTimeOffset.DateTime))",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && DateOnly.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result)",
-            ],
-            PrimitiveUnderlyingType.TimeOnly =>
-            [
-                $"TimeOnly timeOnly => new {data.ClassName}(timeOnly)",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && TimeOnly.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result)",
-            ],
-            PrimitiveUnderlyingType.TimeSpan =>
-            [
-                $"TimeSpan timeSpan => new {data.ClassName}(timeSpan)",
-                $"string stringValue when !string.IsNullOrEmpty(stringValue) && TimeSpan.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new {data.ClassName}(result)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && double.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Char =>
             [
                 $"char charValue => new {data.ClassName}(charValue)",
                 $"string stringValue when !string.IsNullOrEmpty(stringValue) && char.TryParse(stringValue, out var charValue) => new {data.ClassName}(charValue)",
+            ],
+            PrimitiveUnderlyingType.DateTime =>
+            [
+                $"{TypeNames.DateTime} dateOnly => new {data.ClassName}(dateOnly)",
+                $"{TypeNames.DateTimeOffset} dateTimeOffset => new {data.ClassName}(dateTimeOffset.DateTime)",
+                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.DateTime}.TryParseExact(stringValue, "o", {StaticValues.InvariantCulture}, {StaticValues.AssumeLocal}, out var result) => new {data.ClassName}(result)""",
+            ],
+            PrimitiveUnderlyingType.DateTimeOffset =>
+            [
+                $"{TypeNames.DateTimeOffset} dateTimeOffset => new {data.ClassName}(dateTimeOffset)",
+                $"""string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.DateTimeOffset}.TryParseExact(stringValue, "o", {StaticValues.InvariantCulture}, {StaticValues.AssumeLocal}, out var result) => new {data.ClassName}(result)""",
+            ],
+            PrimitiveUnderlyingType.DateOnly =>
+            [
+                $"{TypeNames.DateOnly} dateOnly => new {data.ClassName}(dateOnly)",
+                $"{TypeNames.DateTime} dateTime => new {data.ClassName}({TypeNames.DateOnly}.FromDateTime(dateTime))",
+                $"{TypeNames.DateTimeOffset} dateTimeOffset => new {data.ClassName}({TypeNames.DateOnly}.FromDateTime(dateTimeOffset.DateTime))",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.DateOnly}.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
+            ],
+            PrimitiveUnderlyingType.TimeOnly =>
+            [
+                $"{TypeNames.TimeOnly} timeOnly => new {data.ClassName}(timeOnly)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.TimeOnly}.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
+            ],
+            PrimitiveUnderlyingType.TimeSpan =>
+            [
+                $"{TypeNames.TimeSpan} timeSpan => new {data.ClassName}(timeSpan)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && {TypeNames.TimeSpan}.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             _ => [$"{data.PrimitiveTypeFriendlyName} primitiveValue => new {data.ClassName}(primitiveValue),"],
         };

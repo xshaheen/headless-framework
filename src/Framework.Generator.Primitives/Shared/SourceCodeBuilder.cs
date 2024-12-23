@@ -151,6 +151,16 @@ public sealed class SourceCodeBuilder
         return this;
     }
 
+    public SourceCodeBuilder AppendNullableDisable()
+    {
+        return AppendLine("#nullable disable");
+    }
+
+    public SourceCodeBuilder AppendNullableEnable()
+    {
+        return AppendLine("#nullable enable");
+    }
+
     public SourceCodeBuilder AppendRegion(string regionName)
     {
         return AppendLine($"#region {regionName}").NewLine();
@@ -298,12 +308,31 @@ public sealed class SourceCodeBuilder
 
     public SourceCodeBuilder AppendDebuggerBrowsableNeverAttribute()
     {
-        return AppendLine("[DebuggerBrowsable(DebuggerBrowsableState.Never)]");
+        return AppendLine(
+            "[global::System.Diagnostics.DebuggerBrowsable(global::System.Diagnostics.DebuggerBrowsableState.Never)]"
+        );
     }
 
     public SourceCodeBuilder AppendMethodAggressiveInliningAttribute()
     {
-        return AppendLine("[MethodImpl(MethodImplOptions.AggressiveInlining)]");
+        return AppendLine(
+            "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]"
+        );
+    }
+
+    public SourceCodeBuilder AppendJsonConverterAttribute(string typeName)
+    {
+        return AppendLine($"[global::System.Text.Json.Serialization.JsonConverter(typeof({typeName}))]");
+    }
+
+    public SourceCodeBuilder AppendTypeConverterAttribute(string typeName)
+    {
+        return AppendLine($"[global::System.ComponentModel.TypeConverter(typeof({typeName}))]");
+    }
+
+    public SourceCodeBuilder AppendDebuggerDisplay(string value)
+    {
+        return AppendLine($"[global::System.Diagnostics.DebuggerDisplay(\"{value}\")]");
     }
 
     /// <summary>Appends a line of text to the source code without adding a newline character if the input line is not null.</summary>

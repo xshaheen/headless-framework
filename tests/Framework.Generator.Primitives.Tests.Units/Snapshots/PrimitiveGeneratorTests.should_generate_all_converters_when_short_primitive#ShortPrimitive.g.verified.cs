@@ -27,15 +27,15 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(ShortPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(short))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct ShortPrimitive : IEquatable<ShortPrimitive>
-        , IComparable
-        , IComparable<ShortPrimitive>
-        , IComparisonOperators<ShortPrimitive, ShortPrimitive, bool>
-        , ISpanParsable<ShortPrimitive>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct ShortPrimitive : global::System.IEquatable<ShortPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<ShortPrimitive>
+        , global::System.Numerics.IComparisonOperators<ShortPrimitive, ShortPrimitive, bool>
+        , global::System.ISpanParsable<ShortPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>

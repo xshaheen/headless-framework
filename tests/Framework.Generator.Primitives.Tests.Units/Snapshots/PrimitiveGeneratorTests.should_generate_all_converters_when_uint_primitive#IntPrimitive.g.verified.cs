@@ -27,20 +27,20 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(IntPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(uint))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct IntPrimitive : IEquatable<IntPrimitive>
-        , IComparable
-        , IComparable<IntPrimitive>
-        , IAdditionOperators<IntPrimitive, IntPrimitive, IntPrimitive>
-        , ISubtractionOperators<IntPrimitive, IntPrimitive, IntPrimitive>
-        , IMultiplyOperators<IntPrimitive, IntPrimitive, IntPrimitive>
-        , IDivisionOperators<IntPrimitive, IntPrimitive, IntPrimitive>
-        , IModulusOperators<IntPrimitive, IntPrimitive, IntPrimitive>
-        , IComparisonOperators<IntPrimitive, IntPrimitive, bool>
-        , ISpanParsable<IntPrimitive>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct IntPrimitive : global::System.IEquatable<IntPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<IntPrimitive>
+        , global::System.Numerics.IAdditionOperators<IntPrimitive, IntPrimitive, IntPrimitive>
+        , global::System.Numerics.ISubtractionOperators<IntPrimitive, IntPrimitive, IntPrimitive>
+        , global::System.Numerics.IMultiplyOperators<IntPrimitive, IntPrimitive, IntPrimitive>
+        , global::System.Numerics.IDivisionOperators<IntPrimitive, IntPrimitive, IntPrimitive>
+        , global::System.Numerics.IModulusOperators<IntPrimitive, IntPrimitive, IntPrimitive>
+        , global::System.Numerics.IComparisonOperators<IntPrimitive, IntPrimitive, bool>
+        , global::System.ISpanParsable<IntPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>

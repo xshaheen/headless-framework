@@ -27,10 +27,10 @@ public sealed class DateOnlyPrimitiveDapperTypeHandler : global::Dapper.SqlMappe
     {
         return value switch
         {
-            DateOnly dateOnly => new DateOnlyPrimitive(dateOnly)
-            DateTime dateTime => new DateOnlyPrimitive(DateOnly.FromDateTime(dateTime))
-            DateTimeOffset dateTimeOffset => new DateOnlyPrimitive(DateOnly.FromDateTime(dateTimeOffset.DateTime))
-            string stringValue when !string.IsNullOrEmpty(stringValue) && DateOnly.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new DateOnlyPrimitive(result)
+            global::System.DateOnly dateOnly => new DateOnlyPrimitive(dateOnly)
+            global::System.DateTime dateTime => new DateOnlyPrimitive(global::System.DateOnly.FromDateTime(dateTime))
+            global::System.DateTimeOffset dateTimeOffset => new DateOnlyPrimitive(global::System.DateOnly.FromDateTime(dateTimeOffset.DateTime))
+            string stringValue when !string.IsNullOrEmpty(stringValue) && global::System.DateOnly.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new DateOnlyPrimitive(result)
             _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to DateOnlyPrimitive"),
         };
     }

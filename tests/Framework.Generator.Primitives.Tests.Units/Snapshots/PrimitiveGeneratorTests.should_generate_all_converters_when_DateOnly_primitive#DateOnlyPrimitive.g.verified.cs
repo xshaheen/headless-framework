@@ -27,16 +27,16 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(DateOnlyPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(DateOnly))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct DateOnlyPrimitive : IEquatable<DateOnlyPrimitive>
-        , IComparable
-        , IComparable<DateOnlyPrimitive>
-        , IComparisonOperators<DateOnlyPrimitive, DateOnlyPrimitive, bool>
-        , ISpanFormattable
-        , ISpanParsable<DateOnlyPrimitive>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct DateOnlyPrimitive : global::System.IEquatable<DateOnlyPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<DateOnlyPrimitive>
+        , global::System.Numerics.IComparisonOperators<DateOnlyPrimitive, DateOnlyPrimitive, bool>
+        , global::System.ISpanFormattable
+        , global::System.ISpanParsable<DateOnlyPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>

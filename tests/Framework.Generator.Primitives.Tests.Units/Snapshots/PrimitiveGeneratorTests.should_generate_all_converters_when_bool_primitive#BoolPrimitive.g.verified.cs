@@ -27,12 +27,12 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(BoolPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(bool))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct BoolPrimitive : IEquatable<BoolPrimitive>
-        , IComparable
-        , IComparable<BoolPrimitive>
-        , ISpanParsable<BoolPrimitive>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct BoolPrimitive : global::System.IEquatable<BoolPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<BoolPrimitive>
+        , global::System.ISpanParsable<BoolPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 {
     /// <inheritdoc/>
     public Type GetUnderlyingPrimitiveType() => typeof(bool);

@@ -27,16 +27,16 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(DateTimeOffsetPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(DateTimeOffset))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public readonly partial struct DateTimeOffsetPrimitive : IEquatable<DateTimeOffsetPrimitive>
-        , IComparable
-        , IComparable<DateTimeOffsetPrimitive>
-        , IComparisonOperators<DateTimeOffsetPrimitive, DateTimeOffsetPrimitive, bool>
-        , ISpanFormattable
-        , ISpanParsable<DateTimeOffsetPrimitive>
-        , IConvertible
-        , IXmlSerializable
+public readonly partial struct DateTimeOffsetPrimitive : global::System.IEquatable<DateTimeOffsetPrimitive>
+        , global::System.IComparable
+        , global::System.IComparable<DateTimeOffsetPrimitive>
+        , global::System.Numerics.IComparisonOperators<DateTimeOffsetPrimitive, DateTimeOffsetPrimitive, bool>
+        , global::System.ISpanFormattable
+        , global::System.ISpanParsable<DateTimeOffsetPrimitive>
+        , global::System.IConvertible
+        , global::System.Xml.Serialization.IXmlSerializable
 #if NET8_0_OR_GREATER
-        , IUtf8SpanFormattable
+        , global::System.IUtf8SpanFormattable
 #endif
 {
     /// <inheritdoc/>

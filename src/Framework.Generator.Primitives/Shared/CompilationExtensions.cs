@@ -102,13 +102,24 @@ public static class CompilationExtensions
     /// <returns>True if the type implements the interface; otherwise, false.</returns>
     public static bool ImplementsInterface(this INamedTypeSymbol type, string interfaceFullName)
     {
-        return type.Interfaces.Any(x =>
-            string.Equals(
-                x.ContainingNamespace.ToDisplayString() + "." + x.Name,
-                interfaceFullName,
-                StringComparison.Ordinal
-            )
-        );
+        var span = interfaceFullName.AsSpan();
+
+        if (span.StartsWith("global::".AsSpan(), StringComparison.Ordinal))
+        {
+            span = span.Slice(8);
+        }
+
+        foreach (var symbol in type.AllInterfaces)
+        {
+            var fullName = (symbol.ContainingNamespace.ToDisplayString() + "." + symbol.Name).AsSpan();
+
+            if (span.Equals(fullName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
