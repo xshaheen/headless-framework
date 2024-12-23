@@ -183,7 +183,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <returns>
     ///     The speed in meters per second. The speed must be greater than or equal to zero, or Double.NaN.
     /// </returns>
-    /// <exception cref="System.ArgumentOutOfRangeException">Speed is set outside the valid range.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Speed is set outside the valid range.</exception>
     public double Speed
     {
         get { return _speed; }
