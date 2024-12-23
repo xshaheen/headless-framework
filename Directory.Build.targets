@@ -1,5 +1,3 @@
 ﻿<Project>
 
-  <Import Project="Sdk.targets" Sdk="Framework.Defaults" Version="0.0.15" />
-
 </Project>

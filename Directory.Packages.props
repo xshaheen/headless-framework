@@ -54,7 +54,6 @@
     <PackageVersion Include="FluentValidation" Version="11.11.0" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="11.11.0" />
     <PackageVersion Include="Flurl" Version="4.0.0" />
-    <PackageVersion Include="Framework.Defaults" Version="0.0.14-preview.0.5" />
     <PackageVersion Include="Foundatio" Version="11.0.6" />
     <PackageVersion Include="Foundatio.Redis" Version="11.0.6" />
     <PackageVersion Include="Humanizer.Core" Version="2.14.1" />
@@ -186,6 +185,7 @@
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <GlobalPackageReference Include="AsyncFixer" Version="1.6.0" />
     <GlobalPackageReference Include="Asyncify" Version="0.9.7" />
+    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.15" />
     <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.10" />
