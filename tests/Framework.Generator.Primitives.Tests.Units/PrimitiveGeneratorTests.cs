@@ -7,6 +7,8 @@ using Tests.Helpers;
 
 namespace Tests;
 
+// TODO: Test generate arithmetic operator
+
 public sealed class PrimitiveGeneratorTests
 {
     private const int _GenerateAllFileCounts = 9;
