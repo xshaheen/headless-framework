@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.Network;
 using Framework.Checks;
+using Framework.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -39,7 +39,7 @@ public sealed class ConnekioSmsSender : ISmsSender
 
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/json");
 
-        requestMessage.Headers.Authorization = AuthenticationHeaderValueFactory.CreateBasic(
+        requestMessage.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(
             $"{_options.UserName}:{_options.Password}:{_options.AccountId}"
         );
 

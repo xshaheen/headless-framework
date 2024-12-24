@@ -2,7 +2,7 @@
 
 using System.Net.Http.Headers;
 
-namespace Framework.BuildingBlocks.Helpers.Network;
+namespace Framework.Http;
 
 public sealed class BasicAuthenticationValue : AuthenticationHeaderValue
 {

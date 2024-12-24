@@ -3,9 +3,9 @@
 using System.Net.Http.Headers;
 using Framework.Checks;
 
-namespace Framework.BuildingBlocks.Helpers.Network;
+namespace Framework.Http;
 
-public static class AuthenticationHeaderValueFactory
+public static class AuthenticationHeaderFactory
 {
     public static AuthenticationHeaderValue CreateBasic(string userName, string password)
     {
