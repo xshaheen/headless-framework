@@ -9,11 +9,11 @@ public sealed class ObjectExtensionsTests
     [Fact]
     public void As_tests()
     {
-        var o1 = (object)new ObjectExtensionsTests();
+        object o1 = new ObjectExtensionsTests();
         ObjectExtensions.As<ObjectExtensionsTests>(o1).Should().NotBe(null);
 
         object? o2 = null;
-        ObjectExtensions.As<ObjectExtensionsTests>(o2!).Should().Be(null);
+        ObjectExtensions.As<ObjectExtensionsTests>(o2).Should().Be(null);
     }
 
     [Fact]
@@ -56,21 +56,5 @@ public sealed class ObjectExtensionsTests
 
         str = null;
         str.In("a", "b", "c").Should().Be(false);
-    }
-
-    [Fact]
-    public void If_tests()
-    {
-        var value = 0;
-
-        value = value.If(true, v => v + 1);
-        value.Should().Be(1);
-
-        value = value.If(false, v => v + 1);
-        value.Should().Be(1);
-
-        value = value.If(true, v => v + 3).If(false, v => v + 5);
-
-        value.Should().Be(4);
     }
 }

@@ -110,15 +110,6 @@ public static class ClaimsPrincipalExtensions
         return principal?.FindFirst(FrameworkClaimTypes.AccountType)?.Value;
     }
 
-    public static bool IsSignedIn(this ClaimsPrincipal principal, string authenticationScheme)
-    {
-        Argument.IsNotNull(principal);
-
-        return principal.Identities.Any(i =>
-            string.Equals(i.AuthenticationType, authenticationScheme, StringComparison.Ordinal)
-        );
-    }
-
     public static ImmutableHashSet<string> GetRoles(this ClaimsPrincipal principal)
     {
         Argument.IsNotNull(principal);
@@ -129,60 +120,5 @@ public static class ClaimsPrincipalExtensions
             .ToImmutableHashSet(StringComparer.Ordinal);
 
         return roles;
-    }
-
-    public static ClaimsIdentity AddIfNotContains(this ClaimsIdentity claimsIdentity, Claim claim)
-    {
-        Argument.IsNotNull(claimsIdentity);
-
-        if (!claimsIdentity.Claims.Any(x => string.Equals(x.Type, claim.Type, StringComparison.OrdinalIgnoreCase)))
-        {
-            claimsIdentity.AddClaim(claim);
-        }
-
-        return claimsIdentity;
-    }
-
-    public static ClaimsIdentity AddOrReplace(this ClaimsIdentity claimsIdentity, Claim claim)
-    {
-        Argument.IsNotNull(claimsIdentity);
-        Argument.IsNotNull(claim);
-
-        foreach (var x in claimsIdentity.FindAll(claim.Type).ToList())
-        {
-            claimsIdentity.RemoveClaim(x);
-        }
-
-        claimsIdentity.AddClaim(claim);
-
-        return claimsIdentity;
-    }
-
-    public static ClaimsIdentity RemoveAll(this ClaimsIdentity claimsIdentity, string claimType)
-    {
-        Argument.IsNotNull(claimsIdentity);
-
-        foreach (var x in claimsIdentity.FindAll(claimType))
-        {
-            claimsIdentity.RemoveClaim(x);
-        }
-
-        return claimsIdentity;
-    }
-
-    public static ClaimsPrincipal AddIdentityIfNotContains(this ClaimsPrincipal principal, ClaimsIdentity identity)
-    {
-        Argument.IsNotNull(principal);
-
-        if (
-            !principal.Identities.Any(x =>
-                string.Equals(x.AuthenticationType, identity.AuthenticationType, StringComparison.OrdinalIgnoreCase)
-            )
-        )
-        {
-            principal.AddIdentity(identity);
-        }
-
-        return principal;
     }
 }

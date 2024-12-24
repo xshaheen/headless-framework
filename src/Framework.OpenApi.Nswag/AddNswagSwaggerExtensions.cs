@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Api.ApiExplorer;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Framework.OpenApi.Nswag.Extensions;
 using Framework.OpenApi.Nswag.OperationProcessors;
 using Framework.OpenApi.Nswag.SchemaProcessors;

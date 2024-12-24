@@ -8,6 +8,7 @@ using Framework.Reflection;
 
 namespace Framework.BuildingBlocks.Models.ExtraProperties;
 
+[PublicAPI]
 public static class IncludeExtraPropertiesModifiers
 {
     public static void Modify(JsonTypeInfo jsonTypeInfo)
@@ -32,8 +33,6 @@ public static class IncludeExtraPropertiesModifiers
         }
 
         propertyJsonInfo.Set = (obj, value) =>
-        {
-            ObjectPropertiesHelper.TrySetProperty(obj.As<IHasExtraProperties>(), x => x.ExtraProperties, () => value);
-        };
+            ObjectPropertiesHelper.TrySetProperty((IHasExtraProperties)obj, x => x.ExtraProperties, () => value);
     }
 }

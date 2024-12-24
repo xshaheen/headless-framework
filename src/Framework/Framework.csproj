@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="morelinq" />
     <PackageReference Include="Nito.AsyncEx" />
+    <PackageReference Include="System.Reactive" />
   </ItemGroup>
 
 </Project>

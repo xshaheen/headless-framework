@@ -18,11 +18,15 @@ public static class SnowFlakId
 
     private static IdGenerator? _generator;
 
+    /// <summary>
+    /// If we have multiple instance of the application we should yous unique generatorId per instance.
+    /// </summary>
+    /// <param name="generatorId"></param>
     public static void Configure(int generatorId = 0)
     {
         Argument.IsPositive(generatorId);
 
-        // Let's say we take jan 17st 2022 as our epoch
+        // Let's say we take jan 17th 2022 as our epoch
         var epoch = new DateTimeOffset(2022, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         // Create an ID with 45 bits for timestamp, 2 for generator-id
