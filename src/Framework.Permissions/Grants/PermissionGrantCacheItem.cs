@@ -17,7 +17,7 @@ public sealed class PermissionGrantCacheItem(bool isGranted)
 
     public static string? GetPermissionNameFormCacheKeyOrDefault(string cacheKey)
     {
-        var result = FormattedStringValueExtracter.Extract(cacheKey, _CacheKeyFormat.Format, ignoreCase: true);
+        var result = FormattedStringValueExtractor.Extract(cacheKey, _CacheKeyFormat.Format, ignoreCase: true);
 
         return result.IsMatch ? result.Matches[^1].Value : null;
     }
