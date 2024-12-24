@@ -13,7 +13,7 @@ namespace Framework.Text;
 /// Say that str is "My name is Neo." and format is "My name is {name}.".
 /// Then Extract method gets "Neo" as "name".
 /// </example>
-public static class FormattedStringValueExtracter
+public static class FormattedStringValueExtractor
 {
     /// <summary>Extracts dynamic values from a formatted string.</summary>
     /// <param name="str">String including dynamic values</param>
