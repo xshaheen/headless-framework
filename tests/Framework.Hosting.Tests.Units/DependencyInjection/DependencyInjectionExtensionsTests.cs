@@ -242,6 +242,24 @@ public class DependencyInjectionExtensionsTests
         resolvedService!.Greet().Should().Be("replace");
     }
 
+    [Fact]
+    public void replace_scoped_with_implementation_params_should_replace_service()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        services.AddScoped<IMyService, MyService>();
+
+        // when
+        services.ReplaceScoped<IMyService, ReplacementService>();
+        var provider = services.BuildServiceProvider();
+        var myService = provider.GetService<IMyService>();
+
+        // then
+        myService.Should().NotBeNull();
+        myService!.Greet().Should().Be("replacement");
+    }
+
 #warning Ask Shaheen about this. If the service doesn't exist, the ReplaceScoped method will return false but it will add the new service which might confuse the user and cause unintentional bug
     [Fact]
     public void replace_scoped_should_replace_service_when_it_doesnt_exist()
@@ -289,6 +307,24 @@ public class DependencyInjectionExtensionsTests
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
         resolvedService!.Greet().Should().Be("replace");
+    }
+
+    [Fact]
+    public void replace_transient_with_implementation_params_should_replace_service()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        services.AddTransient<IMyService, MyService>();
+
+        // when
+        services.ReplaceTransient<IMyService, ReplacementService>();
+        var provider = services.BuildServiceProvider();
+        var myService = provider.GetService<IMyService>();
+
+        // then
+        myService.Should().NotBeNull();
+        myService!.Greet().Should().Be("replacement");
     }
 
 #warning Ask Shaheen about this. Should I be able to ReplaceTransient a Scope service?
@@ -367,6 +403,24 @@ public class DependencyInjectionExtensionsTests
         resolvedService!.Greet().Should().Be("replace");
     }
 
+    [Fact]
+    public void replace_singleton_with_implementation_params_should_replace_service()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        services.ReplaceSingleton<IMyService, ReplacementService>();
+        var provider = services.BuildServiceProvider();
+        var myService = provider.GetService<IMyService>();
+
+        // then
+        myService.Should().NotBeNull();
+        myService!.Greet().Should().Be("replacement");
+    }
+
 #warning Ask Shaheen about this. Same question as ReplaceScoped
     [Fact]
     public void replace_singleton_should_replace_service_when_it_doesnt_exist()
@@ -389,9 +443,132 @@ public class DependencyInjectionExtensionsTests
         resolvedService.Should().Be(newServiceMock);
         resolvedService!.Greet().Should().Be("replace");
     }
+
+    [Fact]
+    public void replace_should_replace_service_with_new_factory()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        services.Replace<IMyService>(_ => new ReplacementService());
+
+        var provider = services.BuildServiceProvider();
+        var replacementService = provider.GetService<IMyService>();
+
+        // then
+        var descriptor = services.Single(d => d.ServiceType == typeof(IMyService));
+        descriptor.ImplementationFactory.Should().NotBeNull();
+        replacementService.Should().NotBeNull();
+        replacementService!.Greet().Should().Be("replacement");
+    }
+
+    [Fact]
+    public void is_added_should_return_true_when_service_is_added()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        var result = services.IsAdded<IMyService>();
+
+        // then
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void is_added_should_return_false_when_service_is_not_added()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var result = services.IsAdded<IMyService>();
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void add_keyed_scoped_should_register_service_with_key()
+    {
+        // given
+        var services = new ServiceCollection();
+        const string serviceKey = "myServiceKey";
+
+        // when
+        services.AddKeyedScoped<IMyService>(serviceKey, _ => new MyService());
+        var provider = services.BuildServiceProvider();
+        var myService = provider.GetKeyedService<IMyService>(serviceKey);
+
+        // then
+        myService.Should().NotBeNull();
+        myService!.Greet().Should().Be("original");
+    }
+
+    [Fact]
+    public void service_provider_should_return_null_when_retrieving_invalid_scoped_keyed_service()
+    {
+        // given
+        var services = new ServiceCollection();
+        const string serviceKey = "myServiceKey";
+
+        // when
+        services.AddKeyedScoped<IMyService>(serviceKey, _ => new MyService());
+        var provider = services.BuildServiceProvider();
+        var myServiceWithoutKey = provider.GetKeyedService<IMyService>("invalidKey");
+
+        // then
+        myServiceWithoutKey.Should().BeNull();
+    }
+
+    [Fact]
+    public void add_keyed_transient_should_register_service_with_key()
+    {
+        // given
+        var services = new ServiceCollection();
+        const string serviceKey = "myServiceKey";
+
+        // when
+        services.AddKeyedTransient<IMyService>(serviceKey, _ => new MyService());
+        var provider = services.BuildServiceProvider();
+        var myService = provider.GetKeyedService<IMyService>(serviceKey);
+
+        // then
+        myService.Should().NotBeNull();
+        myService!.Greet().Should().Be("original");
+    }
+
+    [Fact]
+    public void service_provider_should_return_null_when_retrieving_invalid_transient_keyed_service()
+    {
+        // given
+        var services = new ServiceCollection();
+        const string serviceKey = "myServiceKey";
+
+        // when
+        services.AddKeyedTransient<IMyService>(serviceKey, _ => new MyService());
+        var provider = services.BuildServiceProvider();
+        var myServiceWithoutKey = provider.GetKeyedService<IMyService>("invalidKey");
+
+        // then
+        myServiceWithoutKey.Should().BeNull();
+    }
 }
 
 public interface IMyService
 {
     string Greet();
+}
+
+public class MyService : IMyService
+{
+    public string Greet() => "original";
+}
+
+public class ReplacementService : IMyService
+{
+    public string Greet() => "replacement";
 }
