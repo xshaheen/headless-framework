@@ -28,14 +28,17 @@ public sealed class TenantFeatureValueProvider(IFeatureValueStore store, ICurren
 
         var disposable = currentTenant.Change(providerKey);
 
-        var asyncDisposable = Disposable.Create(() =>
-        {
-            disposable.Dispose();
+        var asyncDisposable = Disposable.Create(
+            disposable,
+            static disposable =>
+            {
+                disposable.Dispose();
 
-            return Task.CompletedTask;
-        });
+                return Task.CompletedTask;
+            }
+        );
 
-        return Task.FromResult<IAsyncDisposable>(asyncDisposable);
+        return Task.FromResult(asyncDisposable);
     }
 
     public override Task<string?> GetOrDefaultAsync(
