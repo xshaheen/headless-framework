@@ -132,7 +132,7 @@ public static class ApiRegistration
 
         return Disposable.Create(
             (badRequestSubscription, middlewareAnalysisSubscription),
-            state =>
+            static state =>
             {
                 state.badRequestSubscription.Dispose();
                 state.middlewareAnalysisSubscription.Dispose();
