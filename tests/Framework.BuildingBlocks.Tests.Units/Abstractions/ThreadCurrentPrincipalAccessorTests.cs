@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.BuildingBlocks;
 using Framework.BuildingBlocks.Abstractions;
+using Framework.Constants;
 using Tests.Fakers;
 
 namespace Tests.Abstractions;

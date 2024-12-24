@@ -12,10 +12,6 @@
     <PackageReference Include="Jitbit.FastCache" />
     <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="MimeTypes">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
     <PackageReference Include="Polly.Core" />

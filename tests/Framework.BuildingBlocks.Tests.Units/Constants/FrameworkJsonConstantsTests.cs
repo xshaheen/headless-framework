@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Framework.Serializer.Json.Converters;
 using NetTopologySuite.IO.Converters;
 

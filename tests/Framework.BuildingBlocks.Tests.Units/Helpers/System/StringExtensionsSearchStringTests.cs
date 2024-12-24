@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.Ar;
+using Framework.BuildingBlocks.System;
 
 namespace Tests.Helpers.System;
 

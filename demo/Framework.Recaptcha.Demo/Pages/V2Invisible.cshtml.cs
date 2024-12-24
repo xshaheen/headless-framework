@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Framework.Recaptcha.Contracts;
 using Framework.Recaptcha.V2;
 using Microsoft.AspNetCore.Mvc.RazorPages;

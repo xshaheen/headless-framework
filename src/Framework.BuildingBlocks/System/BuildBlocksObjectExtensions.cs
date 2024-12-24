@@ -3,7 +3,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json.Nodes;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

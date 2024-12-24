@@ -3,7 +3,7 @@
 using Framework.Checks;
 using IdGen;
 
-namespace Framework.BuildingBlocks.Helpers.Ids;
+namespace Framework.BuildingBlocks.Ids;
 
 // Ref: https://github.com/RobThree/IdGen
 // https://github.com/RobThree/IdGen/issues/34

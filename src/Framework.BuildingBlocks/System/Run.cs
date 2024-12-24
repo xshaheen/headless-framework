@@ -3,7 +3,7 @@
 using Polly;
 using Polly.Retry;
 
-namespace Framework.BuildingBlocks.Helpers.System;
+namespace Framework.BuildingBlocks.System;
 
 [PublicAPI]
 public static class Run

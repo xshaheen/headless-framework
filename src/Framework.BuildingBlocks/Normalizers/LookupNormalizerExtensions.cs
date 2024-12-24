@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace Framework.BuildingBlocks.Helpers.Normalizers;
+namespace Framework.BuildingBlocks.Normalizers;
 
 public static class LookupNormalizerExtensions
 {

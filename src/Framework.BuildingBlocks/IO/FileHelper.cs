@@ -11,7 +11,7 @@ using Polly;
 using Polly.Retry;
 using File = System.IO.File;
 
-namespace Framework.BuildingBlocks.Helpers.IO;
+namespace Framework.BuildingBlocks.IO;
 
 [PublicAPI]
 public static partial class FileHelper

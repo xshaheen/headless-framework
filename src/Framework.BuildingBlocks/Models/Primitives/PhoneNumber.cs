@@ -2,7 +2,7 @@
 
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
-using Framework.BuildingBlocks.Helpers.Normalizers;
+using Framework.BuildingBlocks.Normalizers;
 using Framework.Domains;
 using PhoneNumbers;
 using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel.DataAnnotations.Schema;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Framework.Domains;
 
 namespace Framework.Orm.EntityFramework.AuditLogs.Entities;

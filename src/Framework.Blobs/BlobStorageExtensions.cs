@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 
 namespace Framework.Blobs;
 
