@@ -4,7 +4,7 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 
-namespace Framework.BuildingBlocks.Helpers.Network;
+namespace Framework.Network;
 
 [PublicAPI]
 public static class IpAddressHelper

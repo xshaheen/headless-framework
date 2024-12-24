@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.Text;
+using Framework.Text;
 
 namespace Framework.Settings.Values;
 

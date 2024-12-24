@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using Framework.Primitives;
 
-namespace Framework.BuildingBlocks.Helpers.Text;
+namespace Framework.Text;
 
 /// <summary>
 /// This class is used to extract dynamic values from a formatted string.
@@ -110,6 +110,8 @@ public static class FormattedStringValueExtracter
     }
 }
 
+#region Types
+
 public sealed class FormattedStringExtractionResult
 {
     internal FormattedStringExtractionResult(bool isMatch)
@@ -119,8 +121,10 @@ public sealed class FormattedStringExtractionResult
     }
 
     /// <summary>Is fully matched.</summary>
-    public bool IsMatch { get; set; }
+    public bool IsMatch { get; internal set; }
 
     /// <summary>List of matched dynamic values.</summary>
-    public List<NameValue> Matches { get; private set; }
+    public List<NameValue> Matches { get; }
 }
+
+#endregion
