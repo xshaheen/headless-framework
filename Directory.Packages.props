@@ -115,6 +115,7 @@
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="Nito.Disposables" Version="2.5.0" />
     <PackageVersion Include="NJsonSchema" Version="11.1.0" />
     <PackageVersion Include="Npgsql" Version="9.0.2" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />

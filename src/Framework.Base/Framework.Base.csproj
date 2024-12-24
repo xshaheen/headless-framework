@@ -7,11 +7,12 @@
   
   <ItemGroup>
     <PackageReference Include="morelinq" />
-    <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="MimeTypes">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Nito.AsyncEx" />
+    <PackageReference Include="Nito.Disposables" />
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="ZString" />
   </ItemGroup>

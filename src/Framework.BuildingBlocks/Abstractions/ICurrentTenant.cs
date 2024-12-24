@@ -24,7 +24,7 @@ public sealed class NullCurrentTenant : ICurrentTenant
 
     public string? Name => null;
 
-    public IDisposable Change(string? id, string? name = null) => Disposable.Empty;
+    public IDisposable Change(string? id, string? name = null) => DisposableFactory.Empty;
 }
 
 public sealed class CurrentTenant(ICurrentTenantAccessor currentTenantAccessor) : ICurrentTenant
@@ -44,14 +44,6 @@ public sealed class CurrentTenant(ICurrentTenantAccessor currentTenantAccessor) 
         currentTenantAccessor.Current = new TenantInformation(tenantId, name);
 
         // Reset on dispose
-        return Disposable.Create(
-            (currentTenantAccessor, currentScope),
-            static state =>
-            {
-                var (currentTenantAccessor, currentScope) = state;
-
-                currentTenantAccessor.Current = currentScope;
-            }
-        );
+        return DisposableFactory.Create(() => currentTenantAccessor.Current = currentScope);
     }
 }

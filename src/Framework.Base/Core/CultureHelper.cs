@@ -25,14 +25,11 @@ public static class CultureHelper
         CultureInfo.CurrentCulture = culture;
         CultureInfo.CurrentUICulture = uiCulture ?? culture;
 
-        return Disposable.Create(
-            (currentCulture, currentUiCulture),
-            static state =>
-            {
-                CultureInfo.CurrentCulture = state.currentCulture;
-                CultureInfo.CurrentUICulture = state.currentUiCulture;
-            }
-        );
+        return DisposableFactory.Create(() =>
+        {
+            CultureInfo.CurrentCulture = currentCulture;
+            CultureInfo.CurrentUICulture = currentUiCulture;
+        });
     }
 
     public static bool IsValidCultureCode(string? cultureCode)

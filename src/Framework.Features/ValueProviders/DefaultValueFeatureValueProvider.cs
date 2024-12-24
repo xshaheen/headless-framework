@@ -20,7 +20,7 @@ public sealed class DefaultValueFeatureValueProvider : IFeatureValueReadProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(Disposable.EmptyAsync);
+        return Task.FromResult(DisposableFactory.EmptyAsync);
     }
 
     public Task<string?> GetOrDefaultAsync(
