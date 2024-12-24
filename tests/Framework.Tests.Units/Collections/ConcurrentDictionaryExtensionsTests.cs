@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 
-namespace Tests.Extensions.Collections;
+namespace Tests.Collections;
 
 public sealed class ConcurrentDictionaryExtensionsTests
 {

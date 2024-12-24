@@ -2,7 +2,7 @@
 
 using Framework.Primitives;
 
-namespace Tests.Helpers.System;
+namespace Tests.Core;
 
 public sealed class TimeUnitTests
 {

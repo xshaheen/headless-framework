@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Tests.Extensions.IO;
+namespace Tests.IO;
 
 public sealed class StreamExtensionsTests
 {

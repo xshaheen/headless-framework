@@ -2,7 +2,7 @@
 
 using System.Linq.Expressions;
 
-namespace Tests.Extensions.Queryables;
+namespace Tests.Linq;
 
 public sealed class QueryableExtensionsTests
 {

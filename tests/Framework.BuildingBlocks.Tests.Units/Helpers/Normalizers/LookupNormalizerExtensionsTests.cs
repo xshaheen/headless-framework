@@ -61,7 +61,6 @@ public class LookupNormalizerExtensionsTests
         result.Should().BeNull();
     }
 
-    // Bug here because "\0"
     [Fact]
     public void normalize_phone_number_should_remove_spaces_and_return_invariant_digits()
     {

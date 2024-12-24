@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Tests.Extensions.System;
+namespace Tests.Core;
 
 public sealed class ComparableExtensionsTests
 {

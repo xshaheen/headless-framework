@@ -2,7 +2,7 @@
 
 using Framework.Core;
 
-namespace Tests.Extensions.System;
+namespace Tests.Core;
 
 public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposable
 {
