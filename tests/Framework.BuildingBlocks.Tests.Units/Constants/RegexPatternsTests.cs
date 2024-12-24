@@ -14,7 +14,7 @@ public sealed class RegexPatternsTests
     public void email_address_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.EmailAddress().IsMatch(input);
+        var result = RegexPatterns.EmailAddress.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -26,7 +26,7 @@ public sealed class RegexPatternsTests
     public void arabic_characters_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.ArabicCharacters().IsMatch(input);
+        var result = RegexPatterns.ArabicCharacters.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -38,7 +38,7 @@ public sealed class RegexPatternsTests
     public void rtl_characters_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.RtlCharacters().IsMatch(input);
+        var result = RegexPatterns.RtlCharacters.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -51,7 +51,7 @@ public sealed class RegexPatternsTests
     public void egyptian_national_id_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.EgyptianNationalId().IsMatch(input);
+        var result = RegexPatterns.EgyptianNationalId.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -64,7 +64,7 @@ public sealed class RegexPatternsTests
     public void spaces_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Spaces().IsMatch(input);
+        var result = RegexPatterns.Spaces.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -76,7 +76,7 @@ public sealed class RegexPatternsTests
     public void hidden_chars_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.HiddenChars().IsMatch(input);
+        var result = RegexPatterns.HiddenChars.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -89,7 +89,7 @@ public sealed class RegexPatternsTests
     public void quotes_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Quotes().IsMatch(input);
+        var result = RegexPatterns.Quotes.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -102,7 +102,7 @@ public sealed class RegexPatternsTests
     public void ip4_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Ip4().IsMatch(input);
+        var result = RegexPatterns.Ip4.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -115,7 +115,7 @@ public sealed class RegexPatternsTests
     public void ip6_should_match_expected_results(string input, bool isMatch)
     {
         // given
-        var result = RegexPatterns.Ip6().IsMatch(input);
+        var result = RegexPatterns.Ip6.IsMatch(input);
 
         // when
         result.Should().Be(isMatch);
@@ -128,7 +128,7 @@ public sealed class RegexPatternsTests
     public void ip_address_range_should_match_expected_results(string input, bool isMatch)
     {
         // when
-        var result = RegexPatterns.IpAddressRange().IsMatch(input);
+        var result = RegexPatterns.IpAddressRange.IsMatch(input);
 
         // then
         result.Should().Be(isMatch);

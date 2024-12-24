@@ -21,7 +21,7 @@ public static class DateTimeOffsetExtensions
     [JetBrainsPure]
     public static DateTimeOffset ToPalestineTimeZone(this DateTimeOffset dateTimeOffset)
     {
-        return dateTimeOffset.ToTimezone(TimezoneConstants.PalestineTimeZone);
+        return dateTimeOffset.ToTimezone(TimezoneConstants.GazaTimeZone);
     }
 
     [SystemPure]

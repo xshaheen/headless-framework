@@ -504,7 +504,7 @@ public static class StringExtensions
     [JetBrainsPure]
     public static string RemoveHiddenChars(this string input)
     {
-        return RegexPatterns.HiddenChars().Replace(input, replacement: string.Empty);
+        return RegexPatterns.HiddenChars.Replace(input, replacement: string.Empty);
     }
 
     /// <summary>Strips any single quotes or double quotes from the beginning and end of a string.</summary>
@@ -512,7 +512,7 @@ public static class StringExtensions
     [JetBrainsPure]
     public static string StripQuotes(this string s)
     {
-        return RegexPatterns.Quotes().Replace(s, "");
+        return RegexPatterns.Quotes.Replace(s, "");
     }
 
     /// <summary>
@@ -552,7 +552,7 @@ public static class StringExtensions
     [JetBrainsPure]
     public static string OneSpace(this string input)
     {
-        return RegexPatterns.Spaces().Replace(input, " ");
+        return RegexPatterns.Spaces.Replace(input, " ");
     }
 
     /// <summary>
@@ -683,7 +683,7 @@ public static class StringExtensions
     [JetBrainsPure]
     public static bool IsRtlText(this string text)
     {
-        return RegexPatterns.RtlCharacters().IsMatch(text);
+        return RegexPatterns.RtlCharacters.IsMatch(text);
     }
 
     /// <summary>

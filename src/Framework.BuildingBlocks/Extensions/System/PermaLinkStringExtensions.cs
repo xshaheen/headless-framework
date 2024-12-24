@@ -40,7 +40,7 @@ public static class PermaLinkStringExtensions
 
         var text = string.Concat(result).Trim();
 
-        return RegexPatterns.Spaces().Replace(text, "-");
+        return RegexPatterns.Spaces.Replace(text, "-");
     }
 
     private static IEnumerable<char> _NoAccent(this string input)
