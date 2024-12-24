@@ -199,11 +199,11 @@ public static partial class FileHelper
         var normalizeFileName = _NormalizeFileName(sanitizedFileName);
         var randomNumber = RandomNumberGenerator.GetInt32(10_000, int.MaxValue);
 
-        var trusedDisplayName = sanitizedFileName + extension.ToString();
+        var trustedDisplayName = sanitizedFileName + extension.ToString();
         var uniqueSaveName =
             normalizeFileName + "_" + randomNumber.ToString(CultureInfo.InvariantCulture) + extension.ToString();
 
-        return (trusedDisplayName, uniqueSaveName);
+        return (trustedDisplayName, uniqueSaveName);
     }
 
     /// <summary>
@@ -259,8 +259,7 @@ public static partial class FileHelper
     private static string _NormalizeFileName(string fileName)
     {
         var result = RegexPatterns
-            .Spaces()
-            .Replace(fileName, "_")
+            .Spaces.Replace(fileName, "_")
             ._RemoveAccentCharacters()
             ._ReplaceSymbolCharacters()
             ._JoinAsString()

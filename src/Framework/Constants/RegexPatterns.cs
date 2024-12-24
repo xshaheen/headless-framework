@@ -19,7 +19,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex EmailAddress();
+    public static partial Regex EmailAddress { get; }
 
     /// <summary>
     /// https://en.wikipedia.org/wiki/Arabic_script_in_Unicode
@@ -63,7 +63,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex ArabicCharacters();
+    public static partial Regex ArabicCharacters { get; }
 
     ///<summary>Represent RTL characters range use it to check whither a string contain RTL characters.</summary>
     [GeneratedRegex(
@@ -71,7 +71,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex RtlCharacters();
+    public static partial Regex RtlCharacters { get; }
 
     /// <summary>Matches a 14-digit national ID.</summary>
     [GeneratedRegex(
@@ -79,7 +79,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex EgyptianNationalId();
+    public static partial Regex EgyptianNationalId { get; }
 
     /// <summary>Matches one or more whitespace characters.</summary>
     [GeneratedRegex(
@@ -87,7 +87,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Spaces();
+    public static partial Regex Spaces { get; }
 
     /// <summary>Matches hidden characters not in the specified Unicode ranges.</summary>
     [GeneratedRegex(
@@ -95,7 +95,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex HiddenChars();
+    public static partial Regex HiddenChars { get; }
 
     /// <summary>Matches leading and trailing quotes.</summary>
     [GeneratedRegex(
@@ -103,7 +103,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Quotes();
+    public static partial Regex Quotes { get; }
 
     /// <summary>Matches IPv4 IP address.</summary>
     [GeneratedRegex(
@@ -111,7 +111,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Ip4();
+    public static partial Regex Ip4 { get; }
 
     /// <summary>Matches IPv6 IP address.</summary>
     [GeneratedRegex(
@@ -119,7 +119,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Ip6();
+    public static partial Regex Ip6 { get; }
 
     /// <summary>Match both IPv4, IPv6 addresses.</summary>
     [GeneratedRegex(
@@ -127,7 +127,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Ip();
+    public static partial Regex Ip { get; }
 
     /// <summary>Represent a URL with optional protocol.</summary>
     [GeneratedRegex(
@@ -135,7 +135,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Url();
+    public static partial Regex Url { get; }
 
     ///<summary>Represent a URL with HTTP(s) protocol.</summary>
     [GeneratedRegex(
@@ -143,7 +143,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex HttpUrl();
+    public static partial Regex HttpUrl { get; }
 
     /// <summary>Represent a YouTube video URL.</summary>
     [GeneratedRegex(
@@ -151,7 +151,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex YoutubeVideoUrl();
+    public static partial Regex YoutubeVideoUrl { get; }
 
     ///<summary>Represent ZIP Code.</summary>
     [GeneratedRegex(
@@ -159,7 +159,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex ZipCode();
+    public static partial Regex ZipCode { get; }
 
     /// <summary>Represent a UserName consist of "A-Za-Z-_.", can't repeat ".-_" and can't use them as suffix or prefix.</summary>
     [GeneratedRegex(
@@ -167,7 +167,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Username();
+    public static partial Regex Username { get; }
 
     /// <summary>Represent a slug.</summary>
     /// <example>hello, Hello, hello-world, hello-456-world, 456-hello, 456</example>
@@ -176,7 +176,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Slug();
+    public static partial Regex Slug { get; }
 
     /// <summary>Represent xml/html tag.</summary>
     [GeneratedRegex(
@@ -184,7 +184,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex XmlTag();
+    public static partial Regex XmlTag { get; }
 
     /// <summary>Represent a file with extension absolute/relative URL.</summary>
     /// <example>/api.example.com/file.jpg</example>
@@ -197,7 +197,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex FilePathUrl();
+    public static partial Regex FilePathUrl { get; }
 
     /// <summary>Represent file Name with extension having 3 chars.</summary>
     [GeneratedRegex(
@@ -205,7 +205,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex FileNameWithExtension();
+    public static partial Regex FileNameWithExtension { get; }
 
     /// <summary>Represent integer number.</summary>
     [GeneratedRegex(
@@ -213,7 +213,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex IntegerNumber();
+    public static partial Regex IntegerNumber { get; }
 
     /// <summary>Represent decimal number.</summary>
     [GeneratedRegex(
@@ -221,7 +221,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex DecimalNumber();
+    public static partial Regex DecimalNumber { get; }
 
     /// <summary>Represent hex number.</summary>
     [GeneratedRegex(
@@ -229,7 +229,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex HexNumber();
+    public static partial Regex HexNumber { get; }
 
     /// <summary>Represent date.</summary>
     [GeneratedRegex(
@@ -237,7 +237,7 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex Date(); //46494941649
+    public static partial Regex Date { get; } //46494941649
 
     /// <summary>Represent IpAddressRange.</summary>
     [GeneratedRegex(
@@ -245,5 +245,5 @@ public static partial class RegexPatterns
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
-    public static partial Regex IpAddressRange();
+    public static partial Regex IpAddressRange { get; }
 }

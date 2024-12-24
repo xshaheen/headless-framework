@@ -16,7 +16,7 @@ public static class EmailValidator
     /// <returns><see langword="true"/> if the e-mail address is valid, <see langword="false"/> otherwise.</returns>
     public static bool IsValid(string? email, bool requireDotInDomainName = false)
     {
-        var isValid = email is not null && RegexPatterns.EmailAddress().IsMatch(email);
+        var isValid = email is not null && RegexPatterns.EmailAddress.IsMatch(email);
 
         if (!isValid || !requireDotInDomainName)
         {
