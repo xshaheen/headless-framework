@@ -130,14 +130,11 @@ public static class ApiRegistration
         var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
         var middlewareAnalysisSubscription = diagnosticListener.SubscribeWithAdapter(middlewareAnalysis);
 
-        return Disposable.Create(
-            (badRequestSubscription, middlewareAnalysisSubscription),
-            static state =>
-            {
-                state.badRequestSubscription.Dispose();
-                state.middlewareAnalysisSubscription.Dispose();
-            }
-        );
+        return DisposableFactory.Create(() =>
+        {
+            badRequestSubscription.Dispose();
+            middlewareAnalysisSubscription.Dispose();
+        });
     }
 
     public static void AddFrameworkApiResponseCompression(this IServiceCollection services)
