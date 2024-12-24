@@ -21,7 +21,6 @@
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="Polly.RateLimiting" />
     <PackageReference Include="Snappier" />
-    <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
     <PackageReference Include="ZString" />
   </ItemGroup>

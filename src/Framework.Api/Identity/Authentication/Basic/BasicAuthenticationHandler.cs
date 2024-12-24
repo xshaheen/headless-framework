@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Encodings.Web;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;

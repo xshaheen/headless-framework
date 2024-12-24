@@ -111,6 +111,22 @@ public static class TaskExtensions
     }
 
     [DebuggerStepThrough]
+    public static ConfiguredValueTaskAwaitable<TResult> AnyContext<TResult>(this ValueTask<TResult> task)
+    {
+#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+#pragma warning restore VSTHRD003
+    }
+
+    [DebuggerStepThrough]
+    public static ConfiguredValueTaskAwaitable AnyContext(this ValueTask task)
+    {
+#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+#pragma warning restore VSTHRD003
+    }
+
+    [DebuggerStepThrough]
     public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this AwaitableDisposable<TResult> task)
         where TResult : IDisposable
     {

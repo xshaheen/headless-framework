@@ -5,7 +5,7 @@ using System.Xml;
 using System.Xml.Schema;
 using System.Xml.Serialization;
 
-namespace Framework.BuildingBlocks.Helpers.Xml;
+namespace Framework.Xml;
 
 [PublicAPI]
 public static class XmlHelper

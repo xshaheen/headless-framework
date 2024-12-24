@@ -154,26 +154,3 @@ public static partial class ProcessExtensions
         );
     }
 }
-
-#region Types
-
-public sealed record ProcessObservedOutput(ProcessObservedOutputType Type, string Text)
-{
-    public override string ToString()
-    {
-        return Type switch
-        {
-            ProcessObservedOutputType.StandardError => "error: " + Text,
-            _ => Text,
-        };
-    }
-}
-
-public enum ProcessObservedOutputType
-{
-    StandardOutput,
-    StandardError,
-    ExitCode,
-}
-
-#endregion
