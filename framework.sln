@@ -269,7 +269,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Loc
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Base", "src\Framework.Base\Framework.Base.csproj", "{10E30F37-CDE9-4F71-A548-531850973052}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Tests.Units", "tests\Framework.Tests.Units\Framework.Tests.Units.csproj", "{D796447C-2969-46AD-A160-87CC570765C7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Base.Tests.Units", "tests\Framework.Base.Tests.Units\Framework.Base.Tests.Units.csproj", "{D796447C-2969-46AD-A160-87CC570765C7}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
