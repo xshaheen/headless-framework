@@ -2,6 +2,7 @@
 
 namespace Framework.Constants;
 
+[PublicAPI]
 public static class EnvironmentNames
 {
     public const string Production = "Production";

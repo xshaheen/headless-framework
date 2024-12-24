@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Helpers.Threading;
+namespace Framework.Threading;
 
 /// <summary>
 /// Asynchronous locking based on a string key.

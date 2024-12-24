@@ -3,7 +3,7 @@
 using Framework.Checks;
 using Nito.AsyncEx;
 
-namespace Framework.BuildingBlocks.Helpers.Threading;
+namespace Framework.Threading;
 
 [PublicAPI]
 public static class AsyncHelpers
