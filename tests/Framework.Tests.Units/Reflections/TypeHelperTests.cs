@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Tests.Helpers.System;
+namespace Tests.Reflections;
 
 public sealed class TypeHelperTests
 {

@@ -2,12 +2,10 @@
 
 using Framework.BuildingBlocks.Helpers.Ar;
 
-namespace Tests.Extensions.System;
+namespace Tests.Helpers.System;
 
 public sealed class StringExtensionsSearchStringTests(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output = output;
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -106,8 +104,8 @@ public sealed class StringExtensionsSearchStringTests(ITestOutputHelper output)
         // act
         var result = value.SearchString();
 
-        _output.WriteLine($"result   =>{result}");
-        _output.WriteLine($"expected =>{expected}");
+        output.WriteLine($"result   =>{result}");
+        output.WriteLine($"expected =>{expected}");
 
         // assert
         result.Should().Be(expected);

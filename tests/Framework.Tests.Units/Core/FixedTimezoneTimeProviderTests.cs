@@ -2,7 +2,7 @@
 
 using Framework.Core;
 
-namespace Tests.Abstractions;
+namespace Tests.Core;
 
 public sealed class FixedTimezoneTimeProviderTests
 {

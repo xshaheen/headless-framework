@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Tests.Extensions.Collections;
+namespace Tests.Collections;
 
 public sealed class CollectionChangeDetectorExtensionsTests
 {

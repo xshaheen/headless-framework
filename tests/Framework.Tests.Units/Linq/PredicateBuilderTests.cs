@@ -3,7 +3,7 @@
 using System.Linq.Expressions;
 using Framework.Extensions;
 
-namespace Tests.Helpers.Linq;
+namespace Tests.Linq;
 
 public class PredicateBuilderTests
 {

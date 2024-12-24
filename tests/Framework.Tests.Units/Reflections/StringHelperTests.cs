@@ -2,7 +2,7 @@
 
 using Framework.Core;
 
-namespace Tests.Helpers.System;
+namespace Tests.Reflections;
 
 public class StringHelperTests
 {

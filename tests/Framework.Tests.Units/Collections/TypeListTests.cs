@@ -2,7 +2,7 @@
 
 using Framework.Collections;
 
-namespace Tests.Models.Collections;
+namespace Tests.Collections;
 
 public sealed class TypeListTests
 {

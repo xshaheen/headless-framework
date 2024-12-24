@@ -101,7 +101,7 @@ public static class EntityTypeBuilderExtensions
     public static void ConfigureCreateAudit<TEntity>(this EntityTypeBuilder<TEntity> b)
         where TEntity : class, ICreateAudit
     {
-        b.As<EntityTypeBuilder>().TryConfigureCreateAudit();
+        b.Cast<EntityTypeBuilder>().TryConfigureCreateAudit();
     }
 
     #endregion
@@ -157,7 +157,7 @@ public static class EntityTypeBuilderExtensions
     public static void ConfigureUpdateAudit<TEntity>(this EntityTypeBuilder<TEntity> b)
         where TEntity : class, IDeleteAudit
     {
-        b.As<EntityTypeBuilder>().TryConfigureUpdateAudit();
+        b.Cast<EntityTypeBuilder>().TryConfigureUpdateAudit();
     }
 
     public static void ConfigureUpdateAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
@@ -254,7 +254,7 @@ public static class EntityTypeBuilderExtensions
     public static void ConfigureDeleteAudit<TEntity>(this EntityTypeBuilder<TEntity> b)
         where TEntity : class, IDeleteAudit
     {
-        b.As<EntityTypeBuilder>().TryConfigureDeleteAudit();
+        b.Cast<EntityTypeBuilder>().TryConfigureDeleteAudit();
     }
 
     public static void ConfigureDeleteAudit<TId, TEntity, TCreator>(this EntityTypeBuilder<TEntity> builder)
@@ -351,7 +351,7 @@ public static class EntityTypeBuilderExtensions
     public static void ConfigureSuspendAudit<T>(this EntityTypeBuilder<T> b)
         where T : class, ISuspendAudit
     {
-        b.As<EntityTypeBuilder>().TryConfigureSuspendAudit();
+        b.Cast<EntityTypeBuilder>().TryConfigureSuspendAudit();
     }
 
     #endregion
@@ -372,7 +372,7 @@ public static class EntityTypeBuilderExtensions
     public static void ConfigureConcurrencyStamp<T>(this EntityTypeBuilder<T> b)
         where T : class, IHasConcurrencyStamp
     {
-        b.As<EntityTypeBuilder>().TryConfigureConcurrencyStamp();
+        b.Cast<EntityTypeBuilder>().TryConfigureConcurrencyStamp();
     }
 
     #endregion
@@ -393,7 +393,7 @@ public static class EntityTypeBuilderExtensions
     public static void ConfigureExtraProperties<T>(this EntityTypeBuilder<T> b)
         where T : class, IHasExtraProperties
     {
-        b.As<EntityTypeBuilder>().TryConfigureExtraProperties();
+        b.Cast<EntityTypeBuilder>().TryConfigureExtraProperties();
     }
 
     #endregion

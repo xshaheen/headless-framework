@@ -2,7 +2,7 @@
 
 using ObjectExtensions = System.ObjectExtensions;
 
-namespace Tests.Extensions.System;
+namespace Tests.Helpers.System;
 
 public sealed class ObjectExtensionsTests
 {
@@ -43,7 +43,7 @@ public sealed class ObjectExtensionsTests
     }
 
     [Fact]
-    public void InTests()
+    public void In_Tests()
     {
         5.In(1, 3, 5, 7).Should().Be(true);
         6.In(1, 3, 5, 7).Should().Be(false);

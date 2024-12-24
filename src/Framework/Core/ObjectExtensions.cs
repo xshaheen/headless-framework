@@ -79,4 +79,12 @@ public static class ObjectExtensions
     {
         return subject is TTo to ? to : default;
     }
+
+    /// <summary>Directly casts the specified object to the type specified through <typeparamref name="TTo"/>.</summary>
+    /// <remarks>Has been introduced to allow casting objects without breaking the fluent API.</remarks>
+    /// <typeparam name="TTo">The <see cref="Type"/> to cast <paramref name="subject"/> to</typeparam>
+    public static TTo Cast<TTo>(this object subject)
+    {
+        return (TTo)subject;
+    }
 }
