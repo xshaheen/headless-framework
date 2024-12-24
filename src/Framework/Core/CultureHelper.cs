@@ -27,7 +27,7 @@ public static class CultureHelper
 
         return Disposable.Create(
             (currentCulture, currentUiCulture),
-            state =>
+            static state =>
             {
                 CultureInfo.CurrentCulture = state.currentCulture;
                 CultureInfo.CurrentUICulture = state.currentUiCulture;

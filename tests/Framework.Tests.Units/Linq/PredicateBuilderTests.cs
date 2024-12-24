@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Framework.Extensions;
+using Framework.Linq;
 
 namespace Tests.Linq;
 

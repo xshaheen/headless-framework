@@ -2,9 +2,7 @@
 
 using System.Linq.Expressions;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace Framework.Extensions;
+namespace Framework.Linq;
 
 /// <summary>
 /// Predicate builder.
