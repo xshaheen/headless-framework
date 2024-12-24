@@ -6,7 +6,7 @@ using NetTopologySuite.IO.Converters;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace Framework.BuildingBlocks;
+namespace Framework.Constants;
 
 public static class FrameworkJsonConstants
 {

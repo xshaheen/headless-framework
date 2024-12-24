@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 

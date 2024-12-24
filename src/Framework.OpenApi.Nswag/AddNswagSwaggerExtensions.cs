@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Api.ApiExplorer;
-using Framework.BuildingBlocks;
-using Framework.BuildingBlocks.Helpers.Reflection;
+using Framework.Constants;
 using Framework.OpenApi.Nswag.Extensions;
 using Framework.OpenApi.Nswag.OperationProcessors;
 using Framework.OpenApi.Nswag.SchemaProcessors;
 using Framework.Primitives;
+using Framework.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.Reflection;
+using Framework.Reflection;
 
 namespace Framework.BuildingBlocks.Abstractions;
 

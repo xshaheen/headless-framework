@@ -2,8 +2,8 @@
 
 using FluentValidation;
 using FluentValidation.Validators;
-using Framework.BuildingBlocks.Helpers.System;
 using Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+using Framework.Text;
 
 namespace Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation;
 
@@ -20,7 +20,7 @@ internal static class ValidationExtensions
             .GetPropertyRules()
             .Where(ctx =>
                 HasNoCondition(ctx.ValidationRule)
-                && IgnoreAllStringComparer.Instance.Equals(ctx.ValidationRule.PropertyName, name)
+                && IgnoreCaseStringComparer.Instance.Equals(ctx.ValidationRule.PropertyName, name)
             );
     }
 

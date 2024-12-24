@@ -20,7 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
     <ProjectReference Include="..\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Core;
 using Framework.Features.Models;
 using Framework.Features.Values;
-using Framework.System;
 
 namespace Framework.Features.ValueProviders;
 
@@ -54,7 +54,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult<IAsyncDisposable>(NullAsyncDisposable.Instance);
+        return Task.FromResult(Disposable.EmptyAsync);
     }
 
     protected virtual Task<string?> NormalizeProviderKeyAsync(

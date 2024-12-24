@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
 using Microsoft.Extensions.Logging;

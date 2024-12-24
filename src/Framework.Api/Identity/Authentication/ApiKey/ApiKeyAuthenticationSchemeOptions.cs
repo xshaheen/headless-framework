@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Framework.Api.Identity.Authentication.ApiKey;

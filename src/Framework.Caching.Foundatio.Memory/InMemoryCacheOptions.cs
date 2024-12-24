@@ -4,6 +4,7 @@ using FluentValidation;
 
 namespace Framework.Caching;
 
+[PublicAPI]
 public sealed class InMemoryCacheOptions : CacheOptions
 {
     /// <summary>Gets or sets the maximum number of items to store in the cache.</summary>

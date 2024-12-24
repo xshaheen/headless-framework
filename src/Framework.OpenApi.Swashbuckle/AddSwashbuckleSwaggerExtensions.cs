@@ -3,11 +3,11 @@
 using System.Reflection;
 using Asp.Versioning.ApiExplorer;
 using Framework.Api.ApiExplorer;
-using Framework.BuildingBlocks;
-using Framework.BuildingBlocks.Helpers.Reflection;
+using Framework.Constants;
 using Framework.OpenApi.Swashbuckle.Extensions;
 using Framework.OpenApi.Swashbuckle.OperationFilters;
 using Framework.Primitives;
+using Framework.Reflection;
 using MicroElements.Swashbuckle.FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Controllers;

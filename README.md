@@ -11,6 +11,7 @@
 
 ## Test
 
+- More coverage in the Framework.Core project
 - Imaging
 - Media indexing integration tests
 - Entity framework integration tests

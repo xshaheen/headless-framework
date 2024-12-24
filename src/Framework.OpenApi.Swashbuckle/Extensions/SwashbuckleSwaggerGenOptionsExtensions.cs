@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Framework.BuildingBlocks.Helpers.Reflection;
 using Framework.Generator.Primitives;
-using Framework.Primitives;
+using Framework.Reflection;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Framework.OpenApi.Swashbuckle.Extensions;
 
 /// <summary>A static class providing methods to configure Swagger mappings for Primitive types.</summary>
+[PublicAPI]
 public static class SwashbuckleSwaggerGenOptionsExtensions
 {
     private const string _TypeName = "AddSwashbuckleSwaggerPrimitivesMappingsExtensions";
@@ -17,7 +17,7 @@ public static class SwashbuckleSwaggerGenOptionsExtensions
     /// <summary>Adds Swagger mappings for all Primitive types to the specified SwaggerGenOptions.</summary>
     public static void AddPrimitivesSwaggerMappings(this SwaggerGenOptions options, params Assembly[] assemblies)
     {
-        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
+        assemblies.InvokeAllStaticMethods(_TypeName, _MethodName, parameters: options);
     }
 
     /// <summary>Adds Swagger mappings for all Primitive types to the specified SwaggerGenOptions.</summary>
@@ -28,12 +28,12 @@ public static class SwashbuckleSwaggerGenOptionsExtensions
             excludePredicate: AssemblyHelper.IsSystemAssemblyName
         );
 
-        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
+        assemblies.InvokeAllStaticMethods(_TypeName, _MethodName, parameters: options);
     }
 
     /// <summary>Adds Swagger mappings for all Primitive types to the specified SwaggerGenOptions.</summary>
     public static void AddAllPrimitivesSwaggerMappings(this SwaggerGenOptions options, IEnumerable<Assembly> assemblies)
     {
-        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, options);
+        assemblies.InvokeAllStaticMethods(_TypeName, _MethodName, parameters: options);
     }
 }

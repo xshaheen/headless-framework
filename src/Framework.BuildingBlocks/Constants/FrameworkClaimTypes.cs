@@ -2,7 +2,7 @@
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace Framework.BuildingBlocks;
+namespace Framework.Constants;
 
 public static class FrameworkClaimTypes
 {
@@ -48,7 +48,12 @@ public static class FrameworkClaimTypes
     /// <summary>String from the time zone database (http://www.twinsun.com/tz/tz-link.htm) representing the End-User's time zone. For example, Europe/Paris or America/Los_Angeles.</summary>
     public const string ZoneInfo = "zoneinfo";
 
-    /// <summary>End-User's locale, represented as a BCP47 [RFC5646] language tag. This is typically an ISO 639-1 Alpha-2 [ISO639‑1] language code in lowercase and an ISO 3166-1 Alpha-2 [ISO3166‑1] country code in uppercase, separated by a dash. For example, en-US or fr-CA. As a compatibility note, some implementations have used an underscore as the separator rather than a dash, for example, en_US; Relying Parties MAY choose to accept this locale syntax as well.</summary>
+    /// <summary>
+    /// End-User's locale, represented as a BCP47 [RFC5646] language tag.
+    /// This is typically an ISO 639-1 Alpha-2 [ISO639‑1] language code in lowercase and an ISO 3166-1 Alpha-2 [ISO3166‑1] country code in uppercase, separated by a dash.
+    /// For example, en-US or fr-CA. As a compatibility note, some implementations have used an underscore as the separator rather than a dash, for example, en_US;
+    /// Relying on Parties MAY choose to accept this locale syntax as well.
+    /// </summary>
     public const string Locale = "locale";
 
     /// <summary>The identity provider.</summary>

@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Api.Constants;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Constants;
 
+[PublicAPI]
 public static class ProblemDetailTitles
 {
     public const string EndpointNotFounded = "endpoint-not-found";

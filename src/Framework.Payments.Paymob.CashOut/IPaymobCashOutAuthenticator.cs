@@ -2,7 +2,7 @@
 
 using System.Net.Http.Json;
 using Flurl;
-using Framework.BuildingBlocks.Helpers.Network;
+using Framework.Http;
 using Framework.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Options;
 
@@ -37,10 +37,7 @@ public sealed class PaymobCashOutAuthenticator(
         request.Content = new FormUrlEncodedContent(
             [new("grant_type", "password"), new("username", options.UserName), new("password", options.Password)]
         );
-        request.Headers.Authorization = AuthenticationHeaderValueFactory.CreateBasic(
-            options.ClientId,
-            options.ClientSecret
-        );
+        request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
 
         var response = await httpClient.SendAsync(request);
 
@@ -61,10 +58,7 @@ public sealed class PaymobCashOutAuthenticator(
 
         request.Method = HttpMethod.Post;
         request.RequestUri = new Uri(requestUrl, UriKind.Absolute);
-        request.Headers.Authorization = AuthenticationHeaderValueFactory.CreateBasic(
-            options.ClientId,
-            options.ClientSecret
-        );
+        request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
         request.Content = new FormUrlEncodedContent(
             [new("grant_type", "refresh_token"), new("refresh_token", refreshToken)]
         );

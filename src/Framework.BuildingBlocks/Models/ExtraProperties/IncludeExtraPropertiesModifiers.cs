@@ -2,12 +2,13 @@
 
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
-using Framework.BuildingBlocks.Helpers.Reflection;
 using Framework.Checks;
 using Framework.Primitives;
+using Framework.Reflection;
 
 namespace Framework.BuildingBlocks.Models.ExtraProperties;
 
+[PublicAPI]
 public static class IncludeExtraPropertiesModifiers
 {
     public static void Modify(JsonTypeInfo jsonTypeInfo)
@@ -32,8 +33,6 @@ public static class IncludeExtraPropertiesModifiers
         }
 
         propertyJsonInfo.Set = (obj, value) =>
-        {
-            ObjectPropertiesHelper.TrySetProperty(obj.As<IHasExtraProperties>(), x => x.ExtraProperties, () => value);
-        };
+            ObjectPropertiesHelper.TrySetProperty((IHasExtraProperties)obj, x => x.ExtraProperties, () => value);
     }
 }

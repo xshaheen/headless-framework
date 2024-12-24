@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.Text;
+using Framework.Text;
 
 namespace Framework.Settings.Values;
 
@@ -17,7 +17,7 @@ public sealed class SettingValueCacheItem(string? value)
 
     public static string? GetSettingNameFormCacheKey(string cacheKey)
     {
-        var result = FormattedStringValueExtracter.Extract(cacheKey, _CacheKeyFormat.Format, ignoreCase: true);
+        var result = FormattedStringValueExtractor.Extract(cacheKey, _CacheKeyFormat.Format, ignoreCase: true);
 
         return result.IsMatch ? result.Matches[^1].Value : null;
     }

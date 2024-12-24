@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Core;
 using Framework.Features.Models;
-using Framework.System;
 
 namespace Framework.Features.ValueProviders;
 
@@ -20,7 +20,7 @@ public sealed class DefaultValueFeatureValueProvider : IFeatureValueReadProvider
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult<IAsyncDisposable>(NullAsyncDisposable.Instance);
+        return Task.FromResult(Disposable.EmptyAsync);
     }
 
     public Task<string?> GetOrDefaultAsync(
