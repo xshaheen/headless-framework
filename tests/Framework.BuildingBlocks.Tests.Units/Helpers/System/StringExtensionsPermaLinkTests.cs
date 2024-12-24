@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Tests.Core;
+namespace Tests.Helpers.System;
 
 public sealed class StringExtensionsPermaLinkTests
 {

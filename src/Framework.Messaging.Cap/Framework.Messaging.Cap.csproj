@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework\Framework.csproj" />
     <ProjectReference Include="..\Framework.Messaging\Framework.Messaging.csproj" />
   </ItemGroup>
 

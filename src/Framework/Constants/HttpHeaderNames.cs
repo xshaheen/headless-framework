@@ -2,6 +2,7 @@
 
 namespace Framework.Constants;
 
+[PublicAPI]
 public static class HttpHeaderNames
 {
     public const string Authorization = "Authorization";

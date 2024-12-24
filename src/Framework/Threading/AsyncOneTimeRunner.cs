@@ -2,7 +2,7 @@
 
 using Nito.AsyncEx;
 
-namespace Framework.BuildingBlocks.Helpers.Threading;
+namespace Framework.Threading;
 
 /// <summary>
 /// This class is used to ensure running of a code block only once.
