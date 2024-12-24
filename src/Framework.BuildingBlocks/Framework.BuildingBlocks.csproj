@@ -26,7 +26,7 @@
     <ProjectReference Include="..\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" ExcludeAssets="runtime" />
     <ProjectReference Include="..\Framework.Domains\Framework.Domains.csproj" />
     <ProjectReference Include="..\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
-    <ProjectReference Include="..\Framework\Framework.csproj" />
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
   </ItemGroup>
 
   <PropertyGroup Label="Primitives Generator Settings">

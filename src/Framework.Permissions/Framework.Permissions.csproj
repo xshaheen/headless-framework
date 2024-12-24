@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework\Framework.csproj" />
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
     <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
     <ProjectReference Include="..\Framework.Messaging\Framework.Messaging.csproj" />
