@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework\Framework.csproj" />
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
   </ItemGroup>
 
 </Project>
