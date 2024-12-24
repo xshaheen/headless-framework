@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Helpers.System;
+namespace Framework.Core;
 
 [PublicAPI]
 public static class ExecutableFinder
@@ -8,19 +8,15 @@ public static class ExecutableFinder
     // https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/path
     public static string? GetFullExecutablePath(string executableName, string? workingDirectory = null)
     {
-        var separator = OperatingSystem.IsWindows() ? ';' : ':';
+        var isWindows = OperatingSystem.IsWindows();
+        var separator = isWindows ? ';' : ':';
+        var extensions = isWindows ? (Environment.GetEnvironmentVariable("PATHEXT") ?? "").Split(separator) : [];
 
-        var extensions = OperatingSystem.IsWindows()
-            ? (Environment.GetEnvironmentVariable("PATHEXT") ?? "").Split(separator)
-            : [];
-
-        var path = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(separator);
-
-        IEnumerable<string> searchPaths = path;
+        IEnumerable<string> searchPaths = Environment.GetEnvironmentVariable("PATH")?.Split(separator) ?? [];
 
         if (workingDirectory is not null)
         {
-            searchPaths = path.Prepend(workingDirectory);
+            searchPaths = searchPaths.Prepend(workingDirectory);
         }
 
         foreach (var searchPath in searchPaths)

@@ -12,6 +12,7 @@
     <PackageReference Include="morelinq" />
     <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="System.Reactive" />
+    <PackageReference Include="ZString" />
   </ItemGroup>
 
 </Project>

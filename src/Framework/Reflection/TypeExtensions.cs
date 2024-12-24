@@ -164,6 +164,24 @@ public static class TypeExtensions
         return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>);
     }
 
+    /// <summary>Returns void if given type is Task. Return T, if given type is Task{T}. Returns given type otherwise.</summary>
+    public static Type UnwrapTask(this Type type)
+    {
+        Argument.IsNotNull(type);
+
+        if (type == typeof(Task))
+        {
+            return typeof(void);
+        }
+
+        if (type.IsTaskOfT())
+        {
+            return type.GenericTypeArguments[0];
+        }
+
+        return type;
+    }
+
     #endregion
 
     #region Assignable

@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Framework.Generator.Primitives;
-using Framework.Primitives;
 using Framework.Reflection;
 
 #pragma warning disable IDE0130
@@ -10,6 +9,7 @@ using Framework.Reflection;
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>A static class providing methods to configure EF value converts for Primitive types.</summary>
+[PublicAPI]
 public static class ValueConvertersExtensions
 {
     private const string _TypeName = "AddPrimitivesValueConvertersExtensions";
@@ -21,7 +21,7 @@ public static class ValueConvertersExtensions
         params Assembly[] assemblies
     )
     {
-        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, configurationBuilder);
+        assemblies.InvokeAllStaticMethods(_TypeName, _MethodName, parameters: configurationBuilder);
     }
 
     /// <summary>Adds Value converters for all Primitive types to the specified ModelConfigurationBuilder.</summary>
@@ -32,7 +32,7 @@ public static class ValueConvertersExtensions
             excludePredicate: AssemblyHelper.IsSystemAssemblyName
         );
 
-        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, builder);
+        assemblies.InvokeAllStaticMethods(_TypeName, _MethodName, parameters: builder);
     }
 
     /// <summary>Adds Value converters for all Primitive types to the specified ModelConfigurationBuilder.</summary>
@@ -41,6 +41,6 @@ public static class ValueConvertersExtensions
         IEnumerable<Assembly> assemblies
     )
     {
-        PrimitiveInvokeHelper.InvokeInAssemblies(assemblies, _TypeName, _MethodName, builder);
+        assemblies.InvokeAllStaticMethods(_TypeName, _MethodName, parameters: builder);
     }
 }

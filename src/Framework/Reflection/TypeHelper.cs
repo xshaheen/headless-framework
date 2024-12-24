@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Reflection;
 
-namespace Framework.BuildingBlocks.Helpers.Reflection;
+namespace Framework.Reflection;
 
 [PublicAPI]
 public static class TypeHelper
