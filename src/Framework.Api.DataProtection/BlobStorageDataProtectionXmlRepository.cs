@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using Framework.Blobs;
 using Framework.BuildingBlocks.IO;
 using Framework.Checks;
+using Framework.Threading;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,7 +28,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     public IReadOnlyCollection<XElement> GetAllElements()
     {
-        return _GetAllElementsAsync().GetAwaiter().GetResult();
+        return Async.RunSync(_GetAllElementsAsync);
     }
 
     private async Task<IReadOnlyCollection<XElement>> _GetAllElementsAsync()
@@ -76,7 +77,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         Argument.IsNotNull(element);
         var fileName = string.IsNullOrEmpty(friendlyName) ? $"{Guid.NewGuid():N}.xml" : $"{friendlyName}.xml";
 
-        _StoreElementAsync(element, fileName).GetAwaiter().GetResult();
+        Async.RunSync(() => _StoreElementAsync(element, fileName));
     }
 
     private async Task _StoreElementAsync(XElement element, string fileName)
