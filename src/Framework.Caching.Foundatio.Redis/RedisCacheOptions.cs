@@ -5,6 +5,7 @@ using StackExchange.Redis;
 
 namespace Framework.Caching;
 
+[PublicAPI]
 public sealed class RedisCacheOptions : CacheOptions
 {
     public required IConnectionMultiplexer ConnectionMultiplexer { get; set; }

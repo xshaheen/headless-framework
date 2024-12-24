@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Extensions.UI;
+namespace Framework.UI;
 
 [PublicAPI]
 public static class DebounceExtensions

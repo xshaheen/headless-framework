@@ -1,15 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Helpers.System;
+namespace Framework.Text;
 
 /// <summary>
 /// Returns string equality only by symbols ignore a case.
 /// It can be used for comparing camelCase, PascalCase, snake_case, kebab-case identifiers.
 /// </summary>
 [PublicAPI]
-public sealed class IgnoreAllStringComparer : StringComparer
+public sealed class IgnoreCaseStringComparer : StringComparer
 {
-    public static readonly StringComparer Instance = new IgnoreAllStringComparer();
+    public static readonly StringComparer Instance = new IgnoreCaseStringComparer();
 
     public override int Compare(string? x, string? y)
     {

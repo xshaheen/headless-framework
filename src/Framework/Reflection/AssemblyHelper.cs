@@ -9,6 +9,17 @@ namespace Framework.Reflection;
 [PublicAPI]
 public static class AssemblyHelper
 {
+    public static bool IsSystemAssemblyName(string? assemblyFullName)
+    {
+        return assemblyFullName is not null
+            && (
+                assemblyFullName.StartsWith("System.", StringComparison.Ordinal)
+                || assemblyFullName.StartsWith("Microsoft.", StringComparison.Ordinal)
+            );
+    }
+
+    #region Get Assemblies From Folder
+
     public static List<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
     {
         return GetAssemblyFiles(folderPath, searchOption)
@@ -26,12 +37,17 @@ public static class AssemblyHelper
             );
     }
 
+    #endregion
+
+    #region Get Domain Assemblies
+
     public static HashSet<Assembly> GetCurrentAssemblies(
         Func<Assembly, bool> acceptPredicate,
         Func<string, bool> excludePredicate
     )
     {
         var currentlyLoadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+
         var (excluded, included) = currentlyLoadedAssemblies.Partition(assembly =>
             excludePredicate(assembly.FullName!)
         );
@@ -72,12 +88,40 @@ public static class AssemblyHelper
         return acceptedAssemblies;
     }
 
-    public static bool IsSystemAssemblyName(string? assemblyFullName)
+    #endregion
+
+    #region Invoke Static Methods
+
+    public static void InvokeAllStaticMethods(
+        this IEnumerable<Assembly> assemblies,
+        string typeName,
+        string methodName,
+        params object?[]? parameters
+    )
     {
-        return assemblyFullName is not null
-            && (
-                assemblyFullName.StartsWith("System.", StringComparison.Ordinal)
-                || assemblyFullName.StartsWith("Microsoft.", StringComparison.Ordinal)
-            );
+        foreach (var assembly in assemblies)
+        {
+            InvokeAllStaticMethods(assembly, typeName, methodName, parameters);
+        }
     }
+
+    public static void InvokeAllStaticMethods(
+        this Assembly assembly,
+        string typeName,
+        string methodName,
+        params object?[]? parameters
+    )
+    {
+        var methods = assembly
+            .GetExportedTypes()
+            .Where(type => type.IsPublic && string.Equals(type.Name, typeName, StringComparison.Ordinal))
+            .Select(type => type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static));
+
+        foreach (var method in methods)
+        {
+            method?.Invoke(obj: null, parameters);
+        }
+    }
+
+    #endregion
 }
