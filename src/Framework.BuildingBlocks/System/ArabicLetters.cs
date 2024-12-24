@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 // ReSharper disable IdentifierTypo
-namespace Framework.BuildingBlocks.Helpers.Ar;
+namespace Framework.BuildingBlocks.System;
 
 /// <summary>Arabic letters &amp; classification</summary>
 [PublicAPI]

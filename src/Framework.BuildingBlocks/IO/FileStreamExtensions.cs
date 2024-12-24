@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using Framework.Checks;
 using Framework.Primitives;
-using FileHelper = Framework.BuildingBlocks.Helpers.IO.FileHelper;
+using FileHelper = Framework.BuildingBlocks.IO.FileHelper;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

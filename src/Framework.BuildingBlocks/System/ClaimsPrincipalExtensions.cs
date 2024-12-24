@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Principal;
-using Framework.BuildingBlocks;
 using Framework.Checks;
+using Framework.Constants;
 using Framework.Primitives;
 
 #pragma warning disable IDE0130

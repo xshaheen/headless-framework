@@ -2,12 +2,13 @@
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace Framework.BuildingBlocks;
+namespace Framework.Constants;
 
 /// <summary>
 /// Constants for semantic attribute names outlined by the OpenTelemetry specifications.
 /// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/semantic_conventions/README.md"/>.
 /// </summary>
+[PublicAPI]
 public static class OpenTelemetryAttributeNames
 {
     /// <summary>

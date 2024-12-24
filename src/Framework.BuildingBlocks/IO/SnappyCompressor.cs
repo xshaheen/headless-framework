@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Constants;
 using Snappier;
 
-namespace Framework.BuildingBlocks.Helpers.IO;
+namespace Framework.BuildingBlocks.IO;
 
 [PublicAPI]
 public static class SnappyCompressor

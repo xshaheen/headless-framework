@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.IO;
+using FileHelper = Framework.BuildingBlocks.IO.FileHelper;
 
 namespace Tests.Helpers.IO;
 

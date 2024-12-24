@@ -7,7 +7,7 @@ using Framework.Constants;
 // ReSharper disable once CheckNamespace
 namespace System;
 
-public static class PermaLinkStringExtensions
+public static class PermaLinkStringHelper
 {
     /// <summary>Convert the string to SEO optimized and valid url.</summary>
     /// <param name="input">The string to be converted.</param>

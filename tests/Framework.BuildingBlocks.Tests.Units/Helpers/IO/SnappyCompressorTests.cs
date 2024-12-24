@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.Helpers.IO;
+using Framework.BuildingBlocks.IO;
 
 namespace Tests.Helpers.IO;
 

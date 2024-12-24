@@ -6,6 +6,7 @@ using Framework.Checks;
 // ReSharper disable once CheckNamespace
 namespace System.Security.Claims;
 
+[PublicAPI]
 public static class ClaimsPrincipalExtensions
 {
     public static bool IsSignedIn(this ClaimsPrincipal principal, string authenticationScheme)

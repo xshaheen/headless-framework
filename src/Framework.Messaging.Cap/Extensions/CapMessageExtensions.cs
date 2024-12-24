@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Framework.Domains;
 
 #pragma warning disable IDE0130

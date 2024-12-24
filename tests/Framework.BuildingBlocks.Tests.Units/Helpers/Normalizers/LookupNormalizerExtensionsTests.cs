@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Helpers.Normalizers;
+using Framework.BuildingBlocks.Normalizers;
 using Tests.Fakers;
 
 namespace Tests.Helpers.Normalizers;

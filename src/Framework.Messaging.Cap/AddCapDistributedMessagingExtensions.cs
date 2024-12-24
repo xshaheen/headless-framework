@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using DotNetCore.CAP;
-using Framework.BuildingBlocks;
+using Framework.Constants;
 using Framework.Messaging.Filters;
 using Microsoft.Extensions.DependencyInjection;
 
