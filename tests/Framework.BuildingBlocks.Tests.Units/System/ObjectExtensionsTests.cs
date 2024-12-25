@@ -2,7 +2,7 @@
 
 using ObjectExtensions = System.ObjectExtensions;
 
-namespace Tests.Helpers.System;
+namespace Tests.System;
 
 public sealed class ObjectExtensionsTests
 {

@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Normalizers;
-using Tests.Fakers;
+using Framework.Text;
 
-namespace Tests.Helpers.Normalizers;
+namespace Tests.Text;
 
 public class LookupNormalizerExtensionsTests
 {
+    private readonly Faker _faker = new();
+
     [Fact]
     public void normalize_name_should_return_uppercase_trimmed_name()
     {
@@ -15,7 +16,7 @@ public class LookupNormalizerExtensionsTests
         const string expected = "JOHN DOE";
 
         // when
-        var result = input.NormalizeName();
+        var result = LookupNormalizer.NormalizeUserName(input);
 
         // then
         result.Should().Be(expected);
@@ -28,7 +29,7 @@ public class LookupNormalizerExtensionsTests
         const string? input = null;
 
         // when
-        var result = input.NormalizeName();
+        var result = LookupNormalizer.NormalizeUserName(input);
 
         // then
         result.Should().BeNull();
@@ -38,11 +39,11 @@ public class LookupNormalizerExtensionsTests
     public void normalize_email_should_return_normalized_name_for_email()
     {
         // given
-        var email = FakerData.GenerateEmail();
+        var email = _faker.Internet.Email();
         var expected = email.ToUpper(CultureInfo.CurrentCulture);
 
         // when
-        var result = email.NormalizeEmail();
+        var result = LookupNormalizer.NormalizeEmail(email);
 
         // then
         result.Should().Be(expected);
@@ -55,7 +56,7 @@ public class LookupNormalizerExtensionsTests
         const string? email = null;
 
         // when
-        var result = email.NormalizeEmail();
+        var result = LookupNormalizer.NormalizeEmail(email);
 
         // then
         result.Should().BeNull();
@@ -69,7 +70,7 @@ public class LookupNormalizerExtensionsTests
         const string expected = "123456789";
 
         // when
-        var result = phoneNumber.NormalizePhoneNumber();
+        var result = LookupNormalizer.NormalizePhoneNumber(phoneNumber);
 
         // then
         result.Should().Be(expected);
@@ -82,7 +83,7 @@ public class LookupNormalizerExtensionsTests
         const string? phoneNumber = null;
 
         // when
-        var result = phoneNumber.NormalizePhoneNumber();
+        var result = LookupNormalizer.NormalizePhoneNumber(phoneNumber);
 
         // then
         result.Should().BeNull();

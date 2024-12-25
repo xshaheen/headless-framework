@@ -2,8 +2,8 @@
 
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
-using Framework.BuildingBlocks.Normalizers;
 using Framework.Domains;
+using Framework.Text;
 using PhoneNumbers;
 using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;
 
@@ -101,12 +101,11 @@ public sealed class PhoneNumber : ValueObject
     public static string Normalize(int code, string number)
     {
         var codeText = code.ToString(CultureInfo.InvariantCulture);
-        var numberText = number.NormalizePhoneNumber();
 
-        return $"+{codeText}{numberText}";
+        return $"+{codeText}{Normalize(number)}";
     }
 
-    public static string Normalize(string number) => number.NormalizePhoneNumber();
+    public static string Normalize(string number) => LookupNormalizer.NormalizePhoneNumber(number);
 
     public UtilsPhoneNumber ToUtilsPhoneNumber()
     {
