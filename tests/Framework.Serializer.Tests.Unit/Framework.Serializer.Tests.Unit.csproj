@@ -14,6 +14,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
+      <ProjectReference Include="..\..\src\Framework.Serializer.MessagePack\Framework.Serializer.MessagePack.csproj" />
     </ItemGroup>
 
 </Project>
