@@ -3,9 +3,10 @@
 using FluentValidation;
 using Framework.Checks;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
-namespace Framework.Hosting.Options;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.Extensions.Options;
 
 public static class OptionsBuilderFluentValidationExtensions
 {
