@@ -1,16 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
 namespace Framework.Constants;
 
+[PublicAPI]
 public static class LanguageCodes
 {
     public const string English = "en";
     public const string Arabic = "ar";
     public const string Korean = "kr";
     public const string Portuguese = "pt";
-    public const string PortugueseBrazil = "pt-BR";
     public const string Dutch = "nl";
     public const string Croatian = "hr";
     public const string Persian = "fa";

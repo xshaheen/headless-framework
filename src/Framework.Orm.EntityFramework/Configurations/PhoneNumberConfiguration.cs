@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Framework.BuildingBlocks.Models.Primitives;
+using Framework.BuildingBlocks.Primitives;
 using Framework.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
