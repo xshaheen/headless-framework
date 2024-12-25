@@ -17,7 +17,7 @@ namespace Framework.ResourceLocks.Storage.RegularLocks;
 public sealed class StorageResourceLockProvider(
     IResourceLockStorage storage,
     IMessageBus messageBus,
-    IUniqueLongGenerator longGenerator,
+    ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<StorageResourceLockProvider> logger,
     IOptions<ResourceLockOptions> optionsAccessor
@@ -50,7 +50,7 @@ public sealed class StorageResourceLockProvider(
         var normalizedTimeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
         var normalizedAcquireTimeout = _NormalizeAcquireTimeout(acquireTimeout);
 
-        var lockId = longGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
         using var activity = _StartLockActivity(resource);

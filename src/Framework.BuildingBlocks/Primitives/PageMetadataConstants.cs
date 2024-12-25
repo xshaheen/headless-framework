@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Models.Primitives;
+namespace Framework.BuildingBlocks.Primitives;
 
 public static class PageMetadataConstants
 {

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.Models.Primitives;
+using Framework.BuildingBlocks.Primitives;
 
 namespace Tests.Abstractions;
 

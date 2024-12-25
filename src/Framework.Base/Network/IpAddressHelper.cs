@@ -18,7 +18,7 @@ public static class IpAddressHelper
                     is {
                         IsReceiveOnly: false,
                         OperationalStatus: OperationalStatus.Up,
-                        NetworkInterfaceType: not NetworkInterfaceType.Loopback
+                        NetworkInterfaceType: not NetworkInterfaceType.Loopback,
                     }
             )
             .Select(i => (i.Name, i.NetworkInterfaceType, IpProperties: i.GetIPProperties()))
