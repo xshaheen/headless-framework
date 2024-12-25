@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.System;
+using Framework.Text;
 
 namespace Tests.System;
 

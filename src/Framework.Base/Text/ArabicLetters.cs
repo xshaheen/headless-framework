@@ -1,12 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-// ReSharper disable IdentifierTypo
-namespace Framework.BuildingBlocks.System;
+namespace Framework.Text;
 
 /// <summary>Arabic letters &amp; classification</summary>
 [PublicAPI]
+// ReSharper disable IdentifierTypo
 public static class ArabicLetters
 {
+    #region Main Letters
+
     /// <summary>Alef 'ا'.</summary>
     public const char Alef = '\u0627';
 
@@ -118,7 +120,9 @@ public static class ArabicLetters
     /// <summary>Yeh with hamza above 'ئ'.</summary>
     public const char YehHamza = '\u0626';
 
-    // Small Letters
+    #endregion
+
+    #region Small Letters
 
     /// <summary>Small alef ' ٰ'.</summary>
     public const char SmallAlef = '\u0670';
@@ -138,7 +142,9 @@ public static class ArabicLetters
     /// <summary>Hamza below ' ٕ'.</summary>
     public const char HamzaBelow = '\u0655';
 
-    // Ligatures
+    #endregion
+
+    #region Ligatures
 
     /// <summary>Lam alef 'ﻻ'.</summary>
     public const char LamAlef = '\ufefb';
@@ -152,7 +158,9 @@ public static class ArabicLetters
     /// <summary>Lam alef with madda above 'ﻵ'.</summary>
     public const char LamAlefMaddaAbove = '\ufef5';
 
-    // Diacritics
+    #endregion
+
+    #region Diacritics
 
     /// <summary>Fathatan ' ً_'.</summary>
     public const char Fathatan = '\u064b';
@@ -178,7 +186,9 @@ public static class ArabicLetters
     /// <summary>Sukun ' ْ_'.</summary>
     public const char Sukun = '\u0652';
 
-    // Marks and Signs
+    #endregion
+
+    #region Marks and Signs
 
     /// <summary>Arabic Comma '،'.</summary>
     public const char Comma = '\u060C';
@@ -204,7 +214,9 @@ public static class ArabicLetters
     /// <summary>Triple Dot Punctuation Mark '؞'.</summary>
     public const char TripleDotPunctuation = '\u061E';
 
-    // Ornaments
+    #endregion
+
+    #region Ornaments
 
     /// <summary>Star of Rub El Hizb Mark '۞'.</summary>
     public const char StarOfRubElHizb = '\u06DE';
@@ -224,52 +236,27 @@ public static class ArabicLetters
     /// <summary>Five Pointed start '٭'.</summary>
     public const char Star = '\u06E9';
 
-    public static FrozenSet<char> Sun { get; } =
-        new[] { Teh, Theh, Dal, Thal, Reh, Zain, Seen, Sheen, Sad, Dad, Tah, Zah, Lam, Noon }.ToFrozenSet();
+    #endregion
 
-    public static FrozenSet<char> Moon { get; } =
-        new[]
-        {
-            Hamza,
-            AlefMadda,
-            AlefHamzaAbove,
-            AlefHamzaBelow,
-            Alef,
-            Beh,
-            Jeem,
-            Hah,
-            Khah,
-            Ain,
-            Ghain,
-            Feh,
-            Qaf,
-            Kaf,
-            Meem,
-            Heh,
-            Waw,
-            Yeh,
-        }.ToFrozenSet();
+    public static FrozenSet<char> Sun { get; } = [Teh, Theh, Dal, Thal, Reh, Zain, Seen, Sheen, Sad, Dad, Tah, Zah, Lam, Noon];
 
-    public static FrozenSet<char> Tashkeel { get; } =
-        new[] { Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun, Shadda }.ToFrozenSet();
+    public static FrozenSet<char> Moon { get; } = [Hamza,AlefMadda,AlefHamzaAbove,AlefHamzaBelow,Alef,Beh,Jeem,Hah,Khah,Ain,Ghain,Feh,Qaf,Kaf,Meem,Heh,Waw,Yeh];
 
-    public static FrozenSet<char> Harakat { get; } =
-        new[] { Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun }.ToFrozenSet();
+    public static FrozenSet<char> Tashkeel { get; } = [Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun, Shadda];
 
-    public static FrozenSet<char> Tanwin { get; } = new[] { Fathatan, Dammatan, Kasratan }.ToFrozenSet();
+    public static FrozenSet<char> Harakat { get; } = [Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun];
 
-    public static FrozenSet<char> Liguatures { get; } =
-        new[] { LamAlef, LamAlefHamzaAbove, LamAlefHamzaBelow, LamAlefMaddaAbove }.ToFrozenSet();
+    public static FrozenSet<char> Tanwin { get; } = [Fathatan, Dammatan, Kasratan];
 
-    public static FrozenSet<char> Hamzat { get; } =
-        new[] { Hamza, WawHamza, YehHamza, HamzaAbove, HamzaBelow, AlefHamzaAbove, AlefHamzaBelow }.ToFrozenSet();
+    public static FrozenSet<char> Liguatures { get; } = [LamAlef, LamAlefHamzaAbove, LamAlefHamzaBelow, LamAlefMaddaAbove];
 
-    public static FrozenSet<char> Alefat { get; } =
-        new[] { Alef, AlefMadda, AlefHamzaAbove, AlefHamzaBelow, AlefWasla, AlefMaksura, SmallAlef }.ToFrozenSet();
+    public static FrozenSet<char> Hamzat { get; } = [Hamza, WawHamza, YehHamza, HamzaAbove, HamzaBelow, AlefHamzaAbove, AlefHamzaBelow];
 
-    public static FrozenSet<char> WawLike { get; } = new[] { Waw, WawHamza, SmallWaw }.ToFrozenSet();
+    public static FrozenSet<char> Alefat { get; } = [Alef, AlefMadda, AlefHamzaAbove, AlefHamzaBelow, AlefWasla, AlefMaksura, SmallAlef];
 
-    public static FrozenSet<char> YehLike { get; } = new[] { Yeh, YehHamza, AlefMaksura, SmallYeh }.ToFrozenSet();
+    public static FrozenSet<char> WawLike { get; } = [Waw, WawHamza, SmallWaw];
 
-    public static FrozenSet<char> TehLike { get; } = new[] { Teh, TehMarbuta }.ToFrozenSet();
+    public static FrozenSet<char> YehLike { get; } = [Yeh, YehHamza, AlefMaksura, SmallYeh];
+
+    public static FrozenSet<char> TehLike { get; } = [Teh, TehMarbuta];
 }

@@ -3,8 +3,6 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
 namespace Framework.Primitives;
 
 [PublicAPI]
@@ -12,9 +10,6 @@ namespace Framework.Primitives;
 [DebuggerDisplay("{" + nameof(Language) + "}-{" + nameof(Country) + "}")]
 public sealed class PreferredLocale(string country, string language) : IEquatable<PreferredLocale>
 {
-    public static readonly PreferredLocale ArEg = new("EG", "ar");
-    public static readonly PreferredLocale EnUs = new("US", "en");
-
     private PreferredLocale()
         : this(null!, null!) { }
 
