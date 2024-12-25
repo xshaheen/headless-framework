@@ -2,7 +2,7 @@
 
 using Framework.BuildingBlocks.System;
 
-namespace Tests.Helpers.System;
+namespace Tests.System;
 
 public sealed class StringExtensionsSearchStringTests(ITestOutputHelper output)
 {
