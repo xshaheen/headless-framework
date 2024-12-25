@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Framework.Checks;
-using Framework.Hosting.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
