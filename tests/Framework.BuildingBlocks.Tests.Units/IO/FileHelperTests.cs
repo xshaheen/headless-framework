@@ -2,7 +2,7 @@
 
 using FileHelper = Framework.BuildingBlocks.IO.FileHelper;
 
-namespace Tests.Helpers.IO;
+namespace Tests.IO;
 
 public sealed class FileHelperTests
 {

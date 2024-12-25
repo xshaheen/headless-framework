@@ -2,7 +2,7 @@
 
 using Framework.Primitives;
 
-namespace Tests.Models.Primitives;
+namespace Tests.Primitives;
 
 public sealed class PhoneNumberTests
 {

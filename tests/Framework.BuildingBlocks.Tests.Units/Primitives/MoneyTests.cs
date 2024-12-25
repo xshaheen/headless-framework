@@ -3,7 +3,7 @@
 using Framework.Generator.Primitives;
 using Framework.Primitives;
 
-namespace Tests.Models.Primitives;
+namespace Tests.Primitives;
 
 public sealed class MoneyTests
 {
