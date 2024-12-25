@@ -6,7 +6,7 @@ using Framework.Checks;
 using Framework.Primitives;
 using Framework.Reflection;
 
-namespace Framework.BuildingBlocks.Models.ExtraProperties;
+namespace Framework.BuildingBlocks.ExtraProperties;
 
 [PublicAPI]
 public static class IncludeExtraPropertiesModifiers

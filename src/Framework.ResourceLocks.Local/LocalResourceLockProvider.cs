@@ -12,7 +12,7 @@ namespace Framework.ResourceLocks.Local;
 
 [PublicAPI]
 public sealed class LocalResourceLockProvider(
-    IUniqueLongGenerator longGenerator,
+    ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<LocalResourceLockProvider> logger,
     IOptions<ResourceLockOptions> optionsAccessor
@@ -78,7 +78,7 @@ public sealed class LocalResourceLockProvider(
         var elapsed = timeProvider.GetElapsedTime(timestamp);
 
         var resourceLock = new ResourceLock(
-            LockId: longGenerator.Create().ToString(CultureInfo.InvariantCulture),
+            LockId: longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
             lockReleaser,
             timeUntilExpires.Value
         );

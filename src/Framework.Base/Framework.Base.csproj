@@ -6,6 +6,7 @@
   </PropertyGroup>
   
   <ItemGroup>
+    <PackageReference Include="IdGen" />
     <PackageReference Include="morelinq" />
     <PackageReference Include="MimeTypes">
       <PrivateAssets>all</PrivateAssets>

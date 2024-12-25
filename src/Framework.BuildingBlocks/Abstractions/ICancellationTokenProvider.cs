@@ -20,9 +20,9 @@ public static class CancellationTokenProviderExtensions
 {
     public static CancellationToken FallbackToProvider(
         this ICancellationTokenProvider provider,
-        CancellationToken prefferedValue = default
+        CancellationToken preferredValue = default
     )
     {
-        return prefferedValue == CancellationToken.None ? provider.Token : prefferedValue;
+        return preferredValue == CancellationToken.None ? provider.Token : preferredValue;
     }
 }

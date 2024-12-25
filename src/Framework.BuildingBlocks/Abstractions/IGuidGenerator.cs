@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Ids;
+using Framework.Core;
 
 namespace Framework.BuildingBlocks.Abstractions;
 

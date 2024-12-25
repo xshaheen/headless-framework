@@ -14,7 +14,7 @@ public sealed class LocalResourceLockProviderTests(ITestOutputHelper output) : R
         var optionWrapper = new OptionsWrapper<ResourceLockOptions>(option);
 
         return new LocalResourceLockProvider(
-            new SnowFlakIdUniqueLongGenerator(1),
+            new SnowFlakIdLongIdGenerator(1),
             TimeProvider.System,
             LoggerFactory.CreateLogger<LocalResourceLockProvider>(),
             optionWrapper

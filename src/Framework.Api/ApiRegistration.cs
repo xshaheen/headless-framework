@@ -77,7 +77,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<ISerializer>(services => services.GetRequiredService<IJsonSerializer>());
 
         builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-        builder.Services.TryAddSingleton<IUniqueLongGenerator>(new SnowFlakIdUniqueLongGenerator(1));
+        builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowFlakIdLongIdGenerator(1));
         builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
         builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
         builder.Services.TryAddSingleton(TimeProvider.System);

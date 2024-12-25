@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
-using Framework.BuildingBlocks.Models.Primitives;
+using Framework.BuildingBlocks.Primitives;
 using Framework.FluentValidation;
 using Framework.Primitives;
 
