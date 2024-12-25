@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using static Framework.BuildingBlocks.System.ArabicLetters;
+using static Framework.Text.ArabicLetters;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

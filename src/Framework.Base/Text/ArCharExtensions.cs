@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.System;
+using Framework.Text;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -8,6 +8,7 @@ namespace System;
 
 /// <summary>Arabic char extensions.</summary>
 [PublicAPI]
+// ReSharper disable IdentifierTypo
 public static class ArCharExtensions
 {
     /// <summary>Checks for Arabic Shadda Mark.</summary>

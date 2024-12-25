@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA1036  // Override methods on comparable types
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
 namespace Framework.Primitives;
 
 [PublicAPI]
+#pragma warning disable CA1036  // Override methods on comparable types
 public sealed class Range<T> : IEquatable<Range<T>>, IComparable<Range<T>>
     where T : IComparable<T>
 {
