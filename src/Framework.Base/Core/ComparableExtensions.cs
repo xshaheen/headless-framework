@@ -4,7 +4,6 @@
 // ReSharper disable once CheckNamespace
 namespace System;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="IComparable{T}"/>.</summary>
 [PublicAPI]
 public static class ComparableExtensions
 {

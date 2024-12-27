@@ -5,7 +5,6 @@ using System.Collections.ObjectModel;
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="IEnumerable{T}" />.</summary>
 [PublicAPI]
 public static partial class EnumerableExtensions
 {
