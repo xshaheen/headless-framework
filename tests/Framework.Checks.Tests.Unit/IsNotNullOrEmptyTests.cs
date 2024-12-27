@@ -9,21 +9,44 @@ public class IsNotNullOrEmptyTests
     [Fact]
     public void is_not_null_or_empty_throws_for_null_string_or_empty_string()
     {
+        // given
         const string? argumentNull = null;
-        var nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
+        var nullCustomMessage = $"Error {argumentNull} is null";
 
+        // when
+        var nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
+        var nullActionWithCustomMessage = () => Argument.IsNotNullOrEmpty(argumentNull, nullCustomMessage);
+
+        // then
         nullAction
             .Should()
             .ThrowExactly<ArgumentNullException>()
             .WithMessage("Required argument \"argumentNull\" was null. (Parameter 'argumentNull')");
 
-        const string argumentEmpty = "";
-        var emptyAction = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+        nullActionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"{nullCustomMessage} (Parameter 'argumentNull')");
 
+
+        // given
+        const string argumentEmpty = "";
+        var emptyCustomMessage = $"Error {argumentEmpty} is empty";
+
+        // when
+        var emptyAction = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+        var emptyActionWithCustomMessage = () => Argument.IsNotNullOrEmpty(argumentEmpty, emptyCustomMessage);
+
+        // then
         emptyAction
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("Required argument \"argumentEmpty\" was empty. (Parameter 'argumentEmpty')");
+
+        emptyActionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{emptyCustomMessage} (Parameter 'argumentEmpty')");
     }
 
     [Fact]
@@ -39,21 +62,44 @@ public class IsNotNullOrEmptyTests
     [Fact]
     public void is_not_null_or_empty_throws_for_null_or_empty_readonly_collection()
     {
+        // given
         IReadOnlyCollection<int>? argumentNull = null;
-        Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
+        var nullCustomMessage = $"Error collection is null";
 
+        // when
+        Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
+        Action nullActionWithCustomMessage = () => Argument.IsNotNullOrEmpty(argumentNull, nullCustomMessage);
+
+        // then
         nullAction
             .Should()
             .ThrowExactly<ArgumentNullException>()
             .WithMessage("Required argument \"argumentNull\" was null. (Parameter 'argumentNull')");
 
-        IReadOnlyCollection<int> argumentEmpty = new List<int>();
-        Action action = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+        nullActionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"{nullCustomMessage} (Parameter 'argumentNull')");
 
+
+        // given
+        IReadOnlyCollection<int> argumentEmpty = new List<int>();
+        var emptyCustomMessage = $"Error collection is empty";
+
+        // when
+        Action action = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+        Action actionWithCustomMessage = () => Argument.IsNotNullOrEmpty(argumentEmpty, emptyCustomMessage);
+
+        // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("Required argument \"argumentEmpty\" was empty. (Parameter 'argumentEmpty')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{emptyCustomMessage} (Parameter 'argumentEmpty')");
     }
 
     [Fact]
@@ -69,21 +115,44 @@ public class IsNotNullOrEmptyTests
     [Fact]
     public void is_not_null_or_empty_throws_for_empty_or_null_enumerable()
     {
+        // given
         IEnumerable<int>? argumentNull = null;
-        Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
+        var nullCustomMessage = $"Error elements are null";
 
+        // when
+        Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
+        Action nullActionWithCustomMessage = () => Argument.IsNotNullOrEmpty(argumentNull, nullCustomMessage);
+
+        // then
         nullAction
             .Should()
             .ThrowExactly<ArgumentNullException>()
             .WithMessage("Required argument \"argumentNull\" was null. (Parameter 'argumentNull')");
 
-        IEnumerable<int> argumentEmpty = new List<int>();
-        Action emptyAction = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+        nullActionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"{nullCustomMessage} (Parameter 'argumentNull')");
 
+
+        // given
+        IEnumerable<int> argumentEmpty = new List<int>();
+        var emptyCustomMessage = $"Error elements are empty";
+
+        // when
+        Action emptyAction = () => Argument.IsNotNullOrEmpty(argumentEmpty);
+        Action emptyActionWithCustomMessage = () => Argument.IsNotNullOrEmpty(argumentEmpty, emptyCustomMessage);
+
+        // then
         emptyAction
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("Required argument \"argumentEmpty\" was empty. (Parameter 'argumentEmpty')");
+
+        emptyActionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{emptyCustomMessage} (Parameter 'argumentEmpty')");
     }
 
     [Fact]

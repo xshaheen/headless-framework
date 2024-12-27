@@ -55,4 +55,34 @@ public class IsNegativeOrZeroTests
 
         action.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    public static readonly TheoryData<object, string> PositiveDataWithCustomMessage = new()
+    {
+        { (short)3, "Error argument must be negative or zero." },
+        { 3, "Error argument must be negative or zero." },
+        { 5L, "Error argument must be negative or zero." },
+        { 5.5f, "Error argument must be negative or zero." },
+        { 7.5, "Error argument must be negative or zero." },
+        { 7.5d, "Error argument must be negative or zero." },
+        { TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture), "Error argument must be negative or zero." }
+    };
+    [Theory]
+    [MemberData(nameof(PositiveDataWithCustomMessage))]
+    public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive_with_custom_message(object argument,string message)
+    {
+        Action action = argument switch
+        {
+            short value => () => Argument.IsNegativeOrZero(value, message),
+            int value => () => Argument.IsNegativeOrZero(value, message),
+            long value => () => Argument.IsNegativeOrZero(value, message),
+            float value => () => Argument.IsNegativeOrZero(value, message),
+            double value => () => Argument.IsNegativeOrZero(value, message),
+            decimal value => () => Argument.IsNegativeOrZero(value, message),
+            TimeSpan value => () => Argument.IsNegativeOrZero(value, message),
+            _ => throw new InvalidOperationException("Unsupported argument type"),
+        };
+
+        action.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage($"{message} (Parameter 'value')");
+    }
 }

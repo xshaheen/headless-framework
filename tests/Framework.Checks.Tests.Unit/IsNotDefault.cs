@@ -21,15 +21,21 @@ public class IsNotDefault
     {
         // given
         const int argument = 05;
-
+        var customMessage = $"Error {nameof(argument)} = {argument} is not default for int.";
         // when
         var action = () => Argument.IsDefault(argument);
+        var actionWithCustomMessage = () => Argument.IsDefault(argument, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("The argument \"argument\" must be default. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -46,17 +52,26 @@ public class IsNotDefault
     public void is_not_default_should_throw_if_argument_is_default()
     {
         // given
-        const int defaultValue = 0;
+        const int argument = 0;
+        var customMessage = $"Error {nameof(argument)} = {argument} is default for int.";
 
         // when
-        Action action = () => Argument.IsNotDefault(defaultValue);
+        Action action = () => Argument.IsNotDefault(argument);
+        Action actionWithCustomMessage = () => Argument.IsNotDefault(argument, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage(
-                "The argument \"defaultValue\" can NOT be the default value of <System.Int32>. (Parameter 'defaultValue')"
+                "The argument \"argument\" can NOT be the default value of <System.Int32>. (Parameter 'argument')"
+            );
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                $"{customMessage} (Parameter 'argument')"
             );
     }
 
@@ -85,14 +100,21 @@ public class IsNotDefault
     {
         // given
         int? argument = null;
+        var customMessage = $"Error {nameof(argument)} = {argument} is default null for nullable type.";
 
         // when
         Action action = () => Argument.IsNotDefaultOrNull(argument);
+        Action actionWithCustomMessage = () => Argument.IsNotDefaultOrNull(argument, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentNullException>()
             .WithMessage("Required argument \"argument\" was null. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 }
