@@ -269,6 +269,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Base", "src\Frame
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Base.Tests.Unit", "tests\Framework.Base.Tests.Unit\Framework.Base.Tests.Unit.csproj", "{D796447C-2969-46AD-A160-87CC570765C7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Scalar", "src\Framework.OpenApi.Scalar\Framework.OpenApi.Scalar.csproj", "{F000BD85-C165-462D-810F-50C70E0B7408}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -677,6 +679,10 @@ Global
 		{D796447C-2969-46AD-A160-87CC570765C7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D796447C-2969-46AD-A160-87CC570765C7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D796447C-2969-46AD-A160-87CC570765C7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F000BD85-C165-462D-810F-50C70E0B7408}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F000BD85-C165-462D-810F-50C70E0B7408}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F000BD85-C165-462D-810F-50C70E0B7408}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F000BD85-C165-462D-810F-50C70E0B7408}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -782,6 +788,7 @@ Global
 		{BEF4294B-6663-45DA-BFD5-ACFABB62C14E} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{10E30F37-CDE9-4F71-A548-531850973052} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{D796447C-2969-46AD-A160-87CC570765C7} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
+		{F000BD85-C165-462D-810F-50C70E0B7408} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
