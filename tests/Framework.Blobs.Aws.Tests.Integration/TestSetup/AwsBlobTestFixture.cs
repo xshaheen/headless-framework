@@ -1,33 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
+using Testcontainers.LocalStack;
+using Testcontainers.Xunit;
 
 namespace Tests.TestSetup;
 
-public sealed class AwsBlobTestFixture : IAsyncLifetime
+public sealed class AwsBlobTestFixture(IMessageSink messageSink)
+    : ContainerFixture<LocalStackBuilder, LocalStackContainer>(messageSink)
 {
-    private readonly IContainer _localstackContainer = new ContainerBuilder()
-        .WithImage("localstack/localstack:3.0.2")
-        .WithPortBinding("4563-4599", "4563-4599")
-        .WithPortBinding(8055, 8080)
-        .WithEnvironment("SERVICES", "s3")
-        .WithEnvironment("DEBUG", "1")
-        .WithBindMount("localstackdata", "/var/lib/localstack")
-        .WithBindMount("/var/run/docker.sock", "/var/run/docker.sock")
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(8080))
-        .Build();
-
-    /// <summary>This runs before all the test run and Called just after the constructor</summary>
-    public Task InitializeAsync()
+    protected override LocalStackBuilder Configure(LocalStackBuilder builder)
     {
-        return _localstackContainer.StartAsync();
-    }
-
-    /// <summary>This runs after all the test run and Called before Dispose()</summary>
-    public Task DisposeAsync()
-    {
-        return _localstackContainer.StopAsync();
+        return builder
+            .WithImage("localstack/localstack:3.0.2")
+            .WithEnvironment("SERVICES", "s3")
+            .WithEnvironment("DEBUG", "1")
+            .WithPortBinding(8055, 8080);
     }
 }
 

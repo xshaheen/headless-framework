@@ -12,14 +12,15 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(AwsBlobTestFixture))]
-public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
+public sealed class AwsBlobStorageTests(AwsBlobTestFixture fixture, ITestOutputHelper output)
+    : BlobStorageTestsBase(output)
 {
     protected override IBlobStorage GetStorage()
     {
         var s3Config = new AmazonS3Config
         {
             RegionEndpoint = RegionEndpoint.USEast1,
-            ServiceURL = "http://localhost:4566",
+            ServiceURL = fixture.Container.GetConnectionString(),
             ForcePathStyle = true,
         };
 

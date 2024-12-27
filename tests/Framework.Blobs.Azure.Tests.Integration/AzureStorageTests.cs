@@ -14,7 +14,6 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture, ITestOutputH
 {
     protected override IBlobStorage GetStorage()
     {
-        fixture.Container.GetBlobEndpoint();
         var options = new AzureStorageOptions
         {
             AccountName = "devstoreaccount1",
