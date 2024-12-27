@@ -2,7 +2,6 @@
 
 using Framework.Api.ApiExplorer;
 using Framework.Constants;
-using Framework.OpenApi.Nswag.Extensions;
 using Framework.OpenApi.Nswag.OperationProcessors;
 using Framework.OpenApi.Nswag.SchemaProcessors;
 using Framework.Primitives;
@@ -13,97 +12,58 @@ using NJsonSchema;
 using NJsonSchema.Generation;
 using NJsonSchema.Generation.TypeMappers;
 using NSwag;
+using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors.Security;
-using Scalar.AspNetCore;
 
 namespace Framework.OpenApi.Nswag;
 
 [PublicAPI]
 public static class AddNswagSwaggerExtensions
 {
-    // TODO: Add options to configure Nswag Swagger
+    #region Add
 
-    /*
-     * TODO: Problems with Nswag:
-     *  - Generic types of T can't detect nullability of T (e.g. T?) like DataEnvelope<T>
-     *  - query parameters should be camelCase
-     *  - form data parameters should be camelCase
-     */
-
-    public static IServiceCollection AddFrameworkNswagSwagger(this IServiceCollection services)
+    public static IServiceCollection AddFrameworkNswagOpenApi(
+        this IServiceCollection services,
+        Action<FrameworkNswagOptions>? setupFrameworkAction = null,
+        Action<AspNetCoreOpenApiDocumentGeneratorSettings>? setupGeneratorActions = null
+    )
     {
         services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
-                var productName = AssemblyInformation.Entry.Product?.Replace('.', ' ');
-
-                settings.DocumentName = "v1";
-                settings.Version = "1.0.0";
-                settings.Title = productName is null ? "API" : productName.EnsureEndsWith(" API");
-                settings.Description = SwaggerInformation.ResponsesDescription;
-                settings.DefaultResponseReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
-                settings.GenerateOriginalParameterNames = true;
-                settings.UseRouteNameAsOperationId = true;
-                settings.SchemaSettings.UseXmlDocumentation = true;
-                settings.SchemaSettings.GenerateEnumMappingDescription = true;
-                settings.SchemaSettings.FlattenInheritanceHierarchy = true;
-                settings.SchemaSettings.DefaultReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
-                settings.SchemaSettings.DefaultDictionaryValueReferenceTypeNullHandling =
-                    ReferenceTypeNullHandling.NotNull;
-
-                settings.SchemaSettings.SchemaProcessors.Add(new FluentValidationSchemaProcessor(serviceProvider));
-                settings.SchemaSettings.SchemaProcessors.Add(new NullabilityAsRequiredSchemaProcessor());
-
-                settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
-                settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
-                settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
-
-                settings.AddSecurity(_BearerDefinitionName, [], _GetBearerSecurityDefinition());
-                settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor(_BearerDefinitionName));
-
-                settings.SchemaSettings.AddBuildingBlocksPrimitiveMappings();
-                settings.SchemaSettings.AddAllPrimitivesSwaggerMappings();
+                _ConfigureGeneratorSettings(settings, serviceProvider);
+                setupGeneratorActions?.Invoke(settings);
+                _ConfigureGeneratorSettingsByFramework(settings, setupFrameworkAction);
             }
         );
 
         return services;
     }
 
-    public static WebApplication UseFrameworkNswagSwagger(this WebApplication app)
+    public static IServiceCollection AddFrameworkNswagOpenApi(
+        this IServiceCollection services,
+        Action<FrameworkNswagOptions>? setupFrameworkAction,
+        Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider> setupGeneratorActions
+    )
     {
-        app.MapScalarApiReference(options =>
-        {
-            options.EndpointPathPrefix = "/scalar/{documentName}";
-            options.OpenApiRoutePattern = "/openapi/{documentName}.json";
-            options.DarkMode = true;
-            options.HideDarkModeToggle = false;
-            options.Layout = ScalarLayout.Classic;
-            options.OperationSorter = OperationSorter.Alpha;
-            options.TagSorter = TagSorter.Alpha;
+        services.AddOpenApiDocument(
+            (settings, serviceProvider) =>
+            {
+                _ConfigureGeneratorSettings(settings, serviceProvider);
+                setupGeneratorActions?.Invoke(settings, serviceProvider);
+                _ConfigureGeneratorSettingsByFramework(settings, setupFrameworkAction);
+            }
+        );
 
-            options.EnabledTargets =
-            [
-                ScalarTarget.CSharp,
-                ScalarTarget.Go,
-                ScalarTarget.JavaScript,
-                ScalarTarget.Node,
-                ScalarTarget.PowerShell,
-                ScalarTarget.Shell,
-            ];
+        return services;
+    }
 
-            options.EnabledClients =
-            [
-                ScalarClient.HttpClient,
-                ScalarClient.Curl,
-                ScalarClient.Axios,
-                ScalarClient.Fetch,
-                ScalarClient.Xhr,
-                ScalarClient.WebRequest,
-                ScalarClient.Wget,
-                ScalarClient.Httpie,
-            ];
-        });
+    #endregion
 
+    #region Map
+
+    public static WebApplication MapFrameworkNswagOpenApi(this WebApplication app)
+    {
         foreach (var apiVersionDescription in app.DescribeApiVersions().OrderByDescending(v => v.ApiVersion))
         {
             app.UseOpenApi(settings =>
@@ -125,6 +85,8 @@ public static class AddNswagSwaggerExtensions
 
         return app;
     }
+
+    #endregion
 
     #region Bearer
 
@@ -230,6 +192,58 @@ public static class AddNswagSwaggerExtensions
                 }
             )
         );
+    }
+
+    #endregion
+
+    #region Configurations
+
+    private static void _ConfigureGeneratorSettings(
+        AspNetCoreOpenApiDocumentGeneratorSettings settings,
+        IServiceProvider serviceProvider
+    )
+    {
+        // General Settings
+        var productName = AssemblyInformation.Entry.Product?.Replace('.', ' ');
+        settings.Title = productName is null ? "API" : productName.EnsureEndsWith(" API");
+        settings.Description = SwaggerInformation.ResponsesDescription;
+        settings.DefaultResponseReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
+        settings.GenerateOriginalParameterNames = true;
+        settings.UseRouteNameAsOperationId = true;
+        settings.SchemaSettings.UseXmlDocumentation = true;
+        settings.SchemaSettings.GenerateEnumMappingDescription = true;
+        settings.SchemaSettings.FlattenInheritanceHierarchy = true;
+        settings.SchemaSettings.DefaultReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
+        settings.SchemaSettings.DefaultDictionaryValueReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
+        // Schema Processors
+        settings.SchemaSettings.SchemaProcessors.Add(new FluentValidationSchemaProcessor(serviceProvider));
+        settings.SchemaSettings.SchemaProcessors.Add(new NullabilityAsRequiredSchemaProcessor());
+        // Operation Processors
+        settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
+        settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
+        settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
+        // Custom Mappings
+        settings.SchemaSettings.AddBuildingBlocksPrimitiveMappings();
+    }
+
+    private static void _ConfigureGeneratorSettingsByFramework(
+        AspNetCoreOpenApiDocumentGeneratorSettings settings,
+        Action<FrameworkNswagOptions>? setupFrameworkAction
+    )
+    {
+        var frameworkOptions = new FrameworkNswagOptions();
+        setupFrameworkAction?.Invoke(frameworkOptions);
+
+        if (frameworkOptions.AddBearerSecurity)
+        {
+            settings.AddSecurity(_BearerDefinitionName, [], _GetBearerSecurityDefinition());
+            settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor(_BearerDefinitionName));
+        }
+
+        if (frameworkOptions.AddPrimitiveMappings)
+        {
+            settings.SchemaSettings.AddBuildingBlocksPrimitiveMappings();
+        }
     }
 
     #endregion
