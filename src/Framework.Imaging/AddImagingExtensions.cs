@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Imaging;
 
+[PublicAPI]
 public static class AddImagingExtensions
 {
     public static AddImagingBuilder AddImaging(this IServiceCollection services, IConfiguration config)

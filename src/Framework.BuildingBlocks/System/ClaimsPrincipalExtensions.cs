@@ -9,7 +9,6 @@ using Framework.Primitives;
 // ReSharper disable once CheckNamespace
 namespace System.Security.Claims;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="ClaimsPrincipal"/>.</summary>
 [PublicAPI]
 public static class ClaimsPrincipalExtensions
 {

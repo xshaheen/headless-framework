@@ -1,11 +1,83 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using System.Reflection;
+using System.Text.Json.Serialization.Metadata;
 using Framework.Checks;
+using Framework.Reflection;
 
-#pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
 namespace Framework.Primitives;
+
+[PublicAPI]
+public sealed class ExtraProperties : Dictionary<string, object?>
+{
+    public ExtraProperties()
+        : base(StringComparer.InvariantCulture) { }
+
+    public ExtraProperties(IDictionary<string, object?> dictionary)
+        : base(dictionary, StringComparer.InvariantCulture) { }
+}
+
+[PublicAPI]
+public static class ExtraPropertyExtensions
+{
+    public static T? ToEnum<T>(this ExtraProperties extraProperties, string key)
+        where T : Enum
+    {
+        var value = extraProperties[key];
+
+        if (value is null)
+        {
+            return default;
+        }
+
+        if (value.GetType() == typeof(T))
+        {
+            return (T)value;
+        }
+
+        var text = value.ToString();
+
+        if (text is null)
+        {
+            return default;
+        }
+
+        extraProperties[key] = Enum.Parse(typeof(T), text, ignoreCase: true);
+
+        return (T)value;
+    }
+
+    public static bool HasSameItems(this ExtraProperties dictionary, ExtraProperties otherDictionary)
+    {
+        Argument.IsNotNull(dictionary);
+        Argument.IsNotNull(otherDictionary);
+
+        if (dictionary.Count != otherDictionary.Count)
+        {
+            return false;
+        }
+
+        foreach (var key in dictionary.Keys)
+        {
+            if (
+                !otherDictionary.TryGetValue(key, out var value)
+                || !string.Equals(dictionary[key]?.ToString(), value?.ToString(), StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+[PublicAPI]
+public interface IHasExtraProperties
+{
+    ExtraProperties ExtraProperties { get; }
+}
 
 [PublicAPI]
 public static class HasExtraPropertiesExtensions
@@ -98,5 +170,34 @@ public static class HasExtraPropertiesExtensions
         Argument.IsNotNull(other);
 
         return source.ExtraProperties.HasSameItems(other.ExtraProperties);
+    }
+}
+
+[PublicAPI]
+public static class IncludeExtraPropertiesModifiers
+{
+    public static void Modify(JsonTypeInfo jsonTypeInfo)
+    {
+        Argument.IsNotNull(jsonTypeInfo);
+
+        if (!typeof(IHasExtraProperties).IsAssignableFrom(jsonTypeInfo.Type))
+        {
+            return;
+        }
+
+        var propertyJsonInfo = jsonTypeInfo.Properties.FirstOrDefault(x =>
+            x.AttributeProvider is MemberInfo memberInfo
+            && x.PropertyType == typeof(ExtraProperties)
+            && string.Equals(memberInfo.Name, nameof(IHasExtraProperties.ExtraProperties), StringComparison.Ordinal)
+            && x.Set is null
+        );
+
+        if (propertyJsonInfo is null)
+        {
+            return;
+        }
+
+        propertyJsonInfo.Set = (obj, value) =>
+            ObjectPropertiesHelper.TrySetProperty((IHasExtraProperties)obj, x => x.ExtraProperties, () => value);
     }
 }

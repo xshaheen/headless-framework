@@ -7,7 +7,6 @@ using Framework.Core;
 // ReSharper disable once CheckNamespace
 namespace System.IO;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="Stream"/>.</summary>
 [PublicAPI]
 public static class StreamExtensions
 {

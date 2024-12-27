@@ -6,7 +6,6 @@ using Framework.Constants;
 // ReSharper disable once CheckNamespace
 namespace System;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="DateTimeOffset"/>.</summary>
 [PublicAPI]
 public static class DateTimeOffsetExtensions
 {

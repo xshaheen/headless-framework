@@ -6,7 +6,6 @@ using System.IO.Compression;
 // ReSharper disable once CheckNamespace
 namespace System;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="byte"/>.</summary>
 [PublicAPI]
 public static class ByteExtensions
 {
