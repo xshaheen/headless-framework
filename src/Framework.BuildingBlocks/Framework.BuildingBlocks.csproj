@@ -7,14 +7,11 @@
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Flurl" />
-    <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="Jitbit.FastCache" />
     <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
-    <PackageReference Include="Polly.Core" />
-    <PackageReference Include="Polly.RateLimiting" />
     <PackageReference Include="Snappier" />
     <PackageReference Include="TimeZoneConverter" />
   </ItemGroup>

@@ -12,7 +12,6 @@ using Framework.Api.Middlewares;
 using Framework.Api.Security.Claims;
 using Framework.Api.Security.Jwt;
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.System;
 using Framework.Constants;
 using Framework.Core;
 using Framework.Serializer;
