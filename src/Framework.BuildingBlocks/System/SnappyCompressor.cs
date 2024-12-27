@@ -3,7 +3,7 @@
 using Framework.Constants;
 using Snappier;
 
-namespace Framework.BuildingBlocks.IO;
+namespace Framework.BuildingBlocks.System;
 
 [PublicAPI]
 public static class SnappyCompressor

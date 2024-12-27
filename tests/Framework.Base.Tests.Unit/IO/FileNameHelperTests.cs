@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FileHelper = Framework.BuildingBlocks.IO.FileHelper;
+using Framework.IO;
 
 namespace Tests.IO;
 
-public sealed class FileHelperTests
+public sealed class FileNameHelperTests
 {
     public static readonly TheoryData<string, string> SanitizeFileNameData = new()
     {
@@ -25,7 +25,7 @@ public sealed class FileHelperTests
     public void should_sanitize_as_expected_when_use_sanitize_file_name_method(string name, string expected)
     {
         // when
-        var result = FileHelper.SanitizeFileName(name);
+        var result = FileNameHelper.SanitizeFileName(name);
 
         // then
         result.Should().Be(expected);

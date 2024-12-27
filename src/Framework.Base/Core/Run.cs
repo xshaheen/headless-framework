@@ -8,11 +8,6 @@ namespace Framework.Core;
 [PublicAPI]
 public static class Run
 {
-    private static readonly Dictionary<
-        (int MaxAttempts, TimeSpan? RetryInterval, TimeProvider? TimeProvider),
-        ResiliencePipeline
-    > _RetryPipelines = [];
-
     public static Task DelayedAsync(
         TimeSpan delay,
         Func<Task> action,
@@ -211,6 +206,13 @@ public static class Run
         return resiliencePipeline.ExecuteAsync(callback, state, cancellationToken);
     }
 
+    #region Helpers
+
+    private static readonly Dictionary<
+        (int MaxAttempts, TimeSpan? RetryInterval, TimeProvider? TimeProvider),
+        ResiliencePipeline
+    > _RetryPipelines = [];
+
     private static ResiliencePipeline _CreateRetryPipeline(
         int maxAttempts = 5,
         TimeSpan? retryInterval = null,
@@ -251,4 +253,6 @@ public static class Run
 
         return builder.AddRetry(options).Build();
     }
+
+    #endregion
 }

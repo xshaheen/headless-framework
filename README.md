@@ -8,3 +8,4 @@
 ## Test
 
 - Settings/Permissions/Features integration test like abp
+- Resource lock test fixing
