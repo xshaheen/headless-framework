@@ -2,7 +2,7 @@
 
 ## To-Do
 
-- Building Blocks need to be refactored
+- Building Blocks need to be refactored (SearchableString, UserId/AccountId, ...)
 - Api need to be refactored
 
 ## Test

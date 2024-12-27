@@ -2,7 +2,7 @@
 
 using Framework.Checks;
 
-namespace Framework.BuildingBlocks.System;
+namespace Framework.BuildingBlocks.Abstractions;
 
 public interface IPasswordGenerator
 {
