@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.IO;
+using Framework.BuildingBlocks.System;
 
-namespace Tests.IO;
+namespace Tests.System;
 
 public class SnappyCompressorTests
 {

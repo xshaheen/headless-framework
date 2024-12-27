@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Cysharp.Text;
-using Framework.BuildingBlocks.IO;
+using Framework.IO;
 
 namespace Framework.Blobs.SshNet;
 
@@ -20,7 +20,7 @@ public sealed class SshBlobNamingNormalizer : IBlobNamingNormalizer
 
         foreach (var c in fileName)
         {
-            if (!FileHelper.InvalidFileNameChars.Contains(c))
+            if (!FileNameHelper.InvalidFileNameChars.Contains(c))
             {
                 sb.Append(c);
             }
