@@ -17,9 +17,9 @@
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
     <PackageVersion Include="AutoFixture" Version="5.0.0-preview0011" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.301" />
-    <PackageVersion Include="AWSSDK.S3" Version="3.7.410.10" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.406.6" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.68" />
+    <PackageVersion Include="AWSSDK.S3" Version="3.7.410.12" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.406.8" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.70" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.4.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.23.0" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.20.0" />
@@ -66,7 +66,7 @@
     <PackageVersion Include="MailKit" Version="4.9.0" />
     <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.5.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
-    <PackageVersion Include="MessagePack" Version="3.1.0" />
+    <PackageVersion Include="MessagePack" Version="3.1.1" />
     <PackageVersion Include="Meziantou.Extensions.Logging.Xunit" Version="1.0.8" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="9.0.0" />
@@ -133,7 +133,7 @@
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="1.2.71" />
-    <PackageVersion Include="Scrutor" Version="5.0.2" />
+    <PackageVersion Include="Scrutor" Version="5.1.0" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.1.2" />
@@ -186,12 +186,12 @@
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <GlobalPackageReference Include="AsyncFixer" Version="1.6.0" />
     <GlobalPackageReference Include="Asyncify" Version="0.9.7" />
-    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.19" />
+    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.21" />
     <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.10" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.182" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.184" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
