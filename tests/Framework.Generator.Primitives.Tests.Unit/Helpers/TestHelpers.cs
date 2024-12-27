@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using Framework.Generator.Primitives;
 using Framework.Generator.Primitives.Models;
@@ -24,9 +25,7 @@ internal static class TestHelpers
                 [
                     MetadataReference.CreateFromFile(typeof(T).Assembly.Location),
                     MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
-                    MetadataReference.CreateFromFile(
-                        typeof(System.ComponentModel.DataAnnotations.DisplayAttribute).Assembly.Location
-                    ),
+                    MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
                 ]
             );
 

@@ -143,8 +143,6 @@ dotnet_diagnostic.ca1310.severity = suggestion
 dotnet_diagnostic.ca1307.severity = suggestion
 # CA1305: Specify IFormatProvider
 dotnet_diagnostic.ca1305.severity = suggestion
-# CA2234: Pass System.Uri objects instead of strings
-dotnet_diagnostic.ca2234.severity = suggestion
 # CA1304: Specify CultureInfo
 dotnet_diagnostic.ca1304.severity = suggestion
 # CA1303: Do not pass literals as localized parameters
