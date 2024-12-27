@@ -1,21 +1,20 @@
-
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{BF9447CC-2D00-495A-A8C3-D4890EADB01B}"
 	ProjectSection(SolutionItems) = preProject
-		nuget.config = nuget.config
-		README.md = README.md
 		.editorconfig = .editorconfig
-		Directory.Build.props = Directory.Build.props
-		Directory.Packages.props = Directory.Packages.props
-		global.json = global.json
 		.gitattributes = .gitattributes
 		.gitignore = .gitignore
-		Directory.Solution.props = Directory.Solution.props
-		Directory.Build.targets = Directory.Build.targets
 		.github\workflows\ci.yml = .github\workflows\ci.yml
+		Directory.Build.props = Directory.Build.props
+		Directory.Build.targets = Directory.Build.targets
+		Directory.Packages.props = Directory.Packages.props
+		Directory.Solution.props = Directory.Solution.props
+		global.json = global.json
+		nuget.config = nuget.config
+		README.md = README.md
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "_build", "build\_build.csproj", "{9D4242B8-6D61-44A4-A77A-4681029A01E0}"
@@ -112,7 +111,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Identities", "Identities", 
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Identity.Storage.EntityFramework", "src\Framework.Identity.Storage.EntityFramework\Framework.Identity.Storage.EntityFramework.csproj", "{496E7197-D374-4931-A15C-239B18A660B3}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.BuildingBlocks.Tests.Units", "tests\Framework.BuildingBlocks.Tests.Units\Framework.BuildingBlocks.Tests.Units.csproj", "{2EF888C2-9ACA-4089-BDE2-844BAC9A2376}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.BuildingBlocks.Tests.Unit", "tests\Framework.BuildingBlocks.Tests.Unit\Framework.BuildingBlocks.Tests.Unit.csproj", "{2EF888C2-9ACA-4089-BDE2-844BAC9A2376}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.Testing", "src\Framework.Api.Testing\Framework.Api.Testing.csproj", "{AFD43D5B-6724-4F65-8CFA-E1F6641C95C3}"
 EndProject
@@ -190,17 +189,17 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Caching.Foundatio
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Permissions", "Permissions", "{84108258-3B89-47E6-8F75-8686FE69C6BF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.FluentValidation.Tests.Units", "tests\Framework.FluentValidation.Tests.Units\Framework.FluentValidation.Tests.Units.csproj", "{D3601FB7-7297-4F21-87B0-DA15EC11DA0C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.FluentValidation.Tests.Unit", "tests\Framework.FluentValidation.Tests.Unit\Framework.FluentValidation.Tests.Unit.csproj", "{D3601FB7-7297-4F21-87B0-DA15EC11DA0C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Domains.Tests.Units", "tests\Framework.Domains.Tests.Units\Framework.Domains.Tests.Units.csproj", "{7FE29994-06AE-4BF7-A060-41215A843C19}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Domains.Tests.Unit", "tests\Framework.Domains.Tests.Unit\Framework.Domains.Tests.Unit.csproj", "{7FE29994-06AE-4BF7-A060-41215A843C19}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Generator.Primitives.Tests.Units", "tests\Framework.Generator.Primitives.Tests.Units\Framework.Generator.Primitives.Tests.Units.csproj", "{C483CA8E-2EC2-41F8-9F4E-C3B639D06808}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Generator.Primitives.Tests.Unit", "tests\Framework.Generator.Primitives.Tests.Unit\Framework.Generator.Primitives.Tests.Unit.csproj", "{C483CA8E-2EC2-41F8-9F4E-C3B639D06808}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Nswag.Demo", "demo\Framework.OpenApi.Nswag.Demo\Framework.OpenApi.Nswag.Demo.csproj", "{39DF0C8B-5F8C-4A2A-A2CB-78F64C06483F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Storage.EntityFramework", "src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj", "{67E4FB80-6838-4D8B-96CE-EC225F2AD64F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Tests.Integrations", "tests\Framework.Settings.Tests.Integrations\Framework.Settings.Tests.Integrations.csproj", "{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Tests.Integration", "tests\Framework.Settings.Tests.Integration\Framework.Settings.Tests.Integration.csproj", "{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api.OpenApi", "Api.OpenApi", "{85ED3E8C-AB65-4CE4-8514-14B0850986A2}"
 EndProject
@@ -208,29 +207,29 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Swashbuck
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Storage.EntityFramework", "src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj", "{3A9266E7-A6CA-4C33-9E18-4501F9504816}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Tests.Integrations", "tests\Framework.Features.Tests.Integrations\Framework.Features.Tests.Integrations.csproj", "{4E3B3E1F-D84C-4FE4-9E5E-058BFA29699C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Tests.Integration", "tests\Framework.Features.Tests.Integration\Framework.Features.Tests.Integration.csproj", "{4E3B3E1F-D84C-4FE4-9E5E-058BFA29699C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.EntityFramework.Migrations.Startup", "demo\Framework.EntityFramework.Migrations.Startup\Framework.EntityFramework.Migrations.Startup.csproj", "{79AC0B05-1F01-45F7-9576-AE74CEC6FE9F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Permissions.Storage.EntityFramework", "src\Framework.Permissions.Storage.EntityFramework\Framework.Permissions.Storage.EntityFramework.csproj", "{B3582D9E-4456-4BAC-B9B1-1C438C7F4D94}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Permissions.Tests.Integrations", "tests\Framework.Permissions.Tests.Integrations\Framework.Permissions.Tests.Integrations.csproj", "{45EE0F71-5038-4D09-9424-F870B62790C8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Permissions.Tests.Integration", "tests\Framework.Permissions.Tests.Integration\Framework.Permissions.Tests.Integration.csproj", "{45EE0F71-5038-4D09-9424-F870B62790C8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sitemaps", "src\Framework.Sitemaps\Framework.Sitemaps.csproj", "{CDFC5372-7803-45DA-BBB0-BEE35BEA61C4}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Seo", "Seo", "{598A8FF8-F74D-4E1D-BAA2-BD8A3D20EBF7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sitemaps.Tests.Units", "tests\Framework.Sitemaps.Tests.Units\Framework.Sitemaps.Tests.Units.csproj", "{9CD5A8AB-43D1-4B06-BB53-AE785B865EA5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sitemaps.Tests.Unit", "tests\Framework.Sitemaps.Tests.Unit\Framework.Sitemaps.Tests.Unit.csproj", "{9CD5A8AB-43D1-4B06-BB53-AE785B865EA5}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Payments", "Payments", "{BD0F9A3E-1C87-4FA2-81FB-5439E2CF548E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashIn", "src\Framework.Payments.Paymob.CashIn\Framework.Payments.Paymob.CashIn.csproj", "{CEB9163B-EF3B-4686-A9BD-A7D1E3484528}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashIn.Tests.Units", "tests\Framework.Payments.Paymob.CashIn.Tests.Units\Framework.Payments.Paymob.CashIn.Tests.Units.csproj", "{CA90A859-0478-43EE-8F8B-1B00A6B05FD8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashIn.Tests.Unit", "tests\Framework.Payments.Paymob.CashIn.Tests.Unit\Framework.Payments.Paymob.CashIn.Tests.Unit.csproj", "{CA90A859-0478-43EE-8F8B-1B00A6B05FD8}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashOut", "src\Framework.Payments.Paymob.CashOut\Framework.Payments.Paymob.CashOut.csproj", "{B40C1892-5425-4976-8DC5-34621D29FC42}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashOut.Tests.Units", "tests\Framework.Payments.Paymob.CashOut.Tests.Units\Framework.Payments.Paymob.CashOut.Tests.Units.csproj", "{25919EEC-1A26-4557-B7DD-8F08C9BBFE1C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.CashOut.Tests.Unit", "tests\Framework.Payments.Paymob.CashOut.Tests.Unit\Framework.Payments.Paymob.CashOut.Tests.Unit.csproj", "{25919EEC-1A26-4557-B7DD-8F08C9BBFE1C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Payments.Paymob.Services", "src\Framework.Payments.Paymob.Services\Framework.Payments.Paymob.Services.csproj", "{615E8F1B-9108-45E6-8BB6-DCA74E53D267}"
 EndProject
@@ -238,37 +237,37 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Tests.Harne
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Testing", "src\Framework.Testing\Framework.Testing.csproj", "{7E166BAB-7EA7-4586-B345-74CC7B214745}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.SshNet.Tests.Integrations", "tests\Framework.Blobs.SshNet.Tests.Integrations\Framework.Blobs.SshNet.Tests.Integrations.csproj", "{B369B9BE-DA7A-4391-A9EA-C496BC10C246}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.SshNet.Tests.Integration", "tests\Framework.Blobs.SshNet.Tests.Integration\Framework.Blobs.SshNet.Tests.Integration.csproj", "{B369B9BE-DA7A-4391-A9EA-C496BC10C246}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.FileSystem.Tests.Integrations", "tests\Framework.Blobs.FileSystem.Tests.Integrations\Framework.Blobs.FileSystem.Tests.Integrations.csproj", "{060E0990-C413-428A-AB63-2D9CAA0C237F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.FileSystem.Tests.Integration", "tests\Framework.Blobs.FileSystem.Tests.Integration\Framework.Blobs.FileSystem.Tests.Integration.csproj", "{060E0990-C413-428A-AB63-2D9CAA0C237F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Azure.Tests.Integrations", "tests\Framework.Blobs.Azure.Tests.Integrations\Framework.Blobs.Azure.Tests.Integrations.csproj", "{07736E4B-D0BF-4A6D-9C5E-9089DB7C402F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Azure.Tests.Integration", "tests\Framework.Blobs.Azure.Tests.Integration\Framework.Blobs.Azure.Tests.Integration.csproj", "{07736E4B-D0BF-4A6D-9C5E-9089DB7C402F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Aws.Tests.Integrations", "tests\Framework.Blobs.Aws.Tests.Integrations\Framework.Blobs.Aws.Tests.Integrations.csproj", "{67C70237-0BDA-4976-B237-24166ABB5064}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Aws.Tests.Integration", "tests\Framework.Blobs.Aws.Tests.Integration\Framework.Blobs.Aws.Tests.Integration.csproj", "{67C70237-0BDA-4976-B237-24166ABB5064}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Captcha", "Captcha", "{B2C5F15F-41C1-4335-869D-5A8E29F2ADA4}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Tests.Harness", "tests\Framework.ResourceLocks.Tests.Harness\Framework.ResourceLocks.Tests.Harness.csproj", "{F10E592C-583C-438D-9F01-8B53502C60ED}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Checks.Tests.Units", "tests\Framework.Checks.Tests.Units\Framework.Checks.Tests.Units.csproj", "{70456612-825D-47C2-84E8-7AE09BDBD9ED}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Checks.Tests.Unit", "tests\Framework.Checks.Tests.Unit\Framework.Checks.Tests.Unit.csproj", "{70456612-825D-47C2-84E8-7AE09BDBD9ED}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.FluentValidation.Tests.Units", "tests\Framework.Api.FluentValidation.Tests.Units\Framework.Api.FluentValidation.Tests.Units.csproj", "{F2F6363E-F52B-4A33-8167-182FD03AB6D9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Api.FluentValidation.Tests.Unit", "tests\Framework.Api.FluentValidation.Tests.Unit\Framework.Api.FluentValidation.Tests.Unit.csproj", "{F2F6363E-F52B-4A33-8167-182FD03AB6D9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Serializer.Tests.Unit", "tests\Framework.Serializer.Tests.Unit\Framework.Serializer.Tests.Unit.csproj", "{93AF912A-FEAF-4CF9-82A6-3F0DB629B410}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Hosting.Tests.Units", "tests\Framework.Hosting.Tests.Units\Framework.Hosting.Tests.Units.csproj", "{DFF05727-A773-4760-8FD3-FDAC7E3A1468}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Hosting.Tests.Unit", "tests\Framework.Hosting.Tests.Unit\Framework.Hosting.Tests.Unit.csproj", "{DFF05727-A773-4760-8FD3-FDAC7E3A1468}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sms.Vodafone", "src\Framework.Sms.Vodafone\Framework.Sms.Vodafone.csproj", "{778FD47A-393F-45B8-9184-63DD8B373CEB}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sms.Connekio", "src\Framework.Sms.Connekio\Framework.Sms.Connekio.csproj", "{98F0E346-741A-4F06-8CDC-A3F290BDA6D9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Specifications.Tests.Units", "tests\Framework.Specifications.Tests.Units\Framework.Specifications.Tests.Units.csproj", "{1C1D852D-CD0F-4C05-BBB3-3019162E96F4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Specifications.Tests.Unit", "tests\Framework.Specifications.Tests.Unit\Framework.Specifications.Tests.Unit.csproj", "{1C1D852D-CD0F-4C05-BBB3-3019162E96F4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Local.Tests.Integrations", "tests\Framework.ResourceLocks.Local.Tests.Integrations\Framework.ResourceLocks.Local.Tests.Integrations.csproj", "{BEF4294B-6663-45DA-BFD5-ACFABB62C14E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Local.Tests.Integration", "tests\Framework.ResourceLocks.Local.Tests.Integration\Framework.ResourceLocks.Local.Tests.Integration.csproj", "{BEF4294B-6663-45DA-BFD5-ACFABB62C14E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Base", "src\Framework.Base\Framework.Base.csproj", "{10E30F37-CDE9-4F71-A548-531850973052}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Base.Tests.Units", "tests\Framework.Base.Tests.Units\Framework.Base.Tests.Units.csproj", "{D796447C-2969-46AD-A160-87CC570765C7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Base.Tests.Unit", "tests\Framework.Base.Tests.Unit\Framework.Base.Tests.Unit.csproj", "{D796447C-2969-46AD-A160-87CC570765C7}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -690,6 +689,7 @@ Global
 		{CAC04A22-3761-4D26-AB6C-ED0A968282A3} = {9DF89FEA-3DC2-4C8D-B844-29E42743354A}
 		{26E032E6-DE7B-476E-96DB-9D7C201654E3} = {9DF89FEA-3DC2-4C8D-B844-29E42743354A}
 		{93429496-05B1-4F74-923F-9DF1DBE6157A} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
+		{87047EE1-F8DE-4C9E-918D-2ACB15E571EF} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{B55682C8-FC5A-483E-AAFE-8BCD3EB5AF7B} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
 		{7E75D848-8F06-4DEC-9D31-344A8FEB9C2C} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
 		{46C96B78-5A8B-4C2E-966B-D6236D448225} = {1D4BED51-D7B1-45F3-AEEE-CEDADBE4EDDB}
@@ -705,16 +705,20 @@ Global
 		{2FF811C7-A025-4D3E-AD50-B80E719A367A} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
 		{7F5523AF-D4EC-45E8-8849-16A4D3EF5D7E} = {7D1ABA75-9EF8-4E6B-8000-F0A18CBB923F}
 		{AFA88C95-3A85-4333-992C-58BE6543317F} = {36E82089-A2EA-40C2-9526-C4FECB0D69D7}
+		{6CE196DB-E0EF-45B4-859F-FA72A8F902E3} = {B2C5F15F-41C1-4335-869D-5A8E29F2ADA4}
 		{9B23510C-6C48-40FB-B976-912BC5B65383} = {13DBFD21-B6BD-4CA9-9459-9E102ACF0314}
 		{C2448001-A86D-4EB4-A9E7-ADC07A7A29E3} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{A70BB165-6286-4430-9315-68E584C86B9B} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{D297639E-4EF2-45FB-9B17-B1C39C0D1BED} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{590DF3E1-CC61-460A-9693-81D7128F75C3} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
+		{393BC744-61C8-4819-8D25-E1F2EDCF0A10} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
+		{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
 		{4544F0BD-8441-485F-B25D-7FED64D2759E} = {4681258C-BF42-4688-B619-513EB2658D82}
 		{CFE0418B-0A40-496C-A387-2F42829707B5} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
 		{517A2DBC-FD71-4DC9-AAEA-9D2CD8E0A5A0} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
 		{7621EE60-E4D5-4E06-94B2-D01C9D35A2CA} = {4681258C-BF42-4688-B619-513EB2658D82}
 		{496E7197-D374-4931-A15C-239B18A660B3} = {305D1DE0-A6FB-4D0E-B016-255621E3E238}
+		{2EF888C2-9ACA-4089-BDE2-844BAC9A2376} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{AFD43D5B-6724-4F65-8CFA-E1F6641C95C3} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{8B4CAA3A-74F4-407B-B15D-E48FC224B251} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{ABE9F5F1-B8CD-42C3-92D7-F73D707D3CDB} = {7119071F-8B25-48AB-8A76-09BC3A9F5AF3}
@@ -723,12 +727,14 @@ Global
 		{19D2BF87-02D2-4D46-862C-69DBD51D99DF} = {DDE5B4C3-E149-430A-BC51-E984F8435B54}
 		{52138F3C-512F-492C-9771-7147AF3B3660} = {661CFF04-0F0C-4F0A-A61D-5FCF7DB29D15}
 		{8CB7F8B9-1417-4195-B0E8-428BE798080C} = {6C70BD36-5CF8-48FD-AA0B-CD63250884DF}
+		{2F76C1DE-820E-4D29-AF03-AEE15CEFE2C0} = {B2C5F15F-41C1-4335-869D-5A8E29F2ADA4}
 		{7BD87BBC-9B1C-45CB-90FC-7BFB30433F20} = {4681258C-BF42-4688-B619-513EB2658D82}
 		{886DD054-49F7-4D68-9D7A-7B09A45512AF} = {13DBFD21-B6BD-4CA9-9459-9E102ACF0314}
 		{91610995-757E-4103-ABDC-D3EF7E779D1F} = {13DBFD21-B6BD-4CA9-9459-9E102ACF0314}
 		{D1C2452B-6515-4847-90B5-0102066836D3} = {13DBFD21-B6BD-4CA9-9459-9E102ACF0314}
 		{ED2B6847-51A9-4A4A-AC14-E5FF26913530} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
 		{035D5235-8CEE-4B55-AE8A-B25EA9E84C4B} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
+		{07AAA09E-A478-487D-AC3D-21DB41E577F9} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
 		{9D9123F9-474C-4CFC-8F7D-A22075BCEECD} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{9953BFD2-4DAF-426C-9642-20D0ED9F483A} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{19052683-C580-4760-BFA6-948F71469B42} = {23C60C26-82FF-428D-956D-D504541EB8D2}
@@ -741,18 +747,14 @@ Global
 		{C6EE2D73-8607-48C7-96A7-C9349F97C67A} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{52295851-C2FB-469A-B7CA-01436A0EE3B8} = {7D1ABA75-9EF8-4E6B-8000-F0A18CBB923F}
 		{D3601FB7-7297-4F21-87B0-DA15EC11DA0C} = {6AEA3F3A-D5C8-4CD0-9394-0D3BA6636838}
-		{2EF888C2-9ACA-4089-BDE2-844BAC9A2376} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{7FE29994-06AE-4BF7-A060-41215A843C19} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{C483CA8E-2EC2-41F8-9F4E-C3B639D06808} = {9DF89FEA-3DC2-4C8D-B844-29E42743354A}
+		{39DF0C8B-5F8C-4A2A-A2CB-78F64C06483F} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
 		{67E4FB80-6838-4D8B-96CE-EC225F2AD64F} = {7119071F-8B25-48AB-8A76-09BC3A9F5AF3}
 		{1B3E3CE7-9E3F-440B-8D0B-DECB8101259A} = {7119071F-8B25-48AB-8A76-09BC3A9F5AF3}
-		{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
-		{39DF0C8B-5F8C-4A2A-A2CB-78F64C06483F} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
-		{393BC744-61C8-4819-8D25-E1F2EDCF0A10} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
 		{B91E5E8B-B5BB-471E-8068-8F927EBAD53F} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
 		{3A9266E7-A6CA-4C33-9E18-4501F9504816} = {DDE5B4C3-E149-430A-BC51-E984F8435B54}
 		{4E3B3E1F-D84C-4FE4-9E5E-058BFA29699C} = {DDE5B4C3-E149-430A-BC51-E984F8435B54}
-		{07AAA09E-A478-487D-AC3D-21DB41E577F9} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
 		{79AC0B05-1F01-45F7-9576-AE74CEC6FE9F} = {4681258C-BF42-4688-B619-513EB2658D82}
 		{B3582D9E-4456-4BAC-B9B1-1C438C7F4D94} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
 		{45EE0F71-5038-4D09-9424-F870B62790C8} = {84108258-3B89-47E6-8F75-8686FE69C6BF}
@@ -769,9 +771,6 @@ Global
 		{060E0990-C413-428A-AB63-2D9CAA0C237F} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
 		{07736E4B-D0BF-4A6D-9C5E-9089DB7C402F} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
 		{67C70237-0BDA-4976-B237-24166ABB5064} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
-		{87047EE1-F8DE-4C9E-918D-2ACB15E571EF} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
-		{6CE196DB-E0EF-45B4-859F-FA72A8F902E3} = {B2C5F15F-41C1-4335-869D-5A8E29F2ADA4}
-		{2F76C1DE-820E-4D29-AF03-AEE15CEFE2C0} = {B2C5F15F-41C1-4335-869D-5A8E29F2ADA4}
 		{F10E592C-583C-438D-9F01-8B53502C60ED} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{70456612-825D-47C2-84E8-7AE09BDBD9ED} = {6C05A5FE-C26F-4E0B-90AF-A9667D32449B}
 		{F2F6363E-F52B-4A33-8167-182FD03AB6D9} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
