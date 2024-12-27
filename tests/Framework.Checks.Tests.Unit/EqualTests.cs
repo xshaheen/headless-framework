@@ -25,15 +25,21 @@ public sealed class EqualTests
         // given
         var obj1 = new InputsTestArgument();
         var obj2 = new InputsTestArgument();
-
+        var customMessage = $"Error {nameof(obj1)} not the same {nameof(obj2)}.";
         // when
         var action = () => Argument.IsReferenceEqualTo(obj1, obj2);
+        var actionWithCustomMessage = () => Argument.IsReferenceEqualTo(obj1, obj2,customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("The argument \"obj1\" must be the same instance as \"obj2\". (Parameter 'obj1')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'obj1')");
     }
 
     [Fact]
@@ -54,14 +60,21 @@ public sealed class EqualTests
         var obj1 = new InputsTestArgument();
         // ReSharper disable once InlineTemporaryVariable
         var obj2 = obj1;
+        var customMessage = $"Error {nameof(obj1)} is the same {nameof(obj2)}.";
 
         // when
         var action = () => Argument.IsReferenceNotEqualTo(obj1, obj2);
+        var actionWithCustomMessage = () => Argument.IsReferenceNotEqualTo(obj1, obj2,customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("The argument \"obj1\" must not be the same instance as \"obj2\". (Parameter 'obj1')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'obj1')");
     }
 }
