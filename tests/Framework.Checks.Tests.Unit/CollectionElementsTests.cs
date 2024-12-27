@@ -11,15 +11,22 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = ["value1", null, "value3"];
+        var customMessage = "The collection must not contains null elements.";
 
         // when
         Action action = () => Argument.HasNoNulls(argument);
+        Action actionWithCustomMessage = () => Argument.HasNoNulls(argument, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("The argument \"argument\" cannot contains null elements. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -40,15 +47,22 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = ["value1", "", "value3"];
+        var customMessage = "The collection must not contains empty elements.";
 
         // when
         Action action = () => Argument.HasNoNullOrEmptyElements(argument);
+        Action actionWithCustomMessage = () => Argument.HasNoNullOrEmptyElements(argument,customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage("The argument \"argument\" cannot contains empty elements. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -69,9 +83,11 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", " ", "value3" };
+        var customMessage = "The collection must not contains white space elements.";
 
         // when
         Action action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
+        Action actionWithCustomMessage = () => Argument.HasNoNullOrWhiteSpaceElements(argument,customMessage);
 
         // then
         action
@@ -79,6 +95,13 @@ public sealed class CollectionElementsTests
             .ThrowExactly<ArgumentException>()
             .WithMessage(
                 "The argument \"argument\" cannot contains empty or white space elements. (Parameter 'argument')"
+            );
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                $"{customMessage} (Parameter 'argument')"
             );
     }
 
@@ -100,9 +123,10 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
-
+        var customMessage = "The collection must not contains null elements";
         // when
         Action action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
+        Action actionWithCustomMessage = () => Argument.HasNoNullOrWhiteSpaceElements(argument, customMessage);
 
         // then
         action
@@ -110,6 +134,13 @@ public sealed class CollectionElementsTests
             .ThrowExactly<ArgumentException>()
             .WithMessage(
                 "The argument \"argument\" cannot contains empty or white space elements. (Parameter 'argument')"
+            );
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                $"{customMessage} (Parameter 'argument')"
             );
     }
 }

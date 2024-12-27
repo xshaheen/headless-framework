@@ -21,12 +21,26 @@ public class IsNotNullTests
     {
         // given
         List<int>? collection = null;
+        const string customMessage = $"Error {nameof(collection)} is null";
 
         // when
-        Action act = () => Argument.IsNotNull(collection);
+        Action action = () => Argument.IsNotNull(collection);
+        Action actionWithCustomMessage = () => Argument.IsNotNull(collection,customMessage);
 
         // then
-        act.Should().Throw<ArgumentNullException>();
+        action
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage(
+                $"Required argument \"{nameof(collection)}\" was null. (Parameter '{nameof(collection)}')"
+            );
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage(
+                $"{customMessage} (Parameter '{nameof(collection)}')"
+            );
     }
 
     [Fact]

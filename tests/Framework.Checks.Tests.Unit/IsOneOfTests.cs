@@ -23,6 +23,7 @@ public class IsOneOfTests
     {
         // given
         const int argument = 6;
+        const string customMessage = $"{nameof(argument)} is not one of below list.";
 
         // when
         var action = () =>
@@ -32,8 +33,19 @@ public class IsOneOfTests
             return Argument.IsOneOf(argument, validValues);
         };
 
+        var actionWithCustomMessage = () =>
+        {
+            ReadOnlySpan<int> validValues = [1, 2, 5, 7];
+
+            return Argument.IsOneOf(argument, validValues, customMessage);
+        };
+
         // then
-        action.Should().ThrowExactly<ArgumentException>();
+        action.Should().ThrowExactly<ArgumentException>()
+            .WithMessage($"The argument \"{nameof(argument)}\"=<{argument}> must be one of [1,2,5,7]. (Parameter 'argument')");
+
+        actionWithCustomMessage.Should().ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -74,13 +86,20 @@ public class IsOneOfTests
     {
         // given
         const float argument = 4.5f;
+        const string customMessage = $"{nameof(argument)} is not one of below list.";
+
         var validValues = new List<float> { 1.0f, 2.5f, 3.0f };
 
         // when
         var action = () => Argument.IsOneOf(argument, validValues);
+        var actionWithCustomMessage = () => Argument.IsOneOf(argument, validValues, null, customMessage);
 
         // then
-        action.Should().ThrowExactly<ArgumentException>();
+        action.Should().ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"argument\"=<4.5> must be one of [1,2.5,3]. (Parameter 'argument')");
+
+        actionWithCustomMessage.Should().ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]

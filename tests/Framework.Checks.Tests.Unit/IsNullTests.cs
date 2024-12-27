@@ -21,15 +21,22 @@ public class IsNullTests
     {
         // given
         var collection = new List<int> { 1, 2, 3, 4 };
+        const string customMessage = $"Error {nameof(collection)} is not null";
 
         // when
         Action action = () => Argument.IsNull(collection);
+        Action actionWithCustomMessage = () => Argument.IsNull(collection, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentNullException>()
             .WithMessage("The argument \"collection\" must be null. (Parameter 'collection')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentNullException>()
+            .WithMessage($"{customMessage} (Parameter 'collection')");
     }
 
     [Fact]
