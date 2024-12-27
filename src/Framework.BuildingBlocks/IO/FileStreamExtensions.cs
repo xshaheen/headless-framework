@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
-using System.Security.Cryptography;
 using Framework.Checks;
 using Framework.Primitives;
 using FileHelper = Framework.BuildingBlocks.IO.FileHelper;

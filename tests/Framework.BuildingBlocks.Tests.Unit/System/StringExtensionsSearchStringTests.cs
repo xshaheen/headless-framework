@@ -12,6 +12,7 @@ public sealed class StringExtensionsSearchStringTests(ITestOutputHelper output)
     [InlineData(" ")]
     [InlineData("    ")]
     [InlineData(" \n\n\r\n ")]
+    [InlineData(" \f ")]
     public void SearchString__should_returns_white_spaces_with_no_changes(string? value)
     {
         _Test(value, string.Empty);
