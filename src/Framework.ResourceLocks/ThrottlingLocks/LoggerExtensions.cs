@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Framework.ResourceLocks.Local;
+namespace Framework.ResourceLocks.ThrottlingLocks;
 
 internal static partial class LoggerExtensions
 {
@@ -10,7 +10,7 @@ internal static partial class LoggerExtensions
         EventId = 16,
         EventName = "ThrottlingLockTryingToAcquireLock",
         Level = LogLevel.Trace,
-        Message = "Throttling lock trying to acquire lock {Resource}"
+        Message = "Trying to acquire lock {Resource}"
     )]
     public static partial void LogThrottlingLockTryingToAcquireLock(this ILogger logger, string resource);
 
@@ -18,7 +18,7 @@ internal static partial class LoggerExtensions
         EventId = 17,
         EventName = "ThrottlingLockHitCount",
         Level = LogLevel.Trace,
-        Message = "Throttling lock hit count for Resource={Resource} HitCount={HitCount} max={MaxHitsPerPeriod}"
+        Message = "Hit count for Resource={Resource} HitCount={HitCount} max={MaxHitsPerPeriod}"
     )]
     public static partial void LogThrottlingLockHitCount(
         this ILogger logger,
@@ -31,7 +31,7 @@ internal static partial class LoggerExtensions
         EventId = 18,
         EventName = "ThrottlingLockMaxHitsExceeded",
         Level = LogLevel.Trace,
-        Message = "Throttling lock max hits exceeded for {Resource}"
+        Message = "Max hits exceeded for {Resource}"
     )]
     public static partial void LogThrottlingLockMaxHitsExceeded(this ILogger logger, string resource);
 }
