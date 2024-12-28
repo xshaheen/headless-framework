@@ -2,7 +2,7 @@
 
 using Framework.Reflection;
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface IBuildInformationAccessor
 {

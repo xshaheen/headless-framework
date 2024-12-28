@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 /// <summary>Used to look up MIME types given a file path</summary>
 public interface IMimeTypeProvider

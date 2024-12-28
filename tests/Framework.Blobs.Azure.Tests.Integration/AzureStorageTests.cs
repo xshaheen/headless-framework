@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Azure;
-using Framework.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 

@@ -3,9 +3,9 @@
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
+using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Aws;
-using Framework.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 

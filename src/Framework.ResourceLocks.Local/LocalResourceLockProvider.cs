@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using AsyncKeyedLock;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

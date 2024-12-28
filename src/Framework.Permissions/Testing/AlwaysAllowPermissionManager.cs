@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Results;

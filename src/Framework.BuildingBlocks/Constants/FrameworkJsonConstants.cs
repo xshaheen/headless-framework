@@ -4,8 +4,6 @@ using Framework.Serializer;
 using Framework.Serializer.Json.Converters;
 using NetTopologySuite.IO.Converters;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
 namespace Framework.Constants;
 
 public static class FrameworkJsonConstants
