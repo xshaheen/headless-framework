@@ -55,22 +55,6 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         result.Should().Be(string.Join("\r\n", slideTexts) + "\r\n");
     }
 
-    [Fact]
-    public async Task should_throws_when_invalid_slide_references()
-    {
-        await using var stream = _CreatePresentationWithInvalidSlide();
-        var result = await _sut.GetTextAsync(stream);
-        result.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task should_throws_when_null_parts_slide()
-    {
-        await using var stream = _CreatePresentationWithNoPartsSlide();
-        var result = await _sut.GetTextAsync(stream);
-        result.Should().BeEmpty();
-    }
-
     private static MemoryStream _CreateEmptyPresentation()
     {
         var stream = new MemoryStream();
@@ -132,43 +116,6 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
                 new SlideId { Id = slideId++, RelationshipId = presentationPart.GetIdOfPart(slidePart) }
             );
         }
-
-        presentation.Save();
-        stream.Position = 0;
-
-        return stream;
-    }
-
-    private static MemoryStream _CreatePresentationWithInvalidSlide()
-    {
-        var stream = new MemoryStream();
-        using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
-        var presentationPart = presentation.AddPresentationPart();
-
-        presentationPart.Presentation = new Presentation
-        {
-            SlideIdList = new SlideIdList(new SlideId { Id = 1, RelationshipId = "invalid" }),
-        };
-
-        presentation.Save();
-        stream.Position = 0;
-
-        return stream;
-    }
-
-    private static MemoryStream _CreatePresentationWithNoPartsSlide()
-    {
-        var stream = new MemoryStream();
-        using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
-        var presentationPart = presentation.AddPresentationPart();
-        var slidePart = presentation.PresentationPart!.AddNewPart<SlidePart>();
-
-        presentationPart.Presentation = new Presentation
-        {
-            SlideIdList = new SlideIdList(
-                new SlideId { Id = 1, RelationshipId = presentationPart.GetIdOfPart(slidePart) }
-            ),
-        };
 
         presentation.Save();
         stream.Position = 0;

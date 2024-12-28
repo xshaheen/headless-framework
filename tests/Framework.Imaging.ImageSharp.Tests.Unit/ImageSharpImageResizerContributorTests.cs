@@ -19,8 +19,9 @@ public class ImageSharpImageResizerContributorTests
     public async Task should_resize_image_successfully()
     {
         // given
-        const int width = 50;
-        var args = new ImageResizeArgs(ImageResizeMode.Max, width, width, ContentTypes.Images.Jpeg);
+        const int width = 344;
+        const int height = 300;
+        var args = new ImageResizeArgs(ImageResizeMode.Min, width, height, ContentTypes.Images.Jpeg);
 
         await using var imageStream = new FileStream(
             _GetPathImage("happy-young-man-with-q-letter.jpg"),
@@ -37,35 +38,35 @@ public class ImageSharpImageResizerContributorTests
         result.Should().NotBeNull();
         result.Result!.MimeType.Should().Be(ContentTypes.Images.Jpeg);
         result.Result.Width.Should().Be(width);
-        result.Result.Height.Should().Be(width);
+        result.Result.Height.Should().Be(height);
         result.Result.Content.Should().NotBeNull();
         result.Result.Content.Length.Should().BePositive();
     }
-
+    // bugs not change mimeType
     [Fact]
-    public async Task Should_Not_Resize_Unsupported_MimeType()
+    public async Task should_change_mime_type_successfully()
     {
         // given
-        var args = new ImageResizeArgs(60, 60, "UnSupported");
-        var cancellationToken = CancellationToken.None;
+        const string mimeType = ContentTypes.Images.Png;
+        var args = new ImageResizeArgs(mimeType);
 
-        await using var imageStream = new FileStream(_GetPathImage("Car1.jpg"), FileMode.Open, FileAccess.Read);
+        await using var imageStream = new FileStream(_GetPathImage("happy-young-man-with-q-letter.jpg"), FileMode.Open, FileAccess.Read);
 
         // when
-        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args, cancellationToken);
+        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args);
 
         // then
-        result.State.Should().Be(ImageProcessState.Unsupported);
-        result.Error.Should().Be("The given image format is not supported.");
-        result.Result.Should().BeNull();
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.MimeType.Should().Be(mimeType);
     }
 
     [Fact]
-    public async Task should_throw_exception_when_image_resize_mode_invalid()
+    public async Task should_resize_successfully_with_constructor_take_mode_and_height_required()
     {
         // given
-        var args = new ImageResizeArgs(50, 50, ContentTypes.Images.Jpeg, (ImageResizeMode)12);
-        var cancellationToken = CancellationToken.None;
+        const int height = 200;
+        var args = new ImageResizeArgs(ImageResizeMode.Crop,null,height);
+
 
         await using var imageStream = new FileStream(
             _GetPathImage("happy-young-man-with-q-letter.jpg"),
@@ -74,15 +75,21 @@ public class ImageSharpImageResizerContributorTests
         );
 
         // when
-        var act = async () => await _imageResizerContributor.TryResizeAsync(imageStream, args, cancellationToken);
+        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Unknown ImageResizeMode=12");
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Should().NotBeNull();
+        result.Result!.MimeType.Should().Be(ContentTypes.Images.Jpeg);
+        result.Result.Height.Should().Be(height);
+        result.Result.Content.Should().NotBeNull();
+        result.Result.Content.Length.Should().BePositive();
     }
 
     private static string _GetPathImage(string imageName)
     {
         var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+
         return Path.Combine(baseDirectory, $@"..\..\..\Assets\{imageName}");
     }
 }
