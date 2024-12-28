@@ -7,7 +7,7 @@ namespace Framework.Media.Indexing;
 
 public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
 {
-    public async Task<string> GetTextAsync(string path, Stream fileStream)
+    public async Task<string> GetTextAsync(Stream fileStream)
     {
         // PdfPig requires the stream to be seekable, see:
         // https://github.com/UglyToad/PdfPig/blob/master/src/UglyToad.PdfPig.Core/StreamInputBytes.cs#L45.

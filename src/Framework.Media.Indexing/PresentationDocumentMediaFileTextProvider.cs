@@ -7,7 +7,7 @@ namespace Framework.Media.Indexing;
 
 public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
-    public Task<string> GetTextAsync(string path, Stream fileStream)
+    public Task<string> GetTextAsync(Stream fileStream)
     {
         using var document = PresentationDocument.Open(fileStream, isEditable: false);
         var slideIds = document.PresentationPart?.Presentation.SlideIdList?.ChildElements.Cast<SlideId>();

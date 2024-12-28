@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FileSignatures;
+using FileSignatures.Formats;
 using FluentValidation;
 using FluentValidation.TestHelper;
 using Framework.FluentValidation;
@@ -330,11 +331,7 @@ public class FileValidatorsTests
     {
         public FileSignatureUploadValidator(IFileFormatInspector inspector)
         {
-            RuleFor(x => x.UploadedFile)
-                .HaveSignatures(
-                    inspector,
-                    format => format?.Signature.ToList().SequenceEqual(_FileSignatureBytes) == true
-                );
+            RuleFor(x => x.UploadedFile).HaveSignatures(inspector, format => format is Pdf or Word or PowerPoint);
         }
     }
 

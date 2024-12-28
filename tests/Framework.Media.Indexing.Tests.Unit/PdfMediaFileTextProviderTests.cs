@@ -1,25 +1,22 @@
-﻿using Framework.Checks;
-using Framework.Media.Indexing;
+﻿using Framework.Media.Indexing;
 
 namespace Tests;
 
 public sealed class PdfMediaFileTextProviderTests
 {
+    private readonly PdfMediaFileTextProvider _sut = new();
+
     [Fact]
     public async Task get_text_async_should_extract_text_from_real_pdf_file()
     {
         // given
-        var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-        var pdfFilePath = Path.Combine(baseDirectory, @"..\..\..\Files\TestPdf.pdf");
+        var pdfFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Files\TestPdf.pdf");
+        await using var fileStream = File.OpenRead(pdfFilePath);
 
         // when
-        await using var fileStream = File.OpenRead(pdfFilePath);
-        Argument.CanSeek(fileStream);
-        Argument.CanRead(fileStream);
-        var extractor = new PdfMediaFileTextProvider();
-        var result = await extractor.GetTextAsync(pdfFilePath, fileStream);
+        var result = await _sut.GetTextAsync(fileStream);
 
         // then
-        result.Should().Contain("Test pdf"); // Replace with actual expected content
+        await Verify(result).UseDirectory("Snapshots");
     }
 }

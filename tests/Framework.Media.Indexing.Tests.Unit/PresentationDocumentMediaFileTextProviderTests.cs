@@ -12,12 +12,7 @@ namespace Tests;
 
 public sealed class PresentationDocumentMediaFileTextProviderTests
 {
-    private readonly PresentationDocumentMediaFileTextProvider _sut;
-
-    public PresentationDocumentMediaFileTextProviderTests()
-    {
-        _sut = new PresentationDocumentMediaFileTextProvider();
-    }
+    private readonly PresentationDocumentMediaFileTextProvider _sut = new();
 
     [Fact]
     public async Task get_text_async_should_extract_text_from_power_point_file()
@@ -26,10 +21,9 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
         var powerPintFilePath = Path.Combine(baseDirectory, @"..\..\..\Files\TestPPTX.pptx");
 
-
         // when
         await using var fileStream = File.OpenRead(powerPintFilePath);
-        var result = await _sut.GetTextAsync(powerPintFilePath, fileStream);
+        var result = await _sut.GetTextAsync(fileStream);
 
         // then
         result.Should().Contain("Second"); // Replace with actual expected content
@@ -39,7 +33,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     public async Task get_text_async_should_return_empty_string_when_presentation_has_no_slides()
     {
         await using var stream = _CreateEmptyPresentation();
-        var result = await _sut.GetTextAsync("test.pptx", stream);
+        var result = await _sut.GetTextAsync(stream);
         result.Should().BeEmpty();
     }
 
@@ -48,7 +42,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     {
         const string expectedText = "Test slide content";
         await using var stream = _CreatePresentationWithSlide(expectedText);
-        var result = await _sut.GetTextAsync("test.pptx", stream);
+        var result = await _sut.GetTextAsync(stream);
         result.Should().Be($"{expectedText}\r\n");
     }
 
@@ -57,7 +51,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     {
         var slideTexts = new[] { "Slide 1", "Slide 2", "Slide 3" };
         await using var stream = _CreatePresentationWithSlides(slideTexts);
-        var result = await _sut.GetTextAsync("test.pptx", stream);
+        var result = await _sut.GetTextAsync(stream);
         result.Should().Be(string.Join("\r\n", slideTexts) + "\r\n");
     }
 
@@ -65,7 +59,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     public async Task should_throws_when_invalid_slide_references()
     {
         await using var stream = _CreatePresentationWithInvalidSlide();
-        var result = await _sut.GetTextAsync("test.pptx", stream);
+        var result = await _sut.GetTextAsync(stream);
         result.Should().BeEmpty();
     }
 
@@ -73,11 +67,11 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     public async Task should_throws_when_null_parts_slide()
     {
         await using var stream = _CreatePresentationWithNoPartsSlide();
-        var result = await _sut.GetTextAsync("test.pptx", stream);
+        var result = await _sut.GetTextAsync(stream);
         result.Should().BeEmpty();
     }
 
-    private static Stream _CreateEmptyPresentation()
+    private static MemoryStream _CreateEmptyPresentation()
     {
         var stream = new MemoryStream();
         using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
@@ -89,7 +83,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         return stream;
     }
 
-    private static Stream _CreatePresentationWithSlide(string text)
+    private static MemoryStream _CreatePresentationWithSlide(string text)
     {
         var stream = new MemoryStream();
         using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
@@ -99,22 +93,14 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         var slidePart = presentation.PresentationPart!.AddNewPart<SlidePart>();
 
         var slide = new Slide(
-            new CommonSlideData(
-                new ShapeTree(
-                    new Shape(
-                        new TextBody(
-                            new Paragraph(
-                                new Run(new Text(text))
-                            )
-                        )
-                    )
-                )
-            )
+            new CommonSlideData(new ShapeTree(new Shape(new TextBody(new Paragraph(new Run(new Text(text)))))))
         );
 
         slidePart.Slide = slide;
 
-        var slideIdList = new SlideIdList(new SlideId { Id = 1U, RelationshipId = presentationPart.GetIdOfPart(slidePart) });
+        var slideIdList = new SlideIdList(
+            new SlideId { Id = 1U, RelationshipId = presentationPart.GetIdOfPart(slidePart) }
+        );
         presentationPart.Presentation.SlideIdList = slideIdList;
 
         presentation.Save();
@@ -123,7 +109,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         return stream;
     }
 
-    private static Stream _CreatePresentationWithSlides(string[] texts)
+    private static MemoryStream _CreatePresentationWithSlides(string[] texts)
     {
         var stream = new MemoryStream();
         using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
@@ -137,17 +123,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
             var slidePart = presentationPart.AddNewPart<SlidePart>();
 
             var slide = new Slide(
-                new CommonSlideData(
-                    new ShapeTree(
-                        new Shape(
-                            new TextBody(
-                                new Paragraph(
-                                    new Run(new Text(text))
-                                )
-                            )
-                        )
-                    )
-                )
+                new CommonSlideData(new ShapeTree(new Shape(new TextBody(new Paragraph(new Run(new Text(text)))))))
             );
 
             slidePart.Slide = slide;
@@ -163,7 +139,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         return stream;
     }
 
-    private static Stream _CreatePresentationWithInvalidSlide()
+    private static MemoryStream _CreatePresentationWithInvalidSlide()
     {
         var stream = new MemoryStream();
         using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
@@ -180,7 +156,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         return stream;
     }
 
-    private static Stream _CreatePresentationWithNoPartsSlide()
+    private static MemoryStream _CreatePresentationWithNoPartsSlide()
     {
         var stream = new MemoryStream();
         using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
@@ -189,7 +165,9 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
 
         presentationPart.Presentation = new Presentation
         {
-            SlideIdList = new SlideIdList(new SlideId { Id = 1, RelationshipId = presentationPart.GetIdOfPart(slidePart) }),
+            SlideIdList = new SlideIdList(
+                new SlideId { Id = 1, RelationshipId = presentationPart.GetIdOfPart(slidePart) }
+            ),
         };
 
         presentation.Save();

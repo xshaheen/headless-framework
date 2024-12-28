@@ -19,7 +19,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         await using var fileStream = File.OpenRead(wordFilePath);
 
         // when
-        var result = await _sut.GetTextAsync(wordFilePath, fileStream);
+        var result = await _sut.GetTextAsync(fileStream);
 
         // then
         result.Should().Contain("Lorem ipsum dolor"); // Replace with actual expected content
@@ -32,7 +32,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         await using var stream = _CreateEmptyWordDocument();
 
         // when
-        var result = await _sut.GetTextAsync("test.docx", stream);
+        var result = await _sut.GetTextAsync(stream);
 
         // then
         result.Should().BeEmpty();
@@ -49,7 +49,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         Argument.CanWrite(stream);
 
         // when
-        var result = await _sut.GetTextAsync("test.docx", stream);
+        var result = await _sut.GetTextAsync(stream);
 
         // then
         result.Should().Be($"{expectedText}\r\n");
@@ -67,13 +67,13 @@ public sealed class WordDocumentMediaFileTextProviderTests
         Argument.CanRead(stream);
         Argument.CanWrite(stream);
         // when
-        var result = await _sut.GetTextAsync("test.docx", stream);
+        var result = await _sut.GetTextAsync(stream);
 
         // then
         result.Should().Be(expectedText);
     }
 
-    private static Stream _CreateEmptyWordDocument()
+    private static MemoryStream _CreateEmptyWordDocument()
     {
         var stream = new MemoryStream();
         using var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document);
@@ -90,7 +90,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         return stream;
     }
 
-    private static Stream _CreateWordDocumentWithText(string text)
+    private static MemoryStream _CreateWordDocumentWithText(string text)
     {
         var stream = new MemoryStream();
         using var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document);
@@ -102,7 +102,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         return stream;
     }
 
-    private static Stream _CreateWordDocumentWithParagraphs(string[] paragraphs)
+    private static MemoryStream _CreateWordDocumentWithParagraphs(string[] paragraphs)
     {
         var stream = new MemoryStream();
         using var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document);
