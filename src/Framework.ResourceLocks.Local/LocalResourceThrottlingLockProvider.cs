@@ -8,9 +8,9 @@ public sealed class LocalResourceThrottlingLockStorage : IThrottlingResourceLock
 {
     private readonly FastCache<string, ResourceLock> _resources = new();
 
-    public ValueTask<long> GetHitCountsAsync(string resource, long defaultValue = 0)
+    public ValueTask<long> GetHitCountsAsync(string resources, long defaultValue = 0)
     {
-        var results = _resources.TryGet(resource, out var resourceLock) ? resourceLock.HitsCount : defaultValue;
+        var results = _resources.TryGet(resources, out var resourceLock) ? resourceLock.HitsCount : defaultValue;
 
         return ValueTask.FromResult(results);
     }

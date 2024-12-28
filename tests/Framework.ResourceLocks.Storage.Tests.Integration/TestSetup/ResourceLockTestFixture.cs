@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Framework.Database.Sqlite;
+using Framework.ResourceLocks;
 using Framework.ResourceLocks.Storage.RegularLocks;
-using Framework.ResourceLocks.Storage.ThrottlingLocks;
 
 namespace Tests.TestSetup;
 
@@ -23,10 +22,14 @@ public sealed class ResourceLockTestFixture : IAsyncLifetime, IDisposable, IAsyn
     {
         // Create the resource lock table
         var connection = await _connectionFactory.GetOpenConnectionAsync();
-        _CreateResourceLockTable(connection);
-        ResourceLockStorage = new SqliteResourceLockStorage(connection);
-        _CreateThrottlingResourceLockTable(connection);
-        ThrottlingResourceLockStorage = new SqliteThrottlingResourceLockStorage(connection);
+
+        var resourceLockStorage = new SqliteResourceLockStorage(connection);
+        resourceLockStorage.CreateTable();
+        ResourceLockStorage = resourceLockStorage;
+
+        var throttlingResourceLockStorage = new SqliteThrottlingResourceLockStorage(connection);
+        throttlingResourceLockStorage.CreateTable();
+        ThrottlingResourceLockStorage = throttlingResourceLockStorage;
     }
 
     /// <summary>This runs after all the test run and Called before Dispose()</summary>
@@ -43,35 +46,5 @@ public sealed class ResourceLockTestFixture : IAsyncLifetime, IDisposable, IAsyn
     public async ValueTask DisposeAsync()
     {
         await _connectionFactory.DisposeAsync();
-    }
-
-    private static void _CreateResourceLockTable(IDbConnection connection)
-    {
-        using var command = connection.CreateCommand();
-
-        command.CommandText = """
-            CREATE TABLE ResourceLocks (
-                Key TEXT PRIMARY KEY,
-                Value TEXT,
-                Expiration TEXT
-            )
-            """;
-
-        command.ExecuteNonQuery();
-    }
-
-    private static void _CreateThrottlingResourceLockTable(IDbConnection connection)
-    {
-        using var command = connection.CreateCommand();
-
-        command.CommandText = """
-            CREATE TABLE ThrottlingResourceLocks (
-                Key TEXT PRIMARY KEY,
-                Value INTEGER,
-                Expiration TEXT
-            )
-            """;
-
-        command.ExecuteNonQuery();
     }
 }
