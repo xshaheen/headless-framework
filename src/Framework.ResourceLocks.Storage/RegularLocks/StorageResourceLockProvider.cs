@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Core;

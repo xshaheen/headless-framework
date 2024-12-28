@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Domains;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;

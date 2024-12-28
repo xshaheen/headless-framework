@@ -1,4 +1,4 @@
-﻿using Framework.BuildingBlocks.Abstractions;
+﻿using Framework.Abstractions;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Local;
 using Microsoft.Extensions.Logging;

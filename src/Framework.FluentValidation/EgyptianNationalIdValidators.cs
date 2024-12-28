@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Framework.BuildingBlocks.Validators;
 using Framework.FluentValidation.Resources;
+using Framework.Validators;
 
 namespace Framework.FluentValidation;
 

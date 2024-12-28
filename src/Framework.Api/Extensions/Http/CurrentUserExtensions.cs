@@ -6,7 +6,7 @@ using Framework.Primitives;
 
 // ReSharper disable once CheckNamespace
 #pragma warning disable IDE0130
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public static class CurrentUserExtensions
 {

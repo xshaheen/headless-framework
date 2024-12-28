@@ -33,7 +33,7 @@ public static class PermaLinkStringHelper
 
         var result = input
             .Trim()
-            .Replace([("&", " And "), ("+", " Plus "), ("#", " Sharp "), ("%", " Percent ")])
+            .Replace([("&", " And "), ("+", " Plus "), ("#", " "), ("C#", " Csharp "), ("%", " Percent ")])
             ._NoAccent()
             ._NoSymbols()
             ._FirstUpper();

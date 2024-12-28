@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface IHaveTimeProvider
 {

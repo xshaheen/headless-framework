@@ -3,7 +3,7 @@
 using Framework.Primitives;
 using TimeZoneConverter;
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface ITimezoneProvider
 {

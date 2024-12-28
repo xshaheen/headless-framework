@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Validators;
+namespace Framework.Validators;
 
 [PublicAPI]
 public static class GeoCoordinateValidator

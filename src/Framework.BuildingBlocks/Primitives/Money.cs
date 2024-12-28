@@ -3,7 +3,6 @@
 using System.Runtime.InteropServices;
 using Framework.Generator.Primitives;
 
-// ReSharper disable once CheckNamespace
 namespace Framework.Primitives;
 
 [PublicAPI]
