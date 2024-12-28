@@ -22,4 +22,10 @@ public sealed class LocalResourceThrottlingLockProviderTests(ITestOutputHelper o
             LoggerFactory.CreateLogger<LocalResourceThrottlingLockProvider>()
         );
     }
+
+    [Fact]
+    public override Task should_throttle_calls_async()
+    {
+        return base.should_throttle_calls_async();
+    }
 }
