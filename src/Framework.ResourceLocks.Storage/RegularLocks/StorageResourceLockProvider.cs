@@ -8,6 +8,7 @@ using Framework.Checks;
 using Framework.Constants;
 using Framework.Core;
 using Framework.Messaging;
+using Humanizer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
@@ -23,10 +24,10 @@ public sealed class StorageResourceLockProvider(
     IOptions<ResourceLockOptions> optionsAccessor
 ) : IResourceLockProvider
 {
-    private readonly ScopedResourceLockStorage _storage = new(storage, optionsAccessor);
     private bool _isSubscribed;
     private readonly AsyncLock _lock = new();
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _resetEvents = new(StringComparer.Ordinal);
+    private readonly ScopedResourceLockStorage _storage = new(storage, optionsAccessor);
 
     private readonly Counter<int> _lockTimeoutCounter = FrameworkDiagnostics.Meter.CreateCounter<int>(
         "framework.lock.failed",
@@ -39,6 +40,10 @@ public sealed class StorageResourceLockProvider(
         description: "Time waiting for locks"
     );
 
+    public TimeSpan DefaultTimeUntilExpires => 20.Minutes();
+
+    public TimeSpan DefaultAcquireTimeout => 30.Seconds();
+
     public async Task<IResourceLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
@@ -47,32 +52,28 @@ public sealed class StorageResourceLockProvider(
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
-        var normalizedTimeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
-        var normalizedAcquireTimeout = _NormalizeAcquireTimeout(acquireTimeout);
+
+        using var activity = _StartLockActivity(resource);
+        using var acquireTimeoutCts = _GetAcquireCancellation(acquireTimeout, acquireAbortToken);
+        timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
 
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
-        using var activity = _StartLockActivity(resource);
+        acquireAbortToken.ThrowIfCancellationRequested();
 
-        using var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(acquireAbortToken);
-
-        if (normalizedAcquireTimeout is not null)
-        {
-            acquireTimeoutCts.CancelAfter(normalizedAcquireTimeout.Value);
-        }
-
-        var shouldWait = !acquireTimeoutCts.IsCancellationRequested;
         var timestamp = timeProvider.GetTimestamp();
+        var shouldWait = !acquireTimeoutCts.IsCancellationRequested;
         var gotLock = false;
 
         try
         {
             do
             {
+                // Try to acquire the lock
                 try
                 {
-                    gotLock = await _storage.InsertAsync(resource, lockId, normalizedTimeUntilExpires).AnyContext();
+                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires).AnyContext();
                 }
                 catch (Exception e)
                 {
@@ -99,10 +100,10 @@ public sealed class StorageResourceLockProvider(
 
                 var autoResetEvent = _resetEvents.AddOrUpdate(
                     resource,
-                    new ResetEventWithRefCount { RefCount = 1, Target = new AsyncAutoResetEvent() },
-                    (_, existValue) =>
+                    addValue: new ResetEventWithRefCount(),
+                    updateValueFactory: (_, existValue) =>
                     {
-                        existValue.RefCount++;
+                        existValue.IncrementRefCount();
                         return existValue;
                     }
                 );
@@ -112,13 +113,13 @@ public sealed class StorageResourceLockProvider(
                     await _EnsureTopicSubscriptionAsync().AnyContext();
                 }
 
-                var lockPeriod = await _storage.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero;
-                var delayAmount = _DelayAmount(lockPeriod);
+                var delayAmount = await _DelayAmountAsync(resource);
 
                 logger.LogDelayBeforeRetry(delayAmount, resource, lockId);
 
                 // wait until we get a message saying the lock was released or 3 seconds has elapsed or cancellation has been requested
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(acquireTimeoutCts.Token);
+
                 linkedCts.CancelAfter(delayAmount);
 
                 try
@@ -140,7 +141,8 @@ public sealed class StorageResourceLockProvider(
                 resource,
                 (_, existValue) =>
                 {
-                    existValue.RefCount--;
+                    existValue.DecrementRefCount();
+
                     if (existValue.RefCount == 0)
                     {
                         shouldRemove = true;
@@ -263,7 +265,6 @@ public sealed class StorageResourceLockProvider(
             logger.LogSubscribingToLockReleased();
             await messageBus.SubscribeAsync<StorageLockReleased>(msg => _OnLockReleasedAsync(msg.Payload)).AnyContext();
             _isSubscribed = true;
-
             logger.LogSubscribedToLockReleased();
         }
     }
@@ -295,34 +296,55 @@ public sealed class StorageResourceLockProvider(
         return activity;
     }
 
-    /// <summary>Delay a minimum of 50 ms and a maximum of 3 seconds</summary>
-    private static TimeSpan _DelayAmount(TimeSpan expiration)
+    private async Task<TimeSpan> _DelayAmountAsync(string resource)
     {
+        var expiration = await _storage.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero;
+
         return expiration < TimeSpan.FromMilliseconds(50) ? TimeSpan.FromMilliseconds(50)
             : expiration > TimeSpan.FromSeconds(3) ? TimeSpan.FromSeconds(3)
             : expiration;
     }
 
-    private static TimeSpan? _NormalizeTimeUntilExpires(TimeSpan? timeUntilExpires)
+    private TimeSpan? _NormalizeTimeUntilExpires(TimeSpan? timeUntilExpires)
     {
-        return timeUntilExpires is null ? TimeSpan.FromMinutes(20)
+        return timeUntilExpires is null ? DefaultTimeUntilExpires
             : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
             : Argument.IsPositive(timeUntilExpires.Value);
     }
 
-    private static TimeSpan? _NormalizeAcquireTimeout(TimeSpan? acquireTimeout)
+    private CancellationTokenSource _GetAcquireCancellation(TimeSpan? timeout, CancellationToken token)
     {
-        return acquireTimeout is null ? TimeSpan.FromSeconds(30)
-            : acquireTimeout == Timeout.InfiniteTimeSpan ? null
-            : Argument.IsPositive(acquireTimeout.Value);
+        // Acquire timeout must be positive if not infinite.
+        if (timeout is not null && timeout != Timeout.InfiniteTimeSpan)
+        {
+            Argument.IsPositive(timeout.Value);
+        }
+
+        timeout ??= DefaultAcquireTimeout;
+        var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+
+        if (timeout != Timeout.InfiniteTimeSpan)
+        {
+            acquireTimeoutCts.CancelAfter(timeout.Value);
+        }
+
+        return acquireTimeoutCts;
     }
 
     private sealed class ResetEventWithRefCount
     {
-        public required int RefCount { get; set; }
+        private int _refCount = 1;
 
-        public required AsyncAutoResetEvent Target { get; init; }
+        public int RefCount => _refCount;
+
+        public AsyncAutoResetEvent Target { get; } = new();
+
+        public void IncrementRefCount() => Interlocked.Increment(ref _refCount);
+
+        public void DecrementRefCount() => Interlocked.Decrement(ref _refCount);
     }
+
+    private sealed record StorageLockReleased(string Resource, string LockId);
 
     #endregion
 }

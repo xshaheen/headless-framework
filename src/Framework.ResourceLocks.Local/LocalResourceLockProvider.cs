@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using System.Diagnostics;
 using AsyncKeyedLock;
 using Framework.Abstractions;
 using Framework.Checks;
+using Humanizer;
+using Jitbit.Utils;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,8 +19,12 @@ public sealed class LocalResourceLockProvider(
 ) : IResourceLockProvider, IDisposable
 {
     private readonly AsyncKeyedLocker<string> _locks = _CreateAsyncKeyedLocker();
-    private readonly ConcurrentDictionary<string, ResourceLock> _resources = new(StringComparer.Ordinal);
+    private readonly FastCache<string, ResourceLock> _resources = new(100, key => { });
     private readonly ResourceLockOptions _options = optionsAccessor.Value;
+
+    public TimeSpan DefaultTimeUntilExpires => 20.Minutes();
+
+    public TimeSpan DefaultAcquireTimeout => 30.Seconds();
 
     public async Task<IResourceLock?> TryAcquireAsync(
         string resource,
@@ -30,74 +34,30 @@ public sealed class LocalResourceLockProvider(
     )
     {
         // Normalize & Validate Arguments
-
-        timeUntilExpires ??= TimeSpan.FromMinutes(20);
-        acquireTimeout ??= TimeSpan.FromSeconds(30);
-
         Argument.IsNotNullOrWhiteSpace(resource);
-        if (timeUntilExpires != Timeout.InfiniteTimeSpan)
-        {
-            Argument.IsPositive(timeUntilExpires.Value);
-        }
-        if (acquireTimeout != Timeout.InfiniteTimeSpan)
-        {
-            Argument.IsPositive(acquireTimeout.Value);
-        }
 
+        timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
+        acquireTimeout = _NormalizeAcquireTimeout(acquireTimeout);
         var normalizeResource = _options.KeyPrefix + resource;
-        var existResourceLock = _GetResourceLock(normalizeResource);
+        var timestamp = timeProvider.GetTimestamp();
 
-        if (existResourceLock is not null)
+        var lockReleaser = await _LockAsync(normalizeResource, acquireTimeout.Value, acquireAbortToken);
+
+        if (lockReleaser == null)
         {
             return null;
-        }
-
-        var timestamp = timeProvider.GetTimestamp();
-        IDisposable lockReleaser;
-
-        if (acquireTimeout == Timeout.InfiniteTimeSpan)
-        {
-            lockReleaser = await _locks.LockAsync(normalizeResource, acquireAbortToken);
-        }
-        else
-        {
-            var timeoutRelease = await _locks.LockOrNullAsync(
-                normalizeResource,
-                acquireTimeout.Value,
-                acquireAbortToken
-            );
-
-            if (timeoutRelease is null)
-            {
-                return null;
-            }
-
-            lockReleaser = timeoutRelease;
         }
 
         var elapsed = timeProvider.GetElapsedTime(timestamp);
+        var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
-        var resourceLock = new ResourceLock(
-            LockId: longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
-            lockReleaser,
-            timeUntilExpires.Value
-        );
-
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        var resourceLock = new ResourceLock(lockId, lockReleaser, timeUntilExpires.Value);
         // Safe because the resource lock is acquired only by one thread
-        var added = _resources.TryAdd(normalizeResource, resourceLock);
+        _resources.TryAdd(normalizeResource, resourceLock, timeUntilExpires.Value);
+#pragma warning restore CA2000
 
-        if (!added)
-        {
-            logger.LogWarning(
-                "(Shouldn't happen) The resource lock for the key '{Key}' was not added",
-                normalizeResource
-            );
-            resourceLock.Dispose();
-
-            return null;
-        }
-
-        return new DisposableResourceLock(resource, resourceLock.LockId, elapsed, this, logger, timeProvider);
+        return new DisposableResourceLock(resource, lockId, elapsed, this, logger, timeProvider);
     }
 
     public Task<bool> RenewAsync(
@@ -108,49 +68,32 @@ public sealed class LocalResourceLockProvider(
     )
     {
         // Normalize & Validate Arguments
-
         cancellationToken.ThrowIfCancellationRequested();
-        timeUntilExpires ??= TimeSpan.FromMinutes(20);
-
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
+
         if (timeUntilExpires != Timeout.InfiniteTimeSpan)
         {
-            Argument.IsPositive(timeUntilExpires.Value);
+            Argument.IsPositive(timeUntilExpires);
         }
+
+        timeUntilExpires ??= DefaultTimeUntilExpires;
 
         // Check if the lock is still valid
-
         var normalizeResource = _options.KeyPrefix + resource;
-        var resourceLock = _GetResourceLock(normalizeResource);
+        var isLocked = _IsLocked(normalizeResource, lockId);
 
-        if (resourceLock is null)
-        {
-            return Task.FromResult(false);
-        }
-
-        // If the lock id does not match, then it is not the lock that we are looking for
-        if (!string.Equals(resourceLock.LockId, lockId, StringComparison.Ordinal))
-        {
-            return Task.FromResult(false);
-        }
-
-        // Renew the lock
-
-        resourceLock.Renew(timeUntilExpires.Value);
-
-        return Task.FromResult(true);
+        return Task.FromResult(isLocked && _Renew(normalizeResource, timeUntilExpires.Value));
     }
 
     public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrWhiteSpace(resource);
+        cancellationToken.ThrowIfCancellationRequested();
+        resource = _options.KeyPrefix + resource;
+        var isLocked = _IsLocked(resource);
 
-        var normalizeResource = _options.KeyPrefix + resource;
-        var resourceLock = _GetResourceLock(normalizeResource);
-
-        return Task.FromResult(resourceLock is not null && _locks.IsInUse(normalizeResource));
+        return Task.FromResult(isLocked);
     }
 
     public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
@@ -159,63 +102,57 @@ public sealed class LocalResourceLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
-        var normalizeResource = _options.KeyPrefix + resource;
-        var resourceLock = _GetResourceLock(normalizeResource);
+        resource = _options.KeyPrefix + resource;
+        var isLocked = _IsLocked(resource);
 
-        // If the lock is not found, then it is already released
-        if (resourceLock is null)
+        if (!isLocked)
         {
             return Task.CompletedTask;
         }
 
-        // If the lock id does not match, then it is not the lock that we are looking for
-        if (!string.Equals(resourceLock.LockId, lockId, StringComparison.Ordinal))
+        // Remove & Dispose the resource lock
+        if (_resources.TryRemove(resource, out var resourceLock))
         {
-            return Task.CompletedTask;
+            resourceLock.Dispose();
         }
-
-        // Release the lock
-        _RemoveResourceLock(normalizeResource);
 
         return Task.CompletedTask;
     }
 
     public void Dispose()
     {
-        foreach (var value in _resources.Values)
+        foreach (var value in _resources)
         {
-            value.Dispose();
+            value.Value.Dispose();
         }
 
         _resources.Clear();
+        _resources.Dispose();
         _locks.Dispose();
     }
 
     #region Helpers
 
-    private ResourceLock? _GetResourceLock(string resource)
+    private async Task<IDisposable?> _LockAsync(
+        string resource,
+        TimeSpan acquireTimeout,
+        CancellationToken acquireAbortToken
+    )
     {
-        if (!_resources.TryGetValue(resource, out var existResourceLock))
-        {
-            return null;
-        }
-
-        if (existResourceLock.IsExpired)
-        {
-            _RemoveResourceLock(resource);
-
-            return null;
-        }
-
-        return existResourceLock;
+        return acquireTimeout == Timeout.InfiniteTimeSpan
+            ? await _locks.LockAsync(resource, acquireAbortToken)
+            : await _locks.LockOrNullAsync(resource, acquireTimeout, acquireAbortToken);
     }
 
-    private void _RemoveResourceLock(string resource)
+    private bool _IsLocked(string resource, string lockId)
     {
-        if (_resources.TryRemove(resource, out var resourceLock))
-        {
-            resourceLock.Dispose();
-        }
+        return _resources.TryGet(resource, out var resourceLock)
+            && string.Equals(resourceLock.LockId, lockId, StringComparison.Ordinal);
+    }
+
+    private bool _IsLocked(string resource)
+    {
+        return _resources.TryGet(resource, out var resourceLock) && resourceLock is not null;
     }
 
     private static AsyncKeyedLocker<string> _CreateAsyncKeyedLocker()
@@ -231,27 +168,75 @@ public sealed class LocalResourceLockProvider(
         );
     }
 
-    private sealed record ResourceLock(string LockId, IDisposable LockReleaser, TimeSpan DateUntilExpires) : IDisposable
+    [return: System.Diagnostics.CodeAnalysis.NotNull]
+    private TimeSpan? _NormalizeAcquireTimeout(TimeSpan? acquireTimeout)
     {
-        public long TimestampAcquired { get; private set; } = Stopwatch.GetTimestamp();
+        if (acquireTimeout != Timeout.InfiniteTimeSpan)
+        {
+            Argument.IsPositive(acquireTimeout);
+        }
 
-        public TimeSpan DateUntilExpires { get; private set; } = DateUntilExpires;
+        acquireTimeout ??= DefaultAcquireTimeout;
 
-        public bool IsExpired => DateUntilExpires != Timeout.InfiniteTimeSpan && Elapsed >= DateUntilExpires;
+        return acquireTimeout;
+    }
 
-        private TimeSpan Elapsed => Stopwatch.GetElapsedTime(TimestampAcquired);
+    [return: System.Diagnostics.CodeAnalysis.NotNull]
+    private TimeSpan? _NormalizeTimeUntilExpires(TimeSpan? timeUntilExpires)
+    {
+        if (timeUntilExpires != Timeout.InfiniteTimeSpan)
+        {
+            Argument.IsPositive(timeUntilExpires);
+        }
+
+        timeUntilExpires ??= DefaultTimeUntilExpires;
+
+        return timeUntilExpires;
+    }
+
+    #endregion
+
+    private bool _Renew(string resource, TimeSpan timeUntilExpires)
+    {
+        if (!_resources.TryGet(resource, out var resourceLock))
+        {
+            return false;
+        }
+
+        resourceLock.Renew(timeUntilExpires);
+
+        return true;
+    }
+
+    private sealed class ResourceLock : IDisposable
+    {
+        private readonly Timer _timer;
+        private readonly IDisposable _lockReleaser;
+
+        public ResourceLock(string lockId, IDisposable lockReleaser, TimeSpan timeUntilExpires)
+        {
+            LockId = lockId;
+            _lockReleaser = lockReleaser;
+
+            _timer = new Timer(
+                _ => Dispose(),
+                state: null,
+                dueTime: timeUntilExpires,
+                period: Timeout.InfiniteTimeSpan // Pass infinite to disable periodic signaling
+            );
+        }
+
+        public string LockId { get; }
 
         public void Renew(TimeSpan timeUntilExpires)
         {
-            TimestampAcquired = Stopwatch.GetTimestamp();
-            DateUntilExpires = timeUntilExpires;
+            _timer.Change(timeUntilExpires, Timeout.InfiniteTimeSpan);
         }
 
         public void Dispose()
         {
-            LockReleaser.Dispose();
+            _lockReleaser.Dispose();
+            _timer.Dispose();
         }
     }
-
-    #endregion
 }

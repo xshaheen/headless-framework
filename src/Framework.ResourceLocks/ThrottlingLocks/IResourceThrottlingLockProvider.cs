@@ -168,6 +168,11 @@ public sealed class ResourceThrottlingLockProvider(
         return hitCounts > options.MaxHitsPerPeriod;
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        await storage.DisposeAsync().AnyContext();
+    }
+
     #region Helpers
 
     private string _GetKey(string resource)
@@ -200,28 +205,6 @@ public sealed class ResourceThrottlingLockProvider(
         return now.AddTicks(options.ThrottlingPeriod.Ticks - elapsedTicks);
     }
 
-    private static CancellationTokenSource _GetAcquireCancellation(
-        TimeSpan? acquireTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        // Acquire timeout must be positive if not infinite.
-        if (acquireTimeout is not null && acquireTimeout != Timeout.InfiniteTimeSpan)
-        {
-            Argument.IsPositive(acquireTimeout.Value);
-        }
-
-        acquireTimeout ??= TimeSpan.FromSeconds(30);
-        var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        if (acquireTimeout != Timeout.InfiniteTimeSpan)
-        {
-            acquireTimeoutCts.CancelAfter(acquireTimeout.Value);
-        }
-
-        return acquireTimeoutCts;
-    }
-
     private void _LogCurrentInformation(string cacheKey)
     {
         if (logger.IsEnabled(LogLevel.Trace))
@@ -238,9 +221,23 @@ public sealed class ResourceThrottlingLockProvider(
         }
     }
 
-    public async ValueTask DisposeAsync()
+    private static CancellationTokenSource _GetAcquireCancellation(TimeSpan? timeout, CancellationToken token)
     {
-        await storage.DisposeAsync().AnyContext();
+        // Acquire timeout must be positive if not infinite.
+        if (timeout is not null && timeout != Timeout.InfiniteTimeSpan)
+        {
+            Argument.IsPositive(timeout.Value);
+        }
+
+        timeout ??= TimeSpan.FromSeconds(30);
+        var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+
+        if (timeout != Timeout.InfiniteTimeSpan)
+        {
+            acquireTimeoutCts.CancelAfter(timeout.Value);
+        }
+
+        return acquireTimeoutCts;
     }
 
     #endregion
