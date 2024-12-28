@@ -1,8 +1,5 @@
 ﻿using Framework.ResourceLocks;
-using Framework.ResourceLocks.Storage.RegularLocks;
-using Framework.ResourceLocks.Storage.ThrottlingLocks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
 namespace Tests;
@@ -20,13 +17,11 @@ public sealed class LocalResourceThrottlingLockProviderTests(ResourceLockTestFix
             MaxHitsPerPeriod = maxHits,
         };
 
-        var optionWrapper = new OptionsWrapper<ThrottlingResourceLockOptions>(option);
-
-        return new StorageThrottlingResourceLockProvider(
+        return new ResourceThrottlingLockProvider(
             fixture.ThrottlingResourceLockStorage,
+            option,
             TimeProvider.System,
-            LoggerFactory.CreateLogger<StorageResourceLockProvider>(),
-            optionWrapper
+            LoggerFactory.CreateLogger<ResourceThrottlingLockProvider>()
         );
     }
 

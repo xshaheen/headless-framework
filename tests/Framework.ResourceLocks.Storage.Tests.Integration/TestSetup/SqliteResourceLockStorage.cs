@@ -6,6 +6,21 @@ namespace Tests.TestSetup;
 
 public sealed class SqliteResourceLockStorage(IDbConnection connection) : IResourceLockStorage
 {
+    public void CreateTable()
+    {
+        using var command = connection.CreateCommand();
+
+        command.CommandText = """
+            CREATE TABLE ResourceLocks (
+                Key TEXT PRIMARY KEY,
+                Value TEXT,
+                Expiration TEXT
+            )
+            """;
+
+        command.ExecuteNonQuery();
+    }
+
     public ValueTask<bool> InsertAsync(string key, string value, TimeSpan? expiration = null)
     {
         using var command = connection.CreateCommand();
