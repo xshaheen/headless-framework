@@ -1,15 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
+using System.Data.Common;
 
 namespace Framework.Database;
 
 [PublicAPI]
-public interface ISqlConnectionFactory
+public interface ISqlConnectionFactory : IAsyncDisposable
 {
     string GetConnectionString();
 
-    ValueTask<IDbConnection> GetOpenConnectionAsync();
+    ValueTask<DbConnection> GetOpenConnectionAsync();
 
-    ValueTask<IDbConnection> CreateNewConnectionAsync();
+    ValueTask<DbConnection> CreateNewConnectionAsync();
 }

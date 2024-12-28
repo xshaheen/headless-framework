@@ -9,7 +9,15 @@ public sealed class SqliteThrottlingResourceLockStorage(IDbConnection connection
     public void CreateTable()
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "CREATE TABLE ThrottlingResourceLocks (Key TEXT PRIMARY KEY, Expiration TEXT)";
+
+        command.CommandText = """
+            CREATE TABLE ThrottlingResourceLocks (
+                Key TEXT PRIMARY KEY,
+                Value INTEGER DEFAULT 0,
+                Expiration TEXT
+            )
+            """;
+
         command.ExecuteNonQuery();
     }
 
@@ -37,10 +45,8 @@ public sealed class SqliteThrottlingResourceLockStorage(IDbConnection connection
         using var command = connection.CreateCommand();
 
         command.CommandText = """
-            INSERT INTO ThrottlingResourceLocks (Key, Expiration)
-                               VALUES (@key, @expiration)
-            ON CONFLICT(Key) DO UPDATE
-            SET Value = Value + 1, Expiration = @expiration
+            INSERT INTO ThrottlingResourceLocks (Key, Value, Expiration) VALUES (@key, 1, @expiration)
+            ON CONFLICT(Key) DO UPDATE SET Value = Value + 1, Expiration = @expiration
             RETURNING Value
             """;
 

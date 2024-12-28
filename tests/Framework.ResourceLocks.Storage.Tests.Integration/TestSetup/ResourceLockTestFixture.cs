@@ -9,7 +9,7 @@ namespace Tests.TestSetup;
 [CollectionDefinition(nameof(ResourceLockTestFixture))]
 public sealed class ResourceLockTestFixtureCollection : ICollectionFixture<ResourceLockTestFixture>;
 
-public sealed class ResourceLockTestFixture : IAsyncLifetime, IDisposable, IAsyncDisposable
+public sealed class ResourceLockTestFixture : IAsyncLifetime, IAsyncDisposable
 {
     private readonly SqliteConnectionFactory _connectionFactory = new("DataSource=:memory:");
 
@@ -36,11 +36,6 @@ public sealed class ResourceLockTestFixture : IAsyncLifetime, IDisposable, IAsyn
     async Task IAsyncLifetime.DisposeAsync()
     {
         await _connectionFactory.DisposeAsync();
-    }
-
-    public void Dispose()
-    {
-        _connectionFactory.Dispose();
     }
 
     public async ValueTask DisposeAsync()

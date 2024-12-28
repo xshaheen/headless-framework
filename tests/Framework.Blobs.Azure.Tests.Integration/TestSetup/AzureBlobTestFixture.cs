@@ -5,6 +5,9 @@ using Testcontainers.Xunit;
 
 namespace Tests.TestSetup;
 
+[CollectionDefinition(nameof(AzureBlobTestFixture))]
+public sealed class AzureBlobTestFixtureCollection : ICollectionFixture<AzureBlobTestFixture>;
+
 [UsedImplicitly]
 public sealed class AzureBlobTestFixture(IMessageSink messageSink)
     : ContainerFixture<AzuriteBuilder, AzuriteContainer>(messageSink)
@@ -14,6 +17,3 @@ public sealed class AzureBlobTestFixture(IMessageSink messageSink)
         return builder.WithImage("mcr.microsoft.com/azure-storage/azurite:latest");
     }
 }
-
-[CollectionDefinition(nameof(AzureBlobTestFixture))]
-public sealed class AzureBlobTestFixtureCollection : ICollectionFixture<AzureBlobTestFixture>;
