@@ -144,19 +144,20 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_timeout_when_try_to_lock_acquired_resource()
     {
         var locker = GetLockProvider();
+        const string resource = "test";
 
         Logger.LogInformation("Acquiring lock #1");
-        var testLock = await locker.TryAcquireAsync("test", timeUntilExpires: TimeSpan.FromMilliseconds(250));
+        var testLock = await locker.TryAcquireAsync(resource, timeUntilExpires: TimeSpan.FromMilliseconds(250));
         Logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
         testLock.Should().NotBeNull();
 
         Logger.LogInformation("Acquiring lock #2");
-        testLock = await locker.TryAcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(50));
+        testLock = await locker.TryAcquireAsync(resource, acquireTimeout: TimeSpan.FromMilliseconds(50));
         Logger.LogInformation(testLock != null ? "Acquired lock #2" : "Unable to acquire lock #2");
         testLock.Should().BeNull();
 
         Logger.LogInformation("Acquiring lock #3");
-        testLock = await locker.TryAcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(10));
+        testLock = await locker.TryAcquireAsync(resource, acquireTimeout: TimeSpan.FromSeconds(10));
         Logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #3");
         testLock.Should().NotBeNull();
     }

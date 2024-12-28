@@ -39,7 +39,7 @@ public sealed class SqliteResourceLockStorage(IDbConnection connection) : IResou
         return ValueTask.FromResult(result);
     }
 
-    public ValueTask<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiration = null)
+    public ValueTask<bool> ReplaceIfEqualAsync(string key, string value, string expected, TimeSpan? expiration = null)
     {
         using var command = connection.CreateCommand();
 
@@ -59,7 +59,7 @@ public sealed class SqliteResourceLockStorage(IDbConnection connection) : IResou
         return ValueTask.FromResult(result);
     }
 
-    public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T value, TimeSpan? expiration = null)
+    public ValueTask<bool> RemoveIfEqualAsync(string key, string value, TimeSpan? expiration = null)
     {
         using var command = connection.CreateCommand();
 
