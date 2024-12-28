@@ -4,13 +4,13 @@ using Framework.Abstractions;
 
 namespace Tests.Abstractions;
 
-public sealed class SnowFlakIdLongIdGeneratorTests
+public sealed class SnowflakeIdLongIdGeneratorTests
 {
     [Fact]
     public void create_should_generate_unique_ids()
     {
         // given
-        var generator = new SnowFlakIdLongIdGenerator(generatorId: 1);
+        var generator = new SnowflakeIdLongIdGenerator(generatorId: 1);
 
         // when
         var ids = new[]

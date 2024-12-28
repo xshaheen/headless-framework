@@ -1,22 +1,28 @@
 ﻿using Framework.Abstractions;
+using Framework.Messaging;
 using Framework.ResourceLocks;
-using Framework.ResourceLocks.Local;
+using Framework.ResourceLocks.Storage.RegularLocks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class LocalResourceLockProviderTests(ITestOutputHelper output) : ResourceLockProviderTestsBase(output)
+[Collection(nameof(ResourceLockTestFixture))]
+public sealed class LocalResourceLockProviderTests(ResourceLockTestFixture fixture, ITestOutputHelper output)
+    : ResourceLockProviderTestsBase(output)
 {
     protected override IResourceLockProvider GetLockProvider()
     {
         var option = new ResourceLockOptions { KeyPrefix = "test:" };
         var optionWrapper = new OptionsWrapper<ResourceLockOptions>(option);
 
-        return new LocalResourceLockProvider(
+        return new StorageResourceLockProvider(
+            fixture.ResourceLockStorage,
+            Substitute.For<IMessageBus>(), // TODO: Replace with real message bus
             new SnowflakeIdLongIdGenerator(1),
             TimeProvider.System,
-            LoggerFactory.CreateLogger<LocalResourceLockProvider>(),
+            LoggerFactory.CreateLogger<StorageResourceLockProvider>(),
             optionWrapper
         );
     }
