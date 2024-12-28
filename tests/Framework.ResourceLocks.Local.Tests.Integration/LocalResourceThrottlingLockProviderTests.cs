@@ -16,10 +16,13 @@ public sealed class LocalResourceThrottlingLockProviderTests(ITestOutputHelper o
             KeyPrefix = string.Empty,
         };
 
-        return new LocalResourceThrottlingLockProvider(
-            TimeProvider.System,
+        return new ResourceThrottlingLockProvider(
+#pragma warning disable CA2000 // It already disposed inside
+            new LocalResourceThrottlingLockStorage(),
+#pragma warning restore CA2000
             options,
-            LoggerFactory.CreateLogger<LocalResourceThrottlingLockProvider>()
+            TimeProvider.System,
+            LoggerFactory.CreateLogger<ResourceThrottlingLockProvider>()
         );
     }
 
