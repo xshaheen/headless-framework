@@ -5,8 +5,10 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(ResourceLockTestFixture))]
-public sealed class LocalResourceThrottlingLockProviderTests(ResourceLockTestFixture fixture, ITestOutputHelper output)
-    : ResourceThrottlingLockProviderTestsBase(output)
+public sealed class StorageResourceThrottlingLockProviderTests(
+    ResourceLockTestFixture fixture,
+    ITestOutputHelper output
+) : ResourceThrottlingLockProviderTestsBase(output)
 {
     protected override IResourceThrottlingLockProvider GetLockProvider(int maxHits, TimeSpan period)
     {
@@ -29,5 +31,11 @@ public sealed class LocalResourceThrottlingLockProviderTests(ResourceLockTestFix
     public override Task should_throttle_calls_async()
     {
         return base.should_throttle_calls_async();
+    }
+
+    [Fact]
+    public override Task should_throttle_concurrent_calls_async()
+    {
+        return base.should_throttle_concurrent_calls_async();
     }
 }

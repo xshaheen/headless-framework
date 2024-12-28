@@ -9,7 +9,7 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(ResourceLockTestFixture))]
-public sealed class LocalResourceLockProviderTests(ResourceLockTestFixture fixture, ITestOutputHelper output)
+public sealed class StorageResourceLockProviderTests(ResourceLockTestFixture fixture, ITestOutputHelper output)
     : ResourceLockProviderTestsBase(output)
 {
     protected override IResourceLockProvider GetLockProvider()

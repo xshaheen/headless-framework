@@ -31,4 +31,10 @@ public sealed class LocalResourceThrottlingLockProviderTests(ITestOutputHelper o
     {
         return base.should_throttle_calls_async();
     }
+
+    [Fact]
+    public override Task should_throttle_concurrent_calls_async()
+    {
+        return base.should_throttle_concurrent_calls_async();
+    }
 }

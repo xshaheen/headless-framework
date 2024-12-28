@@ -33,8 +33,10 @@ public sealed class LocalResourceThrottlingLockStorage : IThrottlingResourceLock
 
     private sealed record ResourceLock
     {
-        public long HitsCount { get; private set; }
+        private long _hitsCount;
 
-        public void Hit() => HitsCount++;
+        public long HitsCount => Interlocked.Read(ref _hitsCount);
+
+        public void Hit() => Interlocked.Increment(ref _hitsCount);
     }
 }
