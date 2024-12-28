@@ -19,7 +19,7 @@ public static class HostExtensions
     )
     {
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<ILongIdGenerator>(new SnowFlakIdLongIdGenerator(1));
+        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddSingleton<ICancellationTokenProvider>(DefaultCancellationTokenProvider.Instance);
         services.AddSingleton(Substitute.For<ICurrentUser>());

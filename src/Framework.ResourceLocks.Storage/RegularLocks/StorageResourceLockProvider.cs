@@ -187,9 +187,9 @@ public sealed class StorageResourceLockProvider(
         return new DisposableResourceLock(resource, lockId, timeWaitedForLock, this, logger, timeProvider);
     }
 
-    public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
+    public async Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return Run.WithRetriesAsync(
+        return await Run.WithRetriesAsync(
             (_storage, resource),
             static state => state._storage.ExistsAsync(state.resource),
             cancellationToken: cancellationToken
@@ -219,7 +219,7 @@ public sealed class StorageResourceLockProvider(
         logger.LogReleaseReleased(resource, lockId);
     }
 
-    public Task<bool> RenewAsync(
+    public async Task<bool> RenewAsync(
         string resource,
         string lockId,
         TimeSpan? timeUntilExpires = null,
@@ -232,7 +232,7 @@ public sealed class StorageResourceLockProvider(
 
         logger.LogRenewingLock(resource, lockId, timeUntilExpires);
 
-        return Run.WithRetriesAsync(
+        return await Run.WithRetriesAsync(
             (_storage, resource, lockId, normalizedTimeUntilExpires),
             static state =>
             {
