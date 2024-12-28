@@ -9,7 +9,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
 {
     protected abstract IResourceThrottlingLockProvider GetLockProvider(int maxHits, TimeSpan period);
 
-    public virtual async Task WillThrottleCallsAsync()
+    public virtual async Task should_throttle_calls_async()
     {
         const int allowedLocks = 25;
 
