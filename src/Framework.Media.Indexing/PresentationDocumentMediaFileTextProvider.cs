@@ -1,9 +1,7 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using Cysharp.Text;
+using DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
-using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace Framework.Media.Indexing;
 
@@ -35,7 +33,10 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
 
             var slideText = _GetText(slidePart);
 
-            stringBuilder.AppendLine(slideText);
+            if (!string.IsNullOrEmpty(slideText))
+            {
+                stringBuilder.AppendLine(slideText);
+            }
         }
 
         return Task.FromResult(stringBuilder.ToString());
@@ -51,8 +52,10 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
             {
                 stringBuilder.Append(text.Text);
             }
+
+            stringBuilder.Append(' ');
         }
 
-        return stringBuilder.ToString();
+        return stringBuilder.ToString().Trim();
     }
 }
