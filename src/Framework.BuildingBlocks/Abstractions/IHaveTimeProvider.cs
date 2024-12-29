@@ -7,6 +7,7 @@ public interface IHaveTimeProvider
     TimeProvider TimeProvider { get; }
 }
 
+[PublicAPI]
 public static class TimeProviderExtensions
 {
     public static TimeProvider GetTimeProvider(this object target)
