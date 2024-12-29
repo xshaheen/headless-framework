@@ -49,6 +49,8 @@ public sealed class ResourceThrottlingLockProvider(
     ILogger<ResourceThrottlingLockProvider> logger
 ) : IResourceThrottlingLockProvider
 {
+    public static TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
+
     public async Task<IResourceThrottlingLock?> TryAcquireAsync(
         string resource,
         TimeSpan? acquireTimeout = null,
@@ -226,13 +228,13 @@ public sealed class ResourceThrottlingLockProvider(
         // Acquire timeout must be positive if not infinite.
         if (timeout is not null && timeout != Timeout.InfiniteTimeSpan)
         {
-            Argument.IsPositive(timeout.Value);
+            Argument.IsPositiveOrZero(timeout.Value);
         }
 
-        timeout ??= TimeSpan.FromSeconds(30);
+        timeout ??= DefaultAcquireTimeout;
         var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
-        if (timeout != Timeout.InfiniteTimeSpan)
+        if (timeout != Timeout.InfiniteTimeSpan && timeout > TimeSpan.Zero)
         {
             acquireTimeoutCts.CancelAfter(timeout.Value);
         }

@@ -63,7 +63,7 @@ public sealed class StorageResourceLockProvider(
         acquireAbortToken.ThrowIfCancellationRequested();
 
         var timestamp = timeProvider.GetTimestamp();
-        var shouldWait = !acquireTimeoutCts.IsCancellationRequested;
+        var shouldWait = !acquireTimeoutCts.IsCancellationRequested && acquireTimeout != TimeSpan.Zero;
         var gotLock = false;
 
         try
@@ -322,7 +322,7 @@ public sealed class StorageResourceLockProvider(
         timeout ??= DefaultAcquireTimeout;
         var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
-        if (timeout != Timeout.InfiniteTimeSpan)
+        if (timeout != Timeout.InfiniteTimeSpan && timeout > TimeSpan.Zero)
         {
             acquireTimeoutCts.CancelAfter(timeout.Value);
         }

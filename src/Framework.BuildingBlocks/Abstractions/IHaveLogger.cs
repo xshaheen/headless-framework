@@ -10,6 +10,7 @@ public interface IHaveLogger
     ILogger Logger { get; }
 }
 
+[PublicAPI]
 public static class LoggerExtensions
 {
     public static ILogger GetLogger(this object target)
