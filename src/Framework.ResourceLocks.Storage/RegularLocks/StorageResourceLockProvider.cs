@@ -189,6 +189,31 @@ public sealed class StorageResourceLockProvider(
         return new DisposableResourceLock(resource, lockId, timeWaitedForLock, this, logger, timeProvider);
     }
 
+    public async Task<bool> RenewAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+        Argument.IsNotNullOrWhiteSpace(lockId);
+
+        var expires = _NormalizeTimeUntilExpires(timeUntilExpires);
+        logger.LogRenewingLock(resource, lockId, timeUntilExpires);
+
+        return await Run.WithRetriesAsync(
+            (_storage, resource, lockId, expires),
+            static state =>
+            {
+                var (storage, resource, lockId, expires) = state;
+
+                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, expires);
+            },
+            cancellationToken: cancellationToken
+        );
+    }
+
     public async Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         return await Run.WithRetriesAsync(
@@ -214,36 +239,10 @@ public sealed class StorageResourceLockProvider(
             )
             .AnyContext();
 
-        await messageBus
-            .PublishAsync(new StorageLockReleased(resource, lockId), cancellationToken: cancellationToken)
-            .AnyContext();
+        var storageLockReleased = new StorageLockReleased(resource, lockId);
+        await messageBus.PublishAsync(storageLockReleased, cancellationToken: cancellationToken).AnyContext();
 
         logger.LogReleaseReleased(resource, lockId);
-    }
-
-    public async Task<bool> RenewAsync(
-        string resource,
-        string lockId,
-        TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        Argument.IsNotNullOrWhiteSpace(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
-        var normalizedTimeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
-
-        logger.LogRenewingLock(resource, lockId, timeUntilExpires);
-
-        return await Run.WithRetriesAsync(
-            (_storage, resource, lockId, normalizedTimeUntilExpires),
-            static state =>
-            {
-                var (storage, resource, lockId, normalizedTimeUntilExpires) = state;
-
-                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, normalizedTimeUntilExpires);
-            },
-            cancellationToken: cancellationToken
-        );
     }
 
     #region Helpers
@@ -317,7 +316,7 @@ public sealed class StorageResourceLockProvider(
         // Acquire timeout must be positive if not infinite.
         if (timeout is not null && timeout != Timeout.InfiniteTimeSpan)
         {
-            Argument.IsPositive(timeout.Value);
+            Argument.IsPositiveOrZero(timeout.Value);
         }
 
         timeout ??= DefaultAcquireTimeout;

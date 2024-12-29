@@ -30,7 +30,7 @@ public interface IResourceLockProvider
     /// <list type="bullet">
     /// <item><see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/>.</item>
     /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire</item>
-    /// <item>Value greater than 0.</item>
+    /// <item>Value greater than or equal to 0.</item>
     /// </list>
     /// </param>
     /// <param name="acquireAbortToken"></param>
@@ -44,11 +44,6 @@ public interface IResourceLockProvider
         TimeSpan? acquireTimeout = null,
         CancellationToken acquireAbortToken = default
     );
-
-    /// <summary>
-    /// Checks if a specified resource is currently locked.
-    /// </summary>
-    Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Renews a resource lock for a specified <paramref name="resource"/> by extending
@@ -67,4 +62,7 @@ public interface IResourceLockProvider
     /// if it is acquired by the <paramref name="lockId"/>.
     /// </summary>
     Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default);
+
+    /// <summary>Checks if a specified resource is currently locked.</summary>
+    Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default);
 }
