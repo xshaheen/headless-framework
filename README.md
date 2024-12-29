@@ -4,6 +4,7 @@
 
 - Building Blocks need to be refactored (SearchableString, UserId/AccountId, ...)
 - Api need to be refactored
+- Better separation to be able to use with Clean Architecture
 
 ## Test
 
