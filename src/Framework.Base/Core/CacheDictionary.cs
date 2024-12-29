@@ -11,6 +11,8 @@ namespace Framework.Core;
  * This is based on https://github.com/jitbit/FastCache
  */
 
+// TODO: Stop the timer while the collection is empty and restart it when the first item is added
+
 /// <summary>A concurrent dictionary with expiration. Faster MemoryCache alternative.</summary>
 public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>, IDisposable
     where TKey : notnull
@@ -39,8 +41,18 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
     /// </summary>
     public void EvictExpired()
     {
+        if (_dict.IsEmpty)
+        {
+            return;
+        }
+
         // Eviction already started by another thread? forget it, lets move on
         if (!_evictionLock.TryEnter())
+        {
+            return;
+        }
+
+        if (_dict.IsEmpty)
         {
             return;
         }
@@ -267,6 +279,18 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
         _dict.AddOrUpdate(key, static (_, c) => c, static (_, _, c) => c, ttlValue);
     }
 
+    public bool Extend(TKey key, TimeSpan ttl)
+    {
+        if (!_dict.TryGetValue(key, out var ttlValue))
+        {
+            return false;
+        }
+
+        ttlValue.ChangeTtl(ttl);
+
+        return _dict.ContainsKey(key); // It may be removed/evicted by another thread
+    }
+
     #endregion
 
     #region Remove
@@ -363,6 +387,8 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
 
         public TValue Value { get; private set; } = value;
 
+        public long TickCountWhenToKill => Interlocked.Read(ref _tickCountWhenToKill);
+
         public bool IsExpired()
         {
             return IsExpired(Environment.TickCount64);
@@ -370,7 +396,12 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
 
         public bool IsExpired(long currTime)
         {
-            return currTime > _tickCountWhenToKill;
+            return currTime > TickCountWhenToKill;
+        }
+
+        public void ChangeTtl(TimeSpan ttl)
+        {
+            Interlocked.Exchange(ref _tickCountWhenToKill, Environment.TickCount64 + (long)ttl.TotalMilliseconds);
         }
 
         /// <summary>Updates the value and TTL only if the item is expired.</summary>
@@ -381,7 +412,7 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
 
             if (IsExpired(ticks)) // If expired - update the value and TTL
             {
-                _tickCountWhenToKill = ticks + (long)newTtl.TotalMilliseconds; // Update the expiration time first for better concurrency
+                ChangeTtl(newTtl); // Update the expiration time first for better concurrency
                 Value = newValueFactory();
 
                 return (true, Value);
