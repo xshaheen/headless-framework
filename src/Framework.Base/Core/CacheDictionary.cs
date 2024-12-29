@@ -2,6 +2,7 @@
 
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using Nito.AsyncEx;
 
 namespace Framework.Core;
@@ -117,7 +118,7 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
     /// <param name="key">The key to get</param>
     /// <param name="value">When method returns, contains the object with the key if found, otherwise default value of the type</param>
     /// <returns>True if value exists, otherwise false</returns>
-    public bool TryGet(TKey key, out TValue? value)
+    public bool TryGet(TKey key, [NotNullWhen(true)] out TValue? value)
     {
         value = default;
 
@@ -171,7 +172,7 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
             return false;
         }
 
-        value = ttlValue.Value;
+        value = ttlValue.Value!;
 
         return true;
     }
@@ -273,11 +274,11 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
     /// <summary>Tries to remove item with the specified key, also returns the object removed in an "out" var.</summary>
     /// <param name="key">The key of the element to remove</param>
     /// <param name="value">Contains the object removed or the default value if not found</param>
-    public bool TryRemove(TKey key, out TValue? value)
+    public bool TryRemove(TKey key, [NotNullWhen(true)] out TValue? value)
     {
         if (_dict.TryRemove(key, out var ttlValue) && !ttlValue.IsExpired())
         {
-            value = ttlValue.Value;
+            value = ttlValue.Value!;
 
             return true;
         }

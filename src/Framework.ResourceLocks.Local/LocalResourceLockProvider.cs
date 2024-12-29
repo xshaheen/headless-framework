@@ -3,8 +3,8 @@
 using AsyncKeyedLock;
 using Framework.Abstractions;
 using Framework.Checks;
+using Framework.Core;
 using Humanizer;
-using Jitbit.Utils;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -19,7 +19,7 @@ public sealed class LocalResourceLockProvider(
 ) : IResourceLockProvider, IDisposable
 {
     private readonly AsyncKeyedLocker<string> _locks = _CreateAsyncKeyedLocker();
-    private readonly FastCache<string, ResourceLock> _resources = new(100, key => { });
+    private readonly CacheDictionary<string, ResourceLock> _resources = new(100);
     private readonly ResourceLockOptions _options = optionsAccessor.Value;
 
     public TimeSpan DefaultTimeUntilExpires => 20.Minutes();
@@ -194,8 +194,6 @@ public sealed class LocalResourceLockProvider(
         return timeUntilExpires;
     }
 
-    #endregion
-
     private bool _Renew(string resource, TimeSpan timeUntilExpires)
     {
         if (!_resources.TryGet(resource, out var resourceLock))
@@ -239,4 +237,6 @@ public sealed class LocalResourceLockProvider(
             _timer.Dispose();
         }
     }
+
+    #endregion
 }

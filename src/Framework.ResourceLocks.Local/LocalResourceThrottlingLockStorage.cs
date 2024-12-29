@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Jitbit.Utils;
+using Framework.Core;
 
 namespace Framework.ResourceLocks.Local;
 
 public sealed class LocalResourceThrottlingLockStorage : IThrottlingResourceLockStorage
 {
-    private readonly FastCache<string, ResourceLock> _resources = new();
+    private readonly CacheDictionary<string, ResourceLock> _resources = new();
 
     public ValueTask<long> GetHitCountsAsync(string resources, long defaultValue = 0)
     {
