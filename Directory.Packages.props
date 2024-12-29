@@ -57,7 +57,6 @@
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="3.0.1" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.3.0" />
-    <PackageVersion Include="Jitbit.FastCache" Version="1.1.0" />
     <PackageVersion Include="libphonenumber-csharp" Version="8.13.52" />
     <PackageVersion Include="Linq2Couchbase" Version="2.1.0" />
     <PackageVersion Include="MailKit" Version="4.9.0" />
