@@ -6,6 +6,7 @@
   </PropertyGroup>
   
   <ItemGroup>
+    <PackageReference Include="Flurl" />
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="IdGen" />
     <PackageReference Include="morelinq" />
@@ -13,12 +14,11 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="NetTopologySuite" />
-    <PackageReference Include="NetTopologySuite.Features" />
     <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="Nito.Disposables" />
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="System.Reactive" />
+    <PackageReference Include="TimeZoneConverter" />
     <PackageReference Include="ZString" />
   </ItemGroup>
 
