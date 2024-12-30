@@ -23,12 +23,12 @@ public static class PhoneNumberConfiguration
             propertyExpression,
             b =>
             {
-                b.Property(x => x!.CountryCode)
+                b.Property(x => x.CountryCode)
                     .IsRequired(isRequired)
                     .HasColumnName(codeColumnName)
                     .HasMaxLength(PhoneNumberConstants.Codes.MaxLength);
 
-                b.Property(x => x!.Number)
+                b.Property(x => x.Number)
                     .IsRequired(isRequired)
                     .HasColumnName(phoneColumnName)
                     .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength);
