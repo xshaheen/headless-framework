@@ -69,10 +69,10 @@ public static class AddPermissionsExtensions
 
     public static IServiceCollection AddAlwaysAllowAuthorization(this IServiceCollection services)
     {
-        services.ReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
-        services.ReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
+        services.AddOrReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
+        services.AddOrReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
 
-        services.ReplaceSingleton<
+        services.AddOrReplaceSingleton<
             IMethodInvocationAuthorizationService,
             AlwaysAllowMethodInvocationAuthorizationService
         >();
