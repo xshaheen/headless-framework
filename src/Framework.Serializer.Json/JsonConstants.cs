@@ -1,13 +1,28 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Encodings.Web;
+using NetTopologySuite.IO.Converters;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Framework.Serializer;
 
-public static class SerializerJsonConstants
+public static class JsonConstants
 {
+    public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
+    public static readonly JsonSerializerOptions DefaultInternalJsonOptions = CreateInternalJsonOptions();
+    public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = new() { WriteIndented = true };
+
+    public static JsonSerializerOptions CreateWebJsonOptions()
+    {
+        return ConfigureWebJsonOptions(new JsonSerializerOptions());
+    }
+
+    public static JsonSerializerOptions CreateInternalJsonOptions()
+    {
+        return ConfigureInternalJsonOptions(new JsonSerializerOptions());
+    }
+
     public static JsonSerializerOptions ConfigureWebJsonOptions(JsonSerializerOptions options)
     {
         options.Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
@@ -26,9 +41,7 @@ public static class SerializerJsonConstants
         options.AllowTrailingCommas = true;
         options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
-
-        options.Converters.Clear();
-        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
+        _AddDefaultConverters(options);
 
         return options;
     }
@@ -53,10 +66,21 @@ public static class SerializerJsonConstants
         options.RespectRequiredConstructorParameters = true;
         options.AllowTrailingCommas = false;
         options.ReferenceHandler = null;
-
-        options.Converters.Clear();
-        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
+        _AddDefaultConverters(options);
 
         return options;
+    }
+
+    private static void _AddDefaultConverters(JsonSerializerOptions options)
+    {
+        var enumConverter = options.Converters.First(x => x is JsonStringEnumConverter);
+
+        if (enumConverter is not null)
+        {
+            options.Converters.Remove(enumConverter);
+        }
+
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
+        options.Converters.Add(new GeoJsonConverterFactory());
     }
 }

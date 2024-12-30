@@ -70,7 +70,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
 
         builder.Services.TryAddSingleton<IJsonSerializer>(
-            new SystemJsonSerializer(FrameworkJsonConstants.DefaultWebJsonOptions)
+            new SystemJsonSerializer(JsonConstants.DefaultWebJsonOptions)
         );
         builder.Services.TryAddSingleton<ITextSerializer>(services => services.GetRequiredService<IJsonSerializer>());
         builder.Services.TryAddSingleton<ISerializer>(services => services.GetRequiredService<IJsonSerializer>());
