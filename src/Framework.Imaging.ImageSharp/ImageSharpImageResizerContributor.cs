@@ -21,7 +21,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
     {
         if (!string.IsNullOrWhiteSpace(args.MimeType) && !_CanResize(args.MimeType))
         {
-            return ImageStreamResizeResult.NotSupported();
+            return ImageStreamResizeResult.NotSupportedMimeType(args.MimeType);
         }
 
         var (image, error) = await LoadImageHelpers.TryLoad(stream, logger, cancellationToken);
@@ -39,7 +39,7 @@ public sealed class ImageSharpImageResizerContributor(ILogger<ImageSharpImageRes
             return ImageStreamResizeResult.NotSupported();
         }
 
-        var mimeType = format.DefaultMimeType;
+        var mimeType = args.MimeType ?? format.DefaultMimeType;
 
         if (!_CanResize(mimeType))
         {
