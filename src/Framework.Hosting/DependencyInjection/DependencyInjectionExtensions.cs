@@ -67,7 +67,12 @@ public static class DependencyInjectionExtensions
 
     #region Replace
 
-    public static bool ReplaceScoped<TService, TImplementation>(this IServiceCollection services)
+    /// <summary>Adds or replaces a scoped service in the service collection.</summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <typeparam name="TImplementation">The type of the implementation.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>True if the service was replaced, otherwise false.</returns>
+    public static bool AddOrReplaceScoped<TService, TImplementation>(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -77,7 +82,12 @@ public static class DependencyInjectionExtensions
         return result;
     }
 
-    public static bool ReplaceScoped<TService>(
+    /// <summary>Adds or replaces a scoped service in the service collection.</summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="implementationFactory">The factory to create the service implementation.</param>
+    /// <returns>True if the service was replaced, otherwise false.</returns>
+    public static bool AddOrReplaceScoped<TService>(
         this IServiceCollection services,
         Func<IServiceProvider, TService> implementationFactory
     )
@@ -89,7 +99,12 @@ public static class DependencyInjectionExtensions
         return result;
     }
 
-    public static bool ReplaceTransient<TService, TImplementation>(this IServiceCollection services)
+    /// <summary>Adds or replaces a transient service in the service collection.</summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <typeparam name="TImplementation">The type of the implementation.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>True if the service was replaced, otherwise false.</returns>
+    public static bool AddOrReplaceTransient<TService, TImplementation>(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -99,7 +114,12 @@ public static class DependencyInjectionExtensions
         return result;
     }
 
-    public static bool ReplaceTransient<TService>(
+    /// <summary>Adds or replaces a transient service in the service collection.</summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="implementationFactory">The factory to create the service implementation.</param>
+    /// <returns>True if the service was replaced, otherwise false.</returns>
+    public static bool AddOrReplaceTransient<TService>(
         this IServiceCollection services,
         Func<IServiceProvider, TService> implementationFactory
     )
@@ -111,7 +131,12 @@ public static class DependencyInjectionExtensions
         return result;
     }
 
-    public static bool ReplaceSingleton<TService, TImplementation>(this IServiceCollection services)
+    /// <summary>Adds or replaces a singleton service in the service collection.</summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <typeparam name="TImplementation">The type of the implementation.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>True if the service was replaced, otherwise false.</returns>
+    public static bool AddOrReplaceSingleton<TService, TImplementation>(this IServiceCollection services)
         where TService : class
         where TImplementation : class, TService
     {
@@ -121,7 +146,12 @@ public static class DependencyInjectionExtensions
         return result;
     }
 
-    public static bool ReplaceSingleton<TService>(
+    /// <summary>Adds or replaces a singleton service in the service collection.</summary>
+    /// <typeparam name="TService">The type of the service.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="implementationFactory">The factory to create the service implementation.</param>
+    /// <returns>True if the service was replaced, otherwise false.</returns>
+    public static bool AddOrReplaceSingleton<TService>(
         this IServiceCollection services,
         Func<IServiceProvider, TService> implementationFactory
     )
