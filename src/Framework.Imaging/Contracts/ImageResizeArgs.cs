@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 namespace Framework.Imaging.Contracts;
 
 public sealed class ImageResizeArgs
@@ -47,15 +49,36 @@ public sealed class ImageResizeArgs
         }
     }
 
-    public ImageResizeArgs(int? width = null, int? height = null, string? mimeType = null, ImageResizeMode? mode = null)
+    public ImageResizeArgs(string mimeType)
     {
-        if (mode.HasValue)
-        {
-            Mode = mode.Value;
-        }
+        MimeType = Argument.IsNotNullOrWhiteSpace(mimeType);
+    }
 
-        Width = width ?? 0;
+    public ImageResizeArgs(ImageResizeMode mode, int width, int? height = null, string? mimeType = null)
+    {
+        Argument.IsPositive(height);
+
+        Mode = Argument.IsInEnum(mode);
+        Width = Argument.IsPositive(width);
         Height = height ?? 0;
+        MimeType = mimeType;
+    }
+
+    public ImageResizeArgs(ImageResizeMode mode, int? width, int height, string? mimeType = null)
+    {
+        Argument.IsPositive(width);
+
+        Mode = Argument.IsInEnum(mode);
+        Width = width ?? 0;
+        Height = Argument.IsPositive(height);
+        MimeType = mimeType;
+    }
+
+    public ImageResizeArgs(ImageResizeMode mode, int width, int height, string? mimeType = null)
+    {
+        Mode = Argument.IsInEnum(mode);
+        Width = Argument.IsPositive(width);
+        Height = Argument.IsPositive(height);
         MimeType = mimeType;
     }
 }

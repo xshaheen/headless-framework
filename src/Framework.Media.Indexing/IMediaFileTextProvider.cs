@@ -8,8 +8,7 @@ namespace Framework.Media.Indexing;
 public interface IMediaFileTextProvider
 {
     /// <summary>Produces the textual representation of the media file with the given path.</summary>
-    /// <param name="path">The full relative path of the media file.</param>
     /// <param name="fileStream">The <see cref="Stream"/> that can be used to access the file's content.</param>
     /// <returns>The textual representation of the media file.</returns>
-    Task<string> GetTextAsync(string path, Stream fileStream);
+    Task<string> GetTextAsync(Stream fileStream);
 }
