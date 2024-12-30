@@ -28,9 +28,18 @@
   </PropertyGroup>
 
   <ItemGroup Label="Package References">
-    <PackageReference Condition="'$(Configuration)' == 'Release'" Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
-    <PackageReference Condition="'$(Configuration)' == 'Release'" Include="MinVer" PrivateAssets="All" />
-    <PackageReference Condition="'$(ExcludeSbomPackage)' != 'true'" Include="Microsoft.Sbom.Tool" PrivateAssets="All" />
+    <PackageReference Condition="'$(Configuration)' == 'Release'" Include="Microsoft.SourceLink.GitHub" PrivateAssets="All">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Condition="'$(Configuration)' == 'Release'" Include="MinVer" PrivateAssets="All">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Condition="'$(ExcludeSbomPackage)' != 'true'" Include="Microsoft.Sbom.Tool" PrivateAssets="All">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup Label="README Files">

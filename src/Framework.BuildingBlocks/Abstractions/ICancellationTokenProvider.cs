@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface ICancellationTokenProvider
 {
@@ -16,6 +16,7 @@ public sealed class DefaultCancellationTokenProvider : ICancellationTokenProvide
     public CancellationToken Token => CancellationToken.None;
 }
 
+[PublicAPI]
 public static class CancellationTokenProviderExtensions
 {
     public static CancellationToken FallbackToProvider(

@@ -2,11 +2,11 @@
 
 ## To-Do
 
-- Building Blocks need to be refactored
+- Building Blocks need to be refactored (SearchableString, UserId/AccountId, ...)
 - Api need to be refactored
-- Add Nswag options
-- Separate the Scalar from Nswag
+- Better separation to be able to use with Clean Architecture
 
 ## Test
 
 - Settings/Permissions/Features integration test like abp
+- Resource lock test fixing

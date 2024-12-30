@@ -57,11 +57,10 @@
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="3.0.1" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.3.0" />
-    <PackageVersion Include="Jitbit.FastCache" Version="1.1.0" />
     <PackageVersion Include="libphonenumber-csharp" Version="8.13.52" />
     <PackageVersion Include="Linq2Couchbase" Version="2.1.0" />
     <PackageVersion Include="MailKit" Version="4.9.0" />
-    <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.5.0" />
+    <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.5.1" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
     <PackageVersion Include="MessagePack" Version="3.1.1" />
     <PackageVersion Include="Meziantou.Extensions.Logging.Xunit" Version="1.0.8" />
@@ -129,7 +128,7 @@
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.71" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.72" />
     <PackageVersion Include="Scrutor" Version="5.1.0" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
@@ -165,6 +164,7 @@
     <PackageVersion Include="Testcontainers" Version="4.1.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.1.0" />
     <PackageVersion Include="Testcontainers.LocalStack" Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.1.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.1.0" />
     <PackageVersion Include="Testcontainers.Redis" Version="4.1.0" />
     <PackageVersion Include="Testcontainers.Xunit" Version="4.1.0" />
@@ -173,7 +173,7 @@
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.1" />
     <PackageVersion Include="UnitsNet" Version="5.60.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.Xunit" Version="28.6.1" />
+    <PackageVersion Include="Verify.Xunit" Version="28.7.0" />
     <PackageVersion Include="WireMock.Net" Version="1.6.10" />
     <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.10" />
     <PackageVersion Include="WireMock.Net.xUnit" Version="1.6.10" />

@@ -2,7 +2,7 @@
 
 using Framework.Constants;
 
-namespace Framework.BuildingBlocks.Validators;
+namespace Framework.Validators;
 
 [PublicAPI]
 public static class EmailValidator

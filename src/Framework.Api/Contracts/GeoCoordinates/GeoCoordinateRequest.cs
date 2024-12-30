@@ -2,8 +2,8 @@
 
 using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
-using Framework.BuildingBlocks.Validators;
 using Framework.Primitives;
+using Framework.Validators;
 using NetTopologySuite.Geometries;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Microsoft.AspNetCore.Http;
 
 namespace Framework.Api.Security.Claims;

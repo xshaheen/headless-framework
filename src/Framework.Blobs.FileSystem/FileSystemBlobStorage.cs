@@ -2,8 +2,8 @@
 
 using Flurl;
 using Framework.Blobs.FileSystem.Internals;
-using Framework.BuildingBlocks.IO;
 using Framework.Checks;
+using Framework.IO;
 using Framework.Primitives;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -354,7 +354,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
     #region Downaload
 
-    public ValueTask<BlobDownloadResult?> DownloadAsync(
+    public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -362,22 +362,15 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     {
         var filePath = _BuildBlobPath(container, blobName);
 
-        return FileHelper.IoRetryPipeline.ExecuteAsync(
-            static async (filePath, token) =>
-            {
-                if (!File.Exists(filePath))
-                {
-                    return null;
-                }
+        if (!File.Exists(filePath))
+        {
+            return null;
+        }
 
-                await using var fileStream = File.OpenRead(filePath);
-                var memoryStream = await fileStream.CopyToMemoryStreamAndFlushAsync(token);
+        await using var fileStream = File.OpenRead(filePath);
+        var memoryStream = await fileStream.CopyToMemoryStreamAndFlushAsync(cancellationToken);
 
-                return new BlobDownloadResult(memoryStream!, Path.GetFileName(filePath));
-            },
-            filePath,
-            cancellationToken
-        );
+        return new BlobDownloadResult(memoryStream!, Path.GetFileName(filePath));
     }
 
     public ValueTask<BlobInfo?> GetBlobInfoAsync(

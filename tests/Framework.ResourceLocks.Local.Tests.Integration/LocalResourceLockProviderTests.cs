@@ -1,4 +1,4 @@
-﻿using Framework.BuildingBlocks.Abstractions;
+﻿using Framework.Abstractions;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Local;
 using Microsoft.Extensions.Logging;
@@ -14,7 +14,7 @@ public sealed class LocalResourceLockProviderTests(ITestOutputHelper output) : R
         var optionWrapper = new OptionsWrapper<ResourceLockOptions>(option);
 
         return new LocalResourceLockProvider(
-            new SnowFlakIdLongIdGenerator(1),
+            new SnowflakeIdLongIdGenerator(1),
             TimeProvider.System,
             LoggerFactory.CreateLogger<LocalResourceLockProvider>(),
             optionWrapper

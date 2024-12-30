@@ -8,6 +8,7 @@ using Nito.AsyncEx;
 // ReSharper disable once CheckNamespace
 namespace System.Threading.Tasks;
 
+[PublicAPI]
 public static class TaskExtensions
 {
     /// <summary><a href="https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm">Blog post</a></summary>

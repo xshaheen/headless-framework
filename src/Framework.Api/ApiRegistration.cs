@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using FileSignatures;
 using FluentValidation;
+using Framework.Abstractions;
 using Framework.Api.Abstractions;
 using Framework.Api.Diagnostics;
 using Framework.Api.Identity.Normalizer;
@@ -11,8 +12,6 @@ using Framework.Api.Identity.Schemes;
 using Framework.Api.Middlewares;
 using Framework.Api.Security.Claims;
 using Framework.Api.Security.Jwt;
-using Framework.BuildingBlocks.Abstractions;
-using Framework.BuildingBlocks.System;
 using Framework.Constants;
 using Framework.Core;
 using Framework.Serializer;
@@ -57,8 +56,8 @@ public static class ApiRegistration
         builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
         builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
 
-        builder.Services.ReplaceSingleton<ILookupNormalizer, FrameworkLookupNormalizer>();
-        builder.Services.ReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
+        builder.Services.AddOrReplaceSingleton<ILookupNormalizer, FrameworkLookupNormalizer>();
+        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
 
         builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
         builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);
@@ -77,7 +76,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<ISerializer>(services => services.GetRequiredService<IJsonSerializer>());
 
         builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-        builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowFlakIdLongIdGenerator(1));
+        builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
         builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
         builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
         builder.Services.TryAddSingleton(TimeProvider.System);

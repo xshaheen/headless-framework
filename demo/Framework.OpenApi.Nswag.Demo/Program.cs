@@ -25,7 +25,7 @@ builder
     .AddMvc();
 
 builder.Services.AddControllers();
-builder.Services.AddFrameworkNswagSwagger();
+builder.Services.AddFrameworkNswagOpenApi();
 
 builder
     .Services.AddAuthentication()
@@ -53,8 +53,8 @@ builder
             options.TokenValidationParameters.NameClaimType = FrameworkClaimTypes.UserName;
             options.TokenValidationParameters.RoleClaimType = FrameworkClaimTypes.Roles;
             options.TokenValidationParameters.AuthenticationType = AuthenticationConstants.IdentityAuthenticationType;
-            options.TokenValidationParameters.TokenDecryptionKey = createKey("jwtConfig.AccessToken.EncryptingKey");
-            options.TokenValidationParameters.IssuerSigningKey = createKey("jwtConfig.AccessToken.SigningKey");
+            options.TokenValidationParameters.TokenDecryptionKey = createKey("EncryptingKey");
+            options.TokenValidationParameters.IssuerSigningKey = createKey("SigningKey");
 
             return;
 
@@ -75,9 +75,9 @@ builder
 
 var app = builder.Build();
 
-app.UseFrameworkNswagSwagger();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapFrameworkNswagOpenApi();
 app.MapControllers();
 
 await app.RunAsync();

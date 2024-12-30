@@ -7,7 +7,6 @@ using Framework.Checks;
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="ICollection{T}"/>.</summary>
 [PublicAPI]
 public static class CollectionExtensions
 {

@@ -3,13 +3,14 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface IHaveLogger
 {
     ILogger Logger { get; }
 }
 
+[PublicAPI]
 public static class LoggerExtensions
 {
     public static ILogger GetLogger(this object target)

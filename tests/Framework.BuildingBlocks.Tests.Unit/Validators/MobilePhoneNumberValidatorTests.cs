@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Validators;
+using Framework.Validators;
 
 namespace Tests.Validators;
 

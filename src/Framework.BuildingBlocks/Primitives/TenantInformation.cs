@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Primitives;
+namespace Framework.Primitives;
 
 public sealed class TenantInformation(string? tenantId, string? name = null)
 {
