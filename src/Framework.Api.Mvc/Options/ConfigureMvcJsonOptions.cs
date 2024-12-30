@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Constants;
+using Framework.Serializer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
@@ -13,7 +13,7 @@ public sealed class ConfigureMvcJsonOptions(IWebHostEnvironment environment) : I
 {
     public void Configure(JsonOptions options)
     {
-        FrameworkJsonConstants.ConfigureWebJsonOptions(options.JsonSerializerOptions);
+        JsonConstants.ConfigureWebJsonOptions(options.JsonSerializerOptions);
 
         // Pretty print the JSON in development for easier debugging.
         options.JsonSerializerOptions.WriteIndented = environment.IsDevelopmentOrTest();

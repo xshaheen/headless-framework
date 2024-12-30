@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Collections;
-using Framework.Constants;
 using Framework.Primitives;
+using Framework.Serializer;
 using Framework.Serializer.Json.Converters;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -31,7 +31,7 @@ public sealed class ExtraPropertiesValueConverter()
     {
         var option = new JsonSerializerOptions();
 
-        FrameworkJsonConstants.ConfigureInternalJsonOptions(option);
+        JsonConstants.ConfigureInternalJsonOptions(option);
         option.Converters.Add(new ObjectToInferredTypesConverter());
 
         return option;

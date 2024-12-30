@@ -8,4 +8,8 @@
     <ProjectReference Include="..\Framework.Serializer\Framework.Serializer.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
+  </ItemGroup>
+
 </Project>

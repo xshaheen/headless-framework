@@ -43,7 +43,7 @@ public class MessagePackSerializerTests
         using var memoryStream = new MemoryStream();
 
         // when
-        _serializer.Serialize((object) person, memoryStream);
+        _serializer.Serialize((object)person, memoryStream);
 
         // then
         memoryStream.ToArray().Should().NotBeEmpty();
@@ -154,7 +154,7 @@ public class MessagePackSerializerTests
         memoryStream.Position = 0;
 
         // when
-        var result = _serializer.Deserialize(memoryStream, typeof(Person)) as Person;
+        var result = _serializer.Deserialize<Person>(memoryStream);
 
         // then
         result.Should().NotBeNull();

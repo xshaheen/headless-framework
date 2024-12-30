@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Constants;
+using Framework.Serializer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Hosting;
@@ -13,7 +13,7 @@ public sealed class ConfigureMinimalApiJsonOptions(IWebHostEnvironment environme
 {
     public void Configure(JsonOptions options)
     {
-        FrameworkJsonConstants.ConfigureWebJsonOptions(options.SerializerOptions);
+        JsonConstants.ConfigureWebJsonOptions(options.SerializerOptions);
 
         // Pretty print the JSON in development for easier debugging.
         options.SerializerOptions.WriteIndented = environment.IsDevelopmentOrTest();

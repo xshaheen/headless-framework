@@ -13,6 +13,8 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="NetTopologySuite" />
+    <PackageReference Include="NetTopologySuite.Features" />
     <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="Nito.Disposables" />
     <PackageReference Include="Polly.Core" />

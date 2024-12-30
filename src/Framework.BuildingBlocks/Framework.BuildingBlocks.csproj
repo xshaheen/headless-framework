@@ -10,8 +10,6 @@
     <PackageReference Include="Flurl" />
     <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="NetTopologySuite" />
-    <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
     <PackageReference Include="Snappier" />
     <PackageReference Include="TimeZoneConverter" />
   </ItemGroup>
