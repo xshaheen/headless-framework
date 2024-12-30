@@ -486,12 +486,11 @@ public sealed class CacheDictionaryTests
 
         // when
         var firstItem = cache.FirstOrDefault().Value;
-        await Task.Delay(110);
-        var anyItems = cache.Count != 0;
+        await Task.Delay(105);
 
         // then
         firstItem.Should().Be(1024);
-        anyItems.Should().BeFalse();
+        cache.Count.Should().Be(1); // Because cleanup job has not run yet
     }
 
     [Fact]

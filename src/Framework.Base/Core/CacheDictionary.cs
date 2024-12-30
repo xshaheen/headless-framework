@@ -7,11 +7,7 @@ using Nito.AsyncEx;
 
 namespace Framework.Core;
 
-/*
- * This is based on https://github.com/jitbit/FastCache
- */
-
-// TODO: Stop the timer while the collection is empty and restart it when the first item is added
+// This is based on https://github.com/jitbit/FastCache
 
 /// <summary>A concurrent dictionary with expiration. Faster MemoryCache alternative.</summary>
 public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>, IDisposable
