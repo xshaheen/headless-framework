@@ -3,7 +3,7 @@
 using Framework.Abstractions;
 using Framework.Core;
 
-namespace Tests.System;
+namespace Tests.Core;
 
 public class SnappyCompressorTests
 {

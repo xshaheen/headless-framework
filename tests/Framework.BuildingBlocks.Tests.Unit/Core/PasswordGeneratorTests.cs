@@ -2,7 +2,7 @@
 
 using Framework.Abstractions;
 
-namespace Tests.System;
+namespace Tests.Core;
 
 public class PasswordGeneratorTests
 {
