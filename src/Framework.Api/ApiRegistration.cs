@@ -56,8 +56,8 @@ public static class ApiRegistration
         builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
         builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
 
-        builder.Services.ReplaceSingleton<ILookupNormalizer, FrameworkLookupNormalizer>();
-        builder.Services.ReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
+        builder.Services.AddOrReplaceSingleton<ILookupNormalizer, FrameworkLookupNormalizer>();
+        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
 
         builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
         builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);

@@ -230,7 +230,7 @@ public class DependencyInjectionExtensionsTests
         services.AddScoped<IMyService>(_ => originalServiceMock);
 
         // when
-        var result = services.ReplaceScoped<IMyService>(_ => newServiceMock);
+        var result = services.AddOrReplaceScoped<IMyService>(_ => newServiceMock);
 
         // then
         result.Should().BeTrue();
@@ -251,7 +251,7 @@ public class DependencyInjectionExtensionsTests
         services.AddScoped<IMyService, MyService>();
 
         // when
-        services.ReplaceScoped<IMyService, ReplacementService>();
+        services.AddOrReplaceScoped<IMyService, ReplacementService>();
         var provider = services.BuildServiceProvider();
         var myService = provider.GetService<IMyService>();
 
@@ -260,9 +260,8 @@ public class DependencyInjectionExtensionsTests
         myService!.Greet().Should().Be("replacement");
     }
 
-#warning Ask Shaheen about this. If the service doesn't exist, the ReplaceScoped method will return false but it will add the new service which might confuse the user and cause unintentional bug
     [Fact]
-    public void replace_scoped_should_replace_service_when_it_doesnt_exist()
+    public void add_or_replace_scoped_should_replace_service_when_it_doesnt_exist()
     {
         // given
         var services = new ServiceCollection();
@@ -271,10 +270,10 @@ public class DependencyInjectionExtensionsTests
         newServiceMock.Greet().Returns("replace");
 
         // when
-        var result = services.ReplaceScoped<IMyService>(_ => newServiceMock);
+        var result = services.AddOrReplaceScoped<IMyService>(_ => newServiceMock);
 
         // then
-        result.Should().BeFalse(); // TODO: - MINA - Ask Shaheen about this.
+        result.Should().BeFalse();
         var provider = services.BuildServiceProvider();
         var resolvedService = provider.GetService<IMyService>();
 
@@ -284,7 +283,7 @@ public class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void replace_transient_should_replace_service_when_it_exists()
+    public void add_or_replace_transient_should_replace_service_when_it_exists()
     {
         // given
         var services = new ServiceCollection();
@@ -297,7 +296,7 @@ public class DependencyInjectionExtensionsTests
         services.AddTransient<IMyService>(_ => originalServiceMock);
 
         // when
-        var result = services.ReplaceTransient<IMyService>(_ => newServiceMock);
+        var result = services.AddOrReplaceTransient<IMyService>(_ => newServiceMock);
 
         // then
         result.Should().BeTrue();
@@ -310,7 +309,7 @@ public class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void replace_transient_with_implementation_params_should_replace_service()
+    public void add_or_replace_transient_with_implementation_params_should_replace_service()
     {
         // given
         var services = new ServiceCollection();
@@ -318,7 +317,7 @@ public class DependencyInjectionExtensionsTests
         services.AddTransient<IMyService, MyService>();
 
         // when
-        services.ReplaceTransient<IMyService, ReplacementService>();
+        services.AddOrReplaceTransient<IMyService, ReplacementService>();
         var provider = services.BuildServiceProvider();
         var myService = provider.GetService<IMyService>();
 
@@ -327,9 +326,8 @@ public class DependencyInjectionExtensionsTests
         myService!.Greet().Should().Be("replacement");
     }
 
-#warning Ask Shaheen about this. Should I be able to ReplaceTransient a Scope service?
     [Fact]
-    public void replace_transient_should_replace_service_when_it_exists_as_another_lifetime()
+    public void add_or_replace_transient_should_replace_service_when_it_exists_as_another_lifetime()
     {
         // given
         var services = new ServiceCollection();
@@ -342,7 +340,7 @@ public class DependencyInjectionExtensionsTests
         services.AddScoped<IMyService>(_ => originalServiceMock);
 
         // when
-        var result = services.ReplaceTransient<IMyService>(_ => newServiceMock);
+        var result = services.AddOrReplaceTransient<IMyService>(_ => newServiceMock);
 
         // then
         result.Should().BeTrue();
@@ -354,9 +352,8 @@ public class DependencyInjectionExtensionsTests
         resolvedService!.Greet().Should().Be("replace");
     }
 
-#warning Ask Shaheen about this. Same question as ReplaceScoped
     [Fact]
-    public void replace_transient_should_replace_service_when_it_doesnt_exist()
+    public void add_or_replace_transient_should_replace_service_when_it_doesnt_exist()
     {
         // given
         var services = new ServiceCollection();
@@ -365,10 +362,10 @@ public class DependencyInjectionExtensionsTests
         newServiceMock.Greet().Returns("replace");
 
         // when
-        var result = services.ReplaceTransient<IMyService>(_ => newServiceMock);
+        var isReplace = services.AddOrReplaceTransient<IMyService>(_ => newServiceMock);
 
         // then
-        result.Should().BeFalse(); // TODO: - MINA - Ask Shaheen about this.
+        isReplace.Should().BeFalse();
         var provider = services.BuildServiceProvider();
         var resolvedService = provider.GetService<IMyService>();
 
@@ -378,7 +375,7 @@ public class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void replace_singleton_should_replace_service_when_it_exists()
+    public void add_or_replace_singleton_should_replace_service_when_it_exists()
     {
         // given
         var services = new ServiceCollection();
@@ -391,7 +388,7 @@ public class DependencyInjectionExtensionsTests
         services.AddSingleton<IMyService>(_ => originalServiceMock);
 
         // when
-        var result = services.ReplaceSingleton<IMyService>(_ => newServiceMock);
+        var result = services.AddOrReplaceSingleton<IMyService>(_ => newServiceMock);
 
         // then
         result.Should().BeTrue();
@@ -404,7 +401,7 @@ public class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void replace_singleton_with_implementation_params_should_replace_service()
+    public void add_or_replace_singleton_with_implementation_params_should_replace_service()
     {
         // given
         var services = new ServiceCollection();
@@ -412,7 +409,7 @@ public class DependencyInjectionExtensionsTests
         services.AddSingleton<IMyService, MyService>();
 
         // when
-        services.ReplaceSingleton<IMyService, ReplacementService>();
+        services.AddOrReplaceSingleton<IMyService, ReplacementService>();
         var provider = services.BuildServiceProvider();
         var myService = provider.GetService<IMyService>();
 
@@ -421,9 +418,8 @@ public class DependencyInjectionExtensionsTests
         myService!.Greet().Should().Be("replacement");
     }
 
-#warning Ask Shaheen about this. Same question as ReplaceScoped
     [Fact]
-    public void replace_singleton_should_replace_service_when_it_doesnt_exist()
+    public void add_or_replace_singleton_should_replace_service_when_it_doesnt_exist()
     {
         // given
         var services = new ServiceCollection();
@@ -432,10 +428,10 @@ public class DependencyInjectionExtensionsTests
         newServiceMock.Greet().Returns("replace");
 
         // when
-        var result = services.ReplaceSingleton<IMyService>(_ => newServiceMock);
+        var isReplace = services.AddOrReplaceSingleton<IMyService>(_ => newServiceMock);
 
         // then
-        result.Should().BeFalse(); // TODO: - MINA - Ask Shaheen about this.
+        isReplace.Should().BeFalse();
         var provider = services.BuildServiceProvider();
         var resolvedService = provider.GetService<IMyService>();
 
