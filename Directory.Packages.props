@@ -184,7 +184,7 @@
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <GlobalPackageReference Include="AsyncFixer" Version="1.6.0" />
     <GlobalPackageReference Include="Asyncify" Version="0.9.7" />
-    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.21" />
+    <GlobalPackageReference Include="Framework.Defaults" Version="0.0.22" />
     <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.10" />

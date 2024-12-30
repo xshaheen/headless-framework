@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
+using System.Net;
 using System.Security.Cryptography;
-using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
 using Cysharp.Text;
 using Framework.Constants;
@@ -192,7 +192,7 @@ public static partial class FileNameHelper
             validFileName.Append(value);
         }
 
-        var htmlEncoded = HtmlEncoder.Default.Encode(validFileName.ToString());
+        var htmlEncoded = WebUtility.HtmlEncode(validFileName.ToString());
 
         return htmlEncoded;
     }
