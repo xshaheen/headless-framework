@@ -11,7 +11,7 @@ public sealed class ResourceLockTestFixtureCollection : ICollectionFixture<Resou
 
 public sealed class ResourceLockTestFixture : IAsyncLifetime, IAsyncDisposable
 {
-    private readonly SqliteConnectionFactory _connectionFactory = new("DataSource=:memory:");
+    private readonly SqliteConnectionFactory _connectionFactory = new("DataSource=./ThrottlingResourceLocks.db");
 
     public IResourceLockStorage ResourceLockStorage { get; private set; } = null!;
 
@@ -22,20 +22,19 @@ public sealed class ResourceLockTestFixture : IAsyncLifetime, IAsyncDisposable
     {
         // Create the resource lock table
         var connection = await _connectionFactory.GetOpenConnectionAsync();
-
         var resourceLockStorage = new SqliteResourceLockStorage(connection);
-        resourceLockStorage.CreateTable();
+        await resourceLockStorage.CreateTableAsync();
         ResourceLockStorage = resourceLockStorage;
 
-        var throttlingResourceLockStorage = new SqliteThrottlingResourceLockStorage(connection);
-        throttlingResourceLockStorage.CreateTable();
+        var throttlingResourceLockStorage = new SqliteThrottlingResourceLockStorage(connection, TimeProvider.System);
+        await throttlingResourceLockStorage.CreateTableAsync();
         ThrottlingResourceLockStorage = throttlingResourceLockStorage;
     }
 
     /// <summary>This runs after all the test run and Called before Dispose()</summary>
-    async Task IAsyncLifetime.DisposeAsync()
+    Task IAsyncLifetime.DisposeAsync()
     {
-        await _connectionFactory.DisposeAsync();
+        return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()

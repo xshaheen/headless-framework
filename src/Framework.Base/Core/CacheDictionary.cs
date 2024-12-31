@@ -10,7 +10,7 @@ namespace Framework.Core;
 // This is based on https://github.com/jitbit/FastCache
 
 /// <summary>A concurrent dictionary with expiration. Faster MemoryCache alternative.</summary>
-public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>, IDisposable
+public sealed class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TValue>>, IDisposable
     where TKey : notnull
 {
     private readonly ConcurrentDictionary<TKey, TtlValue> _dict = new();
@@ -139,7 +139,7 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
         {
             var kv = new KeyValuePair<TKey, TtlValue>(key, ttlValue);
 
-            // Secret atomic removal method (only if both key and value match condition
+            // Secret atomic removal method (only if both key and value match condition)
             // https://devblogs.microsoft.com/pfxteam/little-known-gems-atomic-conditional-removals-from-concurrentdictionary/
             // so that we don't need any locks!! woohoo
             _dict.TryRemove(kv);
@@ -355,11 +355,10 @@ public class CacheDictionary<TKey, TValue> : IEnumerable<KeyValuePair<TKey, TVal
 
     public void Dispose()
     {
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
+        _Dispose(disposing: true);
     }
 
-    protected virtual void Dispose(bool disposing)
+    private void _Dispose(bool disposing)
     {
         if (!_disposed)
         {

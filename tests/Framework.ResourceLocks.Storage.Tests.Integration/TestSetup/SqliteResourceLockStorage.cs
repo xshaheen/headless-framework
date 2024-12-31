@@ -1,47 +1,52 @@
-﻿using System.Data;
-using Framework.ResourceLocks.Storage.RegularLocks;
+﻿using Framework.ResourceLocks.Storage.RegularLocks;
 using Microsoft.Data.Sqlite;
 
 namespace Tests.TestSetup;
 
-public sealed class SqliteResourceLockStorage(IDbConnection connection) : IResourceLockStorage
+public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IResourceLockStorage
 {
-    public void CreateTable()
+    public async ValueTask CreateTableAsync()
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
 
         command.CommandText = """
-            CREATE TABLE ResourceLocks (
+            CREATE TABLE IF NOT EXISTS ResourceLocks (
                 Key TEXT PRIMARY KEY,
                 Value TEXT,
-                Expiration TEXT
+                Expiration INTEGER DEFAULT NULL
             )
             """;
 
-        command.ExecuteNonQuery();
+        await command.ExecuteNonQueryAsync();
     }
 
-    public ValueTask<bool> InsertAsync(string key, string value, TimeSpan? expiration = null)
+    public async ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? expiration = null)
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
 
         command.CommandText = """
+            DELETE FROM ResourceLocks WHERE Expiration < @now;
             INSERT INTO ResourceLocks (Key, Value, Expiration)
                                VALUES (@key, @value, @expiration)
             """;
 
         command.Parameters.Add(new SqliteParameter("@key", key));
-        command.Parameters.Add(new SqliteParameter("@value", value));
+        command.Parameters.Add(new SqliteParameter("@value", lockId));
         command.Parameters.Add(new SqliteParameter("@expiration", expiration?.ToString("c")));
 
-        var result = command.ExecuteNonQuery() > 0;
+        var result = await command.ExecuteNonQueryAsync() > 0;
 
-        return ValueTask.FromResult(result);
+        return result;
     }
 
-    public ValueTask<bool> ReplaceIfEqualAsync(string key, string value, string expected, TimeSpan? expiration = null)
+    public async ValueTask<bool> ReplaceIfEqualAsync(
+        string key,
+        string lockId,
+        string expected,
+        TimeSpan? expiration = null
+    )
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
 
         command.CommandText = """
             UPDATE ResourceLocks
@@ -50,18 +55,18 @@ public sealed class SqliteResourceLockStorage(IDbConnection connection) : IResou
             """;
 
         command.Parameters.Add(new SqliteParameter("@key", key));
-        command.Parameters.Add(new SqliteParameter("@value", value));
+        command.Parameters.Add(new SqliteParameter("@value", lockId));
         command.Parameters.Add(new SqliteParameter("@expected", expected));
         command.Parameters.Add(new SqliteParameter("@expiration", expiration?.ToString("c")));
 
-        var result = command.ExecuteNonQuery() > 0;
+        var result = await command.ExecuteNonQueryAsync() > 0;
 
-        return ValueTask.FromResult(result);
+        return result;
     }
 
-    public ValueTask<bool> RemoveIfEqualAsync(string key, string value, TimeSpan? expiration = null)
+    public async ValueTask<bool> RemoveIfEqualAsync(string key, string lockId)
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
 
         command.CommandText = """
             DELETE FROM ResourceLocks
@@ -69,40 +74,40 @@ public sealed class SqliteResourceLockStorage(IDbConnection connection) : IResou
             """;
 
         command.Parameters.Add(new SqliteParameter("@key", key));
-        command.Parameters.Add(new SqliteParameter("@value", value));
+        command.Parameters.Add(new SqliteParameter("@value", lockId));
 
-        var result = command.ExecuteNonQuery() > 0;
+        var result = await command.ExecuteNonQueryAsync() > 0;
 
-        return ValueTask.FromResult(result);
+        return result;
     }
 
-    public ValueTask<TimeSpan?> GetExpirationAsync(string key)
+    public async ValueTask<TimeSpan?> GetExpirationAsync(string key)
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
         command.CommandText = "SELECT Expiration FROM ResourceLocks WHERE Key = @key";
         command.Parameters.Add(new SqliteParameter("@key", key));
 
-        var result = command.ExecuteScalar();
+        var result = await command.ExecuteScalarAsync();
 
         if (result is null)
         {
-            return ValueTask.FromResult<TimeSpan?>(null);
+            return null;
         }
 
         var expiration = TimeSpan.ParseExact(result.ToString(), "c", CultureInfo.InvariantCulture);
 
-        return ValueTask.FromResult<TimeSpan?>(expiration);
+        return expiration;
     }
 
-    public ValueTask<bool> ExistsAsync(string key)
+    public async ValueTask<bool> ExistsAsync(string key)
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(1) FROM ResourceLocks WHERE Key = @key";
         command.Parameters.Add(new SqliteParameter("@key", key));
-        var result = command.ExecuteScalar();
+        var result = await command.ExecuteScalarAsync();
 
         var exists = Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
 
-        return ValueTask.FromResult(exists);
+        return exists;
     }
 }

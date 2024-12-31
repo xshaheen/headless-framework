@@ -1,63 +1,106 @@
-﻿using System.Data;
+﻿using System.Data.Common;
 using Framework.ResourceLocks;
 using Microsoft.Data.Sqlite;
 
 namespace Tests.TestSetup;
 
-public sealed class SqliteThrottlingResourceLockStorage(IDbConnection connection) : IThrottlingResourceLockStorage
+public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connection, TimeProvider timeProvider)
+    : IThrottlingResourceLockStorage
 {
+    private readonly TimeSpan _clearExpiredInterval = TimeSpan.FromMinutes(5);
+    private const int _PeriodsToKeep = 10;
+    private long _lastClearExpired;
+
+    #region SQL
+
+    private const string _CreateTable = """
+        CREATE TABLE IF NOT EXISTS ThrottlingLocks (
+            res TEXT PRIMARY KEY,
+            hits INTEGER DEFAULT 0,
+            exp INTEGER NOT NULL,
+            created INTEGER DEFAULT (strftime('%s','now'))
+        )
+        """;
+
+    private const string _IncrementSql = """
+        INSERT INTO ThrottlingLocks (res, hits, exp) VALUES (@key, 1, (select strftime('%s','now') + @exp))
+        ON CONFLICT(res) DO UPDATE SET hits = hits + 1
+        RETURNING hits
+        """;
+
+    private const string _DeleteExpiredSql = """
+        DELETE FROM ThrottlingLocks
+        WHERE exp < ((select strftime('%s','now') - @period);
+        """;
+
+    private const string _GetHitsSql = "SELECT hits FROM ThrottlingLocks WHERE res = @key";
+
+    #endregion
+
     public void CreateTable()
     {
         using var command = connection.CreateCommand();
-
-        command.CommandText = """
-            CREATE TABLE ThrottlingResourceLocks (
-                Key TEXT PRIMARY KEY,
-                Value INTEGER DEFAULT 0,
-                Expiration TEXT
-            )
-            """;
-
+        command.CommandText = _CreateTable;
         command.ExecuteNonQuery();
     }
 
-    public ValueTask<long> GetHitCountsAsync(string resources, long defaultValue = 0)
+    public async ValueTask CreateTableAsync()
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
+        command.CommandText = _CreateTable;
+        await command.ExecuteNonQueryAsync();
+    }
 
-        command.CommandText = "SELECT Value FROM ThrottlingResourceLocks WHERE Key = @key";
-        command.Parameters.Add(new SqliteParameter("@key", resources));
+    public async ValueTask<long> GetHitCountsAsync(string resource, long defaultValue = 0)
+    {
+        var command = connection.CreateCommand();
 
-        var result = command.ExecuteScalar();
+        command.CommandText = _GetHitsSql;
+        command.Parameters.Add(new SqliteParameter("@key", resource));
+
+        var result = await command.ExecuteScalarAsync();
 
         if (result is null)
         {
-            return ValueTask.FromResult(defaultValue);
+            return defaultValue;
         }
 
         var value = Convert.ToInt64(result, CultureInfo.InvariantCulture);
 
-        return ValueTask.FromResult(value);
+        return value;
     }
 
-    public ValueTask<long> IncrementAsync(string resource, TimeSpan ttl)
+    public async ValueTask<long> IncrementAsync(string resource, TimeSpan ttl)
     {
-        using var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
 
-        command.CommandText = """
-            INSERT INTO ThrottlingResourceLocks (Key, Value, Expiration) VALUES (@key, 1, @expiration)
-            ON CONFLICT(Key) DO UPDATE SET Value = Value + 1, Expiration = @expiration
-            RETURNING Value
-            """;
-
+        _AddClearExpired(command, ttl);
+        command.CommandText += _IncrementSql;
         command.Parameters.Add(new SqliteParameter("@key", resource));
-        command.Parameters.Add(new SqliteParameter("@expiration", ttl.ToString("c")));
+        command.Parameters.Add(new SqliteParameter("@exp", _GetSeconds(ttl)));
 
-        var result = command.ExecuteScalar();
+        var result = await command.ExecuteScalarAsync();
         var value = Convert.ToInt64(result, CultureInfo.InvariantCulture);
 
-        return ValueTask.FromResult(value);
+        return value;
     }
+
+    private void _AddClearExpired(DbCommand command, TimeSpan ttl)
+    {
+        // If we have cleared expired locks recently, then skip this time.
+        var lastClearExpired = Interlocked.Read(ref _lastClearExpired);
+
+        if (lastClearExpired != 0 && timeProvider.GetElapsedTime(lastClearExpired) < _clearExpiredInterval)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _lastClearExpired, timeProvider.GetTimestamp());
+        command.CommandText = _DeleteExpiredSql;
+        command.Parameters.Add(new SqliteParameter("@period", _GetSeconds(ttl) * _PeriodsToKeep));
+    }
+
+    private static long _GetSeconds(TimeSpan ttl) => ttl.Seconds / 10_000_000;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

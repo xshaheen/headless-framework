@@ -6,11 +6,11 @@ namespace Framework.ResourceLocks.Storage.RegularLocks;
 
 public interface IResourceLockStorage
 {
-    ValueTask<bool> InsertAsync(string key, string value, TimeSpan? expiration = null);
+    ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? expiration = null);
 
-    ValueTask<bool> ReplaceIfEqualAsync(string key, string value, string expected, TimeSpan? expiration = null);
+    ValueTask<bool> ReplaceIfEqualAsync(string key, string lockId, string expected, TimeSpan? expiration = null);
 
-    ValueTask<bool> RemoveIfEqualAsync(string key, string value, TimeSpan? expiration = null);
+    ValueTask<bool> RemoveIfEqualAsync(string key, string lockId);
 
     ValueTask<TimeSpan?> GetExpirationAsync(string key);
 
@@ -24,19 +24,19 @@ internal sealed class ScopedResourceLockStorage(
 {
     private readonly ResourceLockOptions _options = optionsAccessor.Value;
 
-    public ValueTask<bool> InsertAsync(string key, string value, TimeSpan? expiration = null)
+    public ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? expiration = null)
     {
-        return innerStorage.InsertAsync(_NormalizeResource(key), value, expiration);
+        return innerStorage.InsertAsync(_NormalizeResource(key), lockId, expiration);
     }
 
-    public ValueTask<bool> ReplaceIfEqualAsync(string key, string value, string expected, TimeSpan? expiration = null)
+    public ValueTask<bool> ReplaceIfEqualAsync(string key, string lockId, string expected, TimeSpan? expiration = null)
     {
-        return innerStorage.ReplaceIfEqualAsync(_NormalizeResource(key), value, expected, expiration);
+        return innerStorage.ReplaceIfEqualAsync(_NormalizeResource(key), lockId, expected, expiration);
     }
 
-    public ValueTask<bool> RemoveIfEqualAsync(string key, string value, TimeSpan? expiration = null)
+    public ValueTask<bool> RemoveIfEqualAsync(string key, string lockId)
     {
-        return innerStorage.RemoveIfEqualAsync(_NormalizeResource(key), value, expiration);
+        return innerStorage.RemoveIfEqualAsync(_NormalizeResource(key), lockId);
     }
 
     public ValueTask<TimeSpan?> GetExpirationAsync(string key)
