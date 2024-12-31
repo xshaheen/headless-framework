@@ -9,7 +9,8 @@ namespace System;
 [PublicAPI]
 public static class ByteExtensions
 {
-    [MustUseReturnValue]
+    [SystemPure]
+    [JetBrainsPure]
     public static byte[] Compress(this byte[] bytes)
     {
         using var output = new MemoryStream();
@@ -19,7 +20,8 @@ public static class ByteExtensions
         return output.ToArray();
     }
 
-    [MustUseReturnValue]
+    [SystemPure]
+    [JetBrainsPure]
     public static byte[] Decompress(this byte[] bytes)
     {
         using var output = new MemoryStream();
@@ -36,7 +38,8 @@ public static class ByteExtensions
     /// <param name="bytes1">The first byte[] to compare.</param>
     /// <param name="bytes2">The second byte[] to compare.</param>
     /// <returns>The number of common elements.</returns>
-    [MustUseReturnValue]
+    [SystemPure]
+    [JetBrainsPure]
     public static int BytesDifference(this byte[] bytes1, byte[] bytes2)
     {
         var len1 = bytes1.Length;
