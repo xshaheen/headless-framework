@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Framework.Checks;
 
 #pragma warning disable IDE0130
@@ -16,6 +17,26 @@ public static class MethodInfoExtensions
     {
         Argument.IsNotNull(method);
 
-        return method.ReturnType.IsTaskOrTaskOfT();
+        if (!method.ReturnType.IsGenericType)
+        {
+            return method.ReturnType == typeof(Task)
+                || method.ReturnType == typeof(ValueTask)
+                || method.GetCustomAttribute<AsyncStateMachineAttribute>() != null;
+        }
+
+        var genericTypeDefinition = method.ReturnType.GetGenericTypeDefinition();
+
+        if (
+            genericTypeDefinition == typeof(Task<>)
+            || genericTypeDefinition == typeof(ValueTask<>)
+            || genericTypeDefinition == typeof(IAsyncEnumerable<>)
+            || genericTypeDefinition == typeof(IAsyncEnumerator<>)
+        )
+        {
+            return true;
+        }
+
+        // Fallback to check for AsyncStateMachineAttribute if it has async/await keywords
+        return method.GetCustomAttribute<AsyncStateMachineAttribute>() != null;
     }
 }
