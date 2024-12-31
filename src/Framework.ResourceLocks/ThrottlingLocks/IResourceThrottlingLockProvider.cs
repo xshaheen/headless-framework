@@ -165,7 +165,7 @@ public sealed class ResourceThrottlingLockProvider(
     public async Task<bool> IsLockedAsync(string resource)
     {
         var key = _GetKey(resource);
-        var hitCounts = await storage.GetHitCountsAsync(key);
+        var hitCounts = await storage.GetHitCountsAsync(key).AnyContext();
 
         return hitCounts > options.MaxHitsPerPeriod;
     }

@@ -6,7 +6,7 @@ namespace Framework.ResourceLocks;
 
 public interface IThrottlingResourceLockStorage : IAsyncDisposable
 {
-    ValueTask<long> GetHitCountsAsync(string resources, long defaultValue = 0);
+    ValueTask<long> GetHitCountsAsync(string resource, long defaultValue = 0);
 
     ValueTask<long> IncrementAsync(string resource, TimeSpan ttl);
 }
