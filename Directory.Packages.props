@@ -31,7 +31,7 @@
     <PackageVersion Include="Couchbase.Extensions.MultiOp" Version="1.0.0" />
     <PackageVersion Include="Couchbase.Transactions" Version="3.6.2" />
     <PackageVersion Include="CouchbaseNetClient" Version="3.6.4" />
-    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.3" />
     <PackageVersion Include="Dapper" Version="2.1.35" />
     <PackageVersion Include="DeepCloner" Version="0.10.4" />
     <PackageVersion Include="DeviceDetector.NET" Version="6.4.2" />
