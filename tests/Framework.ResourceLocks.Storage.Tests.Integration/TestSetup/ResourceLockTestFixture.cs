@@ -2,6 +2,7 @@
 
 using Framework.Database.Sqlite;
 using Framework.ResourceLocks;
+using Framework.ResourceLocks.Sqlite;
 using Framework.ResourceLocks.Storage.RegularLocks;
 
 namespace Tests.TestSetup;

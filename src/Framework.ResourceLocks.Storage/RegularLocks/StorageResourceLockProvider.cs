@@ -232,7 +232,7 @@ public sealed class StorageResourceLockProvider(
                 static state =>
                 {
                     var (storage, resource, lockId) = state;
-                    return storage.RemoveIfEqualAsync(resource, lockId);
+                    return storage.RemoveAsync(resource, lockId);
                 },
                 maxAttempts: 15,
                 cancellationToken: cancellationToken

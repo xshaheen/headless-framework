@@ -1,8 +1,9 @@
-﻿using System.Data.Common;
-using Framework.ResourceLocks;
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Data.Common;
 using Microsoft.Data.Sqlite;
 
-namespace Tests.TestSetup;
+namespace Framework.ResourceLocks.Sqlite;
 
 public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connection, TimeProvider timeProvider)
     : IThrottlingResourceLockStorage
@@ -17,26 +18,27 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         CREATE TABLE IF NOT EXISTS ThrottlingLocks (
             res TEXT PRIMARY KEY,
             hits INTEGER DEFAULT 0,
-            exp INTEGER NOT NULL,
-            created INTEGER DEFAULT (strftime('%s','now'))
-        )
+            exp INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_expiration ON ThrottlingLocks (exp);
         """;
 
     private const string _IncrementSql = """
-        INSERT INTO ThrottlingLocks (res, hits, exp) VALUES (@key, 1, (select strftime('%s','now') + @exp))
+        INSERT INTO ThrottlingLocks (res, hits, exp) VALUES (@res, 1, (select strftime('%s','now') + @exp))
         ON CONFLICT(res) DO UPDATE SET hits = hits + 1
         RETURNING hits
         """;
 
     private const string _DeleteExpiredSql = """
         DELETE FROM ThrottlingLocks
-        WHERE exp < ((select strftime('%s','now') - @period);
+        WHERE exp < (select strftime('%s','now') - @period);
         """;
 
-    private const string _GetHitsSql = "SELECT hits FROM ThrottlingLocks WHERE res = @key";
+    private const string _GetHitsSql = "SELECT hits FROM ThrottlingLocks WHERE res = @res";
 
     #endregion
 
+    /// <summary>Creates the ThrottlingLocks table if it does not already exist.</summary>
     public void CreateTable()
     {
         using var command = connection.CreateCommand();
@@ -44,6 +46,7 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         command.ExecuteNonQuery();
     }
 
+    /// <summary>Asynchronously creates the ThrottlingLocks table if it does not already exist.</summary>
     public async ValueTask CreateTableAsync()
     {
         await using var command = connection.CreateCommand();
@@ -53,10 +56,10 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
 
     public async ValueTask<long> GetHitCountsAsync(string resource, long defaultValue = 0)
     {
-        var command = connection.CreateCommand();
+        await using var command = connection.CreateCommand();
 
         command.CommandText = _GetHitsSql;
-        command.Parameters.Add(new SqliteParameter("@key", resource));
+        command.Parameters.Add(new SqliteParameter("@res", resource));
 
         var result = await command.ExecuteScalarAsync();
 
@@ -76,7 +79,7 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
 
         _AddClearExpired(command, ttl);
         command.CommandText += _IncrementSql;
-        command.Parameters.Add(new SqliteParameter("@key", resource));
+        command.Parameters.Add(new SqliteParameter("@res", resource));
         command.Parameters.Add(new SqliteParameter("@exp", _GetSeconds(ttl)));
 
         var result = await command.ExecuteScalarAsync();
