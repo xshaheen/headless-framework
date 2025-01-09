@@ -30,7 +30,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -39,9 +39,16 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work().AnyContext();
+        try
+        {
+            await work().AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
     public static async Task<bool> TryUsingAsync<TState>(
@@ -54,7 +61,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -63,9 +70,16 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work(state).AnyContext();
+        try
+        {
+            await work(state).AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
     public static async Task<bool> TryUsingAsync(
@@ -77,7 +91,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -86,22 +100,29 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work(cancellationToken).AnyContext();
+        try
+        {
+            await work(cancellationToken).AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
     public static async Task<bool> TryUsingAsync<TState>(
         this IResourceLockProvider provider,
         string resource,
-        TState workState,
+        TState state,
         Func<TState, CancellationToken, Task> work,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -110,9 +131,16 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work(workState, cancellationToken).AnyContext();
+        try
+        {
+            await work(state, cancellationToken).AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
     public static async Task<bool> TryUsingAsync(
@@ -124,7 +152,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -133,9 +161,16 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        work();
+        try
+        {
+            work();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
     public static async Task<bool> TryUsingAsync<TState>(
@@ -148,7 +183,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -157,8 +192,15 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        work(state);
+        try
+        {
+            work(state);
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 }
