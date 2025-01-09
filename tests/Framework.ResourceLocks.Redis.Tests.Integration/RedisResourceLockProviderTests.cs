@@ -50,6 +50,19 @@ public sealed class RedisResourceLockProviderTests(RedisTestFixture fixture, ITe
     }
 
     [Fact]
+    public override async Task should_release_lock_multiple_times()
+    {
+        await base.should_release_lock_multiple_times();
+        await _messageBus.Received().PublishAsync(Arg.Any<Arg.AnyType>());
+    }
+
+    [Fact]
+    public override Task should_timeout_when_try_to_lock_acquired_resource()
+    {
+        return base.should_timeout_when_try_to_lock_acquired_resource();
+    }
+
+    [Fact]
     public override Task should_acquire_and_release_locks_async()
     {
         return base.should_acquire_and_release_locks_async();
@@ -59,19 +72,6 @@ public sealed class RedisResourceLockProviderTests(RedisTestFixture fixture, ITe
     public override Task should_acquire_locks_in_parallel()
     {
         return base.should_acquire_locks_in_parallel();
-    }
-
-    [Fact]
-    public override async Task should_release_lock_multiple_times()
-    {
-        await base.should_release_lock_multiple_times();
-        _messageBus.PublishAsync(Arg.Any<Arg.AnyType>()).ReceivedCalls();
-    }
-
-    [Fact]
-    public override Task should_timeout_when_try_to_lock_acquired_resource()
-    {
-        return base.should_timeout_when_try_to_lock_acquired_resource();
     }
 
     [Fact]
