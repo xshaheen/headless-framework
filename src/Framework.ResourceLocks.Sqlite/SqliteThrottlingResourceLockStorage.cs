@@ -12,8 +12,6 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
     private const int _PeriodsToKeep = 10;
     private long _lastClearExpired;
 
-    #region SQL
-
     private const string _CreateTable = """
         CREATE TABLE IF NOT EXISTS ThrottlingLocks (
             res TEXT PRIMARY KEY,
@@ -35,8 +33,6 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         """;
 
     private const string _GetHitsSql = "SELECT hits FROM ThrottlingLocks WHERE res = @res";
-
-    #endregion
 
     /// <summary>Creates the ThrottlingLocks table if it does not already exist.</summary>
     public void CreateTable()
@@ -88,6 +84,8 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         return value;
     }
 
+    #region Helpers
+
     private void _AddClearExpired(DbCommand command, TimeSpan ttl)
     {
         // If we have cleared expired locks recently, then skip this time.
@@ -106,4 +104,6 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
     private static long _GetSeconds(TimeSpan ttl) => ttl.Seconds / 10_000_000;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    #endregion
 }

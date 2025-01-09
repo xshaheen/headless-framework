@@ -8,7 +8,26 @@ namespace Tests;
 
 public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper output) : TestBase(output)
 {
-    protected abstract IResourceThrottlingLockProvider GetLockProvider(int maxHits, TimeSpan period);
+    private readonly TimeProvider _timeProvider = TimeProvider.System;
+
+    protected abstract IThrottlingResourceLockStorage GetLockStorage();
+
+    protected IThrottlingResourceLockProvider GetLockProvider(int maxHits, TimeSpan period)
+    {
+        var options = new ThrottlingResourceLockOptions
+        {
+            ThrottlingPeriod = period,
+            MaxHitsPerPeriod = maxHits,
+            KeyPrefix = string.Empty,
+        };
+
+        return new ThrottlingResourceLockProvider(
+            GetLockStorage(),
+            options,
+            _timeProvider,
+            LoggerFactory.CreateLogger<ThrottlingResourceLockProvider>()
+        );
+    }
 
     public virtual async Task should_throttle_calls_async()
     {
@@ -54,7 +73,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         }
     }
 
-    private async Task _AcquireLocksSync(IResourceThrottlingLockProvider provider, string resource, int count)
+    private async Task _AcquireLocksSync(IThrottlingResourceLockProvider provider, string resource, int count)
     {
         var timestamp = Stopwatch.GetTimestamp();
 
@@ -72,7 +91,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         elapsed.TotalSeconds.Should().BeLessThan(2);
     }
 
-    private async Task _AcquireLocksConcurrently(IResourceThrottlingLockProvider provider, string resource, int count)
+    private async Task _AcquireLocksConcurrently(IThrottlingResourceLockProvider provider, string resource, int count)
     {
         var timestamp = Stopwatch.GetTimestamp();
 
@@ -94,7 +113,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         elapsed.TotalSeconds.Should().BeLessThan(5);
     }
 
-    private async Task _AssertCannotAcquireMore(IResourceThrottlingLockProvider provider, string resource)
+    private async Task _AssertCannotAcquireMore(IThrottlingResourceLockProvider provider, string resource)
     {
         var timestamp = Stopwatch.GetTimestamp();
         var result = await provider.TryAcquireAsync(resource, null, new CancellationToken(true));
@@ -103,7 +122,11 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         result.Should().BeNull();
     }
 
-    private async Task _AssertCanAcquireWithGreaterWait(IResourceThrottlingLockProvider provider, string resource, TimeSpan acquireTimeout)
+    private async Task _AssertCanAcquireWithGreaterWait(
+        IThrottlingResourceLockProvider provider,
+        string resource,
+        TimeSpan acquireTimeout
+    )
     {
         var timestamp = Stopwatch.GetTimestamp();
         var result = await provider.TryAcquireAsync(resource, acquireTimeout: acquireTimeout);

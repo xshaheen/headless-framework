@@ -13,11 +13,11 @@ public static class AddResourceLockExtensions
         ThrottlingResourceLockOptions options
     )
     {
-        services.AddSingleton<IResourceThrottlingLockProvider>(provider => new ResourceThrottlingLockProvider(
-            new LocalResourceThrottlingLockStorage(),
+        services.AddSingleton<IThrottlingResourceLockProvider>(provider => new ThrottlingResourceLockProvider(
+            new LocalThrottlingResourceLockStorage(),
             options,
             provider.GetRequiredService<TimeProvider>(),
-            provider.GetRequiredService<ILogger<ResourceThrottlingLockProvider>>()
+            provider.GetRequiredService<ILogger<ThrottlingResourceLockProvider>>()
         ));
 
         return services;
@@ -29,13 +29,13 @@ public static class AddResourceLockExtensions
         ThrottlingResourceLockOptions options
     )
     {
-        services.AddKeyedSingleton<IResourceThrottlingLockProvider>(
+        services.AddKeyedSingleton<IThrottlingResourceLockProvider>(
             key,
-            provider => new ResourceThrottlingLockProvider(
-                new LocalResourceThrottlingLockStorage(),
+            provider => new ThrottlingResourceLockProvider(
+                new LocalThrottlingResourceLockStorage(),
                 options,
                 provider.GetRequiredService<TimeProvider>(),
-                provider.GetRequiredService<ILogger<ResourceThrottlingLockProvider>>()
+                provider.GetRequiredService<ILogger<ThrottlingResourceLockProvider>>()
             )
         );
 
