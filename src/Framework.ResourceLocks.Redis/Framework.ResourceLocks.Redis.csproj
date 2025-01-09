@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Framework.ResourceLocks.Storage\Framework.ResourceLocks.Storage.csproj" />
   </ItemGroup>
 

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Framework.ResourceLocks;
 
 [PublicAPI]
-public interface IResourceThrottlingLockProvider : IAsyncDisposable
+public interface IThrottlingResourceLockProvider : IAsyncDisposable
 {
     /// <summary>
     /// Acquires a resource lock for a specified resource this method will block
@@ -42,12 +42,12 @@ public interface IResourceThrottlingLockProvider : IAsyncDisposable
 }
 
 [PublicAPI]
-public sealed class ResourceThrottlingLockProvider(
+public sealed class ThrottlingResourceLockProvider(
     IThrottlingResourceLockStorage storage,
     ThrottlingResourceLockOptions options,
     TimeProvider timeProvider,
-    ILogger<ResourceThrottlingLockProvider> logger
-) : IResourceThrottlingLockProvider
+    ILogger<ThrottlingResourceLockProvider> logger
+) : IThrottlingResourceLockProvider
 {
     public static TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
