@@ -16,9 +16,9 @@
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
     <PackageVersion Include="AutoFixture" Version="5.0.0-preview0011" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.301" />
-    <PackageVersion Include="AWSSDK.S3" Version="3.7.410.12" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.406.8" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.70" />
+    <PackageVersion Include="AWSSDK.S3" Version="3.7.411.3" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.406.13" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.75" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.4.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.23.0" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.20.0" />
@@ -104,7 +104,7 @@
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
-    <PackageVersion Include="morelinq" Version="4.3.0" />
+    <PackageVersion Include="morelinq" Version="4.4.0" />
     <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="0.24.0" />
     <PackageVersion Include="NetEscapades.EnumGenerators" Version="1.0.0-beta11" />
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
@@ -128,8 +128,8 @@
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.72" />
-    <PackageVersion Include="Scrutor" Version="5.1.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="1.2.74" />
+    <PackageVersion Include="Scrutor" Version="5.1.1" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.1.2" />
@@ -174,11 +174,11 @@
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.1" />
     <PackageVersion Include="UnitsNet" Version="5.60.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.Xunit" Version="28.7.0" />
-    <PackageVersion Include="WireMock.Net" Version="1.6.10" />
-    <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.10" />
+    <PackageVersion Include="Verify.Xunit" Version="28.8.1" />
+    <PackageVersion Include="WireMock.Net" Version="1.6.11" />
+    <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.11" />
     <PackageVersion Include="WireMock.Net.xUnit" Version="1.6.11" />
-    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.0.0" />
     <PackageVersion Include="ZString" Version="2.6.0" />
   </ItemGroup>
@@ -190,7 +190,7 @@
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.10" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.184" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.185" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
