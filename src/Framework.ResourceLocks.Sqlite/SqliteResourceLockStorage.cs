@@ -13,28 +13,28 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
             lockId TEXT,
             exp INTEGER DEFAULT NULL
         );
-        CREATE INDEX IF NOT EXISTS idx_expiration ON ResourceLocks (exp);
+        CREATE INDEX IF NOT EXISTS idx_expiration ON ResourceLocks (exp)
         """;
 
     private const string _InsertSql = """
-        DELETE FROM ResourceLocks WHERE exp < (select strftime('%s','now') - 7200;
-        INSERT INTO ResourceLocks (res, lockId, exp) VALUES (@res, @lockId, (select strftime('%s','now') + @exp));
+        DELETE FROM ResourceLocks WHERE exp < (select strftime('%s','now') - 7200);
+        INSERT INTO ResourceLocks (res, lockId, exp) VALUES (@res, @lockId, (select strftime('%s','now') + @exp))
         """;
 
     private const string _ReplaceIfEqualSql = """
         UPDATE ResourceLocks
         SET lockId = @lockId, exp = (select strftime('%s','now') + @exp)
-        WHERE res = @res AND lockId = @expected;
+        WHERE res = @res AND lockId = @expected
         """;
 
     private const string _GetExpirationSql = """
         SELECT exp FROM ResourceLocks
-        WHERE res = @res AND exp > (select strftime('%s','now'));
+        WHERE res = @res AND exp > (select strftime('%s','now'))
         """;
 
     private const string _IsExistSql = """
         SELECT COUNT(1) FROM ResourceLocks
-        WHERE res = @res AND exp > (select strftime('%s','now'));
+        WHERE res = @res AND exp > (select strftime('%s','now'))
         """;
 
     private const string _RemoveSql = "DELETE FROM ResourceLocks WHERE res = @res AND lockId = @lockId";
@@ -63,9 +63,15 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         command.Parameters.Add(new SqliteParameter("@res", key));
         command.Parameters.Add(new SqliteParameter("@lockId", lockId));
         command.Parameters.Add(new SqliteParameter("@exp", _GetTimeSpanParameterValue(ttl)));
-        var result = await command.ExecuteNonQueryAsync() > 0;
 
-        return result;
+        try
+        {
+            return await command.ExecuteNonQueryAsync() > 0;
+        }
+        catch (SqliteException e) when (e.SqliteErrorCode == 19) // Unique constraint violation
+        {
+            return false;
+        }
     }
 
     public async ValueTask<bool> ReplaceIfEqualAsync(string key, string lockId, string expected, TimeSpan? ttl = null)
