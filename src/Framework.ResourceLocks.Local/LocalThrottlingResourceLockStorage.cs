@@ -4,7 +4,7 @@ using Framework.Core;
 
 namespace Framework.ResourceLocks.Local;
 
-public sealed class LocalResourceThrottlingLockStorage : IThrottlingResourceLockStorage
+public sealed class LocalThrottlingResourceLockStorage : IThrottlingResourceLockStorage
 {
     private readonly CacheDictionary<string, ResourceLock> _resources = new();
 
