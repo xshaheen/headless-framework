@@ -5,8 +5,10 @@ using Testcontainers.Xunit;
 
 namespace Tests.TestSetup;
 
+[CollectionDefinition(nameof(AwsBlobTestFixture))]
 public sealed class AwsBlobTestFixture(IMessageSink messageSink)
-    : ContainerFixture<LocalStackBuilder, LocalStackContainer>(messageSink)
+    : ContainerFixture<LocalStackBuilder, LocalStackContainer>(messageSink),
+        ICollectionFixture<AwsBlobTestFixture>
 {
     protected override LocalStackBuilder Configure(LocalStackBuilder builder)
     {
@@ -17,6 +19,3 @@ public sealed class AwsBlobTestFixture(IMessageSink messageSink)
             .WithPortBinding(8055, 8080);
     }
 }
-
-[CollectionDefinition(nameof(AwsBlobTestFixture))]
-public sealed class AwsBlobTestFixtureCollection : ICollectionFixture<AwsBlobTestFixture>;

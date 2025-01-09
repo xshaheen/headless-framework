@@ -7,10 +7,8 @@ using Framework.ResourceLocks.Storage.RegularLocks;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(ResourceLockTestFixture))]
-public sealed class ResourceLockTestFixtureCollection : ICollectionFixture<ResourceLockTestFixture>;
-
-public sealed class ResourceLockTestFixture : IAsyncLifetime, IAsyncDisposable
+[CollectionDefinition(nameof(SqliteTestFixture))]
+public sealed class SqliteTestFixture : IAsyncLifetime, IAsyncDisposable, ICollectionFixture<SqliteTestFixture>
 {
     private readonly SqliteConnectionFactory _connectionFactory = new("DataSource=./ThrottlingResourceLocks.db");
 

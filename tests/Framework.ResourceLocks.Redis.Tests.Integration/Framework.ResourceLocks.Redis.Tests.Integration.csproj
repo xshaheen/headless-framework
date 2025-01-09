@@ -8,14 +8,14 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.Redis" />
+    <PackageReference Include="Testcontainers.Xunit" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Database.Sqlite\Framework.Database.Sqlite.csproj" />
-    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Sqlite\Framework.ResourceLocks.Sqlite.csproj" />
-    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Storage\Framework.ResourceLocks.Storage.csproj" />
+    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Redis\Framework.ResourceLocks.Redis.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks.Tests.Harness\Framework.ResourceLocks.Tests.Harness.csproj" />
   </ItemGroup>
 
