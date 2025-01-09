@@ -8,10 +8,14 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(ResourceLockTestFixture))]
-public sealed class StorageResourceLockProviderTests(ResourceLockTestFixture fixture, ITestOutputHelper output)
+[Collection(nameof(SqliteTestFixture))]
+public sealed class SqliteResourceLockProviderTests(SqliteTestFixture fixture, ITestOutputHelper output)
     : ResourceLockProviderTestsBase(output)
 {
+#pragma warning disable CA2213 // Disposable fields should be disposed
+    private readonly IMessageBus _messageBus = Substitute.For<IMessageBus>();
+#pragma warning restore CA2213
+
     protected override IResourceLockProvider GetLockProvider()
     {
         var option = new ResourceLockOptions { KeyPrefix = "test:" };
@@ -19,7 +23,7 @@ public sealed class StorageResourceLockProviderTests(ResourceLockTestFixture fix
 
         return new StorageResourceLockProvider(
             fixture.ResourceLockStorage,
-            Substitute.For<IMessageBus>(), // TODO: Replace with real message bus
+            _messageBus,
             new SnowflakeIdLongIdGenerator(1),
             TimeProvider.System,
             LoggerFactory.CreateLogger<StorageResourceLockProvider>(),
@@ -58,9 +62,10 @@ public sealed class StorageResourceLockProviderTests(ResourceLockTestFixture fix
     }
 
     [Fact]
-    public override Task should_release_lock_multiple_times()
+    public override async Task should_release_lock_multiple_times()
     {
-        return base.should_release_lock_multiple_times();
+        await base.should_release_lock_multiple_times();
+        _messageBus.PublishAsync(Arg.Any<Arg.AnyType>()).ReceivedCalls();
     }
 
     [Fact]

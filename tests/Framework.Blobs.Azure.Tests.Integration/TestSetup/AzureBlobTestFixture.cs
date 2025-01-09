@@ -5,12 +5,11 @@ using Testcontainers.Xunit;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(AzureBlobTestFixture))]
-public sealed class AzureBlobTestFixtureCollection : ICollectionFixture<AzureBlobTestFixture>;
-
 [UsedImplicitly]
+[CollectionDefinition(nameof(AzureBlobTestFixture))]
 public sealed class AzureBlobTestFixture(IMessageSink messageSink)
-    : ContainerFixture<AzuriteBuilder, AzuriteContainer>(messageSink)
+    : ContainerFixture<AzuriteBuilder, AzuriteContainer>(messageSink),
+        ICollectionFixture<AzureBlobTestFixture>
 {
     protected override AzuriteBuilder Configure(AzuriteBuilder builder)
     {
