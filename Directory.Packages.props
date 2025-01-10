@@ -172,7 +172,7 @@
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.1" />
     <PackageVersion Include="UnitsNet" Version="5.60.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.Xunit" Version="28.6.1" />
+    <PackageVersion Include="Verify.Xunit" Version="28.8.1" />
     <PackageVersion Include="WireMock.Net" Version="1.6.10" />
     <PackageVersion Include="WireMock.Net.FluentAssertions" Version="1.6.10" />
     <PackageVersion Include="WireMock.Net.xUnit" Version="1.6.11" />
