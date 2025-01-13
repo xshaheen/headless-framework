@@ -20,7 +20,7 @@ public interface IResourceLockProvider
     /// <param name="timeUntilExpires">
     /// The amount of time until the lock expires. The allowed values are:
     /// <list type="bullet">
-    /// <item><see langword="null"/>: means the default value <see cref="DefaultTimeUntilExpires"/>.</item>
+    /// <item><see langword="null"/>: means the default value <see cref="DefaultTimeUntilExpires"/> (20 minutes).</item>
     /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.</item>
     /// <item>Value greater than 0.</item>
     /// </list>
@@ -28,7 +28,7 @@ public interface IResourceLockProvider
     /// <param name="acquireTimeout">
     /// The amount of time to wait for the lock to be acquired. The allowed values are:
     /// <list type="bullet">
-    /// <item><see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/>.</item>
+    /// <item><see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/> (30 seconds).</item>
     /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire</item>
     /// <item>Value greater than or equal to 0.</item>
     /// </list>
@@ -48,7 +48,7 @@ public interface IResourceLockProvider
     /// <summary>
     /// Renews a resource lock for a specified <paramref name="resource"/> by extending
     /// the expiration time of the lock if it is still held to the <paramref name="lockId"/>
-    /// and if not .
+    /// and return <see langword="true"/>, otherwise <see langword="false"/>.
     /// </summary>
     Task<bool> RenewAsync(
         string resource,
