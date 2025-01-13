@@ -73,7 +73,7 @@ public static class JsonConstants
 
     private static void _AddDefaultConverters(JsonSerializerOptions options)
     {
-        var enumConverter = options.Converters.First(x => x is JsonStringEnumConverter);
+        var enumConverter = options.Converters.FirstOrDefault(x => x is JsonStringEnumConverter);
 
         if (enumConverter is not null)
         {
