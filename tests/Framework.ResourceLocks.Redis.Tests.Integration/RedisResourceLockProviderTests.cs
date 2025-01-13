@@ -1,4 +1,5 @@
-﻿using Framework.Abstractions;
+﻿using Foundatio.Messaging;
+using Framework.Abstractions;
 using Framework.Messaging;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Storage.RegularLocks;
@@ -9,25 +10,39 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(RedisTestFixture))]
-public sealed class RedisResourceLockProviderTests(RedisTestFixture fixture, ITestOutputHelper output)
-    : ResourceLockProviderTestsBase(output)
+public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
 {
-#pragma warning disable CA2213 // Disposable fields should be disposed
-    private readonly IMessageBus _messageBus = Substitute.For<IMessageBus>();
-#pragma warning restore CA2213
+    private static readonly SnowflakeIdLongIdGenerator _IdGenerator = new(1);
+    private static readonly TimeProvider _TimeProvider = TimeProvider.System;
+    private static readonly OptionsWrapper<ResourceLockOptions> _Options = new(new() { KeyPrefix = "test:" });
+    private readonly RedisTestFixture _fixture;
+    private readonly RedisMessageBus _redisMessageBus;
+    private readonly MessageBusFoundatioAdapter _messageBusAdapter;
+    private readonly ILogger<StorageResourceLockProvider> _logger;
+
+    public RedisResourceLockProviderTests(RedisTestFixture fixture, ITestOutputHelper output)
+        : base(output)
+    {
+        _fixture = fixture;
+        _redisMessageBus = new(builder =>
+            builder
+                .Subscriber(fixture.ConnectionMultiplexer.GetSubscriber())
+                .Topic("test-lock")
+                .LoggerFactory(LoggerFactory)
+        );
+        _messageBusAdapter = new(_redisMessageBus);
+        _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();
+    }
 
     protected override IResourceLockProvider GetLockProvider()
     {
-        var option = new ResourceLockOptions { KeyPrefix = "test:" };
-        var optionWrapper = new OptionsWrapper<ResourceLockOptions>(option);
-
         return new StorageResourceLockProvider(
-            fixture.ResourceLockStorage,
-            _messageBus,
-            new SnowflakeIdLongIdGenerator(1),
-            TimeProvider.System,
-            LoggerFactory.CreateLogger<StorageResourceLockProvider>(),
-            optionWrapper
+            _fixture.LockStorage,
+            _messageBusAdapter,
+            _IdGenerator,
+            _TimeProvider,
+            _Options,
+            _logger
         );
     }
 
@@ -53,13 +68,18 @@ public sealed class RedisResourceLockProviderTests(RedisTestFixture fixture, ITe
     public override async Task should_release_lock_multiple_times()
     {
         await base.should_release_lock_multiple_times();
-        await _messageBus.Received().PublishAsync(Arg.Any<Arg.AnyType>());
     }
 
     [Fact]
     public override Task should_timeout_when_try_to_lock_acquired_resource()
     {
         return base.should_timeout_when_try_to_lock_acquired_resource();
+    }
+
+    [Fact]
+    public override Task should_lock_one_at_a_time_async()
+    {
+        return base.should_lock_one_at_a_time_async();
     }
 
     [Fact]
@@ -74,9 +94,14 @@ public sealed class RedisResourceLockProviderTests(RedisTestFixture fixture, ITe
         return base.should_acquire_locks_in_parallel();
     }
 
-    [Fact]
-    public override Task should_lock_one_at_a_time_async()
+    protected override void Dispose(bool disposing)
     {
-        return base.should_lock_one_at_a_time_async();
+        base.Dispose(disposing);
+
+        if (disposing)
+        {
+            _messageBusAdapter?.Dispose();
+            _redisMessageBus?.Dispose();
+        }
     }
 }
