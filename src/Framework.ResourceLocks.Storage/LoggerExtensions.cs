@@ -111,7 +111,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Trace,
         Message = "Will wait {Delay:g} before retrying to acquire lock {Resource} ({LockId})"
     )]
-    public static partial void LogDelayBeforeRetry(this ILogger logger, TimeSpan delay, string resource, string lockId);
+    public static partial void LogDelayBeforeRetry(this ILogger logger, string resource, string lockId, TimeSpan delay);
 
     [LoggerMessage(
         EventId = 13,

@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(SqliteTestFixture))]
+[CollectionDefinition(nameof(SqliteTestFixture), DisableParallelization = false)]
 public sealed class SqliteTestFixture : IAsyncLifetime, IAsyncDisposable, ICollectionFixture<SqliteTestFixture>
 {
     public SqliteConnectionFactory ConnectionFactory { get; } = new("DataSource=./ThrottlingResourceLocks.db");

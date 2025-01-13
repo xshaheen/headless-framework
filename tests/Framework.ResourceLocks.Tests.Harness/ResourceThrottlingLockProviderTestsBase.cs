@@ -65,6 +65,8 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         await _AssertCanAcquireWithGreaterWait(lockProvider, resource, TimeSpan.FromSeconds(2.5));
     }
 
+    #region Helpers
+
     private static async Task _SleepUntilStartOfPeriod(TimeSpan period)
     {
         while (DateTime.UtcNow.Ticks % period.Ticks < TimeSpan.TicksPerMillisecond * 100)
@@ -135,4 +137,6 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         result.Should().NotBeNull();
         result!.Resource.Should().Be(resource);
     }
+
+    #endregion
 }

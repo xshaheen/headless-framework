@@ -33,6 +33,7 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         """;
 
     private const string _GetHitsSql = "SELECT hits FROM ThrottlingLocks WHERE res = @res";
+    private const string _FlushAllSql = "DELETE FROM ThrottlingLocks";
 
     /// <summary>Creates the ThrottlingLocks table if it does not already exist.</summary>
     public void CreateTable()
@@ -76,12 +77,19 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         _AddClearExpired(command, ttl);
         command.CommandText += _IncrementSql;
         command.Parameters.Add(new SqliteParameter("@res", resource));
-        command.Parameters.Add(new SqliteParameter("@exp", _GetSeconds(ttl)));
+        command.Parameters.Add(new SqliteParameter("@exp", ttl.TotalSeconds));
 
         var result = await command.ExecuteScalarAsync();
         var value = Convert.ToInt64(result, CultureInfo.InvariantCulture);
 
         return value;
+    }
+
+    public async ValueTask FlushAllAsync()
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = _FlushAllSql;
+        await command.ExecuteNonQueryAsync();
     }
 
     #region Helpers
@@ -98,10 +106,8 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
 
         Interlocked.Exchange(ref _lastClearExpired, timeProvider.GetTimestamp());
         command.CommandText = _DeleteExpiredSql;
-        command.Parameters.Add(new SqliteParameter("@period", _GetSeconds(ttl) * _PeriodsToKeep));
+        command.Parameters.Add(new SqliteParameter("@period", ttl.TotalSeconds * _PeriodsToKeep));
     }
-
-    private static long _GetSeconds(TimeSpan ttl) => ttl.Seconds / 10_000_000;
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 

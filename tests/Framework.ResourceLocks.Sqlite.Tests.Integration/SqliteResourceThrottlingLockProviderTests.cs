@@ -5,11 +5,22 @@ namespace Tests;
 
 [Collection(nameof(SqliteTestFixture))]
 public sealed class SqliteResourceThrottlingLockProviderTests(SqliteTestFixture fixture, ITestOutputHelper output)
-    : ResourceThrottlingLockProviderTestsBase(output)
+    : ResourceThrottlingLockProviderTestsBase(output),
+        IAsyncLifetime
 {
     protected override IThrottlingResourceLockStorage GetLockStorage()
     {
         return fixture.ThrottlingLockStorage;
+    }
+
+    public async Task InitializeAsync()
+    {
+        await fixture.ThrottlingLockStorage.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
     }
 
     [Fact]

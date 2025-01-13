@@ -4,14 +4,12 @@ using Framework.Caching;
 using Framework.ResourceLocks.Redis;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
-using Testcontainers.Redis;
-using Testcontainers.Xunit;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(RedisTestFixture))]
-public sealed class RedisTestFixture(IMessageSink messageSink)
-    : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
+[CollectionDefinition(nameof(RedisTestFixture), DisableParallelization = false)]
+public sealed class RedisTestFixture // (IMessageSink messageSink)
+    : IAsyncLifetime, // ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
         ICollectionFixture<RedisTestFixture>
 {
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
@@ -20,11 +18,13 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
 
     public RedisThrottlingResourceLockStorage ThrottlingLockStorage { get; private set; } = null!;
 
-    protected override async Task InitializeAsync()
+    // protected override async Task InitializeAsync()
+    public async Task InitializeAsync()
     {
-        await base.InitializeAsync();
-        var connectionString = Container.GetConnectionString();
-        // const string connectionString = "127.0.0.1:7006,allowAdmin=true";
+        // await base.InitializeAsync();
+        // var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
+
+        const string connectionString = "127.0.0.1:7006,allowAdmin=true";
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
         await ConnectionMultiplexer.FlushAllAsync();
 
@@ -35,7 +35,8 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
         await ThrottlingLockStorage.LoadScriptsAsync();
     }
 
-    protected override async Task DisposeAsyncCore()
+    // protected override async Task DisposeAsyncCore()
+    public async Task DisposeAsync()
     {
         await ConnectionMultiplexer.DisposeAsync();
     }

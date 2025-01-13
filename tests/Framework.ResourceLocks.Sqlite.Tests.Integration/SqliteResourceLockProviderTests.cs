@@ -10,11 +10,12 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(SqliteTestFixture))]
-public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsBase
+public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsBase, IAsyncLifetime
 {
     private static readonly SnowflakeIdLongIdGenerator _IdGenerator = new(1);
     private static readonly TimeProvider _TimeProvider = TimeProvider.System;
     private static readonly OptionsWrapper<ResourceLockOptions> _Options = new(new() { KeyPrefix = "test:" });
+
     private readonly SqliteTestFixture _fixture;
     private readonly InMemoryMessageBus _inMemoryMessageBus;
     private readonly MessageBusFoundatioAdapter _messageBusAdapter;
@@ -27,6 +28,27 @@ public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsB
         _inMemoryMessageBus = new(builder => builder.Topic("test-lock").LoggerFactory(LoggerFactory));
         _messageBusAdapter = new(_inMemoryMessageBus);
         _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.LockStorage.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        if (disposing)
+        {
+            _inMemoryMessageBus?.Dispose();
+            _messageBusAdapter?.Dispose();
+        }
     }
 
     protected override IResourceLockProvider GetLockProvider()
@@ -87,16 +109,5 @@ public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsB
     public override Task should_acquire_locks_in_parallel()
     {
         return base.should_acquire_locks_in_parallel();
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-
-        if (disposing)
-        {
-            _inMemoryMessageBus?.Dispose();
-            _messageBusAdapter?.Dispose();
-        }
     }
 }
