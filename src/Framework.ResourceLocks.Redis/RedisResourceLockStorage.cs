@@ -1,20 +1,25 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Framework.Checks;
 using Framework.ResourceLocks.Storage.RegularLocks;
+using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Framework.ResourceLocks.Redis;
 
-public sealed class RedisResourceLockStorage(IConnectionMultiplexer multiplexer) : IResourceLockStorage
+public sealed class RedisResourceLockStorage(
+    IConnectionMultiplexer multiplexer,
+    ILogger<RedisResourceLockStorage> logger
+) : IResourceLockStorage
 {
     private bool _scriptsLoaded;
-    private LoadedLuaScript? _removeIfEqual;
-    private LoadedLuaScript? _replaceIfEqual;
+    private LoadedLuaScript? _removeIfEqualScript;
+    private LoadedLuaScript? _replaceIfEqualScript;
     private readonly AsyncLock _loadScriptsLock = new();
 
-    private const string _ReplaceIfEqualScript = """
+    private const string _ReplaceIfEqual = """
         local currentVal = redis.call('get', @key)
         if (currentVal == false or currentVal == @expected) then
           if (@expires ~= nil and @expires ~= '') then
@@ -27,7 +32,7 @@ public sealed class RedisResourceLockStorage(IConnectionMultiplexer multiplexer)
         end
         """;
 
-    private const string _RemoveIfEqualScript = """
+    private const string _RemoveIfEqual = """
         if redis.call('get', @key) == @expected then
           return redis.call('del', @key)
         else
@@ -44,15 +49,18 @@ public sealed class RedisResourceLockStorage(IConnectionMultiplexer multiplexer)
             return;
         }
 
+        var timestamp = Stopwatch.GetTimestamp();
         using (await _loadScriptsLock.LockAsync())
         {
             if (_scriptsLoaded)
             {
+                logger.LogTrace("Scripts already loaded inside lock {Elapsed:g}", Stopwatch.GetElapsedTime(timestamp));
+
                 return;
             }
-
-            var removeIfEqual = LuaScript.Prepare(_RemoveIfEqualScript);
-            var replaceIfEqual = LuaScript.Prepare(_ReplaceIfEqualScript);
+            logger.LogTrace("Preparing Lua scripts for remove if equal and replace if equal");
+            var removeIfEqual = LuaScript.Prepare(_RemoveIfEqual);
+            var replaceIfEqual = LuaScript.Prepare(_ReplaceIfEqual);
 
             foreach (var endpoint in multiplexer.GetEndPoints())
             {
@@ -63,11 +71,13 @@ public sealed class RedisResourceLockStorage(IConnectionMultiplexer multiplexer)
                     continue;
                 }
 
-                _removeIfEqual = await removeIfEqual.LoadAsync(server).AnyContext();
-                _replaceIfEqual = await replaceIfEqual.LoadAsync(server).AnyContext();
+                logger.LogInformation("Loading Lua scripts on server: {@EndPoint}", server.EndPoint);
+                _removeIfEqualScript = await removeIfEqual.LoadAsync(server).AnyContext();
+                _replaceIfEqualScript = await replaceIfEqual.LoadAsync(server).AnyContext();
             }
 
             _scriptsLoaded = true;
+            logger.LogTrace("Scripts loaded successfully in {Elapsed:g}", Stopwatch.GetElapsedTime(timestamp));
         }
     }
 
@@ -85,7 +95,7 @@ public sealed class RedisResourceLockStorage(IConnectionMultiplexer multiplexer)
         await LoadScriptsAsync();
 
         var redisResult = await Db.ScriptEvaluateAsync(
-            _replaceIfEqual!,
+            _replaceIfEqualScript!,
             _GetReplaceIfEqualParameters(key, lockId, expected, ttl)
         );
 
@@ -100,7 +110,10 @@ public sealed class RedisResourceLockStorage(IConnectionMultiplexer multiplexer)
 
         await LoadScriptsAsync();
 
-        var redisResult = await Db.ScriptEvaluateAsync(_removeIfEqual!, new { key = (RedisKey)key, expected = lockId });
+        var redisResult = await Db.ScriptEvaluateAsync(
+            _removeIfEqualScript!,
+            new { key = (RedisKey)key, expected = lockId }
+        );
 
         var result = (int)redisResult;
 
