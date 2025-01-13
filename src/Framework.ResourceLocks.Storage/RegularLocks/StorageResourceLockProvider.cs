@@ -51,20 +51,20 @@ public sealed class StorageResourceLockProvider(
         CancellationToken acquireAbortToken = default
     )
     {
+        acquireAbortToken.ThrowIfCancellationRequested();
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        using var activity = _StartLockActivity(resource);
-        using var acquireTimeoutCts = _GetAcquireCancellation(acquireTimeout, acquireAbortToken);
+        acquireTimeout ??= DefaultAcquireTimeout;
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
-
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
-        logger.LogAttemptingToAcquireLock(resource, lockId);
-        acquireAbortToken.ThrowIfCancellationRequested();
+        using var activity = _StartLockActivity(resource);
+        using var acquireTimeoutCts = _GetAcquireCancellation(acquireTimeout.Value, acquireAbortToken);
 
-        var timestamp = timeProvider.GetTimestamp();
-        var shouldWait = !acquireTimeoutCts.IsCancellationRequested && acquireTimeout != TimeSpan.Zero;
+        logger.LogAttemptingToAcquireLock(resource, lockId);
+
         var gotLock = false;
+        var timestamp = timeProvider.GetTimestamp();
 
         try
         {
@@ -90,7 +90,8 @@ public sealed class StorageResourceLockProvider(
 
                 if (acquireTimeoutCts.IsCancellationRequested)
                 {
-                    if (shouldWait)
+                    // Log only if cancellation was requested from the caller
+                    if (acquireAbortToken.IsCancellationRequested)
                     {
                         logger.LogCancellationRequested(resource, lockId);
                     }
@@ -311,20 +312,19 @@ public sealed class StorageResourceLockProvider(
             : Argument.IsPositive(timeUntilExpires.Value);
     }
 
-    private CancellationTokenSource _GetAcquireCancellation(TimeSpan? timeout, CancellationToken token)
+    private CancellationTokenSource _GetAcquireCancellation(TimeSpan timeout, CancellationToken token)
     {
         // Acquire timeout must be positive if not infinite.
-        if (timeout is not null && timeout != Timeout.InfiniteTimeSpan)
+        if (timeout != Timeout.InfiniteTimeSpan)
         {
-            Argument.IsPositiveOrZero(timeout.Value);
+            Argument.IsPositiveOrZero(timeout);
         }
 
-        timeout ??= DefaultAcquireTimeout;
         var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
 
-        if (timeout != Timeout.InfiniteTimeSpan && timeout > TimeSpan.Zero)
+        if (timeout != Timeout.InfiniteTimeSpan)
         {
-            acquireTimeoutCts.CancelAfter(timeout.Value);
+            acquireTimeoutCts.CancelAfter(timeout);
         }
 
         return acquireTimeoutCts;

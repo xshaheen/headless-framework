@@ -1,19 +1,23 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Framework.Checks;
+using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Framework.ResourceLocks.Redis;
 
-public sealed class RedisThrottlingResourceLockStorage(IConnectionMultiplexer multiplexer)
-    : IThrottlingResourceLockStorage
+public sealed class RedisThrottlingResourceLockStorage(
+    IConnectionMultiplexer multiplexer,
+    ILogger<RedisThrottlingResourceLockStorage> logger
+) : IThrottlingResourceLockStorage
 {
     private bool _scriptsLoaded;
-    private LoadedLuaScript? _incrementWithExpire;
+    private LoadedLuaScript? _incrementWithExpireScript;
     private readonly AsyncLock _loadScriptsLock = new();
 
-    private const string _IncrementWithExpireScript = """
+    private const string _IncrementWithExpire = """
         if math.modf(@value) == 0 then
           local v = redis.call('incrby', @key, @value)
           if (@expires ~= nil and @expires ~= '') then
@@ -38,14 +42,18 @@ public sealed class RedisThrottlingResourceLockStorage(IConnectionMultiplexer mu
             return;
         }
 
+        var timestamp = Stopwatch.GetTimestamp();
         using (await _loadScriptsLock.LockAsync())
         {
             if (_scriptsLoaded)
             {
+                logger.LogTrace("Scripts already loaded inside lock {Elapsed:g}", Stopwatch.GetElapsedTime(timestamp));
+
                 return;
             }
 
-            var incrementWithExpire = LuaScript.Prepare(_IncrementWithExpireScript);
+            logger.LogTrace("Preparing Lua script for increment with expire");
+            var incrementWithExpire = LuaScript.Prepare(_IncrementWithExpire);
 
             foreach (var endpoint in multiplexer.GetEndPoints())
             {
@@ -56,10 +64,12 @@ public sealed class RedisThrottlingResourceLockStorage(IConnectionMultiplexer mu
                     continue;
                 }
 
-                _incrementWithExpire = await incrementWithExpire.LoadAsync(server).AnyContext();
+                logger.LogTrace("Loading Lua scripts to server: {@Endpoint}", endpoint);
+                _incrementWithExpireScript = await incrementWithExpire.LoadAsync(server).AnyContext();
             }
 
             _scriptsLoaded = true;
+            logger.LogTrace("Scripts loaded successfully in {Elapsed:g}", Stopwatch.GetElapsedTime(timestamp));
         }
     }
 
@@ -78,7 +88,7 @@ public sealed class RedisThrottlingResourceLockStorage(IConnectionMultiplexer mu
         await LoadScriptsAsync();
 
         var result = await Db.ScriptEvaluateAsync(
-            _incrementWithExpire!,
+            _incrementWithExpireScript!,
             new
             {
                 key = (RedisKey)resource,
