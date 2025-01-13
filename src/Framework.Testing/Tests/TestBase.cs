@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Meziantou.Extensions.Logging.Xunit;
+using Framework.Testing.Helpers;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
@@ -10,28 +10,18 @@ public abstract class TestBase : IDisposable
 {
     private bool _disposed;
 
-    protected ILoggerFactory LoggerFactory { get; }
-
     protected ILoggerProvider LoggerProvider { get; }
+
+    protected ILoggerFactory LoggerFactory { get; }
 
     protected ILogger Logger { get; }
 
     protected TestBase(ITestOutputHelper output)
     {
-        LoggerFactory = new LoggerFactory();
+        var (loggerProvider, loggerFactory) = TestHelpers.CreateXUnitLoggerFactory(output);
 
-        LoggerProvider = new XUnitLoggerProvider(
-            output,
-            new XUnitLoggerOptions
-            {
-                IncludeLogLevel = true,
-                IncludeScopes = true,
-                IncludeCategory = true,
-            }
-        );
-
-        LoggerFactory.AddProvider(LoggerProvider);
-
+        LoggerFactory = loggerFactory;
+        LoggerProvider = loggerProvider;
         Logger = LoggerFactory.CreateLogger(GetType());
     }
 
@@ -50,8 +40,8 @@ public abstract class TestBase : IDisposable
 
         if (disposing)
         {
-            LoggerFactory.Dispose();
-            LoggerProvider.Dispose();
+            LoggerFactory?.Dispose();
+            LoggerProvider?.Dispose();
         }
 
         _disposed = true;

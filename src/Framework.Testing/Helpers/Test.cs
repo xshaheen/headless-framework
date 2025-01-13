@@ -4,7 +4,7 @@ using Bogus;
 
 namespace Framework.Testing.Helpers;
 
-public static class TestConstants
+public static class Test
 {
-    public static readonly Faker F = new();
+    public static readonly Faker Faker = new();
 }

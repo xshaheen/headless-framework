@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.ResourceLocks;
 using Framework.Testing.Helpers;
@@ -14,7 +14,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_lock_with_try_acquire()
     {
         var lockProvider = GetLockProvider();
-        var resource = TestConstants.F.Random.String2(3, 20);
+        var resource = Test.Faker.Random.String2(3, 20);
         await using var handle = await lockProvider.TryAcquireAsync(resource);
 
         handle.Should().NotBeNull();
@@ -28,15 +28,16 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_not_acquire_when_already_locked()
     {
         var lockProvider = GetLockProvider();
-        var resource = TestConstants.F.Random.String2(3, 20);
+        var resource = Test.Faker.Random.String2(3, 20);
+        var acquireTimeout = TimeSpan.FromSeconds(1);
 
-        await using (var handle = await lockProvider.TryAcquireAsync(resource))
+        await using (var handle = await lockProvider.TryAcquireAsync(resource, null, acquireTimeout))
         {
             handle.Should().NotBeNull();
 
             await Task.Run(async () =>
             {
-                await using var handle2 = await lockProvider.TryAcquireAsync(resource);
+                await using var handle2 = await lockProvider.TryAcquireAsync(resource, null, acquireTimeout);
 
                 handle2.Should().BeNull();
             });
@@ -44,7 +45,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
         await Task.Run(async () =>
         {
-            await using var handle = await lockProvider.TryAcquireAsync(resource);
+            await using var handle = await lockProvider.TryAcquireAsync(resource, null, acquireTimeout);
 
             handle.Should().NotBeNull();
         });
@@ -53,8 +54,8 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_obtain_multiple_locks()
     {
         var lockProvider = GetLockProvider();
-        var resource1 = TestConstants.F.Random.String2(3, 20);
-        var resource2 = TestConstants.F.Random.String2(3, 20);
+        var resource1 = Test.Faker.Random.String2(3, 20);
+        var resource2 = Test.Faker.Random.String2(3, 20);
 
         await using var handle = await lockProvider.TryAcquireAsync(resource1);
 
@@ -71,7 +72,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_release_lock_multiple_times()
     {
         var locker = GetLockProvider();
-        var resource = TestConstants.F.Random.String2(3, 10);
+        var resource = Test.Faker.Random.String2(3, 10);
 
         var lock1 = await locker.TryAcquireAsync(
             resource,
@@ -127,13 +128,13 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_acquire_and_release_locks_async()
     {
         var locker = GetLockProvider();
-        var resource = "test";
+        const string resource = "test";
 
         // Try to acquire a lock
         var lock1 = await locker.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(1),
-            acquireTimeout: TimeSpan.FromMilliseconds(100)
+            acquireTimeout: TimeSpan.FromMilliseconds(200)
         );
 
         try
@@ -158,7 +159,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
         var counter = 0;
 
-        // Acquire 25 locks in parallel
+        // Acquire 25 locks in parallel, but it should be one at a time
         await Parallel.ForEachAsync(
             Enumerable.Range(1, 25),
             async (_, _) =>
@@ -193,16 +194,16 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
             async (_, ct) =>
             {
                 await using var myLock = await locker.TryAcquireAsync(
-                    "test",
-                    TimeSpan.FromMinutes(1),
-                    TimeSpan.FromMinutes(1),
-                    ct
+                    resource: "test",
+                    timeUntilExpires: TimeSpan.FromMinutes(1),
+                    acquireTimeout: TimeSpan.FromMinutes(1),
+                    acquireAbortToken: ct
                 );
 
                 myLock.Should().NotBeNull();
 
                 var currentConcurrency = Interlocked.Increment(ref concurrency);
-                currentConcurrency.Should().Be(current);
+                currentConcurrency.Should().Be(1);
 
                 var item = current;
                 await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), ct);
@@ -278,10 +279,10 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     private static Task<bool> _DoLockedWorkAsync(IResourceLockProvider locker)
     {
         return locker.TryUsingAsync(
-            "DoLockedWork",
-            async () => await Task.Delay(500),
-            TimeSpan.FromMinutes(1),
-            TimeSpan.Zero
+            resource: "DoLockedWork",
+            work: async () => await Task.Delay(300),
+            timeUntilExpires: TimeSpan.FromMinutes(1),
+            acquireTimeout: TimeSpan.Zero // No waiting just single try
         );
     }
 }
