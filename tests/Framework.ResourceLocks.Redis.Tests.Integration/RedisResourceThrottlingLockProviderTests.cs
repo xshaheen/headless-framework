@@ -9,7 +9,7 @@ public sealed class RedisResourceThrottlingLockProviderTests(RedisTestFixture fi
 {
     protected override IThrottlingResourceLockStorage GetLockStorage()
     {
-        return fixture.ThrottlingResourceLockStorage;
+        return fixture.ThrottlingLockStorage;
     }
 
     [Fact]
