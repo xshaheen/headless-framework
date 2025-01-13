@@ -88,4 +88,21 @@ public static class DateTimeExtensions
     {
         return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeMilliseconds();
     }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTime SafeAdd(this DateTime date, TimeSpan value)
+    {
+        if (date.Ticks + value.Ticks < DateTime.MinValue.Ticks)
+        {
+            return DateTime.MinValue;
+        }
+
+        if (date.Ticks + value.Ticks > DateTime.MaxValue.Ticks)
+        {
+            return DateTime.MaxValue;
+        }
+
+        return date.Add(value);
+    }
 }
