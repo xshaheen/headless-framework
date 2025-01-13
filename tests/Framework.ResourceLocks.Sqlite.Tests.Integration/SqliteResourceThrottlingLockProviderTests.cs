@@ -9,7 +9,7 @@ public sealed class SqliteResourceThrottlingLockProviderTests(SqliteTestFixture 
 {
     protected override IThrottlingResourceLockStorage GetLockStorage()
     {
-        return fixture.ThrottlingResourceLockStorage;
+        return fixture.ThrottlingLockStorage;
     }
 
     [Fact]

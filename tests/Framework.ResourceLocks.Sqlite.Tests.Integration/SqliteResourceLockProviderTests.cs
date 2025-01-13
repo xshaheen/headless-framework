@@ -1,4 +1,5 @@
-﻿using Framework.Abstractions;
+﻿using Foundatio.Messaging;
+using Framework.Abstractions;
 using Framework.Messaging;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Storage.RegularLocks;
@@ -9,25 +10,34 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(SqliteTestFixture))]
-public sealed class SqliteResourceLockProviderTests(SqliteTestFixture fixture, ITestOutputHelper output)
-    : ResourceLockProviderTestsBase(output)
+public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsBase
 {
-#pragma warning disable CA2213 // Disposable fields should be disposed
-    private readonly IMessageBus _messageBus = Substitute.For<IMessageBus>();
-#pragma warning restore CA2213
+    private static readonly SnowflakeIdLongIdGenerator _IdGenerator = new(1);
+    private static readonly TimeProvider _TimeProvider = TimeProvider.System;
+    private static readonly OptionsWrapper<ResourceLockOptions> _Options = new(new() { KeyPrefix = "test:" });
+    private readonly SqliteTestFixture _fixture;
+    private readonly InMemoryMessageBus _inMemoryMessageBus;
+    private readonly MessageBusFoundatioAdapter _messageBusAdapter;
+    private readonly ILogger<StorageResourceLockProvider> _logger;
+
+    public SqliteResourceLockProviderTests(SqliteTestFixture fixture, ITestOutputHelper output)
+        : base(output)
+    {
+        _fixture = fixture;
+        _inMemoryMessageBus = new(builder => builder.Topic("test-lock").LoggerFactory(LoggerFactory));
+        _messageBusAdapter = new(_inMemoryMessageBus);
+        _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();
+    }
 
     protected override IResourceLockProvider GetLockProvider()
     {
-        var option = new ResourceLockOptions { KeyPrefix = "test:" };
-        var optionWrapper = new OptionsWrapper<ResourceLockOptions>(option);
-
         return new StorageResourceLockProvider(
-            fixture.ResourceLockStorage,
-            _messageBus,
-            new SnowflakeIdLongIdGenerator(1),
-            TimeProvider.System,
-            LoggerFactory.CreateLogger<StorageResourceLockProvider>(),
-            optionWrapper
+            _fixture.LockStorage,
+            _messageBusAdapter,
+            _IdGenerator,
+            _TimeProvider,
+            _Options,
+            _logger
         );
     }
 
@@ -50,22 +60,9 @@ public sealed class SqliteResourceLockProviderTests(SqliteTestFixture fixture, I
     }
 
     [Fact]
-    public override Task should_acquire_and_release_locks_async()
-    {
-        return base.should_acquire_and_release_locks_async();
-    }
-
-    [Fact]
-    public override Task should_acquire_locks_in_parallel()
-    {
-        return base.should_acquire_locks_in_parallel();
-    }
-
-    [Fact]
     public override async Task should_release_lock_multiple_times()
     {
         await base.should_release_lock_multiple_times();
-        _messageBus.PublishAsync(Arg.Any<Arg.AnyType>()).ReceivedCalls();
     }
 
     [Fact]
@@ -78,5 +75,28 @@ public sealed class SqliteResourceLockProviderTests(SqliteTestFixture fixture, I
     public override Task should_lock_one_at_a_time_async()
     {
         return base.should_lock_one_at_a_time_async();
+    }
+
+    [Fact]
+    public override Task should_acquire_and_release_locks_async()
+    {
+        return base.should_acquire_and_release_locks_async();
+    }
+
+    [Fact]
+    public override Task should_acquire_locks_in_parallel()
+    {
+        return base.should_acquire_locks_in_parallel();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        if (disposing)
+        {
+            _inMemoryMessageBus?.Dispose();
+            _messageBusAdapter?.Dispose();
+        }
     }
 }

@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Sqlite\Framework.ResourceLocks.Sqlite.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks.Tests.Harness\Framework.ResourceLocks.Tests.Harness.csproj" />
   </ItemGroup>
