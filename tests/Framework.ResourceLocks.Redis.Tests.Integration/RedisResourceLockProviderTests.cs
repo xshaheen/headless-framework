@@ -1,5 +1,6 @@
 ﻿using Foundatio.Messaging;
 using Framework.Abstractions;
+using Framework.Caching;
 using Framework.Messaging;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Storage.RegularLocks;
@@ -10,7 +11,7 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection(nameof(RedisTestFixture))]
-public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
+public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBase, IAsyncLifetime
 {
     private static readonly SnowflakeIdLongIdGenerator _IdGenerator = new(1);
     private static readonly TimeProvider _TimeProvider = TimeProvider.System;
@@ -32,6 +33,27 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
         );
         _messageBusAdapter = new(_redisMessageBus);
         _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _fixture.ConnectionMultiplexer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        if (disposing)
+        {
+            _messageBusAdapter?.Dispose();
+            _redisMessageBus?.Dispose();
+        }
     }
 
     protected override IResourceLockProvider GetLockProvider()
@@ -92,16 +114,5 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
     public override Task should_acquire_locks_in_parallel()
     {
         return base.should_acquire_locks_in_parallel();
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-
-        if (disposing)
-        {
-            _messageBusAdapter?.Dispose();
-            _redisMessageBus?.Dispose();
-        }
     }
 }

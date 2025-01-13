@@ -1,15 +1,27 @@
-﻿using Framework.ResourceLocks;
+﻿using Framework.Caching;
+using Framework.ResourceLocks;
 using Tests.TestSetup;
 
 namespace Tests;
 
 [Collection(nameof(RedisTestFixture))]
 public sealed class RedisResourceThrottlingLockProviderTests(RedisTestFixture fixture, ITestOutputHelper output)
-    : ResourceThrottlingLockProviderTestsBase(output)
+    : ResourceThrottlingLockProviderTestsBase(output),
+        IAsyncLifetime
 {
     protected override IThrottlingResourceLockStorage GetLockStorage()
     {
         return fixture.ThrottlingLockStorage;
+    }
+
+    public async Task InitializeAsync()
+    {
+        await fixture.ConnectionMultiplexer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
     }
 
     [Fact]

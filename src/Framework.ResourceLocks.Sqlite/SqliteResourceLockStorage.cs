@@ -28,7 +28,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         """;
 
     private const string _GetExpirationSql = """
-        SELECT exp FROM ResourceLocks
+        SELECT exp - (select strftime('%s','now')) FROM ResourceLocks
         WHERE res = @res AND exp > (select strftime('%s','now'))
         """;
 
@@ -38,6 +38,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         """;
 
     private const string _RemoveSql = "DELETE FROM ResourceLocks WHERE res = @res AND lockId = @lockId";
+    private const string _FlushAllSql = "DELETE FROM ResourceLocks";
 
     public void CreateTable()
     {
@@ -107,14 +108,15 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         command.CommandText = _GetExpirationSql;
         command.Parameters.Add(new SqliteParameter("@res", key));
 
-        var result = (await command.ExecuteScalarAsync())?.ToString();
+        var scalar = await command.ExecuteScalarAsync();
+        var result = scalar?.ToString();
 
         if (result is null)
         {
             return null;
         }
 
-        var seconds = long.Parse(result, CultureInfo.InvariantCulture);
+        var seconds = double.Parse(result, CultureInfo.InvariantCulture);
         var expiration = TimeSpan.FromSeconds(seconds);
 
         return expiration;
@@ -132,14 +134,19 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         return exists;
     }
 
+    public async ValueTask FlushAllAsync()
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = _FlushAllSql;
+        await command.ExecuteNonQueryAsync();
+    }
+
     #region Helpers
 
     private static object _GetTimeSpanParameterValue(TimeSpan? timeSpan)
     {
-        return timeSpan is null ? DBNull.Value : _GetSeconds(timeSpan.Value);
+        return timeSpan is null ? DBNull.Value : timeSpan.Value.TotalSeconds;
     }
-
-    private static long _GetSeconds(TimeSpan ttl) => ttl.Seconds / 10_000_000;
 
     #endregion
 }
