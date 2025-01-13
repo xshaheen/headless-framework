@@ -60,8 +60,8 @@ public static class ServiceProviderExtensions
         string? userAgent = null
     )
     {
-        ipAddress ??= TestConstants.F.Internet.Ip();
-        userAgent ??= TestConstants.F.Internet.UserAgent();
+        ipAddress ??= Test.Faker.Internet.Ip();
+        userAgent ??= Test.Faker.Internet.UserAgent();
 
         var accessor = provider.GetRequiredService<IHttpContextAccessor>();
 
