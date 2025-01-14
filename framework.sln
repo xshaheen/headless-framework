@@ -295,6 +295,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Sql
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Redis.Tests.Integration", "tests\Framework.ResourceLocks.Redis.Tests.Integration\Framework.ResourceLocks.Redis.Tests.Integration.csproj", "{1673FFD0-3E71-4E90-A098-2F9F2D20DD28}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Messaging.Foundatio.Tests.Integration", "tests\Framework.Messaging.Foundatio.Tests.Integration\Framework.Messaging.Foundatio.Tests.Integration.csproj", "{B17E48C5-D2E8-459A-8CF2-A2585F6650C9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -755,6 +757,10 @@ Global
 		{1673FFD0-3E71-4E90-A098-2F9F2D20DD28}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1673FFD0-3E71-4E90-A098-2F9F2D20DD28}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1673FFD0-3E71-4E90-A098-2F9F2D20DD28}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B17E48C5-D2E8-459A-8CF2-A2585F6650C9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B17E48C5-D2E8-459A-8CF2-A2585F6650C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B17E48C5-D2E8-459A-8CF2-A2585F6650C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B17E48C5-D2E8-459A-8CF2-A2585F6650C9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -873,6 +879,7 @@ Global
 		{D5B1FEBD-F84D-4107-9942-7C65CF807F05} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{05DC23B2-1ABE-4992-8E40-1EF65EB305EB} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{1673FFD0-3E71-4E90-A098-2F9F2D20DD28} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
+		{B17E48C5-D2E8-459A-8CF2-A2585F6650C9} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}

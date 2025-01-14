@@ -6,6 +6,8 @@ namespace Framework.Messaging;
 
 public interface IMessageSubscribeMedium<out TPayload>
 {
+    string MessageKey { get; }
+
     string UniqueId { get; }
 
     string Type { get; }
@@ -19,6 +21,8 @@ public interface IMessageSubscribeMedium<out TPayload>
 
 public sealed class MessageSubscribeMedium<TPayload> : IMessageSubscribeMedium<TPayload>
 {
+    public required string MessageKey { get; set; }
+
     public required string UniqueId { get; init; }
 
     public required string Type { get; init; }

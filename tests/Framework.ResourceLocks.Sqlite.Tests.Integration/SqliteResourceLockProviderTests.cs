@@ -26,7 +26,7 @@ public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsB
     {
         _fixture = fixture;
         _inMemoryMessageBus = new(builder => builder.Topic("test-lock").LoggerFactory(LoggerFactory));
-        _messageBusAdapter = new(_inMemoryMessageBus);
+        _messageBusAdapter = new(_inMemoryMessageBus, new SequentialAsStringGuidGenerator());
         _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();
     }
 

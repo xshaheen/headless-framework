@@ -31,7 +31,7 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
                 .Topic("test-lock")
                 .LoggerFactory(LoggerFactory)
         );
-        _messageBusAdapter = new(_redisMessageBus);
+        _messageBusAdapter = new(_redisMessageBus, new SequentialAsStringGuidGenerator());
         _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();
     }
 
