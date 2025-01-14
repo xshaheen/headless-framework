@@ -31,7 +31,7 @@ public static class JsonConstants
         options.ReadCommentHandling = JsonCommentHandling.Disallow;
         options.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
         options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-        options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace;
+        options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate;
         options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonNode;
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip;
         options.IgnoreReadOnlyProperties = false;

@@ -23,6 +23,7 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, I
     {
         return new()
         {
+            MessageKey = MessageName.GetFrom<T>(),
             Type = msg.Type,
             UniqueId = msg.UniqueId,
             CorrelationId = msg.CorrelationId,
@@ -56,4 +57,3 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, I
 
     public void Dispose() => foundatio.Dispose();
 }
-
