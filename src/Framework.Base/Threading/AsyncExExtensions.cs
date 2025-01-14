@@ -1,0 +1,31 @@
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Diagnostics;
+
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Nito.AsyncEx;
+
+[PublicAPI]
+public static class AsyncExExtensions
+{
+    [DebuggerStepThrough]
+    public static async Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout)
+    {
+        using var cts = timeout.ToCancellationTokenSource();
+        await resetEvent.WaitAsync(cts.Token).AnyContext();
+    }
+
+    [DebuggerStepThrough]
+    public static async Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout)
+    {
+        using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource();
+        await resetEvent.WaitAsync(timeoutCancellationTokenSource.Token).AnyContext();
+    }
+
+    [DebuggerStepThrough]
+    public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout)
+    {
+        return Task.WhenAny(countdownEvent.WaitAsync(), Task.Delay(timeout));
+    }
+}
