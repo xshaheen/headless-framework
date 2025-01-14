@@ -1,8 +1,6 @@
 ﻿using Foundatio.Messaging;
-using Foundatio.Serializer;
 using Framework.Abstractions;
 using Framework.Messaging;
-using Framework.Serializer;
 using Framework.Testing.Tests;
 using Humanizer;
 using Microsoft.Extensions.Logging;
@@ -12,17 +10,16 @@ namespace Tests;
 
 public sealed class MessageBusFoundatioAdapterTests(ITestOutputHelper output) : TestBase(output)
 {
-    private static readonly JsonSerializerOptions _JsonOptions = JsonConstants.DefaultInternalJsonOptions;
-    private static readonly SystemTextJsonSerializer _Serializer = new(_JsonOptions, _JsonOptions);
     private static readonly SequentialAsBinaryGuidGenerator _GuidGenerator = new();
 
     private MessageBusFoundatioAdapter _GetMessageBus()
     {
 #pragma warning disable CA2000 // Dispose objects before losing scope
-        var inMemoryMessageBus = new InMemoryMessageBus(builder => builder
-            .Topic("test-lock")
-            .LoggerFactory(LoggerFactory)
-            .Serializer(_Serializer)
+        var inMemoryMessageBus = new InMemoryMessageBus(
+            builder => builder
+                .Topic("test-lock")
+                .LoggerFactory(LoggerFactory)
+                .Serializer(FoundationHelper.JsonSerializer)
         );
 #pragma warning restore CA2000
 
@@ -62,9 +59,9 @@ public sealed class MessageBusFoundatioAdapterTests(ITestOutputHelper output) : 
         countdown.CurrentCount.Should().Be(0);
     }
 
-    public class MessageA
+    public sealed class MessageA
     {
-        public string Data { get; init; } = string.Empty;
+        public required string Data { get; init; }
 
         public Dictionary<string, string> Items { get; } = new(StringComparer.Ordinal);
     }

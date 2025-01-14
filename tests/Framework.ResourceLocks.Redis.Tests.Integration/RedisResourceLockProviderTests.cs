@@ -30,6 +30,7 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
                 .Subscriber(fixture.ConnectionMultiplexer.GetSubscriber())
                 .Topic("test-lock")
                 .LoggerFactory(LoggerFactory)
+                .Serializer(FoundationHelper.JsonSerializer)
         );
         _messageBusAdapter = new(_redisMessageBus, new SequentialAsStringGuidGenerator());
         _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();

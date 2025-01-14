@@ -6,7 +6,6 @@ using Foundatio;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Framework.Abstractions;
-using Framework.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -17,9 +16,10 @@ public static class AddFoundatioExtensions
 {
     public static IServiceCollection AddMessageBusFoundatioAdapter(this IServiceCollection services)
     {
-        services.AddSingleton<IFrameworkMessageBus, MessageBusFoundatioAdapter>();
+        DefaultSerializer.Instance = FoundationHelper.JsonSerializer;
         services.AddSingleton<IMessagePublisher>(provider => provider.GetRequiredService<IFrameworkMessageBus>());
         services.AddSingleton<IMessageSubscriber>(provider => provider.GetRequiredService<IFrameworkMessageBus>());
+        services.AddSingleton<IFrameworkMessageBus, MessageBusFoundatioAdapter>();
 
         return services;
     }
@@ -34,18 +34,15 @@ public static class AddFoundatioExtensions
             {
                 var guidGenerator = provider.GetRequiredService<IGuidGenerator>();
                 var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
+                var timeProvider = provider.GetRequiredService<TimeProvider>();
 
                 var inMemoryMessageBus = new InMemoryMessageBus(
                     builder =>
                     {
-                        var serializer = new SystemTextJsonSerializer(
-                            serializeOptions: JsonConstants.DefaultInternalJsonOptions,
-                            deserializeOptions: JsonConstants.DefaultInternalJsonOptions
-                        );
-
                         var result = builder
+                            .TimeProvider(timeProvider)
                             .LoggerFactory(loggerFactory)
-                            .Serializer(serializer);
+                            .Serializer(FoundationHelper.JsonSerializer);
 
                         return setupAction is null ? result : setupAction(result);
                     }
@@ -55,9 +52,6 @@ public static class AddFoundatioExtensions
             }
         );
 
-        services.AddSingleton<IMessagePublisher>(provider => provider.GetRequiredService<IFrameworkMessageBus>());
-        services.AddSingleton<IMessageSubscriber>(provider => provider.GetRequiredService<IFrameworkMessageBus>());
-
-        return services;
+        return services.AddMessageBusFoundatioAdapter();
     }
 }
