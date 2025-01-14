@@ -122,7 +122,7 @@ public sealed class StorageResourceLockProvider(
         {
             _lockTimeoutCounter.Add(1);
 
-            if (acquireTimeoutCts.IsCancellationRequested)
+            if (acquireAbortToken.IsCancellationRequested)
             {
                 logger.LogCancellationRequestedAfter(resource, lockId, timeWaitedForLock);
             }
@@ -275,7 +275,7 @@ public sealed class StorageResourceLockProvider(
             .AnyContext();
 
         var storageLockReleased = new StorageResourceLockReleased(resource, lockId);
-        await messageBus.PublishAsync(storageLockReleased, cancellationToken: cancellationToken).AnyContext();
+        await messageBus.PublishAsync(storageLockReleased, cancellationToken).AnyContext();
 
         logger.LogReleaseReleased(resource, lockId);
     }

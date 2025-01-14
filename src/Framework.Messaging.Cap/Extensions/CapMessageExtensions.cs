@@ -7,6 +7,7 @@ using Framework.Serializer;
 // ReSharper disable once CheckNamespace
 namespace DotNetCore.CAP.Monitoring;
 
+[PublicAPI]
 public static class CapMessageExtensions
 {
     public static DistributedMessage<TPayload> GetPayloadMessage<TPayload>(this MessageDto message)

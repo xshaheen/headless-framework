@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Messaging;
 
+[PublicAPI]
 public static class AddCapDistributedMessagingExtensions
 {
     public static CapBuilder AddCapDistributedMessaging(
@@ -14,6 +15,7 @@ public static class AddCapDistributedMessagingExtensions
         Action<CapOptions> setupAction
     )
     {
+        services.AddSingleton<IMessagePublisher, CapMessagePublisher>();
         services.AddSingleton<IDistributedMessagePublisher, CapDistributedMessagePublisher>();
         services.AddSingleton(CapDistributedMessageHandlerFactory.Create());
 
