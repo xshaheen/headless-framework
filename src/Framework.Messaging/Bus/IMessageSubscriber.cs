@@ -73,9 +73,9 @@ public static class MessageSubscriberExtensions
         where T : class
     {
         return subscriber.SubscribeAsync<T>(
-            (msg, _) =>
+            (medium, _) =>
             {
-                handler(msg.Payload);
+                handler(medium.Payload);
 
                 return Task.CompletedTask;
             },
