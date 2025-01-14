@@ -244,7 +244,7 @@ public sealed class StorageResourceLockProvider(
             {
                 var (storage, resource, lockId, ttl) = state;
 
-                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl);
+                return storage.ReplaceIfHasIdAsync(resource, lockId, lockId, ttl);
             },
             cancellationToken: cancellationToken
         );
@@ -267,14 +267,14 @@ public sealed class StorageResourceLockProvider(
                 {
                     var (storage, resource, lockId) = state;
 
-                    return storage.RemoveAsync(resource, lockId);
+                    return storage.RemoveIfHasIdAsync(resource, lockId);
                 },
                 15,
                 cancellationToken: cancellationToken
             )
             .AnyContext();
 
-        var storageLockReleased = new StorageResourceLockReleased(resource, lockId);
+        var storageLockReleased = new StorageResourceLockReleased { Resource = resource, LockId = lockId };
         await messageBus.PublishAsync(storageLockReleased, cancellationToken).AnyContext();
 
         logger.LogReleaseReleased(resource, lockId);

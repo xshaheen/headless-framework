@@ -23,8 +23,10 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
 
     private const string _ReplaceIfEqualSql = """
         UPDATE ResourceLocks
-        SET lockId = @lockId, exp = (select strftime('%s','now') + @exp)
-        WHERE res = @res AND lockId = @expected
+        SET
+            lockId = @newId,
+            exp = (select strftime('%s','now') + @newExp)
+        WHERE res = @res AND lockId = @expectedId
         """;
 
     private const string _GetExpirationSql = """
@@ -37,7 +39,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         WHERE res = @res AND exp > (select strftime('%s','now'))
         """;
 
-    private const string _RemoveSql = "DELETE FROM ResourceLocks WHERE res = @res AND lockId = @lockId";
+    private const string _RemoveIfHasLockIdSql = "DELETE FROM ResourceLocks WHERE res = @res AND lockId = @lockId";
     private const string _FlushAllSql = "DELETE FROM ResourceLocks";
 
     public void CreateTable()
@@ -75,27 +77,27 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         }
     }
 
-    public async ValueTask<bool> ReplaceIfEqualAsync(string key, string lockId, string expected, TimeSpan? ttl = null)
+    public async ValueTask<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
         await using var command = connection.CreateCommand();
 
         command.CommandText = _ReplaceIfEqualSql;
         command.Parameters.Add(new SqliteParameter("@res", key));
-        command.Parameters.Add(new SqliteParameter("@lockId", lockId));
-        command.Parameters.Add(new SqliteParameter("@expected", expected));
-        command.Parameters.Add(new SqliteParameter("@exp", _GetTimeSpanParameterValue(ttl)));
+        command.Parameters.Add(new SqliteParameter("@lockId", newId));
+        command.Parameters.Add(new SqliteParameter("@expectedId", expectedId));
+        command.Parameters.Add(new SqliteParameter("@newExp", _GetTimeSpanParameterValue(newTtl)));
 
         var result = await command.ExecuteNonQueryAsync() > 0;
 
         return result;
     }
 
-    public async ValueTask<bool> RemoveAsync(string key, string lockId)
+    public async ValueTask<bool> RemoveIfHasIdAsync(string key, string expectedId)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = _RemoveSql;
+        command.CommandText = _RemoveIfHasLockIdSql;
         command.Parameters.Add(new SqliteParameter("@res", key));
-        command.Parameters.Add(new SqliteParameter("@lockId", lockId));
+        command.Parameters.Add(new SqliteParameter("@lockId", expectedId));
 
         var result = await command.ExecuteNonQueryAsync() > 0;
 

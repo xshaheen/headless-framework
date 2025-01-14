@@ -8,9 +8,9 @@ public interface IResourceLockStorage
 {
     ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null);
 
-    ValueTask<bool> ReplaceIfEqualAsync(string key, string lockId, string expected, TimeSpan? ttl = null);
+    ValueTask<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null);
 
-    ValueTask<bool> RemoveAsync(string key, string lockId);
+    ValueTask<bool> RemoveIfHasIdAsync(string key, string expectedId);
 
     ValueTask<TimeSpan?> GetExpirationAsync(string key);
 
@@ -29,14 +29,14 @@ internal sealed class ScopedResourceLockStorage(
         return innerStorage.InsertAsync(_NormalizeResource(key), lockId, ttl);
     }
 
-    public ValueTask<bool> ReplaceIfEqualAsync(string key, string lockId, string expected, TimeSpan? ttl = null)
+    public ValueTask<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
-        return innerStorage.ReplaceIfEqualAsync(_NormalizeResource(key), lockId, expected, ttl);
+        return innerStorage.ReplaceIfHasIdAsync(_NormalizeResource(key), expectedId, newId, newTtl);
     }
 
-    public ValueTask<bool> RemoveAsync(string key, string lockId)
+    public ValueTask<bool> RemoveIfHasIdAsync(string key, string expectedId)
     {
-        return innerStorage.RemoveAsync(_NormalizeResource(key), lockId);
+        return innerStorage.RemoveIfHasIdAsync(_NormalizeResource(key), expectedId);
     }
 
     public ValueTask<TimeSpan?> GetExpirationAsync(string key)

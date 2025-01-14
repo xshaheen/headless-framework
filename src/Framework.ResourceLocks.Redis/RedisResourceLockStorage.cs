@@ -88,7 +88,7 @@ public sealed class RedisResourceLockStorage(
         return await Db.StringSetAsync(key, lockId, ttl, When.NotExists, CommandFlags.None);
     }
 
-    public async ValueTask<bool> ReplaceIfEqualAsync(string key, string lockId, string expected, TimeSpan? ttl = null)
+    public async ValueTask<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
         Argument.IsNotNullOrEmpty(key);
 
@@ -96,7 +96,7 @@ public sealed class RedisResourceLockStorage(
 
         var redisResult = await Db.ScriptEvaluateAsync(
             _replaceIfEqualScript!,
-            _GetReplaceIfEqualParameters(key, lockId, expected, ttl)
+            _GetReplaceIfEqualParameters(key, newId, expectedId, newTtl)
         );
 
         var result = (int)redisResult;
@@ -104,7 +104,7 @@ public sealed class RedisResourceLockStorage(
         return result > 0;
     }
 
-    public async ValueTask<bool> RemoveAsync(string key, string lockId)
+    public async ValueTask<bool> RemoveIfHasIdAsync(string key, string expectedId)
     {
         Argument.IsNotNullOrEmpty(key);
 
@@ -112,7 +112,7 @@ public sealed class RedisResourceLockStorage(
 
         var redisResult = await Db.ScriptEvaluateAsync(
             _removeIfEqualScript!,
-            new { key = (RedisKey)key, expected = lockId }
+            new { key = (RedisKey)key, expected = expectedId }
         );
 
         var result = (int)redisResult;

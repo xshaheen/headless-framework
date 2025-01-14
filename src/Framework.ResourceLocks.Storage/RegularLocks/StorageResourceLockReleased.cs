@@ -2,4 +2,9 @@
 
 namespace Framework.ResourceLocks.Storage.RegularLocks;
 
-public sealed record StorageResourceLockReleased(string Resource, string LockId);
+public sealed class StorageResourceLockReleased
+{
+    public required string Resource { get; init; }
+
+    public required string LockId { get; init; }
+}

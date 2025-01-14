@@ -128,7 +128,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_acquire_and_release_locks_async()
     {
         var locker = GetLockProvider();
-        const string resource = "test";
+        var resource = Guid.NewGuid().ToString("N")[..5];
 
         // Try to acquire a lock
         var lock1 = await locker.TryAcquireAsync(
@@ -142,6 +142,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
             // Assert is locked
             lock1.Should().NotBeNull();
             (await locker.IsLockedAsync(resource)).Should().BeTrue();
+
             // Cannot acquire a lock on the same resource
             var lock2Task = locker.TryAcquireAsync(resource, acquireTimeout: TimeSpan.FromMilliseconds(250));
             await Task.Delay(TimeSpan.FromMilliseconds(250));
@@ -155,6 +156,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
             }
         }
 
+        // Assert is not locked now
         (await locker.IsLockedAsync(resource)).Should().BeFalse();
 
         var counter = 0;
