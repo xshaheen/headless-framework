@@ -17,7 +17,7 @@ public sealed class RedisLockTests : LockTestBase
         : base(output)
     {
         var muxer = SharedConnection.GetMuxer(LoggerFactory);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
+        muxer.FlushAllAsync().RunSynchronously();
         _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(LoggerFactory));
 
         _messageBus = new RedisMessageBus(o =>
@@ -128,7 +128,7 @@ public sealed class RedisLockTests : LockTestBase
             _cache.Dispose();
             _messageBus.Dispose();
             var muxer = SharedConnection.GetMuxer(LoggerFactory);
-            muxer.FlushAllAsync().GetAwaiter().GetResult();
+            muxer.FlushAllAsync().RunSynchronously();
         }
     }
 }

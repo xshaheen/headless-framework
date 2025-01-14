@@ -6,7 +6,7 @@ namespace Framework.Domains;
 
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
-public sealed class DistributedMessageAttribute(string messageName) : Attribute
+public sealed class MessageAttribute(string messageName) : Attribute
 {
     public string MessageName { get; } = messageName;
 }

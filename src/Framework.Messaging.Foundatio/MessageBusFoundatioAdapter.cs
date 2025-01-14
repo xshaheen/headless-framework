@@ -1,20 +1,34 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Foundatio.Messaging;
-using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
-using IFrameworkMessageBus = Framework.Messaging.IMessageBus;
+using Framework.Abstractions;
 
 namespace Framework.Messaging;
 
-public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio) : IFrameworkMessageBus
+public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, IGuidGenerator guidGenerator) : IFrameworkMessageBus
 {
-    public Task SubscribeAsync<TPayload>(
-        Func<IMessageSubscribeMedium<TPayload>, CancellationToken, Task> handler,
+    public Task SubscribeAsync<T>(
+        Func<IMessageSubscribeMedium<T>, CancellationToken, Task> handler,
         CancellationToken cancellationToken = default
     )
-        where TPayload : class
+        where T : class
     {
-        return foundatio.SubscribeAsync(handler, cancellationToken);
+        return foundatio.SubscribeAsync<IMessage<T>>(
+            (msg, token) => handler(_MapMessage(msg), token),
+            cancellationToken
+        );
+    }
+
+    private static MessageSubscribeMedium<T> _MapMessage<T>(IMessage<T> msg) where T : class
+    {
+        return new()
+        {
+            Type = msg.Type,
+            UniqueId = msg.UniqueId,
+            CorrelationId = msg.CorrelationId,
+            Properties = msg.Properties,
+            Payload = msg.Body,
+        };
     }
 
     public Task PublishAsync<T>(
@@ -24,20 +38,13 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio) :
     )
         where T : class
     {
-        var foundatioOptions = _MapToFoundatioOptions(options);
-
-        return foundatio.PublishAsync(typeof(T), message, foundatioOptions, cancellationToken);
+        return foundatio.PublishAsync(typeof(T), message, _MapOptions(options), cancellationToken);
     }
 
-    public void Dispose()
-    {
-        foundatio.Dispose();
-    }
-
-    private static MessageOptions? _MapToFoundatioOptions(PublishMessageOptions? options)
+    private MessageOptions _MapOptions(PublishMessageOptions? options)
     {
         return options is null
-            ? null
+            ? new MessageOptions { UniqueId = guidGenerator.Create().ToString() }
             : new MessageOptions
             {
                 UniqueId = options.UniqueId,
@@ -46,4 +53,7 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio) :
                 DeliveryDelay = null,
             };
     }
+
+    public void Dispose() => foundatio.Dispose();
 }
+

@@ -10,6 +10,7 @@ using Framework.Domains;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+[PublicAPI]
 public static class CapServiceProviderExtensions
 {
     public static async Task<DistributedMessage<TPayload>?> GetPayloadMessageAsync<TPayload>(
