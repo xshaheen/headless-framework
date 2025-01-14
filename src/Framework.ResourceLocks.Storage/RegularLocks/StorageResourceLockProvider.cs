@@ -170,7 +170,7 @@ public sealed class StorageResourceLockProvider(
         }
     }
 
-    private CancellationTokenSource _GetAcquireCts(TimeSpan timeout, CancellationToken token)
+    private static CancellationTokenSource _GetAcquireCts(TimeSpan timeout, CancellationToken token)
     {
         // Acquire timeout must be positive if not infinite.
         if (timeout != Timeout.InfiniteTimeSpan)

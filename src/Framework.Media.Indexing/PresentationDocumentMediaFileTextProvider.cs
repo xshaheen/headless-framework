@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Cysharp.Text;
 using DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Packaging;
@@ -10,22 +12,22 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
     public Task<string> GetTextAsync(Stream fileStream)
     {
         using var document = PresentationDocument.Open(fileStream, isEditable: false);
-        var slideIds = document.PresentationPart?.Presentation.SlideIdList?.ChildElements.Cast<SlideId>();
+        var ids = document.PresentationPart?.Presentation.SlideIdList?.ChildElements;
 
-        if (slideIds?.Any() != true)
+        if (ids is null || ids.Value.Count == 0)
         {
             return Task.FromResult(string.Empty);
         }
 
         using var stringBuilder = ZString.CreateStringBuilder();
 
-        foreach (var slideId in slideIds)
+        foreach (var slideId in ids)
         {
-            var relationshipId = slideId.RelationshipId?.Value;
+            var relationshipId = ((SlideId) slideId).RelationshipId?.Value;
 
             if (
                 relationshipId is null
-                || document.PresentationPart!.GetPartById(relationshipId) is not SlidePart slidePart
+                || document.PresentationPart?.GetPartById(relationshipId) is not SlidePart slidePart
             )
             {
                 continue;
