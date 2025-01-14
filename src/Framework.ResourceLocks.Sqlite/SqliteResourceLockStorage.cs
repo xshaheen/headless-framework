@@ -17,7 +17,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         """;
 
     private const string _InsertSql = """
-        DELETE FROM ResourceLocks WHERE exp < (select strftime('%s','now') - 7200);
+        DELETE FROM ResourceLocks WHERE exp <= (select strftime('%s','now'));
         INSERT INTO ResourceLocks (res, lockId, exp) VALUES (@res, @lockId, (select strftime('%s','now') + @exp))
         """;
 

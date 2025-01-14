@@ -162,15 +162,13 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
         // Acquire 25 locks in parallel, but it should be one at a time
         await Parallel.ForEachAsync(
             Enumerable.Range(1, 25),
-            async (_, _) =>
+            async (_, ct) =>
             {
                 var success = await locker.TryUsingAsync(
                     resource,
-                    work: () =>
-                    {
-                        Interlocked.Increment(ref counter);
-                    },
-                    acquireTimeout: TimeSpan.FromSeconds(10)
+                    work: () => Interlocked.Increment(ref counter),
+                    acquireTimeout: TimeSpan.FromSeconds(10),
+                    cancellationToken: ct
                 );
 
                 success.Should().BeTrue();
