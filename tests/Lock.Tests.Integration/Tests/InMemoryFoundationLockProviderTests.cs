@@ -1,45 +1,24 @@
-﻿using Foundatio.Messaging;
-using Framework.Abstractions;
+﻿using Foundatio.Caching;
+using Foundatio.Messaging;
 using Framework.Messaging;
-using Framework.ResourceLocks;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Tests.TestSetup;
+using Tests.Lock;
+using Tests.Storage;
 
-namespace Tests;
+namespace Tests.Tests;
 
-[Collection(nameof(SqliteTestFixture))]
-public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsBase, IAsyncLifetime
+public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
 {
-    private static readonly SnowflakeIdLongIdGenerator _LongGenerator = new(1);
-    private static readonly SequentialAsStringGuidGenerator _GuidGenerator = new();
-    private static readonly TimeProvider _TimeProvider = TimeProvider.System;
-    private static readonly OptionsWrapper<ResourceLockOptions> _Options = new(new() { KeyPrefix = "test:" });
-
-    private readonly SqliteTestFixture _fixture;
+    private readonly InMemoryCacheClient _inMemoryCacheClient = new();
     private readonly InMemoryMessageBus _inMemoryMessageBus;
-    private readonly MessageBusFoundatioAdapter _messageBusAdapter;
-    private readonly ILogger<ResourceLockProvider> _logger;
+    private readonly FoundationLockStorageAdapter _inMemoryStorage;
 
-    public SqliteResourceLockProviderTests(SqliteTestFixture fixture, ITestOutputHelper output)
+    public InMemoryFoundationLockProviderTests(ITestOutputHelper output)
         : base(output)
     {
-        _fixture = fixture;
+        _inMemoryStorage = new(_inMemoryCacheClient);
         _inMemoryMessageBus = new(builder =>
             builder.Topic("test-lock").LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer)
         );
-        _messageBusAdapter = new(_inMemoryMessageBus, _GuidGenerator);
-        _logger = LoggerFactory.CreateLogger<ResourceLockProvider>();
-    }
-
-    public async Task InitializeAsync()
-    {
-        await _fixture.LockStorage.FlushAllAsync();
-    }
-
-    public Task DisposeAsync()
-    {
-        return Task.CompletedTask;
     }
 
     protected override void Dispose(bool disposing)
@@ -48,21 +27,15 @@ public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsB
 
         if (disposing)
         {
+            _inMemoryCacheClient?.Dispose();
             _inMemoryMessageBus?.Dispose();
-            _messageBusAdapter?.Dispose();
+            _inMemoryStorage?.Dispose();
         }
     }
 
-    protected override IResourceLockProvider GetLockProvider()
+    protected override ILockProvider GetLockProvider()
     {
-        return new ResourceLockProvider(
-            _fixture.LockStorage,
-            _messageBusAdapter,
-            _LongGenerator,
-            _TimeProvider,
-            _Options,
-            _logger
-        );
+        return new CacheLockProvider(LongGenerator, _inMemoryStorage, _inMemoryMessageBus, TimeProvider, LoggerFactory);
     }
 
     [Fact]

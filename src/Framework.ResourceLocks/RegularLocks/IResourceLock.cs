@@ -100,10 +100,10 @@ public sealed class DisposableResourceLock(
             }
 
             _isReleased = true;
-            var elapsed = timeProvider.GetElapsedTime(_timestamp);
 
             if (logger.IsEnabled(LogLevel.Debug))
             {
+                var elapsed = timeProvider.GetElapsedTime(_timestamp);
                 logger.LogDebug("Releasing lock {Resource} ({LockId}) after {Duration:g}", Resource, LockId, elapsed);
             }
 

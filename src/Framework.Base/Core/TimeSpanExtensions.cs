@@ -47,6 +47,28 @@ public static class TimeSpanExtensions
 
     [SystemPure]
     [JetBrainsPure]
+    public static CancellationTokenSource ToCancellationTokenSource(this TimeSpan timeout, CancellationToken token)
+    {
+        if (timeout == TimeSpan.Zero)
+        {
+            var source = new CancellationTokenSource();
+            source.Cancel();
+
+            return source;
+        }
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+
+        if (timeout.Ticks > 0)
+        {
+            cts.CancelAfter(timeout);
+        }
+
+        return cts;
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
     public static CancellationTokenSource ToCancellationTokenSource(this TimeSpan? timeout)
     {
         return timeout.HasValue ? timeout.Value.ToCancellationTokenSource() : new CancellationTokenSource();

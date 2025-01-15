@@ -3,7 +3,6 @@ using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Messaging;
 using Framework.ResourceLocks;
-using Framework.ResourceLocks.Storage.RegularLocks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
@@ -19,12 +18,13 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
     private readonly RedisTestFixture _fixture;
     private readonly RedisMessageBus _redisMessageBus;
     private readonly MessageBusFoundatioAdapter _messageBusAdapter;
-    private readonly ILogger<StorageResourceLockProvider> _logger;
+    private readonly ILogger<ResourceLockProvider> _logger;
 
     public RedisResourceLockProviderTests(RedisTestFixture fixture, ITestOutputHelper output)
         : base(output)
     {
         _fixture = fixture;
+
         _redisMessageBus = new(builder =>
             builder
                 .Subscriber(fixture.ConnectionMultiplexer.GetSubscriber())
@@ -32,8 +32,9 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
                 .LoggerFactory(LoggerFactory)
                 .Serializer(FoundationHelper.JsonSerializer)
         );
+
         _messageBusAdapter = new(_redisMessageBus, new SequentialAsStringGuidGenerator());
-        _logger = LoggerFactory.CreateLogger<StorageResourceLockProvider>();
+        _logger = LoggerFactory.CreateLogger<ResourceLockProvider>();
     }
 
     public async Task InitializeAsync()
@@ -59,7 +60,7 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
 
     protected override IResourceLockProvider GetLockProvider()
     {
-        return new StorageResourceLockProvider(
+        return new ResourceLockProvider(
             _fixture.LockStorage,
             _messageBusAdapter,
             _IdGenerator,
@@ -109,6 +110,12 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
     public override Task should_acquire_and_release_locks_async()
     {
         return base.should_acquire_and_release_locks_async();
+    }
+
+    [Fact]
+    public override Task should_acquire_one_at_a_time_parallel()
+    {
+        return base.should_acquire_one_at_a_time_parallel();
     }
 
     [Fact]

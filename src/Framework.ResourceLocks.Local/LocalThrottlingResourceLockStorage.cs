@@ -8,20 +8,20 @@ public sealed class LocalThrottlingResourceLockStorage : IThrottlingResourceLock
 {
     private readonly CacheDictionary<string, ResourceLock> _resources = new();
 
-    public ValueTask<long> GetHitCountsAsync(string resource, long defaultValue = 0)
+    public Task<long> GetHitCountsAsync(string resource)
     {
-        var results = _resources.TryGet(resource, out var resourceLock) ? resourceLock.HitsCount : defaultValue;
+        var results = _resources.TryGet(resource, out var resourceLock) ? resourceLock.HitsCount : 0;
 
-        return ValueTask.FromResult(results);
+        return Task.FromResult(results);
     }
 
-    public ValueTask<long> IncrementAsync(string resource, TimeSpan ttl)
+    public Task<long> IncrementAsync(string resource, TimeSpan ttl)
     {
         var resourceLock = _resources.GetOrAdd(resource, new ResourceLock(), ttl);
 
         resourceLock.Hit();
 
-        return ValueTask.FromResult(resourceLock.HitsCount);
+        return Task.FromResult(resourceLock.HitsCount);
     }
 
     public ValueTask DisposeAsync()

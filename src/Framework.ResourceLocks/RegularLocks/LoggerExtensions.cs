@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Framework.ResourceLocks.Storage;
+namespace Framework.ResourceLocks.RegularLocks;
 
 internal static partial class LoggerExtensions
 {

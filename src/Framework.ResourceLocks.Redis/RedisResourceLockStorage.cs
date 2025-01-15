@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 using Framework.Checks;
-using Framework.ResourceLocks.Storage.RegularLocks;
+using Framework.ResourceLocks.RegularLocks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using StackExchange.Redis;
@@ -81,14 +81,14 @@ public sealed class RedisResourceLockStorage(
         }
     }
 
-    public async ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
+    public async Task<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
     {
         Argument.IsNotNullOrEmpty(key);
 
         return await Db.StringSetAsync(key, lockId, ttl, When.NotExists, CommandFlags.None);
     }
 
-    public async ValueTask<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
+    public async Task<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
         Argument.IsNotNullOrEmpty(key);
 
@@ -104,7 +104,7 @@ public sealed class RedisResourceLockStorage(
         return result > 0;
     }
 
-    public async ValueTask<bool> RemoveIfHasIdAsync(string key, string expectedId)
+    public async Task<bool> RemoveIfHasIdAsync(string key, string expectedId)
     {
         Argument.IsNotNullOrEmpty(key);
 
@@ -120,12 +120,12 @@ public sealed class RedisResourceLockStorage(
         return result > 0;
     }
 
-    public async ValueTask<TimeSpan?> GetExpirationAsync(string key)
+    public async Task<TimeSpan?> GetExpirationAsync(string key)
     {
         return await Db.KeyTimeToLiveAsync(key);
     }
 
-    public async ValueTask<bool> ExistsAsync(string key)
+    public async Task<bool> ExistsAsync(string key)
     {
         return await Db.KeyExistsAsync(key);
     }

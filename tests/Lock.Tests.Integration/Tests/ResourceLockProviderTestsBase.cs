@@ -1,16 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.ResourceLocks;
+using Framework.Abstractions;
 using Framework.Testing.Helpers;
 using Framework.Testing.Tests;
 using Humanizer;
 using Microsoft.Extensions.Logging;
+using Tests.Lock;
 
-namespace Tests;
+namespace Tests.Tests;
 
 public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : TestBase(output)
 {
-    protected abstract IResourceLockProvider GetLockProvider();
+    protected static readonly SnowflakeIdLongIdGenerator LongGenerator = new(1);
+
+    protected static readonly TimeProvider TimeProvider = TimeProvider.System;
+
+    protected abstract ILockProvider GetLockProvider();
 
     public virtual async Task should_lock_with_try_acquire()
     {
@@ -175,8 +180,13 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
             {
                 var success = await locker.TryUsingAsync(
                     resource,
-                    work: () => Interlocked.Increment(ref counter),
-                    acquireTimeout: 10.Seconds(),
+                    work: () =>
+                    {
+                        Interlocked.Increment(ref counter);
+
+                        return Task.CompletedTask;
+                    },
+                    10.Seconds(),
                     cancellationToken: ct
                 );
 
@@ -203,8 +213,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
                 await using var myLock = await locker.TryAcquireAsync(
                     resource: "test",
                     timeUntilExpires: TimeSpan.FromMinutes(1),
-                    acquireTimeout: TimeSpan.FromMinutes(1),
-                    acquireAbortToken: ct
+                    acquireTimeout: TimeSpan.FromMinutes(1)
                 );
 
                 myLock.Should().NotBeNull();
@@ -283,7 +292,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
         successCount.Should().Be(2);
     }
 
-    private static Task<bool> _DoLockedWorkAsync(IResourceLockProvider locker)
+    private static Task<bool> _DoLockedWorkAsync(ILockProvider locker)
     {
         return locker.TryUsingAsync(
             resource: "DoLockedWork",

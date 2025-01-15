@@ -5,6 +5,7 @@ using Foundatio.Messaging;
 using Framework.Caching;
 using Framework.Messaging;
 using Framework.Testing.Tests;
+using Framework.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Tests.Foundatio;
@@ -18,8 +19,11 @@ public sealed class RedisLockTests : LockTestBase
         : base(output)
     {
         var muxer = SharedConnection.GetMuxer(LoggerFactory);
-        muxer.FlushAllAsync().RunSynchronously();
-        _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer));
+        Async.RunSync(muxer.FlushAllAsync);
+
+        _cache = new RedisCacheClient(o =>
+            o.ConnectionMultiplexer(muxer).LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer)
+        );
 
         _messageBus = new RedisMessageBus(o =>
             o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(LoggerFactory)
@@ -129,7 +133,7 @@ public sealed class RedisLockTests : LockTestBase
             _cache.Dispose();
             _messageBus.Dispose();
             var muxer = SharedConnection.GetMuxer(LoggerFactory);
-            muxer.FlushAllAsync().RunSynchronously();
+            Async.RunSync(muxer.FlushAllAsync);
         }
     }
 }

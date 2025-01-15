@@ -40,12 +40,6 @@ public sealed class LocalResourceLockProviderTests(ITestOutputHelper output) : R
     }
 
     [Fact]
-    public override Task should_acquire_and_release_locks_async()
-    {
-        return base.should_acquire_and_release_locks_async();
-    }
-
-    [Fact]
     public override Task should_acquire_locks_in_parallel()
     {
         return base.should_acquire_locks_in_parallel();
@@ -55,6 +49,18 @@ public sealed class LocalResourceLockProviderTests(ITestOutputHelper output) : R
     public override Task should_release_lock_multiple_times()
     {
         return base.should_release_lock_multiple_times();
+    }
+
+    [Fact]
+    public override Task should_acquire_and_release_locks_async()
+    {
+        return base.should_acquire_and_release_locks_async();
+    }
+
+    [Fact]
+    public override Task should_acquire_one_at_a_time_parallel()
+    {
+        return base.should_acquire_one_at_a_time_parallel();
     }
 
     [Fact]

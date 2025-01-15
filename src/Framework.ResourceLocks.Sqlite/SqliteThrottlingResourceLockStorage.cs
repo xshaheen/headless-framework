@@ -44,14 +44,14 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
     }
 
     /// <summary>Asynchronously creates the ThrottlingLocks table if it does not already exist.</summary>
-    public async ValueTask CreateTableAsync()
+    public async Task CreateTableAsync()
     {
         await using var command = connection.CreateCommand();
         command.CommandText = _CreateTable;
         await command.ExecuteNonQueryAsync();
     }
 
-    public async ValueTask<long> GetHitCountsAsync(string resource, long defaultValue = 0)
+    public async Task<long> GetHitCountsAsync(string resource)
     {
         await using var command = connection.CreateCommand();
 
@@ -62,7 +62,7 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
 
         if (result is null)
         {
-            return defaultValue;
+            return 0;
         }
 
         var value = Convert.ToInt64(result, CultureInfo.InvariantCulture);
@@ -70,7 +70,7 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         return value;
     }
 
-    public async ValueTask<long> IncrementAsync(string resource, TimeSpan ttl)
+    public async Task<long> IncrementAsync(string resource, TimeSpan ttl)
     {
         await using var command = connection.CreateCommand();
 
@@ -85,7 +85,7 @@ public sealed class SqliteThrottlingResourceLockStorage(SqliteConnection connect
         return value;
     }
 
-    public async ValueTask FlushAllAsync()
+    public async Task FlushAllAsync()
     {
         await using var command = connection.CreateCommand();
         command.CommandText = _FlushAllSql;

@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.ResourceLocks.Storage\Framework.ResourceLocks.Storage.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
   </ItemGroup>
 
 </Project>

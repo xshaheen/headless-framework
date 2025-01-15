@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Abstractions;
 using Framework.Checks;
 using Framework.ResourceLocks.ThrottlingLocks;
+using Humanizer;
 using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130
@@ -9,8 +11,10 @@ using Microsoft.Extensions.Logging;
 namespace Framework.ResourceLocks;
 
 [PublicAPI]
-public interface IThrottlingResourceLockProvider : IAsyncDisposable
+public interface IThrottlingResourceLockProvider
 {
+    public TimeSpan DefaultAcquireTimeout { get; }
+
     /// <summary>
     /// Acquires a resource lock for a specified resource this method will block
     /// until the lock is acquired or the <paramref name="acquireTimeout"/> is reached.
@@ -47,9 +51,13 @@ public sealed class ThrottlingResourceLockProvider(
     ThrottlingResourceLockOptions options,
     TimeProvider timeProvider,
     ILogger<ThrottlingResourceLockProvider> logger
-) : IThrottlingResourceLockProvider
+) : IThrottlingResourceLockProvider, IHaveTimeProvider, IHaveLogger
 {
-    public static TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
+    public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
+
+    public TimeProvider TimeProvider => timeProvider;
+
+    public ILogger Logger => logger;
 
     public async Task<IResourceThrottlingLock?> TryAcquireAsync(
         string resource,
@@ -58,28 +66,32 @@ public sealed class ThrottlingResourceLockProvider(
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
+
         logger.LogThrottlingLockTryingToAcquireLock(resource);
 
+        acquireTimeout ??= DefaultAcquireTimeout;
         var timestamp = timeProvider.GetTimestamp();
+        using var cts = acquireTimeout.Value.ToCancellationTokenSource(cancellationToken);
+
         var allowLock = false;
         byte errors = 0;
-        using var acquireTimeoutCts = _GetAcquireCancellation(acquireTimeout, cancellationToken);
-
         do
         {
-            var cacheKey = _GetKey(resource);
+            var cacheKey = _GetCacheKey(resource);
 
             try
             {
-                _LogCurrentInformation(cacheKey);
-                var hitCount = await storage.GetHitCountsAsync(cacheKey);
-                logger.LogThrottlingLockHitCount(resource, hitCount, options.MaxHitsPerPeriod);
+                logger.LogThrottlingInfo(_Now(), _DatePeriodStarted(), cacheKey);
+
+                var hitCount = await storage.GetHitCountsAsync(cacheKey).AnyContext();
+
+                logger.LogThrottlingHitCount(resource, hitCount, options.MaxHitsPerPeriod);
 
                 if (hitCount <= options.MaxHitsPerPeriod - 1)
                 {
-                    var ttl = _GetDateCurrentThrottlingPeriodEnded().Subtract(_GetUtcDateTime());
+                    var ttl = _DatePeriodEnded().Subtract(_Now());
 
-                    hitCount = await storage.IncrementAsync(cacheKey, ttl);
+                    hitCount = await storage.IncrementAsync(cacheKey, ttl).AnyContext();
 
                     // Make sure someone didn't beat us to it.
                     if (hitCount <= options.MaxHitsPerPeriod)
@@ -89,45 +101,39 @@ public sealed class ThrottlingResourceLockProvider(
                         break;
                     }
 
-                    logger.LogTrace("Max hits exceeded after increment for {Resource}", resource);
+                    logger.LogThrottlingMaxHitsExceededAfterCurrent(resource);
                 }
                 else
                 {
-                    logger.LogThrottlingLockMaxHitsExceeded(resource);
+                    logger.LogThrottlingMaxHitsExceeded(resource);
                 }
 
-                if (acquireTimeoutCts.IsCancellationRequested)
+                if (cts.IsCancellationRequested)
                 {
                     break;
                 }
 
                 // Sleep until the end of the current throttling period or the acquire timeout.
-                var datePeriodEnd = _GetDateCurrentThrottlingPeriodEnded().AddMilliseconds(1);
+                var sleepUntil = _DatePeriodEnded().AddMilliseconds(1);
 
-                if (datePeriodEnd > _GetUtcDateTime())
+                if (sleepUntil > _Now())
                 {
-                    logger.LogTrace("Sleeping until key expires: {SleepUntil}", datePeriodEnd - _GetUtcDateTime());
-                    await timeProvider.Delay(datePeriodEnd - _GetUtcDateTime(), acquireTimeoutCts.Token).AnyContext();
+                    logger.LogThrottlingSleepUntil(resource, sleepUntil - _Now());
+                    await timeProvider.SafeDelay(sleepUntil - _Now(), cts.Token).AnyContext();
                 }
                 else
                 {
-                    logger.LogTrace("Default sleep for 50ms");
-                    await timeProvider.Delay(TimeSpan.FromMilliseconds(50), acquireTimeoutCts.Token).AnyContext();
+                    logger.LogThrottlingDefaultSleep(resource);
+                    await timeProvider.SafeDelay(50.Milliseconds(), cts.Token).AnyContext();
                 }
             }
             catch (OperationCanceledException)
             {
-                break;
+                return null;
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                logger.LogError(
-                    ex,
-                    "Error acquiring throttled lock: name={Resource} message={Message}",
-                    resource,
-                    ex.Message
-                );
-
+                logger.LogThrottlingError(e, resource, e.Message);
                 errors++;
 
                 if (errors >= 3)
@@ -135,20 +141,15 @@ public sealed class ThrottlingResourceLockProvider(
                     break;
                 }
 
-                try
-                {
-                    await timeProvider.Delay(TimeSpan.FromMilliseconds(50), acquireTimeoutCts.Token).AnyContext();
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
+                await timeProvider.SafeDelay(50.Milliseconds(), cts.Token).AnyContext();
             }
-        } while (!acquireTimeoutCts.IsCancellationRequested);
+        } while (!cts.IsCancellationRequested);
 
-        if (acquireTimeoutCts.IsCancellationRequested)
+        var elapsed = timeProvider.GetElapsedTime(timestamp);
+
+        if (cts.IsCancellationRequested)
         {
-            logger.LogTrace("Cancellation requested");
+            logger.LogThrottlingFailed(resource, elapsed);
         }
 
         if (!allowLock)
@@ -156,91 +157,35 @@ public sealed class ThrottlingResourceLockProvider(
             return null;
         }
 
-        logger.LogTrace("Allowing lock: {Resource}", resource);
-        var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
+        logger.LogThrottlingAcquired(resource, elapsed);
 
-        return new ResourceThrottlingLock(resource, timeWaitedForLock, timeProvider.GetUtcNow());
+        return new ResourceThrottlingLock(resource, elapsed, timeProvider.GetUtcNow());
     }
 
     public async Task<bool> IsLockedAsync(string resource)
     {
-        var key = _GetKey(resource);
-        var hitCounts = await storage.GetHitCountsAsync(key).AnyContext();
+        Argument.IsNotNull(resource);
 
-        return hitCounts > options.MaxHitsPerPeriod;
-    }
+        var cacheKey = _GetCacheKey(resource);
+        var hitCount = await storage.GetHitCountsAsync(cacheKey).AnyContext();
 
-    public async ValueTask DisposeAsync()
-    {
-        await storage.DisposeAsync().AnyContext();
+        return hitCount >= options.MaxHitsPerPeriod;
     }
 
     #region Helpers
 
-    private string _GetKey(string resource)
+    private string _GetCacheKey(string resource)
     {
-        Argument.IsNotNullOrWhiteSpace(resource);
+        FormattableString format = $"{options.KeyPrefix}{resource}:{_DatePeriodStarted().Ticks}";
 
-        resource = string.IsNullOrWhiteSpace(options.KeyPrefix) ? resource : $"{options.KeyPrefix}:{resource}";
-
-        return $"{resource}:{_GetDateCurrentThrottlingPeriodStarted().Ticks.ToString(CultureInfo.InvariantCulture)}";
+        return format.ToString(CultureInfo.InvariantCulture);
     }
 
-    private DateTime _GetUtcDateTime()
-    {
-        return timeProvider.GetUtcNow().UtcDateTime;
-    }
+    private DateTime _Now() => timeProvider.GetUtcNow().UtcDateTime;
 
-    private DateTime _GetDateCurrentThrottlingPeriodStarted()
-    {
-        var now = _GetUtcDateTime();
-        var elapsedTicks = now.Ticks % options.ThrottlingPeriod.Ticks;
+    private DateTime _DatePeriodStarted() => _Now().Floor(options.ThrottlingPeriod);
 
-        return now.AddTicks(-elapsedTicks);
-    }
-
-    private DateTime _GetDateCurrentThrottlingPeriodEnded()
-    {
-        var now = _GetUtcDateTime();
-        var elapsedTicks = now.Ticks % options.ThrottlingPeriod.Ticks;
-
-        return now.AddTicks(options.ThrottlingPeriod.Ticks - elapsedTicks);
-    }
-
-    private void _LogCurrentInformation(string cacheKey)
-    {
-        if (logger.IsEnabled(LogLevel.Trace))
-        {
-            var throttlingPeriodText = _GetDateCurrentThrottlingPeriodStarted()
-                .ToString("mm:ss.fff", CultureInfo.InvariantCulture);
-
-            logger.LogTrace(
-                "Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}",
-                timeProvider.GetUtcNow().ToString("mm:ss.fff", CultureInfo.InvariantCulture),
-                throttlingPeriodText,
-                cacheKey
-            );
-        }
-    }
-
-    private static CancellationTokenSource _GetAcquireCancellation(TimeSpan? timeout, CancellationToken token)
-    {
-        // Acquire timeout must be positive if not infinite.
-        if (timeout is not null && timeout != Timeout.InfiniteTimeSpan)
-        {
-            Argument.IsPositiveOrZero(timeout.Value);
-        }
-
-        timeout ??= DefaultAcquireTimeout;
-        var acquireTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-
-        if (timeout != Timeout.InfiniteTimeSpan && timeout > TimeSpan.Zero)
-        {
-            acquireTimeoutCts.CancelAfter(timeout.Value);
-        }
-
-        return acquireTimeoutCts;
-    }
+    private DateTime _DatePeriodEnded() => _Now().Ceiling(options.ThrottlingPeriod);
 
     #endregion
 }
