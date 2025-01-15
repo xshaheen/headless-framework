@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
+using Framework.ResourceLocks;
 using Framework.Testing.Helpers;
 using Framework.Testing.Tests;
 using Humanizer;
 using Microsoft.Extensions.Logging;
-using Tests.Lock;
 
 namespace Tests.Tests;
 
@@ -15,7 +15,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
     protected static readonly TimeProvider TimeProvider = TimeProvider.System;
 
-    protected abstract ILockProvider GetLockProvider();
+    protected abstract IResourceLockProvider GetLockProvider();
 
     public virtual async Task should_lock_with_try_acquire()
     {
@@ -292,7 +292,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
         successCount.Should().Be(2);
     }
 
-    private static Task<bool> _DoLockedWorkAsync(ILockProvider locker)
+    private static Task<bool> _DoLockedWorkAsync(IResourceLockProvider locker)
     {
         return locker.TryUsingAsync(
             resource: "DoLockedWork",

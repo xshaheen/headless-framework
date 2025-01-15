@@ -10,13 +10,6 @@ namespace Nito.AsyncEx;
 public static class AsyncExExtensions
 {
     [DebuggerStepThrough]
-    public static async Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout)
-    {
-        using var cts = timeout.ToCancellationTokenSource();
-        await resetEvent.WaitAsync(cts.Token).AnyContext();
-    }
-
-    [DebuggerStepThrough]
     public static async Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout)
     {
         using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource();
@@ -24,8 +17,75 @@ public static class AsyncExExtensions
     }
 
     [DebuggerStepThrough]
+    public static async Task SafeWaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout)
+    {
+        try
+        {
+            await resetEvent.WaitAsync(timeout);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    [DebuggerStepThrough]
+    public static async Task SafeWaitAsync(this AsyncAutoResetEvent resetEvent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await resetEvent.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    [DebuggerStepThrough]
+    public static async Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout)
+    {
+        using var cts = timeout.ToCancellationTokenSource();
+        await resetEvent.WaitAsync(cts.Token).AnyContext();
+    }
+
+    [DebuggerStepThrough]
+    public static async Task SafeWaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout)
+    {
+        try
+        {
+            await resetEvent.WaitAsync(timeout);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    [DebuggerStepThrough]
+    public static async Task SafeWaitAsync(this AsyncManualResetEvent resetEvent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await resetEvent.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    [DebuggerStepThrough]
     public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout)
     {
         return Task.WhenAny(countdownEvent.WaitAsync(), Task.Delay(timeout));
+    }
+
+    [DebuggerStepThrough]
+    public static async Task SafeWaitAsync(this AsyncCountdownEvent resetEvent, TimeSpan timeout)
+    {
+        try
+        {
+            await resetEvent.WaitAsync(timeout);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    [DebuggerStepThrough]
+    public static async Task SafeWaitAsync(this AsyncCountdownEvent resetEvent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await resetEvent.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) { }
     }
 }

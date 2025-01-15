@@ -1,43 +1,32 @@
-using Foundatio.Caching;
-using ICacheClient = Tests.Lock.ICacheClient;
+using Framework.ResourceLocks.RegularLocks;
 using IFoundatioCacheClient = Foundatio.Caching.ICacheClient;
 
 namespace Tests.Storage;
 
-public sealed class FoundationLockStorageAdapter(IFoundatioCacheClient cacheClient) : ICacheClient, IDisposable
+public sealed class FoundationLockStorageAdapter(IFoundatioCacheClient cacheClient) : IResourceLockStorage
 {
-    public Task<bool> AddAsync(string resource, string lockId, TimeSpan? ttl = null)
+    public Task<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
     {
-        return cacheClient.AddAsync(resource, lockId, ttl);
+        return cacheClient.AddAsync(key, lockId, ttl);
     }
 
-    public Task<T> GetAsync<T>(string cacheKey, T? defaultValue = default)
+    public Task<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
-        return cacheClient.GetAsync<T>(cacheKey, defaultValue);
+        return cacheClient.ReplaceIfEqualAsync(key, expectedId, newId, newTtl);
     }
 
-    public Task<bool> ExistsAsync(string resource)
+    public Task<bool> RemoveIfEqualAsync(string key, string expectedId)
     {
-        return cacheClient.ExistsAsync(resource);
+        return cacheClient.RemoveIfEqualAsync(key, expectedId);
     }
 
-    public Task RemoveIfEqualAsync(string resource, string lockId)
+    public Task<TimeSpan?> GetExpirationAsync(string key)
     {
-        return cacheClient.RemoveIfEqualAsync(resource, lockId);
+        return cacheClient.GetExpirationAsync(key);
     }
 
-    public Task ReplaceIfEqualAsync(string resource, string existId, string newId, TimeSpan newTtl)
+    public Task<bool> ExistsAsync(string key)
     {
-        return cacheClient.ReplaceIfEqualAsync(resource, newId, existId, newTtl);
-    }
-
-    public Task<TimeSpan?> GetExpirationAsync(string resource)
-    {
-        return cacheClient.GetExpirationAsync(resource);
-    }
-
-    public void Dispose()
-    {
-        cacheClient.Dispose();
+        return cacheClient.ExistsAsync(key);
     }
 }

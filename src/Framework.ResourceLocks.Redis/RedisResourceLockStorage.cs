@@ -88,7 +88,7 @@ public sealed class RedisResourceLockStorage(
         return await Db.StringSetAsync(key, lockId, ttl, When.NotExists, CommandFlags.None);
     }
 
-    public async Task<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
+    public async Task<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
         Argument.IsNotNullOrEmpty(key);
 
@@ -104,7 +104,7 @@ public sealed class RedisResourceLockStorage(
         return result > 0;
     }
 
-    public async Task<bool> RemoveIfHasIdAsync(string key, string expectedId)
+    public async Task<bool> RemoveIfEqualAsync(string key, string expectedId)
     {
         Argument.IsNotNullOrEmpty(key);
 

@@ -128,7 +128,7 @@ public sealed class DynamicSettingDefinitionStore(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                acquireAbortToken: cancellationToken
+                cancellationToken: cancellationToken
             )
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for setting definition common stamp check!"
@@ -188,7 +188,7 @@ public sealed class DynamicSettingDefinitionStore(
             _appSaveLockKey,
             timeUntilExpires: _options.ApplicationSaveLockExpiration,
             acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
-            acquireAbortToken: cancellationToken
+            cancellationToken: cancellationToken
         );
 
         if (applicationResourceLock is null)
@@ -211,7 +211,7 @@ public sealed class DynamicSettingDefinitionStore(
                 _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: 10.Minutes(),
                 acquireTimeout: 5.Minutes(),
-                acquireAbortToken: cancellationToken
+                cancellationToken: cancellationToken
             ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!"); // It will re-try
 
         var (newRecords, changedRecords, deletedRecords) = await _UpdateChangedSettingsAsync(

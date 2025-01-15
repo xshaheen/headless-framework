@@ -41,13 +41,13 @@ public sealed class DisposableResourceLock(
     string lockId,
     TimeSpan timeWaitedForLock,
     IResourceLockProvider lockProvider,
-    ILogger logger,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    ILogger logger
 ) : IResourceLock
 {
+    private bool _isReleased;
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp = timeProvider.GetTimestamp();
-    private bool _isReleased;
 
     public string LockId { get; } = lockId;
 
@@ -107,16 +107,7 @@ public sealed class DisposableResourceLock(
                 logger.LogDebug("Releasing lock {Resource} ({LockId}) after {Duration:g}", Resource, LockId, elapsed);
             }
 
-            try
-            {
-                await lockProvider.ReleaseAsync(Resource, LockId).AnyContext();
-            }
-            catch
-            {
-                _isReleased = false;
-
-                throw;
-            }
+            await lockProvider.ReleaseAsync(Resource, LockId).AnyContext();
         }
     }
 
