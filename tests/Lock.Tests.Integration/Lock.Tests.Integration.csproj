@@ -21,8 +21,4 @@
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="ThrottlingLocks\" />
-  </ItemGroup>
-
 </Project>

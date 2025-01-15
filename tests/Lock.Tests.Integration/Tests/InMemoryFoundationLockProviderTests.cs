@@ -1,7 +1,9 @@
 ﻿using Foundatio.Caching;
 using Foundatio.Messaging;
 using Framework.Messaging;
-using Tests.Lock;
+using Framework.ResourceLocks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Tests.Storage;
 
 namespace Tests.Tests;
@@ -29,13 +31,19 @@ public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
         {
             _inMemoryCacheClient?.Dispose();
             _inMemoryMessageBus?.Dispose();
-            _inMemoryStorage?.Dispose();
         }
     }
 
-    protected override ILockProvider GetLockProvider()
+    protected override IResourceLockProvider GetLockProvider()
     {
-        return new CacheLockProvider(LongGenerator, _inMemoryStorage, _inMemoryMessageBus, TimeProvider, LoggerFactory);
+        return new ResourceLockProvider(
+            _inMemoryStorage,
+            _inMemoryMessageBus,
+            LongGenerator,
+            TimeProvider,
+            new OptionsWrapper<ResourceLockOptions>(new() { KeyPrefix = "tests " }),
+            LoggerFactory.CreateLogger<ResourceLockProvider>()
+        );
     }
 
     [Fact]

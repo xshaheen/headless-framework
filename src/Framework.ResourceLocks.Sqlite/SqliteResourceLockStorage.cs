@@ -77,7 +77,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         }
     }
 
-    public async Task<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
+    public async Task<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
         await using var command = connection.CreateCommand();
 
@@ -92,7 +92,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         return result;
     }
 
-    public async Task<bool> RemoveIfHasIdAsync(string key, string expectedId)
+    public async Task<bool> RemoveIfEqualAsync(string key, string expectedId)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = _RemoveIfHasLockIdSql;

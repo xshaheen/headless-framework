@@ -10,12 +10,12 @@ public sealed class CacheResourceLockStorage(ICache cache) : IResourceLockStorag
         return cache.TryInsertAsync(key, lockId, ttl);
     }
 
-    public Task<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
+    public Task<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
         return cache.TryReplaceIfEqualAsync(key, expectedId, newId, newTtl);
     }
 
-    public Task<bool> RemoveIfHasIdAsync(string key, string expectedId)
+    public Task<bool> RemoveIfEqualAsync(string key, string expectedId)
     {
         return cache.RemoveIfEqualAsync(key, expectedId);
     }

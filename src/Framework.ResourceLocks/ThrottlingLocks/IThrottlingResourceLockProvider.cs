@@ -55,9 +55,9 @@ public sealed class ThrottlingResourceLockProvider(
 {
     public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
-    public TimeProvider TimeProvider => timeProvider;
+    TimeProvider IHaveTimeProvider.TimeProvider => timeProvider;
 
-    public ILogger Logger => logger;
+    ILogger IHaveLogger.Logger => logger;
 
     public async Task<IResourceThrottlingLock?> TryAcquireAsync(
         string resource,

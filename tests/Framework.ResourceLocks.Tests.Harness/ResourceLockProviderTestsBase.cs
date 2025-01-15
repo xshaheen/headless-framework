@@ -204,7 +204,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
                     resource: "test",
                     timeUntilExpires: TimeSpan.FromMinutes(1),
                     acquireTimeout: TimeSpan.FromMinutes(1),
-                    acquireAbortToken: ct
+                    cancellationToken: ct
                 );
 
                 myLock.Should().NotBeNull();

@@ -2,8 +2,10 @@
 using Foundatio.Messaging;
 using Framework.Caching;
 using Framework.Messaging;
+using Framework.ResourceLocks;
 using Framework.Threading;
-using Tests.Lock;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Tests.Storage;
 
 namespace Tests.Tests;
@@ -39,13 +41,19 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
         {
             _redisMessageBus?.Dispose();
             _redisStorage?.Dispose();
-            _redisLockStorage?.Dispose();
         }
     }
 
-    protected override ILockProvider GetLockProvider()
+    protected override IResourceLockProvider GetLockProvider()
     {
-        return new CacheLockProvider(LongGenerator, _redisLockStorage, _redisMessageBus, TimeProvider, LoggerFactory);
+        return new ResourceLockProvider(
+            _redisLockStorage,
+            _redisMessageBus,
+            LongGenerator,
+            TimeProvider,
+            new OptionsWrapper<ResourceLockOptions>(new() { KeyPrefix = "tests " }),
+            LoggerFactory.CreateLogger<ResourceLockProvider>()
+        );
     }
 
     [Fact]

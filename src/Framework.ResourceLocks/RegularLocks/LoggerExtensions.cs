@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.ResourceLocks.RegularLocks;
 
-internal static partial class LoggerExtensions
+public static partial class LoggerExtensions
 {
     [LoggerMessage(
         EventId = 1,
