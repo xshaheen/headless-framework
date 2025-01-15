@@ -77,8 +77,8 @@ public sealed class InMemoryCachingFoundatioAdapter(TimeProvider timeProvider, I
 
     public Task<bool> TryReplaceIfEqualAsync<T>(
         string key,
-        T value,
         T expected,
+        T value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )

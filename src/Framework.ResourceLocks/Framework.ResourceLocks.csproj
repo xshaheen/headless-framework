@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Framework.Messaging\Framework.Messaging.csproj" />
   </ItemGroup>
 
 </Project>

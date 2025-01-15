@@ -73,14 +73,14 @@ public sealed class RedisThrottlingResourceLockStorage(
         }
     }
 
-    public async ValueTask<long> GetHitCountsAsync(string resource, long defaultValue = 0)
+    public async Task<long> GetHitCountsAsync(string resource)
     {
         var redisValue = await Db.StringGetAsync(resource);
 
-        return redisValue.HasValue ? (long)redisValue : defaultValue;
+        return redisValue.HasValue ? (long)redisValue : 0;
     }
 
-    public async ValueTask<long> IncrementAsync(string resource, TimeSpan ttl)
+    public async Task<long> IncrementAsync(string resource, TimeSpan ttl)
     {
         Argument.IsNotNullOrEmpty(resource);
         Argument.IsPositive(ttl);

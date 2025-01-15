@@ -7,7 +7,7 @@ namespace Framework.ResourceLocks.ThrottlingLocks;
 internal static partial class LoggerExtensions
 {
     [LoggerMessage(
-        EventId = 16,
+        EventId = 15,
         EventName = "ThrottlingLockTryingToAcquireLock",
         Level = LogLevel.Trace,
         Message = "Trying to acquire lock {Resource}"
@@ -15,12 +15,25 @@ internal static partial class LoggerExtensions
     public static partial void LogThrottlingLockTryingToAcquireLock(this ILogger logger, string resource);
 
     [LoggerMessage(
+        EventId = 16,
+        EventName = "LogThrottlingInfo",
+        Level = LogLevel.Trace,
+        Message = "Current time: {CurrentTime:mm:ss.fff} throttle: {ThrottlingPeriod:mm:ss.fff} key: {Key}"
+    )]
+    public static partial void LogThrottlingInfo(
+        this ILogger logger,
+        DateTime currentTime,
+        DateTime throttlingPeriod,
+        string key
+    );
+
+    [LoggerMessage(
         EventId = 17,
         EventName = "ThrottlingLockHitCount",
         Level = LogLevel.Trace,
         Message = "Hit count for Resource={Resource} HitCount={HitCount} max={MaxHitsPerPeriod}"
     )]
-    public static partial void LogThrottlingLockHitCount(
+    public static partial void LogThrottlingHitCount(
         this ILogger logger,
         string resource,
         long? hitCount,
@@ -33,5 +46,53 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Trace,
         Message = "Max hits exceeded for {Resource}"
     )]
-    public static partial void LogThrottlingLockMaxHitsExceeded(this ILogger logger, string resource);
+    public static partial void LogThrottlingMaxHitsExceeded(this ILogger logger, string resource);
+
+    [LoggerMessage(
+        EventId = 19,
+        EventName = "ThrottlingLockMaxHitsExceededAfterCurrent",
+        Level = LogLevel.Trace,
+        Message = "Max hits exceeded after increment for {Resource}"
+    )]
+    public static partial void LogThrottlingMaxHitsExceededAfterCurrent(this ILogger logger, string resource);
+
+    [LoggerMessage(
+        EventId = 20,
+        EventName = "ThrottlingDefaultSleep",
+        Level = LogLevel.Trace,
+        Message = "Sleeping for default time for {Resource}"
+    )]
+    public static partial void LogThrottlingDefaultSleep(this ILogger logger, string resource);
+
+    [LoggerMessage(
+        EventId = 21,
+        EventName = "ThrottlingSleepUntil",
+        Level = LogLevel.Trace,
+        Message = "Sleeping until key expires for {Resource}: {SleepTime}"
+    )]
+    public static partial void LogThrottlingSleepUntil(this ILogger logger, string resource, TimeSpan sleepTime);
+
+    [LoggerMessage(
+        EventId = 22,
+        EventName = "ThrottlingFailed",
+        Level = LogLevel.Trace,
+        Message = "Cancellation requested or timeout for {Resource} after {Elapsed}"
+    )]
+    public static partial void LogThrottlingFailed(this ILogger logger, string resource, TimeSpan elapsed);
+
+    [LoggerMessage(
+        EventId = 23,
+        EventName = "ThrottlingAcquired",
+        Level = LogLevel.Trace,
+        Message = "Lock allowed for {Resource} in {Elapsed}"
+    )]
+    public static partial void LogThrottlingAcquired(this ILogger logger, string resource, TimeSpan elapsed);
+
+    [LoggerMessage(
+        EventId = 23,
+        EventName = "ThrottlingError",
+        Level = LogLevel.Error,
+        Message = "Error acquiring throttled lock ({Resource}): {Message}"
+    )]
+    public static partial void LogThrottlingError(this ILogger logger, Exception e, string resource, string message);
 }

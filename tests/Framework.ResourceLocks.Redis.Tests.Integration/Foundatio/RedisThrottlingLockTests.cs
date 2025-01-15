@@ -3,6 +3,7 @@ using Foundatio.Caching;
 using Foundatio.Lock;
 using Framework.Caching;
 using Framework.Testing.Tests;
+using Framework.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Tests.Foundatio;
@@ -15,7 +16,7 @@ public sealed class RedisThrottlingLockTests : ThrottlingLockTestBase
         : base(output)
     {
         var muxer = SharedConnection.GetMuxer(LoggerFactory);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
+        Async.RunSync(muxer.FlushAllAsync);
         _cache = new(o => o.ConnectionMultiplexer(muxer).LoggerFactory(LoggerFactory));
     }
 

@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.ResourceLocks.Storage.RegularLocks;
+using Framework.ResourceLocks.RegularLocks;
 using Microsoft.Data.Sqlite;
 
 namespace Framework.ResourceLocks.Sqlite;
@@ -50,7 +50,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         command.ExecuteNonQuery();
     }
 
-    public async ValueTask CreateTableAsync()
+    public async Task CreateTableAsync()
     {
         await using var command = connection.CreateCommand();
 
@@ -58,7 +58,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         await command.ExecuteNonQueryAsync();
     }
 
-    public async ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
+    public async Task<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
     {
         await using var command = connection.CreateCommand();
 
@@ -77,7 +77,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         }
     }
 
-    public async ValueTask<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
+    public async Task<bool> ReplaceIfHasIdAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
     {
         await using var command = connection.CreateCommand();
 
@@ -92,7 +92,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         return result;
     }
 
-    public async ValueTask<bool> RemoveIfHasIdAsync(string key, string expectedId)
+    public async Task<bool> RemoveIfHasIdAsync(string key, string expectedId)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = _RemoveIfHasLockIdSql;
@@ -104,7 +104,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         return result;
     }
 
-    public async ValueTask<TimeSpan?> GetExpirationAsync(string key)
+    public async Task<TimeSpan?> GetExpirationAsync(string key)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = _GetExpirationSql;
@@ -124,7 +124,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         return expiration;
     }
 
-    public async ValueTask<bool> ExistsAsync(string key)
+    public async Task<bool> ExistsAsync(string key)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = _IsExistSql;
@@ -136,7 +136,7 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
         return exists;
     }
 
-    public async ValueTask FlushAllAsync()
+    public async Task FlushAllAsync()
     {
         await using var command = connection.CreateCommand();
         command.CommandText = _FlushAllSql;

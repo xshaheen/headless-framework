@@ -9,7 +9,7 @@ namespace Tests.TestSetup;
 [CollectionDefinition(nameof(SqliteTestFixture), DisableParallelization = false)]
 public sealed class SqliteTestFixture : IAsyncLifetime, IAsyncDisposable, ICollectionFixture<SqliteTestFixture>
 {
-    public SqliteConnectionFactory ConnectionFactory { get; } = new("DataSource=./ThrottlingResourceLocks.db");
+    public SqliteConnectionFactory ConnectionFactory { get; } = new("DataSource=./ResourceLocks.db");
 
     public SqliteConnection? Connection { get; private set; }
 

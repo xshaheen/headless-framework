@@ -105,4 +105,18 @@ public static class DateTimeExtensions
 
         return date.Add(value);
     }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTime Floor(this DateTime date, TimeSpan interval)
+    {
+        return date.AddTicks(-(date.Ticks % interval.Ticks));
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTime Ceiling(this DateTime date, TimeSpan interval)
+    {
+        return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
+    }
 }
