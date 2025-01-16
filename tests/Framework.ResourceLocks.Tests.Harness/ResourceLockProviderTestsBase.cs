@@ -170,7 +170,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     {
         var locker = GetLockProvider();
         var resource = Guid.NewGuid().ToString("N")[..5];
-        const int count = 2;
+        const int count = 500;
 
         var counter = 0;
 
@@ -193,11 +193,46 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
         counter.Should().Be(count);
     }
 
-    public virtual async Task should_acquire_locks_in_parallel()
+    public virtual async Task should_acquire_locks_in_sync()
     {
         var locker = GetLockProvider();
 
         const int count = 100;
+        var current = 1;
+        var used = new List<int>();
+        var concurrency = 0;
+
+        for (var i = 0; i < count; i++)
+        {
+            await using var myLock = await locker.TryAcquireAsync(
+                resource: "test",
+                timeUntilExpires: TimeSpan.FromMinutes(2),
+                acquireTimeout: TimeSpan.FromMinutes(2)
+            );
+
+            myLock.Should().NotBeNull();
+
+            ++concurrency;
+            concurrency.Should().Be(1);
+
+            var item = current;
+            await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)));
+            used.Add(item);
+            current++;
+
+            --concurrency;
+        }
+
+        var duplicates = used.GroupBy(x => x).Where(g => g.Skip(1).Any());
+        duplicates.Should().BeEmpty();
+        used.Should().HaveCount(count);
+    }
+
+    public virtual async Task should_acquire_locks_in_parallel()
+    {
+        var locker = GetLockProvider();
+
+        const int count = 150;
         var current = 1;
         var used = new List<int>();
         var concurrency = 0;
@@ -208,8 +243,8 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
             {
                 await using var myLock = await locker.TryAcquireAsync(
                     resource: "test",
-                    timeUntilExpires: TimeSpan.FromMinutes(1),
-                    acquireTimeout: TimeSpan.FromMinutes(1),
+                    timeUntilExpires: TimeSpan.FromMinutes(2),
+                    acquireTimeout: TimeSpan.FromMinutes(2),
                     cancellationToken: ct
                 );
 
@@ -237,10 +272,11 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
         var locker = GetLockProvider();
 
         var successCount = 0;
+        var resource = Guid.NewGuid().ToString("N")[..5];
 
         var lockTask1 = Task.Run(async () =>
         {
-            if (await _DoLockedWorkAsync(locker))
+            if (await doLockedWorkAsync(locker, resource))
             {
                 Interlocked.Increment(ref successCount);
                 Logger.LogInformation("LockTask1 Success");
@@ -249,7 +285,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
         var lockTask2 = Task.Run(async () =>
         {
-            if (await _DoLockedWorkAsync(locker))
+            if (await doLockedWorkAsync(locker, resource))
             {
                 Interlocked.Increment(ref successCount);
                 Logger.LogInformation("LockTask2 Success");
@@ -258,7 +294,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
         var lockTask3 = Task.Run(async () =>
         {
-            if (await _DoLockedWorkAsync(locker))
+            if (await doLockedWorkAsync(locker, resource))
             {
                 Interlocked.Increment(ref successCount);
                 Logger.LogInformation("LockTask3 Success");
@@ -267,7 +303,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
         var lockTask4 = Task.Run(async () =>
         {
-            if (await _DoLockedWorkAsync(locker))
+            if (await doLockedWorkAsync(locker, resource))
             {
                 Interlocked.Increment(ref successCount);
                 Logger.LogInformation("LockTask4 Success");
@@ -280,22 +316,22 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
         await Task.Run(async () =>
         {
-            if (await _DoLockedWorkAsync(locker))
+            if (await doLockedWorkAsync(locker, resource))
             {
                 Interlocked.Increment(ref successCount);
             }
         });
 
         successCount.Should().Be(2);
-    }
 
-    private static Task<bool> _DoLockedWorkAsync(IResourceLockProvider locker)
-    {
-        return locker.TryUsingAsync(
-            resource: "DoLockedWork",
-            work: async () => await Task.Delay(300),
-            timeUntilExpires: TimeSpan.FromMinutes(1),
-            acquireTimeout: TimeSpan.Zero // No waiting just single try
-        );
+        static Task<bool> doLockedWorkAsync(IResourceLockProvider locker, string resource)
+        {
+            return locker.TryUsingAsync(
+                resource: resource,
+                work: async () => await Task.Delay(300),
+                timeUntilExpires: TimeSpan.FromMinutes(1),
+                acquireTimeout: TimeSpan.Zero // No waiting just single try
+            );
+        }
     }
 }

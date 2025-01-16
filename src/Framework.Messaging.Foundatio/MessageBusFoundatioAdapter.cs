@@ -5,7 +5,8 @@ using Framework.Abstractions;
 
 namespace Framework.Messaging;
 
-public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, IGuidGenerator guidGenerator) : IFrameworkMessageBus
+public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, IGuidGenerator guidGenerator)
+    : IFrameworkMessageBus
 {
     public Task SubscribeAsync<T>(
         Func<IMessageSubscribeMedium<T>, CancellationToken, Task> handler,
@@ -19,7 +20,8 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, I
         );
     }
 
-    private static MessageSubscribeMedium<T> _MapMessage<T>(IMessage<T> msg) where T : class
+    private static MessageSubscribeMedium<T> _MapMessage<T>(IMessage<T> msg)
+        where T : class
     {
         return new()
         {
@@ -55,5 +57,5 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, I
             };
     }
 
-    public void Dispose() => foundatio.Dispose();
+    public void Dispose() { }
 }

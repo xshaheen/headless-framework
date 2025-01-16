@@ -1,38 +1,38 @@
-﻿using Foundatio.Caching;
-using Foundatio.Messaging;
+﻿using Foundatio.Messaging;
+using Framework.Caching;
 using Framework.Messaging;
-using Framework.Redis;
 using Framework.ResourceLocks;
-using Framework.Threading;
+using Framework.ResourceLocks.Cache;
+using Framework.Serializer;
 using Microsoft.Extensions.Logging;
-using Tests.Storage;
+using Tests.TestSetup;
 
-namespace Tests.Tests;
+namespace Tests;
 
-public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
+[Collection(nameof(CacheTestFixture))]
+public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
 {
-    private readonly RedisMessageBus _redisMessageBus;
-    private readonly RedisCacheClient _redisStorage;
-    private readonly FoundationLockStorageAdapter _redisLockStorage;
-    private readonly MessageBusFoundatioAdapter _messageBusFoundatioAdapter;
+    private readonly RedisMessageBus _foundatioMessageBus;
+    private readonly MessageBusFoundatioAdapter _messageBus;
+    private readonly RedisCachingFoundatioAdapter _cache;
+    private readonly CacheResourceLockStorage _storage;
 
-    public RedisFoundationLockProviderTests(ITestOutputHelper output)
+    public RedisResourceLockProviderTests(CacheTestFixture fixture, ITestOutputHelper output)
         : base(output)
     {
-        var muxer = SharedConnection.GetMuxer(LoggerFactory);
-        Async.RunSync(() => muxer.FlushAllAsync());
-
-        _redisMessageBus = new RedisMessageBus(o =>
-            o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(LoggerFactory)
+        _foundatioMessageBus = new RedisMessageBus(o =>
+            o.Subscriber(fixture.ConnectionMultiplexer.GetSubscriber()).Topic("test-lock").LoggerFactory(LoggerFactory)
         );
 
-        _messageBusFoundatioAdapter = new(_redisMessageBus, GuidGenerator);
+        _messageBus = new(_foundatioMessageBus, GuidGenerator);
 
-        _redisStorage = new RedisCacheClient(o =>
-            o.ConnectionMultiplexer(muxer).LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer)
+        _cache = new RedisCachingFoundatioAdapter(
+            new SystemJsonSerializer(),
+            TimeProvider,
+            new RedisCacheOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer }
         );
 
-        _redisLockStorage = new FoundationLockStorageAdapter(_redisStorage);
+        _storage = new CacheResourceLockStorage(_cache);
     }
 
     protected override void Dispose(bool disposing)
@@ -41,17 +41,17 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
 
         if (disposing)
         {
-            _redisMessageBus?.Dispose();
-            _redisStorage?.Dispose();
-            _messageBusFoundatioAdapter?.Dispose();
+            _foundatioMessageBus?.Dispose();
+            _messageBus?.Dispose();
+            _cache?.Dispose();
         }
     }
 
     protected override IResourceLockProvider GetLockProvider()
     {
         return new ResourceLockProvider(
-            _redisLockStorage,
-            _messageBusFoundatioAdapter,
+            _storage,
+            _messageBus,
             Options,
             LongGenerator,
             TimeProvider,
@@ -111,5 +111,11 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
     public override Task should_acquire_locks_in_parallel()
     {
         return base.should_acquire_locks_in_parallel();
+    }
+
+    [Fact]
+    public override Task should_acquire_locks_in_sync()
+    {
+        return base.should_acquire_locks_in_sync();
     }
 }

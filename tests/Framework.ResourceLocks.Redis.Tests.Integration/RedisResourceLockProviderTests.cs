@@ -119,4 +119,10 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
     {
         return base.should_acquire_locks_in_parallel();
     }
+
+    [Fact]
+    public override Task should_acquire_locks_in_sync()
+    {
+        return base.should_acquire_locks_in_sync();
+    }
 }
