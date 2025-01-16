@@ -4,7 +4,6 @@ using Framework.Messaging;
 using Framework.Redis;
 using Framework.ResourceLocks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
 namespace Tests;
@@ -12,9 +11,6 @@ namespace Tests;
 [Collection(nameof(RedisTestFixture))]
 public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBase, IAsyncLifetime
 {
-    private static readonly SnowflakeIdLongIdGenerator _IdGenerator = new(1);
-    private static readonly TimeProvider _TimeProvider = TimeProvider.System;
-    private static readonly OptionsWrapper<ResourceLockOptions> _Options = new(new() { KeyPrefix = "test:" });
     private readonly RedisTestFixture _fixture;
     private readonly RedisMessageBus _redisMessageBus;
     private readonly MessageBusFoundatioAdapter _messageBusAdapter;
@@ -63,9 +59,9 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
         return new ResourceLockProvider(
             _fixture.LockStorage,
             _messageBusAdapter,
-            _IdGenerator,
-            _TimeProvider,
-            _Options,
+            Options,
+            LongGenerator,
+            TimeProvider,
             _logger
         );
     }

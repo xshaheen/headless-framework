@@ -19,7 +19,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
-    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Local\Framework.ResourceLocks.Local.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
   </ItemGroup>
 

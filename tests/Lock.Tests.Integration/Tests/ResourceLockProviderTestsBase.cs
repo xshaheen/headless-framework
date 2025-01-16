@@ -17,6 +17,8 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 
     protected static readonly TimeProvider TimeProvider = TimeProvider.System;
 
+    protected static readonly ResourceLockOptions Options = new() { KeyPrefix = "tests" };
+
     protected abstract IResourceLockProvider GetLockProvider();
 
     public virtual async Task should_lock_with_try_acquire()

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Abstractions;
 using Framework.ResourceLocks;
 using Framework.Testing.Helpers;
 using Framework.Testing.Tests;
@@ -10,6 +11,11 @@ namespace Tests;
 
 public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : TestBase(output)
 {
+    protected static readonly SnowflakeIdLongIdGenerator LongGenerator = new(1);
+    protected static readonly SequentialAsStringGuidGenerator GuidGenerator = new();
+    protected static readonly TimeProvider TimeProvider = TimeProvider.System;
+    protected static readonly ResourceLockOptions Options = new() { KeyPrefix = "test:" };
+
     protected abstract IResourceLockProvider GetLockProvider();
 
     public virtual async Task should_lock_with_try_acquire()

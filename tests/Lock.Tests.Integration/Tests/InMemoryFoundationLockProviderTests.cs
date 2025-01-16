@@ -3,7 +3,6 @@ using Foundatio.Messaging;
 using Framework.Messaging;
 using Framework.ResourceLocks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tests.Storage;
 
 namespace Tests.Tests;
@@ -43,9 +42,9 @@ public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
         return new ResourceLockProvider(
             _inMemoryStorage,
             _messageBusFoundatioAdapter,
+            Options,
             LongGenerator,
             TimeProvider,
-            new OptionsWrapper<ResourceLockOptions>(new() { KeyPrefix = "tests " }),
             LoggerFactory.CreateLogger<ResourceLockProvider>()
         );
     }
