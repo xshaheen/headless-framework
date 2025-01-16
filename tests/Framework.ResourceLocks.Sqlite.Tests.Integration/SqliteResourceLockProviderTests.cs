@@ -1,9 +1,7 @@
 ﻿using Foundatio.Messaging;
-using Framework.Abstractions;
 using Framework.Messaging;
 using Framework.ResourceLocks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
 namespace Tests;
@@ -11,11 +9,6 @@ namespace Tests;
 [Collection(nameof(SqliteTestFixture))]
 public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsBase, IAsyncLifetime
 {
-    private static readonly SnowflakeIdLongIdGenerator _LongGenerator = new(1);
-    private static readonly SequentialAsStringGuidGenerator _GuidGenerator = new();
-    private static readonly TimeProvider _TimeProvider = TimeProvider.System;
-    private static readonly OptionsWrapper<ResourceLockOptions> _Options = new(new() { KeyPrefix = "test:" });
-
     private readonly SqliteTestFixture _fixture;
     private readonly InMemoryMessageBus _inMemoryMessageBus;
     private readonly MessageBusFoundatioAdapter _messageBusAdapter;
@@ -28,7 +21,7 @@ public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsB
         _inMemoryMessageBus = new(builder =>
             builder.LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer)
         );
-        _messageBusAdapter = new(_inMemoryMessageBus, _GuidGenerator);
+        _messageBusAdapter = new(_inMemoryMessageBus, GuidGenerator);
         _logger = LoggerFactory.CreateLogger<ResourceLockProvider>();
     }
 
@@ -58,9 +51,9 @@ public sealed class SqliteResourceLockProviderTests : ResourceLockProviderTestsB
         return new ResourceLockProvider(
             _fixture.LockStorage,
             _messageBusAdapter,
-            _LongGenerator,
-            _TimeProvider,
-            _Options,
+            Options,
+            LongGenerator,
+            TimeProvider,
             _logger
         );
     }

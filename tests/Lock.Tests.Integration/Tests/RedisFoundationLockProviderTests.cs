@@ -5,7 +5,6 @@ using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.Threading;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Tests.Storage;
 
 namespace Tests.Tests;
@@ -53,9 +52,9 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
         return new ResourceLockProvider(
             _redisLockStorage,
             _messageBusFoundatioAdapter,
+            Options,
             LongGenerator,
             TimeProvider,
-            new OptionsWrapper<ResourceLockOptions>(new() { KeyPrefix = "tests " }),
             LoggerFactory.CreateLogger<ResourceLockProvider>()
         );
     }

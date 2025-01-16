@@ -10,7 +10,6 @@ using Framework.Core;
 using Framework.Messaging;
 using Framework.ResourceLocks.RegularLocks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
 #pragma warning disable IDE0130
@@ -78,13 +77,13 @@ public interface IResourceLockProvider
 public sealed class ResourceLockProvider(
     IResourceLockStorage storage,
     IMessageBus messageBus,
+    ResourceLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
-    IOptions<ResourceLockOptions> optionsAccessor,
     ILogger<ResourceLockProvider> logger
 ) : IResourceLockProvider, IHaveLogger, IHaveTimeProvider
 {
-    private readonly ScopedResourceLockStorage _storage = new(storage, optionsAccessor.Value.KeyPrefix);
+    private readonly ScopedResourceLockStorage _storage = new(storage, options.KeyPrefix);
 
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
         StringComparer.Ordinal

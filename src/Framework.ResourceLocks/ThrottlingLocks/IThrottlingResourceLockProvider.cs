@@ -59,6 +59,8 @@ public sealed class ThrottlingResourceLockProvider(
 
     ILogger IHaveLogger.Logger => logger;
 
+    #region Acquire
+
     public async Task<IResourceThrottlingLock?> TryAcquireAsync(
         string resource,
         TimeSpan? acquireTimeout = null,
@@ -162,6 +164,10 @@ public sealed class ThrottlingResourceLockProvider(
         return new ResourceThrottlingLock(resource, elapsed, timeProvider.GetUtcNow());
     }
 
+    #endregion
+
+    #region IsLocked
+
     public async Task<bool> IsLockedAsync(string resource)
     {
         Argument.IsNotNull(resource);
@@ -171,6 +177,8 @@ public sealed class ThrottlingResourceLockProvider(
 
         return hitCount >= options.MaxHitsPerPeriod;
     }
+
+    #endregion
 
     #region Helpers
 
