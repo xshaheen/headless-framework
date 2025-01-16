@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Database.Sqlite\Framework.Database.Sqlite.csproj" />
+    <ProjectReference Include="..\Framework.Sql.Sqlite\Framework.Sql.Sqlite.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
   </ItemGroup>
 

@@ -5,7 +5,7 @@ using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Nito.AsyncEx;
 
-namespace Framework.Database.Sqlite;
+namespace Framework.Sql.Sqlite;
 
 [PublicAPI]
 public sealed class SqliteConnectionFactory(string connectionString) : ISqlConnectionFactory

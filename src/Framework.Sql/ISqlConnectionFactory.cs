@@ -2,7 +2,7 @@
 
 using System.Data.Common;
 
-namespace Framework.Database;
+namespace Framework.Sql;
 
 [PublicAPI]
 public interface ISqlConnectionFactory : IAsyncDisposable

@@ -1,5 +1,5 @@
-﻿using Framework.Database;
-using Framework.Database.PostgreSql;
+﻿using Framework.Sql;
+using Framework.Sql.PostgreSql;
 using Tests.TestSetup;
 
 namespace Tests;

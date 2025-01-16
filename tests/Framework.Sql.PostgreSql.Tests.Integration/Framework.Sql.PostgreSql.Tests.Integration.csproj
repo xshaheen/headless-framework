@@ -15,8 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Database.PostgreSql\Framework.Database.PostgreSql.csproj" />
-    <ProjectReference Include="..\Framework.Database.Tests.Harness\Framework.Database.Tests.Harness.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Sql.PostgreSql\Framework.Sql.PostgreSql.csproj" />
+    <ProjectReference Include="..\Framework.Sql.Tests.Harness\Framework.Sql.Tests.Harness.csproj" />
   </ItemGroup>
 
 </Project>

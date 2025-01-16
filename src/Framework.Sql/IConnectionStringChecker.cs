@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Database;
+namespace Framework.Sql;
 
 [PublicAPI]
 public interface IConnectionStringChecker

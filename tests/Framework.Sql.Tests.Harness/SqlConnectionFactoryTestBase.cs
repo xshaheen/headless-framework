@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
-using Framework.Database;
+using Framework.Sql;
 
 namespace Tests;
 

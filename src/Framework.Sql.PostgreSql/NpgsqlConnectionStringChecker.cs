@@ -1,30 +1,31 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
-namespace Framework.Database.SqlServer;
+namespace Framework.Sql.PostgreSql;
 
 [PublicAPI]
-public sealed class SqlServerConnectionStringChecker(ILogger<SqlServerConnectionStringChecker> logger)
+public sealed class NpgsqlConnectionStringChecker(ILogger<NpgsqlConnectionStringChecker> logger)
     : IConnectionStringChecker
 {
     public async Task<(bool Connected, bool DatabaseExists)> CheckAsync(string connectionString)
     {
         var result = (Connected: false, DatabaseExists: false);
-        var connString = new SqlConnectionStringBuilder(connectionString) { ConnectTimeout = 1 };
 
-        var oldDatabaseName = connString.InitialCatalog;
-        connString.InitialCatalog = "master";
+        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString) { Timeout = 1 };
+
+        var oldDatabaseName = connectionBuilder.Database;
+        connectionBuilder.Database = "postgres";
 
         try
         {
-            await using var conn = new SqlConnection(connString.ConnectionString);
+            await using var conn = new NpgsqlConnection(connectionBuilder.ConnectionString);
 
             await conn.OpenAsync();
             result.Connected = true;
 
-            await conn.ChangeDatabaseAsync(oldDatabaseName);
+            await conn.ChangeDatabaseAsync(oldDatabaseName!);
             result.DatabaseExists = true;
 
             await conn.CloseAsync();
@@ -33,7 +34,7 @@ public sealed class SqlServerConnectionStringChecker(ILogger<SqlServerConnection
         }
         catch (Exception e)
         {
-            logger.LogWarning(e, "Error checking connection string");
+            logger.LogWarning(e, "Error while checking connection string");
 
             return result;
         }
