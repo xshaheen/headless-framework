@@ -15,6 +15,7 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
     private readonly RedisMessageBus _redisMessageBus;
     private readonly RedisCacheClient _redisStorage;
     private readonly FoundationLockStorageAdapter _redisLockStorage;
+    private readonly MessageBusFoundatioAdapter _messageBusFoundatioAdapter;
 
     public RedisFoundationLockProviderTests(ITestOutputHelper output)
         : base(output)
@@ -25,6 +26,8 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
         _redisMessageBus = new RedisMessageBus(o =>
             o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(LoggerFactory)
         );
+
+        _messageBusFoundatioAdapter = new(_redisMessageBus, GuidGenerator);
 
         _redisStorage = new RedisCacheClient(o =>
             o.ConnectionMultiplexer(muxer).LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer)
@@ -41,6 +44,7 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
         {
             _redisMessageBus?.Dispose();
             _redisStorage?.Dispose();
+            _messageBusFoundatioAdapter?.Dispose();
         }
     }
 
@@ -48,7 +52,7 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
     {
         return new ResourceLockProvider(
             _redisLockStorage,
-            _redisMessageBus,
+            _messageBusFoundatioAdapter,
             LongGenerator,
             TimeProvider,
             new OptionsWrapper<ResourceLockOptions>(new() { KeyPrefix = "tests " }),

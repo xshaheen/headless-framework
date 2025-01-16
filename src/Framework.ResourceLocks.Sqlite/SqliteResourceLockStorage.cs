@@ -118,7 +118,11 @@ public sealed class SqliteResourceLockStorage(SqliteConnection connection) : IRe
             return null;
         }
 
-        var seconds = double.Parse(result, CultureInfo.InvariantCulture);
+        if (!double.TryParse(result, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
+        {
+            return null;
+        }
+
         var expiration = TimeSpan.FromSeconds(seconds);
 
         return expiration;

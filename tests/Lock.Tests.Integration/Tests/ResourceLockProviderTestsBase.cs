@@ -13,6 +13,8 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
 {
     protected static readonly SnowflakeIdLongIdGenerator LongGenerator = new(1);
 
+    protected static readonly SequentialAsStringGuidGenerator GuidGenerator = new();
+
     protected static readonly TimeProvider TimeProvider = TimeProvider.System;
 
     protected abstract IResourceLockProvider GetLockProvider();
