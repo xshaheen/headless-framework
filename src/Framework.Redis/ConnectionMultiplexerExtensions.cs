@@ -2,8 +2,9 @@
 
 using StackExchange.Redis;
 
-namespace Framework.Caching;
+namespace Framework.Redis;
 
+[PublicAPI]
 public static class ConnectionMultiplexerExtensions
 {
     public static async Task FlushAllAsync(this IConnectionMultiplexer muxer)

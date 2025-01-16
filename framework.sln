@@ -83,7 +83,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Messaging", "Messaging", "{
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Database", "Database", "{13DBFD21-B6BD-4CA9-9459-9E102ACF0314}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database.SqlServer", "src\Framework.Database.SqlServer\Framework.Database.SqlServer.csproj", "{9B23510C-6C48-40FB-B976-912BC5B65383}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Sql.SqlServer", "src\Framework.Sql.SqlServer\Framework.Sql.SqlServer.csproj", "{9B23510C-6C48-40FB-B976-912BC5B65383}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api", "Api", "{803B73EC-8061-4DF5-90D0-FD22AC252646}"
 EndProject
@@ -143,13 +143,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Recaptcha.Demo", 
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Orm.Dapper", "src\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj", "{7BD87BBC-9B1C-45CB-90FC-7BFB30433F20}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database.Sqlite", "src\Framework.Database.Sqlite\Framework.Database.Sqlite.csproj", "{886DD054-49F7-4D68-9D7A-7B09A45512AF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Sql.Sqlite", "src\Framework.Sql.Sqlite\Framework.Sql.Sqlite.csproj", "{886DD054-49F7-4D68-9D7A-7B09A45512AF}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database", "src\Framework.Database\Framework.Database.csproj", "{91610995-757E-4103-ABDC-D3EF7E779D1F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Sql", "src\Framework.Sql\Framework.Sql.csproj", "{91610995-757E-4103-ABDC-D3EF7E779D1F}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Orms", "Orms", "{4681258C-BF42-4688-B619-513EB2658D82}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Database.PostgreSql", "src\Framework.Database.PostgreSql\Framework.Database.PostgreSql.csproj", "{D1C2452B-6515-4847-90B5-0102066836D3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Sql.PostgreSql", "src\Framework.Sql.PostgreSql\Framework.Sql.PostgreSql.csproj", "{D1C2452B-6515-4847-90B5-0102066836D3}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Blobs.SshNet", "src\Framework.Blobs.SshNet\Framework.Blobs.SshNet.csproj", "{ED2B6847-51A9-4A4A-AC14-E5FF26913530}"
 EndProject
@@ -161,7 +161,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Kernel", "Kernel", "{6C05A5
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Validations", "Validations", "{6AEA3F3A-D5C8-4CD0-9394-0D3BA6636838}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ResourceLocks", "ResourceLocks", "{A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Locks", "Locks", "{A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.ResourceLocks", "src\Framework.ResourceLocks\Framework.ResourceLocks.csproj", "{9D9123F9-474C-4CFC-8F7D-A22075BCEECD}"
 EndProject
@@ -275,13 +275,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Scalar", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Sqlite.Tests.Integration", "tests\Framework.ResourceLocks.Sqlite.Tests.Integration\Framework.ResourceLocks.Sqlite.Tests.Integration.csproj", "{FA498571-8503-4400-85D2-B00EDEAE7BF2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Database.Sqlite.Tests.Integration", "tests\Framework.Database.Sqlite.Tests.Integration\Framework.Database.Sqlite.Tests.Integration.csproj", "{D383A363-FD42-4D84-93C1-5EF76B1DC59E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sql.Sqlite.Tests.Integration", "tests\Framework.Sql.Sqlite.Tests.Integration\Framework.Sql.Sqlite.Tests.Integration.csproj", "{D383A363-FD42-4D84-93C1-5EF76B1DC59E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Database.Tests.Harness", "tests\Framework.Database.Tests.Harness\Framework.Database.Tests.Harness.csproj", "{A489B210-116A-431E-99E3-BAC7B46F0726}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sql.Tests.Harness", "tests\Framework.Sql.Tests.Harness\Framework.Sql.Tests.Harness.csproj", "{A489B210-116A-431E-99E3-BAC7B46F0726}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Database.SqlServer.Tests.Integration", "tests\Framework.Database.SqlServer.Tests.Integration\Framework.Database.SqlServer.Tests.Integration.csproj", "{DB3F3AD8-0CEF-4290-8CC6-48D3D0ADF081}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sql.SqlServer.Tests.Integration", "tests\Framework.Sql.SqlServer.Tests.Integration\Framework.Sql.SqlServer.Tests.Integration.csproj", "{DB3F3AD8-0CEF-4290-8CC6-48D3D0ADF081}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Database.PostgreSql.Tests.Integration", "tests\Framework.Database.PostgreSql.Tests.Integration\Framework.Database.PostgreSql.Tests.Integration.csproj", "{EFB1A135-0F3D-45EB-B42A-92D96F2682BF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Sql.PostgreSql.Tests.Integration", "tests\Framework.Sql.PostgreSql.Tests.Integration\Framework.Sql.PostgreSql.Tests.Integration.csproj", "{EFB1A135-0F3D-45EB-B42A-92D96F2682BF}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Slugs", "src\Framework.Slugs\Framework.Slugs.csproj", "{B39F6F02-AD29-4899-8C39-56889EFFA642}"
 EndProject
@@ -298,6 +298,12 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Lock.Tests.Integration", "tests\Lock.Tests.Integration\Lock.Tests.Integration.csproj", "{FDA264E5-F316-479C-A4F4-35E93E5E6C28}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.ResourceLocks.Cache", "src\Framework.ResourceLocks.Cache\Framework.ResourceLocks.Cache.csproj", "{72A4EA25-6729-46DF-84FE-32B283191ADA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Redis", "src\Framework.Blobs.Redis\Framework.Blobs.Redis.csproj", "{30FED0F7-3742-4309-9805-1AFB1DA5B9E5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Blobs.Redis.Tests.Integration", "tests\Framework.Blobs.Redis.Tests.Integration\Framework.Blobs.Redis.Tests.Integration.csproj", "{4F8D4BC1-806E-4342-B5CA-206A653EDCE5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Redis", "src\Framework.Redis\Framework.Redis.csproj", "{F30D5471-564F-407F-882C-56B37466C024}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -767,6 +773,18 @@ Global
 		{72A4EA25-6729-46DF-84FE-32B283191ADA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{72A4EA25-6729-46DF-84FE-32B283191ADA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{72A4EA25-6729-46DF-84FE-32B283191ADA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{30FED0F7-3742-4309-9805-1AFB1DA5B9E5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{30FED0F7-3742-4309-9805-1AFB1DA5B9E5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{30FED0F7-3742-4309-9805-1AFB1DA5B9E5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{30FED0F7-3742-4309-9805-1AFB1DA5B9E5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F8D4BC1-806E-4342-B5CA-206A653EDCE5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F8D4BC1-806E-4342-B5CA-206A653EDCE5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F8D4BC1-806E-4342-B5CA-206A653EDCE5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F8D4BC1-806E-4342-B5CA-206A653EDCE5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F30D5471-564F-407F-882C-56B37466C024}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F30D5471-564F-407F-882C-56B37466C024}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F30D5471-564F-407F-882C-56B37466C024}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F30D5471-564F-407F-882C-56B37466C024}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -887,6 +905,9 @@ Global
 		{B17E48C5-D2E8-459A-8CF2-A2585F6650C9} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
 		{FDA264E5-F316-479C-A4F4-35E93E5E6C28} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
 		{72A4EA25-6729-46DF-84FE-32B283191ADA} = {A1BB8AD3-74EA-436A-8B8E-9A3C1095DDBD}
+		{30FED0F7-3742-4309-9805-1AFB1DA5B9E5} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
+		{4F8D4BC1-806E-4342-B5CA-206A653EDCE5} = {B36919A7-AE4D-4C80-93F9-DBD8D79564D0}
+		{F30D5471-564F-407F-882C-56B37466C024} = {13DBFD21-B6BD-4CA9-9459-9E102ACF0314}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}

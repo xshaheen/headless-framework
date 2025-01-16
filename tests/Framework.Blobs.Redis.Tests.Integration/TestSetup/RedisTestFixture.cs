@@ -1,0 +1,30 @@
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Redis;
+using StackExchange.Redis;
+using Testcontainers.Redis;
+using Testcontainers.Xunit;
+
+namespace Tests.TestSetup;
+
+[CollectionDefinition(nameof(RedisTestFixture), DisableParallelization = false)]
+public sealed class RedisTestFixture(IMessageSink messageSink)
+    : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
+        ICollectionFixture<RedisTestFixture>
+{
+    public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
+
+    protected override async Task InitializeAsync()
+    {
+        await base.InitializeAsync();
+        var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
+        // const string connectionString = "127.0.0.1:7006,allowAdmin=true";
+        ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
+        await ConnectionMultiplexer.FlushAllAsync();
+    }
+
+    protected override async Task DisposeAsyncCore()
+    {
+        await ConnectionMultiplexer.DisposeAsync();
+    }
+}

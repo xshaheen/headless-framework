@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,8 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Redis\Framework.Redis.csproj" />
-    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
   </ItemGroup>
 
 </Project>
