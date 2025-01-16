@@ -3,7 +3,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.Database.Sqlite;
+namespace Framework.Sql.Sqlite;
 
 [PublicAPI]
 public sealed class SqliteConnectionStringChecker(ILogger<SqliteConnectionStringChecker> logger)

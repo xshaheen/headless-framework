@@ -2,15 +2,15 @@
 
 using System.Data;
 using System.Data.Common;
-using Microsoft.Data.SqlClient;
 using Nito.AsyncEx;
+using Npgsql;
 
-namespace Framework.Database.SqlServer;
+namespace Framework.Sql.PostgreSql;
 
 [PublicAPI]
-public sealed class SqlServerConnectionFactory(string connectionString) : ISqlConnectionFactory
+public sealed class NpgsqlConnectionFactory(string connectionString) : ISqlConnectionFactory
 {
-    private SqlConnection? _connection;
+    private NpgsqlConnection? _connection;
     private readonly AsyncLock _lock = new();
 
     public string GetConnectionString()
@@ -18,15 +18,15 @@ public sealed class SqlServerConnectionFactory(string connectionString) : ISqlCo
         return connectionString;
     }
 
-    public async ValueTask<SqlConnection> CreateNewConnectionAsync()
+    public async ValueTask<NpgsqlConnection> CreateNewConnectionAsync()
     {
-        var connection = new SqlConnection(connectionString);
+        var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
 
         return connection;
     }
 
-    public async ValueTask<SqlConnection> GetOpenConnectionAsync()
+    public async ValueTask<NpgsqlConnection> GetOpenConnectionAsync()
     {
         using var _ = await _lock.LockAsync();
 

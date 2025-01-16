@@ -1,7 +1,7 @@
 ﻿using Foundatio.Caching;
 using Foundatio.Messaging;
-using Framework.Caching;
 using Framework.Messaging;
+using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.Threading;
 using Microsoft.Extensions.Logging;
@@ -21,7 +21,7 @@ public class RedisFoundationLockProviderTests : ResourceLockProviderTestsBase
         : base(output)
     {
         var muxer = SharedConnection.GetMuxer(LoggerFactory);
-        Async.RunSync(muxer.FlushAllAsync);
+        Async.RunSync(() => muxer.FlushAllAsync());
 
         _redisMessageBus = new RedisMessageBus(o =>
             o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(LoggerFactory)

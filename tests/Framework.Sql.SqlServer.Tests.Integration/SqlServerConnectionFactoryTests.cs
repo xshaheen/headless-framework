@@ -1,18 +1,20 @@
-﻿using Framework.Database;
-using Framework.Database.Sqlite;
+﻿using Framework.Sql;
+using Framework.Sql.SqlServer;
+using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class SqliteConnectionFactoryTests : SqlConnectionFactoryTestBase
+[Collection(nameof(SqlServerTestFixture))]
+public sealed class SqlServerConnectionFactoryTests(SqlServerTestFixture fixture) : SqlConnectionFactoryTestBase
 {
     public override string GetConnection()
     {
-        return "DataSource=:memory:";
+        return fixture.Container.GetConnectionString();
     }
 
     public override ISqlConnectionFactory GetFactory()
     {
-        return new SqliteConnectionFactory(GetConnection());
+        return new SqlServerConnectionFactory(GetConnection());
     }
 
     [Fact]
@@ -52,11 +54,11 @@ public sealed class SqliteConnectionFactoryTests : SqlConnectionFactoryTestBase
         await using var sut = GetFactory();
         var connection = await sut.GetOpenConnectionAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)";
+        command.CommandText = "CREATE TABLE test (id INT PRIMARY KEY, Name NVARCHAR(50))";
         await command.ExecuteNonQueryAsync();
 
         // when
-        command.CommandText = "INSERT INTO test (name) VALUES ('test')";
+        command.CommandText = "INSERT INTO test (Id, Name) VALUES (1, 'test')";
         await command.ExecuteNonQueryAsync();
 
         // then

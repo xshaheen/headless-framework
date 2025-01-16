@@ -8,13 +8,15 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.MsSql" />
+    <PackageReference Include="Testcontainers.Xunit" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Database.Sqlite\Framework.Database.Sqlite.csproj" />
-    <ProjectReference Include="..\Framework.Database.Tests.Harness\Framework.Database.Tests.Harness.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Sql.SqlServer\Framework.Sql.SqlServer.csproj" />
+    <ProjectReference Include="..\Framework.Sql.Tests.Harness\Framework.Sql.Tests.Harness.csproj" />
   </ItemGroup>
 
 </Project>
