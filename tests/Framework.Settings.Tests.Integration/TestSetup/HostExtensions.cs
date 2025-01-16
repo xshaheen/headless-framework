@@ -1,13 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.ResourceLocks.Local;
+using Framework.Messaging;
+using Framework.ResourceLocks;
+using Framework.ResourceLocks.Cache;
 using Framework.Settings;
 using Framework.Settings.Seeders;
 using Framework.Settings.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
+using IMessageBus = Framework.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
@@ -25,8 +30,7 @@ public static class HostExtensions
         services.AddSingleton(Substitute.For<ICurrentUser>());
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
-        services.AddInMemoryCache();
-        services.AddLocalResourceLock();
+        services._AddInMemoryResourceLock();
 
         services
             .AddSettingsManagementCore()
@@ -38,5 +42,20 @@ public static class HostExtensions
         services.RemoveHostedService<SettingsInitializationBackgroundService>();
 
         return services;
+    }
+
+    private static void _AddInMemoryResourceLock(this IServiceCollection services)
+    {
+        // Cache
+        services.AddInMemoryCache();
+
+        // MessageBus
+        services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
+        services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
+
+        services.AddResourceLock(
+            provider => new CacheResourceLockStorage(provider.GetRequiredService<ICache>()),
+            provider => provider.GetRequiredService<IMessageBus>()
+        );
     }
 }

@@ -1,14 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Messaging;
 using Framework.Permissions;
 using Framework.Permissions.Seeders;
 using Framework.Permissions.Storage.EntityFramework;
-using Framework.ResourceLocks.Local;
+using Framework.ResourceLocks;
+using Framework.ResourceLocks.Cache;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
+using IMessageBus = Framework.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
@@ -30,18 +34,29 @@ public static class HostExtensions
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
         services.AddSingleton(Substitute.For<IDistributedMessagePublisher>());
 
-        services.AddInMemoryCache();
-        services.AddLocalResourceLock();
+        services._AddInMemoryResourceLock();
 
         services
             .AddPermissionsManagementCore()
-            .AddPermissionsManagementEntityFrameworkStorage(options =>
-            {
-                options.UseNpgsql(postgreConnectionString);
-            });
+            .AddPermissionsManagementEntityFrameworkStorage(options => options.UseNpgsql(postgreConnectionString));
 
         services.RemoveHostedService<PermissionsInitializationBackgroundService>();
 
         return services;
+    }
+
+    private static void _AddInMemoryResourceLock(this IServiceCollection services)
+    {
+        // Cache
+        services.AddInMemoryCache();
+
+        // MessageBus
+        services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
+        services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
+
+        services.AddResourceLock(
+            provider => new CacheResourceLockStorage(provider.GetRequiredService<ICache>()),
+            provider => provider.GetRequiredService<IMessageBus>()
+        );
     }
 }

@@ -12,7 +12,7 @@ namespace Framework.ResourceLocks;
 [PublicAPI]
 public static class AddResourceLockExtensions
 {
-    public static void AddResourceLockCore(
+    public static void AddResourceLock(
         this IServiceCollection services,
         Func<IServiceProvider, IResourceLockStorage> storageSetupAction,
         Func<IServiceProvider, IMessageBus> busSetupAction,

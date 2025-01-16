@@ -20,6 +20,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
+    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Cache\Framework.ResourceLocks.Cache.csproj" />
   </ItemGroup>
 
   <ItemGroup>
