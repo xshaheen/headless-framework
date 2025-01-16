@@ -1,4 +1,4 @@
-﻿using Framework.Caching;
+﻿using Framework.Redis;
 using Framework.ResourceLocks;
 using Tests.TestSetup;
 

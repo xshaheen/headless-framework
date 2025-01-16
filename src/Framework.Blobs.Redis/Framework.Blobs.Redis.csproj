@@ -9,8 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Redis\Framework.Redis.csproj" />
-    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+    <ProjectReference Include="..\Framework.Blobs\Framework.Blobs.csproj" />
   </ItemGroup>
 
 </Project>

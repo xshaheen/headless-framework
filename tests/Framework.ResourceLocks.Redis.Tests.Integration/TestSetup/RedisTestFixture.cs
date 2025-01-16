@@ -1,8 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Caching;
+using Framework.Redis;
 using Framework.ResourceLocks.Redis;
-using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
 namespace Tests.TestSetup;
@@ -28,11 +27,12 @@ public sealed class RedisTestFixture // (IMessageSink messageSink)
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
         await ConnectionMultiplexer.FlushAllAsync();
 
-        LockStorage = new(ConnectionMultiplexer, NullLogger<RedisResourceLockStorage>.Instance);
-        await LockStorage.LoadScriptsAsync();
+        var scriptLoader = new FrameworkRedisScriptsLoader(ConnectionMultiplexer);
+        await scriptLoader.LoadScriptsAsync();
 
-        ThrottlingLockStorage = new(ConnectionMultiplexer, NullLogger<RedisThrottlingResourceLockStorage>.Instance);
-        await ThrottlingLockStorage.LoadScriptsAsync();
+        LockStorage = new(ConnectionMultiplexer, scriptLoader);
+
+        ThrottlingLockStorage = new(ConnectionMultiplexer, scriptLoader);
     }
 
     // protected override async Task DisposeAsyncCore()

@@ -6,7 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Foundatio" />
     <PackageReference Include="Foundatio.Redis" />
   </ItemGroup>
 
@@ -14,6 +13,7 @@
     <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
+    <ProjectReference Include="..\Framework.Redis\Framework.Redis.csproj" />
     <ProjectReference Include="..\Framework.Serializer\Framework.Serializer.csproj" />
   </ItemGroup>
 

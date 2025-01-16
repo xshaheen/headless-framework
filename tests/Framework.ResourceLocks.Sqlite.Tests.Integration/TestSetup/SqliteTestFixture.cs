@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Database.Sqlite;
 using Framework.ResourceLocks.Sqlite;
+using Framework.Sql.Sqlite;
 using Microsoft.Data.Sqlite;
 
 namespace Tests.TestSetup;
