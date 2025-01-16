@@ -13,6 +13,7 @@ public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
     private readonly InMemoryCacheClient _inMemoryCacheClient = new();
     private readonly InMemoryMessageBus _inMemoryMessageBus;
     private readonly FoundationLockStorageAdapter _inMemoryStorage;
+    private readonly MessageBusFoundatioAdapter _messageBusFoundatioAdapter;
 
     public InMemoryFoundationLockProviderTests(ITestOutputHelper output)
         : base(output)
@@ -21,6 +22,8 @@ public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
         _inMemoryMessageBus = new(builder =>
             builder.Topic("test-lock").LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer)
         );
+
+        _messageBusFoundatioAdapter = new MessageBusFoundatioAdapter(_inMemoryMessageBus, GuidGenerator);
     }
 
     protected override void Dispose(bool disposing)
@@ -31,6 +34,7 @@ public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
         {
             _inMemoryCacheClient?.Dispose();
             _inMemoryMessageBus?.Dispose();
+            _messageBusFoundatioAdapter?.Dispose();
         }
     }
 
@@ -38,7 +42,7 @@ public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
     {
         return new ResourceLockProvider(
             _inMemoryStorage,
-            _inMemoryMessageBus,
+            _messageBusFoundatioAdapter,
             LongGenerator,
             TimeProvider,
             new OptionsWrapper<ResourceLockOptions>(new() { KeyPrefix = "tests " }),
