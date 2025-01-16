@@ -1,14 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Foundatio.Messaging;
 using Framework.Api;
 using Framework.Caching;
 using Framework.Messaging;
 using Framework.Permissions;
 using Framework.Permissions.Storage.EntityFramework;
-using Framework.ResourceLocks.Local;
+using Framework.ResourceLocks;
+using Framework.ResourceLocks.Cache;
 using Microsoft.EntityFrameworkCore;
 using Savorboard.CAP.InMemoryMessageQueue;
+using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
+using IMessageBus = Framework.Messaging.IMessageBus;
 
 // To add a migration use:
 // dotnet ef migrations add InitialMigration -p .\demo\Framework.EntityFramework.Migrations.Startup
@@ -22,8 +26,9 @@ using Savorboard.CAP.InMemoryMessageQueue;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddFrameworkApiServices();
-builder.Services.AddInMemoryCache();
-builder.Services.AddLocalResourceLock();
+
+addInMemoryResourceLock(builder.Services);
+
 builder.Services.AddCapDistributedMessaging(options =>
 {
     options.UseInMemoryStorage();
@@ -41,3 +46,20 @@ builder
     });
 
 await builder.Build().RunAsync();
+
+return;
+
+static void addInMemoryResourceLock(IServiceCollection services)
+{
+    // Cache
+    services.AddInMemoryCache();
+
+    // MessageBus
+    services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
+    services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
+
+    services.AddResourceLock(
+        provider => new CacheResourceLockStorage(provider.GetRequiredService<ICache>()),
+        provider => provider.GetRequiredService<IMessageBus>()
+    );
+}

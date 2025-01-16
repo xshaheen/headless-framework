@@ -11,7 +11,8 @@ using Testcontainers.PostgreSql;
 
 namespace Tests.TestSetup;
 
-public sealed class PermissionsTestFixture : IAsyncLifetime, IDisposable
+[CollectionDefinition(nameof(PermissionsTestFixture))]
+public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestFixture>, IAsyncLifetime, IDisposable
 {
     private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
     private AsyncLazy<Respawner>? _respawner;
@@ -81,6 +82,3 @@ public sealed class PermissionsTestFixture : IAsyncLifetime, IDisposable
         await command.ExecuteNonQueryAsync();
     }
 }
-
-[CollectionDefinition(nameof(PermissionsTestFixture))]
-public sealed class PermissionsTestCollection : ICollectionFixture<PermissionsTestFixture>;
