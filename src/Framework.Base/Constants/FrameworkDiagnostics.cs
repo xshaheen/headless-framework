@@ -14,9 +14,10 @@ public static class FrameworkDiagnostics
 
     static FrameworkDiagnostics()
     {
-        var packageVersion = typeof(FrameworkDiagnostics).Assembly.GetAssemblyVersion();
+        var product = typeof(FrameworkDiagnostics).Assembly.GetAssemblyProduct() ?? "Framework";
+        var version = typeof(FrameworkDiagnostics).Assembly.GetAssemblyVersion() ?? "1.0.0";
 
-        ActivitySource = new("Framework", packageVersion);
-        Meter = new("Framework", packageVersion);
+        ActivitySource = new(product, version);
+        Meter = new(version, version);
     }
 }

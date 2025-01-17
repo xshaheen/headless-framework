@@ -6,6 +6,7 @@ using Framework.Caching;
 using Framework.Messaging;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
+using Framework.ResourceLocks.RegularLocks;
 using Framework.Settings;
 using Framework.Settings.Seeders;
 using Framework.Settings.Storage.EntityFramework;
@@ -43,14 +44,17 @@ public static class HostExtensions
 
     private static void _AddInMemoryResourceLock(this IServiceCollection services)
     {
+        // Cache
         services.AddInMemoryCache();
+        services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
+        // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
         services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
 
         services.AddResourceLock(
-            provider => new CacheResourceLockStorage(provider.GetRequiredService<ICache>()),
+            provider => provider.GetRequiredService<IResourceLockStorage>(),
             provider => provider.GetRequiredService<IMessageBus>(),
-            (options, _) => options.KeyPrefix = "test"
+            (options, _) => options.KeyPrefix = "resource-locks:"
         );
     }
 }
