@@ -19,10 +19,10 @@ using IMessageBus = Framework.Messaging.IMessageBus;
 // dotnet ef migrations add InitialMigration -p .\demo\Framework.EntityFramework.Migrations.Startup
 
 // To generate the script use:
-// dotnet ef migrations script -s .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.sql
+// dotnet ef migrations script --idempotent -s .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.sql
 
 // To generate the bundler use:
-// dotnet ef migrations bundle -p .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.exe
+// dotnet ef migrations bundle --idempotent -p .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.exe
 
 var builder = WebApplication.CreateBuilder(args);
 

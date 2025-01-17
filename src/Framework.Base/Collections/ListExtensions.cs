@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using Framework.Checks;
 
 #pragma warning disable IDE0130
@@ -233,5 +234,12 @@ public static class ListExtensions
         source.Add(item);
 
         return item;
+    }
+
+    /// <inheritdoc cref="CollectionsMarshal.AsSpan{T}"/>
+    [MustUseReturnValue]
+    public static Span<T> AsSpan<T>(this List<T> source)
+    {
+        return CollectionsMarshal.AsSpan(source);
     }
 }

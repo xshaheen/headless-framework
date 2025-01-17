@@ -9,14 +9,6 @@ namespace System.Collections.Generic;
 [PublicAPI]
 public static class ConcurrentQueueExtensions
 {
-    public static void EnqueueRange<T>(this ConcurrentQueue<T> queue, params T[] items)
-    {
-        foreach (var item in items)
-        {
-            queue.Enqueue(item);
-        }
-    }
-
     public static void EnqueueRange<T>(this ConcurrentQueue<T> queue, IEnumerable<T> items)
     {
         foreach (var item in items)
@@ -25,7 +17,7 @@ public static class ConcurrentQueueExtensions
         }
     }
 
-    public static void EnqueueRange<T>(this ConcurrentQueue<T> queue, ReadOnlySpan<T> items)
+    public static void EnqueueRange<T>(this ConcurrentQueue<T> queue, params ReadOnlySpan<T> items)
     {
         foreach (var item in items)
         {

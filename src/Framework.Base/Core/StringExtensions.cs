@@ -231,7 +231,7 @@ public static class StringExtensions
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
-    public static string? RemovePostfix(this string? input, params string[]? postfixes)
+    public static string? RemovePostfix(this string? input, params ReadOnlySpan<string> postfixes)
     {
         return input.RemovePostfix(StringComparison.Ordinal, postfixes);
     }
@@ -246,14 +246,18 @@ public static class StringExtensions
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
-    public static string? RemovePostfix(this string? input, StringComparison comparisonType, params string[]? postfixes)
+    public static string? RemovePostfix(
+        this string? input,
+        StringComparison comparisonType,
+        params ReadOnlySpan<string> postfixes
+    )
     {
         if (string.IsNullOrEmpty(input))
         {
             return null;
         }
 
-        if (postfixes.IsNullOrEmpty())
+        if (postfixes.IsEmpty)
         {
             return input;
         }
@@ -293,7 +297,7 @@ public static class StringExtensions
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
-    public static string? RemoveCharacters(this string? input, params char[] unwantedCharacters)
+    public static string? RemoveCharacters(this string? input, params ReadOnlySpan<char> unwantedCharacters)
     {
         return string.IsNullOrEmpty(input) ? null : string.Concat(input.Split(unwantedCharacters));
     }
@@ -307,7 +311,7 @@ public static class StringExtensions
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
-    public static string? RemovePrefix(this string? input, params string[]? prefixes)
+    public static string? RemovePrefix(this string? input, params ReadOnlySpan<string> prefixes)
     {
         return input.RemovePrefix(StringComparison.Ordinal, prefixes);
     }
@@ -322,14 +326,18 @@ public static class StringExtensions
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
-    public static string? RemovePrefix(this string? input, StringComparison comparisonType, params string[]? prefixes)
+    public static string? RemovePrefix(
+        this string? input,
+        StringComparison comparisonType,
+        params ReadOnlySpan<string> prefixes
+    )
     {
         if (input.IsNullOrEmpty())
         {
             return null;
         }
 
-        if (prefixes.IsNullOrEmpty())
+        if (prefixes.IsEmpty)
         {
             return input;
         }
@@ -356,14 +364,14 @@ public static class StringExtensions
     [SystemPure]
     [JetBrainsPure]
     [return: NotNullIfNotNull(nameof(input))]
-    public static string? RemovePrefix(this string? input, params char[]? prefixes)
+    public static string? RemovePrefix(this string? input, params ReadOnlySpan<char> prefixes)
     {
         if (input.IsNullOrEmpty())
         {
             return null;
         }
 
-        if (prefixes.IsNullOrEmpty())
+        if (prefixes.IsEmpty)
         {
             return input;
         }
