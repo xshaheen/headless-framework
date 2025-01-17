@@ -89,8 +89,8 @@ public static class AddPermissionsExtensions
             options.GrantProviders.Add<UserPermissionGrantProvider>();
         });
 
-        services.TryAddSingleton<IPermissionGrantProvider, RolePermissionGrantProvider>();
-        services.TryAddSingleton<IPermissionGrantProvider, UserPermissionGrantProvider>();
+        services.AddSingleton<RolePermissionGrantProvider>();
+        services.AddSingleton<UserPermissionGrantProvider>();
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)
