@@ -9,6 +9,7 @@ using Framework.Permissions;
 using Framework.Permissions.Storage.EntityFramework;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
+using Framework.ResourceLocks.RegularLocks;
 using Microsoft.EntityFrameworkCore;
 using Savorboard.CAP.InMemoryMessageQueue;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
@@ -53,13 +54,13 @@ static void addInMemoryResourceLock(IServiceCollection services)
 {
     // Cache
     services.AddInMemoryCache();
-
+    services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
     // MessageBus
     services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
     services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
 
     services.AddResourceLock(
-        provider => new CacheResourceLockStorage(provider.GetRequiredService<ICache>()),
+        provider => provider.GetRequiredService<IResourceLockStorage>(),
         provider => provider.GetRequiredService<IMessageBus>()
     );
 }

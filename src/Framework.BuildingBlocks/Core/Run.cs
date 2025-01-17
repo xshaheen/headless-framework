@@ -1,252 +1,271 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Polly;
-using Polly.Retry;
+using Framework.Checks;
+using Humanizer;
+using Microsoft.Extensions.Logging;
 
 namespace Framework.Core;
 
-[PublicAPI]
 public static class Run
 {
     public static Task DelayedAsync(
         TimeSpan delay,
-        Func<Task> action,
+        Func<CancellationToken, Task> action,
         TimeProvider? timeProvider = null,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsPositive(delay);
+        Argument.IsNotNull(action);
+
         timeProvider ??= TimeProvider.System;
 
-        return cancellationToken.IsCancellationRequested
-            ? Task.CompletedTask
-            : Task.Run(
-                async () =>
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.Run(
+            async () =>
+            {
+                if (delay.Ticks > 0)
                 {
-                    if (delay.Ticks > 0)
-                    {
-                        await Task.Delay(delay, timeProvider, cancellationToken).AnyContext();
-                    }
+                    await timeProvider.Delay(delay, cancellationToken).AnyContext();
+                }
 
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        return;
-                    }
+                cancellationToken.ThrowIfCancellationRequested();
 
-                    await action().AnyContext();
-                },
-                cancellationToken
-            );
-    }
-
-    public static void WithRetries(
-        Action callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        resiliencePipeline.Execute(callback);
-    }
-
-    public static TResult WithRetries<TResult>(
-        Func<TResult> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        return resiliencePipeline.Execute(static callback => callback(), callback);
-    }
-
-    public static async Task WithRetriesAsync(
-        Func<Task> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        await resiliencePipeline.ExecuteAsync(
-            static async (callback, _) => await callback(),
-            callback,
+                await action(cancellationToken).AnyContext();
+            },
             cancellationToken
         );
     }
 
-    public static async Task<TResult> WithRetriesAsync<TResult>(
-        Func<Task<TResult>> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        return await resiliencePipeline.ExecuteAsync(
-            static async (callback, _) => await callback(),
-            callback,
-            cancellationToken
-        );
-    }
-
-    public static async Task<TResult> WithRetriesAsync<TResult>(
-        Func<CancellationToken, Task<TResult>> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        return await resiliencePipeline.ExecuteAsync(
-            static async (callback, token) => await callback(token),
-            callback,
-            cancellationToken
-        );
-    }
-
-    public static ValueTask WithRetriesAsync(
-        Func<ValueTask> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        return resiliencePipeline.ExecuteAsync(static (callback, _) => callback(), callback, cancellationToken);
-    }
+    #region Retry with Return
 
     public static async Task<TResult> WithRetriesAsync<TResult, TState>(
         TState state,
-        Func<TState, CancellationToken, Task<TResult>> callback,
+        Func<TState, CancellationToken, Task<TResult>> action,
         int maxAttempts = 5,
         TimeSpan? retryInterval = null,
         TimeProvider? timeProvider = null,
+        ILogger? logger = null,
         CancellationToken cancellationToken = default
     )
     {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
+        ArgumentNullException.ThrowIfNull(action);
 
-        var newState = (state, callback);
+        timeProvider ??= TimeProvider.System;
+        var attempts = 1;
+        var startTime = timeProvider.GetUtcNow();
+        var currentBackoffTime = _DefaultBackoffIntervals[0];
 
-        return await resiliencePipeline.ExecuteAsync(
-            static async (newState, token) => await newState.callback(newState.state, token),
-            newState,
-            cancellationToken
-        );
-    }
-
-    public static async Task<TResult> WithRetriesAsync<TResult, TState>(
-        TState state,
-        Func<TState, Task<TResult>> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        var newState = (state, callback);
-
-        return await resiliencePipeline.ExecuteAsync(
-            static async (newState, _) => await newState.callback(newState.state),
-            newState,
-            cancellationToken
-        );
-    }
-
-    public static ValueTask<TResult> WithRetriesAsync<TResult, TState>(
-        TState state,
-        Func<TState, ValueTask<TResult>> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        var newState = (state, callback);
-
-        return resiliencePipeline.ExecuteAsync(
-            static (newState, _) => newState.callback(newState.state),
-            newState,
-            cancellationToken
-        );
-    }
-
-    public static ValueTask<TResult> WithRetriesAsync<TResult, TState>(
-        TState state,
-        Func<TState, CancellationToken, ValueTask<TResult>> callback,
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var resiliencePipeline = _CreateRetryPipeline(maxAttempts, retryInterval, timeProvider);
-
-        return resiliencePipeline.ExecuteAsync(callback, state, cancellationToken);
-    }
-
-    #region Helpers
-
-    private static readonly Dictionary<
-        (int MaxAttempts, TimeSpan? RetryInterval, TimeProvider? TimeProvider),
-        ResiliencePipeline
-    > _RetryPipelines = [];
-
-    private static ResiliencePipeline _CreateRetryPipeline(
-        int maxAttempts = 5,
-        TimeSpan? retryInterval = null,
-        TimeProvider? timeProvider = null
-    )
-    {
-        var key = (maxAttempts, retryInterval, timeProvider);
-
-        if (_RetryPipelines.TryGetValue(key, out var resiliencePipeline))
+        if (retryInterval != null)
         {
-            return resiliencePipeline;
+            currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
         }
 
-        var pipeline = _CoreCreateResiliencePipeline(maxAttempts, retryInterval, timeProvider);
+        do
+        {
+            if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "Retrying {Attempts} attempt after {Delay:g}...",
+                    attempts,
+                    timeProvider.GetUtcNow().Subtract(startTime)
+                );
+            }
 
-        _RetryPipelines[key] = pipeline;
+            try
+            {
+                return await action(state, cancellationToken).AnyContext();
+            }
+            catch (Exception ex) when (attempts < maxAttempts)
+            {
+                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                {
+                    logger.LogError(ex, "Retry error: {Message}", ex.Message);
+                }
 
-        return pipeline;
+                await timeProvider.SafeDelay(currentBackoffTime.Milliseconds(), cancellationToken).AnyContext();
+            }
+
+            if (retryInterval == null)
+            {
+                currentBackoffTime = _DefaultBackoffIntervals[Math.Min(attempts, _DefaultBackoffIntervals.Length - 1)];
+            }
+
+            attempts++;
+        } while (attempts <= maxAttempts && !cancellationToken.IsCancellationRequested);
+
+        throw new TaskCanceledException("Should not get here");
     }
 
-    private static ResiliencePipeline _CoreCreateResiliencePipeline(
-        int maxAttempts,
-        TimeSpan? retryInterval,
-        TimeProvider? timeProvider
+    public static Task<TResult> WithRetriesAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> action,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default
     )
     {
-        var options = new RetryStrategyOptions
-        {
-            Name = "RunWithRetriesPolicy",
-            MaxRetryAttempts = maxAttempts,
-            BackoffType = DelayBackoffType.Exponential,
-            UseJitter = false,
-            Delay = retryInterval ?? TimeSpan.FromSeconds(1),
-            ShouldHandle = new PredicateBuilder().Handle<Exception>(),
-        };
+        return WithRetriesAsync(
+            action,
+            static (action, token) => action(token),
+            maxAttempts,
+            retryInterval,
+            timeProvider,
+            logger,
+            cancellationToken
+        );
+    }
 
-        var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
+    public static Task<TResult> WithRetriesAsync<TResult, TState>(
+        TState state,
+        Func<TState, Task<TResult>> action,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return WithRetriesAsync(
+            (action, state),
+            static (tuple, _) => tuple.action(tuple.state),
+            maxAttempts,
+            retryInterval,
+            timeProvider,
+            logger,
+            cancellationToken
+        );
+    }
 
-        return builder.AddRetry(options).Build();
+    public static Task<TResult> WithRetriesAsync<TResult>(
+        Func<Task<TResult>> action,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return WithRetriesAsync(
+            action,
+            static (action, _) => action(),
+            maxAttempts,
+            retryInterval,
+            timeProvider,
+            logger,
+            cancellationToken
+        );
     }
 
     #endregion
+
+    #region Retry without Return
+
+    public static Task WithRetriesAsync<TState>(
+        TState state,
+        Func<TState, CancellationToken, Task> action,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return WithRetriesAsync(
+            (action, state),
+            static async (tuple, token) =>
+            {
+                await tuple.action(tuple.state, token).AnyContext();
+
+                return (object?)null;
+            },
+            maxAttempts,
+            retryInterval,
+            timeProvider,
+            logger,
+            cancellationToken
+        );
+    }
+
+    public static Task WithRetriesAsync(
+        Func<CancellationToken, Task> action,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return WithRetriesAsync(
+            action,
+            static async (action, token) =>
+            {
+                await action(token).AnyContext();
+
+                return (object?)null;
+            },
+            maxAttempts,
+            retryInterval,
+            timeProvider,
+            logger,
+            cancellationToken
+        );
+    }
+
+    public static Task WithRetriesAsync<TState>(
+        TState state,
+        Func<TState, Task> action,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return WithRetriesAsync(
+            (action, state),
+            static async (tuple, _) =>
+            {
+                await tuple.action(tuple.state).AnyContext();
+
+                return (object?)null;
+            },
+            maxAttempts,
+            retryInterval,
+            timeProvider,
+            logger,
+            cancellationToken
+        );
+    }
+
+    public static Task WithRetriesAsync(
+        Func<Task> action,
+        int maxAttempts = 5,
+        TimeSpan? retryInterval = null,
+        TimeProvider? timeProvider = null,
+        ILogger? logger = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return WithRetriesAsync(
+            action,
+            static async (action, _) =>
+            {
+                await action().AnyContext();
+
+                return (object?)null;
+            },
+            maxAttempts,
+            retryInterval,
+            timeProvider,
+            logger,
+            cancellationToken
+        );
+    }
+
+    #endregion
+
+    private static readonly int[] _DefaultBackoffIntervals = [100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000];
 }

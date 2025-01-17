@@ -12,7 +12,7 @@ public sealed class RunTests
         var delay = TimeSpan.FromMilliseconds(200);
         var actionExecuted = false;
 
-        async Task action()
+        async Task action(CancellationToken _)
         {
             actionExecuted = true;
 
@@ -27,56 +27,6 @@ public sealed class RunTests
         // then
         actionExecuted.Should().BeTrue();
         elapsed.Should().BeGreaterOrEqualTo(delay);
-    }
-
-    [Fact]
-    public void should_execute_callback_with_retries_when_with_retries_is_called()
-    {
-        // given
-        var attempts = 0;
-
-        var callback = () =>
-        {
-            attempts++;
-
-            if (attempts < 3)
-            {
-                throw new InvalidOperationException("Retry");
-            }
-        };
-
-        // when
-        var action = () => Run.WithRetries(callback, maxAttempts: 5);
-
-        // then
-        action.Should().NotThrow();
-        attempts.Should().Be(3);
-    }
-
-    [Fact]
-    public void should_return_result_with_retries_when_with_retries_is_called()
-    {
-        // given
-        var attempts = 0;
-
-        int callback()
-        {
-            attempts++;
-
-            if (attempts < 3)
-            {
-                throw new InvalidOperationException("Retry");
-            }
-
-            return 42;
-        }
-
-        // when
-        var result = Run.WithRetries(callback, maxAttempts: 5);
-
-        // then
-        result.Should().Be(42);
-        attempts.Should().Be(3);
     }
 
     [Fact]

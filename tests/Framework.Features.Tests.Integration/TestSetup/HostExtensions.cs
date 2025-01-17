@@ -9,6 +9,7 @@ using Framework.Features.Storage.EntityFramework;
 using Framework.Messaging;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
+using Framework.ResourceLocks.RegularLocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
@@ -46,14 +47,15 @@ public static class HostExtensions
     {
         // Cache
         services.AddInMemoryCache();
-
+        services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
         services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
 
         services.AddResourceLock(
-            provider => new CacheResourceLockStorage(provider.GetRequiredService<ICache>()),
-            provider => provider.GetRequiredService<IMessageBus>()
+            provider => provider.GetRequiredService<IResourceLockStorage>(),
+            provider => provider.GetRequiredService<IMessageBus>(),
+            (options, _) => options.KeyPrefix = "resource-locks:"
         );
     }
 }
