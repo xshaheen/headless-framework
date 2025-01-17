@@ -15,7 +15,7 @@ public static class QueueExtensions
         }
     }
 
-    public static void EnqueueRange<T>(this Queue<T> queue, IEnumerable<T> items)
+    public static void EnqueueRange<T>(this Queue<T> queue, params IEnumerable<T> items)
     {
         foreach (var item in items)
         {
@@ -23,7 +23,7 @@ public static class QueueExtensions
         }
     }
 
-    public static void EnqueueRange<T>(this Queue<T> queue, ReadOnlySpan<T> items)
+    public static void EnqueueRange<T>(this Queue<T> queue, params ReadOnlySpan<T> items)
     {
         foreach (var item in items)
         {

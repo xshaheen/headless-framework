@@ -18,6 +18,28 @@ public static partial class Argument
     /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ReadOnlySpan<T> IsNotEmpty<T>(
+        ReadOnlySpan<T> argument,
+        string? message = null,
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null
+    )
+    {
+        return argument.IsEmpty
+            ? throw new ArgumentException(
+                message ?? $"Required argument {paramName.ToAssertString()} was empty.",
+                paramName
+            )
+            : argument;
+    }
+
+    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is empty.</summary>
+    /// <param name="argument">The argument to check.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <returns><paramref name="paramName" /> if the value is not empty.</returns>
+    /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]
     public static IReadOnlyCollection<T>? IsNotEmpty<T>(
         IReadOnlyCollection<T>? argument,

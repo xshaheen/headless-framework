@@ -71,9 +71,9 @@ public static class RandomHelper
     /// </summary>
     /// <typeparam name="T">Type of the objects</typeparam>
     /// <param name="objects">List of object to select a random one</param>
-    public static T GetRandomOf<T>(params T[] objects)
+    public static T GetRandomOf<T>(params ReadOnlySpan<T> objects)
     {
-        Argument.IsNotNullOrEmpty(objects);
+        Argument.IsNotEmpty(objects);
 
         return objects[GetRandom(0, objects.Length)];
     }
