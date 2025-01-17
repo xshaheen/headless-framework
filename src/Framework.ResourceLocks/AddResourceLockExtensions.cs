@@ -28,8 +28,6 @@ public static class AddResourceLockExtensions
             services.ConfigureSingleton(optionSetupAction);
         }
 
-        services.AddSingleton(storageSetupAction);
-        services.AddSingleton(busSetupAction);
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
 

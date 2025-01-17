@@ -9,7 +9,7 @@ namespace Framework.ResourceLocks;
 public sealed class ThrottlingResourceLockOptions
 {
     /// <summary>Resource lock key prefix.</summary>
-    public string KeyPrefix { get; set; } = "";
+    public string KeyPrefix { get; set; } = "throttling-lock:";
 
     public int MaxHitsPerPeriod { get; set; } = 100;
 
