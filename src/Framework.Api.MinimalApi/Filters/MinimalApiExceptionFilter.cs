@@ -109,7 +109,7 @@ public sealed partial class MinimalApiExceptionFilter(
                 return TypedResults.StatusCode(StatusCodes.Status500InternalServerError);
             }
 
-            var details = problemDetailsCreator.InternalError(context.HttpContext, exception.ExpandExceptionMessage());
+            var details = problemDetailsCreator.InternalError(context.HttpContext, exception.ExpandMessage());
 
             return TypedResults.Problem(details);
         }

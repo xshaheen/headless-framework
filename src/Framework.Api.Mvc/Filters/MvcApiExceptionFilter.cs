@@ -192,10 +192,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
             return;
         }
 
-        var details = _problemDetailsCreator.InternalError(
-            context.HttpContext,
-            context.Exception.ExpandExceptionMessage()
-        );
+        var details = _problemDetailsCreator.InternalError(context.HttpContext, context.Exception.ExpandMessage());
 
         context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status500InternalServerError };
         context.ExceptionHandled = true;
