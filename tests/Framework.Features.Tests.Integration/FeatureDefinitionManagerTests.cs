@@ -54,8 +54,8 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture)
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>();
         builder.Services.ConfigureFeaturesServices(fixture.ConnectionString);
+        builder.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>();
         var host = builder.Build();
 
         return host;

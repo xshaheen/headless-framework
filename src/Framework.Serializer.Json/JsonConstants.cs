@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Encodings.Web;
+using Framework.Serializer.Json.Converters;
 using NetTopologySuite.IO.Converters;
 
 #pragma warning disable IDE0130
@@ -82,5 +83,6 @@ public static class JsonConstants
 
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
         options.Converters.Add(new GeoJsonConverterFactory());
+        options.Converters.Add(new IpAddressJsonConverter());
     }
 }

@@ -137,4 +137,57 @@ public static class DateTimeOffsetExtensions
     {
         return new(date.Year, date.Month, date.Day, date.Hour, 0, 0, 0, date.Offset);
     }
+
+    /// <summary>
+    /// Safely adds a specified <see cref="TimeSpan"/> to the given <see cref="DateTimeOffset"/>.
+    /// </summary>
+    /// <param name="date">The <see cref="DateTimeOffset"/> to which the <paramref name="value"/> will be added.</param>
+    /// <param name="value">The <see cref="TimeSpan"/> to add.</param>
+    /// <returns>
+    /// A new <see cref="DateTimeOffset"/> that is the sum of the original <paramref name="date"/> and the <paramref name="value"/>.
+    /// If the result is less than <see cref="DateTimeOffset.MinValue"/>, <see cref="DateTimeOffset.MinValue"/> is returned.
+    /// If the result is greater than <see cref="DateTimeOffset.MaxValue"/>, <see cref="DateTimeOffset.MaxValue"/> is returned.
+    /// </returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTimeOffset SafeAdd(this DateTimeOffset date, TimeSpan value)
+    {
+        if (date.Ticks + value.Ticks < DateTimeOffset.MinValue.Ticks)
+        {
+            return DateTimeOffset.MinValue;
+        }
+
+        if (date.Ticks + value.Ticks > DateTimeOffset.MaxValue.Ticks)
+        {
+            return DateTimeOffset.MaxValue;
+        }
+
+        return date.Add(value);
+    }
+
+    /// <summary>
+    /// Floors the given <see cref="DateTimeOffset"/> to the nearest interval of the specified <see cref="TimeSpan"/>.
+    /// </summary>
+    /// <param name="date">The <see cref="DateTimeOffset"/> to floor.</param>
+    /// <param name="interval">The <see cref="TimeSpan"/> interval to floor to.</param>
+    /// <returns>A new <see cref="DateTimeOffset"/> floored to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTimeOffset Floor(this DateTimeOffset date, TimeSpan interval)
+    {
+        return date.AddTicks(-(date.Ticks % interval.Ticks));
+    }
+
+    /// <summary>
+    /// Ceils the given <see cref="DateTimeOffset"/> to the nearest interval of the specified <see cref="TimeSpan"/>.
+    /// </summary>
+    /// <param name="date">The <see cref="DateTimeOffset"/> to ceil.</param>
+    /// <param name="interval">The <see cref="TimeSpan"/> interval to ceil to.</param>
+    /// <returns>A new <see cref="DateTimeOffset"/> ceiled to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTimeOffset Ceiling(this DateTimeOffset date, TimeSpan interval)
+    {
+        return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
+    }
 }
