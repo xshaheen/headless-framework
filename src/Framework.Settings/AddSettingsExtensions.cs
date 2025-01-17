@@ -88,10 +88,11 @@ public static class AddSettingsExtensions
             options.ValueProviders.Add<UserSettingValueProvider>();
         });
 
-        services.TryAddSingleton<ISettingValueReadProvider, DefaultValueSettingValueProvider>();
-        services.TryAddSingleton<ISettingValueReadProvider, ConfigurationSettingValueProvider>();
-        services.TryAddSingleton<ISettingValueReadProvider, GlobalSettingValueProvider>();
-        services.TryAddSingleton<ISettingValueReadProvider, TenantSettingValueProvider>();
+        services.AddSingleton<DefaultValueSettingValueProvider>();
+        services.AddSingleton<ConfigurationSettingValueProvider>();
+        services.AddSingleton<GlobalSettingValueProvider>();
+        services.AddSingleton<TenantSettingValueProvider>();
+        services.AddSingleton<UserSettingValueProvider>();
     }
 
     private static void _AddSettingEncryption(this IServiceCollection services)

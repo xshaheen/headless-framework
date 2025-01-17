@@ -85,9 +85,9 @@ public static class AddFeaturesExtensions
             options.ValueProviders.Add<TenantFeatureValueProvider>();
         });
 
-        services.AddSingleton<IFeatureValueReadProvider, DefaultValueFeatureValueProvider>();
-        services.AddSingleton<IFeatureValueReadProvider, EditionFeatureValueProvider>();
-        services.AddSingleton<IFeatureValueReadProvider, TenantFeatureValueProvider>();
+        services.AddSingleton<DefaultValueFeatureValueProvider>();
+        services.AddSingleton<EditionFeatureValueProvider>();
+        services.AddSingleton<TenantFeatureValueProvider>();
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)
