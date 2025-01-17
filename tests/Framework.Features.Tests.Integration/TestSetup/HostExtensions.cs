@@ -54,8 +54,7 @@ public static class HostExtensions
 
         services.AddResourceLock(
             provider => provider.GetRequiredService<IResourceLockStorage>(),
-            provider => provider.GetRequiredService<IMessageBus>(),
-            (options, _) => options.KeyPrefix = "resource-locks:"
+            provider => provider.GetRequiredService<IMessageBus>()
         );
     }
 }

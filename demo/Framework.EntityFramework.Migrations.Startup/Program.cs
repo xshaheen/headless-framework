@@ -26,6 +26,14 @@ using IMessageBus = Framework.Messaging.IMessageBus;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Host.UseDefaultServiceProvider(
+    (_, options) =>
+    {
+        options.ValidateOnBuild = true;
+        options.ValidateScopes = true;
+    }
+);
+
 builder.AddFrameworkApiServices();
 
 addInMemoryResourceLock(builder.Services);
@@ -46,7 +54,9 @@ builder
         );
     });
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+
+await app.RunAsync();
 
 return;
 

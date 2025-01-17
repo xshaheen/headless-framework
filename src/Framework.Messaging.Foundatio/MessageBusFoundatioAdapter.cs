@@ -6,7 +6,7 @@ using Framework.Abstractions;
 namespace Framework.Messaging;
 
 public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, IGuidGenerator guidGenerator)
-    : IFrameworkMessageBus
+    : IMessageBus
 {
     public Task SubscribeAsync<T>(
         Func<IMessageSubscribeMedium<T>, CancellationToken, Task> handler,
