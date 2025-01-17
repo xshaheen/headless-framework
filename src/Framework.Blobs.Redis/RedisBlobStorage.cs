@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using System.Text.RegularExpressions;
 using Framework.Checks;
 using Framework.Core;
 using Framework.Primitives;
@@ -30,17 +29,18 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Create Container
 
-    public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
+    public ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
         cancellationToken.ThrowIfCancellationRequested();
+        throw new NotImplementedException();
     }
 
     #endregion
 
     #region Upload
 
-    public async ValueTask UploadAsync(
+    public ValueTask UploadAsync(
         string[] container,
         string blobName,
         Stream stream,
@@ -51,7 +51,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        var blobPath = _BuildBlobPath(container, blobName);
+        throw new NotImplementedException();
     }
 
     #endregion
@@ -88,7 +88,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Delete
 
-    public async ValueTask<bool> DeleteAsync(
+    public ValueTask<bool> DeleteAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -100,7 +100,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         throw new NotImplementedException();
     }
 
-    private async Task<bool> _DeleteAsync(string blobPath, CancellationToken cancellationToken)
+    private Task<bool> _DeleteAsync(string blobPath, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
@@ -137,7 +137,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
 
-    public async ValueTask<int> DeleteAllAsync(
+    public ValueTask<int> DeleteAllAsync(
         string[] container,
         string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
@@ -146,7 +146,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         throw new NotImplementedException();
     }
 
-    public async Task<int> DeleteDirectoryAsync(
+    public Task<int> DeleteDirectoryAsync(
         string directory,
         bool includeSelf = true,
         CancellationToken cancellationToken = default
@@ -154,20 +154,14 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         _logger.LogInformation("Deleting {Directory} directory", directory);
 
-        var count = 0;
-
         throw new NotImplementedException();
-
-        _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
-
-        return count;
     }
 
     #endregion
 
     #region Rename
 
-    public async ValueTask<bool> RenameAsync(
+    public ValueTask<bool> RenameAsync(
         string[] blobContainer,
         string blobName,
         string[] newBlobContainer,
@@ -187,7 +181,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Copy
 
-    public async ValueTask<bool> CopyAsync(
+    public ValueTask<bool> CopyAsync(
         string[] blobContainer,
         string blobName,
         string[] newBlobContainer,
@@ -207,7 +201,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Exists
 
-    public async ValueTask<bool> ExistsAsync(
+    public ValueTask<bool> ExistsAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -223,7 +217,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Downalod
 
-    public async ValueTask<BlobDownloadResult?> DownloadAsync(
+    public ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -288,7 +282,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region List
 
-    public async ValueTask<PagedFileListResult> GetPagedListAsync(
+    public ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
         string? blobSearchPattern = null,
         int pageSize = 100,
@@ -304,7 +298,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         throw new NotImplementedException();
     }
 
-    private sealed record SearchCriteria(string PathPrefix = "", Regex? Pattern = null);
+    // private sealed record SearchCriteria(string PathPrefix = "", Regex? Pattern = null);
 
     #endregion
 

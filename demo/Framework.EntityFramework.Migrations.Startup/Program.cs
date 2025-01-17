@@ -5,11 +5,11 @@ using Foundatio.Messaging;
 using Framework.Api;
 using Framework.Caching;
 using Framework.Messaging;
-using Framework.Permissions;
-using Framework.Permissions.Storage.EntityFramework;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
 using Framework.ResourceLocks.RegularLocks;
+using Framework.Settings;
+using Framework.Settings.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Savorboard.CAP.InMemoryMessageQueue;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
@@ -44,9 +44,19 @@ builder.Services.AddCapDistributedMessaging(options =>
     options.UseInMemoryMessageQueue();
 });
 
+// builder
+//     .Services.AddPermissionsManagementCore()
+//     .AddPermissionsManagementEntityFrameworkStorage(options =>
+//     {
+//         options.UseNpgsql(
+//             "Host=localhost;Database=Framework;Username=postgres;Password=postgres",
+//             b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName)
+//         );
+//     });
+
 builder
-    .Services.AddPermissionsManagementCore()
-    .AddPermissionsManagementEntityFrameworkStorage(options =>
+    .Services.AddSettingsManagementCore()
+    .AddSettingsManagementEntityFrameworkStorage(options =>
     {
         options.UseNpgsql(
             "Host=localhost;Database=Framework;Username=postgres;Password=postgres",

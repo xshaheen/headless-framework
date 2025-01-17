@@ -32,7 +32,7 @@ public class PasswordGeneratorTests
         var password = _passwordGenerator.GeneratePassword(length, requiredUniqueChars);
 
         // then
-        password.Distinct().Should().HaveCountGreaterOrEqualTo(requiredUniqueChars);
+        password.Distinct().Should().HaveCountGreaterThanOrEqualTo(requiredUniqueChars);
     }
 
     [Fact]

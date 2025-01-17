@@ -26,7 +26,7 @@ public sealed class RunTests
 
         // then
         actionExecuted.Should().BeTrue();
-        elapsed.Should().BeGreaterOrEqualTo(delay);
+        elapsed.Should().BeGreaterThanOrEqualTo(delay);
     }
 
     [Fact]
