@@ -8,7 +8,7 @@ namespace Tests;
 
 public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper output) : TestBase(output)
 {
-    private readonly TimeProvider _timeProvider = TimeProvider.System;
+    protected TimeProvider TimeProvider { get; } = TimeProvider.System;
 
     protected abstract IThrottlingResourceLockStorage GetLockStorage();
 
@@ -24,7 +24,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         return new ThrottlingResourceLockProvider(
             GetLockStorage(),
             options,
-            _timeProvider,
+            TimeProvider,
             LoggerFactory.CreateLogger<ThrottlingResourceLockProvider>()
         );
     }
@@ -100,13 +100,11 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         await Parallel.ForAsync(
             1,
             count + 1,
-            async (i, ct) =>
+            async (_, ct) =>
             {
-                Logger.LogInformation("###### Try to Acquire Locks: {Id}", i);
                 var l = await provider.TryAcquireAsync(resource, cancellationToken: ct);
                 l.Should().NotBeNull();
                 l!.Resource.Should().Be(resource);
-                // l.TimeWaitedForLock.Should().BeCloseTo(TimeSpan.Zero, 600.Milliseconds());
             }
         );
 

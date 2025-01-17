@@ -7,14 +7,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public class InMemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
+public class MemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
 {
     private readonly InMemoryMessageBus _foundatioMessageBus;
     private readonly MessageBusFoundatioAdapter _messageBus;
     private readonly InMemoryCachingFoundatioAdapter _cache;
     private readonly CacheResourceLockStorage _storage;
 
-    public InMemoryFoundationLockProviderTests(ITestOutputHelper output)
+    public MemoryFoundationLockProviderTests(ITestOutputHelper output)
         : base(output)
     {
         _foundatioMessageBus = new InMemoryMessageBus(o => o.Topic("test-lock").LoggerFactory(LoggerFactory));
