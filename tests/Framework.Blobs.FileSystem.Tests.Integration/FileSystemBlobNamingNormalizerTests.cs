@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Blobs.FileSystem;
+using Framework.Blobs;
 
 namespace Tests;
 
 public sealed class FileSystemBlobNamingNormalizerTests
 {
-    private readonly FileSystemBlobNamingNormalizer _normalizer = new();
+    private readonly CrossOsNamingNormalizer _normalizer = new();
 
     [Theory]
     [InlineData("validfilename", "validfilename")]
