@@ -32,14 +32,7 @@ public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
         long duration
     )
     {
-        Extensions.MiddlewareException(
-            logger,
-            exception,
-            timestamp,
-            name,
-            duration,
-            exception.ExpandExceptionMessage()
-        );
+        Extensions.MiddlewareException(logger, exception, timestamp, name, duration, exception.ExpandMessage());
     }
 
     private static partial class Extensions
