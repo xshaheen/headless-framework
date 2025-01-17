@@ -74,14 +74,22 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 22,
-        EventName = "ThrottlingFailed",
+        EventName = "ThrottlingTimeout",
         Level = LogLevel.Trace,
-        Message = "Cancellation requested or timeout for {Resource} after {Elapsed}"
+        Message = "Timeout for {Resource} after {Elapsed}"
     )]
-    public static partial void LogThrottlingFailed(this ILogger logger, string resource, TimeSpan elapsed);
+    public static partial void LogThrottlingTimeout(this ILogger logger, string resource, TimeSpan elapsed);
 
     [LoggerMessage(
         EventId = 23,
+        EventName = "ThrottlingCancelled",
+        Level = LogLevel.Trace,
+        Message = "Cancellation requested for {Resource} after {Elapsed}"
+    )]
+    public static partial void LogThrottlingCancelled(this ILogger logger, string resource, TimeSpan elapsed);
+
+    [LoggerMessage(
+        EventId = 24,
         EventName = "ThrottlingAcquired",
         Level = LogLevel.Trace,
         Message = "Lock allowed for {Resource} in {Elapsed}"
@@ -89,7 +97,7 @@ internal static partial class LoggerExtensions
     public static partial void LogThrottlingAcquired(this ILogger logger, string resource, TimeSpan elapsed);
 
     [LoggerMessage(
-        EventId = 23,
+        EventId = 25,
         EventName = "ThrottlingError",
         Level = LogLevel.Error,
         Message = "Error acquiring throttled lock ({Resource}): {Message}"

@@ -73,6 +73,7 @@ public sealed class ThrottlingResourceLockProvider(
 
         acquireTimeout ??= DefaultAcquireTimeout;
         var timestamp = timeProvider.GetTimestamp();
+        var shouldWait = !cancellationToken.IsCancellationRequested;
         using var cts = acquireTimeout.Value.ToCancellationTokenSource(cancellationToken);
 
         var allowLock = false;
@@ -149,13 +150,17 @@ public sealed class ThrottlingResourceLockProvider(
 
         var elapsed = timeProvider.GetElapsedTime(timestamp);
 
-        if (cts.IsCancellationRequested)
-        {
-            logger.LogThrottlingFailed(resource, elapsed);
-        }
-
         if (!allowLock)
         {
+            if (shouldWait && cancellationToken.IsCancellationRequested)
+            {
+                logger.LogThrottlingCancelled(resource, elapsed);
+            }
+            else
+            {
+                logger.LogThrottlingTimeout(resource, elapsed);
+            }
+
             return null;
         }
 
