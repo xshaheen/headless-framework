@@ -34,10 +34,7 @@ public static class HostExtensions
 
         services
             .AddSettingsManagementCore()
-            .AddSettingsManagementEntityFrameworkStorage(options =>
-            {
-                options.UseNpgsql(postgreConnectionString);
-            });
+            .AddSettingsManagementEntityFrameworkStorage(options => options.UseNpgsql(postgreConnectionString));
 
         services.RemoveHostedService<SettingsInitializationBackgroundService>();
 
@@ -46,16 +43,14 @@ public static class HostExtensions
 
     private static void _AddInMemoryResourceLock(this IServiceCollection services)
     {
-        // Cache
         services.AddInMemoryCache();
-
-        // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
         services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
 
         services.AddResourceLock(
             provider => new CacheResourceLockStorage(provider.GetRequiredService<ICache>()),
-            provider => provider.GetRequiredService<IMessageBus>()
+            provider => provider.GetRequiredService<IMessageBus>(),
+            (options, _) => options.KeyPrefix = "test"
         );
     }
 }
