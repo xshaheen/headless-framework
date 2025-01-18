@@ -4,25 +4,27 @@ using System.Reflection;
 using Foundatio.Messaging;
 using Framework.Api;
 using Framework.Caching;
+using Framework.Features;
+using Framework.Features.Storage.EntityFramework;
 using Framework.Messaging;
+using Framework.Permissions;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
 using Framework.ResourceLocks.RegularLocks;
 using Framework.Settings;
-using Framework.Settings.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Savorboard.CAP.InMemoryMessageQueue;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
 using IMessageBus = Framework.Messaging.IMessageBus;
 
 // To add a migration use:
-// dotnet ef migrations add InitialMigration -p .\demo\Framework.EntityFramework.Migrations.Startup
+// dotnet ef migrations add InitialMigration -p .\demo\Framework.EntityFramework.Migrations.Startup --context FeaturesDbContext
 
 // To generate the script use:
-// dotnet ef migrations script --idempotent -s .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.sql
+// dotnet ef migrations script --idempotent -s .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.sql --context FeaturesDbContext
 
 // To generate the bundler use:
-// dotnet ef migrations bundle --idempotent -p .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.exe
+// dotnet ef migrations bundle --idempotent -p .\demo\Framework.EntityFramework.Migrations.Startup -o .\postgre-init.exe --context FeaturesDbContext
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,24 +46,27 @@ builder.Services.AddCapDistributedMessaging(options =>
     options.UseInMemoryMessageQueue();
 });
 
-// builder
-//     .Services.AddPermissionsManagementCore()
-//     .AddPermissionsManagementEntityFrameworkStorage(options =>
-//     {
-//         options.UseNpgsql(
-//             "Host=localhost;Database=Framework;Username=postgres;Password=postgres",
-//             b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName)
-//         );
-//     });
+const string connectionString = "Host=localhost;Database=Framework;Username=postgres;Password=postgres";
+
+builder
+    .Services.AddPermissionsManagementCore()
+    .AddPermissionsManagementEntityFrameworkStorage(options =>
+    {
+        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
+    });
 
 builder
     .Services.AddSettingsManagementCore()
     .AddSettingsManagementEntityFrameworkStorage(options =>
     {
-        options.UseNpgsql(
-            "Host=localhost;Database=Framework;Username=postgres;Password=postgres",
-            b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName)
-        );
+        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
+    });
+
+builder
+    .Services.AddFeaturesManagementCore()
+    .AddFeaturesManagementEntityFrameworkStorage(options =>
+    {
+        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
     });
 
 var app = builder.Build();

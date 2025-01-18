@@ -5,7 +5,7 @@ using Framework.Settings.Values;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Settings.Storage.EntityFramework;
+namespace Framework.Settings;
 
 [PublicAPI]
 public static class AddSettingsManagementEntityFrameworkStorageExtensions

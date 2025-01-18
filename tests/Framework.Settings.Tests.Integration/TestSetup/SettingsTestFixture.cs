@@ -66,6 +66,7 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
             .WithUsername("postgres")
             .WithPassword("postgres")
             .WithPortBinding(5432)
+            .WithReuse(true)
             .Build();
     }
 

@@ -7,7 +7,7 @@ namespace Tests.TestSetup;
 
 public static class TestData
 {
-    public static Faker<SettingDefinition> CreateSettingDefinitionFaker()
+    public static Faker<SettingDefinition> CreateDefinitionFaker()
     {
         return new Faker<SettingDefinition>().CustomInstantiator(faker => new SettingDefinition(
             name: faker.Random.String2(1, SettingDefinitionRecordConstants.NameMaxLength),

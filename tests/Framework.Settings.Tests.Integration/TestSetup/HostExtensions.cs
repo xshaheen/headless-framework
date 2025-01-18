@@ -9,7 +9,6 @@ using Framework.ResourceLocks.Cache;
 using Framework.ResourceLocks.RegularLocks;
 using Framework.Settings;
 using Framework.Settings.Seeders;
-using Framework.Settings.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;

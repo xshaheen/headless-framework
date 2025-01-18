@@ -6,7 +6,6 @@ using Framework.Caching;
 using Framework.Messaging;
 using Framework.Permissions;
 using Framework.Permissions.Seeders;
-using Framework.Permissions.Storage.EntityFramework;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
 using Framework.ResourceLocks.RegularLocks;
