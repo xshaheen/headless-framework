@@ -18,7 +18,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         {
             ThrottlingPeriod = period,
             MaxHitsPerPeriod = maxHits,
-            KeyPrefix = string.Empty,
+            KeyPrefix = "test_throttling_lock:",
         };
 
         return new ThrottlingResourceLockProvider(
@@ -84,7 +84,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
             Logger.LogInformation("###### Try to Acquire Locks: {Id}", i);
             var l = await provider.TryAcquireAsync(resource);
             l.Should().NotBeNull();
-            l!.Resource.Should().Be(resource);
+            l.Resource.Should().Be(resource);
             l.TimeWaitedForLock.Should().BeCloseTo(TimeSpan.Zero, 300.Milliseconds());
         }
 
@@ -104,7 +104,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
             {
                 var l = await provider.TryAcquireAsync(resource, cancellationToken: ct);
                 l.Should().NotBeNull();
-                l!.Resource.Should().Be(resource);
+                l.Resource.Should().Be(resource);
             }
         );
 
@@ -133,7 +133,7 @@ public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper 
         var elapsed = Stopwatch.GetElapsedTime(timestamp);
         Logger.LogInformation("Time to acquire lock: {Elapsed:g}", elapsed);
         result.Should().NotBeNull();
-        result!.Resource.Should().Be(resource);
+        result.Resource.Should().Be(resource);
     }
 
     #endregion

@@ -30,13 +30,31 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
     /// <summary>This runs before all tests finished and Called just after the constructor</summary>
     public async Task InitializeAsync()
     {
-        await _postgreSqlContainer.StartAsync();
-        await _redisContainer.StartAsync();
+        await _StartContainersAsync();
+        await Task.WhenAll(_InitializePostgreSqlAsync(), _InitializeRedisAsync());
+        await ResetAsync();
+    }
 
-        // PostgreSql
+    /// <summary>This runs after all the tests finished and Called before Dispose()</summary>
+    public async Task DisposeAsync()
+    {
+        await SqlConnection.DisposeAsync();
+        await _postgreSqlContainer.DisposeAsync();
+        await Multiplexer.DisposeAsync();
+        await _redisContainer.DisposeAsync();
+    }
+
+    private async Task _StartContainersAsync()
+    {
+        await Task.WhenAll(_postgreSqlContainer.StartAsync(), _redisContainer.StartAsync());
+    }
+
+    private async Task _InitializePostgreSqlAsync()
+    {
         SqlConnectionString = _postgreSqlContainer.GetConnectionString();
         SqlConnection = new NpgsqlConnection(SqlConnectionString);
         await SqlConnection.OpenAsync();
+        await _RunMigrationAsync();
         Respawner = await Respawner.CreateAsync(
             SqlConnection,
             new RespawnerOptions
@@ -45,26 +63,17 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
                 DbAdapter = DbAdapter.Postgres,
             }
         );
-        await _RunMigrationAsync();
+    }
 
-        // Redis
+    private async Task _InitializeRedisAsync()
+    {
         RedisConnectionString = _redisContainer.GetConnectionString() + ",allowAdmin=true";
         Multiplexer = await ConnectionMultiplexer.ConnectAsync(RedisConnectionString);
     }
 
-    /// <summary>This runs after all the tests finished and Called before Dispose()</summary>
-    public async Task DisposeAsync()
-    {
-        await ResetAsync();
-        await SqlConnection.DisposeAsync();
-        await _postgreSqlContainer.DisposeAsync();
-        await _redisContainer.DisposeAsync();
-    }
-
     public async Task ResetAsync()
     {
-        await Respawner.ResetAsync(SqlConnection);
-        await Multiplexer.FlushAllAsync();
+        await Task.WhenAll(Respawner.ResetAsync(SqlConnection), Multiplexer.FlushAllAsync()).WithAggregatedExceptions();
     }
 
     private async Task _RunMigrationAsync()
@@ -79,7 +88,8 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
         return new PostgreSqlBuilder()
-            .WithDatabase("SettingsTest")
+            .WithLabel("type", "settings")
+            .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
             .WithPortBinding(5432)
@@ -89,6 +99,6 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder().WithReuse(true).Build();
+        return new RedisBuilder().WithLabel("type", "settings").WithReuse(true).Build();
     }
 }

@@ -15,17 +15,19 @@
     <PackageReference Include="Savorboard.CAP.InMemoryMessageQueue" />
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Messaging.Cap\Framework.Messaging.Cap.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Framework.Permissions.Storage.EntityFramework\Framework.Permissions.Storage.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Cache\Framework.ResourceLocks.Cache.csproj" />
+    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Redis\Framework.ResourceLocks.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
+
 
   <ItemGroup>
     <None Update="TestSetup\postgre-init.sql">

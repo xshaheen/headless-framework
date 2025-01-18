@@ -14,6 +14,11 @@ public sealed class CacheTestFixture(IMessageSink messageSink)
 {
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
 
+    protected override RedisBuilder Configure(RedisBuilder builder)
+    {
+        return base.Configure(builder).WithLabel("type", "resource_locks_cache").WithReuse(true);
+    }
+
     protected override async Task InitializeAsync()
     {
         await base.InitializeAsync();
@@ -24,10 +29,12 @@ public sealed class CacheTestFixture(IMessageSink messageSink)
 
         var scriptLoader = new FrameworkRedisScriptsLoader(ConnectionMultiplexer);
         await scriptLoader.LoadScriptsAsync();
+        await ConnectionMultiplexer.FlushAllAsync();
     }
 
     protected override async Task DisposeAsyncCore()
     {
+        await base.DisposeAsyncCore();
         await ConnectionMultiplexer.DisposeAsync();
     }
 }
