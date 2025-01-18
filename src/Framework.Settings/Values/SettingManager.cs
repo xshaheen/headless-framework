@@ -155,7 +155,7 @@ public sealed class SettingManager(
 
         var setting =
             await definitionManager.GetOrDefaultAsync(settingName, cancellationToken)
-            ?? throw new ConflictException(await errorsProvider.DefinitionNotFound(settingName));
+            ?? throw new ConflictException(await errorsProvider.NotDefined(settingName));
 
         var providers = valueProviderManager
             .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -239,7 +239,7 @@ public sealed class SettingManager(
 
         var definition =
             await definitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new ConflictException(await errorsProvider.DefinitionNotFound(name));
+            ?? throw new ConflictException(await errorsProvider.NotDefined(name));
 
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 

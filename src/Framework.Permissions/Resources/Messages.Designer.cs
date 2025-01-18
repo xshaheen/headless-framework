@@ -7,7 +7,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Framework.Settings.Resources {
+namespace Framework.Permissions.Resources {
     using System;
     
     
@@ -38,7 +38,7 @@ namespace Framework.Settings.Resources {
         internal static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Framework.Settings.Resources.Messages", typeof(Messages).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Framework.Permissions.Resources.Messages", typeof(Messages).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;
@@ -60,47 +60,65 @@ namespace Framework.Settings.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Setting definition not found for setting name: {0}..
+        ///   Looks up a localized string similar to The permission named &apos;{0}&apos; is disabled..
         /// </summary>
-        internal static string setting_not_defined {
+        internal static string permissions_disabled {
             get {
-                return ResourceManager.GetString("setting:not_defined", resourceCulture);
+                return ResourceManager.GetString("permissions:disabled", resourceCulture);
             }
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Setting provider is readonly for provider key: {0} and can&apos;t be modified..
+        ///   Looks up a localized string similar to The permission named &apos;{0}&apos; does not have a provider named &apos;{1}&apos;..
         /// </summary>
-        internal static string setting_provider_is_readonly {
+        internal static string permissions_provider_not_defined {
             get {
-                return ResourceManager.GetString("setting:provider_is_readonly", resourceCulture);
+                return ResourceManager.GetString("permissions:provider-not-defined", resourceCulture);
             }
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Setting provider not found for provider name: {0}..
+        ///   Looks up a localized string similar to The provider named &apos;{0}&apos; is not defined for some permissions..
         /// </summary>
-        internal static string setting_provider_not_found {
+        internal static string permissions_provider_not_defined_for_some {
             get {
-                return ResourceManager.GetString("setting:provider_not_found", resourceCulture);
+                return ResourceManager.GetString("permissions:provider-not-defined-for-some", resourceCulture);
             }
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Tenant is not available to use with setting provider..
+        ///   Looks up a localized string similar to Unknown permission management provider: {0}.
         /// </summary>
-        internal static string setting_tenant_not_available {
+        internal static string permissions_provider_not_found {
             get {
-                return ResourceManager.GetString("setting:tenant_not_available", resourceCulture);
+                return ResourceManager.GetString("permissions:provider-not-found", resourceCulture);
             }
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to User is not available to use with setting provider..
+        ///   Looks up a localized string similar to Some permissions are disabled..
         /// </summary>
-        internal static string setting_user_not_available {
+        internal static string permissions_some_disabled {
             get {
-                return ResourceManager.GetString("setting:user_not_available", resourceCulture);
+                return ResourceManager.GetString("permissions:some-disabled", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Some permission are not defined..
+        /// </summary>
+        internal static string permissions_some_undefined {
+            get {
+                return ResourceManager.GetString("permissions:some-undefined", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The permission named &apos;{0}&apos; is undefined..
+        /// </summary>
+        internal static string permissions_undefined {
+            get {
+                return ResourceManager.GetString("permissions:undefined", resourceCulture);
             }
         }
     }
