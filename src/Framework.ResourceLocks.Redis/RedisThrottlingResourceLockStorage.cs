@@ -20,24 +20,12 @@ public sealed class RedisThrottlingResourceLockStorage(
         return redisValue.HasValue ? (long)redisValue : 0;
     }
 
-    public async Task<long> IncrementAsync(string resource, TimeSpan ttl)
+    public Task<long> IncrementAsync(string resource, TimeSpan ttl)
     {
         Argument.IsNotNullOrEmpty(resource);
         Argument.IsPositive(ttl);
 
-        await scriptsLoader.LoadScriptsAsync();
-
-        var result = await Db.ScriptEvaluateAsync(
-            scriptsLoader.IncrementWithExpireScript!,
-            new
-            {
-                key = (RedisKey)resource,
-                value = 1,
-                expires = (int)ttl.TotalMilliseconds,
-            }
-        );
-
-        return (long)result;
+        return scriptsLoader.IncrementAsync(Db, resource, 1, ttl);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

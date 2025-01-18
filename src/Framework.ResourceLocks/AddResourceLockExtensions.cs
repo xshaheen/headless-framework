@@ -12,7 +12,22 @@ namespace Framework.ResourceLocks;
 [PublicAPI]
 public static class AddResourceLockExtensions
 {
-    public static void AddResourceLock(
+    public static IServiceCollection AddResourceLock<TStorage>(
+        this IServiceCollection services,
+        Action<ResourceLockOptions, IServiceProvider>? optionSetupAction = null
+    )
+        where TStorage : class, IResourceLockStorage
+    {
+        services.AddSingleton<IResourceLockStorage, TStorage>();
+
+        return services.AddResourceLock(
+            provider => provider.GetRequiredService<IResourceLockStorage>(),
+            provider => provider.GetRequiredService<IMessageBus>(),
+            optionSetupAction
+        );
+    }
+
+    public static IServiceCollection AddResourceLock(
         this IServiceCollection services,
         Func<IServiceProvider, IResourceLockStorage> storageSetupAction,
         Func<IServiceProvider, IMessageBus> busSetupAction,
@@ -39,6 +54,8 @@ public static class AddResourceLockExtensions
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<ILogger<ResourceLockProvider>>()
         ));
+
+        return services;
     }
 
     public static IServiceCollection AddThrottlingResourceLock(
