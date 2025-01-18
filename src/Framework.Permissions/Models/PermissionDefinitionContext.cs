@@ -31,6 +31,12 @@ public interface IPermissionDefinitionContext
     PermissionGroupDefinition AddGroup(string name, string? displayName = null);
 
     /// <summary>
+    /// Tries to add a new permission group.
+    /// Throws <see cref="InvalidOperationException"/> if there is a group with the name.
+    /// </summary>
+    PermissionGroupDefinition AddGroup(PermissionGroupDefinition group);
+
+    /// <summary>
     /// Tries to remove a permission group.
     /// Throws <see cref="InvalidOperationException"/> if there is not any group with the name.
     /// </summary>
@@ -53,12 +59,23 @@ public sealed class PermissionDefinitionContext : IPermissionDefinitionContext
     {
         Argument.IsNotNull(name);
 
-        if (Groups.ContainsKey(name))
+        var group = new PermissionGroupDefinition(name, displayName);
+
+        return AddGroup(group);
+    }
+
+    public PermissionGroupDefinition AddGroup(PermissionGroupDefinition group)
+    {
+        Argument.IsNotNull(group);
+
+        if (Groups.ContainsKey(group.Name))
         {
-            throw new InvalidOperationException($"There is already an existing permission group with name: {name}");
+            throw new InvalidOperationException(
+                $"There is already an existing permission group with name: {group.Name}"
+            );
         }
 
-        return Groups[name] = new PermissionGroupDefinition(name, displayName);
+        return Groups[group.Name] = group;
     }
 
     public PermissionGroupDefinition GetGroup(string name)

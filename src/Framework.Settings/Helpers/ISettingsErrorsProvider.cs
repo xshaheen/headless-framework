@@ -7,7 +7,7 @@ namespace Framework.Settings.Helpers;
 
 public interface ISettingsErrorsProvider
 {
-    ValueTask<ErrorDescriptor> DefinitionNotFound(string settingName);
+    ValueTask<ErrorDescriptor> NotDefined(string settingName);
 
     ValueTask<ErrorDescriptor> ProviderNotFound(string providerName);
 
@@ -20,11 +20,11 @@ public interface ISettingsErrorsProvider
 
 public sealed class DefaultSettingsErrorsProvider : ISettingsErrorsProvider
 {
-    public ValueTask<ErrorDescriptor> DefinitionNotFound(string settingName)
+    public ValueTask<ErrorDescriptor> NotDefined(string settingName)
     {
         var error = new ErrorDescriptor(
-            "setting:definition_not_found",
-            string.Format(CultureInfo.InvariantCulture, Messages.setting_definition_not_found, settingName)
+            "setting:not_defined",
+            string.Format(CultureInfo.InvariantCulture, Messages.setting_not_defined, settingName)
         ).WithParam("settingName", settingName);
 
         return ValueTask.FromResult(error);

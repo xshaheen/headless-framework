@@ -7,6 +7,7 @@ using Framework.Permissions.Filters;
 using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
+using Framework.Permissions.Resources;
 using Framework.Permissions.Seeders;
 using Framework.Permissions.Testing;
 using Microsoft.AspNetCore.Authorization;
@@ -104,11 +105,12 @@ public static class AddPermissionsExtensions
             PermissionGrantCacheItemInvalidator
         >();
 
+        services.TryAddSingleton<IPermissionErrorDescriber, DefaultPermissionErrorDescriber>();
+
         // Definition Services
         /*
          * 1. You need to provide a storage implementation for `IPermissionDefinitionRecordRepository`
-         * 2. Implement `IPermissionDefinitionProvider` to define your permissions in code
-         *    and use `AddPermissionDefinitionProvider` to register it
+         * 2. Implement `IPermissionDefinitionProvider` to define your permissions in code and use `AddPermissionDefinitionProvider` to register it
          */
         services.TryAddSingleton<IPermissionDefinitionSerializer, PermissionDefinitionSerializer>();
         services.TryAddSingleton<IStaticPermissionDefinitionStore, StaticPermissionDefinitionStore>();
