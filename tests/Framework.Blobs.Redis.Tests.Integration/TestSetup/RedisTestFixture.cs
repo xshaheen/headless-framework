@@ -7,7 +7,7 @@ using Testcontainers.Xunit;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(RedisTestFixture), DisableParallelization = false)]
+[CollectionDefinition(nameof(RedisTestFixture))]
 public sealed class RedisTestFixture(IMessageSink messageSink)
     : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
         ICollectionFixture<RedisTestFixture>
@@ -18,13 +18,14 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
     {
         await base.InitializeAsync();
         var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
-        // const string connectionString = "127.0.0.1:7006,allowAdmin=true";
+
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
         await ConnectionMultiplexer.FlushAllAsync();
     }
 
     protected override async Task DisposeAsyncCore()
     {
+        await base.DisposeAsyncCore();
         await ConnectionMultiplexer.DisposeAsync();
     }
 }

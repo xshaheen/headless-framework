@@ -4,27 +4,27 @@ using Framework.Permissions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(PermissionsTestFixture))]
-public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture fixture)
+public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture fixture, ITestOutputHelper output)
+    : PermissionsTestBase(fixture, output)
 {
     [Fact]
     public async Task should_save_defined_settings_when_call_SaveAsync()
     {
         // given
-        var hostBuilder = _CreatePermissionsHostBuilder();
+        var builder = CreateHostBuilder();
+        builder.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>();
 
-        hostBuilder.Services.Configure<PermissionManagementOptions>(options =>
+        builder.Services.Configure<PermissionManagementOptions>(options =>
         {
             options.IsDynamicPermissionStoreEnabled = true;
             options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
         });
 
-        var host = hostBuilder.Build();
+        var host = builder.Build();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
@@ -57,14 +57,5 @@ public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture
             group.AddGeneratedPermissionDefinition();
             group.AddGeneratedPermissionDefinition();
         }
-    }
-
-    private HostApplicationBuilder _CreatePermissionsHostBuilder()
-    {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>();
-        builder.Services.ConfigurePermissionsServices(fixture.ConnectionString);
-
-        return builder;
     }
 }

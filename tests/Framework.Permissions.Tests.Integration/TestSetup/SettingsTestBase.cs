@@ -1,12 +1,9 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
-using Foundatio.Messaging;
+﻿using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Features;
-using Framework.Features.Seeders;
-using Framework.Features.Storage.EntityFramework;
 using Framework.Messaging;
+using Framework.Permissions;
+using Framework.Permissions.Seeders;
 using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Redis;
@@ -20,8 +17,8 @@ using IMessageBus = Framework.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
-[Collection(nameof(FeaturesTestFixture))]
-public abstract class FeaturesTestBase(FeaturesTestFixture fixture, ITestOutputHelper output) : TestBase(output)
+[Collection(nameof(PermissionsTestFixture))]
+public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestOutputHelper output) : TestBase(output)
 {
     protected IHost CreateHost(Action<IHostApplicationBuilder>? configure = null)
     {
@@ -50,6 +47,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture, ITestOutputH
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
+        services.AddSingleton(Substitute.For<IDistributedMessagePublisher>());
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
             o.Subscriber(fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
@@ -64,9 +62,9 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture, ITestOutputH
         services.AddResourceLock<RedisResourceLockStorage>();
 
         services
-            .AddFeaturesManagementCore()
-            .AddFeaturesManagementEntityFrameworkStorage(options => options.UseNpgsql(fixture.SqlConnectionString));
+            .AddPermissionsManagementCore()
+            .AddPermissionsManagementEntityFrameworkStorage(options => options.UseNpgsql(fixture.SqlConnectionString));
 
-        services.RemoveHostedService<FeaturesInitializationBackgroundService>();
+        services.RemoveHostedService<PermissionsInitializationBackgroundService>();
     }
 }

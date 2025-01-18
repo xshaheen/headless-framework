@@ -35,7 +35,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture, ITestOutputH
         return builder;
     }
 
-    public void ConfigureSettingsServices(IHostApplicationBuilder builder)
+    protected void ConfigureSettingsServices(IHostApplicationBuilder builder)
     {
         var services = builder.Services;
 
