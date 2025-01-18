@@ -11,6 +11,8 @@ namespace Tests;
 public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture fixture, ITestOutputHelper output)
     : PermissionsTestBase(fixture, output)
 {
+    private static readonly PermissionGroupDefinition _GroupDefinition = TestData.CreateGroupDefinition();
+
     [Fact]
     public async Task should_save_defined_settings_when_call_SaveAsync()
     {
@@ -39,23 +41,14 @@ public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture
         // then
         definitionsBefore.Should().BeEmpty();
         groupsBefore.Should().BeEmpty();
-
-        definitionsAfter.Should().NotBeEmpty();
         definitionsAfter.Should().HaveCount(3);
-
-        groupsAfter.Should().NotBeEmpty();
         groupsAfter.Should().ContainSingle();
+        groupsAfter[0].Should().BeEquivalentTo(_GroupDefinition);
     }
 
     [UsedImplicitly]
     private sealed class PermissionsDefinitionProvider : IPermissionDefinitionProvider
     {
-        public void Define(IPermissionDefinitionContext context)
-        {
-            var group = context.AddGeneratedPermissionGroup();
-            group.AddGeneratedPermissionDefinition();
-            group.AddGeneratedPermissionDefinition();
-            group.AddGeneratedPermissionDefinition();
-        }
+        public void Define(IPermissionDefinitionContext context) => context.AddGroup(_GroupDefinition);
     }
 }
