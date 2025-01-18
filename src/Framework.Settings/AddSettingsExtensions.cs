@@ -109,10 +109,12 @@ public static class AddSettingsExtensions
 
         services.AddHostedService<SettingsInitializationBackgroundService>();
 
-        services.AddTransient<
+        services.TryAddTransient<
             ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
             SettingValueCacheItemInvalidator
         >();
+
+        services.TryAddSingleton<ISettingsErrorsProvider, DefaultSettingsErrorsProvider>();
 
         // Definition Services
         /*

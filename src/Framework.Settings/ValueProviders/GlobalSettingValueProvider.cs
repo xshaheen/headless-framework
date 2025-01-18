@@ -11,5 +11,8 @@ public sealed class GlobalSettingValueProvider(ISettingValueStore store) : Store
 
     public override string Name => ProviderName;
 
-    protected override string? NormalizeProviderKey(string? providerKey) => null;
+    protected override ValueTask<string?> NormalizeProviderKey(string? providerKey)
+    {
+        return ValueTask.FromResult<string?>(null);
+    }
 }
