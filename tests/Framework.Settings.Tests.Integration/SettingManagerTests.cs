@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutputHelper output)
     : SettingsTestBase(fixture, output)
 {
-    private static readonly List<SettingDefinition> _SettingDefinitions =
+    private static readonly List<SettingDefinition> _Definitions =
     [
         new("Setting1", "Value1", displayName: "Display1"),
         new("Setting2", "Value2", description: "Description2"),
@@ -47,7 +47,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         var settingValues = await settingManager.GetAllDefaultAsync();
 
         // then
-        var expected = _SettingDefinitions.ConvertAll(x => new SettingValue(x.Name, x.DefaultValue));
+        var expected = _Definitions.ConvertAll(x => new SettingValue(x.Name, x.DefaultValue));
         settingValues.Should().BeEquivalentTo(expected);
     }
 
@@ -61,7 +61,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         var userId = Guid.NewGuid().ToString();
         const string settingName = "NotDefinedSetting";
         var settingsErrorsProvider = scope.ServiceProvider.GetRequiredService<ISettingsErrorsProvider>();
-        var error = await settingsErrorsProvider.DefinitionNotFound(settingName);
+        var error = await settingsErrorsProvider.NotDefined(settingName);
 
         // when
         var act = () => settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");
@@ -96,7 +96,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     {
         public void Define(ISettingDefinitionContext context)
         {
-            foreach (var settingDefinition in _SettingDefinitions)
+            foreach (var settingDefinition in _Definitions)
             {
                 context.Add(settingDefinition);
             }

@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, ITestOutputHelper output)
     : SettingsTestBase(fixture, output)
 {
-    private static readonly List<SettingDefinition> _SettingDefinitions = TestData.CreateDefinitionFaker().Generate(5);
+    private static readonly List<SettingDefinition> _Definitions = TestData.CreateDefinitionFaker().Generate(5);
 
     [Fact]
     public async Task should_get_empty_when_call_GetAllAsync_and_no_definitions()
@@ -42,8 +42,8 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
 
         // then
         definitions.Should().NotBeEmpty();
-        definitions.Should().HaveCount(_SettingDefinitions.Count);
-        definitions.Should().BeEquivalentTo(_SettingDefinitions);
+        definitions.Should().HaveCount(_Definitions.Count);
+        definitions.Should().BeEquivalentTo(_Definitions);
     }
 
     [Fact]
@@ -53,14 +53,14 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
-        var oneOfTheDefinedSetting = _SettingDefinitions[0];
+        var oneOfTheDefinedSetting = _Definitions[0];
 
         // when
         var definition = await definitionManager.GetOrDefaultAsync(oneOfTheDefinedSetting.Name);
 
         // then
         definition.Should().NotBeNull();
-        definition!.Should().Be(oneOfTheDefinedSetting);
+        definition.Should().Be(oneOfTheDefinedSetting);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
     {
         public void Define(ISettingDefinitionContext context)
         {
-            foreach (var settingDefinition in _SettingDefinitions)
+            foreach (var settingDefinition in _Definitions)
             {
                 context.Add(settingDefinition);
             }
