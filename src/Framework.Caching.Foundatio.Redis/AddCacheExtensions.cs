@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -41,6 +42,7 @@ public static class AddCacheExtensions
             return services;
         }
 
+        services.TryAddSingleton<ISerializer, SystemJsonSerializer>();
         services.AddSingleton<ICache, RedisCachingFoundatioAdapter>();
 
         services.AddKeyedSingleton(

@@ -13,7 +13,6 @@ public sealed class FrameworkRedisScriptsLoader(
 )
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-
     private bool _scriptsLoaded;
     private readonly AsyncLock _loadScriptsLock = new();
 
@@ -85,7 +84,53 @@ public sealed class FrameworkRedisScriptsLoader(
         }
     }
 
-    public static object GetReplaceIfEqualParameters(RedisKey key, string value, string expected, TimeSpan? expires)
+    public async Task<bool> ReplaceIfEqualAsync(
+        IDatabase db,
+        RedisKey key,
+        string? expectedValue,
+        string? newValue,
+        TimeSpan? newTtl = null
+    )
+    {
+        await LoadScriptsAsync();
+
+        var redisResult = await db.ScriptEvaluateAsync(
+            ReplaceIfEqualScript!,
+            _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl)
+        );
+
+        var result = (int)redisResult;
+
+        return result > 0;
+    }
+
+    public async Task<bool> RemoveIfEqualAsync(IDatabase db, RedisKey key, string? expectedValue)
+    {
+        await LoadScriptsAsync();
+
+        var redisResult = await db.ScriptEvaluateAsync(
+            RemoveIfEqualScript!,
+            _GetRemoveIfEqualParameters(key, expectedValue)
+        );
+
+        var result = (int)redisResult;
+
+        return result > 0;
+    }
+
+    public async Task<long> IncrementAsync(IDatabase db, string resource, long value, TimeSpan ttl)
+    {
+        await LoadScriptsAsync();
+
+        var result = await db.ScriptEvaluateAsync(
+            IncrementWithExpireScript!,
+            _GetIncrementParameters(resource, value, ttl)
+        );
+
+        return (long)result;
+    }
+
+    private static object _GetReplaceIfEqualParameters(RedisKey key, string? value, string? expected, TimeSpan? expires)
     {
         if (expires.HasValue)
         {
@@ -104,6 +149,21 @@ public sealed class FrameworkRedisScriptsLoader(
             value,
             expected,
             expires = "",
+        };
+    }
+
+    private static object _GetRemoveIfEqualParameters(RedisKey key, string? expected)
+    {
+        return new { key, expected };
+    }
+
+    private static object _GetIncrementParameters(string resource, long value, TimeSpan ttl)
+    {
+        return new
+        {
+            key = (RedisKey)resource,
+            value,
+            expires = (int)ttl.TotalMilliseconds,
         };
     }
 }
