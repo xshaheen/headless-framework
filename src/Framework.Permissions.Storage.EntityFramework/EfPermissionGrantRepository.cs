@@ -4,7 +4,7 @@ using Framework.Permissions.Entities;
 using Framework.Permissions.Grants;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Permissions.Storage.EntityFramework;
+namespace Framework.Permissions;
 
 public sealed class EfPermissionGrantRepository(IDbContextFactory<PermissionsDbContext> dbFactory)
     : IPermissionGrantRepository

@@ -18,7 +18,7 @@ namespace Framework.Permissions;
 [PublicAPI]
 public static class AddPermissionsExtensions
 {
-    public static IServiceCollection AddFeaturesManagementCore(
+    public static IServiceCollection AddPermissionsManagementCore(
         this IServiceCollection services,
         Action<PermissionManagementOptions, IServiceProvider> setupAction
     )

@@ -3,7 +3,7 @@
 using Framework.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Permissions.Storage.EntityFramework;
+namespace Framework.Permissions;
 
 [PublicAPI]
 public sealed class PermissionsDbContext(DbContextOptions options) : DbContext(options)

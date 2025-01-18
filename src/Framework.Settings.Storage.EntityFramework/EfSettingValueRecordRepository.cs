@@ -4,7 +4,7 @@ using Framework.Settings.Entities;
 using Framework.Settings.Values;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Settings.Storage.EntityFramework;
+namespace Framework.Settings;
 
 public sealed class EfSettingValueRecordRepository(IDbContextFactory<SettingsDbContext> dbFactory)
     : ISettingValueRecordRepository

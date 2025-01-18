@@ -3,7 +3,7 @@
 using Framework.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Settings.Storage.EntityFramework;
+namespace Framework.Settings;
 
 [PublicAPI]
 public sealed class SettingsDbContext(DbContextOptions options) : DbContext(options)
