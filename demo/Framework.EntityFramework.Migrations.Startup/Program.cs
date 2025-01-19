@@ -82,7 +82,7 @@ static void addInMemoryResourceLock(IServiceCollection services)
     services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
     // MessageBus
     services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
-    services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
+    services.AddMessageBusFoundatioAdapter();
 
     services.AddResourceLock(
         provider => provider.GetRequiredService<IResourceLockStorage>(),

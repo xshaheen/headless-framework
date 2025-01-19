@@ -13,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
-using IMessageBus = Framework.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
@@ -46,11 +45,12 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture, ITestOutputH
         services.AddSingleton(Substitute.For<ICurrentUser>());
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
+        services.AddSingleton<ILocalMessagePublisher, ServiceProviderLocalMessagePublisher>();
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
             o.Subscriber(fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
         ));
-        services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
+        services.AddMessageBusFoundatioAdapter();
         // Cache
         services.AddRedisCache(options => options.ConnectionMultiplexer = fixture.Multiplexer);
         // Lock Storage
