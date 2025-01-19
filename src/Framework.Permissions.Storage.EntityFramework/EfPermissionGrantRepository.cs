@@ -1,13 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Domains;
+using Framework.Messaging;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Grants;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Permissions;
 
-public sealed class EfPermissionGrantRepository(IDbContextFactory<PermissionsDbContext> dbFactory)
-    : IPermissionGrantRepository
+public sealed class EfPermissionGrantRepository(
+    IDbContextFactory<PermissionsDbContext> dbFactory,
+    ILocalMessagePublisher localPublisher
+) : IPermissionGrantRepository
 {
     public async Task<PermissionGrantRecord?> FindAsync(
         string name,
@@ -80,10 +84,15 @@ public sealed class EfPermissionGrantRepository(IDbContextFactory<PermissionsDbC
 
         db.PermissionGrants.Remove(permissionGrant);
         await db.SaveChangesAsync(cancellationToken);
+
+        await localPublisher.PublishAsync(
+            new EntityChangedEventData<PermissionGrantRecord>(permissionGrant),
+            cancellationToken
+        );
     }
 
     public async Task DeleteManyAsync(
-        IEnumerable<PermissionGrantRecord> permissionGrants,
+        IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
         CancellationToken cancellationToken = default
     )
     {
@@ -91,5 +100,13 @@ public sealed class EfPermissionGrantRepository(IDbContextFactory<PermissionsDbC
 
         db.PermissionGrants.RemoveRange(permissionGrants);
         await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var permissionGrant in permissionGrants)
+        {
+            await localPublisher.PublishAsync(
+                new EntityChangedEventData<PermissionGrantRecord>(permissionGrant),
+                cancellationToken
+            );
+        }
     }
 }

@@ -3,7 +3,7 @@
 using Framework.Features.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Features.Storage.EntityFramework;
+namespace Framework.Features;
 
 [PublicAPI]
 public sealed class FeaturesDbContext(DbContextOptions options) : DbContext(options)

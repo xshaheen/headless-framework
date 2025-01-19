@@ -5,7 +5,7 @@ using Framework.Features.Values;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Features.Storage.EntityFramework;
+namespace Framework.Features;
 
 [PublicAPI]
 public static class AddFeaturesManagementEntityFrameworkStorageExtensions
