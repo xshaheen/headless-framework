@@ -6,6 +6,7 @@ using Framework.Permissions.Models;
 using Framework.Primitives;
 using Framework.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using MoreLinq.Extensions;
 using Tests.TestSetup;
 
@@ -22,7 +23,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
     ];
 
     [Fact]
-    public async Task should_to_get_empty_when_no_permissions()
+    public async Task should_get_empty_when_no_permissions()
     {
         // given
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
@@ -120,6 +121,102 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         permission.IsGranted.Should().BeFalse();
         permission.Name.Should().Be(somePermission.Name);
         permission.Providers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_get_dynamic_permissions()
+    {
+        var currentUser = new TestCurrentUser
+        {
+            IsAuthenticated = true,
+            UserId = new UserId("123"),
+            WritableRoles = { "Role1" },
+        };
+
+        // given: host1 with dynamic permission store enabled
+        using var host1 = _CreateDynamicEnabledHostBuilder<Host1PermissionsDefinitionProvider>().Build();
+        await using var scope1 = host1.Services.CreateAsyncScope();
+        var permissionManager1 = scope1.ServiceProvider.GetRequiredService<IPermissionManager>();
+        var dynamicStore1 = scope1.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
+        const string host1Permission = "Permission1";
+
+        // given: host2 with dynamic permission store enabled
+        using var host2 = _CreateDynamicEnabledHostBuilder<Host2PermissionsDefinitionProvider>().Build();
+        await using var scope2 = host2.Services.CreateAsyncScope();
+        var permissionManager2 = scope2.ServiceProvider.GetRequiredService<IPermissionManager>();
+        var dynamicStore2 = scope2.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
+        const string host2Permission = "Permission2";
+
+        // given: host2 saved its local permissions to dynamic store
+        await dynamicStore2.SaveAsync();
+
+        // when: get dynamic permissions from host1
+        var host1Permissions = await permissionManager1.GetAllAsync(currentUser);
+
+        // then: dynamic permissions should be returned
+        host1Permissions.Should().HaveCount(2);
+        host1Permissions.Should().ContainSingle(x => x.Name == host1Permission);
+        host1Permissions.Should().ContainSingle(x => x.Name == host2Permission);
+
+        // given: host1 saved its local permissions to dynamic store
+        await dynamicStore1.SaveAsync();
+
+        // when: get dynamic permissions from host1
+        var host2Permissions = await permissionManager2.GetAllAsync(currentUser);
+
+        // then: dynamic permissions should be returned
+        host2Permissions.Should().HaveCount(2);
+        host2Permissions.Should().ContainSingle(x => x.Name == host1Permission);
+        host2Permissions.Should().ContainSingle(x => x.Name == host2Permission);
+
+        // when: change dynamic permission value in host1
+        await permissionManager1.GrantToUserAsync(host2Permission, currentUser.UserId);
+
+        // then: dynamic permission value should be available in both hosts
+        (await permissionManager1.GetAsync(host2Permission, currentUser))
+            .IsGranted.Should()
+            .BeTrue();
+        (await permissionManager2.GetAsync(host2Permission, currentUser)).IsGranted.Should().BeTrue();
+
+        // when: change dynamic permission value in host2
+        await permissionManager2.RevokeFromUserAsync(host2Permission, currentUser.UserId);
+
+        // then: dynamic permission value should be changed
+        (await permissionManager1.GetAsync(host2Permission, currentUser))
+            .IsGranted.Should()
+            .BeFalse();
+        (await permissionManager2.GetAsync(host2Permission, currentUser)).IsGranted.Should().BeFalse();
+    }
+
+    private HostApplicationBuilder _CreateDynamicEnabledHostBuilder<T>()
+        where T : class, IPermissionDefinitionProvider
+    {
+        var builder = CreateHostBuilder();
+
+        builder.Services.AddPermissionDefinitionProvider<T>();
+        builder.Services.Configure<PermissionManagementOptions>(options =>
+            options.IsDynamicPermissionStoreEnabled = true
+        );
+
+        return builder;
+    }
+
+    [UsedImplicitly]
+    private sealed class Host1PermissionsDefinitionProvider : IPermissionDefinitionProvider
+    {
+        public void Define(IPermissionDefinitionContext context)
+        {
+            context.AddGroup("Group1").AddChild("Permission1");
+        }
+    }
+
+    [UsedImplicitly]
+    private sealed class Host2PermissionsDefinitionProvider : IPermissionDefinitionProvider
+    {
+        public void Define(IPermissionDefinitionContext context)
+        {
+            context.AddGroup("Group2").AddChild("Permission2");
+        }
     }
 
     [UsedImplicitly]

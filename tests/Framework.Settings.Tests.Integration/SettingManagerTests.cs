@@ -120,7 +120,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     public async Task should_get_dynamic_settings()
     {
         // given: host1 with dynamic setting store enabled
-        using var host1 = _CreateDynamicSettingEnabledHostBuilder<Host1SettingsDefinitionProvider>().Build();
+        using var host1 = _CreateDynamicEnabledHostBuilder<Host1SettingsDefinitionProvider>().Build();
         await using var scope1 = host1.Services.CreateAsyncScope();
         var settingManager1 = scope1.ServiceProvider.GetRequiredService<ISettingManager>();
         var dynamicStore1 = scope1.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
@@ -128,7 +128,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         const string host1SettingValue = "Value1";
 
         // given: host2 with dynamic setting store enabled
-        using var host2 = _CreateDynamicSettingEnabledHostBuilder<Host2SettingsDefinitionProvider>().Build();
+        using var host2 = _CreateDynamicEnabledHostBuilder<Host2SettingsDefinitionProvider>().Build();
         await using var scope2 = host2.Services.CreateAsyncScope();
         var settingManager2 = scope2.ServiceProvider.GetRequiredService<ISettingManager>();
         var dynamicStore2 = scope2.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
@@ -178,7 +178,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         (await settingManager1.GetForUserAsync(userId, host2Setting)).Should().Be("NewValue2");
     }
 
-    private HostApplicationBuilder _CreateDynamicSettingEnabledHostBuilder<T>()
+    private HostApplicationBuilder _CreateDynamicEnabledHostBuilder<T>()
         where T : class, ISettingDefinitionProvider
     {
         var builder = CreateHostBuilder();
