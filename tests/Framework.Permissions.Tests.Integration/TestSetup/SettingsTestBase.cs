@@ -47,6 +47,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestO
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
         services.AddSingleton(Substitute.For<IDistributedMessagePublisher>());
+        services.AddSingleton<ILocalMessagePublisher, ServiceProviderLocalMessagePublisher>();
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
             o.Subscriber(fixture.Multiplexer.GetSubscriber()).Topic("test-lock")

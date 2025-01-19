@@ -5,7 +5,6 @@ using Foundatio.Messaging;
 using Framework.Api;
 using Framework.Caching;
 using Framework.Features;
-using Framework.Features.Storage.EntityFramework;
 using Framework.Messaging;
 using Framework.Permissions;
 using Framework.ResourceLocks;
