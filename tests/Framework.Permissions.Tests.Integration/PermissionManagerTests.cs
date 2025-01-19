@@ -94,10 +94,10 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
 
         var somePermission = _GroupDefinitions[0].Permissions[0];
 
-        // when grant
+        // when: grant
         await permissionManager.GrantToRoleAsync(somePermission.Name, "Role1");
 
-        // then granted
+        // then: granted
         var permission = await permissionManager.GetAsync(somePermission.Name, currentUser);
         permission.Should().NotBeNull();
         permission.IsGranted.Should().BeTrue();
@@ -111,9 +111,10 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         grantedPermission.Name.Should().Be(somePermission.Name);
         notGranted.Should().HaveCount(15);
 
-        // when revoke
+        // when: revoke
         await permissionManager.RevokeFromRoleAsync(somePermission.Name, "Role1");
-        // then revoked
+
+        // then: revoked
         permission = await permissionManager.GetAsync(somePermission.Name, currentUser);
         permission.Should().NotBeNull();
         permission.IsGranted.Should().BeFalse();

@@ -17,7 +17,7 @@ public static class FeatureManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var featureValue = await featureManager.GetOrDefaultAsync(name, cancellationToken: cancellationToken);
+        var featureValue = await featureManager.GetAsync(name, cancellationToken: cancellationToken);
 
         if (string.IsNullOrEmpty(featureValue?.Value))
         {
@@ -85,7 +85,7 @@ public static class FeatureManagerExtensions
         Argument.IsNotNull(featureManager);
         Argument.IsNotNull(name);
 
-        var value = await featureManager.GetOrDefaultAsync(
+        var value = await featureManager.GetAsync(
             name,
             providerName,
             providerKey,
@@ -160,18 +160,38 @@ public static class FeatureManagerExtensions
             throw new ConflictException(error);
         }
     }
+
+    public static Task GrantAsync(
+        this IFeatureManager featureManager,
+        string name,
+        string providerName,
+        string providerKey
+    )
+    {
+        return featureManager.SetAsync(name, "true", providerName, providerKey, forceToSet: true);
+    }
+
+    public static Task RevokeAsync(
+        this IFeatureManager featureManager,
+        string name,
+        string providerName,
+        string providerKey
+    )
+    {
+        return featureManager.SetAsync(name, "false", providerName, providerKey, forceToSet: true);
+    }
 }
 
 [PublicAPI]
 public static class DefaultValueFeatureManagerExtensions
 {
-    public static Task<FeatureValue?> GetDefaultAsync(
+    public static Task<FeatureValue> GetDefaultAsync(
         this IFeatureManager featureManager,
         string name,
         bool fallback = true
     )
     {
-        return featureManager.GetOrDefaultAsync(
+        return featureManager.GetAsync(
             name,
             DefaultValueFeatureValueProvider.ProviderName,
             providerKey: null,
@@ -197,14 +217,14 @@ public static class DefaultValueFeatureManagerExtensions
 [PublicAPI]
 public static class EditionFeatureManagerExtensions
 {
-    public static Task<FeatureValue?> GetForEditionAsync(
+    public static Task<FeatureValue> GetForEditionAsync(
         this IFeatureManager featureManager,
-        string editionId,
         string name,
+        string editionId,
         bool fallback = true
     )
     {
-        return featureManager.GetOrDefaultAsync(name, EditionFeatureValueProvider.ProviderName, editionId, fallback);
+        return featureManager.GetAsync(name, EditionFeatureValueProvider.ProviderName, editionId, fallback);
     }
 
     public static Task<List<FeatureValue>> GetAllForEditionAsync(
@@ -216,17 +236,6 @@ public static class EditionFeatureManagerExtensions
         return featureManager.GetAllAsync(EditionFeatureValueProvider.ProviderName, editionId, fallback);
     }
 
-    public static Task SetForEditionAsync(
-        this IFeatureManager featureManager,
-        string editionId,
-        string name,
-        string? value,
-        bool forceToSet = false
-    )
-    {
-        return featureManager.SetAsync(name, value, EditionFeatureValueProvider.ProviderName, editionId, forceToSet);
-    }
-
     public static Task DeleteForEditionAsync(
         this IFeatureManager featureManager,
         string editionId,
@@ -235,19 +244,43 @@ public static class EditionFeatureManagerExtensions
     {
         return featureManager.DeleteAsync(EditionFeatureValueProvider.ProviderName, editionId, cancellationToken);
     }
+
+    /// <inheritdoc cref="IFeatureManager.SetAsync"/>
+    public static Task SetForEditionAsync(
+        this IFeatureManager featureManager,
+        string name,
+        string? value,
+        string editionId,
+        bool forceToSet = false
+    )
+    {
+        return featureManager.SetAsync(name, value, EditionFeatureValueProvider.ProviderName, editionId, forceToSet);
+    }
+
+    /// <summary>Grant a feature to an edition.</summary>
+    public static Task GrantToEditionAsync(this IFeatureManager featureManager, string name, string editionId)
+    {
+        return featureManager.GrantAsync(name, EditionFeatureValueProvider.ProviderName, editionId);
+    }
+
+    /// <summary>Revoke a feature from an edition.</summary>
+    public static Task RevokeFromEditionAsync(this IFeatureManager featureManager, string name, string editionId)
+    {
+        return featureManager.RevokeAsync(name, EditionFeatureValueProvider.ProviderName, editionId);
+    }
 }
 
 [PublicAPI]
 public static class TenantFeatureManagerExtensions
 {
-    public static Task<FeatureValue?> GetForTenantAsync(
+    public static Task<FeatureValue> GetForTenantAsync(
         this IFeatureManager featureManager,
-        string tenantId,
         string name,
+        string tenantId,
         bool fallback = true
     )
     {
-        return featureManager.GetOrDefaultAsync(name, TenantFeatureValueProvider.ProviderName, tenantId, fallback);
+        return featureManager.GetAsync(name, TenantFeatureValueProvider.ProviderName, tenantId, fallback);
     }
 
     public static Task<List<FeatureValue>> GetAllForTenantAsync(
@@ -259,11 +292,12 @@ public static class TenantFeatureManagerExtensions
         return featureManager.GetAllAsync(TenantFeatureValueProvider.ProviderName, tenantId, fallback);
     }
 
+    /// <inheritdoc cref="IFeatureManager.SetAsync"/>
     public static Task SetForTenantAsync(
         this IFeatureManager featureManager,
-        string tenantId,
         string name,
         string? value,
+        string tenantId,
         bool forceToSet = false
     )
     {
@@ -277,5 +311,17 @@ public static class TenantFeatureManagerExtensions
     )
     {
         return featureManager.DeleteAsync(TenantFeatureValueProvider.ProviderName, tenantId, cancellationToken);
+    }
+
+    /// <summary>Grant a feature to a tenant.</summary>
+    public static Task GrantToTenantAsync(this IFeatureManager featureManager, string name, string tenantId)
+    {
+        return featureManager.GrantAsync(name, TenantFeatureValueProvider.ProviderName, tenantId);
+    }
+
+    /// <summary>Revoke a feature from a tenant.</summary>
+    public static Task RevokeFromTenantAsync(this IFeatureManager featureManager, string name, string tenantId)
+    {
+        return featureManager.RevokeAsync(name, TenantFeatureValueProvider.ProviderName, tenantId);
     }
 }

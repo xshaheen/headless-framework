@@ -125,7 +125,7 @@ public static class LoggerExtensions
         return builder.Tag([tag]);
     }
 
-    public static LogState Tag(this LogState builder, Span<string> tags)
+    public static LogState Tag(this LogState builder, params ReadOnlySpan<string> tags)
     {
         var tagList = new List<string>();
 

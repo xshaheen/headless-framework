@@ -8,7 +8,7 @@ public interface ISettingDefinitionContext
 
     IReadOnlyList<SettingDefinition> GetAll();
 
-    void Add(params Span<SettingDefinition> definitions);
+    void Add(params ReadOnlySpan<SettingDefinition> definitions);
 }
 
 public sealed class SettingDefinitionContext(Dictionary<string, SettingDefinition> settings) : ISettingDefinitionContext
@@ -23,7 +23,7 @@ public sealed class SettingDefinitionContext(Dictionary<string, SettingDefinitio
         return settings.Values.ToImmutableList();
     }
 
-    public void Add(params Span<SettingDefinition> definitions)
+    public void Add(params ReadOnlySpan<SettingDefinition> definitions)
     {
         if (definitions.IsEmpty)
         {

@@ -9,7 +9,7 @@ public sealed class NullableStringToGuidConverter : JsonConverter<Guid?>
         if (reader.TokenType is JsonTokenType.String)
         {
             var guidString = reader.GetString();
-            Span<string> formats = ["N", "D", "B", "P", "X"];
+            ReadOnlySpan<string> formats = ["N", "D", "B", "P", "X"];
 
             foreach (var format in formats)
             {
