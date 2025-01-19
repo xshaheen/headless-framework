@@ -12,7 +12,7 @@ namespace Framework.Messaging;
 
 public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider services) : ILocalMessagePublisher
 {
-    private static readonly ConcurrentDictionary<Type, int> _HandlerOrderCache = new();
+    private readonly ConcurrentDictionary<Type, int> _handlerOrderCache = new();
 
     public void Publish<T>(T message)
         where T : class, ILocalMessage
@@ -72,9 +72,9 @@ public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider servic
 
     #region Helpers
 
-    private static int _GetHandlerOrder(Type handlerType)
+    private int _GetHandlerOrder(Type handlerType)
     {
-        return _HandlerOrderCache.GetOrAdd(
+        return _handlerOrderCache.GetOrAdd(
             handlerType,
             type =>
             {
