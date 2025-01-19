@@ -85,7 +85,7 @@ internal static class DapperSourceFilesGeneratorEmitter
 
         // TODO: Enhance support for SByte, byte, UInt16, UInt32, UInt64
 
-        Span<string> switchCases = data.UnderlyingType switch
+        ReadOnlySpan<string> switchCases = data.UnderlyingType switch
         {
             PrimitiveUnderlyingType.String => [$"string stringValue => new {data.ClassName}(stringValue),"],
             PrimitiveUnderlyingType.Guid =>
