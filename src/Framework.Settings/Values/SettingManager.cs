@@ -5,6 +5,7 @@ using Framework.Exceptions;
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Models;
+using Framework.Settings.Resources;
 using Framework.Settings.ValueProviders;
 
 namespace Framework.Settings.Values;
@@ -56,7 +57,7 @@ public sealed class SettingManager(
     ISettingValueStore valueStore,
     ISettingValueProviderManager valueProviderManager,
     ISettingEncryptionService encryptionService,
-    ISettingsErrorsProvider errorsProvider
+    ISettingsErrorsDescriptor errorsDescriptor
 ) : ISettingManager
 {
     public Task<string?> GetOrDefaultAsync(
@@ -155,7 +156,7 @@ public sealed class SettingManager(
 
         var setting =
             await definitionManager.GetOrDefaultAsync(settingName, cancellationToken)
-            ?? throw new ConflictException(await errorsProvider.NotDefined(settingName));
+            ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName));
 
         var providers = valueProviderManager
             .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -163,7 +164,7 @@ public sealed class SettingManager(
 
         if (providers.Count == 0)
         {
-            throw new ConflictException(await errorsProvider.ProviderNotFound(providerName));
+            throw new ConflictException(await errorsDescriptor.ProviderNotFound(providerName));
         }
 
         if (setting.IsEncrypted)
@@ -194,7 +195,7 @@ public sealed class SettingManager(
         {
             if (provider is not ISettingValueProvider p)
             {
-                throw new ConflictException(await errorsProvider.ProviderIsReadonly(providerName));
+                throw new ConflictException(await errorsDescriptor.ProviderIsReadonly(providerName));
             }
 
             if (value is null)
@@ -239,7 +240,7 @@ public sealed class SettingManager(
 
         var definition =
             await definitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new ConflictException(await errorsProvider.NotDefined(name));
+            ?? throw new ConflictException(await errorsDescriptor.NotDefined(name));
 
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 

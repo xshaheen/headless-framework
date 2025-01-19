@@ -105,7 +105,7 @@ public static class AddPermissionsExtensions
             PermissionGrantCacheItemInvalidator
         >();
 
-        services.TryAddSingleton<IPermissionErrorDescriber, DefaultPermissionErrorDescriber>();
+        services.TryAddSingleton<IPermissionErrorsDescriptor, DefaultPermissionErrorsDescriptor>();
 
         // Definition Services
         /*

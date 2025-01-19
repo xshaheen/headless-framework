@@ -60,7 +60,7 @@ namespace Framework.Permissions.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to The permission named &apos;{0}&apos; is disabled..
+        ///   Looks up a localized string similar to The permission &apos;{0}&apos; is disabled..
         /// </summary>
         internal static string permissions_disabled {
             get {
@@ -69,7 +69,7 @@ namespace Framework.Permissions.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to The permission named &apos;{0}&apos; does not have a provider named &apos;{1}&apos;..
+        ///   Looks up a localized string similar to The permission &apos;{0}&apos; does not have a provider &apos;{1}&apos;..
         /// </summary>
         internal static string permissions_provider_not_defined {
             get {
@@ -78,7 +78,7 @@ namespace Framework.Permissions.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to The provider named &apos;{0}&apos; is not defined for some permissions..
+        ///   Looks up a localized string similar to The provider &apos;{0}&apos; is not defined for some permissions..
         /// </summary>
         internal static string permissions_provider_not_defined_for_some {
             get {
@@ -114,7 +114,7 @@ namespace Framework.Permissions.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to The permission named &apos;{0}&apos; is undefined..
+        ///   Looks up a localized string similar to The permission &apos;{0}&apos; is undefined..
         /// </summary>
         internal static string permissions_undefined {
             get {
