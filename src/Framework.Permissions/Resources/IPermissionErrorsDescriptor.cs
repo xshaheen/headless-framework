@@ -4,7 +4,7 @@ using Framework.Primitives;
 
 namespace Framework.Permissions.Resources;
 
-public interface IPermissionErrorDescriber
+public interface IPermissionErrorsDescriptor
 {
     ValueTask<ErrorDescriptor> SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames);
 
@@ -24,7 +24,7 @@ public interface IPermissionErrorDescriber
     ValueTask<ErrorDescriptor> PermissionProviderNotDefined(string permissionName, string providerName);
 }
 
-public sealed class DefaultPermissionErrorDescriber : IPermissionErrorDescriber
+public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescriptor
 {
     public ValueTask<ErrorDescriptor> SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames)
     {
