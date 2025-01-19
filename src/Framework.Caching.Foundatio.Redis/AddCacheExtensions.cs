@@ -44,11 +44,7 @@ public static class AddCacheExtensions
 
         services.TryAddSingleton<ISerializer, SystemJsonSerializer>();
         services.AddSingleton<ICache, RedisCachingFoundatioAdapter>();
-
-        services.AddKeyedSingleton(
-            CacheConstants.DistributedCacheProvider,
-            static services => services.GetRequiredService<ICache>()
-        );
+        services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
 
         return services;
     }

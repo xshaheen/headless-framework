@@ -40,7 +40,6 @@ public static class AddCacheExtensions
     private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
     {
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-        services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
 
         if (!isDefault)
         {
@@ -49,10 +48,9 @@ public static class AddCacheExtensions
             return services;
         }
 
-        services.AddKeyedSingleton(
-            CacheConstants.MemoryCacheProvider,
-            provider => provider.GetRequiredService<ICache>()
-        );
+        services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
+        services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, x => x.GetRequiredService<ICache>());
+        services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
 
         return services;
     }
