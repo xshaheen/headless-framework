@@ -6,6 +6,7 @@ using Framework.Features.Models;
 using Framework.Features.ValueProviders;
 using Framework.Features.Values;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
 
 namespace Tests;
@@ -187,6 +188,80 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
         feature.Provider.Key.Should().Be(editionId);
     }
 
+    [Fact]
+    public async Task should_get_dynamic_features()
+    {
+        // given: host1 with dynamic feature store enabled
+        using var host1 = _CreateDynamicEnabledHostBuilder<Host1FeaturesDefinitionProvider>().Build();
+        await using var scope1 = host1.Services.CreateAsyncScope();
+        var featureManager1 = scope1.ServiceProvider.GetRequiredService<IFeatureManager>();
+        var dynamicStore1 = scope1.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
+        const string host1Feature = "Feature1";
+        const string host1FeatureValue = "Value1";
+
+        // given: host2 with dynamic feature store enabled
+        using var host2 = _CreateDynamicEnabledHostBuilder<Host2FeaturesDefinitionProvider>().Build();
+        await using var scope2 = host2.Services.CreateAsyncScope();
+        var featureManager2 = scope2.ServiceProvider.GetRequiredService<IFeatureManager>();
+        var dynamicStore2 = scope2.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
+        const string host2Feature = "Feature2";
+        const string host2FeatureValue = "Value2";
+
+        // given: host2 saved its local features to dynamic store
+        await dynamicStore2.SaveAsync();
+
+        // when: get dynamic features from host1
+        var host1Features = await featureManager1.GetAllDefaultAsync();
+
+        // then: dynamic features should be returned
+        host1Features.Should().HaveCount(2);
+        host1Features.Should().ContainSingle(x => x.Name == host1Feature && x.Value == host1FeatureValue);
+        host1Features.Should().ContainSingle(x => x.Name == host2Feature && x.Value == host2FeatureValue);
+
+        // given: host1 saved its local features to dynamic store
+        await dynamicStore1.SaveAsync();
+
+        // when: get dynamic features from host1
+        var host2Features = await featureManager1.GetAllDefaultAsync();
+
+        // then: dynamic features should be returned
+        host2Features.Should().HaveCount(2);
+        host2Features.Should().ContainSingle(x => x.Name == host1Feature && x.Value == host1FeatureValue);
+        host2Features.Should().ContainSingle(x => x.Name == host2Feature && x.Value == host2FeatureValue);
+
+        // given
+        const string editionId = "AnyEditionId";
+
+        // when: change dynamic feature value in host1
+        await featureManager1.GrantToEditionAsync(host2Feature, editionId);
+
+        // then: dynamic feature value should be available in both hosts
+        (await featureManager1.GetForEditionAsync(host2Feature, editionId))
+            .Value.Should()
+            .Be("true");
+        (await featureManager2.GetForEditionAsync(host2Feature, editionId)).Value.Should().Be("true");
+
+        // when: change dynamic feature value in host2
+        await featureManager2.RevokeFromEditionAsync(host2Feature, editionId);
+
+        // then: dynamic feature value should be changed
+        (await featureManager1.GetForEditionAsync(host2Feature, editionId))
+            .Value.Should()
+            .Be("false");
+        (await featureManager2.GetForEditionAsync(host2Feature, editionId)).Value.Should().Be("false");
+    }
+
+    private HostApplicationBuilder _CreateDynamicEnabledHostBuilder<T>()
+        where T : class, IFeatureDefinitionProvider
+    {
+        var builder = CreateHostBuilder();
+
+        builder.Services.AddFeatureDefinitionProvider<T>();
+        builder.Services.Configure<FeatureManagementOptions>(options => options.IsDynamicFeatureStoreEnabled = true);
+
+        return builder;
+    }
+
     private static List<FeatureValue> _GetDefaultFeatureValues()
     {
         var defaultProvider = new FeatureValueProvider(DefaultValueFeatureValueProvider.ProviderName, null);
@@ -197,6 +272,24 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
             .ToList();
 
         return defaultFeatureValues;
+    }
+
+    [UsedImplicitly]
+    private sealed class Host1FeaturesDefinitionProvider : IFeatureDefinitionProvider
+    {
+        public void Define(IFeatureDefinitionContext context)
+        {
+            context.AddGroup("Group1").AddChild("Feature1", "Value1");
+        }
+    }
+
+    [UsedImplicitly]
+    private sealed class Host2FeaturesDefinitionProvider : IFeatureDefinitionProvider
+    {
+        public void Define(IFeatureDefinitionContext context)
+        {
+            context.AddGroup("Group2").AddChild("Feature2", "Value2");
+        }
     }
 
     [UsedImplicitly]
