@@ -1,8 +1,8 @@
 ﻿using Framework.Exceptions;
 using Framework.Settings;
 using Framework.Settings.Definitions;
-using Framework.Settings.Helpers;
 using Framework.Settings.Models;
+using Framework.Settings.Resources;
 using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
@@ -60,7 +60,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
         var userId = Guid.NewGuid().ToString();
         const string settingName = "NotDefinedSetting";
-        var settingsErrorsProvider = scope.ServiceProvider.GetRequiredService<ISettingsErrorsProvider>();
+        var settingsErrorsProvider = scope.ServiceProvider.GetRequiredService<ISettingsErrorsDescriptor>();
         var error = await settingsErrorsProvider.NotDefined(settingName);
 
         // when

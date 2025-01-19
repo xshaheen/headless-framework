@@ -3,6 +3,7 @@
 using Framework.Features;
 using Framework.Features.Definitions;
 using Framework.Features.Models;
+using Framework.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
@@ -12,6 +13,30 @@ namespace Tests;
 public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, ITestOutputHelper output)
     : FeaturesTestBase(fixture, output)
 {
+    private static readonly FeatureGroupDefinition[] _GroupDefinitions =
+    [
+        TestData.CreateGroupDefinition(4),
+        TestData.CreateGroupDefinition(5),
+        TestData.CreateGroupDefinition(7),
+    ];
+
+    [Fact]
+    public async Task should_get_empty_when_call_GetAllAsync_and_no_definitions()
+    {
+        // given
+        using var host = CreateHost();
+        await using var scope = host.Services.CreateAsyncScope();
+        var definitionManager = scope.ServiceProvider.GetRequiredService<IFeatureDefinitionManager>();
+
+        // when
+        var groups = await definitionManager.GetGroupsAsync();
+        var features = await definitionManager.GetFeaturesAsync();
+
+        // then
+        groups.Should().BeEmpty();
+        features.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_get_defined_settings_when_call_GetAllAsync_and_is_defined()
     {
@@ -25,10 +50,26 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, I
         var definitions = await definitionManager.GetFeaturesAsync();
 
         // then
-        definitions.Should().NotBeEmpty();
-        groups.Should().NotBeEmpty();
-        groups.Should().ContainSingle();
-        definitions.Should().HaveCount(3);
+        groups.Should().HaveCount(3);
+        groups.Should().BeEquivalentTo(_GroupDefinitions);
+        definitions.Should().HaveCount(16);
+        definitions.Should().BeEquivalentTo(_GroupDefinitions.SelectMany(x => x.Features));
+    }
+
+    [Fact]
+    public async Task should_get_default_when_call_GetOrDefaultAsync_and_is_not_defined()
+    {
+        // given
+        using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var definitionManager = scope.ServiceProvider.GetRequiredService<IFeatureDefinitionManager>();
+        var randomSettingName = Test.Faker.Random.String2(5, 10);
+
+        // when
+        var definition = await definitionManager.GetOrDefaultAsync(randomSettingName);
+
+        // then
+        definition.Should().BeNull();
     }
 
     [Fact]
@@ -58,10 +99,10 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, I
     {
         public void Define(IFeatureDefinitionContext context)
         {
-            var group = context.AddGeneratedFeatureGroup();
-            group.AddGeneratedFeatureDefinition();
-            group.AddGeneratedFeatureDefinition();
-            group.AddGeneratedFeatureDefinition();
+            foreach (var item in _GroupDefinitions)
+            {
+                context.AddGroup(item);
+            }
         }
     }
 }

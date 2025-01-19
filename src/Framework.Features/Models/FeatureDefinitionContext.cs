@@ -8,6 +8,8 @@ public interface IFeatureDefinitionContext
 {
     FeatureGroupDefinition? GetGroupOrDefault(string name);
 
+    FeatureGroupDefinition AddGroup(FeatureGroupDefinition definition);
+
     FeatureGroupDefinition AddGroup(string name, string? displayName = null);
 
     void RemoveGroup(string name);
@@ -21,12 +23,21 @@ public sealed class FeatureDefinitionContext : IFeatureDefinitionContext
     {
         Argument.IsNotNull(name);
 
-        if (Groups.ContainsKey(name))
+        return AddGroup(new FeatureGroupDefinition(name, displayName));
+    }
+
+    public FeatureGroupDefinition AddGroup(FeatureGroupDefinition definition)
+    {
+        Argument.IsNotNull(definition);
+
+        if (Groups.ContainsKey(definition.Name))
         {
-            throw new InvalidOperationException($"There is already an existing feature group with name: {name}");
+            throw new InvalidOperationException(
+                $"There is already an existing feature group with name: {definition.Name}"
+            );
         }
 
-        return Groups[name] = new FeatureGroupDefinition(name, displayName);
+        return Groups[definition.Name] = definition;
     }
 
     public FeatureGroupDefinition? GetGroupOrDefault(string name)

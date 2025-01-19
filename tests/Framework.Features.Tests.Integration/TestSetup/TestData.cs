@@ -28,4 +28,18 @@ public static class TestData
             isAvailableToHost: Faker.Random.Bool()
         );
     }
+
+    public static FeatureGroupDefinition CreateGroupDefinition(int children = 3)
+    {
+        var context = new FeatureDefinitionContext();
+
+        var group = context.AddGeneratedFeatureGroup();
+
+        for (var i = 0; i < children; i++)
+        {
+            group.AddGeneratedFeatureDefinition();
+        }
+
+        return group;
+    }
 }
