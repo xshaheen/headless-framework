@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
+using Framework.Exceptions;
 using Framework.Features.Definitions;
 using Framework.Features.Models;
+using Framework.Features.Resources;
 using Framework.Features.ValueProviders;
 
 namespace Framework.Features.Values;
@@ -50,7 +52,8 @@ public interface IFeatureManager
 
 public sealed class FeatureManager(
     IFeatureDefinitionManager definitionManager,
-    IFeatureValueProviderManager valueProviderManager
+    IFeatureValueProviderManager valueProviderManager,
+    IFeatureErrorsDescriptor errorsDescriptor
 ) : IFeatureManager
 {
     public async Task<FeatureValue?> GetOrDefaultAsync(
@@ -131,7 +134,7 @@ public sealed class FeatureManager(
 
         var feature =
             await definitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new InvalidOperationException($"Undefined feature: {name}");
+            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name));
 
         var providers = valueProviderManager
             .ValueProviders.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -139,7 +142,7 @@ public sealed class FeatureManager(
 
         if (providers.Count == 0)
         {
-            throw new InvalidOperationException($"Unknown feature value provider: {providerName}");
+            throw new ConflictException(await errorsDescriptor.FeatureProviderNotDefined(name, providerName));
         }
 
         if (providers.Count > 1 && !forceToSet && value is not null)
@@ -168,7 +171,7 @@ public sealed class FeatureManager(
         {
             if (provider is not IFeatureValueProvider p)
             {
-                throw new InvalidOperationException($"Provider {providerName} is readonly provider");
+                throw new ConflictException(await errorsDescriptor.ProviderIsReadonly(providerName));
             }
 
             if (value is null)
@@ -208,7 +211,7 @@ public sealed class FeatureManager(
         {
             var feature =
                 await definitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
-                ?? throw new InvalidOperationException($"Undefined feature: {featureNameValue.Name}");
+                ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(featureNameValue.Name));
 
             foreach (var provider in writableProviders)
             {
@@ -234,7 +237,7 @@ public sealed class FeatureManager(
 
         var definition =
             await definitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new InvalidOperationException($"Feature {name} is not defined!");
+            ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name));
 
         IEnumerable<IFeatureValueReadProvider> providers = valueProviderManager.ValueProviders;
 

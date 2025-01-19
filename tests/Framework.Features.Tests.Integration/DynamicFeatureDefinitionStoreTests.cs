@@ -11,6 +11,8 @@ namespace Tests;
 public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixture, ITestOutputHelper output)
     : FeaturesTestBase(fixture, output)
 {
+    private static readonly FeatureGroupDefinition _GroupDefinition = TestData.CreateGroupDefinition();
+
     [Fact]
     public async Task should_save_defined_settings_when_call_SaveAsync()
     {
@@ -39,23 +41,14 @@ public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixtu
         // then
         definitionsBefore.Should().BeEmpty();
         groupsBefore.Should().BeEmpty();
-
-        definitionsAfter.Should().NotBeEmpty();
         definitionsAfter.Should().HaveCount(3);
-
-        groupsAfter.Should().NotBeEmpty();
         groupsAfter.Should().ContainSingle();
+        groupsAfter[0].Should().BeEquivalentTo(_GroupDefinition);
     }
 
     [UsedImplicitly]
     private sealed class FeaturesDefinitionProvider : IFeatureDefinitionProvider
     {
-        public void Define(IFeatureDefinitionContext context)
-        {
-            var group = context.AddGeneratedFeatureGroup();
-            group.AddGeneratedFeatureDefinition();
-            group.AddGeneratedFeatureDefinition();
-            group.AddGeneratedFeatureDefinition();
-        }
+        public void Define(IFeatureDefinitionContext context) => context.AddGroup(_GroupDefinition);
     }
 }

@@ -18,7 +18,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         CancellationToken cancellationToken = default
     )
     {
-        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken);
+        var pk = NormalizeProviderKey(providerKey);
 
         return await Store.GetOrDefaultAsync(feature.Name, Name, pk, cancellationToken);
     }
@@ -30,7 +30,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         CancellationToken cancellationToken = default
     )
     {
-        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken);
+        var pk = NormalizeProviderKey(providerKey);
 
         await Store.SetAsync(feature.Name, value, Name, pk, cancellationToken);
     }
@@ -41,7 +41,7 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         CancellationToken cancellationToken = default
     )
     {
-        var pk = await NormalizeProviderKeyAsync(providerKey, cancellationToken);
+        var pk = NormalizeProviderKey(providerKey);
 
         await Store.DeleteAsync(feature.Name, Name, pk, cancellationToken);
     }
@@ -57,13 +57,5 @@ public abstract class StoreFeatureValueProvider(IFeatureValueStore store) : IFea
         return Task.FromResult(DisposableFactory.EmptyAsync);
     }
 
-    protected virtual Task<string?> NormalizeProviderKeyAsync(
-        string? providerKey,
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return Task.FromResult(providerKey);
-    }
+    protected virtual string? NormalizeProviderKey(string? providerKey) => providerKey;
 }
