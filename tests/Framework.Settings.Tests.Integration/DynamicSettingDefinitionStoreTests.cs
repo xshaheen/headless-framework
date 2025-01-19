@@ -14,7 +14,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     private static readonly List<SettingDefinition> _SettingDefinitions = TestData.CreateDefinitionFaker().Generate(10);
 
     [Fact]
-    public async Task should_save_defined_settings_when_call_SaveAsync()
+    public async Task should_save_defined_settings()
     {
         // given
         var builder = CreateHostBuilder();

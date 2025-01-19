@@ -6,6 +6,7 @@ using Framework.Settings.Resources;
 using Framework.Settings.ValueProviders;
 using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
 
 namespace Tests;
@@ -113,6 +114,96 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         dbRecord.Should().NotBeNull();
         dbRecord.Name.Should().Be(settingName);
         dbRecord.Value.Should().NotBe("NewValue");
+    }
+
+    [Fact]
+    public async Task should_get_dynamic_settings()
+    {
+        // given: host1 with dynamic setting store enabled
+        using var host1 = _CreateDynamicSettingEnabledHostBuilder<Host1SettingsDefinitionProvider>().Build();
+        await using var scope1 = host1.Services.CreateAsyncScope();
+        var settingManager1 = scope1.ServiceProvider.GetRequiredService<ISettingManager>();
+        var dynamicStore1 = scope1.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
+        const string host1Setting = "Setting1";
+        const string host1SettingValue = "Value1";
+
+        // given: host2 with dynamic setting store enabled
+        using var host2 = _CreateDynamicSettingEnabledHostBuilder<Host2SettingsDefinitionProvider>().Build();
+        await using var scope2 = host2.Services.CreateAsyncScope();
+        var settingManager2 = scope2.ServiceProvider.GetRequiredService<ISettingManager>();
+        var dynamicStore2 = scope2.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
+        const string host2Setting = "Setting2";
+        const string host2SettingValue = "Value2";
+
+        // given: host2 saved its local settings to dynamic store
+        await dynamicStore2.SaveAsync();
+
+        // when: get dynamic settings from host1
+        var host1LocalSetting = await settingManager1.GetDefaultAsync(host1Setting);
+        var host1DynamicSetting = await settingManager1.GetDefaultAsync(host2Setting);
+
+        // then: dynamic settings should be returned
+        host1LocalSetting.Should().Be(host1SettingValue);
+        host1DynamicSetting.Should().Be(host2SettingValue);
+
+        // given: host1 saved its local settings to dynamic store
+        await dynamicStore1.SaveAsync();
+
+        // when: get dynamic settings from host1
+        var host2LocalSetting = await settingManager2.GetDefaultAsync(host2Setting);
+        var host2DynamicSetting = await settingManager2.GetDefaultAsync(host1Setting);
+
+        // then: dynamic settings should be returned
+        host2LocalSetting.Should().Be(host2SettingValue);
+        host2DynamicSetting.Should().Be(host1SettingValue);
+
+        // when: change dynamic setting value in host1
+        var userId = Guid.NewGuid().ToString();
+        await settingManager1.SetForUserAsync(userId, host1Setting, "NewValue1");
+
+        // then: dynamic setting value should be changed
+
+        (await settingManager1.GetForUserAsync(userId, host1Setting))
+            .Should()
+            .Be("NewValue1");
+        (await settingManager2.GetForUserAsync(userId, host1Setting)).Should().Be("NewValue1");
+
+        // when: change dynamic setting value in host2
+        await settingManager2.SetForUserAsync(userId, host2Setting, "NewValue2");
+
+        // then: dynamic setting value should be changed
+        (await settingManager2.GetForUserAsync(userId, host2Setting))
+            .Should()
+            .Be("NewValue2");
+        (await settingManager1.GetForUserAsync(userId, host2Setting)).Should().Be("NewValue2");
+    }
+
+    private HostApplicationBuilder _CreateDynamicSettingEnabledHostBuilder<T>()
+        where T : class, ISettingDefinitionProvider
+    {
+        var builder = CreateHostBuilder();
+        builder.Services.AddSettingDefinitionProvider<T>();
+        builder.Services.Configure<SettingManagementOptions>(options => options.IsDynamicSettingStoreEnabled = true);
+
+        return builder;
+    }
+
+    [UsedImplicitly]
+    private sealed class Host1SettingsDefinitionProvider : ISettingDefinitionProvider
+    {
+        public void Define(ISettingDefinitionContext context)
+        {
+            context.Add(new SettingDefinition("Setting1", "Value1"));
+        }
+    }
+
+    [UsedImplicitly]
+    private sealed class Host2SettingsDefinitionProvider : ISettingDefinitionProvider
+    {
+        public void Define(ISettingDefinitionContext context)
+        {
+            context.Add(new SettingDefinition("Setting2", "Value2"));
+        }
     }
 
     [UsedImplicitly]

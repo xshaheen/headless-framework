@@ -14,7 +14,7 @@ public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture
     private static readonly PermissionGroupDefinition _GroupDefinition = TestData.CreateGroupDefinition();
 
     [Fact]
-    public async Task should_save_defined_settings_when_call_SaveAsync()
+    public async Task should_save_defined_permissions()
     {
         // given
         var builder = CreateHostBuilder();

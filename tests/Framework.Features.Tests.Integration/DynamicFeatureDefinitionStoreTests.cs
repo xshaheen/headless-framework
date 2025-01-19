@@ -14,7 +14,7 @@ public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixtu
     private static readonly FeatureGroupDefinition _GroupDefinition = TestData.CreateGroupDefinition();
 
     [Fact]
-    public async Task should_save_defined_settings_when_call_SaveAsync()
+    public async Task should_save_defined_features()
     {
         // given
         var builder = CreateHostBuilder();

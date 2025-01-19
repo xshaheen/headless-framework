@@ -12,7 +12,7 @@ public sealed class SettingDefinitionRecordRepositoryTests(SettingsTestFixture f
     private static readonly List<SettingDefinition> _Definition = TestData.CreateDefinitionFaker().Generate(2);
 
     [Fact]
-    public async Task should_save_defined_settings_when_call_SaveAsync()
+    public async Task should_save_defined_settings()
     {
         // given
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingDefinitionProvider>());
