@@ -1,13 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Domains;
+using Framework.Messaging;
 using Framework.Settings.Entities;
 using Framework.Settings.Values;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Settings;
 
-public sealed class EfSettingValueRecordRepository(IDbContextFactory<SettingsDbContext> dbFactory)
-    : ISettingValueRecordRepository
+public sealed class EfSettingValueRecordRepository(
+    IDbContextFactory<SettingsDbContext> dbFactory,
+    ILocalMessagePublisher localPublisher
+) : ISettingValueRecordRepository
 {
     public async Task<SettingValueRecord?> FindAsync(
         string name,
@@ -58,7 +62,6 @@ public sealed class EfSettingValueRecordRepository(IDbContextFactory<SettingsDbC
     )
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-
         return await db
             .SettingValues.Where(s =>
                 names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey
@@ -93,10 +96,12 @@ public sealed class EfSettingValueRecordRepository(IDbContextFactory<SettingsDbC
 
         db.SettingValues.Update(setting);
         await db.SaveChangesAsync(cancellationToken);
+
+        await localPublisher.PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken);
     }
 
     public async Task DeleteAsync(
-        IEnumerable<SettingValueRecord> settings,
+        IReadOnlyCollection<SettingValueRecord> settings,
         CancellationToken cancellationToken = default
     )
     {
@@ -104,5 +109,13 @@ public sealed class EfSettingValueRecordRepository(IDbContextFactory<SettingsDbC
 
         db.SettingValues.RemoveRange(settings);
         await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var setting in settings)
+        {
+            await localPublisher.PublishAsync(
+                new EntityChangedEventData<SettingValueRecord>(setting),
+                cancellationToken
+            );
+        }
     }
 }

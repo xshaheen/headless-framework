@@ -13,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
-using IMessageBus = Framework.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
@@ -52,7 +51,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestO
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
             o.Subscriber(fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
         ));
-        services.AddSingleton<IMessageBus, MessageBusFoundatioAdapter>();
+        services.AddMessageBusFoundatioAdapter();
         // Cache
         services.AddRedisCache(options => options.ConnectionMultiplexer = fixture.Multiplexer);
         // Lock Storage

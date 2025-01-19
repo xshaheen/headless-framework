@@ -6,7 +6,10 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Definitions;
 
-/// <summary>Store for setting definitions that are defined statically in memory which is defined at <see cref="SettingManagementProvidersOptions.DefinitionProviders"/>.</summary>
+/// <summary>
+/// Store for setting definitions that are defined statically in the current application memory
+/// which is defined at <see cref="SettingManagementProvidersOptions.DefinitionProviders"/>.
+/// </summary>
 public interface IStaticSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
@@ -51,7 +54,7 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
         var settings = new Dictionary<string, SettingDefinition>(StringComparer.Ordinal);
         var context = new SettingDefinitionContext(settings);
 
-#pragma warning disable MA0045
+#pragma warning disable MA0045 // Use async scope - Justification: No async disposable needed here
         using var scope = _serviceProvider.CreateScope();
 #pragma warning restore MA0045
 

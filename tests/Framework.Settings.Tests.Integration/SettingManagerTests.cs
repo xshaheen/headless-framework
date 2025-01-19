@@ -3,6 +3,7 @@ using Framework.Settings;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
 using Framework.Settings.Resources;
+using Framework.Settings.ValueProviders;
 using Framework.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
@@ -21,7 +22,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     ];
 
     [Fact]
-    public async Task should_be_able_to_get_default_value()
+    public async Task should_get_default_value()
     {
         // given
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
@@ -36,7 +37,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     }
 
     [Fact]
-    public async Task should_be_able_to_get_all_default_values()
+    public async Task should_get_all_default_values()
     {
         // given
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
@@ -74,7 +75,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     }
 
     [Fact]
-    public async Task should_be_able_to_set_value_when_setting_exist()
+    public async Task should_set_value_when_setting_exist()
     {
         // given
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
@@ -89,6 +90,29 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
 
         // then
         settingValue.Should().Be("NewValue");
+    }
+
+    [Fact]
+    public async Task should_set_encrypted_value_when_setting_exist_and_get_it_decrypted()
+    {
+        // given
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
+        var valueRepository = scope.ServiceProvider.GetRequiredService<ISettingValueRecordRepository>();
+        var userId = Guid.NewGuid().ToString();
+        const string settingName = "Setting4";
+
+        // when
+        await settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");
+        var settingValue = await settingManager.GetForUserAsync(userId, name: settingName);
+
+        // then
+        settingValue.Should().Be("NewValue");
+        var dbRecord = await valueRepository.FindAsync(settingName, UserSettingValueProvider.ProviderName, userId);
+        dbRecord.Should().NotBeNull();
+        dbRecord.Name.Should().Be(settingName);
+        dbRecord.Value.Should().NotBe("NewValue");
     }
 
     [UsedImplicitly]

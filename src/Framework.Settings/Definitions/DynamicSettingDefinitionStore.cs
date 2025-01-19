@@ -13,14 +13,16 @@ using Nito.AsyncEx;
 
 namespace Framework.Settings.Definitions;
 
-/// <summary>Store for setting definitions that defined dynamically from an external source like a database.</summary>
+/// <summary>
+/// Store for setting definitions that defined dynamically from an external source like a database.
+/// </summary>
 public interface IDynamicSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
 
     Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
-    /// <summary>Save the application static settings to the dynamic store.</summary>
+    /// <summary>Save the current application static settings to the dynamic store.</summary>
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
 
