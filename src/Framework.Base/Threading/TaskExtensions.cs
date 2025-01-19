@@ -8,8 +8,11 @@ using Nito.AsyncEx;
 // ReSharper disable once CheckNamespace
 namespace System.Threading.Tasks;
 
+[PublicAPI]
 public static class TaskExtensions
 {
+    #region Forget
+
     /// <summary><a href="https://www.meziantou.net/fire-and-forget-a-task-in-dotnet.htm">Blog post</a></summary>
     public static void Forget(this Task task)
     {
@@ -39,6 +42,25 @@ public static class TaskExtensions
 #pragma warning restore ERP022
         }
     }
+
+    #endregion
+
+    #region Safe Delay
+
+    public static async Task SafeDelay(
+        this TimeProvider timeProvider,
+        TimeSpan delay,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await timeProvider.Delay(delay, cancellationToken);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    #endregion
 
     #region AggregateException
 

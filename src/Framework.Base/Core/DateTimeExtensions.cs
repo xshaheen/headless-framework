@@ -4,7 +4,6 @@
 // ReSharper disable once CheckNamespace
 namespace System;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="DateTime"/>.</summary>
 [PublicAPI]
 public static class DateTimeExtensions
 {
@@ -76,6 +75,9 @@ public static class DateTimeExtensions
         return new(date.Year, date.Month, date.Day, date.Hour, 0, 0, 0);
     }
 
+    /// <summary>Converts the specified <see cref="DateTime"/> to Unix time in seconds. </summary>
+    /// <param name="date">The <see cref="DateTime"/> to convert.</param>
+    /// <returns>The number of seconds that have elapsed since 1970-01-01T00:00:00Z.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static long ToUnixTimeSeconds(this DateTime date)
@@ -83,10 +85,66 @@ public static class DateTimeExtensions
         return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeSeconds();
     }
 
+    /// <summary>Converts the specified <see cref="DateTime"/> to Unix time in milliseconds.</summary>
+    /// <param name="date">The <see cref="DateTime"/> to convert.</param>
+    /// <returns>The number of milliseconds that have elapsed since 1970-01-01T00:00:00Z.</returns>
     [SystemPure]
     [JetBrainsPure]
     public static long ToUnixTimeMilliseconds(this DateTime date)
     {
         return new DateTimeOffset(date.ToUniversalTime()).ToUnixTimeMilliseconds();
+    }
+
+    /// <summary>
+    /// Safely adds a specified <see cref="TimeSpan"/> to the given <see cref="DateTime"/>.
+    /// </summary>
+    /// <param name="date">The <see cref="DateTime"/> to which the <paramref name="value"/> will be added.</param>
+    /// <param name="value">The <see cref="TimeSpan"/> to add.</param>
+    /// <returns>
+    /// A new <see cref="DateTime"/> that is the sum of the original <paramref name="date"/> and the <paramref name="value"/>.
+    /// If the result is less than <see cref="DateTime.MinValue"/>, <see cref="DateTime.MinValue"/> is returned.
+    /// If the result is greater than <see cref="DateTime.MaxValue"/>, <see cref="DateTime.MaxValue"/> is returned.
+    /// </returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTime SafeAdd(this DateTime date, TimeSpan value)
+    {
+        if (date.Ticks + value.Ticks < DateTime.MinValue.Ticks)
+        {
+            return DateTime.MinValue;
+        }
+
+        if (date.Ticks + value.Ticks > DateTime.MaxValue.Ticks)
+        {
+            return DateTime.MaxValue;
+        }
+
+        return date.Add(value);
+    }
+
+    /// <summary>
+    /// Floors the given <see cref="DateTime"/> to the nearest interval of the specified <see cref="TimeSpan"/>.
+    /// </summary>
+    /// <param name="date">The <see cref="DateTime"/> to floor.</param>
+    /// <param name="interval">The <see cref="TimeSpan"/> interval to floor to.</param>
+    /// <returns>A new <see cref="DateTime"/> floored to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTime Floor(this DateTime date, TimeSpan interval)
+    {
+        return date.AddTicks(-(date.Ticks % interval.Ticks));
+    }
+
+    /// <summary>
+    /// Ceils the given <see cref="DateTime"/> to the nearest interval of the specified <see cref="TimeSpan"/>.
+    /// </summary>
+    /// <param name="date">The <see cref="DateTime"/> to ceil.</param>
+    /// <param name="interval">The <see cref="TimeSpan"/> interval to ceil to.</param>
+    /// <returns>A new <see cref="DateTime"/> ceiled to the nearest interval of the specified <paramref name="interval"/>.</returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTime Ceiling(this DateTime date, TimeSpan interval)
+    {
+        return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
     }
 }

@@ -74,15 +74,15 @@ public sealed class CouchbaseAssemblyCollectionsReader : ICouchbaseAssemblyColle
 
     private static IEnumerable<Assembly> _GetAssemblies(string assemblyPrefix)
     {
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+        var assemblies = AppDomain
+            .CurrentDomain.GetAssemblies()
+            .Where(assembly =>
+                assembly is { IsDynamic: false, FullName: not null }
+                && !_IsSystemAssembly(assembly.FullName)
+                && assembly.FullName.StartsWith(assemblyPrefix, StringComparison.Ordinal)
+            );
 
-        var stormAssemblies = assemblies.Where(assembly =>
-            assembly is { IsDynamic: false, FullName: not null }
-            && !_IsSystemAssembly(assembly.FullName)
-            && assembly.FullName.StartsWith(assemblyPrefix, StringComparison.Ordinal)
-        );
-
-        return stormAssemblies;
+        return assemblies;
     }
 
     private static bool _IsSystemAssembly(string? assemblyFullName)

@@ -20,13 +20,13 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
         return await Store.GetOrDefaultAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken);
     }
 
-    public Task<List<SettingValue>> GetAllAsync(
+    public async Task<List<SettingValue>> GetAllAsync(
         SettingDefinition[] settings,
         string? providerKey,
         CancellationToken cancellationToken = default
     )
     {
-        return Store.GetAllAsync(
+        return await Store.GetAllAsync(
             settings.Select(x => x.Name).ToArray(),
             Name,
             NormalizeProviderKey(providerKey),

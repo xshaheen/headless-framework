@@ -66,7 +66,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
         var retryStrategyOptions = new RetryStrategyOptions
         {
-            Name = "StormCouchbaseManager.Retry",
+            Name = "CouchbaseManager.Retry",
             BackoffType = DelayBackoffType.Linear,
             Delay = 0.5.Seconds(),
             UseJitter = true,

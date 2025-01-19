@@ -13,14 +13,17 @@
     <PackageReference Include="Respawn" />
     <PackageReference Include="Testcontainers" />
     <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
-    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Local\Framework.ResourceLocks.Local.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
+    <ProjectReference Include="..\..\src\Framework.ResourceLocks.Redis\Framework.ResourceLocks.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

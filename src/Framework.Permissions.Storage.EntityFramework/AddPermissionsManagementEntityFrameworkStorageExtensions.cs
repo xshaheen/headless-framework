@@ -5,7 +5,7 @@ using Framework.Permissions.Grants;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Permissions.Storage.EntityFramework;
+namespace Framework.Permissions;
 
 [PublicAPI]
 public static class AddPermissionsManagementEntityFrameworkStorageExtensions

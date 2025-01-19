@@ -3,22 +3,38 @@
 using Framework.Settings;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
+using Framework.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(SettingsTestFixture))]
-public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
+public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, ITestOutputHelper output)
+    : SettingsTestBase(fixture, output)
 {
-    private static readonly SettingDefinition _SettingDefinition = TestData.CreateSettingDefinitionFaker().Generate();
+    private static readonly List<SettingDefinition> _Definitions = TestData.CreateDefinitionFaker().Generate(5);
+
+    [Fact]
+    public async Task should_get_empty_when_call_GetAllAsync_and_no_definitions()
+    {
+        // given
+        using var host = CreateHost();
+        await using var scope = host.Services.CreateAsyncScope();
+        var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
+
+        // when
+        var definitions = await definitionManager.GetAllAsync();
+
+        // then
+        definitions.Should().BeEmpty();
+    }
 
     [Fact]
     public async Task should_get_defined_settings_when_call_GetAllAsync_and_is_defined()
     {
         // given
-        await using var scope = _CreateHost().Services.CreateAsyncScope();
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
 
         // when
@@ -26,32 +42,41 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
 
         // then
         definitions.Should().NotBeEmpty();
-        definitions.Should().Contain(_SettingDefinition);
+        definitions.Should().HaveCount(_Definitions.Count);
+        definitions.Should().BeEquivalentTo(_Definitions);
     }
 
     [Fact]
     public async Task should_get_defined_setting_when_call_GetOrDefaultAsync_and_is_defined()
     {
         // given
-        await using var scope = _CreateHost().Services.CreateAsyncScope();
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
+        var oneOfTheDefinedSetting = _Definitions[0];
 
         // when
-        var definition = await definitionManager.GetOrDefaultAsync(_SettingDefinition.Name);
+        var definition = await definitionManager.GetOrDefaultAsync(oneOfTheDefinedSetting.Name);
 
         // then
         definition.Should().NotBeNull();
-        definition!.Should().Be(_SettingDefinition);
+        definition.Should().Be(oneOfTheDefinedSetting);
     }
 
-    private IHost _CreateHost()
+    [Fact]
+    public async Task should_get_default_when_call_GetOrDefaultAsync_and_is_not_defined()
     {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
-        builder.Services.ConfigureSettingsServices(fixture.ConnectionString);
-        var host = builder.Build();
+        // given
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
+        var randomSettingName = Test.Faker.Random.String2(5, 10);
 
-        return host;
+        // when
+        var definition = await definitionManager.GetOrDefaultAsync(randomSettingName);
+
+        // then
+        definition.Should().BeNull();
     }
 
     [UsedImplicitly]
@@ -59,7 +84,10 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture)
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(_SettingDefinition);
+            foreach (var settingDefinition in _Definitions)
+            {
+                context.Add(settingDefinition);
+            }
         }
     }
 }

@@ -21,12 +21,18 @@ public sealed class IsNotEmptyTests
     {
         // given
         var collection = new List<int>();
+        var customMessage = $"Error {nameof(collection)} not contains elements.";
 
         // when
         var action = () => Argument.IsNotEmpty(collection);
+        var actionWithCustomMessage = () => Argument.IsNotEmpty(collection,customMessage);
 
         // then
-        action.Should().ThrowExactly<ArgumentException>();
+        action.Should().ThrowExactly<ArgumentException>()
+            .WithMessage("Required argument \"collection\" was empty. (Parameter 'collection')");
+
+        actionWithCustomMessage.Should().ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'collection')");
     }
 
     [Fact]

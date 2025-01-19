@@ -2,7 +2,7 @@
 
 using System.Net;
 using System.Security.Claims;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Testing.Helpers;
 using Mediator;
 using Microsoft.AspNetCore.Http;
@@ -60,8 +60,8 @@ public static class ServiceProviderExtensions
         string? userAgent = null
     )
     {
-        ipAddress ??= TestConstants.F.Internet.Ip();
-        userAgent ??= TestConstants.F.Internet.UserAgent();
+        ipAddress ??= Test.Faker.Internet.Ip();
+        userAgent ??= Test.Faker.Internet.UserAgent();
 
         var accessor = provider.GetRequiredService<IHttpContextAccessor>();
 

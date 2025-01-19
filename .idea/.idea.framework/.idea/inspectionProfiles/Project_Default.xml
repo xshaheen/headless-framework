@@ -40,5 +40,6 @@
         </list>
       </option>
     </inspection_tool>
+    <inspection_tool class="SqlNoDataSourceInspection" enabled="true" level="INFORMATION" enabled_by_default="true" />
   </profile>
 </component>

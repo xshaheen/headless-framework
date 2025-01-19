@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Serialization.Metadata;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Features.Entities;
 using Framework.Features.Models;
@@ -142,7 +142,7 @@ public sealed class DynamicFeatureDefinitionStore(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                acquireAbortToken: cancellationToken
+                cancellationToken: cancellationToken
             )
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for feature definition common stamp check!"
@@ -256,7 +256,7 @@ public sealed class DynamicFeatureDefinitionStore(
             _appSaveLockKey,
             timeUntilExpires: _options.ApplicationSaveLockExpiration,
             acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
-            acquireAbortToken: cancellationToken
+            cancellationToken: cancellationToken
         );
 
         if (appResourceLock is null)
@@ -292,7 +292,7 @@ public sealed class DynamicFeatureDefinitionStore(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                acquireAbortToken: cancellationToken
+                cancellationToken: cancellationToken
             ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static features!"); // It will re-try
 
         var (newGroups, updatedGroups, deletedGroups) = await _UpdateChangedFeatureGroupsAsync(

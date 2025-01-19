@@ -6,7 +6,6 @@ using System.Runtime.CompilerServices;
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
-/// <summary>Provides a set of extension methods for operations on <see cref="IAsyncEnumerable{T}"/>.</summary>
 [PublicAPI]
 public static class AsyncEnumerableExtensions
 {

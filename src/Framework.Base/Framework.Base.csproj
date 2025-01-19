@@ -6,6 +6,8 @@
   </PropertyGroup>
   
   <ItemGroup>
+    <PackageReference Include="Flurl" />
+    <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="IdGen" />
     <PackageReference Include="morelinq" />
     <PackageReference Include="MimeTypes">
@@ -14,7 +16,9 @@
     </PackageReference>
     <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="Nito.Disposables" />
+    <PackageReference Include="Polly.Core" />
     <PackageReference Include="System.Reactive" />
+    <PackageReference Include="TimeZoneConverter" />
     <PackageReference Include="ZString" />
   </ItemGroup>
 

@@ -41,13 +41,13 @@ public sealed class DisposableResourceLock(
     string lockId,
     TimeSpan timeWaitedForLock,
     IResourceLockProvider lockProvider,
-    ILogger logger,
-    TimeProvider timeProvider
+    TimeProvider timeProvider,
+    ILogger logger
 ) : IResourceLock
 {
+    private bool _isReleased;
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp = timeProvider.GetTimestamp();
-    private bool _isReleased;
 
     public string LockId { get; } = lockId;
 
@@ -100,23 +100,19 @@ public sealed class DisposableResourceLock(
             }
 
             _isReleased = true;
-            var elapsed = timeProvider.GetElapsedTime(_timestamp);
 
             if (logger.IsEnabled(LogLevel.Debug))
             {
-                logger.LogDebug("Releasing lock {Resource} ({LockId}) after {Duration:g}", Resource, LockId, elapsed);
+                var elapsed = timeProvider.GetElapsedTime(_timestamp);
+                logger.LogDebug(
+                    "Releasing lock: R={Resource} Id={LockId} after {Duration:g}",
+                    Resource,
+                    LockId,
+                    elapsed
+                );
             }
 
-            try
-            {
-                await lockProvider.ReleaseAsync(Resource, LockId).AnyContext();
-            }
-            catch
-            {
-                _isReleased = false;
-
-                throw;
-            }
+            await lockProvider.ReleaseAsync(Resource, LockId).AnyContext();
         }
     }
 
@@ -126,7 +122,7 @@ public sealed class DisposableResourceLock(
 
         if (isTraceLogLevelEnabled)
         {
-            logger.LogTrace("Disposing lock {Resource} ({LockId})", Resource, LockId);
+            logger.LogTrace("Disposing lock: R={Resource} Id={LockId}", Resource, LockId);
         }
 
         try
@@ -137,13 +133,13 @@ public sealed class DisposableResourceLock(
         {
             if (logger.IsEnabled(LogLevel.Error))
             {
-                logger.LogError(e, "Unable to release lock {Resource} ({LockId})", Resource, LockId);
+                logger.LogError(e, "Unable to release lock: R={Resource} Id={LockId}", Resource, LockId);
             }
         }
 
         if (isTraceLogLevelEnabled)
         {
-            logger.LogTrace("Disposed lock {Resource} ({LockId})", Resource, LockId);
+            logger.LogTrace("Disposed lock: R={Resource} Id={LockId}", Resource, LockId);
         }
     }
 }

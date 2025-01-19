@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Checks;
-
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Concurrent;
@@ -21,41 +19,5 @@ public static class ConcurrentDictionaryExtensions
         where TKey : notnull
     {
         return dictionary.TryGetValue(key, out var obj) ? obj : default;
-    }
-
-    /// <summary>
-    /// Attempts to update the value associated with the specified key in the <see cref="ConcurrentDictionary{TKey, TValue}"/>.
-    /// </summary>
-    /// <typeparam name="TKey">The type of keys in the dictionary.</typeparam>
-    /// <typeparam name="TValue">The type of values in the dictionary.</typeparam>
-    /// <param name="concurrentDictionary">The dictionary to update.</param>
-    /// <param name="key">The key of the value to update.</param>
-    /// <param name="updateValueFactory">A function to generate a new value for the key based on the current value.</param>
-    /// <returns>
-    /// <see langword="true"/> if the value with the specified key was updated successfully; otherwise, <see langword="false"/>.
-    /// </returns>
-    public static bool TryUpdate<TKey, TValue>(
-        this ConcurrentDictionary<TKey, TValue> concurrentDictionary,
-        TKey key,
-        Func<TKey, TValue, TValue> updateValueFactory
-    )
-        where TKey : notnull
-    {
-        Argument.IsNotNull(key);
-        Argument.IsNotNull(updateValueFactory);
-
-        TValue? comparisonValue;
-        TValue newValue;
-        do
-        {
-            if (!concurrentDictionary.TryGetValue(key, out comparisonValue))
-            {
-                return false;
-            }
-
-            newValue = updateValueFactory(key, comparisonValue);
-        } while (!concurrentDictionary.TryUpdate(key, newValue, comparisonValue));
-
-        return true;
     }
 }

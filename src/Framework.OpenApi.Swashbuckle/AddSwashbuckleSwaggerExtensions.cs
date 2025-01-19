@@ -22,48 +22,7 @@ namespace Framework.OpenApi.Swashbuckle;
 [PublicAPI]
 public static class AddSwashbuckleSwaggerExtensions
 {
-    // TODO: Add options to configure Swashbuckle Swagger
-
-    public static IEndpointConventionBuilder UseFrameworkSwashbuckleSwagger(this WebApplication app)
-    {
-        const string uiPath = "swashbuckle";
-        const string documentRoute = "/swashbuckle/{documentName}/swagger.{extension:regex(^(json|ya?ml)$)}";
-
-        var endpointBuilder = app.MapSwagger(documentRoute);
-
-        app.UseSwagger(options =>
-        {
-            options.RouteTemplate = documentRoute;
-        });
-
-        app.UseSwaggerUI(options =>
-        {
-            var productName = AssemblyInformation.Entry.Product?.Replace('.', ' ');
-            options.DocumentTitle = productName is null ? "API" : productName + " API"; // Set the Swagger UI browser document title.
-            options.RoutePrefix = uiPath; // Set the Swagger UI to render at '/swashbuckle'.
-            options.DocExpansion(DocExpansion.None);
-            options.DisplayOperationId();
-            options.DisplayRequestDuration();
-
-            var apiVersionDescriptions = app
-                .Services.GetRequiredService<IApiVersionDescriptionProvider>()
-                .ApiVersionDescriptions.OrderByDescending(v => v.ApiVersion);
-
-            foreach (var apiVersionDescription in apiVersionDescriptions)
-            {
-                var version = apiVersionDescription.ApiVersion.ToString(format: null, CultureInfo.InvariantCulture);
-
-                options.SwaggerEndpoint(
-                    url: $"/swashbuckle/{apiVersionDescription.GroupName}/swagger.json",
-                    name: $"Version {version}"
-                );
-            }
-        });
-
-        return endpointBuilder;
-    }
-
-    internal static IServiceCollection AddFrameworkSwashbuckleSwagger(this IServiceCollection services)
+    public static IServiceCollection AddFrameworkSwashbuckleSwagger(this IServiceCollection services)
     {
         services.AddFluentValidationRulesToSwagger();
         services.AddSwaggerGen(options =>
@@ -126,6 +85,45 @@ public static class AddSwashbuckleSwaggerExtensions
         services.ConfigureOptions<ConfigureSwashbuckleSwaggerGenApiVersionsOptions>();
 
         return services;
+    }
+
+    public static IEndpointConventionBuilder UseFrameworkSwashbuckleSwagger(this WebApplication app)
+    {
+        const string uiPath = "swashbuckle";
+        const string documentRoute = "/swashbuckle/{documentName}/swagger.{extension:regex(^(json|ya?ml)$)}";
+
+        var endpointBuilder = app.MapSwagger(documentRoute);
+
+        app.UseSwagger(options =>
+        {
+            options.RouteTemplate = documentRoute;
+        });
+
+        app.UseSwaggerUI(options =>
+        {
+            var productName = AssemblyInformation.Entry.Product?.Replace('.', ' ');
+            options.DocumentTitle = productName is null ? "API" : productName + " API"; // Set the Swagger UI browser document title.
+            options.RoutePrefix = uiPath; // Set the Swagger UI to render at '/swashbuckle'.
+            options.DocExpansion(DocExpansion.None);
+            options.DisplayOperationId();
+            options.DisplayRequestDuration();
+
+            var apiVersionDescriptions = app
+                .Services.GetRequiredService<IApiVersionDescriptionProvider>()
+                .ApiVersionDescriptions.OrderByDescending(v => v.ApiVersion);
+
+            foreach (var apiVersionDescription in apiVersionDescriptions)
+            {
+                var version = apiVersionDescription.ApiVersion.ToString(format: null, CultureInfo.InvariantCulture);
+
+                options.SwaggerEndpoint(
+                    url: $"/swashbuckle/{apiVersionDescription.GroupName}/swagger.json",
+                    name: $"Version {version}"
+                );
+            }
+        });
+
+        return endpointBuilder;
     }
 
     #region Primitives
@@ -207,8 +205,6 @@ public static class AddSwashbuckleSwaggerExtensions
                 Version = apiVersionDescription.ApiVersion.ToString(),
                 Title = AssemblyInformation.Entry.Product,
                 Description = SwaggerInformation.ResponsesDescription,
-                Contact = new OpenApiContact { Name = "Zad Digital", Email = "contact@zad.digital" },
-                TermsOfService = new Uri("https://www.zad.digital/terms-of-service"),
             };
 
             if (apiVersionDescription.IsDeprecated)

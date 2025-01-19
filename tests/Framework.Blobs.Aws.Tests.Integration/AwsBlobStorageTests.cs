@@ -3,23 +3,24 @@
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
+using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Aws;
-using Framework.BuildingBlocks.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
 namespace Tests;
 
 [Collection(nameof(AwsBlobTestFixture))]
-public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
+public sealed class AwsBlobStorageTests(AwsBlobTestFixture fixture, ITestOutputHelper output)
+    : BlobStorageTestsBase(output)
 {
     protected override IBlobStorage GetStorage()
     {
         var s3Config = new AmazonS3Config
         {
             RegionEndpoint = RegionEndpoint.USEast1,
-            ServiceURL = "http://localhost:4566",
+            ServiceURL = fixture.Container.GetConnectionString(),
             ForcePathStyle = true,
         };
 
@@ -38,164 +39,164 @@ public sealed class AwsBlobStorageTests(ITestOutputHelper output) : BlobStorageT
     }
 
     [Fact]
-    public override Task CanGetEmptyFileListOnMissingDirectoryAsync()
+    public override Task can_get_empty_file_list_on_missing_directory()
     {
-        return base.CanGetEmptyFileListOnMissingDirectoryAsync();
+        return base.can_get_empty_file_list_on_missing_directory();
     }
 
     [Fact]
-    public override Task CanGetFileListForSingleFolderAsync()
+    public override Task can_get_file_list_for_single_folder()
     {
-        return base.CanGetFileListForSingleFolderAsync();
+        return base.can_get_file_list_for_single_folder();
     }
 
     [Fact]
-    public override Task CanGetFileListForSingleFileAsync()
+    public override Task can_get_file_list_for_single_file()
     {
-        return base.CanGetFileListForSingleFileAsync();
+        return base.can_get_file_list_for_single_file();
     }
 
     [Fact]
-    public override Task CanGetPagedFileListForSingleFolderAsync()
+    public override Task can_get_paged_file_list_for_single_folder()
     {
-        return base.CanGetPagedFileListForSingleFolderAsync();
+        return base.can_get_paged_file_list_for_single_folder();
     }
 
     [Fact]
-    public override Task CanGetFileInfoAsync()
+    public override Task can_get_file_info()
     {
-        return base.CanGetFileInfoAsync();
+        return base.can_get_file_info();
     }
 
     [Fact]
-    public override Task CanGetNonExistentFileInfoAsync()
+    public override Task can_get_non_existent_file_info()
     {
-        return base.CanGetNonExistentFileInfoAsync();
+        return base.can_get_non_existent_file_info();
     }
 
     [Fact]
-    public override Task CanManageFilesAsync()
+    public override Task can_manage_files()
     {
-        return base.CanManageFilesAsync();
+        return base.can_manage_files();
     }
 
     [Fact]
-    public override Task CanRenameFilesAsync()
+    public override Task can_rename_files()
     {
-        return base.CanRenameFilesAsync();
+        return base.can_rename_files();
     }
 
     [Fact]
-    public override Task CanConcurrentlyManageFilesAsync()
+    public override Task can_concurrently_manage_files()
     {
-        return base.CanConcurrentlyManageFilesAsync();
+        return base.can_concurrently_manage_files();
     }
 
     [Fact]
-    public override Task CanDeleteEntireFolderAsync()
+    public override Task can_delete_entire_folder()
     {
-        return base.CanDeleteEntireFolderAsync();
+        return base.can_delete_entire_folder();
     }
 
     [Fact]
-    public override Task CanDeleteEntireFolderWithWildcardAsync()
+    public override Task can_delete_entire_folder_with_wildcard()
     {
-        return base.CanDeleteEntireFolderWithWildcardAsync();
+        return base.can_delete_entire_folder_with_wildcard();
     }
 
     [Fact]
-    public override Task CanDeleteFolderWithMultiFolderWildcardsAsync()
+    public override Task can_delete_folder_with_multi_folder_wildcards()
     {
-        return base.CanDeleteFolderWithMultiFolderWildcardsAsync();
+        return base.can_delete_folder_with_multi_folder_wildcards();
     }
 
     [Fact]
-    public override Task CanDeleteSpecificFilesAsync()
+    public override Task can_delete_specific_files()
     {
-        return base.CanDeleteSpecificFilesAsync();
+        return base.can_delete_specific_files();
     }
 
     [Fact]
-    public override Task CanDeleteNestedFolderAsync()
+    public override Task can_delete_nested_folder()
     {
-        return base.CanDeleteNestedFolderAsync();
+        return base.can_delete_nested_folder();
     }
 
     [Fact]
-    public override Task CanDeleteSpecificFilesInNestedFolderAsync()
+    public override Task can_delete_specific_files_in_nested_folder()
     {
-        return base.CanDeleteSpecificFilesInNestedFolderAsync();
+        return base.can_delete_specific_files_in_nested_folder();
     }
 
     [Fact]
-    public override Task CanRoundTripSeekableStreamAsync()
+    public override Task can_round_trip_seekable_stream()
     {
-        return base.CanRoundTripSeekableStreamAsync();
+        return base.can_round_trip_seekable_stream();
     }
 
     [Fact]
-    public override Task WillRespectStreamOffsetAsync()
+    public override Task will_respect_stream_offset()
     {
-        return base.WillRespectStreamOffsetAsync();
+        return base.will_respect_stream_offset();
     }
 
     [Fact]
-    public override Task CanSaveOverExistingStoredContent()
+    public override Task can_save_over_existing_stored_content()
     {
-        return base.CanSaveOverExistingStoredContent();
+        return base.can_save_over_existing_stored_content();
     }
 
     [Fact]
-    public override Task CanCallDeleteWithEmptyContainerAsync()
+    public override Task can_call_delete_with_empty_container()
     {
-        return base.CanCallDeleteWithEmptyContainerAsync();
+        return base.can_call_delete_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallBulkDeleteWithEmptyContainerAsync()
+    public override Task can_call_bulk_Delete_with_empty_container()
     {
-        return base.CanCallBulkDeleteWithEmptyContainerAsync();
+        return base.can_call_bulk_Delete_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallDeleteAllAsyncWithEmptyContainerAsync()
+    public override Task can_call_delete_all_async_with_empty_container()
     {
-        return base.CanCallDeleteAllAsyncWithEmptyContainerAsync();
+        return base.can_call_delete_all_async_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallCopyWithEmptyContainerAsync()
+    public override Task can_call_copy_with_empty_container()
     {
-        return base.CanCallCopyWithEmptyContainerAsync();
+        return base.can_call_copy_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallRenameWithEmptyContainerAsync()
+    public override Task can_call_rename_with_empty_container()
     {
-        return base.CanCallRenameWithEmptyContainerAsync();
+        return base.can_call_rename_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallExistsWithEmptyContainerAsync()
+    public override Task can_call_exists_with_empty_container()
     {
-        return base.CanCallExistsWithEmptyContainerAsync();
+        return base.can_call_exists_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallDownloadWithEmptyContainerAsync()
+    public override Task can_call_download_with_empty_container()
     {
-        return base.CanCallDownloadWithEmptyContainerAsync();
+        return base.can_call_download_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallGetBlobInfoWithEmptyContainerAsync()
+    public override Task can_call_get_blob_info_with_empty_container()
     {
-        return base.CanCallGetBlobInfoWithEmptyContainerAsync();
+        return base.can_call_get_blob_info_with_empty_container();
     }
 
     [Fact]
-    public override Task CanCallGetPagedListWithEmptyContainerAsync()
+    public override Task can_call_get_paged_list_with_empty_container()
     {
-        return base.CanCallGetPagedListWithEmptyContainerAsync();
+        return base.can_call_get_paged_list_with_empty_container();
     }
 }

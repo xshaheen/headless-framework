@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Serialization.Metadata;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Caching;
 using Framework.ResourceLocks;
 using Framework.Serializer.Json.Modifiers;
@@ -13,14 +13,16 @@ using Nito.AsyncEx;
 
 namespace Framework.Settings.Definitions;
 
-/// <summary>Store for setting definitions that defined dynamically from an external source like a database.</summary>
+/// <summary>
+/// Store for setting definitions that defined dynamically from an external source like a database.
+/// </summary>
 public interface IDynamicSettingDefinitionStore
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
 
     Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
 
-    /// <summary>Save the application static settings to the dynamic store.</summary>
+    /// <summary>Save the current application static settings to the dynamic store.</summary>
     Task SaveAsync(CancellationToken cancellationToken = default);
 }
 
@@ -128,7 +130,7 @@ public sealed class DynamicSettingDefinitionStore(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                acquireAbortToken: cancellationToken
+                cancellationToken: cancellationToken
             )
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for setting definition common stamp check!"
@@ -188,7 +190,7 @@ public sealed class DynamicSettingDefinitionStore(
             _appSaveLockKey,
             timeUntilExpires: _options.ApplicationSaveLockExpiration,
             acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
-            acquireAbortToken: cancellationToken
+            cancellationToken: cancellationToken
         );
 
         if (applicationResourceLock is null)
@@ -211,7 +213,7 @@ public sealed class DynamicSettingDefinitionStore(
                 _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: 10.Minutes(),
                 acquireTimeout: 5.Minutes(),
-                acquireAbortToken: cancellationToken
+                cancellationToken: cancellationToken
             ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!"); // It will re-try
 
         var (newRecords, changedRecords, deletedRecords) = await _UpdateChangedSettingsAsync(

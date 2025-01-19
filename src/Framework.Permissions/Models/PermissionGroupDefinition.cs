@@ -9,7 +9,7 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
     private string? _displayName;
     private readonly List<PermissionDefinition> _permissions;
 
-    internal PermissionGroupDefinition(string name, string? displayName = null)
+    public PermissionGroupDefinition(string name, string? displayName = null)
     {
         Name = name;
         DisplayName = displayName ?? name;

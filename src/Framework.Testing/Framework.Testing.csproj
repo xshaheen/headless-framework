@@ -10,11 +10,13 @@
     <PackageReference Include="Bogus" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Meziantou.Extensions.Logging.Xunit" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="xunit" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
+    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
   </ItemGroup>
 
 </Project>

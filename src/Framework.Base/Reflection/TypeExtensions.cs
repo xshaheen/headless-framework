@@ -152,16 +152,27 @@ public static class TypeExtensions
     #region TPL
 
     [MustUseReturnValue]
-    public static bool IsTaskOrTaskOfT(this Type type)
-    {
-        return type == typeof(Task)
-            || (type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>));
-    }
-
-    [MustUseReturnValue]
     public static bool IsTaskOfT(this Type type)
     {
         return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(Task<>);
+    }
+
+    [MustUseReturnValue]
+    public static bool IsTaskOrTaskOfT(this Type type)
+    {
+        return type == typeof(Task) || IsTaskOfT(type);
+    }
+
+    [MustUseReturnValue]
+    public static bool IsValueTaskOfT(this Type type)
+    {
+        return type.GetTypeInfo().IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTask<>);
+    }
+
+    [MustUseReturnValue]
+    public static bool IsValueTaskOrValueTaskOfT(this Type type)
+    {
+        return type == typeof(ValueTask) || IsValueTaskOfT(type);
     }
 
     /// <summary>Returns void if given type is Task. Return T, if given type is Task{T}. Returns given type otherwise.</summary>

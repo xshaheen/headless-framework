@@ -4,27 +4,29 @@ using Framework.Features;
 using Framework.Features.Definitions;
 using Framework.Features.Models;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(FeaturesTestFixture))]
-public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixture)
+public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixture, ITestOutputHelper output)
+    : FeaturesTestBase(fixture, output)
 {
+    private static readonly FeatureGroupDefinition _GroupDefinition = TestData.CreateGroupDefinition();
+
     [Fact]
-    public async Task should_save_defined_settings_when_call_SaveAsync()
+    public async Task should_save_defined_features()
     {
         // given
-        var hostBuilder = _CreateFeaturesHostBuilder();
+        var builder = CreateHostBuilder();
+        builder.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>();
 
-        hostBuilder.Services.Configure<FeatureManagementOptions>(options =>
+        builder.Services.Configure<FeatureManagementOptions>(options =>
         {
             options.IsDynamicFeatureStoreEnabled = true;
             options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
         });
 
-        var host = hostBuilder.Build();
+        var host = builder.Build();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
@@ -39,32 +41,14 @@ public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixtu
         // then
         definitionsBefore.Should().BeEmpty();
         groupsBefore.Should().BeEmpty();
-
-        definitionsAfter.Should().NotBeEmpty();
         definitionsAfter.Should().HaveCount(3);
-
-        groupsAfter.Should().NotBeEmpty();
         groupsAfter.Should().ContainSingle();
+        groupsAfter[0].Should().BeEquivalentTo(_GroupDefinition);
     }
 
     [UsedImplicitly]
     private sealed class FeaturesDefinitionProvider : IFeatureDefinitionProvider
     {
-        public void Define(IFeatureDefinitionContext context)
-        {
-            var group = context.AddGeneratedFeatureGroup();
-            group.AddGeneratedFeatureDefinition();
-            group.AddGeneratedFeatureDefinition();
-            group.AddGeneratedFeatureDefinition();
-        }
-    }
-
-    private HostApplicationBuilder _CreateFeaturesHostBuilder()
-    {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>();
-        builder.Services.ConfigureFeaturesServices(fixture.ConnectionString);
-
-        return builder;
+        public void Define(IFeatureDefinitionContext context) => context.AddGroup(_GroupDefinition);
     }
 }

@@ -4,31 +4,30 @@ using Framework.Settings;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(SettingsTestFixture))]
-public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixture)
+public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixture, ITestOutputHelper output)
+    : SettingsTestBase(fixture, output)
 {
-    private static readonly List<SettingDefinition> _SettingDefinitions = TestData
-        .CreateSettingDefinitionFaker()
-        .Generate(10);
+    private static readonly List<SettingDefinition> _SettingDefinitions = TestData.CreateDefinitionFaker().Generate(10);
 
     [Fact]
-    public async Task should_save_defined_settings_when_call_SaveAsync()
+    public async Task should_save_defined_settings()
     {
         // given
-        var hostBuilder = _CreateSettingsHostBuilder();
+        var builder = CreateHostBuilder();
 
-        hostBuilder.Services.Configure<SettingManagementOptions>(options =>
+        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
+
+        builder.Services.Configure<SettingManagementOptions>(options =>
         {
             options.IsDynamicSettingStoreEnabled = true;
             options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
         });
 
-        var host = hostBuilder.Build();
+        var host = builder.Build();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
@@ -49,16 +48,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add([.. _SettingDefinitions]);
+            context.Add(_SettingDefinitions.AsSpan());
         }
-    }
-
-    private HostApplicationBuilder _CreateSettingsHostBuilder()
-    {
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
-        builder.Services.ConfigureSettingsServices(fixture.ConnectionString);
-
-        return builder;
     }
 }

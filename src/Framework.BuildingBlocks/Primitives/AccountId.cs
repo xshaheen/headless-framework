@@ -2,7 +2,6 @@
 
 using Framework.Generator.Primitives;
 
-// ReSharper disable once CheckNamespace
 namespace Framework.Primitives;
 
 /// <summary>Account identifier.</summary>

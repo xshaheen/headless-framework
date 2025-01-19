@@ -4,14 +4,18 @@ namespace Framework.Recaptcha.Internals;
 
 internal static class StringExtensions
 {
-    public static string? RemovePostFix(this string str, StringComparison comparisonType, params string[]? postFixes)
+    public static string? RemovePostFix(
+        this string str,
+        StringComparison comparisonType,
+        params ReadOnlySpan<string> postFixes
+    )
     {
         if (string.IsNullOrEmpty(str))
         {
             return null;
         }
 
-        if (postFixes is null || postFixes.Length == 0)
+        if (postFixes.IsEmpty)
         {
             return str;
         }

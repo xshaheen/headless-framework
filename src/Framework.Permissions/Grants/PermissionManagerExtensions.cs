@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
+using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Results;
 
 namespace Framework.Permissions.Grants;
@@ -36,5 +37,103 @@ public static class PermissionManagerExtensions
         }
 
         return result;
+    }
+
+    public static Task SetToUserAsync(
+        this IPermissionManager permissionManager,
+        string permissionName,
+        string userId,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return permissionManager.SetAsync(
+            permissionName,
+            UserPermissionGrantProvider.ProviderName,
+            userId,
+            isGranted,
+            cancellationToken
+        );
+    }
+
+    public static Task GrantToUserAsync(
+        this IPermissionManager permissionManager,
+        string permissionName,
+        string userId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return permissionManager.SetAsync(
+            permissionName,
+            UserPermissionGrantProvider.ProviderName,
+            userId,
+            isGranted: true,
+            cancellationToken
+        );
+    }
+
+    public static Task RevokeFromUserAsync(
+        this IPermissionManager permissionManager,
+        string permissionName,
+        string userId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return permissionManager.SetAsync(
+            permissionName,
+            UserPermissionGrantProvider.ProviderName,
+            userId,
+            isGranted: false,
+            cancellationToken
+        );
+    }
+
+    public static Task SetToRoleAsync(
+        this IPermissionManager permissionManager,
+        string permissionName,
+        string roleName,
+        bool isGranted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return permissionManager.SetAsync(
+            permissionName,
+            RolePermissionGrantProvider.ProviderName,
+            roleName,
+            isGranted,
+            cancellationToken
+        );
+    }
+
+    public static Task GrantToRoleAsync(
+        this IPermissionManager permissionManager,
+        string permissionName,
+        string roleName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return permissionManager.SetAsync(
+            permissionName,
+            RolePermissionGrantProvider.ProviderName,
+            roleName,
+            isGranted: true,
+            cancellationToken
+        );
+    }
+
+    public static Task RevokeFromRoleAsync(
+        this IPermissionManager permissionManager,
+        string permissionName,
+        string roleName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return permissionManager.SetAsync(
+            permissionName,
+            RolePermissionGrantProvider.ProviderName,
+            roleName,
+            isGranted: false,
+            cancellationToken
+        );
     }
 }

@@ -2,12 +2,11 @@
 
 using Framework.Generator.Primitives;
 
-#pragma warning disable CA1036  // Override methods on comparable types
-// ReSharper disable once CheckNamespace
 namespace Framework.Primitives;
 
 /// <summary>User identifier.</summary>
 [PublicAPI]
+#pragma warning disable CA1036  // Override methods on comparable types
 public sealed partial class UserId : IPrimitive<string>
 {
     public static PrimitiveValidationResult Validate(string value)

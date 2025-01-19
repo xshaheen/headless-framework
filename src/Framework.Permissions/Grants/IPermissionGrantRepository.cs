@@ -36,7 +36,7 @@ public interface IPermissionGrantRepository
     Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken);
 
     Task DeleteManyAsync(
-        IEnumerable<PermissionGrantRecord> permissionGrants,
+        IReadOnlyCollection<PermissionGrantRecord> permissionGrants,
         CancellationToken cancellationToken = default
     );
 }

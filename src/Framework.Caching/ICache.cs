@@ -34,8 +34,8 @@ public interface ICache
 
     Task<bool> TryReplaceIfEqualAsync<T>(
         string key,
-        T value,
         T expected,
+        T value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );

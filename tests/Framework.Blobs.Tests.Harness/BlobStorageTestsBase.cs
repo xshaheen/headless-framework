@@ -18,7 +18,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
     protected static string[] Container => [ContainerName];
 
-    public virtual async Task CanGetEmptyFileListOnMissingDirectoryAsync()
+    public virtual async Task can_get_empty_file_list_on_missing_directory()
     {
         using var storage = GetStorage();
 
@@ -29,7 +29,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         list.Should().BeEmpty();
     }
 
-    public virtual async Task CanGetFileListForSingleFolderAsync()
+    public virtual async Task can_get_file_list_for_single_folder()
     {
         using var storage = GetStorage();
 
@@ -52,7 +52,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobsListAsync(container, @"q\*")).Should().ContainSingle();
     }
 
-    public virtual async Task CanGetFileListForSingleFileAsync()
+    public virtual async Task can_get_file_list_for_single_file()
     {
         using var storage = GetStorage();
 
@@ -73,7 +73,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         list[0].Created.Should().BeAfter(DateTimeOffset.MinValue);
     }
 
-    public virtual async Task CanGetPagedFileListForSingleFolderAsync()
+    public virtual async Task can_get_paged_file_list_for_single_folder()
     {
         using var storage = GetStorage();
 
@@ -131,7 +131,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobContentAsync([name, "q"], "new.txt")).Should().Be("new");
     }
 
-    public virtual async Task CanGetFileInfoAsync()
+    public virtual async Task can_get_file_info()
     {
         using var storage = GetStorage();
 
@@ -150,7 +150,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         fileInfo = await storage.GetBlobInfoAsync(container, blobName);
         fileInfo.Should().NotBeNull();
-        fileInfo!.BlobKey.Should().Be($"folder/{blobName}");
+        fileInfo.BlobKey.Should().Be($"folder/{blobName}");
         fileInfo.Size.Should().BePositive("Should have file size");
 
         // NOTE: File creation time might not be accurate:
@@ -173,7 +173,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         fileInfo = await storage.GetBlobInfoAsync(container, blobName);
 
         fileInfo.Should().NotBeNull();
-        fileInfo!.BlobKey.Should().EndWith($"folder/{blobName}", "Incorrect file");
+        fileInfo.BlobKey.Should().EndWith($"folder/{blobName}", "Incorrect file");
         fileInfo.Size.Should().BePositive("Incorrect file size");
 
         fileInfo
@@ -188,7 +188,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
             );
     }
 
-    public virtual async Task CanGetNonExistentFileInfoAsync()
+    public virtual async Task can_get_non_existent_file_info()
     {
         using var storage = GetStorage();
 
@@ -202,7 +202,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobInfoAsync(container, Guid.NewGuid().ToString())).Should().BeNull();
     }
 
-    public virtual async Task CanManageFilesAsync()
+    public virtual async Task can_manage_files()
     {
         using var storage = GetStorage();
 
@@ -224,7 +224,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
     }
 
-    public virtual async Task CanRenameFilesAsync()
+    public virtual async Task can_rename_files()
     {
         using var storage = GetStorage();
 
@@ -246,7 +246,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobsListAsync(container)).Should().ContainSingle();
     }
 
-    public virtual async Task CanDeleteEntireFolderAsync()
+    public virtual async Task can_delete_entire_folder()
     {
         using var storage = GetStorage();
 
@@ -262,7 +262,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
     }
 
-    public virtual async Task CanDeleteEntireFolderWithWildcardAsync()
+    public virtual async Task can_delete_entire_folder_with_wildcard()
     {
         using var storage = GetStorage();
 
@@ -282,7 +282,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobsListAsync(container)).Should().BeEmpty();
     }
 
-    public virtual async Task CanDeleteFolderWithMultiFolderWildcardsAsync()
+    public virtual async Task can_delete_folder_with_multi_folder_wildcards()
     {
         using var storage = GetStorage();
 
@@ -327,7 +327,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobsListAsync(container)).Should().HaveCount(2 * 11 * filesPerMonth);
     }
 
-    public virtual async Task CanDeleteSpecificFilesAsync()
+    public virtual async Task can_delete_specific_files()
     {
         using var storage = GetStorage();
 
@@ -354,7 +354,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.ExistsAsync([name, "x", "nested"], "world.csv")).Should().BeTrue();
     }
 
-    public virtual async Task CanDeleteNestedFolderAsync()
+    public virtual async Task can_delete_nested_folder()
     {
         using var storage = GetStorage();
 
@@ -380,7 +380,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.ExistsAsync([name, "x", "nested"], "world.csv")).Should().BeFalse();
     }
 
-    public virtual async Task CanDeleteSpecificFilesInNestedFolderAsync()
+    public virtual async Task can_delete_specific_files_in_nested_folder()
     {
         using var storage = GetStorage();
 
@@ -410,7 +410,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.ExistsAsync([name, "x", "nested"], "world.csv")).Should().BeTrue();
     }
 
-    public virtual async Task CanRoundTripSeekableStreamAsync()
+    public virtual async Task can_round_trip_seekable_stream()
     {
         using var storage = GetStorage();
 
@@ -434,12 +434,12 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         // Download the stream from storage
         var downloadResult = await storage.DownloadAsync(container, path);
         downloadResult.Should().NotBeNull();
-        await using var stream = downloadResult!.Stream;
+        await using var stream = downloadResult.Stream;
         var actual = XElement.Load(stream);
         actual.ToString(SaveOptions.DisableFormatting).Should().Be(element.ToString(SaveOptions.DisableFormatting));
     }
 
-    public virtual async Task WillRespectStreamOffsetAsync()
+    public virtual async Task will_respect_stream_offset()
     {
         using var storage = GetStorage();
 
@@ -468,7 +468,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobContentAsync(container, blobName)).Should().Be("Blake");
     }
 
-    public virtual async Task CanConcurrentlyManageFilesAsync()
+    public virtual async Task can_concurrently_manage_files()
     {
         using var storage = GetStorage();
 
@@ -524,7 +524,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
                 var eventPost = await _GetPostAndSetWorkMarkAsync(
                     storage,
                     container,
-                    TestConstants.F.Random.Int(0, 25).ToString(CultureInfo.InvariantCulture) + ".json"
+                    Test.Faker.Random.Int(0, 25).ToString(CultureInfo.InvariantCulture) + ".json"
                 );
 
                 if (eventPost == null)
@@ -532,7 +532,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
                     return;
                 }
 
-                if (TestConstants.F.Random.Bool())
+                if (Test.Faker.Random.Bool())
                 {
                     await _CompletePostAsync(storage, container, blobName, eventPost.ProjectId, DateTime.UtcNow);
                 }
@@ -544,7 +544,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         );
     }
 
-    public virtual async Task CanSaveOverExistingStoredContent()
+    public virtual async Task can_save_over_existing_stored_content()
     {
         using var storage = GetStorage();
 
@@ -562,13 +562,13 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         (await storage.GetBlobContentAsync<Post>(container, blobName)).Should().BeEquivalentTo(shortIdPost);
     }
 
-    public virtual async Task CanCallDeleteAllAsyncWithEmptyContainerAsync()
+    public virtual async Task can_call_delete_all_async_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] container = [TestConstants.F.Random.String2(5, 25)];
+        string[] container = [Test.Faker.Random.String2(5, 25)];
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DeleteAllAsync(container).AsTask();
@@ -576,14 +576,14 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallDeleteWithEmptyContainerAsync()
+    public virtual async Task can_call_delete_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] container = [TestConstants.F.Random.String2(5, 25)];
-        var blobName = TestConstants.F.Random.String2(5, 25);
+        string[] container = [Test.Faker.Random.String2(5, 25)];
+        var blobName = Test.Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DeleteAsync(container, blobName).AsTask();
@@ -591,14 +591,14 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallBulkDeleteWithEmptyContainerAsync()
+    public virtual async Task can_call_bulk_Delete_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] container = [TestConstants.F.Random.String2(5, 25)];
-        string[] blobNames = [TestConstants.F.Random.String2(5, 25)];
+        string[] container = [Test.Faker.Random.String2(5, 25)];
+        string[] blobNames = [Test.Faker.Random.String2(5, 25)];
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.BulkDeleteAsync(container, blobNames).AsTask();
@@ -606,16 +606,16 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallRenameWithEmptyContainerAsync()
+    public virtual async Task can_call_rename_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] sourceContainer = [TestConstants.F.Random.String2(5, 25)];
-        string[] destinationContainer = [TestConstants.F.Random.String2(5, 25)];
-        var blobName = TestConstants.F.Random.String2(5, 25);
-        var newBlobName = TestConstants.F.Random.String2(5, 25);
+        string[] sourceContainer = [Test.Faker.Random.String2(5, 25)];
+        string[] destinationContainer = [Test.Faker.Random.String2(5, 25)];
+        var blobName = Test.Faker.Random.String2(5, 25);
+        var newBlobName = Test.Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.RenameAsync(sourceContainer, blobName, destinationContainer, newBlobName).AsTask();
@@ -623,16 +623,16 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallCopyWithEmptyContainerAsync()
+    public virtual async Task can_call_copy_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] sourceContainer = [TestConstants.F.Random.String2(5, 25)];
-        string[] destinationContainer = [TestConstants.F.Random.String2(5, 25)];
-        var blobName = TestConstants.F.Random.String2(5, 25);
-        var newBlobName = TestConstants.F.Random.String2(5, 25);
+        string[] sourceContainer = [Test.Faker.Random.String2(5, 25)];
+        string[] destinationContainer = [Test.Faker.Random.String2(5, 25)];
+        var blobName = Test.Faker.Random.String2(5, 25);
+        var newBlobName = Test.Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.CopyAsync(sourceContainer, blobName, destinationContainer, newBlobName).AsTask();
@@ -640,14 +640,14 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallExistsWithEmptyContainerAsync()
+    public virtual async Task can_call_exists_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] container = [TestConstants.F.Random.String2(5, 25)];
-        var blobName = TestConstants.F.Random.String2(5, 25);
+        string[] container = [Test.Faker.Random.String2(5, 25)];
+        var blobName = Test.Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.ExistsAsync(container, blobName).AsTask();
@@ -655,14 +655,14 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallDownloadWithEmptyContainerAsync()
+    public virtual async Task can_call_download_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] container = [TestConstants.F.Random.String2(5, 25)];
-        var blobName = TestConstants.F.Random.String2(5, 25);
+        string[] container = [Test.Faker.Random.String2(5, 25)];
+        var blobName = Test.Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DownloadAsync(container, blobName).AsTask();
@@ -670,14 +670,14 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallGetBlobInfoWithEmptyContainerAsync()
+    public virtual async Task can_call_get_blob_info_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] container = [TestConstants.F.Random.String2(5, 25)];
-        var blobName = TestConstants.F.Random.String2(5, 25);
+        string[] container = [Test.Faker.Random.String2(5, 25)];
+        var blobName = Test.Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.GetBlobInfoAsync(container, blobName).AsTask();
@@ -685,13 +685,13 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
         await action.Should().NotThrowAsync();
     }
 
-    public virtual async Task CanCallGetPagedListWithEmptyContainerAsync()
+    public virtual async Task can_call_get_paged_list_with_empty_container()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        string[] container = [TestConstants.F.Random.String2(5, 25)];
+        string[] container = [Test.Faker.Random.String2(5, 25)];
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.GetPagedListAsync(container).AsTask();

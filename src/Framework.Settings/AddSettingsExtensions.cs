@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Domains;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Helpers;
 using Framework.Settings.Models;
+using Framework.Settings.Resources;
 using Framework.Settings.Seeders;
 using Framework.Settings.ValueProviders;
 using Framework.Settings.Values;
@@ -88,10 +89,11 @@ public static class AddSettingsExtensions
             options.ValueProviders.Add<UserSettingValueProvider>();
         });
 
-        services.TryAddSingleton<ISettingValueReadProvider, DefaultValueSettingValueProvider>();
-        services.TryAddSingleton<ISettingValueReadProvider, ConfigurationSettingValueProvider>();
-        services.TryAddSingleton<ISettingValueReadProvider, GlobalSettingValueProvider>();
-        services.TryAddSingleton<ISettingValueReadProvider, TenantSettingValueProvider>();
+        services.AddSingleton<DefaultValueSettingValueProvider>();
+        services.AddSingleton<ConfigurationSettingValueProvider>();
+        services.AddSingleton<GlobalSettingValueProvider>();
+        services.AddSingleton<TenantSettingValueProvider>();
+        services.AddSingleton<UserSettingValueProvider>();
     }
 
     private static void _AddSettingEncryption(this IServiceCollection services)
@@ -108,10 +110,12 @@ public static class AddSettingsExtensions
 
         services.AddHostedService<SettingsInitializationBackgroundService>();
 
-        services.AddTransient<
+        services.TryAddTransient<
             ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
             SettingValueCacheItemInvalidator
         >();
+
+        services.TryAddSingleton<ISettingsErrorsDescriptor, DefaultSettingsErrorsDescriptor>();
 
         // Definition Services
         /*

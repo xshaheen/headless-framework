@@ -4,7 +4,7 @@ using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Permissions.Storage.EntityFramework;
+namespace Framework.Permissions;
 
 public sealed class EfPermissionDefinitionRecordRepository(IDbContextFactory<PermissionsDbContext> dbFactory)
     : IPermissionDefinitionRecordRepository

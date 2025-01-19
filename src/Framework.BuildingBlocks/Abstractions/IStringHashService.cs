@@ -3,7 +3,7 @@
 using System.Security.Cryptography;
 using FluentValidation;
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface IStringHashService
 {

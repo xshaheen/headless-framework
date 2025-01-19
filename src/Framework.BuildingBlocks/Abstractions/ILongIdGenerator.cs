@@ -2,7 +2,7 @@
 
 using Framework.Core;
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface ILongIdGenerator
 {
@@ -10,7 +10,7 @@ public interface ILongIdGenerator
     long Create();
 }
 
-public sealed class SnowFlakIdLongIdGenerator(short generatorId = 0) : ILongIdGenerator
+public sealed class SnowflakeIdLongIdGenerator(short generatorId = 0) : ILongIdGenerator
 {
     private readonly SnowflakeId _generator = new(generatorId);
 

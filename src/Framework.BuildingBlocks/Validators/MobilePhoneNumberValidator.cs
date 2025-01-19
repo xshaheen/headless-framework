@@ -3,7 +3,7 @@
 using System.Diagnostics.CodeAnalysis;
 using PhoneNumbers;
 
-namespace Framework.BuildingBlocks.Validators;
+namespace Framework.Validators;
 
 [PublicAPI]
 public static class MobilePhoneNumberValidator

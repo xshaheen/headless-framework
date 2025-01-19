@@ -5,7 +5,8 @@ using DotNet.Testcontainers.Containers;
 
 namespace Tests.TestSetup;
 
-public sealed class SshBlobTestFixture : IAsyncLifetime
+[CollectionDefinition(nameof(SshBlobTestFixture))]
+public sealed class SshBlobTestFixture : IAsyncLifetime, ICollectionFixture<SshBlobTestFixture>
 {
     private readonly IContainer _sftpContainer = new ContainerBuilder()
         .WithImage("atmoz/sftp:latest")
@@ -26,6 +27,3 @@ public sealed class SshBlobTestFixture : IAsyncLifetime
         return _sftpContainer.StopAsync();
     }
 }
-
-[CollectionDefinition(nameof(SshBlobTestFixture))]
-public sealed class SshBlobTestFixtureCollection : ICollectionFixture<SshBlobTestFixture>;

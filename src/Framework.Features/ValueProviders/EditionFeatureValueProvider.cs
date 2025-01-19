@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Features.Models;
 using Framework.Features.Values;
 
@@ -30,13 +30,10 @@ public sealed class EditionFeatureValueProvider(IFeatureValueStore store, ICurre
         return await Store.GetOrDefaultAsync(feature.Name, Name, editionId, cancellationToken);
     }
 
-    protected override Task<string?> NormalizeProviderKeyAsync(
-        string? providerKey,
-        CancellationToken cancellationToken = default
-    )
+    protected override string? NormalizeProviderKey(string? providerKey)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        var editionId = providerKey ?? principalAccessor.Principal.GetEditionId();
 
-        return Task.FromResult(providerKey ?? principalAccessor.Principal.GetEditionId());
+        return editionId;
     }
 }

@@ -50,6 +50,19 @@ public static class ObjectExtensions
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool In<T>(this T item, params ReadOnlySpan<T> collection)
+        where T : IEquatable<T>?
+    {
+        return collection.Contains(item);
+    }
+
+    /// <summary>Check if an item is in a list.</summary>
+    /// <param name="item">Item to check</param>
+    /// <param name="collection">List of items</param>
+    /// <typeparam name="T">Type of the items</typeparam>
+    [JetBrainsPure]
+    [SystemPure]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool In<T>(this T item, IEnumerable<T> collection)
     {
         return collection.Contains(item);

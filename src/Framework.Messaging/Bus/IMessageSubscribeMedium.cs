@@ -6,15 +6,30 @@ namespace Framework.Messaging;
 
 public interface IMessageSubscribeMedium<out TPayload>
 {
+    string MessageKey { get; }
+
     string UniqueId { get; }
 
-    string TypeKey { get; }
+    string Type { get; }
 
-    string CorrelationId { get; }
+    string? CorrelationId { get; }
 
-    DateTimeOffset Timestamp { get; }
-
-    IDictionary<string, string> Properties { get; }
+    IDictionary<string, string>? Properties { get; }
 
     TPayload Payload { get; }
+}
+
+public sealed class MessageSubscribeMedium<TPayload> : IMessageSubscribeMedium<TPayload>
+{
+    public required string MessageKey { get; set; }
+
+    public required string UniqueId { get; init; }
+
+    public required string Type { get; init; }
+
+    public required string? CorrelationId { get; init; }
+
+    public required IDictionary<string, string>? Properties { get; init; }
+
+    public required TPayload Payload { get; init; }
 }

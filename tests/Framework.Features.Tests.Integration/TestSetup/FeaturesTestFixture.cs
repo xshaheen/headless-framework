@@ -1,86 +1,104 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Checks;
+using Framework.Redis;
 using Microsoft.EntityFrameworkCore.Migrations;
-using Microsoft.Extensions.DependencyInjection;
-using Nito.AsyncEx;
 using Npgsql;
 using Respawn;
 using Respawn.Graph;
+using StackExchange.Redis;
 using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
 
 namespace Tests.TestSetup;
 
-public sealed class FeaturesTestFixture : IAsyncLifetime, IDisposable
+[CollectionDefinition(nameof(FeaturesTestFixture))]
+public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
-    private AsyncLazy<Respawner>? _respawner;
+    private readonly RedisContainer _redisContainer = _CreateRedisContainer();
 
-    public string ConnectionString { get; private set; } = null!;
+    public string SqlConnectionString { get; private set; } = null!;
+
+    private NpgsqlConnection SqlConnection { get; set; } = null!;
+
+    private Respawner Respawner { get; set; } = null!;
+
+    public string RedisConnectionString { get; private set; } = null!;
+
+    public ConnectionMultiplexer Multiplexer { get; private set; } = null!;
 
     /// <summary>This runs before all tests finished and Called just after the constructor</summary>
     public async Task InitializeAsync()
     {
-        await _postgreSqlContainer.StartAsync();
-        ConnectionString = _postgreSqlContainer.GetConnectionString();
-        _respawner = new(() => _CreateRespawnerAsync(ConnectionString));
-        await _RunMigrationAsync(ConnectionString);
+        await _StartContainersAsync();
+        await Task.WhenAll(_InitializePostgreSqlAsync(), _InitializeRedisAsync());
+        await ResetAsync();
     }
-
-    /// <summary>This runs after all the tests run</summary>
-    public void Dispose() { }
 
     /// <summary>This runs after all the tests finished and Called before Dispose()</summary>
     public async Task DisposeAsync()
     {
+        await SqlConnection.DisposeAsync();
         await _postgreSqlContainer.DisposeAsync();
+        await Multiplexer.DisposeAsync();
+        await _redisContainer.DisposeAsync();
+    }
+
+    private async Task _StartContainersAsync()
+    {
+        await Task.WhenAll(_postgreSqlContainer.StartAsync(), _redisContainer.StartAsync());
+    }
+
+    private async Task _InitializePostgreSqlAsync()
+    {
+        SqlConnectionString = _postgreSqlContainer.GetConnectionString();
+        SqlConnection = new NpgsqlConnection(SqlConnectionString);
+        await SqlConnection.OpenAsync();
+        await _RunMigrationAsync();
+        Respawner = await Respawner.CreateAsync(
+            SqlConnection,
+            new RespawnerOptions
+            {
+                TablesToIgnore = [new Table(HistoryRepository.DefaultTableName)],
+                DbAdapter = DbAdapter.Postgres,
+            }
+        );
+    }
+
+    private async Task _InitializeRedisAsync()
+    {
+        RedisConnectionString = _redisContainer.GetConnectionString() + ",allowAdmin=true";
+        Multiplexer = await ConnectionMultiplexer.ConnectAsync(RedisConnectionString);
     }
 
     public async Task ResetAsync()
     {
-        Ensure.True(_respawner is not null);
-        var respawner = await _respawner;
-        await respawner.ResetAsync(ConnectionString);
+        await Task.WhenAll(Respawner.ResetAsync(SqlConnection), Multiplexer.FlushAllAsync()).WithAggregatedExceptions();
     }
 
-    public IServiceProvider CreateFeaturesServiceProvider()
+    private async Task _RunMigrationAsync()
     {
-        var serviceCollection = new ServiceCollection();
-        serviceCollection.ConfigureFeaturesServices(ConnectionString);
-        return serviceCollection.BuildServiceProvider();
-    }
-
-    private static Task<Respawner> _CreateRespawnerAsync(string connectionString)
-    {
-        return Respawner.CreateAsync(
-            connectionString,
-            new RespawnerOptions { TablesToIgnore = [new Table(HistoryRepository.DefaultTableName)] }
-        );
+        var migrationScript = await File.ReadAllTextAsync("TestSetup/postgre-init.sql");
+#pragma warning disable CA2100 // Review SQL queries for security vulnerabilities
+        await using var command = new NpgsqlCommand(migrationScript, SqlConnection);
+#pragma warning restore CA2100
+        await command.ExecuteNonQueryAsync();
     }
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
         return new PostgreSqlBuilder()
-            .WithDatabase("FeaturesTest")
+            .WithLabel("type", "features")
+            .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
             .WithPortBinding(5432)
+            .WithReuse(true)
             .Build();
     }
 
-    private static async Task _RunMigrationAsync(string connectionString)
+    private static RedisContainer _CreateRedisContainer()
     {
-        var migrationScript = await File.ReadAllTextAsync("TestSetup/postgre-init.sql");
-
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
-
-#pragma warning disable CA2100 // Review SQL queries for security vulnerabilities
-        await using var command = new NpgsqlCommand(migrationScript, connection);
-#pragma warning restore CA2100
-        await command.ExecuteNonQueryAsync();
+        return new RedisBuilder().WithLabel("type", "features").WithReuse(true).Build();
     }
 }
-
-[CollectionDefinition(nameof(FeaturesTestFixture))]
-public sealed class FeaturesTestCollection : ICollectionFixture<FeaturesTestFixture>;

@@ -7,11 +7,17 @@ namespace Framework.ResourceLocks;
 [PublicAPI]
 public static class ResourceLockProviderExtensions
 {
+    /// <summary>Releases a resource lock for <paramref name="resourceLock"/>.</summary>
     public static Task ReleaseAsync(this IResourceLockProvider provider, IResourceLock resourceLock)
     {
         return provider.ReleaseAsync(resourceLock.Resource, resourceLock.LockId);
     }
 
+    /// <summary>
+    /// Renews a resource lock for a specified <paramref name="resourceLock"/> by extending
+    /// the expiration time of the lock if it is still held to the <see cref="IResourceLock.LockId"/>
+    /// and return <see langword="true"/>, otherwise <see langword="false"/>.
+    /// </summary>
     public static Task RenewAsync(
         this IResourceLockProvider provider,
         IResourceLock resourceLock,
@@ -21,6 +27,25 @@ public static class ResourceLockProviderExtensions
         return provider.RenewAsync(resourceLock.Resource, resourceLock.LockId, timeUntilExpires);
     }
 
+    /// <summary>
+    /// Tries to acquire a lock for a specified <paramref name="resource"/> and execute the <paramref name="work"/>
+    /// </summary>
+    /// <param name="timeUntilExpires">
+    /// The amount of time until the lock expires. The allowed values are:
+    /// <list type="bullet">
+    /// <item><see langword="null"/>: means the default value (20 minutes).</item>
+    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.</item>
+    /// <item>Value greater than 0.</item>
+    /// </list>
+    /// </param>
+    /// <param name="acquireTimeout">
+    /// The amount of time to wait for the lock to be acquired. The allowed values are:
+    /// <list type="bullet">
+    /// <item><see langword="null"/>: means the default value (30 seconds).</item>
+    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire</item>
+    /// <item>Value greater than or equal to 0.</item>
+    /// </list>
+    /// </param>
     public static async Task<bool> TryUsingAsync(
         this IResourceLockProvider provider,
         string resource,
@@ -30,7 +55,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -39,11 +64,19 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work().AnyContext();
+        try
+        {
+            await work().AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
+    /// <inheritdoc cref="TryUsingAsync(IResourceLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,CancellationToken)"/>
     public static async Task<bool> TryUsingAsync<TState>(
         this IResourceLockProvider provider,
         string resource,
@@ -54,7 +87,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -63,11 +96,19 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work(state).AnyContext();
+        try
+        {
+            await work(state).AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
+    /// <inheritdoc cref="TryUsingAsync(IResourceLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,CancellationToken)"/>
     public static async Task<bool> TryUsingAsync(
         this IResourceLockProvider provider,
         string resource,
@@ -77,7 +118,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -86,22 +127,30 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work(cancellationToken).AnyContext();
+        try
+        {
+            await work(cancellationToken).AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
+    /// <inheritdoc cref="TryUsingAsync(IResourceLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,CancellationToken)"/>
     public static async Task<bool> TryUsingAsync<TState>(
         this IResourceLockProvider provider,
         string resource,
-        TState workState,
+        TState state,
         Func<TState, CancellationToken, Task> work,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -110,11 +159,19 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        await work(workState, cancellationToken).AnyContext();
+        try
+        {
+            await work(state, cancellationToken).AnyContext();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
+    /// <inheritdoc cref="TryUsingAsync(IResourceLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,CancellationToken)"/>
     public static async Task<bool> TryUsingAsync(
         this IResourceLockProvider provider,
         string resource,
@@ -124,7 +181,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -133,11 +190,19 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        work();
+        try
+        {
+            work();
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 
+    /// <inheritdoc cref="TryUsingAsync(IResourceLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,CancellationToken)"/>
     public static async Task<bool> TryUsingAsync<TState>(
         this IResourceLockProvider provider,
         string resource,
@@ -148,7 +213,7 @@ public static class ResourceLockProviderExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await using var resourceLock = await provider
+        var resourceLock = await provider
             .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
             .AnyContext();
 
@@ -157,8 +222,15 @@ public static class ResourceLockProviderExtensions
             return false;
         }
 
-        work(state);
+        try
+        {
+            work(state);
 
-        return true;
+            return true;
+        }
+        finally
+        {
+            await resourceLock.ReleaseAsync();
+        }
     }
 }

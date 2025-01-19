@@ -8,7 +8,7 @@ namespace Framework.Media.Indexing;
 
 public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
 {
-    public Task<string> GetTextAsync(string path, Stream fileStream)
+    public Task<string> GetTextAsync(Stream fileStream)
     {
         using var document = WordprocessingDocument.Open(fileStream, isEditable: false);
 

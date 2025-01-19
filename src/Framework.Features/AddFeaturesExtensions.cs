@@ -5,6 +5,7 @@ using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Framework.Features.Filters;
 using Framework.Features.Models;
+using Framework.Features.Resources;
 using Framework.Features.Seeders;
 using Framework.Features.ValueProviders;
 using Framework.Features.Values;
@@ -85,9 +86,9 @@ public static class AddFeaturesExtensions
             options.ValueProviders.Add<TenantFeatureValueProvider>();
         });
 
-        services.AddSingleton<IFeatureValueReadProvider, DefaultValueFeatureValueProvider>();
-        services.AddSingleton<IFeatureValueReadProvider, EditionFeatureValueProvider>();
-        services.AddSingleton<IFeatureValueReadProvider, TenantFeatureValueProvider>();
+        services.AddSingleton<DefaultValueFeatureValueProvider>();
+        services.AddSingleton<EditionFeatureValueProvider>();
+        services.AddSingleton<TenantFeatureValueProvider>();
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)
@@ -99,6 +100,8 @@ public static class AddFeaturesExtensions
             ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>,
             FeatureValueCacheItemInvalidator
         >();
+
+        services.AddSingleton<IFeatureErrorsDescriptor, DefaultFeatureErrorsDescriptor>();
 
         // Definition Services
         /*

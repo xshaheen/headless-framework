@@ -4,7 +4,7 @@ using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Features.Storage.EntityFramework;
+namespace Framework.Features;
 
 public sealed class EfFeatureDefinitionRecordRepository(IDbContextFactory<FeaturesDbContext> dbFactory)
     : IFeatureDefinitionRecordRepository

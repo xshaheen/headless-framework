@@ -8,7 +8,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Flurl;
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.IO;

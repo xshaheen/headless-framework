@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface IHaveTimeProvider
 {
     TimeProvider TimeProvider { get; }
 }
 
+[PublicAPI]
 public static class TimeProviderExtensions
 {
     public static TimeProvider GetTimeProvider(this object target)

@@ -28,7 +28,7 @@ public class IsNegativeTests
 
     public static readonly TheoryData<object> Data =
     [
-        (short)5,
+        (short) 5,
         5,
         5L,
         5.5f,
@@ -42,17 +42,48 @@ public class IsNegativeTests
     {
         Action act = argument switch
         {
-            short => () => Argument.IsNegative((short)argument),
-            int => () => Argument.IsNegative((int)argument),
-            long => () => Argument.IsNegative((long)argument),
-            float => () => Argument.IsNegative((float)argument),
-            double => () => Argument.IsNegative((double)argument),
-            decimal => () => Argument.IsNegative((decimal)argument),
-            TimeSpan => () => Argument.IsNegative((TimeSpan)argument),
+            short => () => Argument.IsNegative((short) argument),
+            int => () => Argument.IsNegative((int) argument),
+            long => () => Argument.IsNegative((long) argument),
+            float => () => Argument.IsNegative((float) argument),
+            double => () => Argument.IsNegative((double) argument),
+            decimal => () => Argument.IsNegative((decimal) argument),
+            TimeSpan => () => Argument.IsNegative((TimeSpan) argument),
             _ => throw new InvalidOperationException("Unsupported argument type"),
         };
 
         act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    public static readonly TheoryData<object, string> PositiveDataWithCustomMessage = new()
+    {
+        { (short)3, "Error argument must be negative." },
+        { 3, "Error argument must be negative." },
+        { 5L, "Error argument must be negative." },
+        { 5.5f, "Error argument must be negative." },
+        { 7.5, "Error argument must be negative." },
+        { 7.5d, "Error argument must be negative." },
+        { TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture), "Error argument must be negative." }
+    };
+
+    [Theory]
+    [MemberData(nameof(PositiveDataWithCustomMessage))]
+    public void is_negative_should_throw_argument_out_of_range_exception_when_negative_with_custom_message(object argument,string message)
+    {
+        Action action = argument switch
+        {
+            short value => () => Argument.IsNegative(value,message),
+            int value => () => Argument.IsNegative(value,message),
+            long value => () => Argument.IsNegative(value,message),
+            float value => () => Argument.IsNegative(value,message),
+            double value => () => Argument.IsNegative(value,message),
+            decimal value => () => Argument.IsNegative(value,message),
+            TimeSpan value => () => Argument.IsNegative(value,message),
+            _ => throw new InvalidOperationException("Unsupported argument type"),
+        };
+
+        action.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage($"{message} (Parameter 'value')");
     }
 
     [Fact]
@@ -60,11 +91,17 @@ public class IsNegativeTests
     {
         // given
         object argument = "test";
+        var customMessage = $"Error {nameof(argument)} is string";
 
         // when
         var action = () => Argument.IsNotOfType<string>(argument);
+        var actionWithCustomMessage = () => Argument.IsNotOfType<string>(argument, customMessage);
 
         // then
-        action.Should().ThrowExactly<ArgumentException>();
+        action.Should().ThrowExactly<ArgumentException>()
+            .WithMessage("The argument \"argument\" must NOT be of type <System.String>. (Parameter 'argument')");
+
+        actionWithCustomMessage.Should().ThrowExactly<ArgumentException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 }

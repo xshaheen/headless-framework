@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
+using Framework.Exceptions;
 using Framework.Settings.Definitions;
 using Framework.Settings.Helpers;
 using Framework.Settings.Models;
+using Framework.Settings.Resources;
 using Framework.Settings.ValueProviders;
 
 namespace Framework.Settings.Values;
@@ -54,7 +56,8 @@ public sealed class SettingManager(
     ISettingDefinitionManager definitionManager,
     ISettingValueStore valueStore,
     ISettingValueProviderManager valueProviderManager,
-    ISettingEncryptionService encryptionService
+    ISettingEncryptionService encryptionService,
+    ISettingsErrorsDescriptor errorsDescriptor
 ) : ISettingManager
 {
     public Task<string?> GetOrDefaultAsync(
@@ -122,7 +125,10 @@ public sealed class SettingManager(
                 value = await providerList[0].GetOrDefaultAsync(setting, providerKey, cancellationToken);
             }
 
-            if (setting.IsEncrypted)
+            if (
+                setting.IsEncrypted
+                && !string.Equals(providerName, DefaultValueSettingValueProvider.ProviderName, StringComparison.Ordinal)
+            )
             {
                 value = encryptionService.Decrypt(setting, value);
             }
@@ -150,7 +156,7 @@ public sealed class SettingManager(
 
         var setting =
             await definitionManager.GetOrDefaultAsync(settingName, cancellationToken)
-            ?? throw new InvalidOperationException($"Undefined setting: {settingName}");
+            ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName));
 
         var providers = valueProviderManager
             .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -158,7 +164,7 @@ public sealed class SettingManager(
 
         if (providers.Count == 0)
         {
-            throw new InvalidOperationException($"Unknown setting value provider: {providerName}");
+            throw new ConflictException(await errorsDescriptor.ProviderNotFound(providerName));
         }
 
         if (setting.IsEncrypted)
@@ -189,7 +195,7 @@ public sealed class SettingManager(
         {
             if (provider is not ISettingValueProvider p)
             {
-                throw new InvalidOperationException($"Provider {providerName} is readonly provider");
+                throw new ConflictException(await errorsDescriptor.ProviderIsReadonly(providerName));
             }
 
             if (value is null)
@@ -234,7 +240,7 @@ public sealed class SettingManager(
 
         var definition =
             await definitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new InvalidOperationException($"Undefined setting: {name}");
+            ?? throw new ConflictException(await errorsDescriptor.NotDefined(name));
 
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 

@@ -2,12 +2,13 @@
 
 using System.Xml.Linq;
 using Framework.Blobs;
-using Framework.BuildingBlocks.IO;
 using Framework.Checks;
 using Framework.Threading;
+using Humanizer;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Polly;
 
 namespace Framework.Api.DataProtection;
 
@@ -18,6 +19,20 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     private static readonly string[] _Containers = ["DataProtection"];
     private readonly IBlobStorage _storage;
     private readonly ILogger _logger;
+
+    private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
+        .AddRetry(
+            new()
+            {
+                Name = "BlobStorageDataProtectionXmlRepositoryRetryPolicy",
+                MaxRetryAttempts = 4,
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = false,
+                Delay = 200.Milliseconds(),
+                ShouldHandle = new PredicateBuilder().Handle<IOException>(),
+            }
+        )
+        .Build();
 
     public BlobStorageDataProtectionXmlRepository(IBlobStorage storage, ILoggerFactory? loggerFactory = null)
     {
@@ -83,7 +98,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
     private async Task _StoreElementAsync(XElement element, string fileName)
     {
         _logger.LogTrace("Saving element: {File}", fileName);
-        await FileHelper.IoRetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName));
+        await _RetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName));
         _logger.LogTrace("Saved element: {File}", fileName);
 
         return;

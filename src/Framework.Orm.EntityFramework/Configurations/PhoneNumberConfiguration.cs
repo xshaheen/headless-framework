@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Framework.BuildingBlocks.Primitives;
 using Framework.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -24,12 +23,12 @@ public static class PhoneNumberConfiguration
             propertyExpression,
             b =>
             {
-                b.Property(x => x!.CountryCode)
+                b.Property(x => x.CountryCode)
                     .IsRequired(isRequired)
                     .HasColumnName(codeColumnName)
                     .HasMaxLength(PhoneNumberConstants.Codes.MaxLength);
 
-                b.Property(x => x!.Number)
+                b.Property(x => x.Number)
                     .IsRequired(isRequired)
                     .HasColumnName(phoneColumnName)
                     .HasMaxLength(PhoneNumberConstants.Numbers.MaxLength);

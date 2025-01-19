@@ -40,7 +40,7 @@ public static class AddFileSystemBlobExtensions
 
     private static IServiceCollection _AddBaseServices(IServiceCollection builder)
     {
-        builder.AddSingleton<IBlobNamingNormalizer, FileSystemBlobNamingNormalizer>();
+        builder.AddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
         builder.AddSingleton<IBlobStorage, FileSystemBlobStorage>();
 
         return builder;

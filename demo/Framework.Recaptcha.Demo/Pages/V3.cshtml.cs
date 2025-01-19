@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Constants;
 using Framework.Recaptcha.Contracts;
 using Framework.Recaptcha.V3;
+using Framework.Serializer;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Framework.Recaptcha.Demo.Pages;
@@ -21,6 +21,6 @@ internal sealed class V3Model(IReCaptchaSiteVerifyV3 siteVerify) : PageModel
 
         var response = await siteVerify.VerifyAsync(request);
 
-        Result = JsonSerializer.Serialize(response, FrameworkJsonConstants.DefaultPrettyJsonOptions);
+        Result = JsonSerializer.Serialize(response, JsonConstants.DefaultPrettyJsonOptions);
     }
 }

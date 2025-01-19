@@ -14,3 +14,16 @@ public interface IMessagePublisher
     )
         where T : class;
 }
+
+public static class IMessagePublisherExtensions
+{
+    public static Task PublishAsync<T>(
+        this IMessagePublisher publisher,
+        T message,
+        CancellationToken cancellationToken = default
+    )
+        where T : class
+    {
+        return publisher.PublishAsync(message, options: null, cancellationToken);
+    }
+}

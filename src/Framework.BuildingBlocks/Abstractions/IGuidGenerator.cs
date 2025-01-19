@@ -2,7 +2,7 @@
 
 using Framework.Core;
 
-namespace Framework.BuildingBlocks.Abstractions;
+namespace Framework.Abstractions;
 
 public interface IGuidGenerator
 {

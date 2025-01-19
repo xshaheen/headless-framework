@@ -7,6 +7,7 @@ using Framework.Permissions.Filters;
 using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
+using Framework.Permissions.Resources;
 using Framework.Permissions.Seeders;
 using Framework.Permissions.Testing;
 using Microsoft.AspNetCore.Authorization;
@@ -18,7 +19,7 @@ namespace Framework.Permissions;
 [PublicAPI]
 public static class AddPermissionsExtensions
 {
-    public static IServiceCollection AddFeaturesManagementCore(
+    public static IServiceCollection AddPermissionsManagementCore(
         this IServiceCollection services,
         Action<PermissionManagementOptions, IServiceProvider> setupAction
     )
@@ -69,10 +70,10 @@ public static class AddPermissionsExtensions
 
     public static IServiceCollection AddAlwaysAllowAuthorization(this IServiceCollection services)
     {
-        services.ReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
-        services.ReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
+        services.AddOrReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
+        services.AddOrReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
 
-        services.ReplaceSingleton<
+        services.AddOrReplaceSingleton<
             IMethodInvocationAuthorizationService,
             AlwaysAllowMethodInvocationAuthorizationService
         >();
@@ -89,8 +90,8 @@ public static class AddPermissionsExtensions
             options.GrantProviders.Add<UserPermissionGrantProvider>();
         });
 
-        services.TryAddSingleton<IPermissionGrantProvider, RolePermissionGrantProvider>();
-        services.TryAddSingleton<IPermissionGrantProvider, UserPermissionGrantProvider>();
+        services.AddSingleton<RolePermissionGrantProvider>();
+        services.AddSingleton<UserPermissionGrantProvider>();
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)
@@ -104,11 +105,12 @@ public static class AddPermissionsExtensions
             PermissionGrantCacheItemInvalidator
         >();
 
+        services.TryAddSingleton<IPermissionErrorsDescriptor, DefaultPermissionErrorsDescriptor>();
+
         // Definition Services
         /*
          * 1. You need to provide a storage implementation for `IPermissionDefinitionRecordRepository`
-         * 2. Implement `IPermissionDefinitionProvider` to define your permissions in code
-         *    and use `AddPermissionDefinitionProvider` to register it
+         * 2. Implement `IPermissionDefinitionProvider` to define your permissions in code and use `AddPermissionDefinitionProvider` to register it
          */
         services.TryAddSingleton<IPermissionDefinitionSerializer, PermissionDefinitionSerializer>();
         services.TryAddSingleton<IStaticPermissionDefinitionStore, StaticPermissionDefinitionStore>();

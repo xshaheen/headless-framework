@@ -1,13 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Domains;
 using Framework.Features.Entities;
 using Framework.Features.Values;
+using Framework.Messaging;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Features.Storage.EntityFramework;
+namespace Framework.Features;
 
-public sealed class EfFeatureValueRecordRecordRepository(IDbContextFactory<FeaturesDbContext> dbFactory)
-    : IFeatureValueRecordRepository
+public sealed class EfFeatureValueRecordRecordRepository(
+    IDbContextFactory<FeaturesDbContext> dbFactory,
+    ILocalMessagePublisher localPublisher
+) : IFeatureValueRecordRepository
 {
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
@@ -68,6 +72,11 @@ public sealed class EfFeatureValueRecordRecordRepository(IDbContextFactory<Featu
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         db.FeatureValues.Add(featureValue);
         await db.SaveChangesAsync(cancellationToken);
+
+        await localPublisher.PublishAsync(
+            new EntityChangedEventData<FeatureValueRecord>(featureValue),
+            cancellationToken
+        );
     }
 
     public async Task UpdateAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
@@ -75,15 +84,28 @@ public sealed class EfFeatureValueRecordRecordRepository(IDbContextFactory<Featu
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         db.FeatureValues.Update(featureValue);
         await db.SaveChangesAsync(cancellationToken);
+
+        await localPublisher.PublishAsync(
+            new EntityChangedEventData<FeatureValueRecord>(featureValue),
+            cancellationToken
+        );
     }
 
     public async Task DeleteAsync(
-        IEnumerable<FeatureValueRecord> featureValues,
+        IReadOnlyCollection<FeatureValueRecord> featureValues,
         CancellationToken cancellationToken = default
     )
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         db.FeatureValues.RemoveRange(featureValues);
         await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var featureValue in featureValues)
+        {
+            await localPublisher.PublishAsync(
+                new EntityChangedEventData<FeatureValueRecord>(featureValue),
+                cancellationToken
+            );
+        }
     }
 }

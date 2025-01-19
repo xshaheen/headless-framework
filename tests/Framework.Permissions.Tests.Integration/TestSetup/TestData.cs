@@ -9,7 +9,7 @@ public static class TestData
 {
     public static readonly Faker Faker = new();
 
-    public static PermissionGroupDefinition AddGeneratedPermissionGroup(this IPermissionDefinitionContext context)
+    public static PermissionGroupDefinition AddGeneratedGroup(this IPermissionDefinitionContext context)
     {
         return context.AddGroup(
             name: Faker.Random.String2(1, PermissionGroupDefinitionRecordConstants.NameMaxLength),
@@ -17,12 +17,26 @@ public static class TestData
         );
     }
 
-    public static PermissionDefinition AddGeneratedPermissionDefinition(this PermissionGroupDefinition group)
+    public static PermissionDefinition AddGeneratedDefinition(this PermissionGroupDefinition group)
     {
         return group.AddChild(
             name: Faker.Random.String2(1, PermissionDefinitionRecordConstants.NameMaxLength),
             displayName: Faker.Random.String2(1, PermissionDefinitionRecordConstants.DisplayNameMaxLength),
             isEnabled: Faker.Random.Bool()
         );
+    }
+
+    public static PermissionGroupDefinition CreateGroupDefinition(int children = 3)
+    {
+        var context = new PermissionDefinitionContext();
+
+        var group = context.AddGeneratedGroup();
+
+        for (var i = 0; i < children; i++)
+        {
+            group.AddGeneratedDefinition();
+        }
+
+        return group;
     }
 }

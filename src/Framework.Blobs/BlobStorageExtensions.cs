@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
-using Framework.Constants;
+using Framework.Serializer;
 
 namespace Framework.Blobs;
 
@@ -83,7 +83,33 @@ public static class BlobStorageExtensions
             await JsonSerializer.SerializeAsync(
                 utf8Json: memoryStream,
                 value: contents,
-                options: FrameworkJsonConstants.DefaultInternalJsonOptions,
+                options: JsonConstants.DefaultInternalJsonOptions,
+                cancellationToken: cancellationToken
+            );
+
+            memoryStream.ResetPosition();
+        }
+
+        await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
+    }
+
+    public static async ValueTask UploadContentAsync<T>(
+        this IBlobStorage storage,
+        string[] container,
+        string blobName,
+        T? contents,
+        JsonSerializerOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var memoryStream = new MemoryStream();
+
+        if (contents is not null)
+        {
+            await JsonSerializer.SerializeAsync(
+                utf8Json: memoryStream,
+                value: contents,
+                options: options,
                 cancellationToken: cancellationToken
             );
 
@@ -116,6 +142,7 @@ public static class BlobStorageExtensions
         this IBlobStorage storage,
         string[] container,
         string blobName,
+        JsonSerializerOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -126,7 +153,8 @@ public static class BlobStorageExtensions
             return default;
         }
 
-        var result = JsonSerializer.Deserialize<T>(content, FrameworkJsonConstants.DefaultInternalJsonOptions);
+        options ??= JsonConstants.DefaultInternalJsonOptions;
+        var result = JsonSerializer.Deserialize<T>(content, options);
 
         return result;
     }

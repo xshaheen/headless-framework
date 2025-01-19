@@ -39,9 +39,11 @@ public sealed class MethodInvocationFeatureCheckerService(IFeatureManager featur
 
         if (methodInfo.IsPublic)
         {
-            attributes = attributes.Union(
-                methodInfo.DeclaringType!.GetCustomAttributes(inherit: true).OfType<RequiresFeatureAttribute>()
-            );
+            var requiresFeatureAttributes = methodInfo
+                .DeclaringType!.GetCustomAttributes(inherit: true)
+                .OfType<RequiresFeatureAttribute>();
+
+            attributes = attributes.Union(requiresFeatureAttributes);
         }
 
         return attributes;

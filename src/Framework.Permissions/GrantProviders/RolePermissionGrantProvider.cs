@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Checks;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
@@ -26,7 +26,7 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
     {
         Argument.IsNotNullOrEmpty(permissions);
 
-        var permissionNames = permissions.Select(x => x.Name).Distinct(StringComparer.Ordinal).ToArray();
+        var permissionNames = permissions.Select(x => x.Name).Distinct(StringComparer.Ordinal).ToList();
         var roles = currentUser.Roles;
 
         if (roles.Count == 0)
@@ -64,7 +64,7 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
                 permissionNames.RemoveAll(name => string.Equals(name, permissionName, StringComparison.Ordinal));
             }
 
-            if (result.AllGranted || result.AllProhibited || permissionNames.Length == 0)
+            if (result.AllGranted || result.AllProhibited || permissionNames.Count == 0)
             {
                 break;
             }

@@ -3,6 +3,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
+using Cysharp.Text;
 using Framework.Exceptions;
 
 #pragma warning disable IDE0130
@@ -20,40 +21,6 @@ public static class ExceptionExtensions
         ExceptionDispatchInfo.Capture(exception).Throw();
 
         return exception;
-    }
-
-    [DoesNotReturn]
-    public static void ThrowConflictException(this Exception ex)
-    {
-        throw new ConflictException(ex.ExpandExceptionMessage(), ex);
-    }
-
-    [SystemPure]
-    [JetBrainsPure]
-    public static string ExpandExceptionMessage(this Exception ex)
-    {
-        const int maxDepthLevel = 5;
-
-        var builder = new StringBuilder();
-        var separator = Environment.NewLine;
-        var exception = ex;
-        var depthLevel = 0;
-
-        while (exception is not null && depthLevel++ < maxDepthLevel)
-        {
-            if (builder.Length > 0)
-            {
-                builder.Append(separator);
-            }
-
-            builder.Append(ex.Message);
-            builder.Append(separator);
-            builder.Append(ex.StackTrace);
-
-            exception = exception.InnerException;
-        }
-
-        return builder.ToString();
     }
 
     [SystemPure]
@@ -74,5 +41,112 @@ public static class ExceptionExtensions
         }
 
         return current;
+    }
+
+    [DoesNotReturn]
+    public static void ThrowConflictException(this Exception exception)
+    {
+        throw new ConflictException(exception.Message, exception);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static string ExpandMessage(this Exception? e, int maxDepth = 5)
+    {
+        if (e is null)
+        {
+            return string.Empty;
+        }
+
+        var sb = ZString.CreateStringBuilder();
+
+        if (e is AggregateException aggregate)
+        {
+            expandAggregate(ref sb, aggregate, maxDepth);
+        }
+        else
+        {
+            expandException(ref sb, e, maxDepth);
+        }
+
+        return sb.ToString();
+
+        static void expandException(ref Utf16ValueStringBuilder sb, Exception e, int max)
+        {
+            var depthLevel = 0;
+            var exception = e;
+
+            while (exception is not null && depthLevel++ < max)
+            {
+                if (depthLevel > 1)
+                {
+                    sb.Append(Environment.NewLine);
+                }
+
+                if (exception is AggregateException aggregateException)
+                {
+                    expandAggregate(ref sb, aggregateException, max);
+
+                    break;
+                }
+
+                addException(ref sb, exception);
+
+                exception = exception.InnerException;
+            }
+        }
+
+        static void expandAggregate(ref Utf16ValueStringBuilder sb, AggregateException e, int max)
+        {
+            e = e.Flatten();
+
+            sb.Append("### AggregateException:");
+            sb.Append(Environment.NewLine);
+
+            var count = 0;
+
+            foreach (var exception in e.InnerExceptions)
+            {
+                if (count >= max)
+                {
+                    break;
+                }
+
+                if (count > 0)
+                {
+                    sb.Append(Environment.NewLine);
+                }
+
+                addException(ref sb, exception.GetInnermostException());
+
+                count++;
+            }
+
+            if (count >= max)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append("... and ");
+                sb.Append(e.InnerExceptions.Count - max);
+                sb.Append(" more");
+            }
+
+            sb.Append(Environment.NewLine);
+            sb.Append("###");
+        }
+
+        static void addException(ref Utf16ValueStringBuilder sb, Exception e)
+        {
+            sb.Append(e.GetType().Name);
+            sb.Append(": ");
+            sb.Append(e.Message);
+
+            var stackTrace = e.StackTrace;
+
+            if (stackTrace is not null)
+            {
+                sb.Append(Environment.NewLine);
+                sb.Append(stackTrace);
+            }
+        }
     }
 }

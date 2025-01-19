@@ -184,12 +184,7 @@ public static class CapDistributedMessageHandlerFactory
                 .First(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDistributedMessageHandler<>))
                 .GetGenericArguments()[0];
 
-            var messageName =
-                messageType.GetCustomAttribute<DistributedMessageAttribute>()?.MessageName
-                ?? throw new InvalidOperationException(
-                    $"The message type {messageType.Name} does not have a {nameof(DistributedMessageAttribute)} attribute"
-                );
-
+            var messageName = MessageName.GetFrom(messageType);
             var key = (messageName, messageType);
 
             if (!map.TryGetValue(key, out var handlers))

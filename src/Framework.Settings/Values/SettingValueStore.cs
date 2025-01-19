@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Checks;
 using Framework.Settings.Definitions;
@@ -10,7 +10,10 @@ using Humanizer;
 
 namespace Framework.Settings.Values;
 
-/// <summary>Represents a store for setting values.</summary>
+/// <summary>
+/// Represents a store for setting values. It is used to get, set, and delete setting values from the repository
+/// and responsible for caching setting values.
+/// </summary>
 public interface ISettingValueStore
 {
     Task<string?> GetOrDefaultAsync(

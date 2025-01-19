@@ -25,15 +25,22 @@ public sealed class ComparableTypesTests
         // given
         const int argument = 15;
         const int expected = 10;
+        var customMessage = $"Error {nameof(argument)} greater than {nameof(expected)}";
 
         // when
         Action action = () => Argument.IsLessThanOrEqualTo(argument, expected);
+        Action actionWithCustomMessage = () => Argument.IsLessThanOrEqualTo(argument, expected, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
             .WithMessage($"The argument \"argument\" must be less than or equal to 10. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -49,14 +56,21 @@ public sealed class ComparableTypesTests
         // given
         const int argument = 3;
         const int expected = 5;
+        var customMessage = $"Error {nameof(argument)} less than {nameof(expected)}";
 
         // when & then
         Action action = () => Argument.IsGreaterThanOrEqualTo(argument, expected);
+        Action actionWithCustomMessage = () => Argument.IsGreaterThanOrEqualTo(argument, expected, customMessage);
 
         action
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
             .WithMessage("The argument \"argument\" must be greater than or equal to 5. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -84,15 +98,22 @@ public sealed class ComparableTypesTests
         // given
         const int argument = 5;
         const int expected = 5;
+        var customMessage = $"Error {nameof(argument)} is equal {nameof(expected)} must be {nameof(argument)} less than {expected}";
 
         // when
         Action action = () => Argument.IsLessThan(argument, expected);
+        Action actionWithCustomMessage = () => Argument.IsLessThan(argument, expected, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
             .WithMessage($"The argument \"argument\" must be less than 5. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -108,15 +129,23 @@ public sealed class ComparableTypesTests
         // given
         const int argument = 3;
         const int expected = 5;
+        var customMessage = $"Error {nameof(argument)} less than {nameof(expected)}.";
 
-        // when & then
+        // when
 
         Action action = () => Argument.IsGreaterThan(argument, expected);
+        Action actionWithCustomMessage = () => Argument.IsGreaterThan(argument, expected, customMessage);
 
+        // then
         action
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
             .WithMessage("The argument \"argument\" must be greater than 5. (Parameter 'argument')");
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -125,15 +154,25 @@ public sealed class ComparableTypesTests
         // given
         const int minimumValue = 10;
         const int maximumValue = 5;
+        var customMessage = $"Error on range {nameof(minimumValue)} must less or equal {nameof(maximumValue)}.";
 
-        // when & then
+        // when
         var action = () => Argument.Range(minimumValue, maximumValue);
+        var actionWithCustomMessage = () => Argument.Range(minimumValue, maximumValue, customMessage);
 
+        // then
         action
             .Should()
             .ThrowExactly<ArgumentException>()
             .WithMessage(
                 "The argument \"minimumValue\" should be less or equal than \"maximumValue\". (Parameter 'minimumValue')"
+            );
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                $"{customMessage} (Parameter 'minimumValue')"
             );
     }
 
@@ -162,9 +201,11 @@ public sealed class ComparableTypesTests
         const int argument = 5;
         const int minimumValue = 10;
         const int maximumValue = 20;
+        var customMessage = $"Error {nameof(argument)} not between {nameof(minimumValue)} and {nameof(maximumValue)}.";
 
         // when
         Action action = () => Argument.IsInclusiveBetween(argument, minimumValue, maximumValue);
+        Action actionWithCustomMessage = () => Argument.IsInclusiveBetween(argument, minimumValue, maximumValue, customMessage);
 
         // then
         action
@@ -172,6 +213,13 @@ public sealed class ComparableTypesTests
             .ThrowExactly<ArgumentOutOfRangeException>()
             .WithMessage(
                 "The argument argument = 5 must be between 10 and 20 inclusively (10, 20). (Parameter 'argument')"
+            );
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage(
+                $"{customMessage} (Parameter 'argument')"
             );
     }
 
@@ -189,9 +237,11 @@ public sealed class ComparableTypesTests
         const int argument = 1;
         const int minimumValue = 3;
         const int maximumValue = 10;
+        var customMessage = $"Error {nameof(minimumValue)} not between {nameof(minimumValue)} and {nameof(maximumValue)}.";
 
         // when
         Action action = () => Argument.IsExclusiveBetween(argument, minimumValue, maximumValue);
+        Action actionWithCustomMessage = () => Argument.IsExclusiveBetween(argument, minimumValue, maximumValue, customMessage);
 
         // then
         action
@@ -199,6 +249,13 @@ public sealed class ComparableTypesTests
             .ThrowExactly<ArgumentOutOfRangeException>()
             .WithMessage(
                 "The argument argument = 1 must be between 3 and 10 exclusively (3, 10). (Parameter 'argument')"
+            );
+
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage(
+                $"{customMessage} (Parameter 'argument')"
             );
     }
 }

@@ -130,7 +130,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         CancellationToken cancellationToken = default
     )
     {
-        return cache.TryReplaceIfEqualAsync(key, value, expected, expiration, cancellationToken);
+        return cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
     }
 
     public Task<long> SetAddAsync(

@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Results;
-using Framework.Primitives;
 
 namespace Framework.Permissions.Testing;
 
@@ -42,7 +41,7 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
         return Task.FromResult(permissionNames.Select(x => new GrantedPermissionResult(x, isGranted: true)).ToList());
     }
 
-    public Task<Result<ErrorDescriptor>> SetAsync(
+    public Task SetAsync(
         string permissionName,
         string providerName,
         string providerKey,
@@ -50,10 +49,10 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
         CancellationToken cancellationToken = default
     )
     {
-        return Task.FromResult(Result<ErrorDescriptor>.Success());
+        return Task.CompletedTask;
     }
 
-    public Task<Result<ErrorDescriptor>> SetAsync(
+    public Task SetAsync(
         IReadOnlyCollection<string> permissionNames,
         string providerName,
         string providerKey,
@@ -61,7 +60,7 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
         CancellationToken cancellationToken = default
     )
     {
-        return Task.FromResult(Result<ErrorDescriptor>.Success());
+        return Task.CompletedTask;
     }
 
     public Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default)

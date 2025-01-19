@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using DotNetCore.CAP;
-using Framework.Constants;
 using Framework.Messaging.Filters;
+using Framework.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Messaging;
 
+[PublicAPI]
 public static class AddCapDistributedMessagingExtensions
 {
     public static CapBuilder AddCapDistributedMessaging(
@@ -14,6 +15,7 @@ public static class AddCapDistributedMessagingExtensions
         Action<CapOptions> setupAction
     )
     {
+        services.AddSingleton<IMessagePublisher, CapMessagePublisher>();
         services.AddSingleton<IDistributedMessagePublisher, CapDistributedMessagePublisher>();
         services.AddSingleton(CapDistributedMessageHandlerFactory.Create());
 
@@ -22,7 +24,7 @@ public static class AddCapDistributedMessagingExtensions
             capOptions.FailedMessageExpiredAfter = 30 * 24 * 3600; // 30 days
             capOptions.SucceedMessageExpiredAfter = 5 * 24 * 3600; // 30 days
             capOptions.CollectorCleaningInterval = 5 * 60; // 5 minutes
-            FrameworkJsonConstants.ConfigureInternalJsonOptions(capOptions.JsonSerializerOptions);
+            JsonConstants.ConfigureInternalJsonOptions(capOptions.JsonSerializerOptions);
             setupAction.Invoke(capOptions);
         });
 

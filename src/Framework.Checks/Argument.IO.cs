@@ -81,9 +81,9 @@ public static partial class Argument
             return;
         }
 
-        throw new ArgumentException(
-            $"The stream argument {paramName.ToAssertString()} of type <{stream.GetType().Name} must be at the starting position. (Actual Position {stream.Position})",
-            paramName
-        );
+        FormattableString format =
+            $"The stream argument {paramName.ToAssertString()} of type <{stream.GetType().Name} must be at the starting position. (Actual Position {stream.Position})";
+
+        throw new ArgumentException(format.ToString(CultureInfo.InvariantCulture), paramName);
     }
 }

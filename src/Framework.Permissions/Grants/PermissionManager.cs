@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.BuildingBlocks.Abstractions;
+using Framework.Abstractions;
 using Framework.Checks;
+using Framework.Exceptions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
 using Framework.Permissions.Resources;
 using Framework.Permissions.Results;
-using Framework.Primitives;
 
 namespace Framework.Permissions.Grants;
 
@@ -32,7 +32,7 @@ public interface IPermissionManager
         CancellationToken cancellationToken = default
     );
 
-    Task<Result<ErrorDescriptor>> SetAsync(
+    Task SetAsync(
         string permissionName,
         string providerName,
         string providerKey,
@@ -40,7 +40,7 @@ public interface IPermissionManager
         CancellationToken cancellationToken = default
     );
 
-    Task<Result<ErrorDescriptor>> SetAsync(
+    Task SetAsync(
         IReadOnlyCollection<string> permissionNames,
         string providerName,
         string providerKey,
@@ -54,7 +54,8 @@ public interface IPermissionManager
 public sealed class PermissionManager(
     IPermissionDefinitionManager definitionManager,
     IPermissionGrantProviderManager grantProviderManager,
-    IPermissionGrantRepository repository
+    IPermissionGrantRepository repository,
+    IPermissionErrorsDescriptor errorsDescriptor
 ) : IPermissionManager
 {
     public async Task<GrantedPermissionResult> GetAsync(
@@ -132,7 +133,7 @@ public sealed class PermissionManager(
         return result;
     }
 
-    public async Task<Result<ErrorDescriptor>> SetAsync(
+    public async Task SetAsync(
         string permissionName,
         string providerName,
         string providerKey,
@@ -145,17 +146,19 @@ public sealed class PermissionManager(
         if (permission is null)
         {
             // Maybe they were removed from dynamic permission definition store
-            return PermissionErrorDescriber.PermissionIsNotDefined(permissionName);
+            throw new ConflictException(await errorsDescriptor.PermissionIsNotDefined(permissionName));
         }
 
         if (!permission.IsEnabled)
         {
-            return PermissionErrorDescriber.PermissionDisabled(permission.Name);
+            throw new ConflictException(await errorsDescriptor.PermissionDisabled(permission.Name));
         }
 
         if (permission.Providers.Count != 0 && !permission.Providers.Contains(providerName, StringComparer.Ordinal))
         {
-            return PermissionErrorDescriber.PermissionProviderNotDefined(permission.Name, providerName);
+            throw new ConflictException(
+                await errorsDescriptor.PermissionProviderNotDefined(permission.Name, providerName)
+            );
         }
 
         var provider = grantProviderManager.ValueProviders.FirstOrDefault(m =>
@@ -164,15 +167,13 @@ public sealed class PermissionManager(
 
         if (provider is null)
         {
-            return PermissionErrorDescriber.PermissionsProviderNotFound(providerName);
+            throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
         }
 
         await provider.SetAsync(permission, providerKey, isGranted, cancellationToken);
-
-        return Result<ErrorDescriptor>.Success();
     }
 
-    public async Task<Result<ErrorDescriptor>> SetAsync(
+    public async Task SetAsync(
         IReadOnlyCollection<string> permissionNames,
         string providerName,
         string providerKey,
@@ -193,14 +194,14 @@ public sealed class PermissionManager(
         if (undefinedPermissions.Count != 0)
         {
             // Maybe they removed from dynamic permission definition store
-            return PermissionErrorDescriber.SomePermissionsAreNotDefined(undefinedPermissions);
+            throw new ConflictException(await errorsDescriptor.SomePermissionsAreNotDefined(undefinedPermissions));
         }
 
         var disabledPermissions = definedPermissions.Where(x => !x.IsEnabled).Select(x => x.Name).ToList();
 
         if (disabledPermissions.Count != 0)
         {
-            return PermissionErrorDescriber.SomePermissionsAreDisabled(disabledPermissions);
+            throw new ConflictException(await errorsDescriptor.SomePermissionsAreDisabled(disabledPermissions));
         }
 
         // Check if all permissions are granted
@@ -211,9 +212,8 @@ public sealed class PermissionManager(
 
         if (notDefinedProviderPermissions.Count != 0)
         {
-            return PermissionErrorDescriber.ProviderNotDefinedForSomePermissions(
-                notDefinedProviderPermissions,
-                providerName
+            throw new ConflictException(
+                await errorsDescriptor.ProviderNotDefinedForSomePermissions(notDefinedProviderPermissions, providerName)
             );
         }
 
@@ -223,12 +223,10 @@ public sealed class PermissionManager(
 
         if (provider is null)
         {
-            return PermissionErrorDescriber.PermissionsProviderNotFound(providerName);
+            throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
         }
 
         await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken);
-
-        return Result<ErrorDescriptor>.Success();
     }
 
     public async Task DeleteAsync(
