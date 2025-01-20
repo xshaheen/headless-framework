@@ -1,91 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Blobs;
-using Framework.Blobs.SshNet;
+using Framework.Blobs.Redis;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(SshBlobTestFixture))]
-public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
+[Collection(nameof(RedisTestFixture))]
+public sealed class RedisBlobStorageTests(RedisTestFixture fixture, ITestOutputHelper output) : BlobStorageTestsBase(output)
 {
     protected override IBlobStorage GetStorage()
     {
-        var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework:password@localhost:2222" };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
+        var options = new RedisBlobStorageOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer };
+        var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
 
-        return new SshBlobStorage(optionsWrapper);
-    }
-
-    [Fact]
-    public void can_create_ssh_file_storage_without_Connection_string_password()
-    {
-        // given
-        var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework@localhost:2222" };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
-
-        // when
-        using var storage = new SshBlobStorage(optionsWrapper);
-    }
-
-    [Fact]
-    public void can_create_ssh_file_storage_without_proxy_password()
-    {
-        // given
-        var options = new SshBlobStorageOptions
-        {
-            ConnectionString = "sftp://username@host",
-            Proxy = "proxy://username@host",
-        };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
-
-        // when
-        using var storage = new SshBlobStorage(optionsWrapper);
-    }
-
-    [Fact]
-    public async Task will_not_return_directory_in_get_page()
-    {
-        using var storage = GetStorage();
-
-        await ResetAsync(storage);
-
-        var container = Container;
-        var containerName = ContainerName;
-
-        var result = await storage.GetPagedListAsync(container);
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
-        (await result.NextPageAsync()).Should().BeFalse();
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
-
-        const string directory = "EmptyDirectory";
-        var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync() : null;
-        client.Should().NotBeNull();
-
-        await client!.CreateDirectoryAsync($"{containerName}/{directory}");
-
-        result = await storage.GetPagedListAsync(container);
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
-        (await result.NextPageAsync()).Should().BeFalse();
-        result.HasMore.Should().BeFalse();
-        result.Blobs.Should().BeEmpty();
-
-        // Ensure the directory will not be returned via get file info
-        var info = await storage.GetBlobInfoAsync(container, directory);
-        info.Should().BeNull();
-
-        // Ensure delete files can remove all files including fake folders
-        await storage.DeleteAllAsync(container, "*");
-
-        // Assert folder was removed by Delete Files
-        (await client.ExistsAsync($"{containerName}/{directory}"))
-            .Should()
-            .BeFalse();
-        (await storage.GetBlobInfoAsync(container, directory)).Should().BeNull();
+        return new RedisBlobStorage(optionsWrapper);
     }
 
     [Fact]
@@ -136,7 +66,7 @@ public sealed class SshBlobStorageTests(ITestOutputHelper output) : BlobStorageT
         return base.can_rename_files();
     }
 
-    [Fact(Skip = "Doesn't work well with SFTP")]
+    [Fact]
     public override Task can_concurrently_manage_files()
     {
         return base.can_concurrently_manage_files();

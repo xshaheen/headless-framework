@@ -579,10 +579,12 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     private static string _BuildBlobPath(string[] container, string blobName)
     {
-        var path =
-            container.Length == 1 ? container[0] : string.Join('/', container.Skip(1)).EnsureEndsWith('/') + blobName;
+        if (container.Length == 1)
+        {
+            return blobName;
+        }
 
-        return _NormalizePath(path);
+        return _NormalizePath(string.Join('/', container.Skip(1)).EnsureEndsWith('/') + blobName);
     }
 
     [return: NotNullIfNotNull(nameof(path))]
