@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Numerics;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using StackExchange.Redis;
@@ -21,6 +22,10 @@ public sealed class FrameworkRedisScriptsLoader(
     public LoadedLuaScript? RemoveIfEqualScript { get; private set; }
 
     public LoadedLuaScript? ReplaceIfEqualScript { get; private set; }
+
+    public LoadedLuaScript? SetIfHigherScript { get; private set; }
+
+    public LoadedLuaScript? SetIfLowerScript { get; private set; }
 
     public async Task LoadScriptsAsync()
     {
@@ -47,6 +52,8 @@ public sealed class FrameworkRedisScriptsLoader(
             var incrementWithExpire = LuaScript.Prepare(RedisScripts.IncrementWithExpire);
             var removeIfEqual = LuaScript.Prepare(RedisScripts.RemoveIfEqual);
             var replaceIfEqual = LuaScript.Prepare(RedisScripts.ReplaceIfEqual);
+            var setIfHigher = LuaScript.Prepare(RedisScripts.SetIfHigher);
+            var setIfLower = LuaScript.Prepare(RedisScripts.SetIfLower);
 
             foreach (var endpoint in multiplexer.GetEndPoints())
             {
@@ -65,14 +72,25 @@ public sealed class FrameworkRedisScriptsLoader(
                 var loadIncrementScriptTask = incrementWithExpire.LoadAsync(server);
                 var loadRemoveScriptTask = removeIfEqual.LoadAsync(server);
                 var loadReplaceScriptTask = replaceIfEqual.LoadAsync(server);
+                var loadSetIfHigherScriptTask = setIfHigher.LoadAsync(server);
+                var loadSetIfLowerScriptTask = setIfLower.LoadAsync(server);
 
-                await Task.WhenAll(loadIncrementScriptTask, loadRemoveScriptTask, loadReplaceScriptTask)
+               var results =  await Task.WhenAll(
+                       loadIncrementScriptTask,
+                       loadRemoveScriptTask,
+                       loadReplaceScriptTask,
+                       loadSetIfHigherScriptTask,
+                       loadSetIfLowerScriptTask
+                    )
                     .WithAggregatedExceptions()
                     .AnyContext();
 
-                IncrementWithExpireScript = await incrementWithExpire.LoadAsync(server).AnyContext();
-                RemoveIfEqualScript = await removeIfEqual.LoadAsync(server).AnyContext();
-                ReplaceIfEqualScript = await replaceIfEqual.LoadAsync(server).AnyContext();
+                IncrementWithExpireScript = results[0];
+                RemoveIfEqualScript = results[1];
+                ReplaceIfEqualScript = results[2];
+                SetIfHigherScript = results[3];
+                SetIfLowerScript = results[4];
+
             }
 
             _scriptsLoaded = true;
@@ -92,12 +110,12 @@ public sealed class FrameworkRedisScriptsLoader(
         TimeSpan? newTtl = null
     )
     {
-        await LoadScriptsAsync();
+        await LoadScriptsAsync().AnyContext();
 
         var redisResult = await db.ScriptEvaluateAsync(
             ReplaceIfEqualScript!,
             _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl)
-        );
+        ).AnyContext();
 
         var result = (int)redisResult;
 
@@ -106,13 +124,9 @@ public sealed class FrameworkRedisScriptsLoader(
 
     public async Task<bool> RemoveIfEqualAsync(IDatabase db, RedisKey key, string? expectedValue)
     {
-        await LoadScriptsAsync();
-
-        var redisResult = await db.ScriptEvaluateAsync(
-            RemoveIfEqualScript!,
-            _GetRemoveIfEqualParameters(key, expectedValue)
-        );
-
+        await LoadScriptsAsync().AnyContext();
+        var parameters = _GetRemoveIfEqualParameters(key, expectedValue);
+        var redisResult = await db.ScriptEvaluateAsync(RemoveIfEqualScript!, parameters).AnyContext();
         var result = (int)redisResult;
 
         return result > 0;
@@ -120,15 +134,59 @@ public sealed class FrameworkRedisScriptsLoader(
 
     public async Task<long> IncrementAsync(IDatabase db, string resource, long value, TimeSpan ttl)
     {
-        await LoadScriptsAsync();
-
-        var result = await db.ScriptEvaluateAsync(
-            IncrementWithExpireScript!,
-            _GetIncrementParameters(resource, value, ttl)
-        );
+        await LoadScriptsAsync().AnyContext();
+        var parameters = _GetIncrementParameters(resource, value, ttl);
+        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).AnyContext();
 
         return (long)result;
     }
+
+    public async Task<double> IncrementAsync(IDatabase db, string resource, double value, TimeSpan ttl)
+    {
+        await LoadScriptsAsync().AnyContext();
+        var parameters = _GetIncrementParameters(resource, value, ttl);
+        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).AnyContext();
+
+        return (double)result;
+    }
+
+    public async Task<long> SetIfLowerAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
+    {
+        await LoadScriptsAsync().AnyContext();
+        var parameters = _GetIfParameters(key, value, ttl);
+        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).AnyContext();
+
+        return (long)result;
+    }
+
+    public async Task<double> SetIfLowerAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
+    {
+        await LoadScriptsAsync().AnyContext();
+        var parameters = _GetIfParameters(key, value, ttl);
+        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).AnyContext();
+
+        return (double)result;
+    }
+
+    public async Task<long> SetIfHigherAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
+    {
+        await LoadScriptsAsync().AnyContext();
+        var parameters = _GetIfParameters(key, value, ttl);
+        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).AnyContext();
+
+        return (long)result;
+    }
+
+    public async Task<double> SetIfHigherAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
+    {
+        await LoadScriptsAsync().AnyContext();
+        var parameters = _GetIfParameters(key, value, ttl);
+        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).AnyContext();
+
+        return (double)result;
+    }
+
+    #region Helpers
 
     private static object _GetReplaceIfEqualParameters(RedisKey key, string? value, string? expected, TimeSpan? expires)
     {
@@ -148,7 +206,7 @@ public sealed class FrameworkRedisScriptsLoader(
             key,
             value,
             expected,
-            expires = "",
+            expires = RedisValue.EmptyString,
         };
     }
 
@@ -157,7 +215,7 @@ public sealed class FrameworkRedisScriptsLoader(
         return new { key, expected };
     }
 
-    private static object _GetIncrementParameters(string resource, long value, TimeSpan ttl)
+    private static object _GetIncrementParameters<T>(string resource, T value, TimeSpan ttl) where T : INumber<T>
     {
         return new
         {
@@ -166,4 +224,13 @@ public sealed class FrameworkRedisScriptsLoader(
             expires = (int)ttl.TotalMilliseconds,
         };
     }
+
+    private static object _GetIfParameters<T>(string key, T value, TimeSpan? ttl) where T : INumber<T>
+    {
+        return ttl.HasValue
+            ? new { key = (RedisKey) key, value, expires = (int) ttl.Value.TotalMilliseconds }
+            : new { key = (RedisKey) key, value, expires = RedisValue.EmptyString };
+    }
+
+    #endregion
 }
