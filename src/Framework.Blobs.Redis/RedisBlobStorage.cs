@@ -82,9 +82,9 @@ public sealed class RedisBlobStorage : IBlobStorage
             var saveInfoTask = database.HashSetAsync(infoContainer, blobPath, memory.ToArray());
 
             await Run.WithRetriesAsync(
-                () => Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions(),
-                cancellationToken: cancellationToken,
-                logger: _logger
+                async () => await Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions().AnyContext(),
+                logger: _logger,
+                cancellationToken: cancellationToken
             ).AnyContext();
         }
         catch (Exception e)
@@ -153,7 +153,13 @@ public sealed class RedisBlobStorage : IBlobStorage
         var database = Database;
         var deleteInfoTask = database.HashDeleteAsync(infoContainer, blobPath);
         var deleteBlobTask = database.HashDeleteAsync(blobsContainer, blobPath);
-        var result = await Run.WithRetriesAsync(() => Task.WhenAll(deleteInfoTask, deleteBlobTask).WithAggregatedExceptions(), logger: _logger, cancellationToken: cancellationToken).AnyContext();
+
+
+        var result = await Run.WithRetriesAsync(
+            async () => await Task.WhenAll(deleteInfoTask, deleteBlobTask).WithAggregatedExceptions().AnyContext(),
+            logger: _logger,
+            cancellationToken: cancellationToken
+        ).AnyContext();
 
         return result[0] || result[1];
     }
@@ -250,7 +256,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Copy
 
-    public ValueTask<bool> CopyAsync(
+    public async ValueTask<bool> CopyAsync(
         string[] blobContainer,
         string blobName,
         string[] newBlobContainer,
@@ -263,7 +269,30 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
-        throw new NotImplementedException();
+
+
+        try
+        {
+            var result = await DownloadAsync(blobContainer, blobName, cancellationToken).AnyContext();
+
+            if (result is null)
+            {
+                return false;
+            }
+
+            await using var stream = result.Stream;
+            await UploadAsync(newBlobContainer, newBlobName, stream, metadata: null, cancellationToken).AnyContext();
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
+            var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
+            _logger.LogError(ex, "Error copying {Path} to {TargetPath}: {Message}", srcBlobPath, dstBlobPath, ex.Message);
+
+            return false;
+        }
     }
 
     #endregion
