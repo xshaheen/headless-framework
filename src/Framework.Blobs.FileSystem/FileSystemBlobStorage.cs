@@ -443,13 +443,13 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             return PagedFileListResult.Empty;
         }
 
-        var result = new PagedFileListResult(_ =>
+        var result = new PagedFileListResult((_, _) =>
             ValueTask.FromResult<INextPageResult>(
                 _GetFiles(baseDirectoryPath, directoryPath, blobSearchPattern, 1, pageSize)
             )
         );
 
-        await result.NextPageAsync();
+        await result.NextPageAsync(cancellationToken).AnyContext();
 
         return result;
     }
@@ -522,7 +522,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             HasMore = hasMore,
             Blobs = list,
             NextPageFunc = hasMore
-                ? _ =>
+                ? (_, _) =>
                     ValueTask.FromResult<INextPageResult>(
                         _GetFiles(baseDirectoryPath, directoryPath, searchPattern, page + 1, pageSize)
                     )

@@ -611,11 +611,11 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult(_ =>
-            _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, cancellationToken)
+        var result = new PagedFileListResult((_, token) =>
+            _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
         );
 
-        await result.NextPageAsync().AnyContext();
+        await result.NextPageAsync(cancellationToken).AnyContext();
 
         return result;
     }
@@ -664,7 +664,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 .Where(spec => !_IsDirectory(spec))
                 .ToList(),
             NextPageFunc = response.IsTruncated
-                ? _ => _GetFilesAsync(bucket, criteria, pageSize, response.NextContinuationToken, cancellationToken)
+                ? (_, token) => _GetFilesAsync(bucket, criteria, pageSize, response.NextContinuationToken, token)
                 : null,
         };
     }

@@ -549,11 +549,11 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var directoryPath = _BuildContainerPath(container);
 
-        var result = new PagedFileListResult(_ =>
-            _GetFilesAsync(container[0], directoryPath, blobSearchPattern, 1, pageSize, cancellationToken)
+        var result = new PagedFileListResult((_, token) =>
+            _GetFilesAsync(container[0], directoryPath, blobSearchPattern, 1, pageSize, token)
         );
 
-        await result.NextPageAsync();
+        await result.NextPageAsync(cancellationToken).AnyContext();
 
         return result;
     }
@@ -597,8 +597,7 @@ public sealed class SshBlobStorage : IBlobStorage
             HasMore = hasMore,
             Blobs = list,
             NextPageFunc = hasMore
-                ? _ =>
-                    _GetFilesAsync(baseContainer, directoryPath, searchPattern, page + 1, pageSize, cancellationToken)
+                ? (_, token) => _GetFilesAsync(baseContainer, directoryPath, searchPattern, page + 1, pageSize, token)
                 : null,
         };
     }
@@ -612,10 +611,8 @@ public sealed class SshBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        if (limit is <= 0)
-        {
-            return [];
-        }
+        Argument.IsPositive(limit);
+        Argument.IsPositiveOrZero(skip);
 
         await _EnsureClientConnectedAsync(cancellationToken);
 

@@ -417,11 +417,11 @@ public sealed class AzureBlobStorage : IBlobStorage
         var client = _GetContainerClient(containerUrl);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult(async _ =>
-            await _GetFilesAsync(client, criteria, pageSize, previousNextPageResult: null, cancellationToken)
+        var result = new PagedFileListResult(async (_, token) =>
+            await _GetFilesAsync(client, criteria, pageSize, previousNextPageResult: null, token)
         );
 
-        await result.NextPageAsync().AnyContext();
+        await result.NextPageAsync(cancellationToken).AnyContext();
 
         return result;
     }
@@ -465,8 +465,8 @@ public sealed class AzureBlobStorage : IBlobStorage
                     Blobs = blobs.Take(pageSize).ToList(),
                     ExtraLoadedBlobs = blobs.Skip(pageSize).ToList(),
                     ContinuationToken = previousNextPageResult.ContinuationToken,
-                    AzureNextPageFunc = currentResult =>
-                        _GetFilesAsync(client, criteria, pageSize, currentResult, cancellationToken),
+                    AzureNextPageFunc = (currentResult, token) =>
+                        _GetFilesAsync(client, criteria, pageSize, currentResult, token),
                 };
             }
         }
@@ -563,7 +563,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             ExtraLoadedBlobs = hasExtraLoadedBlobs ? blobs.Skip(pageSize).ToList() : Array.Empty<BlobInfo>(),
             ContinuationToken = continuationToken,
             AzureNextPageFunc = hasExtraLoadedBlobs
-                ? currentResult => _GetFilesAsync(client, criteria, pageSize, currentResult, cancellationToken)
+                ? (currentResult, token) => _GetFilesAsync(client, criteria, pageSize, currentResult, token)
                 : null,
         };
     }

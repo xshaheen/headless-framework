@@ -40,7 +40,7 @@ public static class LoggerExtensions
         this ILogger logger,
         Func<LogState, LogState> stateBuilder,
         [StructuredMessageTemplate] string message,
-        params object[] args
+        params object?[] args
     )
     {
         using (BeginScope(logger, stateBuilder))
@@ -53,7 +53,7 @@ public static class LoggerExtensions
         this ILogger logger,
         Func<LogState, LogState> stateBuilder,
         [StructuredMessageTemplate] string message,
-        params object[] args
+        params object?[] args
     )
     {
         using (BeginScope(logger, stateBuilder))
@@ -66,7 +66,7 @@ public static class LoggerExtensions
         this ILogger logger,
         Func<LogState, LogState> stateBuilder,
         [StructuredMessageTemplate] string message,
-        params object[] args
+        params object?[] args
     )
     {
         using (BeginScope(logger, stateBuilder))
@@ -79,7 +79,7 @@ public static class LoggerExtensions
         this ILogger logger,
         Func<LogState, LogState> stateBuilder,
         [StructuredMessageTemplate] string message,
-        params object[] args
+        params object?[] args
     )
     {
         using (BeginScope(logger, stateBuilder))
@@ -93,7 +93,7 @@ public static class LoggerExtensions
         Func<LogState, LogState> stateBuilder,
         Exception exception,
         [StructuredMessageTemplate] string message,
-        params object[] args
+        params object?[] args
     )
     {
         using (BeginScope(logger, stateBuilder))
@@ -106,7 +106,7 @@ public static class LoggerExtensions
         this ILogger logger,
         Func<LogState, LogState> stateBuilder,
         [StructuredMessageTemplate] string message,
-        params object[] args
+        params object?[] args
     )
     {
         using (BeginScope(logger, stateBuilder))
