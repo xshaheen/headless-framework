@@ -236,7 +236,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Rename
 
-    public ValueTask<bool> RenameAsync(
+    public async ValueTask<bool> RenameAsync(
         string[] blobContainer,
         string blobName,
         string[] newBlobContainer,
@@ -249,7 +249,27 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
-        throw new NotImplementedException();
+        var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
+        var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
+        _logger.LogInformation("Renaming {Path} to {NewPath}", srcBlobPath, dstBlobPath);
+
+        try
+        {
+            var result = await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken);
+
+            if (!result)
+            {
+                return false;
+            }
+
+            return await DeleteAsync(blobContainer, blobName, cancellationToken).AnyContext();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error renaming {Path} to {NewPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
+
+            return false;
+        }
     }
 
     #endregion
@@ -269,8 +289,6 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
-
-
         try
         {
             var result = await DownloadAsync(blobContainer, blobName, cancellationToken).AnyContext();
@@ -285,11 +303,11 @@ public sealed class RedisBlobStorage : IBlobStorage
 
             return true;
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
             var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
             var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
-            _logger.LogError(ex, "Error copying {Path} to {TargetPath}: {Message}", srcBlobPath, dstBlobPath, ex.Message);
+            _logger.LogError(e, "Error copying {Path} to {TargetPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
 
             return false;
         }
