@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text.RegularExpressions;
+using Flurl;
 using Framework.Checks;
+using Framework.Constants;
 using Framework.Core;
 using Framework.Primitives;
 using Framework.Serializer;
@@ -33,14 +36,15 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
         cancellationToken.ThrowIfCancellationRequested();
-        throw new NotImplementedException();
+
+        return ValueTask.CompletedTask;
     }
 
     #endregion
 
     #region Upload
 
-    public ValueTask UploadAsync(
+    public async ValueTask UploadAsync(
         string[] container,
         string blobName,
         Stream stream,
@@ -51,7 +55,44 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        throw new NotImplementedException();
+        var (blobsContainer, infoContainer) = _BuildContainerPath(container);
+        var blobPath = _BuildBlobPath(container, blobName);
+
+        try
+        {
+            var database = Database;
+
+            await using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
+            var saveBlobTask = database.HashSetAsync(blobsContainer, blobPath, memory.ToArray());
+            var fileSize = memory.Length;
+            memory.Seek(0, SeekOrigin.Begin);
+            memory.SetLength(0);
+
+            var blobInfo = new BlobInfo
+            {
+                BlobKey = blobPath,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
+                Size = fileSize,
+            };
+
+            _serializer.Serialize(blobInfo, memory);
+
+            var saveInfoTask = database.HashSetAsync(infoContainer, blobPath, memory.ToArray());
+
+            await Run.WithRetriesAsync(
+                () => Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions(),
+                cancellationToken: cancellationToken,
+                logger: _logger
+            ).AnyContext();
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error saving {Path}: {Message}", blobPath, e.Message);
+
+            throw;
+        }
     }
 
     #endregion
@@ -67,19 +108,21 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(async blob =>
-        {
-            try
+        var tasks = blobs.Select(
+            async blob =>
             {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+                try
+                {
+                    await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                return Result<Exception>.Success();
+                    return Result<Exception>.Success();
+                }
+                catch (Exception e)
+                {
+                    return Result<Exception>.Fail(e);
+                }
             }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        );
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
@@ -88,7 +131,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Delete
 
-    public ValueTask<bool> DeleteAsync(
+    public async ValueTask<bool> DeleteAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -97,12 +140,22 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        throw new NotImplementedException();
+        var (blobsContainer, infoContainer) = _BuildContainerPath(container);
+        var blobPath = _BuildBlobPath(container, blobName);
+
+        return await _DeleteAsync(blobPath, infoContainer, blobsContainer, cancellationToken);
     }
 
-    private Task<bool> _DeleteAsync(string blobPath, CancellationToken cancellationToken)
+    private async Task<bool> _DeleteAsync(string blobPath, string infoContainer, string blobsContainer, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        _logger.LogTrace("Deleting {Path}", blobPath);
+
+        var database = Database;
+        var deleteInfoTask = database.HashDeleteAsync(infoContainer, blobPath);
+        var deleteBlobTask = database.HashDeleteAsync(blobsContainer, blobPath);
+        var result = await Run.WithRetriesAsync(() => Task.WhenAll(deleteInfoTask, deleteBlobTask).WithAggregatedExceptions(), logger: _logger, cancellationToken: cancellationToken).AnyContext();
+
+        return result[0] || result[1];
     }
 
     #endregion
@@ -122,39 +175,55 @@ public sealed class RedisBlobStorage : IBlobStorage
             return [];
         }
 
-        var tasks = blobNames.Select(async fileName =>
-        {
-            try
+        var tasks = blobNames.Select(
+            async fileName =>
             {
-                return await DeleteAsync(container, fileName, cancellationToken);
+                try
+                {
+                    return await DeleteAsync(container, fileName, cancellationToken);
+                }
+                catch (Exception e)
+                {
+                    return Result<bool, Exception>.Fail(e);
+                }
             }
-            catch (Exception e)
-            {
-                return Result<bool, Exception>.Fail(e);
-            }
-        });
+        );
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
 
-    public ValueTask<int> DeleteAllAsync(
+    public async ValueTask<int> DeleteAllAsync(
         string[] container,
         string? blobSearchPattern = null,
         CancellationToken cancellationToken = default
     )
     {
-        throw new NotImplementedException();
-    }
+        var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken).AnyContext();
 
-    public Task<int> DeleteDirectoryAsync(
-        string directory,
-        bool includeSelf = true,
-        CancellationToken cancellationToken = default
-    )
-    {
-        _logger.LogInformation("Deleting {Directory} directory", directory);
+        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs, blobSearchPattern);
 
-        throw new NotImplementedException();
+        var (blobsContainer, infoContainer) = _BuildContainerPath(container);
+
+        var tasks = blobs.Select(
+            async blob =>
+            {
+                try
+                {
+                  return await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, cancellationToken);
+                }
+                catch (Exception e)
+                {
+                    return Result<bool, Exception>.Fail(e);
+                }
+            }
+        );
+
+        var results = await Task.WhenAll(tasks).WithAggregatedExceptions();
+        var count = results.Count(r => r.Succeeded);
+
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
+
+        return count;
     }
 
     #endregion
@@ -201,7 +270,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Exists
 
-    public ValueTask<bool> ExistsAsync(
+    public async ValueTask<bool> ExistsAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -210,14 +279,19 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        throw new NotImplementedException();
+        var (_, infoContainer) = _BuildContainerPath(container);
+        var blobPath = _BuildBlobPath(container, blobName);
+
+        _logger.LogTrace("Checking if {Path} exists", blobPath);
+
+        return await Run.WithRetriesAsync(() => Database.HashExistsAsync(infoContainer, blobPath), logger: _logger, cancellationToken: cancellationToken);
     }
 
     #endregion
 
     #region Downalod
 
-    public ValueTask<BlobDownloadResult?> DownloadAsync(
+    public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -226,27 +300,27 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        throw new NotImplementedException();
+        var (blobsContainer, _) = _BuildContainerPath(container);
+        var blobPath = _BuildBlobPath(container, blobName);
 
-        // if (String.IsNullOrEmpty(path))
-        //     throw new ArgumentNullException(nameof(path));
-        //
-        // if (streamMode is StreamMode.Write)
-        //     throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
-        //
-        // string normalizedPath = NormalizePath(path);
-        // _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
-        //
-        // var fileContent = await Run.WithRetriesAsync(() => Database.HashGetAsync(_options.ContainerName, normalizedPath),
-        //     cancellationToken: cancellationToken, logger: _logger).AnyContext();
-        //
-        // if (fileContent.IsNull)
-        // {
-        //     _logger.LogError("Unable to get file stream for {Path}: File Not Found", normalizedPath);
-        //     return null;
-        // }
-        //
-        // return new MemoryStream(fileContent);
+        _logger.LogTrace("Getting file stream for {Path}", blobPath);
+
+        var fileContent = await Run.WithRetriesAsync(
+            () => Database.HashGetAsync(blobsContainer, blobPath),
+            logger: _logger,
+            cancellationToken: cancellationToken
+        ).AnyContext();
+
+        if (fileContent.IsNull)
+        {
+            _logger.LogError("Unable to get file stream for {Path}: File Not Found", blobPath);
+
+            return null;
+        }
+
+        var stream = new MemoryStream(fileContent!);
+
+        return new BlobDownloadResult(stream, blobName);
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(
@@ -258,13 +332,13 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(container);
         Argument.IsNotNull(blobName);
 
-        var containerPath = _BuildContainerPath(container);
+        var (_, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
         _logger.LogTrace("Getting file info for {Path}", blobPath);
 
         var blobInfo = await Run.WithRetriesAsync(
-            (Database, containerPath, blobPath),
-            static state => state.Database.HashGetAsync(state.containerPath, state.blobPath),
+            (Database, infoContainer, blobPath),
+            static state => state.Database.HashGetAsync(state.infoContainer, state.blobPath),
             cancellationToken: cancellationToken
         );
 
@@ -275,14 +349,14 @@ public sealed class RedisBlobStorage : IBlobStorage
             return null;
         }
 
-        return _serializer.Deserialize<BlobInfo>((byte[])blobInfo!);
+        return _serializer.Deserialize<BlobInfo>((byte[]) blobInfo!);
     }
 
     #endregion
 
-    #region List
+    #region Page
 
-    public ValueTask<PagedFileListResult> GetPagedListAsync(
+    public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
         string? blobSearchPattern = null,
         int pageSize = 100,
@@ -293,22 +367,167 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsPositive(pageSize);
         Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
-        var directoryPath = _BuildContainerPath(container);
+        var (_, infoContainer) = _BuildContainerPath(container);
+        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        throw new NotImplementedException();
+        var result = new PagedFileListResult((_, token) => _GetFilesPageAsync(infoContainer, criteria, 1, pageSize, token));
+        await result.NextPageAsync(cancellationToken).AnyContext();
+
+        return result;
     }
 
-    // private sealed record SearchCriteria(string PathPrefix = "", Regex? Pattern = null);
+    private async ValueTask<INextPageResult> _GetFilesPageAsync(
+        string container,
+        SearchCriteria criteria,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var pagingLimit = pageSize;
+        var skip = (page - 1) * pagingLimit;
+
+        if (pagingLimit < int.MaxValue)
+        {
+            pagingLimit++;
+        }
+
+        _logger.LogTrace(
+            s => s.Property("Limit", pagingLimit).Property("Skip", skip),
+            "Getting files matching {Prefix} and {Pattern}...",
+            criteria.Prefix,
+            criteria.Pattern
+        );
+
+        var list = await _ScanBlobInfoListAsync(container, criteria, skip, pagingLimit, cancellationToken);
+
+        var hasMore = false;
+
+        if (list.Count == pagingLimit)
+        {
+            hasMore = true;
+            list.RemoveAt(pagingLimit - 1);
+        }
+
+        return new NextPageResult
+        {
+            Success = true,
+            HasMore = hasMore,
+            Blobs = list,
+            NextPageFunc = hasMore ? (_, token) => _GetFilesPageAsync(container, criteria, page + 1, pageSize, token) : null,
+        };
+    }
+
+    private async Task<List<BlobInfo>> _GetFileListAsync(
+        string[] container,
+        string? searchPattern = null,
+        int? limit = null,
+        int? skip = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsPositive(limit);
+        Argument.IsPositiveOrZero(skip);
+
+        var (_, infoContainer) = _BuildContainerPath(container);
+        var criteria = _GetRequestCriteria(container.Skip(1), searchPattern);
+
+        var pageSize = limit ?? int.MaxValue;
+
+        _logger.LogTrace(
+            s => s.Property("SearchPattern", searchPattern).Property("Limit", limit).Property("Skip", skip),
+            "Getting file list matching {Prefix} and {Pattern}...",
+            criteria.Prefix,
+            criteria.Pattern
+        );
+
+        var blobs = await _ScanBlobInfoListAsync(infoContainer, criteria, skip ?? 0, pageSize, cancellationToken);
+
+        return blobs;
+    }
+
+    private async Task<List<BlobInfo>> _ScanBlobInfoListAsync(
+        string container,
+        SearchCriteria criteria,
+        int skipCount = 0,
+        int? pagingLimit = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        List<BlobInfo> list = [];
+
+        await foreach (var hashEntry in Database.HashScanAsync(container, $"{criteria.Prefix}*").WithCancellation(cancellationToken))
+        {
+            if (hashEntry.Value.IsNull)
+            {
+                continue;
+            }
+
+            var blobInfo = _serializer.Deserialize<BlobInfo>((byte[]) hashEntry.Value!)!;
+
+            if (criteria.Pattern != null && !criteria.Pattern.IsMatch(blobInfo.BlobKey))
+            {
+                continue;
+            }
+
+            // Skip
+            if (skipCount > 0)
+            {
+                skipCount--;
+
+                continue;
+            }
+
+            // Take
+            if (pagingLimit.HasValue && list.Count == pagingLimit)
+            {
+                break;
+            }
+
+            list.Add(blobInfo);
+        }
+
+        return list;
+    }
+
+    private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
+    {
+        searchPattern = Url.Combine(string.Join('/', directories), _NormalizePath(searchPattern));
+
+        if (string.IsNullOrEmpty(searchPattern))
+        {
+            return new SearchCriteria();
+        }
+
+        var hasWildcard = searchPattern.Contains('*', StringComparison.Ordinal);
+
+        var prefix = searchPattern;
+        Regex? patternRegex = null;
+
+        if (hasWildcard)
+        {
+            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
+            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
+            var slashPos = searchPattern.LastIndexOf('/');
+            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
+        }
+
+        return new(prefix, patternRegex);
+    }
+
+    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
 
     #endregion
 
     #region Build Paths
 
-    private static string _BuildContainerPath(string[] container)
+    private static (string BlobsContainer, string InfoContainer) _BuildContainerPath(string[] container)
     {
         Argument.IsNotNullOrEmpty(container);
 
-        return _NormalizePath(container[0]).EnsureEndsWith('/');
+        var path = _NormalizePath(container[0]);
+
+        return (path.EnsureEndsWith('/'), ("blob-info/" + path).EnsureEndsWith('/'));
     }
 
     private static string _BuildBlobPath(string[] container, string blobName)

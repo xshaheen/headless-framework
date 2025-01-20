@@ -6,6 +6,8 @@ using System.Collections.ObjectModel;
 // ReSharper disable once CheckNamespace
 namespace Framework.Blobs;
 
+using NextPageFunc = Func<PagedFileListResult, CancellationToken, ValueTask<INextPageResult>>;
+
 public interface INextPageResult
 {
     public bool Success { get; }
@@ -14,12 +16,12 @@ public interface INextPageResult
 
     public IReadOnlyCollection<BlobInfo> Blobs { get; }
 
-    public Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc { get; }
+    public NextPageFunc? NextPageFunc { get; }
 }
 
 public interface IHasNextPageFunc
 {
-    Func<PagedFileListResult, ValueTask<INextPageResult>>? NextPageFunc { get; }
+    NextPageFunc? NextPageFunc { get; }
 }
 
 public sealed class PagedFileListResult : IHasNextPageFunc
@@ -33,10 +35,10 @@ public sealed class PagedFileListResult : IHasNextPageFunc
 
     #region Next Page
 
-    private Func<PagedFileListResult, ValueTask<INextPageResult>>? _nextPageFunc;
-    Func<PagedFileListResult, ValueTask<INextPageResult>>? IHasNextPageFunc.NextPageFunc => _nextPageFunc;
+    private NextPageFunc? _nextPageFunc;
+    NextPageFunc? IHasNextPageFunc.NextPageFunc => _nextPageFunc;
 
-    public async Task<bool> NextPageAsync()
+    public async Task<bool> NextPageAsync(CancellationToken cancellationToken = default)
     {
         IHasNextPageFunc func = this;
 
@@ -45,7 +47,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
             return false;
         }
 
-        var result = await func.NextPageFunc(this);
+        var result = await func.NextPageFunc(this, cancellationToken);
 
         if (result.Success)
         {
@@ -77,7 +79,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
     public PagedFileListResult(
         IReadOnlyCollection<BlobInfo> blobs,
         bool hasMore,
-        Func<PagedFileListResult, ValueTask<INextPageResult>> nextPageFunc
+        NextPageFunc nextPageFunc
     )
     {
         Blobs = blobs;
@@ -85,7 +87,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
         _nextPageFunc = nextPageFunc;
     }
 
-    public PagedFileListResult(Func<PagedFileListResult, ValueTask<INextPageResult>> nextPageFunc)
+    public PagedFileListResult(NextPageFunc nextPageFunc)
     {
         _nextPageFunc = nextPageFunc;
     }
