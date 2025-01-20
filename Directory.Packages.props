@@ -26,10 +26,10 @@
     <PackageVersion Include="ByteSize" Version="2.1.2" />
     <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
     <PackageVersion Include="Couchbase.Extensions.Compression.Snappier" Version="3.0.1-beta.1" />
-    <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.6.4" />
+    <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.6.5" />
     <PackageVersion Include="Couchbase.Extensions.MultiOp" Version="1.0.0" />
     <PackageVersion Include="Couchbase.Transactions" Version="3.6.2" />
-    <PackageVersion Include="CouchbaseNetClient" Version="3.6.4" />
+    <PackageVersion Include="CouchbaseNetClient" Version="3.6.5" />
     <PackageVersion Include="coverlet.collector" Version="6.0.3" />
     <PackageVersion Include="Dapper" Version="2.1.35" />
     <PackageVersion Include="DeepCloner" Version="0.10.4" />
