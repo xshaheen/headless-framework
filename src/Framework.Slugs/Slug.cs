@@ -1,103 +1,82 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Cysharp.Text;
+using System.Diagnostics.CodeAnalysis;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace System;
+namespace Framework.Slugs;
 
 public static class Slug
 {
-    /// <summary>Convert the string to SEO optimized and valid url.</summary>
-    /// <param name="input">The string to be converted.</param>
-    public static string Create(string input)
+    [return: NotNullIfNotNull(nameof(text))]
+    public static string? Create(string? text, SlugOptions? options = null)
     {
-        if (string.IsNullOrWhiteSpace(input))
+        if (text is null)
         {
-            return string.Empty;
+            return null;
         }
 
-        var span = input.Normalize(NormalizationForm.FormD).AsSpan();
+        options ??= SlugOptions.Default;
+        text = text.Normalize(NormalizationForm.FormD);
 
-        var builder = ZString.CreateStringBuilder();
-        var hasPreviousDash = false;
+        var textLength = options.MaximumLength > 0 ? Math.Min(text.Length, options.MaximumLength) : text.Length;
+        var sb = new StringBuilder(textLength);
 
-        foreach (var c in span)
+        foreach (var rune in text.EnumerateRunes())
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) is UnicodeCategory.NonSpacingMark)
+            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(rune.Value);
+
+            if (options.IsAllowed(rune))
             {
-                continue;
+                sb.Append(options.Replace(rune));
+            }
+            else if (
+                unicodeCategory != UnicodeCategory.NonSpacingMark
+                && options.Separator is not null
+                && !_EndsWith(sb, options.Separator)
+            )
+            {
+                sb.Append(options.Separator);
             }
 
-            switch (c)
+            if (options.MaximumLength > 0 && sb.Length >= options.MaximumLength)
             {
-                case '&':
-                    if (!hasPreviousDash && builder.Length > 0)
-                    {
-                        builder.Append('-');
-                        hasPreviousDash = true;
-                    }
-                    builder.Append("and-");
-
-                    continue;
-                case '.':
-                    if (!hasPreviousDash && builder.Length > 0)
-                    {
-                        builder.Append('-');
-                        hasPreviousDash = true;
-                    }
-                    builder.Append("dot-");
-
-                    continue;
-                case '+':
-                    if (!hasPreviousDash && builder.Length > 0)
-                    {
-                        builder.Append('-');
-                        hasPreviousDash = true;
-                    }
-                    builder.Append("plus-");
-
-                    continue;
-                case '%':
-                    if (!hasPreviousDash && builder.Length > 0)
-                    {
-                        builder.Append('-');
-                        hasPreviousDash = true;
-                    }
-                    builder.Append("percent-");
-
-                    continue;
+                break;
             }
-
-            if (char.IsWhiteSpace(c) || char.IsPunctuation(c) || char.IsSymbol(c))
-            {
-                if (!hasPreviousDash && builder.Length > 0)
-                {
-                    builder.Append('-');
-                    hasPreviousDash = true;
-                }
-
-                continue;
-            }
-
-            builder.Append(char.ToLowerInvariant(c));
-            hasPreviousDash = false;
         }
 
-        if (builder.AsSpan()[^1] == '-')
+        text = sb.ToString();
+
+        if (options.MaximumLength > 0 && text.Length > options.MaximumLength)
         {
-            builder.Remove(builder.Length - 1, 1);
+            text = text[..options.MaximumLength];
         }
 
-        return builder.ToString();
+        if (
+            !options.CanEndWithSeparator
+            && options.Separator is not null
+            && text.EndsWith(options.Separator, StringComparison.Ordinal)
+        )
+        {
+            text = text[..^options.Separator.Length];
+        }
+
+        return text.Normalize(NormalizationForm.FormC);
     }
 
-    /// <summary>Convert the string to SEO optimized and valid url.</summary>
-    /// <param name="input">The string to be converted.</param>
-    /// <param name="suffix">A unique identifier to append at the end to make uri unique.</param>
-    /// <returns></returns>
-    public static string Create(string input, string suffix)
+    private static bool _EndsWith(StringBuilder stringBuilder, string suffix)
     {
-        return $"{Create(input)}-{suffix.ToLowerInvariant()}";
+        if (stringBuilder.Length < suffix.Length)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < suffix.Length; index++)
+        {
+            if (stringBuilder[stringBuilder.Length - 1 - index] != suffix[suffix.Length - 1 - index])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
