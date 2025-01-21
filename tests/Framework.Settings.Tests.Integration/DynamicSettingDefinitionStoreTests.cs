@@ -17,6 +17,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     public async Task should_save_defined_settings()
     {
         // given
+        await Fixture.ResetAsync();
         var builder = CreateHostBuilder();
 
         builder.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>();
@@ -27,7 +28,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
             options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
         });
 
-        var host = builder.Build();
+        using var host = builder.Build();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();

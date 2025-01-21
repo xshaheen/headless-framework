@@ -26,6 +26,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     public async Task should_get_default_value()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
@@ -41,6 +42,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     public async Task should_get_all_default_values()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
@@ -57,6 +59,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     public async Task should_throw_error_when_set_not_defined_setting()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
@@ -79,6 +82,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     public async Task should_set_value_when_setting_exist()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
@@ -97,6 +101,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     public async Task should_set_encrypted_value_when_setting_exist_and_get_it_decrypted()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
@@ -120,6 +125,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
     public async Task should_get_dynamic_settings()
     {
         // given: host1 with dynamic setting store enabled
+        await Fixture.ResetAsync();
         using var host1 = _CreateDynamicEnabledHostBuilder<Host1SettingsDefinitionProvider>().Build();
         await using var scope1 = host1.Services.CreateAsyncScope();
         var settingManager1 = scope1.ServiceProvider.GetRequiredService<ISettingManager>();

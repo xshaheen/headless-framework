@@ -7,7 +7,7 @@ using Framework.Primitives;
 using Framework.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using MoreLinq.Extensions;
+using MoreLinq;
 using Tests.TestSetup;
 
 namespace Tests;
@@ -26,6 +26,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
     public async Task should_get_empty_when_no_permissions()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
@@ -57,6 +58,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
     public async Task should_get_not_granted()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
@@ -82,6 +84,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
     public async Task should_be_able_to_grant_and_revoke_permissions()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
@@ -134,6 +137,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         };
 
         // given: host1 with dynamic permission store enabled
+        await Fixture.ResetAsync();
         using var host1 = _CreateDynamicEnabledHostBuilder<Host1PermissionsDefinitionProvider>().Build();
         await using var scope1 = host1.Services.CreateAsyncScope();
         var permissionManager1 = scope1.ServiceProvider.GetRequiredService<IPermissionManager>();

@@ -27,6 +27,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
     public async Task get_should_error_when_not_defined_feature()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost();
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
@@ -46,6 +47,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
     public async Task get_all_should_return_empty_when_not_defined_feature()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost();
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
@@ -63,6 +65,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
     public async Task should_get_default_value()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
@@ -90,6 +93,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
     public async Task should_fallback_to_default_value_when_edition_not_has_any_value()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
@@ -116,6 +120,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
     public async Task should_not_fallback_when_edition_not_has_any_value_and_no_fallback()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
@@ -140,6 +145,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
     public async Task should_be_able_to_grant_and_revoke_features()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<Feature1FeaturesDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
@@ -192,6 +198,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
     public async Task should_get_dynamic_features()
     {
         // given: host1 with dynamic feature store enabled
+        await Fixture.ResetAsync();
         using var host1 = _CreateDynamicEnabledHostBuilder<Host1FeaturesDefinitionProvider>().Build();
         await using var scope1 = host1.Services.CreateAsyncScope();
         var featureManager1 = scope1.ServiceProvider.GetRequiredService<IFeatureManager>();

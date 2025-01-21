@@ -17,6 +17,7 @@ public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixtu
     public async Task should_save_defined_features()
     {
         // given
+        await Fixture.ResetAsync();
         var builder = CreateHostBuilder();
         builder.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>();
 
@@ -26,7 +27,7 @@ public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixtu
             options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
         });
 
-        var host = builder.Build();
+        using var host = builder.Build();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
