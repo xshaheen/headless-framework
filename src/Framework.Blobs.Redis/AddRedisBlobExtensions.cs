@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Blobs.Redis;
 
@@ -13,7 +14,7 @@ public static class AddRedisBlobExtensions
         Action<RedisBlobStorageOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
+        services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -23,21 +24,21 @@ public static class AddRedisBlobExtensions
         Action<RedisBlobStorageOptions> setupAction
     )
     {
-        services.ConfigureSingleton<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
+        services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddRedisBlobStorage(this IServiceCollection services, IConfigurationSection config)
     {
-        services.ConfigureSingleton<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(config);
+        services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(config);
 
         return _AddCore(services);
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
-        services.AddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
+        services.TryAddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
         services.AddSingleton<IBlobStorage, RedisBlobStorage>();
 
         return services;

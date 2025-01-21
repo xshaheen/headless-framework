@@ -21,7 +21,7 @@ public static class AddPaymobCashOutExtensions
         Argument.IsNotNull(services);
         Argument.IsNotNull(setupAction);
 
-        services.ConfigureOptions<PaymobCashOutOptions, PaymobCashOutOptionsValidator>(setupAction);
+        services.Configure<PaymobCashOutOptions, PaymobCashOutOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -36,7 +36,7 @@ public static class AddPaymobCashOutExtensions
         Argument.IsNotNull(services);
         Argument.IsNotNull(setupAction);
 
-        services.ConfigureOptions<PaymobCashOutOptions, PaymobCashOutOptionsValidator>(setupAction);
+        services.Configure<PaymobCashOutOptions, PaymobCashOutOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -51,7 +51,7 @@ public static class AddPaymobCashOutExtensions
         Argument.IsNotNull(services);
         Argument.IsNotNull(config);
 
-        services.ConfigureOptions<PaymobCashOutOptions, PaymobCashOutOptionsValidator>(config);
+        services.Configure<PaymobCashOutOptions, PaymobCashOutOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }

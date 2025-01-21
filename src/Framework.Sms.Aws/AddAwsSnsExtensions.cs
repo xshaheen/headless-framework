@@ -29,7 +29,7 @@ public static class AddAwsSnsExtensions
         AWSOptions? awsOptions = null
     )
     {
-        services.ConfigureSingleton<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(config);
+        services.Configure<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(config);
 
         return _AddCore(services, awsOptions);
     }
@@ -41,7 +41,7 @@ public static class AddAwsSnsExtensions
         AWSOptions? awsOptions = null
     )
     {
-        services.ConfigureSingleton<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
+        services.Configure<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, awsOptions);
     }
@@ -53,7 +53,7 @@ public static class AddAwsSnsExtensions
         AWSOptions? awsOptions = null
     )
     {
-        services.ConfigureSingleton<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
+        services.Configure<AwsSnsSmsOptions, AwsSnsSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, awsOptions);
     }

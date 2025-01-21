@@ -10,7 +10,7 @@ public static class AddImageSharpExtensions
 {
     public static AddImagingBuilder AddImageSharpContributors(this AddImagingBuilder builder, IConfiguration config)
     {
-        builder.Services.ConfigureSingleton<ImageSharpOptions, ImageSharpOptionsValidator>(config);
+        builder.Services.Configure<ImageSharpOptions, ImageSharpOptionsValidator>(config);
 
         return _AddCore(builder);
     }
@@ -20,7 +20,7 @@ public static class AddImageSharpExtensions
         Action<ImageSharpOptions>? setupAction = null
     )
     {
-        builder.Services.ConfigureSingleton<ImageSharpOptions, ImageSharpOptionsValidator>(setupAction);
+        builder.Services.Configure<ImageSharpOptions, ImageSharpOptionsValidator>(setupAction);
 
         return _AddCore(builder);
     }
@@ -30,7 +30,7 @@ public static class AddImageSharpExtensions
         Action<ImageSharpOptions, IServiceProvider> setupAction
     )
     {
-        builder.Services.ConfigureSingleton<ImageSharpOptions, ImageSharpOptionsValidator>(setupAction);
+        builder.Services.Configure<ImageSharpOptions, ImageSharpOptionsValidator>(setupAction);
 
         return _AddCore(builder);
     }

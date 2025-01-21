@@ -14,7 +14,7 @@ public static class AddCacheExtensions
         bool isDefault = true
     )
     {
-        services.ConfigureSingleton<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+        services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
 
         return _AddCacheCore(services, isDefault);
     }
@@ -27,11 +27,11 @@ public static class AddCacheExtensions
     {
         if (setupAction is null)
         {
-            services.AddSingletonOptions<InMemoryCacheOptions, InMemoryCacheOptionsValidator>();
+            services.AddOptions<InMemoryCacheOptions, InMemoryCacheOptionsValidator>();
         }
         else
         {
-            services.ConfigureSingleton<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+            services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
         }
 
         return _AddCacheCore(services, isDefault);
@@ -39,6 +39,7 @@ public static class AddCacheExtensions
 
     private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
     {
+        services.AddSingletonOptionValue<InMemoryCacheOptions>();
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
 
         if (!isDefault)

@@ -15,7 +15,7 @@ public static class AddCacheExtensions
         bool isDefault = true
     )
     {
-        services.ConfigureSingleton<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+        services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
 
         return _AddCacheCore(services, isDefault);
     }
@@ -26,13 +26,14 @@ public static class AddCacheExtensions
         bool isDefault = true
     )
     {
-        services.ConfigureSingleton<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+        services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
 
         return _AddCacheCore(services, isDefault);
     }
 
     private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
     {
+        services.AddSingletonOptionValue<RedisCacheOptions>();
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
 
         if (!isDefault)

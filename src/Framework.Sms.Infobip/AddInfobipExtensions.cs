@@ -16,7 +16,7 @@ public static class AddInfobipExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<InfobipOptions, InfobipOptionsValidator>(config);
+        services.Configure<InfobipOptions, InfobipOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -28,7 +28,7 @@ public static class AddInfobipExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<InfobipOptions, InfobipOptionsValidator>(setupAction);
+        services.Configure<InfobipOptions, InfobipOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -40,7 +40,7 @@ public static class AddInfobipExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<InfobipOptions, InfobipOptionsValidator>(setupAction);
+        services.Configure<InfobipOptions, InfobipOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }

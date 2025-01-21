@@ -3,6 +3,7 @@
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.S3;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Blobs.Aws;
 
@@ -36,7 +37,7 @@ public static class AddAwsS3Extensions
         }
 
         services.TryAddAWSService<IAmazonS3>(awsOptions);
-        services.AddSingleton<IBlobNamingNormalizer, AwsBlobNamingNormalizer>();
+        services.TryAddSingleton<IBlobNamingNormalizer, AwsBlobNamingNormalizer>();
         services.AddSingleton<IBlobStorage, AwsBlobStorage>();
 
         return services;

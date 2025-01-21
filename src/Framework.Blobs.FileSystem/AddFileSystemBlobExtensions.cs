@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Blobs.FileSystem;
 
@@ -13,7 +14,7 @@ public static class AddFileSystemBlobExtensions
         Action<FileSystemBlobStorageOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
+        services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
 
         return _AddBaseServices(services);
     }
@@ -23,7 +24,7 @@ public static class AddFileSystemBlobExtensions
         Action<FileSystemBlobStorageOptions> setupAction
     )
     {
-        services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
+        services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
 
         return _AddBaseServices(services);
     }
@@ -33,14 +34,14 @@ public static class AddFileSystemBlobExtensions
         IConfigurationSection config
     )
     {
-        services.ConfigureSingleton<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(config);
+        services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(config);
 
         return _AddBaseServices(services);
     }
 
     private static IServiceCollection _AddBaseServices(IServiceCollection builder)
     {
-        builder.AddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
+        builder.TryAddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
         builder.AddSingleton<IBlobStorage, FileSystemBlobStorage>();
 
         return builder;

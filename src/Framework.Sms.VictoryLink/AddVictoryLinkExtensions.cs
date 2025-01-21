@@ -16,7 +16,7 @@ public static class AddVictoryLinkExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(config);
+        services.Configure<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -28,7 +28,7 @@ public static class AddVictoryLinkExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(setupAction);
+        services.Configure<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -40,7 +40,7 @@ public static class AddVictoryLinkExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(setupAction);
+        services.Configure<VictoryLinkSmsOptions, VictoryLinkSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
