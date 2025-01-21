@@ -99,6 +99,6 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder().WithLabel("type", "settings").WithReuse(true).Build();
+        return new RedisBuilder().WithLabel("type", "settings").WithImage("redis:7.4").WithReuse(true).Build();
     }
 }

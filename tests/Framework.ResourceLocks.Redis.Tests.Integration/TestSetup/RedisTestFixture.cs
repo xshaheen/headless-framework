@@ -21,7 +21,7 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
 
     protected override RedisBuilder Configure(RedisBuilder builder)
     {
-        return base.Configure(builder).WithLabel("type", "resource_locks_redis").WithReuse(true);
+        return base.Configure(builder).WithLabel("type", "resource_locks_redis").WithImage("redis:7.4").WithReuse(true);
     }
 
     protected override async Task InitializeAsync()
