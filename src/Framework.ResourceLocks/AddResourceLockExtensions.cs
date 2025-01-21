@@ -36,13 +36,14 @@ public static class AddResourceLockExtensions
     {
         if (optionSetupAction is null)
         {
-            services.AddSingletonOptions<ResourceLockOptions>();
+            services.AddOptions<ResourceLockOptions, ResourceLockOptionsValidator>();
         }
         else
         {
-            services.ConfigureSingleton(optionSetupAction);
+            services.Configure(optionSetupAction);
         }
 
+        services.AddSingletonOptionValue<ResourceLockOptions>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
 

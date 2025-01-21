@@ -16,7 +16,7 @@ public static class AddCequensExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<CequensSmsOptions, CequensSmsOptionsValidator>(config);
+        services.Configure<CequensSmsOptions, CequensSmsOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -28,7 +28,7 @@ public static class AddCequensExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<CequensSmsOptions, CequensSmsOptionsValidator>(setupAction);
+        services.Configure<CequensSmsOptions, CequensSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -40,7 +40,7 @@ public static class AddCequensExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<CequensSmsOptions, CequensSmsOptionsValidator>(setupAction);
+        services.Configure<CequensSmsOptions, CequensSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }

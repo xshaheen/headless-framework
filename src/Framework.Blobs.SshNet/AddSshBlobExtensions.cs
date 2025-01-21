@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Blobs.SshNet;
 
@@ -13,7 +14,7 @@ public static class AddSshBlobExtensions
         Action<SshBlobStorageOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
+        services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -23,21 +24,21 @@ public static class AddSshBlobExtensions
         Action<SshBlobStorageOptions> setupAction
     )
     {
-        services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
+        services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
 
     public static IServiceCollection AddSshBlobStorage(this IServiceCollection services, IConfigurationSection config)
     {
-        services.ConfigureSingleton<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(config);
+        services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(config);
 
         return _AddCore(services);
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
-        services.AddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
+        services.TryAddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
         services.AddSingleton<IBlobStorage, SshBlobStorage>();
 
         return services;

@@ -11,7 +11,7 @@ public static class AddImagingExtensions
 {
     public static AddImagingBuilder AddImaging(this IServiceCollection services, IConfiguration config)
     {
-        services.ConfigureSingleton<ImagingOptions, ImagingOptionsValidator>(config);
+        services.Configure<ImagingOptions, ImagingOptionsValidator>(config);
 
         return _AddCore(services);
     }
@@ -21,7 +21,7 @@ public static class AddImagingExtensions
         Action<ImagingOptions>? setupAction = null
     )
     {
-        services.ConfigureSingleton<ImagingOptions, ImagingOptionsValidator>(setupAction);
+        services.Configure<ImagingOptions, ImagingOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -31,7 +31,7 @@ public static class AddImagingExtensions
         Action<ImagingOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<ImagingOptions, ImagingOptionsValidator>(setupAction);
+        services.Configure<ImagingOptions, ImagingOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }

@@ -28,7 +28,7 @@ public static class AddSettingsExtensions
         Action<SettingManagementOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
+        services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -43,7 +43,7 @@ public static class AddSettingsExtensions
         Action<SettingManagementOptions>? setupAction = null
     )
     {
-        services.ConfigureSingleton<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
+        services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -98,7 +98,8 @@ public static class AddSettingsExtensions
 
     private static void _AddSettingEncryption(this IServiceCollection services)
     {
-        services.AddSingletonOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
+        services.AddOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
+        services.AddSingletonOptionValue<StringEncryptionOptions>();
         services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
         services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
     }

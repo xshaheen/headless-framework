@@ -16,7 +16,7 @@ public static class AddConnekioSmsExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(config);
+        services.Configure<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -28,7 +28,7 @@ public static class AddConnekioSmsExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
+        services.Configure<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -40,7 +40,7 @@ public static class AddConnekioSmsExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
+        services.Configure<ConnekioSmsOptions, ConnekioSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }

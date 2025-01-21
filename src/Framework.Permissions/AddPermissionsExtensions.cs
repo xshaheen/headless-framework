@@ -24,7 +24,7 @@ public static class AddPermissionsExtensions
         Action<PermissionManagementOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
+        services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -34,7 +34,7 @@ public static class AddPermissionsExtensions
         Action<PermissionManagementOptions>? setupAction = null
     )
     {
-        services.ConfigureSingleton<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
+        services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }

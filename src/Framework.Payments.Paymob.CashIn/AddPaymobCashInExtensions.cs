@@ -28,7 +28,7 @@ public static class AddPaymobCashInExtensions
         Argument.IsNotNull(services);
         Argument.IsNotNull(setupAction);
 
-        services.ConfigureOptions<PaymobCashInOptions, PaymobCashInOptionsValidator>(setupAction);
+        services.Configure<PaymobCashInOptions, PaymobCashInOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -49,7 +49,7 @@ public static class AddPaymobCashInExtensions
         Argument.IsNotNull(services);
         Argument.IsNotNull(config);
 
-        services.ConfigureOptions<PaymobCashInOptions, PaymobCashInOptionsValidator>(config);
+        services.Configure<PaymobCashInOptions, PaymobCashInOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }

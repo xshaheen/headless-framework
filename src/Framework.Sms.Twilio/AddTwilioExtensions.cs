@@ -12,7 +12,7 @@ public static class AddTwilioExtensions
         Action<TwilioSmsOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
+        services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -22,7 +22,7 @@ public static class AddTwilioExtensions
         Action<TwilioSmsOptions> setupAction
     )
     {
-        services.ConfigureSingleton<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
+        services.Configure<TwilioSmsOptions, TwilioSmsOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }

@@ -16,7 +16,7 @@ public static class AddVodafoneSmsExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VodafoneSmsOptions, VodafoneSmsOptionsValidator>(config);
+        services.Configure<VodafoneSmsOptions, VodafoneSmsOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -28,7 +28,7 @@ public static class AddVodafoneSmsExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VodafoneSmsOptions, VodafoneSmsOptionsValidator>(setupAction);
+        services.Configure<VodafoneSmsOptions, VodafoneSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -40,7 +40,7 @@ public static class AddVodafoneSmsExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.ConfigureSingleton<VodafoneSmsOptions, VodafoneSmsOptionsValidator>(setupAction);
+        services.Configure<VodafoneSmsOptions, VodafoneSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }

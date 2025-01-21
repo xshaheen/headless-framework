@@ -83,11 +83,8 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IClock, Clock>();
         builder.Services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
 
-        builder.Services.AddSingletonOptions<StringHashOptions, StringHashOptionsValidator>();
-        builder.Services.TryAddSingleton<IStringHashService, StringHashService>();
-
-        builder.Services.AddSingletonOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
-        builder.Services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
+        builder.Services.AddStringHashService();
+        builder.Services.AddStringEncryptionService();
 
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
@@ -192,5 +189,19 @@ public static class ApiRegistration
         ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
         JsonWebTokenHandler.DefaultMapInboundClaims = false;
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
+    }
+
+    public static void AddStringHashService(this IServiceCollection services)
+    {
+        services.AddOptions<StringHashOptions, StringHashOptionsValidator>();
+        services.AddSingletonOptionValue<StringHashOptions>();
+        services.TryAddSingleton<IStringHashService, StringHashService>();
+    }
+
+    public static void AddStringEncryptionService(this IServiceCollection services)
+    {
+        services.AddOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
+        services.AddSingletonOptionValue<StringEncryptionOptions>();
+        services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
     }
 }

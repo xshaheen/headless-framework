@@ -27,7 +27,7 @@ public static class AddFeaturesExtensions
         Action<FeatureManagementOptions, IServiceProvider> setupAction
     )
     {
-        services.ConfigureSingleton<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
+        services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }
@@ -42,7 +42,7 @@ public static class AddFeaturesExtensions
         Action<FeatureManagementOptions>? setupAction = null
     )
     {
-        services.ConfigureSingleton<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
+        services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
 
         return _AddCore(services);
     }

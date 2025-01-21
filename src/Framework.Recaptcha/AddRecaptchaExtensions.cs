@@ -24,7 +24,7 @@ public static class AddRecaptchaExtensions
     {
         if (setupAction is not null)
         {
-            services.ConfigureOptions<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
+            services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
         }
 
         _AddCoreV3(services, configureClient, configureResilience);
@@ -41,7 +41,7 @@ public static class AddRecaptchaExtensions
     {
         if (setupAction is not null)
         {
-            services.ConfigureOptions<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
+            services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
         }
 
         _AddCoreV3(services, configureClient, configureResilience);
@@ -58,7 +58,7 @@ public static class AddRecaptchaExtensions
     {
         if (setupAction is not null)
         {
-            services.ConfigureOptions<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
+            services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
         }
 
         _AddCoreV2(services, configureClient, configureResilience);
@@ -75,7 +75,7 @@ public static class AddRecaptchaExtensions
     {
         if (setupAction is not null)
         {
-            services.ConfigureOptions<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
+            services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
         }
 
         _AddCoreV2(services, configureClient, configureResilience);
