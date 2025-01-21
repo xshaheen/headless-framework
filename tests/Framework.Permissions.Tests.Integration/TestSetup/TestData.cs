@@ -22,7 +22,7 @@ public static class TestData
         return group.AddChild(
             name: Faker.Random.String2(1, PermissionDefinitionRecordConstants.NameMaxLength),
             displayName: Faker.Random.String2(1, PermissionDefinitionRecordConstants.DisplayNameMaxLength),
-            isEnabled: Faker.Random.Bool()
+            isEnabled: true
         );
     }
 

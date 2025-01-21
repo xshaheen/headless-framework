@@ -99,6 +99,6 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder().WithLabel("type", "features").WithReuse(true).Build();
+        return new RedisBuilder().WithLabel("type", "features").WithImage("redis:7.4").WithReuse(true).Build();
     }
 }
