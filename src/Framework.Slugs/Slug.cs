@@ -17,8 +17,17 @@ public static class Slug
         options ??= SlugOptions.Default;
         text = text.Normalize(NormalizationForm.FormD);
 
+        foreach (var (value, replacement) in options.Replacements)
+        {
+            var newValue = replacement.EndsWith(' ') ? replacement : replacement + " ";
+            newValue = replacement.StartsWith(' ') ? newValue : " " + newValue;
+
+            text = text.Replace(value, newValue, StringComparison.Ordinal);
+        }
+
         var textLength = options.MaximumLength > 0 ? Math.Min(text.Length, options.MaximumLength) : text.Length;
         var sb = new StringBuilder(textLength);
+        var hasPreviousDash = false;
 
         foreach (var rune in text.EnumerateRunes())
         {
@@ -27,6 +36,7 @@ public static class Slug
             if (options.IsAllowed(rune))
             {
                 sb.Append(options.Replace(rune));
+                hasPreviousDash = false;
             }
             else if (
                 unicodeCategory != UnicodeCategory.NonSpacingMark
@@ -34,7 +44,11 @@ public static class Slug
                 && !_EndsWith(sb, options.Separator)
             )
             {
-                sb.Append(options.Separator);
+                if (!hasPreviousDash && sb.Length > 0)
+                {
+                    sb.Append(options.Separator);
+                    hasPreviousDash = true;
+                }
             }
 
             if (options.MaximumLength > 0 && sb.Length >= options.MaximumLength)
@@ -50,13 +64,12 @@ public static class Slug
             text = text[..options.MaximumLength];
         }
 
-        if (
-            !options.CanEndWithSeparator
-            && options.Separator is not null
-            && text.EndsWith(options.Separator, StringComparison.Ordinal)
-        )
+        if (options is { CanEndWithSeparator: false, Separator: not null })
         {
-            text = text[..^options.Separator.Length];
+            while (text.EndsWith(options.Separator, StringComparison.Ordinal))
+            {
+                text = text[..^options.Separator.Length];
+            }
         }
 
         return text.Normalize(NormalizationForm.FormC);

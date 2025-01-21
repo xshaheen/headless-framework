@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
+using Cysharp.Text;
 using Framework.Checks;
 using Framework.Constants;
 
@@ -464,13 +465,13 @@ public static class StringExtensions
             return input;
         }
 
-        var sb = new StringBuilder();
+        var sb = ZString.CreateStringBuilder();
 
         foreach (var c in input)
         {
             if (char.IsDigit(c))
             {
-                sb.Append(char.GetNumericValue(c).ToString(CultureInfo.InvariantCulture));
+                sb.Append(char.GetNumericValue(c));
             }
             else
             {

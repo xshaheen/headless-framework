@@ -27,12 +27,22 @@ public sealed class SlugOptions
             UnicodeRange.Create('a', 'z'),
             UnicodeRange.Create('0', '9'),
             UnicodeRange.Create('ؠ', 'ي'),
-            UnicodeRange.Create('٠', '٩'),
         ];
+
+    public Dictionary<string, string> Replacements { get; } =
+        new(StringComparer.Ordinal)
+        {
+            { "&", "and" },
+            { "+", "plus" },
+            { ".", "dot" },
+            { "%", "percent" },
+        };
 
     public bool IsAllowed(Rune character)
     {
-        return AllowedRanges.Count == 0 || AllowedRanges.Exists(range => _IsInRange(range, character));
+        return AllowedRanges.Count == 0
+            || AllowedRanges.Exists(range => _IsInRange(range, character))
+            || Replacements.ContainsKey(character.ToString());
     }
 
     public string Replace(Rune rune)
