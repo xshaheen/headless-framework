@@ -15,16 +15,15 @@ public static class AddCapDistributedMessagingExtensions
         Action<CapOptions> setupAction
     )
     {
-        services.AddSingleton<IMessagePublisher, CapMessagePublisher>();
         services.AddSingleton<IDistributedMessagePublisher, CapDistributedMessagePublisher>();
         services.AddSingleton(CapDistributedMessageHandlerFactory.Create());
 
         var capBuilder = services.AddCap(capOptions =>
         {
+            JsonConstants.ConfigureInternalJsonOptions(capOptions.JsonSerializerOptions);
             capOptions.FailedMessageExpiredAfter = 30 * 24 * 3600; // 30 days
             capOptions.SucceedMessageExpiredAfter = 5 * 24 * 3600; // 30 days
             capOptions.CollectorCleaningInterval = 5 * 60; // 5 minutes
-            JsonConstants.ConfigureInternalJsonOptions(capOptions.JsonSerializerOptions);
             setupAction.Invoke(capOptions);
         });
 
