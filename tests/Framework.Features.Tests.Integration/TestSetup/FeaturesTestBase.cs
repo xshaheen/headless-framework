@@ -21,6 +21,8 @@ namespace Tests.TestSetup;
 [Collection(nameof(FeaturesTestFixture))]
 public abstract class FeaturesTestBase(FeaturesTestFixture fixture, ITestOutputHelper output) : TestBase(output)
 {
+    protected FeaturesTestFixture Fixture { get; } = fixture;
+
     protected IHost CreateHost(Action<IHostApplicationBuilder>? configure = null)
     {
         var builder = CreateHostBuilder();
@@ -51,20 +53,20 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture, ITestOutputH
         services.AddSingleton<ILocalMessagePublisher, ServiceProviderLocalMessagePublisher>();
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
-            o.Subscriber(fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
+            o.Subscriber(Fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
         ));
         services.AddMessageBusFoundatioAdapter();
         // Cache
-        services.AddRedisCache(options => options.ConnectionMultiplexer = fixture.Multiplexer);
+        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
         // Lock Storage
-        services.AddSingleton<IConnectionMultiplexer>(fixture.Multiplexer);
+        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         services.AddSingleton<FrameworkRedisScriptsLoader>();
         // Resource Lock
         services.AddResourceLock<RedisResourceLockStorage>();
 
         services
             .AddFeaturesManagementCore()
-            .AddFeaturesManagementEntityFrameworkStorage(options => options.UseNpgsql(fixture.SqlConnectionString));
+            .AddFeaturesManagementEntityFrameworkStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.RemoveHostedService<FeaturesInitializationBackgroundService>();
     }

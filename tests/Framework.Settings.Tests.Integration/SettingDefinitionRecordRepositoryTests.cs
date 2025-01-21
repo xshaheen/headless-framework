@@ -15,6 +15,7 @@ public sealed class SettingDefinitionRecordRepositoryTests(SettingsTestFixture f
     public async Task should_save_defined_settings()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var repository = scope.ServiceProvider.GetRequiredService<ISettingDefinitionRecordRepository>();

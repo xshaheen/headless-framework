@@ -87,12 +87,16 @@ public sealed class AwsBlobStorage : IBlobStorage
         await CreateContainerAsync(container, cancellationToken);
         var (bucket, objectKey) = _BuildObjectKey(blobName, container);
 
+        await using var streamCopy = new MemoryStream();
+        await stream.CopyToAsync(streamCopy, cancellationToken);
+        streamCopy.ResetPosition();
+
         var request = new PutObjectRequest
         {
             BucketName = bucket,
             Key = objectKey,
-            InputStream = stream.CanSeek ? stream : AmazonS3Util.MakeStreamSeekable(stream),
-            AutoCloseStream = !stream.CanSeek,
+            InputStream = streamCopy,
+            AutoCloseStream = true,
             AutoResetStreamPosition = false,
             ContentType = _mimeTypeProvider.GetMimeType(blobName),
             UseChunkEncoding = _options.UseChunkEncoding,
@@ -611,8 +615,8 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult((_, token) =>
-            _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
+        var result = new PagedFileListResult(
+            (_, token) => _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();

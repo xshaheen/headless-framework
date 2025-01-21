@@ -17,6 +17,7 @@ public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture
     public async Task should_save_defined_permissions()
     {
         // given
+        await Fixture.ResetAsync();
         var builder = CreateHostBuilder();
         builder.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>();
 
@@ -26,7 +27,7 @@ public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture
             options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.Zero;
         });
 
-        var host = builder.Build();
+        using var host = builder.Build();
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();

@@ -13,9 +13,10 @@ public sealed class AwsBlobTestFixture(IMessageSink messageSink)
     protected override LocalStackBuilder Configure(LocalStackBuilder builder)
     {
         return builder
-            .WithImage("localstack/localstack:3.0.2")
+            .WithImage("localstack/localstack:4.0.3")
             .WithEnvironment("SERVICES", "s3")
             .WithEnvironment("DEBUG", "1")
-            .WithPortBinding(8055, 8080);
+            .WithPortBinding(8055, 8080)
+            .WithReuse(true);
     }
 }

@@ -19,6 +19,8 @@ namespace Tests.TestSetup;
 [Collection(nameof(PermissionsTestFixture))]
 public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestOutputHelper output) : TestBase(output)
 {
+    public PermissionsTestFixture Fixture { get; } = fixture;
+
     protected IHost CreateHost(Action<IHostApplicationBuilder>? configure = null)
     {
         var builder = CreateHostBuilder();
@@ -50,20 +52,20 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestO
         services.AddSingleton<ILocalMessagePublisher, ServiceProviderLocalMessagePublisher>();
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
-            o.Subscriber(fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
+            o.Subscriber(Fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
         ));
         services.AddMessageBusFoundatioAdapter();
         // Cache
-        services.AddRedisCache(options => options.ConnectionMultiplexer = fixture.Multiplexer);
+        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
         // Lock Storage
-        services.AddSingleton<IConnectionMultiplexer>(fixture.Multiplexer);
+        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         services.AddSingleton<FrameworkRedisScriptsLoader>();
         // Resource Lock
         services.AddResourceLock<RedisResourceLockStorage>();
 
         services
             .AddPermissionsManagementCore()
-            .AddPermissionsManagementEntityFrameworkStorage(options => options.UseNpgsql(fixture.SqlConnectionString));
+            .AddPermissionsManagementEntityFrameworkStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.RemoveHostedService<PermissionsInitializationBackgroundService>();
     }

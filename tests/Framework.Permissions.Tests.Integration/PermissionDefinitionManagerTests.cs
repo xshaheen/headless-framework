@@ -23,6 +23,7 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
     public async Task should_get_empty_when_call_GetAllAsync_and_no_definitions()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost();
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<IPermissionDefinitionManager>();
@@ -40,6 +41,7 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
     public async Task should_get_defined_settings_when_call_GetAllAsync_and_is_defined()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<IPermissionDefinitionManager>();
@@ -59,6 +61,7 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
     public async Task should_get_default_when_call_GetOrDefaultAsync_and_is_not_defined()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<IPermissionDefinitionManager>();
@@ -75,6 +78,7 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
     public async Task should_get_defined_setting_when_call_GetOrDefaultAsync_and_is_defined()
     {
         // given
+        await Fixture.ResetAsync();
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<IPermissionDefinitionManager>();
