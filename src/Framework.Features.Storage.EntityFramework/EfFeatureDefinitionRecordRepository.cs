@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Features;
 
-public sealed class EfFeatureDefinitionRecordRepository(IDbContextFactory<FeaturesDbContext> dbFactory)
+public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IFeatureDefinitionRecordRepository
+    where TContext : DbContext, IFeaturesDbContext
 {
     public async Task<List<FeatureGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
