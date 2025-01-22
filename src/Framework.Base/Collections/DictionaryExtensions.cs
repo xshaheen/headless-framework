@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -173,5 +174,45 @@ public static class DictionaryExtensions
         val = value;
 
         return true;
+    }
+
+    public static Dictionary<TKey, TValue?> AddPair<TKey, TValue>(
+        this Dictionary<TKey, TValue?> dictionary,
+        TKey key,
+        TValue? value
+    )
+        where TKey : notnull
+    {
+        dictionary.Add(key, value);
+
+        return dictionary;
+    }
+
+    public static Dictionary<TKey, TValue?> AddDictionary<TKey, TValue>(
+        this Dictionary<TKey, TValue?> dictionary,
+        Dictionary<TKey, TValue?> otherDictionary
+    )
+        where TKey : notnull
+    {
+        foreach (var (key, value) in otherDictionary)
+        {
+            dictionary.AddPair(key, value);
+        }
+
+        return dictionary;
+    }
+
+    public static Dictionary<TKey, TValue?> AddDictionary<TKey, TValue>(
+        this Dictionary<TKey, TValue?> dictionary,
+        ReadOnlyDictionary<TKey, TValue?> otherDictionary
+    )
+        where TKey : notnull
+    {
+        foreach (var (key, value) in otherDictionary)
+        {
+            dictionary.AddPair(key, value);
+        }
+
+        return dictionary;
     }
 }
