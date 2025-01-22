@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Permissions;
 
-public sealed class EfPermissionDefinitionRecordRepository(IDbContextFactory<PermissionsDbContext> dbFactory)
+public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IPermissionDefinitionRecordRepository
+    where TContext : DbContext, IPermissionsDbContext
 {
     public async Task<List<PermissionGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default

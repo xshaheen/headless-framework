@@ -8,10 +8,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Permissions;
 
-public sealed class EfPermissionGrantRepository(
-    IDbContextFactory<PermissionsDbContext> dbFactory,
+public sealed class EfPermissionGrantRepository<TContext>(
+    IDbContextFactory<TContext> dbFactory,
     ILocalMessagePublisher localPublisher
 ) : IPermissionGrantRepository
+    where TContext : DbContext, IPermissionsDbContext
 {
     public async Task<PermissionGrantRecord?> FindAsync(
         string name,
