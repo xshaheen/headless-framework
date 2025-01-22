@@ -147,4 +147,32 @@ public static class DateTimeExtensions
     {
         return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
     }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateOnly ToDateOnly(this DateTime date)
+    {
+        return DateOnly.FromDateTime(date);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateOnly ToUtcDateOnly(this DateTime date)
+    {
+        return DateOnly.FromDateTime(date.ToUniversalTime());
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static TimeOnly ToTimeOnly(this DateTime date)
+    {
+        return TimeOnly.FromDateTime(date);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static TimeOnly ToUtcTimeOnly(this DateTime date)
+    {
+        return TimeOnly.FromDateTime(date.ToUniversalTime());
+    }
 }

@@ -190,4 +190,32 @@ public static class DateTimeOffsetExtensions
     {
         return date.AddTicks(interval.Ticks - (date.Ticks % interval.Ticks));
     }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateOnly ToDateOnly(this DateTimeOffset date)
+    {
+        return DateOnly.FromDateTime(date.DateTime);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateOnly ToUtcDateOnly(this DateTimeOffset date)
+    {
+        return DateOnly.FromDateTime(date.UtcDateTime);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static TimeOnly ToTimeOnly(this DateTimeOffset date)
+    {
+        return TimeOnly.FromDateTime(date.DateTime);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static TimeOnly ToUtcTimeOnly(this DateTimeOffset date)
+    {
+        return TimeOnly.FromDateTime(date.UtcDateTime);
+    }
 }
