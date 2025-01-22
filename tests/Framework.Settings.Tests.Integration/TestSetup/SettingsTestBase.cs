@@ -63,7 +63,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture, ITestOutputH
 
         services
             .AddSettingsManagementCore()
-            .AddSettingsManagementEntityFrameworkStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
+            .AddSettingsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.RemoveHostedService<SettingsInitializationBackgroundService>();
     }

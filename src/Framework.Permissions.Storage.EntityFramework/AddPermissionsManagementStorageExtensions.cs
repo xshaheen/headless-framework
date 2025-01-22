@@ -10,48 +10,33 @@ namespace Framework.Permissions;
 [PublicAPI]
 public static class AddPermissionsManagementStorageExtensions
 {
-    public static IServiceCollection AddPermissionsManagementEntityFrameworkStorage(
+    public static IServiceCollection AddPermissionsManagementDbContextStorage(
         this IServiceCollection services,
         Action<DbContextOptionsBuilder> setupAction
     )
     {
-        return services.AddPermissionsManagementEntityFrameworkStorage<PermissionsDbContext>(setupAction);
-    }
-
-    public static IServiceCollection AddPermissionsManagementEntityFrameworkStorage(
-        this IServiceCollection services,
-        Action<IServiceProvider, DbContextOptionsBuilder> setupAction
-    )
-    {
-        return services.AddPermissionsManagementEntityFrameworkStorage<PermissionsDbContext>(setupAction);
-    }
-
-    public static IServiceCollection AddPermissionsManagementEntityFrameworkStorage<TContext>(
-        this IServiceCollection services,
-        Action<DbContextOptionsBuilder> setupAction
-    )
-        where TContext : DbContext, IPermissionsDbContext
-    {
-        services.AddPooledDbContextFactory<TContext>(setupAction);
-
-        services.AddSingleton<IPermissionGrantRepository, EfPermissionGrantRepository<TContext>>();
-
-        services.AddSingleton<
-            IPermissionDefinitionRecordRepository,
-            EfPermissionDefinitionRecordRepository<TContext>
-        >();
+        services.AddPooledDbContextFactory<PermissionsDbContext>(setupAction);
+        services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();
 
         return services;
     }
 
-    public static IServiceCollection AddPermissionsManagementEntityFrameworkStorage<TContext>(
+    public static IServiceCollection AddPermissionsManagementDbContextStorage(
         this IServiceCollection services,
         Action<IServiceProvider, DbContextOptionsBuilder> setupAction
     )
+    {
+        services.AddPooledDbContextFactory<PermissionsDbContext>(setupAction);
+        services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddPermissionsManagementDbContextStorage<TContext>(
+        this IServiceCollection services
+    )
         where TContext : DbContext, IPermissionsDbContext
     {
-        services.AddPooledDbContextFactory<TContext>(setupAction);
-
         services.AddSingleton<IPermissionGrantRepository, EfPermissionGrantRepository<TContext>>();
 
         services.AddSingleton<

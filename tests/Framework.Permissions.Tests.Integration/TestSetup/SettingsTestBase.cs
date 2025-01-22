@@ -65,7 +65,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestO
 
         services
             .AddPermissionsManagementCore()
-            .AddPermissionsManagementEntityFrameworkStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
+            .AddPermissionsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.RemoveHostedService<PermissionsInitializationBackgroundService>();
     }
