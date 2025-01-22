@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
@@ -81,25 +84,25 @@ public static class DictionaryExtensions
     /// </summary>
     /// <param name="dictionary">Dictionary to check and get</param>
     /// <param name="key">Key to find the value</param>
-    /// <param name="factory">A factory method used to create the value if not found in the dictionary</param>
+    /// <param name="value">The value to add if not exist.</param>
     /// <typeparam name="TKey">Type of the key</typeparam>
     /// <typeparam name="TValue">Type of the value</typeparam>
-    /// <returns>Value if found, default if can not found.</returns>
+    /// <returns>Value if found, default if it can not find.</returns>
     [SystemPure]
     [JetBrainsPure]
-    public static TValue GetOrAdd<TKey, TValue>(
-        this IDictionary<TKey, TValue> dictionary,
-        TKey key,
-        Func<TKey, TValue> factory
-    )
+    public static TValue? GetOrAdd<TKey, TValue>(this Dictionary<TKey, TValue?> dictionary, TKey key, TValue? value)
         where TKey : notnull
     {
-        if (dictionary.TryGetValue(key, out var obj))
+        ref var val = ref CollectionsMarshal.GetValueRefOrAddDefault(dictionary, key, out var exist);
+
+        if (exist)
         {
-            return obj;
+            return val;
         }
 
-        return dictionary[key] = factory(key);
+        val = value;
+
+        return value;
     }
 
     /// <summary>
@@ -110,16 +113,65 @@ public static class DictionaryExtensions
     /// <param name="factory">A factory method used to create the value if not found in the dictionary</param>
     /// <typeparam name="TKey">Type of the key</typeparam>
     /// <typeparam name="TValue">Type of the value</typeparam>
-    /// <returns>Value if found, default if can not found.</returns>
+    /// <returns>Value if found, default if it can not find.</returns>
     [SystemPure]
     [JetBrainsPure]
-    public static TValue GetOrAdd<TKey, TValue>(
-        this IDictionary<TKey, TValue> dictionary,
+    public static TValue? GetOrAdd<TKey, TValue>(
+        this Dictionary<TKey, TValue?> dictionary,
         TKey key,
-        Func<TValue> factory
+        Func<TKey, TValue?> factory
     )
         where TKey : notnull
     {
-        return dictionary.GetOrAdd(key, _ => factory());
+        ref var val = ref CollectionsMarshal.GetValueRefOrAddDefault(dictionary, key, out var exist);
+
+        if (exist)
+        {
+            return val;
+        }
+
+        var newValue = factory(key);
+
+        val = newValue;
+
+        return newValue;
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static bool TryUpdate<TKey, TValue>(
+        this Dictionary<TKey, TValue?> dictionary,
+        TKey key,
+        Func<TKey, TValue?> factory
+    )
+        where TKey : notnull
+    {
+        ref var val = ref CollectionsMarshal.GetValueRefOrNullRef(dictionary, key);
+
+        if (Unsafe.IsNullRef(ref val))
+        {
+            return false;
+        }
+
+        val = factory(key);
+
+        return true;
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static bool TryUpdate<TKey, TValue>(this Dictionary<TKey, TValue?> dictionary, TKey key, TValue? value)
+        where TKey : notnull
+    {
+        ref var val = ref CollectionsMarshal.GetValueRefOrNullRef(dictionary, key);
+
+        if (Unsafe.IsNullRef(ref val))
+        {
+            return false;
+        }
+
+        val = value;
+
+        return true;
     }
 }

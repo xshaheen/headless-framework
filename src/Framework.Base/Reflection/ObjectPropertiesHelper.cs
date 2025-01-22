@@ -39,8 +39,10 @@ public static class ObjectPropertiesHelper
 
         var property = _CachedObjectProperties.GetOrAdd(
             cacheKey,
-            () =>
+            valueFactory: static (_, state) =>
             {
+                var (obj, propertySelector, ignoreAttributeTypes) = state;
+
                 if (propertySelector.Body.NodeType is not ExpressionType.MemberAccess)
                 {
                     return null;
@@ -69,7 +71,8 @@ public static class ObjectPropertiesHelper
                 }
 
                 return propertyInfo;
-            }
+            },
+            (obj, propertySelector, ignoreAttributeTypes)
         );
 
         property?.SetValue(obj, valueFactory(obj));
