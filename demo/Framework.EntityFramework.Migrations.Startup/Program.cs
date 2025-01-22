@@ -49,21 +49,21 @@ const string connectionString = "Host=localhost;Database=Framework;Username=post
 
 builder
     .Services.AddPermissionsManagementCore()
-    .AddPermissionsManagementEntityFrameworkStorage(options =>
+    .AddPermissionsManagementDbContextStorage(options =>
     {
         options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
     });
 
 builder
     .Services.AddSettingsManagementCore()
-    .AddSettingsManagementEntityFrameworkStorage(options =>
+    .AddSettingsManagementDbContextStorage(options =>
     {
         options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
     });
 
 builder
     .Services.AddFeaturesManagementCore()
-    .AddFeaturesManagementEntityFrameworkStorage(options =>
+    .AddFeaturesManagementDbContextStorage(options =>
     {
         options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
     });

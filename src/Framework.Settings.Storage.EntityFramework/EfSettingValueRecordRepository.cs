@@ -8,10 +8,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Settings;
 
-public sealed class EfSettingValueRecordRepository(
-    IDbContextFactory<SettingsDbContext> dbFactory,
+public sealed class EfSettingValueRecordRepository<TContext>(
+    IDbContextFactory<TContext> dbFactory,
     ILocalMessagePublisher localPublisher
 ) : ISettingValueRecordRepository
+    where TContext : DbContext, ISettingsDbContext
 {
     public async Task<SettingValueRecord?> FindAsync(
         string name,

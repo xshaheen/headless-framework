@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Settings;
 
-public sealed class EfSettingDefinitionRecordRepository(IDbContextFactory<SettingsDbContext> dbFactory)
+public sealed class EfSettingDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : ISettingDefinitionRecordRepository
+    where TContext : DbContext, ISettingsDbContext
 {
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
