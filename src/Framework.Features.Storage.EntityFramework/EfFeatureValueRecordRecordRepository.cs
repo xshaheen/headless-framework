@@ -8,10 +8,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Features;
 
-public sealed class EfFeatureValueRecordRecordRepository(
-    IDbContextFactory<FeaturesDbContext> dbFactory,
+public sealed class EfFeatureValueRecordRecordRepository<TContext>(
+    IDbContextFactory<TContext> dbFactory,
     ILocalMessagePublisher localPublisher
 ) : IFeatureValueRecordRepository
+    where TContext : DbContext, IFeaturesDbContext
 {
     public async Task<FeatureValueRecord?> FindAsync(
         string name,

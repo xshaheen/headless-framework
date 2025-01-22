@@ -66,7 +66,9 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture, ITestOutputH
 
         services
             .AddFeaturesManagementCore()
-            .AddFeaturesManagementEntityFrameworkStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
+            .AddFeaturesManagementEntityFrameworkStorage<FeaturesDbContext>(options =>
+                options.UseNpgsql(Fixture.SqlConnectionString)
+            );
 
         services.RemoveHostedService<FeaturesInitializationBackgroundService>();
     }
