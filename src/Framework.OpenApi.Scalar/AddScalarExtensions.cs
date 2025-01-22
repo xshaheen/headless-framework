@@ -7,7 +7,10 @@ namespace Framework.OpenApi.Scalar;
 
 public static class AddScalarExtensions
 {
-    public static WebApplication MapFrameworkScalarOpenApi(this WebApplication app, Action<ScalarOptions> setupAction)
+    public static WebApplication MapFrameworkScalarOpenApi(
+        this WebApplication app,
+        Action<ScalarOptions>? setupAction = null
+    )
     {
         app.MapScalarApiReference(
             endpointPrefix: "/scalar/{documentName}",
@@ -42,7 +45,7 @@ public static class AddScalarExtensions
                     ScalarClient.Httpie,
                 ];
 
-                setupAction(options);
+                setupAction?.Invoke(options);
             }
         );
 

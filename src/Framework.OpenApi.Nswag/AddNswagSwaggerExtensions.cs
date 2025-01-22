@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Asp.Versioning.ApiExplorer;
 using Framework.Api.ApiExplorer;
 using Framework.Constants;
 using Framework.OpenApi.Nswag.OperationProcessors;
@@ -12,6 +13,7 @@ using NJsonSchema;
 using NJsonSchema.Generation;
 using NJsonSchema.Generation.TypeMappers;
 using NSwag;
+using NSwag.AspNetCore;
 using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors.Security;
 
@@ -62,7 +64,11 @@ public static class AddNswagSwaggerExtensions
 
     #region Map
 
-    public static WebApplication MapFrameworkNswagOpenApi(this WebApplication app)
+    public static WebApplication MapFrameworkNswagOpenApi(
+        this WebApplication app,
+        Action<OpenApiDocumentMiddlewareSettings, ApiVersionDescription>? documentSettings = null,
+        Action<SwaggerUiSettings>? uiSettings = null
+    )
     {
         foreach (var apiVersionDescription in app.DescribeApiVersions().OrderByDescending(v => v.ApiVersion))
         {
@@ -70,6 +76,7 @@ public static class AddNswagSwaggerExtensions
             {
                 settings.DocumentName = apiVersionDescription.GroupName;
                 settings.Path = $"/openapi/{apiVersionDescription.GroupName}.json";
+                documentSettings?.Invoke(settings, apiVersionDescription);
             });
         }
 
@@ -81,6 +88,7 @@ public static class AddNswagSwaggerExtensions
             config.EnableTryItOut = true;
             config.TagsSorter = "alpha";
             config.DocExpansion = "none";
+            uiSettings?.Invoke(config);
         });
 
         return app;
