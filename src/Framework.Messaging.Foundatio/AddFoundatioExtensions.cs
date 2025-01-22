@@ -28,24 +28,15 @@ public static class AddFoundatioExtensions
         Builder<InMemoryMessageBusOptionsBuilder, InMemoryMessageBusOptions>? setupAction = null
     )
     {
-        services.AddSingleton<IMessageBus>(provider =>
+        services.AddSingleton<IFoundatioMessageBus>(provider => new InMemoryMessageBus(builder =>
         {
-            var guidGenerator = provider.GetRequiredService<IGuidGenerator>();
-            var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
-            var timeProvider = provider.GetRequiredService<TimeProvider>();
+            var result = builder
+                .TimeProvider(provider.GetRequiredService<TimeProvider>())
+                .LoggerFactory(provider.GetRequiredService<ILoggerFactory>())
+                .Serializer(FoundationHelper.JsonSerializer);
 
-            var inMemoryMessageBus = new InMemoryMessageBus(builder =>
-            {
-                var result = builder
-                    .TimeProvider(timeProvider)
-                    .LoggerFactory(loggerFactory)
-                    .Serializer(FoundationHelper.JsonSerializer);
-
-                return setupAction is null ? result : setupAction(result);
-            });
-
-            return new MessageBusFoundatioAdapter(inMemoryMessageBus, guidGenerator);
-        });
+            return setupAction is null ? result : setupAction(result);
+        }));
 
         return services.AddMessageBusFoundatioAdapter();
     }
