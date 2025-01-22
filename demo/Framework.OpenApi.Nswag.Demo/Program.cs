@@ -3,6 +3,7 @@
 using Asp.Versioning;
 using Framework.Constants;
 using Framework.OpenApi.Nswag;
+using Framework.OpenApi.Scalar;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 
@@ -78,6 +79,7 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapFrameworkNswagOpenApi();
+app.MapFrameworkScalarOpenApi();
 app.MapControllers();
 
 await app.RunAsync();
