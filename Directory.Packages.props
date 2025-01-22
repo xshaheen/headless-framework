@@ -14,7 +14,7 @@
     <PackageVersion Include="AsyncKeyedLock" Version="7.1.4" />
     <PackageVersion Include="AutoBogus" Version="2.13.1" />
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
-    <PackageVersion Include="AutoFixture" Version="5.0.0-preview0011" />
+    <PackageVersion Include="AutoFixture" Version="5.0.0-preview0012" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.301" />
     <PackageVersion Include="AWSSDK.S3" Version="3.7.412.2" />
     <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.407.2" />
