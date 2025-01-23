@@ -2,10 +2,20 @@
 
 namespace Framework.Constants;
 
+[PublicAPI]
 public static class JwtClaimTypes
 {
+    /// <summary>JWT ID. A unique identifier for the token, which can be used to prevent reuse of the token. These tokens MUST only be used once, unless conditions for reuse were negotiated between the parties; any such negotiation is beyond the scope of this specification.</summary>
+    public const string JwtId = "jti";
+
+    /// <summary>Session identifier. This represents a Session of an OP at an RP to a User Agent or device for a logged-in End-User. Its contents are unique to the OP and opaque to the RP.</summary>
+    public const string SessionId = "sid";
+
     /// <summary>Subject - Identifier for the End-User at the Issuer.</summary>
     public const string Subject = "sub";
+
+    /// <summary>The identity provider.</summary>
+    public const string IdentityProvider = "idp";
 
     /// <summary>Audience(s) that this ID Token is intended for. It MUST contain the OAuth 2.0 client_id of the Relying Party as an audience value. It MAY also contain identifiers for other audiences. In the general case, the aud value is an array of case sensitive strings. In the common special case when there is one audience, the aud value MAY be a single case sensitive string.</summary>
     public const string Audience = "aud";
@@ -22,6 +32,9 @@ public static class JwtClaimTypes
     /// <summary>The exp (expiration time) claim identifies the expiration time on or after which the token MUST NOT be accepted for processing, specified as the number of seconds from 1970-01-01T0:0:0Z</summary>
     public const string Expiration = "exp";
 
+    /// <summary>Authentication Methods References. JSON array of strings that are identifiers for authentication methods used in the authentication.</summary>
+    public const string AuthenticationMethod = "amr";
+
     /// <summary>
     /// Authentication Context Class Reference. String specifying an Authentication Context Class Reference value that identifies the Authentication Context Class that the authentication performed satisfied.
     /// The value "0" indicates the End-User authentication did not meet the requirements of ISO/IEC 29115 level 1.
@@ -30,7 +43,7 @@ public static class JwtClaimTypes
     ///  (This corresponds to the OpenID 2.0 PAPE nist_auth_level 0.)
     /// An absolute URI or an RFC 6711 registered name SHOULD be used as the acr value; registered names MUST NOT be used with a different meaning than that which is registered.
     /// Parties using this claim will need to agree upon the meanings of the values used, which may be context-specific.
-    /// The acr value is a case sensitive string.
+    /// The acr value is a case-sensitive string.
     /// </summary>
     public const string AuthenticationContextClassReference = "acr";
 
@@ -49,11 +62,16 @@ public static class JwtClaimTypes
     /// <summary>State hash value. Its value is the base64url encoding of the left-most half of the hash of the octets of the ASCII representation of the state value, where the hash algorithm used is the hash algorithm used in the alg Header Parameter of the ID Token's JOSE Header. For instance, if the alg is HS512, hash the code value with SHA-512, then take the left-most 256 bits and base64url encode them. The c_hash value is a case sensitive string.</summary>
     public const string StateHash = "s_hash";
 
-    /// <summary>String value used to associate a Client session with an ID Token, and to mitigate replay attacks. The value is passed through unmodified from the Authentication Request to the ID Token. If present in the ID Token, Clients MUST verify that the nonce Claim Value is equal to the value of the nonce parameter sent in the Authentication Request. If present in the Authentication Request, Authorization Servers MUST include a nonce Claim in the ID Token with the Claim Value being the nonce value sent in the Authentication Request. Authorization Servers SHOULD perform no other processing on nonce values used. The nonce value is a case sensitive string.</summary>
+    /// <summary>
+    /// String value used to associate a Client session with an ID Token, and to mitigate replay attacks.
+    /// The value is passed through unmodified from the Authentication Request to the ID Token.
+    /// If present in the ID Token, Clients MUST verify that the nonce Claim Value is equal to
+    /// the value of the nonce parameter sent in the Authentication Request.
+    /// If present in the Authentication Request, Authorization Servers MUST include
+    /// a nonce Claim in the ID Token with the Claim Value being the nonce value sent in the Authentication Request.
+    /// Authorization Servers SHOULD perform no other processing on nonce values used. The nonce value is a case-sensitive string.
+    /// </summary>
     public const string Nonce = "nonce";
-
-    /// <summary>JWT ID. A unique identifier for the token, which can be used to prevent reuse of the token. These tokens MUST only be used once, unless conditions for reuse were negotiated between the parties; any such negotiation is beyond the scope of this specification.</summary>
-    public const string JwtId = "jti";
 
     /// <summary>OAuth 2.0 Client Identifier valid at the Authorization Server.</summary>
     public const string ClientId = "client_id";

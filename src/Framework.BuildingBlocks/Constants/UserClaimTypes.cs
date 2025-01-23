@@ -2,7 +2,8 @@
 
 namespace Framework.Constants;
 
-public static class FrameworkClaimTypes
+[PublicAPI]
+public static class UserClaimTypes
 {
     public const string AccountId = "account_id";
 
@@ -53,13 +54,4 @@ public static class FrameworkClaimTypes
     /// Relying on Parties MAY choose to accept this locale syntax as well.
     /// </summary>
     public const string Locale = "locale";
-
-    /// <summary>The identity provider.</summary>
-    public const string IdentityProvider = "idp";
-
-    /// <summary>Authentication Methods References. JSON array of strings that are identifiers for authentication methods used in the authentication.</summary>
-    public const string AuthenticationMethod = "amr";
-
-    /// <summary>Session identifier. This represents a Session of an OP at an RP to a User Agent or device for a logged-in End-User. Its contents are unique to the OP and opaque to the RP.</summary>
-    public const string SessionId = "sid";
 }
