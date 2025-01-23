@@ -14,8 +14,8 @@ public sealed class ThreadCurrentPrincipalAccessorTests
         return new ClaimsPrincipal(
             new ClaimsIdentity(
                 [
-                    new Claim(FrameworkClaimTypes.Name, FakerData.GenerateName()),
-                    new Claim(FrameworkClaimTypes.Email, FakerData.GenerateEmail()),
+                    new Claim(UserClaimTypes.Name, FakerData.GenerateName()),
+                    new Claim(UserClaimTypes.Email, FakerData.GenerateEmail()),
                 ]
             )
         );
@@ -40,9 +40,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
         const string emailValue = "zad-charities@tt.net";
 
         var newPrincipal = new ClaimsPrincipal(
-            new ClaimsIdentity(
-                [new Claim(FrameworkClaimTypes.Name, nameValue), new Claim(FrameworkClaimTypes.Email, emailValue)]
-            )
+            new ClaimsIdentity([new Claim(UserClaimTypes.Name, nameValue), new Claim(UserClaimTypes.Email, emailValue)])
         );
 
         // when
@@ -50,10 +48,10 @@ public sealed class ThreadCurrentPrincipalAccessorTests
 
         // then
         var name = _accessor
-            .Principal.Claims.First(x => string.Equals(x.Type, FrameworkClaimTypes.Name, StringComparison.Ordinal))
+            .Principal.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Name, StringComparison.Ordinal))
             .Value;
         var email = _accessor
-            .Principal.Claims.First(x => string.Equals(x.Type, FrameworkClaimTypes.Email, StringComparison.Ordinal))
+            .Principal.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Email, StringComparison.Ordinal))
             .Value;
 
         name.Should().Be(nameValue);

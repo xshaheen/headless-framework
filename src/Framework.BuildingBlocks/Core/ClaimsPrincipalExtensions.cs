@@ -14,7 +14,7 @@ public static class ClaimsPrincipalExtensions
 {
     public static UserId? GetUserId(this ClaimsPrincipal? principal)
     {
-        var id = principal?.FindFirst(FrameworkClaimTypes.UserId)?.Value;
+        var id = principal?.FindFirst(UserClaimTypes.UserId)?.Value;
 
         if (id is null)
         {
@@ -31,8 +31,7 @@ public static class ClaimsPrincipalExtensions
 
     public static UserId? GetUserId(this IIdentity identity)
     {
-        var claimsIdentity = identity as ClaimsIdentity;
-        var id = claimsIdentity?.FindFirst(FrameworkClaimTypes.UserId)?.Value;
+        var id = (identity as ClaimsIdentity)?.FindFirst(UserClaimTypes.UserId)?.Value;
 
         if (id is null)
         {
@@ -49,7 +48,7 @@ public static class ClaimsPrincipalExtensions
 
     public static AccountId? GetAccountId(this ClaimsPrincipal? principal)
     {
-        var id = principal?.FindFirst(FrameworkClaimTypes.AccountId)?.Value;
+        var id = principal?.FindFirst(UserClaimTypes.AccountId)?.Value;
 
         if (id is null)
         {
@@ -66,8 +65,7 @@ public static class ClaimsPrincipalExtensions
 
     public static AccountId? GetAccountId(this IIdentity identity)
     {
-        var claimsIdentity = identity as ClaimsIdentity;
-        var id = claimsIdentity?.FindFirst(FrameworkClaimTypes.AccountId)?.Value;
+        var id = (identity as ClaimsIdentity)?.FindFirst(UserClaimTypes.AccountId)?.Value;
 
         if (id is null)
         {
@@ -84,29 +82,37 @@ public static class ClaimsPrincipalExtensions
 
     public static string? GetEditionId(this ClaimsPrincipal? principal)
     {
-        return principal?.FindFirst(FrameworkClaimTypes.EditionId)?.Value;
+        return principal?.FindFirst(UserClaimTypes.EditionId)?.Value;
     }
 
     public static string? GetEditionId(this IIdentity identity)
     {
-        var claimsIdentity = identity as ClaimsIdentity;
-        return claimsIdentity?.FindFirst(FrameworkClaimTypes.EditionId)?.Value;
+        return (identity as ClaimsIdentity)?.FindFirst(UserClaimTypes.EditionId)?.Value;
+    }
+
+    public static string? GetSessionId(this ClaimsPrincipal? principal)
+    {
+        return principal?.FindFirst(JwtClaimTypes.SessionId)?.Value;
+    }
+
+    public static string? GetSessionId(this IIdentity identity)
+    {
+        return (identity as ClaimsIdentity)?.FindFirst(JwtClaimTypes.SessionId)?.Value;
     }
 
     public static string? GetTenantId(this ClaimsPrincipal? principal)
     {
-        return principal?.FindFirst(FrameworkClaimTypes.TenantId)?.Value;
+        return principal?.FindFirst(UserClaimTypes.TenantId)?.Value;
     }
 
     public static string? GetTenantId(this IIdentity identity)
     {
-        var claimsIdentity = identity as ClaimsIdentity;
-        return claimsIdentity?.FindFirst(FrameworkClaimTypes.TenantId)?.Value;
+        return (identity as ClaimsIdentity)?.FindFirst(UserClaimTypes.TenantId)?.Value;
     }
 
     public static string? GetAccountType(this ClaimsPrincipal? principal)
     {
-        return principal?.FindFirst(FrameworkClaimTypes.AccountType)?.Value;
+        return principal?.FindFirst(UserClaimTypes.AccountType)?.Value;
     }
 
     public static ImmutableHashSet<string> GetRoles(this ClaimsPrincipal principal)
@@ -114,7 +120,7 @@ public static class ClaimsPrincipalExtensions
         Argument.IsNotNull(principal);
 
         var roles = principal
-            .Claims.Where(claim => string.Equals(claim.Type, FrameworkClaimTypes.Roles, StringComparison.Ordinal))
+            .Claims.Where(claim => string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.Ordinal))
             .Select(claim => claim.Value)
             .ToImmutableHashSet(StringComparer.Ordinal);
 

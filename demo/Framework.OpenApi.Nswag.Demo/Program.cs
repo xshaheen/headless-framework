@@ -51,8 +51,8 @@ builder
             options.TokenValidationParameters.ValidateLifetime = true;
             options.TokenValidationParameters.RequireExpirationTime = true;
             options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
-            options.TokenValidationParameters.NameClaimType = FrameworkClaimTypes.UserName;
-            options.TokenValidationParameters.RoleClaimType = FrameworkClaimTypes.Roles;
+            options.TokenValidationParameters.NameClaimType = UserClaimTypes.UserName;
+            options.TokenValidationParameters.RoleClaimType = UserClaimTypes.Roles;
             options.TokenValidationParameters.AuthenticationType = AuthenticationConstants.IdentityAuthenticationType;
             options.TokenValidationParameters.TokenDecryptionKey = createKey("EncryptingKey");
             options.TokenValidationParameters.IssuerSigningKey = createKey("SigningKey");
@@ -70,7 +70,7 @@ builder
         policy =>
         {
             policy.RequireAuthenticatedUser();
-            policy.RequireClaim(FrameworkClaimTypes.Roles, "role");
+            policy.RequireClaim(UserClaimTypes.Roles, "role");
         }
     );
 
