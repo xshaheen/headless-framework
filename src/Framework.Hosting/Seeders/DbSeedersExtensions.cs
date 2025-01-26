@@ -7,7 +7,7 @@ namespace Framework.Hosting.Seeders;
 [PublicAPI]
 public static class DbSeedersExtensions
 {
-    public static void AddDataSeeder<T>(this IServiceCollection services)
+    public static void AddSeeder<T>(this IServiceCollection services)
         where T : class, ISeeder
     {
         services.AddTransient<ISeeder, T>().AddTransient<T>();
@@ -15,22 +15,12 @@ public static class DbSeedersExtensions
 
     public static async Task SeedAsync(this IServiceProvider services)
     {
-        var typeOfSeeders = await _GetSeedersAsync(services);
+        await using var scope = services.CreateAsyncScope();
+        var seeders = scope.ServiceProvider.GetServices<ISeeder>();
 
-        foreach (var type in typeOfSeeders)
+        foreach (var seeder in seeders)
         {
-            await using var scope = services.CreateAsyncScope();
-            var seeder = (ISeeder)scope.ServiceProvider.GetRequiredService(type);
-
             await seeder.SeedAsync();
         }
-    }
-
-    private static async Task<IEnumerable<Type>> _GetSeedersAsync(IServiceProvider services)
-    {
-        await using var scope = services.CreateAsyncScope();
-        var typeOfSeeders = scope.ServiceProvider.GetServices<ISeeder>().Select(x => x.GetType());
-
-        return typeOfSeeders;
     }
 }
