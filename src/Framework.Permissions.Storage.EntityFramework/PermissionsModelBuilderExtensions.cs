@@ -8,19 +8,17 @@ namespace Framework.Permissions;
 [PublicAPI]
 public static class PermissionsModelBuilderExtensions
 {
-    public static string DefaultSchema { get; set; } = "permissions";
-
     public static string DefaultPermissionGrantTableName { get; set; } = "PermissionGrants";
 
     public static string DefaultPermissionDefinitionTableName { get; set; } = "PermissionDefinitions";
 
     public static string DefaultPermissionGroupDefinitionTableName { get; set; } = "PermissionGroupDefinitions";
 
-    public static void AddPermissionsConfiguration(this ModelBuilder modelBuilder)
+    public static void AddPermissionsConfiguration(this ModelBuilder modelBuilder, string schema = "permissions")
     {
         modelBuilder.Entity<PermissionGrantRecord>(b =>
         {
-            b.ToTable(DefaultPermissionGrantTableName, DefaultSchema);
+            b.ToTable(DefaultPermissionGrantTableName, schema);
             b.Property(x => x.Name).HasMaxLength(PermissionGrantRecordConstants.NameMaxLength).IsRequired();
 
             b.Property(x => x.ProviderName)
@@ -47,7 +45,7 @@ public static class PermissionsModelBuilderExtensions
 
         modelBuilder.Entity<PermissionGroupDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultPermissionGroupDefinitionTableName, DefaultSchema);
+            b.ToTable(DefaultPermissionGroupDefinitionTableName, schema);
             b.TryConfigureExtraProperties();
             b.Property(x => x.Name).HasMaxLength(PermissionGroupDefinitionRecordConstants.NameMaxLength).IsRequired();
 
@@ -60,7 +58,7 @@ public static class PermissionsModelBuilderExtensions
 
         modelBuilder.Entity<PermissionDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultPermissionDefinitionTableName, DefaultSchema);
+            b.ToTable(DefaultPermissionDefinitionTableName, schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.GroupName).HasMaxLength(PermissionDefinitionRecordConstants.NameMaxLength).IsRequired();

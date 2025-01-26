@@ -16,7 +16,7 @@ public static class FeaturesModelBuilderExtensions
 
     public static string DefaultFeatureGroupDefinitionTableName { get; set; } = "FeatureGroupDefinitions";
 
-    public static void AddFeaturesConfigurations(this ModelBuilder modelBuilder)
+    public static void AddFeaturesConfiguration(this ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<FeatureValueRecord>(b =>
         {

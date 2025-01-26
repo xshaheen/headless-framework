@@ -8,17 +8,15 @@ namespace Framework.Settings;
 [PublicAPI]
 public static class SettingsModelBuilderExtensions
 {
-    public static string DefaultSchema { get; set; } = "settings";
-
     public static string DefaultSettingValuesTableName { get; set; } = "SettingValues";
 
     public static string DefaultSettingDefinitionTableName { get; set; } = "SettingDefinitions";
 
-    public static void AddSettingsConfiguration(this ModelBuilder modelBuilder)
+    public static void AddSettingsConfiguration(this ModelBuilder modelBuilder, string schema = "settings")
     {
         modelBuilder.Entity<SettingValueRecord>(b =>
         {
-            b.ToTable(DefaultSettingValuesTableName, DefaultSchema);
+            b.ToTable(DefaultSettingValuesTableName, schema);
             b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.NameMaxLength).IsRequired();
             b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.ValueMaxLength).IsRequired();
 
@@ -41,7 +39,7 @@ public static class SettingsModelBuilderExtensions
 
         modelBuilder.Entity<SettingDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultSettingDefinitionTableName, DefaultSchema);
+            b.ToTable(DefaultSettingDefinitionTableName, schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.Name).HasMaxLength(SettingDefinitionRecordConstants.NameMaxLength).IsRequired();

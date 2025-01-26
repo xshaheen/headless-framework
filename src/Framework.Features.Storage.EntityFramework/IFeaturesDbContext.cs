@@ -7,9 +7,9 @@ namespace Framework.Features;
 
 public interface IFeaturesDbContext
 {
-    DbSet<FeatureValueRecord> FeatureValues { get; init; }
+    DbSet<FeatureValueRecord> FeatureValues { get; }
 
-    DbSet<FeatureDefinitionRecord> FeatureDefinitions { get; init; }
+    DbSet<FeatureDefinitionRecord> FeatureDefinitions { get; }
 
-    DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions { get; init; }
+    DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions { get; }
 }

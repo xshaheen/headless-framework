@@ -7,9 +7,9 @@ namespace Framework.Permissions;
 
 public interface IPermissionsDbContext
 {
-    DbSet<PermissionGrantRecord> PermissionGrants { get; init; }
+    DbSet<PermissionGrantRecord> PermissionGrants { get; }
 
-    DbSet<PermissionDefinitionRecord> PermissionDefinitions { get; init; }
+    DbSet<PermissionDefinitionRecord> PermissionDefinitions { get; }
 
-    DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions { get; init; }
+    DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions { get; }
 }

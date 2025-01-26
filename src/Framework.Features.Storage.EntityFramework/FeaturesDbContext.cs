@@ -17,6 +17,6 @@ public class FeaturesDbContext(DbContextOptions options) : DbContext(options), I
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddFeaturesConfigurations();
+        modelBuilder.AddFeaturesConfiguration();
     }
 }

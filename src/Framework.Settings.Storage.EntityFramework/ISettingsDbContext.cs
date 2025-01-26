@@ -7,7 +7,7 @@ namespace Framework.Settings;
 
 public interface ISettingsDbContext
 {
-    DbSet<SettingValueRecord> SettingValues { get; init; }
+    DbSet<SettingValueRecord> SettingValues { get; }
 
-    DbSet<SettingDefinitionRecord> SettingDefinitions { get; init; }
+    DbSet<SettingDefinitionRecord> SettingDefinitions { get; }
 }
