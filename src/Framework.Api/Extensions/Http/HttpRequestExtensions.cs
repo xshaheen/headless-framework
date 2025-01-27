@@ -55,6 +55,10 @@ public static class HttpRequestExtensions
         Argument.IsNotNull(request);
         Argument.IsNotNull(contentType);
 
-        return request.Headers[HeaderNames.Accept].ToString().Contains(contentType, StringComparison.OrdinalIgnoreCase);
+        var acceptHeader = request.Headers[HeaderNames.Accept];
+
+        return acceptHeader.Count == 0
+            || acceptHeader.Equals("*/*")
+            || acceptHeader.ToString().Contains(contentType, StringComparison.InvariantCultureIgnoreCase);
     }
 }
