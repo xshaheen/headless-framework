@@ -49,7 +49,7 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
     {
         public void Define(ISettingDefinitionContext context)
         {
-            context.Add(_SettingDefinitions.AsSpan());
+            context.Add(_SettingDefinitions.AsReadOnlySpan());
         }
     }
 }

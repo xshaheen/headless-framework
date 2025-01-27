@@ -236,10 +236,22 @@ public static class ListExtensions
         return item;
     }
 
+    /// <summary>
+    /// Get a <see cref="ReadOnlySpan{T}"/> view over a <see cref="List{T}"/>'s data.
+    /// Items should not be added or removed from the <see cref="List{T}"/> while the <see cref="ReadOnlySpan{T}"/> is in use.
+    /// </summary>
+    /// <param name="list">The list to get the data view over.</param>
+    /// <typeparam name="T">The type of the elements in the list.</typeparam>
+    [MustUseReturnValue]
+    public static ReadOnlySpan<T> AsReadOnlySpan<T>(this List<T> list)
+    {
+        return CollectionsMarshal.AsSpan(list);
+    }
+
     /// <inheritdoc cref="CollectionsMarshal.AsSpan{T}"/>
     [MustUseReturnValue]
-    public static Span<T> AsSpan<T>(this List<T> source)
+    public static ReadOnlySpan<T> AsSpan<T>(this List<T> list)
     {
-        return CollectionsMarshal.AsSpan(source);
+        return CollectionsMarshal.AsSpan(list);
     }
 }
