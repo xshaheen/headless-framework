@@ -46,6 +46,20 @@ public static class ApiRegistration
         builder.Services.AddCustomStatusCodesRewriterMiddleware();
         builder.Services.AddRequestCanceledMiddleware();
 
+        builder.Services.AddProblemDetails(options =>
+        {
+            options.CustomizeProblemDetails = context =>
+            {
+                var services = context.HttpContext.RequestServices;
+                var buildInformationAccessor = services.GetRequiredService<IBuildInformationAccessor>();
+                var timeProvider = services.GetRequiredService<TimeProvider>();
+
+                context.ProblemDetails.Extensions["buildNumber"] = buildInformationAccessor.GetBuildNumber();
+                context.ProblemDetails.Extensions["commitNumber"] = buildInformationAccessor.GetCommitNumber();
+                context.ProblemDetails.Extensions["timestamp"] = timeProvider.GetUtcNow().ToString("O");
+            };
+        });
+
         builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
         builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
@@ -64,7 +78,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
         builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
-        builder.Services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
+        builder.Services.TryAddSingleton<IFrameworkProblemDetailsFactory, FrameworkProblemDetailsFactory>();
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
         builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();

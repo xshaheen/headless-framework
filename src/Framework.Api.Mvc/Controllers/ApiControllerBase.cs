@@ -16,7 +16,7 @@ public abstract class ApiControllerBase : ControllerBase
 {
     private IConfiguration? _config;
     private ISender? _sender;
-    private IProblemDetailsCreator? _problemDetailsCreator;
+    private IFrameworkProblemDetailsFactory? _problemDetailsCreator;
 
     protected IConfiguration Configuration =>
         _config ??=
@@ -28,10 +28,10 @@ public abstract class ApiControllerBase : ControllerBase
             HttpContext.RequestServices.GetService<ISender>()
             ?? throw new InvalidOperationException($"{nameof(ISender)} service not registered");
 
-    private IProblemDetailsCreator ProblemDetailsCreator =>
+    private IFrameworkProblemDetailsFactory Factory =>
         _problemDetailsCreator ??=
-            HttpContext.RequestServices.GetService<IProblemDetailsCreator>()
-            ?? throw new InvalidOperationException($"{nameof(ProblemDetailsCreator)} service not registered");
+            HttpContext.RequestServices.GetService<IFrameworkProblemDetailsFactory>()
+            ?? throw new InvalidOperationException($"{nameof(Factory)} service not registered");
 
     [NonAction]
     protected async Task<ActionResult> NoContent(IRequest? req, CancellationToken token = default)
@@ -74,7 +74,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected BadRequestObjectResult MalformedSyntax()
     {
-        return base.BadRequest(ProblemDetailsCreator.MalformedSyntax(HttpContext));
+        return base.BadRequest(Factory.MalformedSyntax(HttpContext));
     }
 
     [NonAction]
@@ -92,7 +92,7 @@ public abstract class ApiControllerBase : ControllerBase
                 StringComparer.Ordinal
             );
 
-        var problemDetails = ProblemDetailsCreator.UnprocessableEntity(HttpContext, errors);
+        var problemDetails = Factory.UnprocessableEntity(HttpContext, errors);
 
         return base.UnprocessableEntity(problemDetails);
     }
@@ -100,7 +100,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected NotFoundObjectResult NotFoundProblemDetails(string entity, string key)
     {
-        var problemDetails = ProblemDetailsCreator.EntityNotFound(HttpContext, entity, key);
+        var problemDetails = Factory.EntityNotFound(HttpContext, entity, key);
 
         return base.NotFound(problemDetails);
     }
@@ -108,7 +108,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(IEnumerable<ErrorDescriptor> errorDescriptors)
     {
-        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, errorDescriptors);
+        var problemDetails = Factory.Conflict(HttpContext, errorDescriptors);
 
         return base.Conflict(problemDetails);
     }
@@ -116,7 +116,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(ErrorDescriptor errorDescriptor)
     {
-        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, [errorDescriptor]);
+        var problemDetails = Factory.Conflict(HttpContext, [errorDescriptor]);
 
         return base.Conflict(problemDetails);
     }

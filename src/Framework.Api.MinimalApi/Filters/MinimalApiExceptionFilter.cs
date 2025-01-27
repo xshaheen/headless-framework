@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Resources;
+using Framework.Constants;
 using Framework.Exceptions;
 using Framework.FluentValidation;
 using Framework.Primitives;
@@ -17,20 +18,31 @@ namespace Framework.Api.MinimalApi.Filters;
 
 [PublicAPI]
 public sealed partial class MinimalApiExceptionFilter(
-    IProblemDetailsCreator problemDetailsCreator,
+    IFrameworkProblemDetailsFactory problemDetailsFactory,
     IHostEnvironment environment,
     ILogger<MinimalApiExceptionFilter> logger
 ) : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
+        // If the exception is not an API exception, we don't need to do anything.
+        if (
+            !context.HttpContext.Request.CanAccept(
+                ContentTypes.Applications.Json,
+                ContentTypes.Applications.ProblemJson
+            )
+        )
+        {
+            return await next(context);
+        }
+
         try
         {
             return await next(context);
         }
         catch (ConflictException exception)
         {
-            var details = problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
+            var details = problemDetailsFactory.Conflict(context.HttpContext, exception.Errors);
 
             return TypedResults.Problem(details);
         }
@@ -52,7 +64,7 @@ public sealed partial class MinimalApiExceptionFilter(
                     StringComparer.Ordinal
                 );
 
-            var details = problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
+            var details = problemDetailsFactory.UnprocessableEntity(context.HttpContext, errors);
 
             context.HttpContext.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";
             context.HttpContext.Response.Headers[HeaderNames.Pragma] = "no-cache";
@@ -63,7 +75,7 @@ public sealed partial class MinimalApiExceptionFilter(
         }
         catch (EntityNotFoundException exception)
         {
-            var details = problemDetailsCreator.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
+            var details = problemDetailsFactory.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
 
             return TypedResults.Problem(details);
         }
@@ -72,7 +84,7 @@ public sealed partial class MinimalApiExceptionFilter(
         {
             LogDbConcurrencyException(logger, exception);
 
-            var details = problemDetailsCreator.Conflict(
+            var details = problemDetailsFactory.Conflict(
                 context.HttpContext,
                 [GeneralMessageDescriber.ConcurrencyFailure()]
             );
@@ -109,7 +121,7 @@ public sealed partial class MinimalApiExceptionFilter(
                 return TypedResults.StatusCode(StatusCodes.Status500InternalServerError);
             }
 
-            var details = problemDetailsCreator.InternalError(context.HttpContext, exception.ExpandMessage());
+            var details = problemDetailsFactory.InternalError(context.HttpContext, exception.ExpandMessage());
 
             return TypedResults.Problem(details);
         }
