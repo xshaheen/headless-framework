@@ -32,7 +32,8 @@ public static class JsonConstants
         options.ReadCommentHandling = JsonCommentHandling.Disallow;
         options.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
         options.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-        options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate;
+        // Make it populate when this get fixed: https://github.com/dotnet/runtime/issues/92877
+        options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace;
         options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonNode;
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Skip;
         options.IgnoreReadOnlyProperties = false;
@@ -53,7 +54,8 @@ public static class JsonConstants
         options.NumberHandling = JsonNumberHandling.Strict;
         options.ReadCommentHandling = JsonCommentHandling.Disallow;
         options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-        options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate;
+        // Make it populate when this get fixed: https://github.com/dotnet/runtime/issues/92877
+        options.PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace;
         options.UnknownTypeHandling = JsonUnknownTypeHandling.JsonNode;
         options.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
         options.PropertyNamingPolicy = null;
