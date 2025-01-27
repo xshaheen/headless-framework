@@ -19,7 +19,7 @@ public sealed class ErrorDescriptor
     public ErrorDescriptor(
         string code,
         [LocalizationRequired] string description,
-        Dictionary<string, object> paramsDictionary,
+        Dictionary<string, object?> paramsDictionary,
         ValidationSeverity severity = ValidationSeverity.Information
     )
     {
@@ -29,7 +29,7 @@ public sealed class ErrorDescriptor
         _params = paramsDictionary;
     }
 
-    private Dictionary<string, object>? _params;
+    private Dictionary<string, object?>? _params;
 
     /// <summary>A distinct code indicating the cause of the error.</summary>
     public string Code { get; private init; }
@@ -41,19 +41,19 @@ public sealed class ErrorDescriptor
     public ValidationSeverity Severity { get; private init; }
 
     /// <summary>Object containing parameter values related to the error.</summary>
-    public IReadOnlyDictionary<string, object> Params => _params ?? [];
+    public IReadOnlyDictionary<string, object?>? Params => _params;
 
-    public ErrorDescriptor WithParam(string key, object value)
+    public ErrorDescriptor WithParam(string key, object? value)
     {
-        _params ??= new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        _params ??= new(StringComparer.OrdinalIgnoreCase);
         _params[key] = value;
 
         return this;
     }
 
-    public ErrorDescriptor WithParams(IReadOnlyDictionary<string, object> values)
+    public ErrorDescriptor WithParams(IReadOnlyDictionary<string, object?> values)
     {
-        _params ??= new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        _params ??= new(StringComparer.OrdinalIgnoreCase);
 
         foreach (var (key, value) in values)
         {
