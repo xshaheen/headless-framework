@@ -8,19 +8,17 @@ namespace Framework.Features;
 [PublicAPI]
 public static class FeaturesModelBuilderExtensions
 {
-    public static string DefaultSchema { get; set; } = "features";
-
     public static string DefaultFeatureValuesTableName { get; set; } = "FeatureValues";
 
     public static string DefaultFeatureDefinitionTableName { get; set; } = "FeatureDefinitions";
 
     public static string DefaultFeatureGroupDefinitionTableName { get; set; } = "FeatureGroupDefinitions";
 
-    public static void AddFeaturesConfiguration(this ModelBuilder modelBuilder)
+    public static void AddFeaturesConfiguration(this ModelBuilder modelBuilder, string schema = "features")
     {
         modelBuilder.Entity<FeatureValueRecord>(b =>
         {
-            b.ToTable(DefaultFeatureValuesTableName, DefaultSchema);
+            b.ToTable(DefaultFeatureValuesTableName, schema);
             b.Property(x => x.Name).HasMaxLength(FeatureValueRecordConstants.NameMaxLength).IsRequired();
             b.Property(x => x.Value).HasMaxLength(FeatureValueRecordConstants.ValueMaxLength).IsRequired();
 
@@ -43,7 +41,7 @@ public static class FeaturesModelBuilderExtensions
 
         modelBuilder.Entity<FeatureGroupDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultFeatureGroupDefinitionTableName, DefaultSchema);
+            b.ToTable(DefaultFeatureGroupDefinitionTableName, schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.Name).HasMaxLength(FeatureGroupDefinitionRecordConstants.NameMaxLength).IsRequired();
@@ -57,7 +55,7 @@ public static class FeaturesModelBuilderExtensions
 
         modelBuilder.Entity<FeatureDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultFeatureDefinitionTableName, DefaultSchema);
+            b.ToTable(DefaultFeatureDefinitionTableName, schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.GroupName).HasMaxLength(FeatureDefinitionRecordConstants.NameMaxLength).IsRequired();
