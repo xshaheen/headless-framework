@@ -81,7 +81,7 @@ public readonly struct EquatableArray<T>(T[] array, IEqualityComparer<T>? equali
 
     /// <summary>Returns a <see cref="ReadOnlySpan{T}"/> wrapping the current items.</summary>
     /// <returns>A <see cref="ReadOnlySpan{T}"/> wrapping the current items.</returns>
-    public ReadOnlySpan<T> AsSpan()
+    public Span<T> AsSpan()
     {
         return _array.AsSpan();
     }
