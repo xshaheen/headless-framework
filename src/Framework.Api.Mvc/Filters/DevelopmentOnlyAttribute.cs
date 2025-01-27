@@ -2,7 +2,7 @@
 
 using Framework.Api.Abstractions;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,22 +11,22 @@ namespace Framework.Api.Mvc.Filters;
 
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-public sealed class DevelopmentOnlyAttribute : Attribute, IResourceFilter
+public sealed class DevelopmentOnlyAttribute : Attribute, IAsyncResourceFilter
 {
-    public void OnResourceExecuting(ResourceExecutingContext context)
+    public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
         var services = context.HttpContext.RequestServices;
         var environment = services.GetRequiredService<IWebHostEnvironment>();
 
         if (environment.IsDevelopment())
         {
+            await next();
+
             return;
         }
 
-        var creator = services.GetRequiredService<IProblemDetailsCreator>();
-        var endpointNotFound = creator.EndpointNotFound(context.HttpContext);
-        context.Result = new NotFoundObjectResult(endpointNotFound);
+        var factory = services.GetRequiredService<IFrameworkProblemDetailsFactory>();
+        var problemDetails = factory.EndpointNotFound(context.HttpContext);
+        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
     }
-
-    public void OnResourceExecuted(ResourceExecutedContext context) { }
 }

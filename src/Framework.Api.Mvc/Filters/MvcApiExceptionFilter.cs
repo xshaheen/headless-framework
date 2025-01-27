@@ -22,18 +22,18 @@ namespace Framework.Api.Mvc.Filters;
 [PublicAPI]
 public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 {
-    private readonly IProblemDetailsCreator _problemDetailsCreator;
+    private readonly IFrameworkProblemDetailsFactory _problemDetailsFactory;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<MvcApiExceptionFilter> _logger;
     private readonly Dictionary<Type, Action<ExceptionContext>> _exceptionHandlers;
 
     public MvcApiExceptionFilter(
-        IProblemDetailsCreator problemDetailsCreator,
+        IFrameworkProblemDetailsFactory problemDetailsFactory,
         IHostEnvironment environment,
         ILogger<MvcApiExceptionFilter> logger
     )
     {
-        _problemDetailsCreator = problemDetailsCreator;
+        _problemDetailsFactory = problemDetailsFactory;
         _environment = environment;
         _logger = logger;
 
@@ -59,7 +59,12 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
         }
 
         // If the exception is not an API exception, we don't need to do anything.
-        if (!context.HttpContext.Request.CanAccept(ContentTypes.Applications.Json))
+        if (
+            !context.HttpContext.Request.CanAccept(
+                ContentTypes.Applications.Json,
+                ContentTypes.Applications.ProblemJson
+            )
+        )
         {
             return;
         }
@@ -99,7 +104,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
                 StringComparer.Ordinal
             );
 
-        var details = _problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
+        var details = _problemDetailsFactory.UnprocessableEntity(context.HttpContext, errors);
 
         context.Result = new UnprocessableEntityObjectResult(details)
         {
@@ -119,7 +124,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
         var exception = context.Exception as EntityNotFoundException;
         Debug.Assert(exception is not null);
 
-        var details = _problemDetailsCreator.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
+        var details = _problemDetailsFactory.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
         context.Result = new NotFoundObjectResult(details);
         context.ExceptionHandled = true;
     }
@@ -130,7 +135,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
         var exception = context.Exception as ConflictException;
         Debug.Assert(exception is not null);
 
-        var details = _problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
+        var details = _problemDetailsFactory.Conflict(context.HttpContext, exception.Errors);
         context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict };
         context.ExceptionHandled = true;
     }
@@ -140,7 +145,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
     {
         LogDbConcurrencyException(_logger, context.Exception);
 
-        var details = _problemDetailsCreator.Conflict(
+        var details = _problemDetailsFactory.Conflict(
             context.HttpContext,
             [GeneralMessageDescriber.ConcurrencyFailure()]
         );
@@ -192,8 +197,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
             return;
         }
 
-        var details = _problemDetailsCreator.InternalError(context.HttpContext, context.Exception.ExpandMessage());
-
+        var details = _problemDetailsFactory.InternalError(context.HttpContext, context.Exception.ExpandMessage());
         context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status500InternalServerError };
         context.ExceptionHandled = true;
     }

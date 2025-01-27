@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
-using Framework.Abstractions;
 using Framework.Constants;
 using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
@@ -9,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Framework.Api.Abstractions;
 
-public interface IProblemDetailsCreator
+public interface IFrameworkProblemDetailsFactory
 {
     ProblemDetails EndpointNotFound(HttpContext context);
 
@@ -27,8 +25,7 @@ public interface IProblemDetailsCreator
     ProblemDetails InternalError(HttpContext context, string stackTrace);
 }
 
-public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInformationAccessor, IClock clock)
-    : IProblemDetailsCreator
+public sealed class FrameworkProblemDetailsFactory : IFrameworkProblemDetailsFactory
 {
     public ProblemDetails EndpointNotFound(HttpContext context)
     {
@@ -39,13 +36,6 @@ public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInforma
             Status = StatusCodes.Status404NotFound,
             Detail = $"The requested endpoint '{context.Request.Path}' was not found.",
             Instance = context.Request.Path.Value ?? "",
-            Extensions =
-            {
-                ["timestamp"] = clock.UtcNow.ToString("O"),
-                ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
-                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
-                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
-            },
         };
     }
 
@@ -58,14 +48,7 @@ public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInforma
             Title = ProblemDetailTitles.EntityNotFounded,
             Detail = $"The requested entity does not exist. There is no entity matches '{entity}:{key}'.",
             Instance = context.Request.Path.Value ?? "",
-            Extensions =
-            {
-                ["timestamp"] = clock.UtcNow.ToString("O"),
-                ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
-                ["params"] = new { entity, key },
-                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
-                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
-            },
+            Extensions = { ["params"] = new { entity, key } },
         };
     }
 
@@ -79,13 +62,6 @@ public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInforma
             Detail =
                 "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.",
             Instance = context.Request.Path.Value ?? "",
-            Extensions =
-            {
-                ["timestamp"] = clock.UtcNow.ToString("O"),
-                ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
-                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
-                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
-            },
         };
     }
 
@@ -101,14 +77,7 @@ public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInforma
             Status = StatusCodes.Status422UnprocessableEntity,
             Detail = "One or more validation errors occurred.",
             Instance = context.Request.Path.Value ?? "",
-            Extensions =
-            {
-                ["errors"] = errorDescriptors,
-                ["timestamp"] = clock.UtcNow.ToString("O"),
-                ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
-                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
-                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
-            },
+            Extensions = { ["errors"] = errorDescriptors },
         };
     }
 
@@ -121,14 +90,7 @@ public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInforma
             Title = ProblemDetailTitles.ConflictRequest,
             Detail = "Conflict request",
             Instance = context.Request.Path.Value ?? "",
-            Extensions =
-            {
-                ["errors"] = errorDescriptors,
-                ["timestamp"] = clock.UtcNow.ToString("O"),
-                ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
-                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
-                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
-            },
+            Extensions = { ["errors"] = errorDescriptors },
         };
     }
 
@@ -141,14 +103,7 @@ public sealed class ProblemDetailsCreator(IBuildInformationAccessor buildInforma
             Status = StatusCodes.Status500InternalServerError,
             Detail = "An error occurred while processing your request.",
             Instance = context.Request.Path.Value ?? "",
-            Extensions =
-            {
-                ["timestamp"] = clock.UtcNow.ToString("O"),
-                ["traceId"] = Activity.Current?.Id ?? context.TraceIdentifier,
-                ["stackTrace"] = stackTrace,
-                ["buildNumber"] = buildInformationAccessor.GetBuildNumber(),
-                ["commitNumber"] = buildInformationAccessor.GetCommitNumber(),
-            },
+            Extensions = { ["stackTrace"] = stackTrace },
         };
     }
 }

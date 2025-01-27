@@ -50,6 +50,31 @@ public static class HttpRequestExtensions
         return connection.RemoteIpAddress is null && connection.LocalIpAddress is null;
     }
 
+    public static bool CanAccept(this HttpRequest request, params ReadOnlySpan<string> contentTypes)
+    {
+        Argument.IsNotNull(request);
+        Argument.IsNotEmpty(contentTypes);
+
+        var acceptHeader = request.Headers[HeaderNames.Accept];
+
+        if (acceptHeader.Count == 0 || acceptHeader.Equals("*/*"))
+        {
+            return true;
+        }
+
+        var acceptHeaderText = acceptHeader.ToString();
+
+        foreach (var contentType in contentTypes)
+        {
+            if (acceptHeaderText.Contains(contentType, StringComparison.InvariantCultureIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static bool CanAccept(this HttpRequest request, string contentType)
     {
         Argument.IsNotNull(request);
