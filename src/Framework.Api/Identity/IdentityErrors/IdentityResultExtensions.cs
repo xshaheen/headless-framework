@@ -24,6 +24,11 @@ public static class IdentityResultExtensions
     {
         var descriptor = new ErrorDescriptor(paramsError.Code, paramsError.Description);
 
+        if (paramsError.Params is null)
+        {
+            return descriptor;
+        }
+
         foreach (var (key, value) in paramsError.Params)
         {
             descriptor.WithParam(key, value);
