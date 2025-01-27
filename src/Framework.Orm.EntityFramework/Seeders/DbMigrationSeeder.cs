@@ -1,10 +1,11 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Hosting.Seeders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Orm.EntityFramework.Seeders;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Hosting.Seeders;
 
 public sealed class DbMigrationSeeder<TDbContext>(IServiceProvider provider) : ISeeder
     where TDbContext : DbContext
