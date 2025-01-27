@@ -10,22 +10,20 @@ using Framework.Exceptions;
 using Framework.FluentValidation;
 using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Net.Http.Headers;
 
 namespace Framework.Api.Mvc.Filters;
 
 [PublicAPI]
-public sealed partial class MvcApiExceptionFilter : IExceptionFilter
+public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
 {
     private readonly IFrameworkProblemDetailsFactory _problemDetailsFactory;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<MvcApiExceptionFilter> _logger;
-    private readonly Dictionary<Type, Action<ExceptionContext>> _exceptionHandlers;
+    private readonly Dictionary<Type, Func<ExceptionContext, Task>> _exceptionHandlers;
 
     public MvcApiExceptionFilter(
         IFrameworkProblemDetailsFactory problemDetailsFactory,
@@ -50,7 +48,7 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
         };
     }
 
-    public void OnException(ExceptionContext context)
+    public async Task OnExceptionAsync(ExceptionContext context)
     {
         // If the exception is already handled, we don't need to do anything.
         if (context.ExceptionHandled)
@@ -73,16 +71,16 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
 
         if (_exceptionHandlers.TryGetValue(type, out var handler))
         {
-            handler.Invoke(context);
+            await handler(context);
 
             return;
         }
 
-        _HandleUnknownException(context);
+        await _HandleUnknownException(context);
     }
 
     /// <summary>Handle validation exception.</summary>
-    private void _HandleValidationException(ExceptionContext context)
+    private async Task _HandleValidationException(ExceptionContext context)
     {
         var exception = context.Exception as ValidationException;
 
@@ -104,101 +102,100 @@ public sealed partial class MvcApiExceptionFilter : IExceptionFilter
                 StringComparer.Ordinal
             );
 
-        var details = _problemDetailsFactory.UnprocessableEntity(context.HttpContext, errors);
-
-        context.Result = new UnprocessableEntityObjectResult(details)
-        {
-            ContentTypes = [ContentTypes.Applications.ProblemJson, ContentTypes.Applications.ProblemXml],
-        };
-
-        context.HttpContext.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";
-        context.HttpContext.Response.Headers[HeaderNames.Pragma] = "no-cache";
-        context.HttpContext.Response.Headers[HeaderNames.ETag] = default;
-        context.HttpContext.Response.Headers[HeaderNames.Expires] = "0";
+        var problemDetails = _problemDetailsFactory.UnprocessableEntity(context.HttpContext, errors);
+        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
 
     /// <summary>Handle entity not found response.</summary>
-    private void _HandleEntityNotFoundException(ExceptionContext context)
+    private async Task _HandleEntityNotFoundException(ExceptionContext context)
     {
         var exception = context.Exception as EntityNotFoundException;
         Debug.Assert(exception is not null);
 
-        var details = _problemDetailsFactory.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
-        context.Result = new NotFoundObjectResult(details);
+        var problemDetails = _problemDetailsFactory.EntityNotFound(
+            context.HttpContext,
+            exception.Entity,
+            exception.Key
+        );
+
+        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
+
         context.ExceptionHandled = true;
     }
 
     /// <summary>Handle forbidden request exception.</summary>
-    private void _HandleConflictException(ExceptionContext context)
+    private async Task _HandleConflictException(ExceptionContext context)
     {
         var exception = context.Exception as ConflictException;
         Debug.Assert(exception is not null);
 
-        var details = _problemDetailsFactory.Conflict(context.HttpContext, exception.Errors);
-        context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict };
+        var problemDetails = _problemDetailsFactory.Conflict(context.HttpContext, exception.Errors);
+        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
 
     /// <summary>Handle DbUpdateConcurrencyException.</summary>
-    private void _HandleDbUpdateConcurrencyException(ExceptionContext context)
+    private async Task _HandleDbUpdateConcurrencyException(ExceptionContext context)
     {
         LogDbConcurrencyException(_logger, context.Exception);
 
-        var details = _problemDetailsFactory.Conflict(
+        var problemDetails = _problemDetailsFactory.Conflict(
             context.HttpContext,
             [GeneralMessageDescriber.ConcurrencyFailure()]
         );
 
-        context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status409Conflict };
+        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
 
     /// <summary>Handle OperationCanceledException.</summary>
-    private static void _HandleRequestCanceledException(ExceptionContext context)
+    private static async Task _HandleRequestCanceledException(ExceptionContext context)
     {
-        context.Result = new StatusCodeResult(499);
+        await Results.Problem(statusCode: 499).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
 
     /// <summary>Handle request unhandled exceptions.</summary>
-    private void _HandleUnknownException(ExceptionContext context)
+    private Task _HandleUnknownException(ExceptionContext context)
     {
         LogUnhandledException(_logger, context.Exception);
 
-        if (context.Exception is { InnerException: OperationCanceledException })
-        {
-            _HandleRequestCanceledException(context);
-
-            return;
-        }
-
-        _HandleInternalError(context);
+        return context.Exception is { InnerException: OperationCanceledException }
+            ? _HandleRequestCanceledException(context)
+            : _HandleInternalError(context);
     }
 
     /// <summary>Handle NotImplementedException.</summary>
-    private static void _HandleNotImplementedException(ExceptionContext context)
+    private static async Task _HandleNotImplementedException(ExceptionContext context)
     {
-        context.Result = new StatusCodeResult(StatusCodes.Status501NotImplemented);
+        await Results.Problem(statusCode: StatusCodes.Status501NotImplemented).ExecuteAsync(context.HttpContext);
+
         context.ExceptionHandled = true;
     }
 
     /// <summary>Handle Timeout</summary>
-    private static void _HandleTimeoutExceptions(ExceptionContext context)
+    private static async Task _HandleTimeoutExceptions(ExceptionContext context)
     {
-        context.Result = new StatusCodeResult(StatusCodes.Status408RequestTimeout);
+        await Results.Problem(statusCode: StatusCodes.Status408RequestTimeout).ExecuteAsync(context.HttpContext);
+
         context.ExceptionHandled = true;
     }
 
-    private void _HandleInternalError(ExceptionContext context)
+    private async Task _HandleInternalError(ExceptionContext context)
     {
         if (_environment.IsDevelopmentOrTest())
         {
             return;
         }
 
-        var details = _problemDetailsFactory.InternalError(context.HttpContext, context.Exception.ExpandMessage());
-        context.Result = new ObjectResult(details) { StatusCode = StatusCodes.Status500InternalServerError };
+        var problemDetails = _problemDetailsFactory.InternalError(
+            context.HttpContext,
+            context.Exception.ExpandMessage()
+        );
+
+        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
+
         context.ExceptionHandled = true;
     }
 
