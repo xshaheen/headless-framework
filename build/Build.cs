@@ -133,7 +133,7 @@ file sealed class Build : NukeBuild
     Target Pack =>
         x =>
             x.Description("Creates NuGet packages and outputs them to the artifacts directory.")
-                .DependsOn(Compile)
+                // .DependsOn(Compile)
                 .Executes(() =>
                 {
                     DotNetPack(settings =>
@@ -142,8 +142,7 @@ file sealed class Build : NukeBuild
                             .SetConfiguration(Configuration)
                             .EnableNoBuild()
                             .EnableNoRestore()
-                            // Disable because the source generator failed to pack if this is enabled
-                            // .EnableIncludeSymbols()
+                            .EnableIncludeSymbols()
                             .SetOutputDirectory(PackagesResults)
                             .SetContinuousIntegrationBuild(!IsLocalBuild)
                     );
