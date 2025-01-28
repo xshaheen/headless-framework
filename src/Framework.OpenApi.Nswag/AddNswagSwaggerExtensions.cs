@@ -64,7 +64,7 @@ public static class AddNswagSwaggerExtensions
 
     #region Map
 
-    public static WebApplication MapFrameworkNswagOpenApi(
+    public static WebApplication MapFrameworkNswagOpenApiVersions(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings, ApiVersionDescription>? documentSettings = null,
         Action<SwaggerUiSettings>? uiSettings = null
@@ -79,6 +79,33 @@ public static class AddNswagSwaggerExtensions
                 documentSettings?.Invoke(settings, apiVersionDescription);
             });
         }
+
+        app.UseSwaggerUi(config =>
+        {
+            config.Path = "/swagger";
+            config.DocumentPath = "/openapi/{documentName}.json";
+            config.PersistAuthorization = true;
+            config.EnableTryItOut = true;
+            config.TagsSorter = "alpha";
+            config.DocExpansion = "none";
+            uiSettings?.Invoke(config);
+        });
+
+        return app;
+    }
+
+    public static WebApplication MapFrameworkNswagOpenApi(
+        this WebApplication app,
+        Action<OpenApiDocumentMiddlewareSettings>? documentSettings = null,
+        Action<SwaggerUiSettings>? uiSettings = null
+    )
+    {
+        app.UseOpenApi(settings =>
+        {
+            settings.DocumentName = "v1";
+            settings.Path = "/openapi/{documentName}.json";
+            documentSettings?.Invoke(settings);
+        });
 
         app.UseSwaggerUi(config =>
         {
