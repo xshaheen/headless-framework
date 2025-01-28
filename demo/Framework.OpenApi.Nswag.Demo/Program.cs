@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Asp.Versioning;
 using Framework.Constants;
 using Framework.OpenApi.Nswag;
 using Framework.OpenApi.Scalar;
@@ -8,22 +7,6 @@ using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddEndpointsApiExplorer();
-
-builder
-    .Services.AddApiVersioning(options =>
-    {
-        options.ReportApiVersions = true;
-        options.AssumeDefaultVersionWhenUnspecified = true;
-        options.ApiVersionReader = new HeaderApiVersionReader(HttpHeaderNames.ApiVersion);
-    })
-    .AddApiExplorer(options =>
-    {
-        // Version format: 'v'major[.minor][-status]
-        options.GroupNameFormat = "'v'VVV";
-        options.DefaultApiVersion = new ApiVersion(1, 0);
-    })
-    .AddMvc();
 
 builder.Services.AddControllers();
 builder.Services.AddFrameworkNswagOpenApi();
