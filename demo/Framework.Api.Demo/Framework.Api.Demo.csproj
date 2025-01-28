@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Framework.Api.Tests.Integration" />
     <ProjectReference Include="..\..\src\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\..\src\Framework.OpenApi.Nswag\Framework.OpenApi.Nswag.csproj" />
   </ItemGroup>
