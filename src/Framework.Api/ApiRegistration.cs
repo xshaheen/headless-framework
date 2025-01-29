@@ -25,6 +25,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Framework.Api;
@@ -54,9 +55,15 @@ public static class ApiRegistration
                 var buildInformationAccessor = services.GetRequiredService<IBuildInformationAccessor>();
                 var timeProvider = services.GetRequiredService<TimeProvider>();
 
+                context.ProblemDetails.Instance = context.HttpContext.Request.Path.Value ?? "";
                 context.ProblemDetails.Extensions["buildNumber"] = buildInformationAccessor.GetBuildNumber();
                 context.ProblemDetails.Extensions["commitNumber"] = buildInformationAccessor.GetCommitNumber();
                 context.ProblemDetails.Extensions["timestamp"] = timeProvider.GetUtcNow().ToString("O");
+
+                if (context.Exception is not null && builder.Environment.IsDevelopmentOrTest())
+                {
+                    context.ProblemDetails.Extensions["stackTrace"] = context.Exception.ExpandMessage();
+                }
             };
         });
 

@@ -22,7 +22,7 @@ public interface IProblemDetailsCreator
 
     ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errorDescriptors);
 
-    ProblemDetails InternalError(HttpContext context, string stackTrace);
+    ProblemDetails InternalError(HttpContext context);
 }
 
 public sealed class ProblemDetailsCreator : IProblemDetailsCreator
@@ -31,11 +31,9 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
     {
         return new ProblemDetails
         {
-            Type = $"/errors/{ProblemDetailTitles.EndpointNotFounded}",
-            Title = ProblemDetailTitles.EndpointNotFounded,
             Status = StatusCodes.Status404NotFound,
+            Title = ProblemDetailTitles.EndpointNotFounded,
             Detail = $"The requested endpoint '{context.Request.Path}' was not found.",
-            Instance = context.Request.Path.Value ?? "",
         };
     }
 
@@ -43,11 +41,9 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
     {
         return new ProblemDetails
         {
-            Type = $"/errors/{ProblemDetailTitles.EntityNotFounded}",
             Status = StatusCodes.Status404NotFound,
             Title = ProblemDetailTitles.EntityNotFounded,
             Detail = $"The requested entity does not exist. There is no entity matches '{entity}:{key}'.",
-            Instance = context.Request.Path.Value ?? "",
             Extensions = { ["params"] = new { entity, key } },
         };
     }
@@ -56,12 +52,10 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
     {
         return new ProblemDetails
         {
-            Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-            Title = ProblemDetailTitles.BadRequest,
             Status = StatusCodes.Status400BadRequest,
+            Title = ProblemDetailTitles.BadRequest,
             Detail =
                 "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.",
-            Instance = context.Request.Path.Value ?? "",
         };
     }
 
@@ -72,11 +66,9 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
     {
         return new ProblemDetails
         {
-            Type = $"/errors/{ProblemDetailTitles.ValidationProblem}",
             Title = ProblemDetailTitles.ValidationProblem,
             Status = StatusCodes.Status422UnprocessableEntity,
             Detail = "One or more validation errors occurred.",
-            Instance = context.Request.Path.Value ?? "",
             Extensions = { ["errors"] = errorDescriptors },
         };
     }
@@ -85,25 +77,20 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
     {
         return new ProblemDetails
         {
-            Type = $"/errors/{ProblemDetailTitles.ConflictRequest}",
             Status = StatusCodes.Status409Conflict,
             Title = ProblemDetailTitles.ConflictRequest,
             Detail = "Conflict request",
-            Instance = context.Request.Path.Value ?? "",
             Extensions = { ["errors"] = errorDescriptors },
         };
     }
 
-    public ProblemDetails InternalError(HttpContext context, string stackTrace)
+    public ProblemDetails InternalError(HttpContext context)
     {
         return new ProblemDetails
         {
-            Type = $"/errors/{ProblemDetailTitles.UnhandledException}",
-            Title = ProblemDetailTitles.UnhandledException,
             Status = StatusCodes.Status500InternalServerError,
+            Title = ProblemDetailTitles.UnhandledException,
             Detail = "An error occurred while processing your request.",
-            Instance = context.Request.Path.Value ?? "",
-            Extensions = { ["stackTrace"] = stackTrace },
         };
     }
 }

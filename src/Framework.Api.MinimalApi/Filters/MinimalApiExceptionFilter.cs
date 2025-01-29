@@ -8,13 +8,16 @@ using Framework.Constants;
 using Framework.Exceptions;
 using Framework.FluentValidation;
 using Framework.Primitives;
+using Humanizer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 
-namespace Framework.Api.MinimalApi.Filters;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.AspNetCore.Builder;
 
 [PublicAPI]
 public sealed partial class MinimalApiExceptionFilter(
@@ -52,24 +55,21 @@ public sealed partial class MinimalApiExceptionFilter(
                 .Errors.GroupBy(
                     failure => failure.PropertyName,
                     failure => new ErrorDescriptor(
-                        code: FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
+                        code: string.IsNullOrEmpty(failure.ErrorCode)
+                            ? failure.ErrorMessage
+                            : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
                         description: failure.ErrorMessage,
                         paramsDictionary: failure.FormattedMessagePlaceholderValues
                     ),
                     StringComparer.Ordinal
                 )
                 .ToDictionary(
-                    failureGroup => failureGroup.Key,
+                    failureGroup => failureGroup.Key.Camelize(),
                     failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
                     StringComparer.Ordinal
                 );
 
             var details = problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
-
-            context.HttpContext.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";
-            context.HttpContext.Response.Headers[HeaderNames.Pragma] = "no-cache";
-            context.HttpContext.Response.Headers[HeaderNames.ETag] = default;
-            context.HttpContext.Response.Headers[HeaderNames.Expires] = "0";
 
             return TypedResults.Problem(details);
         }
@@ -121,7 +121,7 @@ public sealed partial class MinimalApiExceptionFilter(
                 return TypedResults.StatusCode(StatusCodes.Status500InternalServerError);
             }
 
-            var details = problemDetailsCreator.InternalError(context.HttpContext, exception.ExpandMessage());
+            var details = problemDetailsCreator.InternalError(context.HttpContext);
 
             return TypedResults.Problem(details);
         }

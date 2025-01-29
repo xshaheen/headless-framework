@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Framework.Api.Tests.Integration" />
+    <ProjectReference Include="..\..\src\Framework.Api.MinimalApi\Framework.Api.MinimalApi.csproj" />
     <ProjectReference Include="..\..\src\Framework.Api.Mvc\Framework.Api.Mvc.csproj" />
     <ProjectReference Include="..\..\src\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\..\src\Framework.OpenApi.Nswag\Framework.OpenApi.Nswag.csproj" />

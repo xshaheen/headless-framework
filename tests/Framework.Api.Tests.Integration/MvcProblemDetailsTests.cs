@@ -11,8 +11,27 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
+[Collection(nameof(Fixture))]
+public sealed class Fixture : ICollectionFixture<Fixture> { }
+
 public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(output)
 {
+    #region Malformed Syntax
+
+    /*
+     * {
+     *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+     *   "title" : "bad-request",
+     *   "status" : 400,
+     *   "detail" : "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.",
+     *   "instance" : "/minimal/malformed-syntax",
+     *   "traceId" : "00-1402a1325f82be1e9277e334c617d122-5a8c02fbde4b5d93-00",
+     *   "buildNumber" : "2.16.1.109",
+     *   "commitNumber" : "2.16.1.109",
+     *   "timestamp" : "2025-01-28T15:20:52.9121154+00:00"
+     * }
+     */
+
     [Fact]
     public async Task mvc_bad_request()
     {
@@ -33,37 +52,263 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
 
     private static async Task _VerifyMalformedSyntax(HttpResponseMessage response)
     {
-        /*
-         * {
-         *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-         *   "title" : "bad-request",
-         *   "status" : 400,
-         *   "detail" : "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.",
-         *   "instance" : "/minimal/malformed-syntax",
-         *   "traceId" : "00-1402a1325f82be1e9277e334c617d122-5a8c02fbde4b5d93-00",
-         *   "buildNumber" : "2.16.1.109",
-         *   "commitNumber" : "2.16.1.109",
-         *   "timestamp" : "2025-01-28T15:20:52.9121154+00:00"
-         * }
-         */
-
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var json = await response.Content.ReadAsStringAsync();
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
-        const string details =
-            "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.";
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+            "bad-request",
+            400,
+            "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax."
+        );
 
-        jsonElement.GetProperty("type").GetString().Should().Be("https://tools.ietf.org/html/rfc9110#section-15.5.1");
-        jsonElement.GetProperty("title").GetString().Should().Be("bad-request");
-        jsonElement.GetProperty("status").GetInt32().Should().Be(400);
-        jsonElement.GetProperty("detail").GetString().Should().Be(details);
+        jsonElement.EnumerateObject().Count().Should().Be(9);
+    }
+
+    #endregion
+
+    #region Entity Not Found
+
+    /*
+     * {
+     *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+     *   "title" : "entity-not-found",
+     *   "status" : 404,
+     *   "detail" : "The requested entity does not exist. There is no entity matches 'Entity:Key'.",
+     *   "instance" : "/minimal/entity-not-found",
+     *   "params" : {
+     *     "entity" : "Entity",
+     *     "key" : "Key"
+     *   },
+     *   "traceId" : "00-4782502e77808f3d0eff63531d30c35b-49c15b7ba6e935a6-00",
+     *   "buildNumber" : "2.16.1.109",
+     *   "commitNumber" : "2.16.1.109",
+     *   "timestamp" : "2025-01-29T20:20:27.8143466+00:00"
+     * }
+     */
+
+    [Fact]
+    public async Task minimal_api_entity_not_found()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/minimal/entity-not-found", stringContent);
+        await _VerifyEntityNotFound(response);
+    }
+
+    private static async Task _VerifyEntityNotFound(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var json = await response.Content.ReadAsStringAsync();
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+            "entity-not-found",
+            404,
+            "The requested entity does not exist. There is no entity matches 'Entity:Key'."
+        );
+
+        jsonElement.GetProperty("params").GetProperty("entity").GetString().Should().Be("Entity");
+        jsonElement.GetProperty("params").GetProperty("key").GetString().Should().Be("Key");
+
+        jsonElement.EnumerateObject().Count().Should().Be(10);
+    }
+
+    #endregion
+
+    #region Internal Error
+
+    [Fact]
+    public async Task minimal_api_internal_error()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/minimal/internal-error", stringContent);
+        await _VerifyInternalServerError(response);
+    }
+
+    private static async Task _VerifyInternalServerError(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var json = await response.Content.ReadAsStringAsync();
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+            "bad-request",
+            400,
+            "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax."
+        );
+
+        jsonElement.EnumerateObject().Count().Should().Be(9);
+    }
+
+    #endregion
+
+    #region Conflict
+
+    /*
+     * {
+     *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+     *   "title" : "conflict-request",
+     *   "status" : 409,
+     *   "detail" : "Conflict request",
+     *   "instance" : "/minimal/conflict",
+     *   "errors" : [ {
+     *     "code" : "key",
+     *     "description" : "value",
+     *     "severity" : "information",
+     *     "params" : null
+     *   } ],
+     *   "traceId" : "00-4cb6fa7facd9168e5149073bc3fdea78-ac6a26b9cf09c4fa-00",
+     *   "buildNumber" : "2.16.1.109",
+     *   "commitNumber" : "2.16.1.109",
+     *   "timestamp" : "2025-01-29T18:57:39.2293695+00:00"
+     * }
+     */
+
+    [Fact]
+    public async Task minimal_api_conflict()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/minimal/conflict", stringContent);
+        await _VerifyConflict(response);
+    }
+
+    [Fact]
+    public async Task mvc_api_conflict()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/mvc/conflict", stringContent);
+        await _VerifyConflict(response);
+    }
+
+    private static async Task _VerifyConflict(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var json = await response.Content.ReadAsStringAsync();
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+            "conflict-request",
+            409,
+            "Conflict request"
+        );
+
+        var errors = jsonElement.GetProperty("errors").EnumerateArray().ToList();
+        errors.Count.Should().Be(1);
+        _ValidateErrorDescriptor(errors[0]);
+        jsonElement.EnumerateObject().Count().Should().Be(10);
+    }
+
+    #endregion
+
+    #region Unprocessable
+
+    /*
+     * {
+     *   "type" : "https://tools.ietf.org/html/rfc4918#section-11.2",
+     *   "title" : "validation-problem",
+     *   "status" : 422,
+     *   "detail" : "One or more validation errors occurred.",
+     *   "errors" : {
+     *     "property" : [ {
+     *       "code" : "Error message",
+     *       "description" : "Error message",
+     *       "severity" : "information",
+     *       "params" : null
+     *     } ]
+     *   },
+     *   "traceId" : "00-b9a104ec955015318f70edcdf19819ce-73494e5484f1a67f-00",
+     *   "buildNumber" : "2.16.1.109",
+     *   "commitNumber" : "2.16.1.109",
+     *   "timestamp" : "2025-01-29T19:37:06.4937153+00:00"
+     * }
+     */
+
+    [Fact]
+    public async Task minimal_api_unprocessable()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/minimal/unprocessable", stringContent);
+        await _VerifyUnprocessable(response);
+    }
+
+    private static async Task _VerifyUnprocessable(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var json = await response.Content.ReadAsStringAsync();
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc4918#section-11.2",
+            "validation-problem",
+            422,
+            "One or more validation errors occurred."
+        );
+
+        var errorsObject = jsonElement.GetProperty("errors").EnumerateObject().ToList();
+        errorsObject.Should().ContainSingle();
+        errorsObject[0].Name.Should().Be("property");
+        var propertyErrorsArray = errorsObject[0].Value.EnumerateArray().ToList();
+        propertyErrorsArray.Count.Should().Be(1);
+        var error = propertyErrorsArray[0];
+        _ValidateErrorDescriptor(error);
+        jsonElement.EnumerateObject().Count().Should().Be(10);
+    }
+
+    #endregion
+
+    #region Helpers
+
+    private static void _ValidateErrorDescriptor(JsonElement error)
+    {
+        error.GetProperty("code").GetString().Should().Be("error-code");
+        error.GetProperty("description").GetString().Should().Be("Error message");
+        error.GetProperty("severity").GetString().Should().Be("information");
+        error.GetProperty("params").ValueKind.Should().Be(JsonValueKind.Null);
+        error.EnumerateObject().Count().Should().Be(4);
+    }
+
+    private static void _ValidateCoreProblemDetails(
+        JsonElement jsonElement,
+        HttpResponseMessage response,
+        string type,
+        string title,
+        int status,
+        string detail
+    )
+    {
+        jsonElement.GetProperty("type").GetString().Should().Be(type);
+        jsonElement.GetProperty("title").GetString().Should().Be(title);
+        jsonElement.GetProperty("status").GetInt32().Should().Be(status);
+        jsonElement.GetProperty("detail").GetString().Should().Be(detail);
         jsonElement.GetProperty("instance").GetString().Should().Be(response.RequestMessage!.RequestUri!.PathAndQuery);
         jsonElement.GetProperty("traceId").GetString().Should().NotBeNullOrWhiteSpace();
         jsonElement.GetProperty("buildNumber").GetString().Should().NotBeNullOrWhiteSpace();
         jsonElement.GetProperty("commitNumber").GetString().Should().NotBeNullOrWhiteSpace();
         jsonElement.GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, 1.Seconds());
-        jsonElement.EnumerateObject().Count().Should().Be(9);
     }
 
     private async Task<WebApplicationFactory<Program>> _CreateDefaultFactory(
@@ -87,4 +332,6 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
             }
         });
     }
+
+    #endregion
 }

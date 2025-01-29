@@ -1,0 +1,48 @@
+﻿using FluentValidation;
+using FluentValidation.Results;
+using Framework.Api.Mvc.Controllers;
+using Framework.Exceptions;
+using Framework.Primitives;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Framework.Api.Demo.Endpoints;
+
+[ApiController]
+[Route("/mvc")]
+public sealed class ProblemsController : ApiControllerBase
+{
+    [HttpGet("malformed-syntax")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetMalformedSyntax()
+    {
+        return MalformedSyntax();
+    }
+
+    [HttpPost("entity-not-found")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetEntityNotFound()
+    {
+        throw new EntityNotFoundException("Entity", "Key");
+    }
+
+    [HttpPost("internal-error")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetInternalError()
+    {
+        throw new InvalidOperationException("This is a test exception.");
+    }
+
+    [HttpPost("conflict")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetConflict()
+    {
+        throw new ConflictException(new ErrorDescriptor("key", "value"));
+    }
+
+    [HttpPost("unprocessable-entity")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetUnprocessableEntity()
+    {
+        throw new ValidationException([new ValidationFailure("Property", "Error message")]);
+    }
+}
