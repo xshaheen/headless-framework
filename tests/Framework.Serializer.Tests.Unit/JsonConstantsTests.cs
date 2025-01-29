@@ -25,7 +25,7 @@ public sealed class JsonConstantsTests
     [Fact]
     public void web_options_deserializer()
     {
-        var model1 = JsonSerializer.Deserialize<TestModel1>(_Json, _options);
+        var model1 = JsonSerializer.Deserialize<TestModel2>(_Json, _options);
 
         model1.Should().BeEquivalentTo(_model1);
     }
