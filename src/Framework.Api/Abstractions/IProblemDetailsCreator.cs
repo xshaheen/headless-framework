@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Framework.Api.Abstractions;
 
-public interface IFrameworkProblemDetailsFactory
+public interface IProblemDetailsCreator
 {
     ProblemDetails EndpointNotFound(HttpContext context);
 
@@ -25,7 +25,7 @@ public interface IFrameworkProblemDetailsFactory
     ProblemDetails InternalError(HttpContext context, string stackTrace);
 }
 
-public sealed class FrameworkProblemDetailsFactory : IFrameworkProblemDetailsFactory
+public sealed class ProblemDetailsCreator : IProblemDetailsCreator
 {
     public ProblemDetails EndpointNotFound(HttpContext context)
     {
@@ -56,7 +56,7 @@ public sealed class FrameworkProblemDetailsFactory : IFrameworkProblemDetailsFac
     {
         return new ProblemDetails
         {
-            Type = $"/errors/{ProblemDetailTitles.BadRequest}",
+            Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
             Title = ProblemDetailTitles.BadRequest,
             Status = StatusCodes.Status400BadRequest,
             Detail =

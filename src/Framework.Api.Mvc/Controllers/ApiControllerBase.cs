@@ -16,7 +16,7 @@ public abstract class ApiControllerBase : ControllerBase
 {
     private IConfiguration? _config;
     private ISender? _sender;
-    private IFrameworkProblemDetailsFactory? _problemDetailsCreator;
+    private IProblemDetailsCreator? _problemDetailsCreator;
 
     protected IConfiguration Configuration =>
         _config ??=
@@ -28,10 +28,14 @@ public abstract class ApiControllerBase : ControllerBase
             HttpContext.RequestServices.GetService<ISender>()
             ?? throw new InvalidOperationException($"{nameof(ISender)} service not registered");
 
-    private IFrameworkProblemDetailsFactory Factory =>
+    protected MvcProblemDetailsNormalizer ProblemDetailsNormalizer =>
+        HttpContext.RequestServices.GetService<MvcProblemDetailsNormalizer>()
+        ?? throw new InvalidOperationException($"{nameof(MvcProblemDetailsNormalizer)} service not registered");
+
+    private IProblemDetailsCreator ProblemDetailsCreator =>
         _problemDetailsCreator ??=
-            HttpContext.RequestServices.GetService<IFrameworkProblemDetailsFactory>()
-            ?? throw new InvalidOperationException($"{nameof(Factory)} service not registered");
+            HttpContext.RequestServices.GetService<IProblemDetailsCreator>()
+            ?? throw new InvalidOperationException($"{nameof(ProblemDetailsCreator)} service not registered");
 
     [NonAction]
     protected async Task<ActionResult> NoContent(IRequest? req, CancellationToken token = default)
@@ -74,7 +78,10 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected BadRequestObjectResult MalformedSyntax()
     {
-        return base.BadRequest(Factory.MalformedSyntax(HttpContext));
+        var problemDetails = ProblemDetailsCreator.MalformedSyntax(HttpContext);
+        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
+
+        return base.BadRequest(problemDetails);
     }
 
     [NonAction]
@@ -92,7 +99,8 @@ public abstract class ApiControllerBase : ControllerBase
                 StringComparer.Ordinal
             );
 
-        var problemDetails = Factory.UnprocessableEntity(HttpContext, errors);
+        var problemDetails = ProblemDetailsCreator.UnprocessableEntity(HttpContext, errors);
+        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.UnprocessableEntity(problemDetails);
     }
@@ -100,7 +108,8 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected NotFoundObjectResult NotFoundProblemDetails(string entity, string key)
     {
-        var problemDetails = Factory.EntityNotFound(HttpContext, entity, key);
+        var problemDetails = ProblemDetailsCreator.EntityNotFound(HttpContext, entity, key);
+        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.NotFound(problemDetails);
     }
@@ -108,7 +117,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(IEnumerable<ErrorDescriptor> errorDescriptors)
     {
-        var problemDetails = Factory.Conflict(HttpContext, errorDescriptors);
+        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, errorDescriptors);
 
         return base.Conflict(problemDetails);
     }
@@ -116,7 +125,8 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(ErrorDescriptor errorDescriptor)
     {
-        var problemDetails = Factory.Conflict(HttpContext, [errorDescriptor]);
+        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, [errorDescriptor]);
+        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.Conflict(problemDetails);
     }
