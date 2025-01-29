@@ -187,11 +187,6 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
 
     private async Task _HandleInternalError(ExceptionContext context)
     {
-        if (_environment.IsDevelopmentOrTest())
-        {
-            return;
-        }
-
         var problemDetails = _problemDetailsCreator.InternalError(context.HttpContext);
 
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);

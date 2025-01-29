@@ -45,9 +45,7 @@ public static class ProblemsEndpoints
             "unprocessable",
             () =>
             {
-                throw new ValidationException(
-                    [new ValidationFailure("Property", "Error message") { ErrorCode = "error-code" }]
-                );
+                throw new ValidationException([new("Property", "Error message") { ErrorCode = "error-code" }]);
             }
         );
     }
