@@ -55,11 +55,6 @@ public static class ApiRegistration
                 context.ProblemDetails.Extensions["buildNumber"] = buildInformationAccessor.GetBuildNumber();
                 context.ProblemDetails.Extensions["commitNumber"] = buildInformationAccessor.GetCommitNumber();
                 context.ProblemDetails.Extensions["timestamp"] = timeProvider.GetUtcNow().ToString("O");
-
-                if (context.Exception is not null && builder.Environment.IsDevelopmentOrTest())
-                {
-                    context.ProblemDetails.Extensions["stackTrace"] = context.Exception.ExpandMessage();
-                }
             };
         });
 

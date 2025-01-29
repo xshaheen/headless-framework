@@ -51,13 +51,10 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
             "https://tools.ietf.org/html/rfc9110#section-15.5.5",
             "endpoint-not-found",
             404,
-            "The requested endpoint '/minimal/12345678' was not found."
+            "The requested endpoint '/12345678' was not found."
         );
 
-        jsonElement.GetProperty("params").GetProperty("entity").GetString().Should().Be("Entity");
-        jsonElement.GetProperty("params").GetProperty("key").GetString().Should().Be("Key");
-
-        jsonElement.EnumerateObject().Count().Should().Be(10);
+        jsonElement.EnumerateObject().Count().Should().Be(9);
     }
 
     #endregion
@@ -146,6 +143,16 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
         await _VerifyEntityNotFound(response);
     }
 
+    [Fact]
+    public async Task mvc_entity_not_found()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/mvc/entity-not-found", stringContent);
+        await _VerifyEntityNotFound(response);
+    }
+
     private static async Task _VerifyEntityNotFound(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -202,7 +209,7 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
     }
 
     [Fact]
-    public async Task mvc_api_conflict()
+    public async Task mvc_conflict()
     {
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
@@ -267,6 +274,16 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
         await _VerifyUnprocessable(response);
     }
 
+    [Fact]
+    public async Task mvc_unprocessable()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/mvc/unprocessable-entity", stringContent);
+        await _VerifyUnprocessable(response);
+    }
+
     private static async Task _VerifyUnprocessable(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
@@ -294,7 +311,9 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
 
     #endregion
 
-    #region Internal Error
+    #region Internal Error (UseExceptionHandler)
+
+    // UseExceptionHandler
 
     /*
      * {
@@ -310,6 +329,33 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
      * }
      */
 
+    // UseDeveloperExceptionHandler
+
+    /*
+     * {
+     *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+     *   "title" : "System.InvalidOperationException",
+     *   "status" : 500,
+     *   "detail" : "This is a test exception.",
+     *   "instance" : "/minimal/internal-error",
+     *   "exception" : {
+     *     "details" : "System.InvalidOperationException: This is a test exception.\r\n   at Framework.Api.Demo.Endpoints.ProblemsEndpoints.<>c.<MapProblemsEndpoints>b__0_2() in D:\\Dev\\framework\\cs-framework\\demo\\Framework.Api.Demo\\Endpoints\\ProblemsEndpoints.cs:line 32\r\n   at lambda_method48(Closure, EndpointFilterInvocationContext)\r\n   at Microsoft.AspNetCore.Builder.MinimalApiExceptionFilter.InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) in D:\\Dev\\framework\\cs-framework\\src\\Framework.Api.MinimalApi\\Filters\\MinimalApiExceptionFilter.cs:line 43\r\n   at Microsoft.AspNetCore.Http.RequestDelegateFactory.<ExecuteValueTaskOfObject>g__ExecuteAwaited|128_0(ValueTask`1 valueTask, HttpContext httpContext, JsonTypeInfo`1 jsonTypeInfo)\r\n   at NSwag.AspNetCore.Middlewares.SwaggerUiIndexMiddleware.Invoke(HttpContext context)\r\n   at NSwag.AspNetCore.Middlewares.RedirectToIndexMiddleware.Invoke(HttpContext context)\r\n   at NSwag.AspNetCore.Middlewares.OpenApiDocumentMiddleware.Invoke(HttpContext context)\r\n   at Framework.Api.Middlewares.StatusCodesRewriterMiddleware.InvokeAsync(HttpContext context, RequestDelegate next) in D:\\Dev\\framework\\cs-framework\\src\\Framework.Api\\Middlewares\\StatusCodesRewriterMiddleware.cs:line 13\r\n   at Microsoft.AspNetCore.Builder.UseMiddlewareExtensions.InterfaceMiddlewareBinder.<>c__DisplayClass2_0.<<CreateMiddleware>b__0>d.MoveNext()\r\n--- End of stack trace from previous location ---\r\n   at Microsoft.AspNetCore.Diagnostics.DeveloperExceptionPageMiddlewareImpl.Invoke(HttpContext context)",
+     *     "headers" : {
+     *       "content-Type" : [ "text/plain; charset=utf-8" ],
+     *       "content-Length" : [ "0" ],
+     *       "host" : [ "localhost" ]
+     *     },
+     *     "path" : "/minimal/internal-error",
+     *     "endpoint" : "HTTP: POST minimal/internal-error",
+     *     "routeValues" : null
+     *   },
+     *   "traceId" : "00-988ce453442fc521ec4ed1e5aba288a6-de267659253f8c4d-00",
+     *   "buildNumber" : "2.16.1.109",
+     *   "commitNumber" : "2.16.1.109",
+     *   "timestamp" : "2025-01-29T21:59:34.4677538+00:00"
+     * }
+     */
+
     [Fact]
     public async Task minimal_api_internal_error()
     {
@@ -317,6 +363,16 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/minimal/internal-error", stringContent);
+        await _VerifyInternalServerError(response);
+    }
+
+    [Fact]
+    public async Task mvc_internal_error()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/mvc/internal-error", stringContent);
         await _VerifyInternalServerError(response);
     }
 
@@ -330,12 +386,13 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
             jsonElement,
             response,
             "https://tools.ietf.org/html/rfc9110#section-15.6.1",
-            "unhandled-exception",
+            "System.InvalidOperationException",
             500,
-            "An error occurred while processing your request."
+            "This is a test exception."
         );
 
-        jsonElement.EnumerateObject().Count().Should().Be(9);
+        jsonElement.GetProperty("exception").EnumerateObject().Should().HaveCountGreaterThan(0);
+        jsonElement.EnumerateObject().Count().Should().Be(10);
     }
 
     #endregion
