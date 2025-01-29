@@ -49,17 +49,17 @@ public sealed class PhoneNumberTests
         result.Should().Be("EG");
     }
 
-    [Fact]
-    public void normalize_single_string_should_return_correct_format()
+    [Theory]
+    [InlineData(20, "1018541323", "+201018541323")]
+    [InlineData(20, "01018541323", "+201018541323")]
+    [InlineData(20, "010 18541 323", "+201018541323")]
+    public void normalize_single_string_should_return_correct_format(int code, string number, string expected)
     {
-        // given
-        const string number = " 010 18541 323";
-
         // when
-        var normalized = PhoneNumber.Normalize(number);
+        var normalized = PhoneNumber.Normalize(code, number);
 
         // then
-        normalized.Should().Be("01018541323");
+        normalized.Should().Be(expected);
     }
 
     [Fact]
