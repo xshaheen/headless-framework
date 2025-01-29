@@ -133,7 +133,6 @@ file sealed class Build : NukeBuild
     Target Pack =>
         x =>
             x.Description("Creates NuGet packages and outputs them to the artifacts directory.")
-                // .DependsOn(Compile)
                 .Executes(() =>
                 {
                     DotNetPack(settings =>
