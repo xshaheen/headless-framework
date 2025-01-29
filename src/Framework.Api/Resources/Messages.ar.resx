@@ -110,7 +110,7 @@
     <value>يتطلب تسجيل الدخول المصادقة الثنائية.</value>
   </data>
   <data name="auth:user_locked_out" xml:space="preserve">
-    <value>لقد حاولت إدخال كلمة المرور عدة مرات. الحساب معلق مؤقتا. حاول مرة أخرى في وقت لاحق.</value>
+    <value>لقد حاولت عدة مرات. الحساب معلق مؤقتا. حاول مرة أخرى في وقت لاحق.</value>
   </data>
   <data name="auth:user_requires_alternate_login_or_password" xml:space="preserve">
     <value>لا يمكن حذف تسجيل الدخول الخارجي. لا يوجد طريقة تسجيل آخري يرجى تعيين كلمة سر أولاً.</value>

@@ -8,6 +8,9 @@
 //------------------------------------------------------------------------------
 
 namespace Framework.Api.Resources {
+    using System;
+    
+    
     /// <summary>
     ///   A strongly-typed resource class, for looking up localized strings, etc.
     /// </summary>
@@ -336,7 +339,7 @@ namespace Framework.Api.Resources {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to You tried to enter password many times. The account temporarily suspended. Try again later..
+        ///   Looks up a localized string similar to You tried many times. The account temporarily suspended. Try again later..
         /// </summary>
         internal static string auth_user_locked_out {
             get {
