@@ -22,7 +22,6 @@ namespace Microsoft.AspNetCore.Builder;
 [PublicAPI]
 public sealed partial class MinimalApiExceptionFilter(
     IProblemDetailsCreator problemDetailsCreator,
-    IHostEnvironment environment,
     ILogger<MinimalApiExceptionFilter> logger
 ) : IEndpointFilter
 {
@@ -114,11 +113,6 @@ public sealed partial class MinimalApiExceptionFilter(
             if (exception is { InnerException: OperationCanceledException })
             {
                 return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
-            }
-
-            if (environment.IsDevelopmentOrTest())
-            {
-                return TypedResults.StatusCode(StatusCodes.Status500InternalServerError);
             }
 
             var details = problemDetailsCreator.InternalError(context.HttpContext);

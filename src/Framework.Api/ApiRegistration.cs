@@ -43,10 +43,6 @@ public static class ApiRegistration
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddResilienceEnricher();
 
-        builder.Services.AddServerTimingMiddleware();
-        builder.Services.AddCustomStatusCodesRewriterMiddleware();
-        builder.Services.AddRequestCanceledMiddleware();
-
         builder.Services.AddProblemDetails(options =>
         {
             options.CustomizeProblemDetails += context =>
@@ -112,11 +108,6 @@ public static class ApiRegistration
             // Turn on resilience by default
             http.AddStandardResilienceHandler();
         });
-    }
-
-    public static void UseFrameworkApi(this WebApplication app)
-    {
-        app.UseSecurityHeaders();
     }
 
     public static IDisposable AddApiBadRequestDiagnosticListeners(this WebApplication app)

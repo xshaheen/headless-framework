@@ -11,11 +11,57 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-[Collection(nameof(Fixture))]
-public sealed class Fixture : ICollectionFixture<Fixture> { }
-
 public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(output)
 {
+    #region Entity Not Found (Middleware rewriter)
+
+    /*
+     * {
+     *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+     *   "title" : "endpoint-not-found",
+     *   "status" : 404,
+     *   "detail" : "The requested endpoint '/minimal/12345678' was not found.",
+     *   "instance" : "/minimal/12345678",
+     *   "traceId" : "00-f67982d0996492c0607b5cb52cc5fd8b-97a0db435cd3152d-00",
+     *   "buildNumber" : "2.16.1.109",
+     *   "commitNumber" : "2.16.1.109",
+     *   "timestamp" : "2025-01-29T20:58:22.4696294+00:00"
+     * }
+     */
+
+    [Fact]
+    public async Task endpoint_not_found()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/12345678", stringContent);
+        await _VerifyEndpointNotFound(response);
+    }
+
+    private static async Task _VerifyEndpointNotFound(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var json = await response.Content.ReadAsStringAsync();
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+            "endpoint-not-found",
+            404,
+            "The requested endpoint '/minimal/12345678' was not found."
+        );
+
+        jsonElement.GetProperty("params").GetProperty("entity").GetString().Should().Be("Entity");
+        jsonElement.GetProperty("params").GetProperty("key").GetString().Should().Be("Key");
+
+        jsonElement.EnumerateObject().Count().Should().Be(10);
+    }
+
+    #endregion
+
     #region Malformed Syntax
 
     /*
@@ -119,38 +165,6 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
         jsonElement.GetProperty("params").GetProperty("key").GetString().Should().Be("Key");
 
         jsonElement.EnumerateObject().Count().Should().Be(10);
-    }
-
-    #endregion
-
-    #region Internal Error
-
-    [Fact]
-    public async Task minimal_api_internal_error()
-    {
-        await using var factory = await _CreateDefaultFactory();
-        using var client = factory.CreateClient();
-        using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/minimal/internal-error", stringContent);
-        await _VerifyInternalServerError(response);
-    }
-
-    private static async Task _VerifyInternalServerError(HttpResponseMessage response)
-    {
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        var json = await response.Content.ReadAsStringAsync();
-        var jsonElement = JsonDocument.Parse(json).RootElement;
-
-        _ValidateCoreProblemDetails(
-            jsonElement,
-            response,
-            "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-            "bad-request",
-            400,
-            "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax."
-        );
-
-        jsonElement.EnumerateObject().Count().Should().Be(9);
     }
 
     #endregion
@@ -280,6 +294,52 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
 
     #endregion
 
+    #region Internal Error
+
+    /*
+     * {
+     *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+     *   "title" : "unhandled-exception",
+     *   "status" : 500,
+     *   "detail" : "An error occurred while processing your request.",
+     *   "instance" : "/minimal/internal-error",
+     *   "traceId" : "00-eb923ba0d504831499a6fa0e0bfc56da-a2246692e80f630e-00",
+     *   "buildNumber" : "2.16.1.109",
+     *   "commitNumber" : "2.16.1.109",
+     *   "timestamp" : "2025-01-29T20:50:45.1595209+00:00"
+     * }
+     */
+
+    [Fact]
+    public async Task minimal_api_internal_error()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var stringContent = new StringContent(string.Empty);
+        using var response = await client.PostAsync("/minimal/internal-error", stringContent);
+        await _VerifyInternalServerError(response);
+    }
+
+    private static async Task _VerifyInternalServerError(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        var json = await response.Content.ReadAsStringAsync();
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+            "unhandled-exception",
+            500,
+            "An error occurred while processing your request."
+        );
+
+        jsonElement.EnumerateObject().Count().Should().Be(9);
+    }
+
+    #endregion
+
     #region Helpers
 
     private static void _ValidateErrorDescriptor(JsonElement error)
@@ -322,7 +382,7 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
 
         return factory.WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment(EnvironmentNames.Test);
+            builder.UseEnvironment(EnvironmentNames.Development);
             builder.ConfigureLogging(loggingBuilder => loggingBuilder.ClearProviders().AddProvider(LoggerProvider));
             configureHost?.Invoke(builder);
 
