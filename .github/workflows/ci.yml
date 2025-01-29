@@ -61,6 +61,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: ".NET Nuke Build"
+        run: ./build.ps1 Compile -Configuration ${{ env.CONFIGURATION }}
+        shell: pwsh
+
       - name: ".NET Nuke Pack"
         run: ./build.ps1 Pack -Configuration ${{ env.CONFIGURATION }}
         shell: pwsh
