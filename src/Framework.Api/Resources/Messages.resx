@@ -109,7 +109,7 @@
     <value>Email is already linked to this account.</value>
   </data>
   <data name="auth:user_locked_out" xml:space="preserve">
-    <value>You tried to enter password many times. The account temporarily suspended. Try again later.</value>
+    <value>You tried many times. The account temporarily suspended. Try again later.</value>
   </data>
   <data name="auth:login_requires_confirmation" xml:space="preserve">
     <value>User cannot sign in without a confirmed account.</value>
