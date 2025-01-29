@@ -6,14 +6,9 @@ using Framework.Api.Abstractions;
 using Framework.Api.Resources;
 using Framework.Constants;
 using Framework.Exceptions;
-using Framework.FluentValidation;
-using Framework.Primitives;
-using Humanizer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Net.Http.Headers;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -50,24 +45,7 @@ public sealed partial class MinimalApiExceptionFilter(
         }
         catch (ValidationException exception)
         {
-            var errors = exception
-                .Errors.GroupBy(
-                    failure => failure.PropertyName,
-                    failure => new ErrorDescriptor(
-                        code: string.IsNullOrEmpty(failure.ErrorCode)
-                            ? failure.ErrorMessage
-                            : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
-                        description: failure.ErrorMessage,
-                        paramsDictionary: failure.FormattedMessagePlaceholderValues
-                    ),
-                    StringComparer.Ordinal
-                )
-                .ToDictionary(
-                    failureGroup => failureGroup.Key.Camelize(),
-                    failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
-                    StringComparer.Ordinal
-                );
-
+            var errors = exception.Errors.ToErrorDescriptors();
             var details = problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
 
             return TypedResults.Problem(details);

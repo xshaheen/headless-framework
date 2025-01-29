@@ -7,9 +7,6 @@ using Framework.Api.Abstractions;
 using Framework.Api.Resources;
 using Framework.Constants;
 using Framework.Exceptions;
-using Framework.FluentValidation;
-using Framework.Primitives;
-using Humanizer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
@@ -87,24 +84,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
 
         Debug.Assert(exception is not null);
 
-        var errors = exception
-            .Errors.GroupBy(
-                failure => failure.PropertyName,
-                failure => new ErrorDescriptor(
-                    code: string.IsNullOrEmpty(failure.ErrorCode)
-                        ? failure.ErrorMessage
-                        : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
-                    description: failure.ErrorMessage,
-                    paramsDictionary: failure.FormattedMessagePlaceholderValues
-                ),
-                StringComparer.Ordinal
-            )
-            .ToDictionary(
-                failureGroup => failureGroup.Key.Camelize(),
-                failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
-                StringComparer.Ordinal
-            );
-
+        var errors = exception.Errors.ToErrorDescriptors();
         var problemDetails = _problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;

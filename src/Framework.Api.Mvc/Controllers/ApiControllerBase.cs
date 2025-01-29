@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using FluentValidation.Results;
 using Framework.Api.Abstractions;
 using Framework.Primitives;
@@ -87,18 +88,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected UnprocessableEntityObjectResult UnprocessableEntityProblemDetails(IEnumerable<ValidationFailure> failures)
     {
-        var errors = failures
-            .GroupBy(
-                static failure => failure.PropertyName,
-                static failure => new ErrorDescriptor(failure.ErrorCode, failure.ErrorMessage),
-                StringComparer.Ordinal
-            )
-            .ToDictionary(
-                static failureGroup => failureGroup.Key,
-                static failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
-                StringComparer.Ordinal
-            );
-
+        var errors = failures.ToErrorDescriptors();
         var problemDetails = ProblemDetailsCreator.UnprocessableEntity(HttpContext, errors);
         ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
