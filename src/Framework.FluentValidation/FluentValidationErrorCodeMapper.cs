@@ -1,14 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Framework.FluentValidation;
 
 [PublicAPI]
 public static class FluentValidationErrorCodeMapper
 {
-    public static string MapToApplicationErrorCode(string errorCode)
+    [return: NotNullIfNotNull(nameof(errorCode))]
+    public static string? MapToApplicationErrorCode(string? errorCode)
     {
         return errorCode switch
         {
+            null => null,
             "EmailValidator" => "g:invalid_email",
             "CreditCardValidator" => "g:invalid_credit_card",
             "GreaterThanOrEqualValidator" => "g:greater_than_or_equal",

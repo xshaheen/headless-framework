@@ -91,7 +91,9 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
             .Errors.GroupBy(
                 failure => failure.PropertyName,
                 failure => new ErrorDescriptor(
-                    code: FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
+                    code: string.IsNullOrEmpty(failure.ErrorCode)
+                        ? failure.ErrorMessage
+                        : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
                     description: failure.ErrorMessage,
                     paramsDictionary: failure.FormattedMessagePlaceholderValues
                 ),
@@ -190,10 +192,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
             return;
         }
 
-        var problemDetails = _problemDetailsCreator.InternalError(
-            context.HttpContext,
-            context.Exception.ExpandMessage()
-        );
+        var problemDetails = _problemDetailsCreator.InternalError(context.HttpContext);
 
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
 

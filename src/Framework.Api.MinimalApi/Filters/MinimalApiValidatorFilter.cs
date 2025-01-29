@@ -4,7 +4,9 @@ using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Api.MinimalApi.Filters;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.AspNetCore.Builder;
 
 [PublicAPI]
 public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
