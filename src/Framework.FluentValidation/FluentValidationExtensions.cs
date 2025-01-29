@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation.Results;
+using Framework.FluentValidation;
 using Framework.Primitives;
 
 #pragma warning disable IDE0130
@@ -31,5 +33,56 @@ public static class FluentValidationExtensions
             > ValidationSeverity.Error => Severity.Error,
             < ValidationSeverity.Information => Severity.Info,
         };
+    }
+
+    public static Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptors(
+        this IEnumerable<ValidationFailure> failures
+    )
+    {
+        return failures
+            .GroupBy(
+                failure => failure.PropertyName,
+                failure => new ErrorDescriptor(
+                    code: string.IsNullOrEmpty(failure.ErrorCode)
+                        ? failure.ErrorMessage
+                        : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
+                    description: failure.ErrorMessage,
+                    paramsDictionary: failure.FormattedMessagePlaceholderValues
+                ),
+                StringComparer.Ordinal
+            )
+            .ToDictionary(
+                failureGroup => _NormalizePropertyName(failureGroup.Key),
+                failureGroup => (List<ErrorDescriptor>)[.. failureGroup],
+                StringComparer.Ordinal
+            );
+    }
+
+    private static string _NormalizePropertyName(string propertyName)
+    {
+        if (string.IsNullOrEmpty(propertyName))
+        {
+            return propertyName;
+        }
+
+        var parts = propertyName.Split('.');
+
+        // camelCase all the parts
+        var newSpan = new char[propertyName.Length];
+        var index = 0;
+
+        foreach (var part in parts)
+        {
+            if (index > 0)
+            {
+                newSpan[index++] = '.';
+            }
+
+            newSpan[index++] = char.ToLowerInvariant(part[0]);
+            part.AsSpan(1).CopyTo(newSpan.AsSpan(index));
+            index += part.Length - 1;
+        }
+
+        return new string(newSpan, 0, index);
     }
 }

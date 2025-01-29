@@ -15,12 +15,9 @@ public interface IProblemDetailsCreator
 
     ProblemDetails MalformedSyntax(HttpContext context);
 
-    ProblemDetails UnprocessableEntity(
-        HttpContext context,
-        IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> errorDescriptors
-    );
+    ProblemDetails UnprocessableEntity(HttpContext context, Dictionary<string, List<ErrorDescriptor>> errors);
 
-    ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errorDescriptors);
+    ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errors);
 
     ProblemDetails InternalError(HttpContext context);
 }
@@ -59,28 +56,25 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails UnprocessableEntity(
-        HttpContext context,
-        IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> errorDescriptors
-    )
+    public ProblemDetails UnprocessableEntity(HttpContext context, Dictionary<string, List<ErrorDescriptor>> errors)
     {
         return new ProblemDetails
         {
             Title = ProblemDetailTitles.ValidationProblem,
             Status = StatusCodes.Status422UnprocessableEntity,
             Detail = "One or more validation errors occurred.",
-            Extensions = { ["errors"] = errorDescriptors },
+            Extensions = { ["errors"] = errors },
         };
     }
 
-    public ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errorDescriptors)
+    public ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errors)
     {
         return new ProblemDetails
         {
             Status = StatusCodes.Status409Conflict,
             Title = ProblemDetailTitles.ConflictRequest,
             Detail = "Conflict request",
-            Extensions = { ["errors"] = errorDescriptors },
+            Extensions = { ["errors"] = errors },
         };
     }
 
