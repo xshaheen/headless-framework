@@ -798,4 +798,34 @@ public static class StringExtensions
     {
         return str.TryParse(null, out value);
     }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static string NormalizePropertyPath(this string propertyName)
+    {
+        if (string.IsNullOrEmpty(propertyName))
+        {
+            return propertyName;
+        }
+
+        var parts = propertyName.Split('.');
+
+        // camelCase all the parts
+        var newSpan = new char[propertyName.Length];
+        var index = 0;
+
+        foreach (var part in parts)
+        {
+            if (index > 0)
+            {
+                newSpan[index++] = '.';
+            }
+
+            newSpan[index++] = char.ToLowerInvariant(part[0]);
+            part.AsSpan(1).CopyTo(newSpan.AsSpan(index));
+            index += part.Length - 1;
+        }
+
+        return new string(newSpan, 0, index);
+    }
 }
