@@ -115,9 +115,7 @@ public sealed partial class MinimalApiExceptionFilter(
                 return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
             }
 
-            var details = problemDetailsCreator.InternalError(context.HttpContext);
-
-            return TypedResults.Problem(details);
+            throw;
         }
     }
 

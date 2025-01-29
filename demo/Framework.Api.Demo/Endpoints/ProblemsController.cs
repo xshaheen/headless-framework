@@ -36,13 +36,13 @@ public sealed class ProblemsController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetConflict()
     {
-        throw new ConflictException(new ErrorDescriptor("key", "value"));
+        throw new ConflictException(new ErrorDescriptor("error-code", "Error message"));
     }
 
     [HttpPost("unprocessable-entity")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetUnprocessableEntity()
     {
-        throw new ValidationException([new ValidationFailure("Property", "Error message")]);
+        throw new ValidationException([new("Property", "Error message") { ErrorCode = "error-code" }]);
     }
 }

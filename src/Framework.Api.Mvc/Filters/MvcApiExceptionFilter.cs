@@ -164,9 +164,12 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
     {
         LogUnhandledException(_logger, context.Exception);
 
-        return context.Exception is { InnerException: OperationCanceledException }
-            ? _HandleRequestCanceledException(context)
-            : _HandleInternalError(context);
+        if (context.Exception is { InnerException: OperationCanceledException })
+        {
+            return _HandleRequestCanceledException(context);
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>Handle NotImplementedException.</summary>
@@ -181,15 +184,6 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
     private static async Task _HandleTimeoutExceptions(ExceptionContext context)
     {
         await Results.Problem(statusCode: StatusCodes.Status408RequestTimeout).ExecuteAsync(context.HttpContext);
-
-        context.ExceptionHandled = true;
-    }
-
-    private async Task _HandleInternalError(ExceptionContext context)
-    {
-        var problemDetails = _problemDetailsCreator.InternalError(context.HttpContext);
-
-        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
 
         context.ExceptionHandled = true;
     }

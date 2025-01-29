@@ -18,6 +18,15 @@ builder.Services.AddControllers();
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopmentOrTest())
+{
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler();
+}
+
 app.UseCustomStatusCodesRewriter();
 app.MapFrameworkNswagOpenApi();
 app.MapControllers();
