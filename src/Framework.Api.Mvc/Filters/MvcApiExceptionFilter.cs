@@ -9,6 +9,7 @@ using Framework.Constants;
 using Framework.Exceptions;
 using Framework.FluentValidation;
 using Framework.Primitives;
+using Humanizer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
@@ -97,7 +98,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
                 StringComparer.Ordinal
             )
             .ToDictionary(
-                failureGroup => failureGroup.Key,
+                failureGroup => failureGroup.Key.Camelize(),
                 failureGroup => (IReadOnlyList<ErrorDescriptor>)[.. failureGroup],
                 StringComparer.Ordinal
             );
