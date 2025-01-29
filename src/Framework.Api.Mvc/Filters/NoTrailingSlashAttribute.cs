@@ -37,7 +37,7 @@ public sealed class NoTrailingSlashAttribute : Attribute, IAsyncResourceFilter
     private static async Task _HandleTrailingSlashRequest(ResourceExecutingContext context)
     {
         var serviceProvider = context.HttpContext.RequestServices;
-        var factory = serviceProvider.GetRequiredService<IFrameworkProblemDetailsFactory>();
+        var factory = serviceProvider.GetRequiredService<IProblemDetailsCreator>();
         var problemDetails = factory.EndpointNotFound(context.HttpContext);
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
     }

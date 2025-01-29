@@ -20,18 +20,18 @@ namespace Framework.Api.Mvc.Filters;
 [PublicAPI]
 public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
 {
-    private readonly IFrameworkProblemDetailsFactory _problemDetailsFactory;
+    private readonly IProblemDetailsCreator _problemDetailsCreator;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<MvcApiExceptionFilter> _logger;
     private readonly Dictionary<Type, Func<ExceptionContext, Task>> _exceptionHandlers;
 
     public MvcApiExceptionFilter(
-        IFrameworkProblemDetailsFactory problemDetailsFactory,
+        IProblemDetailsCreator problemDetailsCreator,
         IHostEnvironment environment,
         ILogger<MvcApiExceptionFilter> logger
     )
     {
-        _problemDetailsFactory = problemDetailsFactory;
+        _problemDetailsCreator = problemDetailsCreator;
         _environment = environment;
         _logger = logger;
 
@@ -102,7 +102,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
                 StringComparer.Ordinal
             );
 
-        var problemDetails = _problemDetailsFactory.UnprocessableEntity(context.HttpContext, errors);
+        var problemDetails = _problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
@@ -113,7 +113,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
         var exception = context.Exception as EntityNotFoundException;
         Debug.Assert(exception is not null);
 
-        var problemDetails = _problemDetailsFactory.EntityNotFound(
+        var problemDetails = _problemDetailsCreator.EntityNotFound(
             context.HttpContext,
             exception.Entity,
             exception.Key
@@ -130,7 +130,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
         var exception = context.Exception as ConflictException;
         Debug.Assert(exception is not null);
 
-        var problemDetails = _problemDetailsFactory.Conflict(context.HttpContext, exception.Errors);
+        var problemDetails = _problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
@@ -140,7 +140,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
     {
         LogDbConcurrencyException(_logger, context.Exception);
 
-        var problemDetails = _problemDetailsFactory.Conflict(
+        var problemDetails = _problemDetailsCreator.Conflict(
             context.HttpContext,
             [GeneralMessageDescriber.ConcurrencyFailure()]
         );
@@ -189,7 +189,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
             return;
         }
 
-        var problemDetails = _problemDetailsFactory.InternalError(
+        var problemDetails = _problemDetailsCreator.InternalError(
             context.HttpContext,
             context.Exception.ExpandMessage()
         );

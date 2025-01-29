@@ -18,7 +18,7 @@ namespace Framework.Api.MinimalApi.Filters;
 
 [PublicAPI]
 public sealed partial class MinimalApiExceptionFilter(
-    IFrameworkProblemDetailsFactory problemDetailsFactory,
+    IProblemDetailsCreator problemDetailsCreator,
     IHostEnvironment environment,
     ILogger<MinimalApiExceptionFilter> logger
 ) : IEndpointFilter
@@ -42,7 +42,7 @@ public sealed partial class MinimalApiExceptionFilter(
         }
         catch (ConflictException exception)
         {
-            var details = problemDetailsFactory.Conflict(context.HttpContext, exception.Errors);
+            var details = problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
 
             return TypedResults.Problem(details);
         }
@@ -64,7 +64,7 @@ public sealed partial class MinimalApiExceptionFilter(
                     StringComparer.Ordinal
                 );
 
-            var details = problemDetailsFactory.UnprocessableEntity(context.HttpContext, errors);
+            var details = problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
 
             context.HttpContext.Response.Headers[HeaderNames.CacheControl] = "no-cache, no-store, must-revalidate";
             context.HttpContext.Response.Headers[HeaderNames.Pragma] = "no-cache";
@@ -75,7 +75,7 @@ public sealed partial class MinimalApiExceptionFilter(
         }
         catch (EntityNotFoundException exception)
         {
-            var details = problemDetailsFactory.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
+            var details = problemDetailsCreator.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
 
             return TypedResults.Problem(details);
         }
@@ -84,7 +84,7 @@ public sealed partial class MinimalApiExceptionFilter(
         {
             LogDbConcurrencyException(logger, exception);
 
-            var details = problemDetailsFactory.Conflict(
+            var details = problemDetailsCreator.Conflict(
                 context.HttpContext,
                 [GeneralMessageDescriber.ConcurrencyFailure()]
             );
@@ -121,7 +121,7 @@ public sealed partial class MinimalApiExceptionFilter(
                 return TypedResults.StatusCode(StatusCodes.Status500InternalServerError);
             }
 
-            var details = problemDetailsFactory.InternalError(context.HttpContext, exception.ExpandMessage());
+            var details = problemDetailsCreator.InternalError(context.HttpContext, exception.ExpandMessage());
 
             return TypedResults.Problem(details);
         }

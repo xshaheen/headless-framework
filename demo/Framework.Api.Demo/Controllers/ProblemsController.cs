@@ -1,14 +1,15 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Framework.Api.Mvc.Controllers;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Framework.Api.Demo.Controllers;
 
 [ApiController]
-public sealed class ProblemsController : ControllerBase
+public sealed class ProblemsController : ApiControllerBase
 {
-    [HttpGet("/")]
+    [HttpGet("/mvc/malformed-syntax")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult Get()
+    public ActionResult GetMalformedSyntax()
     {
-        return Ok("Hello World!");
+        return MalformedSyntax();
     }
 }

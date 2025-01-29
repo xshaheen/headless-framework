@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 
 namespace Framework.Api.Middlewares;
 
-public sealed class StatusCodesRewriterMiddleware(IFrameworkProblemDetailsFactory problemDetailsFactory) : IMiddleware
+public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problemDetailsCreator) : IMiddleware
 {
     /// <summary>Executes the middleware.</summary>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
@@ -26,7 +26,7 @@ public sealed class StatusCodesRewriterMiddleware(IFrameworkProblemDetailsFactor
 
         if (context.Response.StatusCode is StatusCodes.Status404NotFound)
         {
-            var problemDetails = problemDetailsFactory.EndpointNotFound(context);
+            var problemDetails = problemDetailsCreator.EndpointNotFound(context);
 
             await Results.Problem(problemDetails).ExecuteAsync(context);
         }

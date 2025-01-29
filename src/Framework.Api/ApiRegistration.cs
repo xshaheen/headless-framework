@@ -48,7 +48,7 @@ public static class ApiRegistration
 
         builder.Services.AddProblemDetails(options =>
         {
-            options.CustomizeProblemDetails = context =>
+            options.CustomizeProblemDetails += context =>
             {
                 var services = context.HttpContext.RequestServices;
                 var buildInformationAccessor = services.GetRequiredService<IBuildInformationAccessor>();
@@ -78,7 +78,7 @@ public static class ApiRegistration
         builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
         builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
-        builder.Services.TryAddSingleton<IFrameworkProblemDetailsFactory, FrameworkProblemDetailsFactory>();
+        builder.Services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
         builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
