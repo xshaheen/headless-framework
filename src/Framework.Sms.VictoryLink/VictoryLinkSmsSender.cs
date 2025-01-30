@@ -19,7 +19,7 @@ public sealed class VictoryLinkSmsSender(
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(request);
@@ -37,8 +37,8 @@ public sealed class VictoryLinkSmsSender(
                 : request.Destinations[0].Number,
         };
 
-        var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, token);
-        var rawContent = await response.Content.ReadAsStringAsync(token);
+        var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, cancellationToken);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {

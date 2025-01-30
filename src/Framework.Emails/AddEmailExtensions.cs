@@ -6,11 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Framework.Emails;
 
 [PublicAPI]
-public static class AddDevEmailExtensions
+public static class AddEmailExtensions
 {
-    public static IServiceCollection AddDevEmailSender(this IServiceCollection services)
+    public static IServiceCollection AddDevEmailSender(this IServiceCollection services, string filePath)
     {
-        services.AddSingleton<IEmailSender, DevEmailSender>();
+        services.AddSingleton<IEmailSender>(new DevEmailSender(filePath));
 
         return services;
     }

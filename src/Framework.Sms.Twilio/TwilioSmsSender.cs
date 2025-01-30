@@ -20,7 +20,7 @@ public sealed class TwilioSmsSender : ISmsSender
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotEmpty(request.Destinations);

@@ -6,11 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Framework.Sms;
 
 [PublicAPI]
-public static class AddDevSmsExtensions
+public static class AddSmsExtensions
 {
-    public static void AddDevSmsSender(this IServiceCollection services)
+    public static void AddDevSmsSender(this IServiceCollection services, string filePath)
     {
-        services.AddSingleton<ISmsSender, DevSmsSender>();
+        services.AddSingleton<ISmsSender>(new DevSmsSender(filePath));
     }
 
     public static void AddNoopSmsSender(this IServiceCollection services)

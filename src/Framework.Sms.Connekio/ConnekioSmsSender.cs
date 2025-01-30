@@ -30,7 +30,7 @@ public sealed class ConnekioSmsSender : ISmsSender
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(request);
@@ -43,8 +43,8 @@ public sealed class ConnekioSmsSender : ISmsSender
             $"{_options.UserName}:{_options.Password}:{_options.AccountId}"
         );
 
-        var response = await _httpClient.SendAsync(requestMessage, token);
-        var rawContent = await response.Content.ReadAsStringAsync(token);
+        var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {

@@ -6,8 +6,6 @@
 
   <ItemGroup>
     <PackageReference Include="MailKit" />
-    <PackageReference Include="Serilog" />
-    <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
 
   <ItemGroup>
