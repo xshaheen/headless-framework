@@ -21,10 +21,10 @@ public sealed class CequensSmsSender(
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
-        var jwtToken = await _GetTokenRequestAsync(token) ?? _options.Token;
+        var jwtToken = await _GetTokenRequestAsync(cancellationToken) ?? _options.Token;
 
         if (string.IsNullOrEmpty(jwtToken))
         {
@@ -47,8 +47,8 @@ public sealed class CequensSmsSender(
             Recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString(),
         };
 
-        var response = await httpClient.PostAsJsonAsync(_options.SingleSmsEndpoint, apiRequest, token);
-        var rawContent = await response.Content.ReadAsStringAsync(token);
+        var response = await httpClient.PostAsJsonAsync(_options.SingleSmsEndpoint, apiRequest, cancellationToken);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (response.IsSuccessStatusCode)
         {

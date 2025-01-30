@@ -28,7 +28,7 @@ public sealed class InfobipSmsSender : ISmsSender
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         var destination = request.IsBatch
@@ -57,7 +57,7 @@ public sealed class InfobipSmsSender : ISmsSender
 
         try
         {
-            var smsResponse = await _smsApi.SendSmsMessageAsync(smsRequest, token);
+            var smsResponse = await _smsApi.SendSmsMessageAsync(smsRequest, cancellationToken);
             _logger.LogTrace("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
 
             return SendSingleSmsResponse.Succeeded();

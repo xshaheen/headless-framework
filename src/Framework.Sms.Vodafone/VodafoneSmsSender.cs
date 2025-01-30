@@ -31,7 +31,7 @@ public sealed class VodafoneSmsSender : ISmsSender
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(request);
@@ -39,8 +39,8 @@ public sealed class VodafoneSmsSender : ISmsSender
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
 
-        var response = await _httpClient.PostAsJsonAsync(_uri, requestMessage, token);
-        var rawContent = await response.Content.ReadAsStringAsync(token);
+        var response = await _httpClient.PostAsJsonAsync(_uri, requestMessage, cancellationToken);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {

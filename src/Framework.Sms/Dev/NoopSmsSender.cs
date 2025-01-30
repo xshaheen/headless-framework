@@ -4,9 +4,12 @@ namespace Framework.Sms.Dev;
 
 public sealed class NoopSmsSender : ISmsSender
 {
-    public ValueTask<SendSingleSmsResponse> SendAsync(SendSingleSmsRequest request, CancellationToken token = default)
+    public ValueTask<SendSingleSmsResponse> SendAsync(
+        SendSingleSmsRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
-        token.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(SendSingleSmsResponse.Succeeded());
     }
 }

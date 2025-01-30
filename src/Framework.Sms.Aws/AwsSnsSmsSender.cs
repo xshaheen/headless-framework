@@ -18,7 +18,7 @@ public sealed class AwsSnsSmsSender(
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotEmpty(request.Destinations);
@@ -62,7 +62,7 @@ public sealed class AwsSnsSmsSender(
 
         try
         {
-            var publishResponse = await client.PublishAsync(publishRequest, token);
+            var publishResponse = await client.PublishAsync(publishRequest, cancellationToken);
 
             if (publishResponse.HttpStatusCode.IsSuccessStatusCode())
             {
