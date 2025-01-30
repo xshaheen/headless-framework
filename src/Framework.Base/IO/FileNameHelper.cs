@@ -69,7 +69,7 @@ public static partial class FileNameHelper
         var untrustedFileName = Path.GetFileName(untrustedBlobName);
         var extension = Path.GetExtension(untrustedFileName);
 
-        var sanitizedFileName = SanitizeFileName(untrustedFileName);
+        var sanitizedFileName = _SanitizeFileWithoutExtension(untrustedFileName);
         var trustedDisplayName = sanitizedFileName + extension.ToString();
 
         var normalizeFileName = _NormalizeFileName(sanitizedFileName);
@@ -164,17 +164,24 @@ public static partial class FileNameHelper
     /// <param name="untrustedName">The file name without extension to sanitize.</param>
     public static string SanitizeFileName(ReadOnlySpan<char> untrustedName)
     {
-        var validFileName = ZString.CreateStringBuilder();
+        var fileName = Path.GetFileNameWithoutExtension(untrustedName);
 
+        return _SanitizeFileWithoutExtension(fileName) + Path.GetExtension(untrustedName).ToString();
+    }
+
+    private static string _SanitizeFileWithoutExtension(ReadOnlySpan<char> fileName)
+    {
+        var validFileName = ZString.CreateStringBuilder();
         var spaceCount = 0;
 
-        foreach (var value in untrustedName)
+        foreach (var value in fileName)
         {
             if (InvalidFileNameChars.Contains(value))
             {
                 continue;
             }
 
+            // The next part ensures that multiple consecutive spaces are reduced to a single space
             if (value == ' ')
             {
                 spaceCount++;
@@ -192,9 +199,7 @@ public static partial class FileNameHelper
             validFileName.Append(value);
         }
 
-        var htmlEncoded = WebUtility.HtmlEncode(validFileName.ToString());
-
-        return htmlEncoded;
+        return WebUtility.HtmlEncode(validFileName.ToString());
     }
 
     #endregion

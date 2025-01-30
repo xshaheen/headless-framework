@@ -11,7 +11,8 @@ public class DistributedMessage : EqualityBase<DistributedMessage>, IDistributed
 
     public required DateTimeOffset Timestamp { get; init; }
 
-    public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+    public IDictionary<string, string> Properties { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 
     protected override IEnumerable<object?> EqualityComponents()
     {
