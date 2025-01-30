@@ -66,6 +66,18 @@ public static partial class FileNameHelper
         ReadOnlySpan<char> untrustedBlobName
     )
     {
+        var randomNumber = RandomNumberGenerator
+            .GetInt32(1_000_000, int.MaxValue)
+            .ToString(CultureInfo.InvariantCulture);
+
+        return GetTrustedFileNames(untrustedBlobName, "_" + randomNumber);
+    }
+
+    public static (string TrusedDisplayName, string UniqueSaveName) GetTrustedFileNames(
+        ReadOnlySpan<char> untrustedBlobName,
+        ReadOnlySpan<char> randomSuffix
+    )
+    {
         var untrustedFileName = Path.GetFileName(untrustedBlobName);
         var extension = Path.GetExtension(untrustedFileName);
 
@@ -73,8 +85,7 @@ public static partial class FileNameHelper
         var trustedDisplayName = sanitizedFileName + extension.ToString();
 
         var normalizeFileName = _NormalizeFileName(sanitizedFileName);
-        var randomNumber = RandomNumberGenerator.GetInt32(10_000, int.MaxValue).ToString(CultureInfo.InvariantCulture);
-        var uniqueSaveName = normalizeFileName + "_" + randomNumber + extension.ToString();
+        var uniqueSaveName = normalizeFileName + randomSuffix.ToString() + extension.ToString();
 
         return (trustedDisplayName, uniqueSaveName);
     }
