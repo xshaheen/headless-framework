@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Framework.Orm.EntityFramework.Configurations;
 
+[PublicAPI]
 public static class CurrencyConfiguration
 {
     public static void HasComplexCurrency<TEntity>(

@@ -1,14 +1,22 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Framework.Primitives;
 
-namespace Framework.Orm.EntityFramework.DataGrid.Ordering;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Primitives;
 
 public static class OrderExtensions
 {
-    public static IOrderedQueryable<T> Order<T>(this IQueryable<T> source, Orders? orders)
+    public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, params List<OrderBy> orders)
     {
-        if (orders is null || orders.Count == 0)
+        return OrderBy(source, orders.AsReadOnlySpan());
+    }
+
+    public static IOrderedQueryable<T> OrderBy<T>(this IQueryable<T> source, params ReadOnlySpan<OrderBy> orders)
+    {
+        if (orders.IsEmpty)
         {
             return source.Order();
         }
@@ -17,7 +25,7 @@ public static class OrderExtensions
 
         var query = asc ? source.OrderBy(property) : source.OrderByDescending(property);
 
-        for (var index = 1; index < orders.Count; ++index)
+        for (var index = 1; index < orders.Length; ++index)
         {
             query = orders[index].Ascending
                 ? source.ThenBy(orders[index].Property)
@@ -134,3 +142,5 @@ public static class OrderExtensions
                 );
     }
 }
+
+public sealed class InvalidOrderPropertyException(string message, Exception? inner) : Exception(message, inner);

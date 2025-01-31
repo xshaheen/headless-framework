@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Orm.EntityFramework.DataGrid.Pagination;
+namespace Framework.Primitives;
 
 public sealed class IndexPage<T>
 {
@@ -27,6 +27,13 @@ public sealed class IndexPage<T>
 
     public bool HasNext => Index < TotalPages - 1;
 
-    public IndexPage<TOutput> GetProjectedPage<TOutput>(Func<T, TOutput> map) =>
-        new(Items.Select(map).ToList(), Index, Size, TotalItems);
+    public IndexPage<TOutput> Select<TOutput>(Func<T, TOutput> map)
+    {
+        return new(Items.Select(map).ToList(), Index, Size, TotalItems);
+    }
+
+    public IndexPage<T> Where(Func<T, bool> predicate)
+    {
+        return new(Items.Where(predicate).ToList(), Index, Size, TotalItems);
+    }
 }

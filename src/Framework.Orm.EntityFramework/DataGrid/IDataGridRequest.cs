@@ -1,17 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Orm.EntityFramework.DataGrid.Ordering;
-using Framework.Orm.EntityFramework.DataGrid.Pagination;
+using Framework.Primitives;
 
 namespace Framework.Orm.EntityFramework.DataGrid;
 
-public interface IDataGridRequest : IIndexPageRequest, IMultiOrdersListRequest;
+public interface IDataGridRequest : IHasMultiOrderByRequest
+{
+    public IndexPageRequest? Page { get; }
+}
 
 public abstract class DataGridRequest : IDataGridRequest
 {
-    public int Index { get; init; }
+    public IndexPageRequest? Page { get; init; }
 
-    public int Size { get; init; }
-
-    public Orders? Orders { get; init; }
+    public List<OrderBy>? Orders { get; init; }
 }
