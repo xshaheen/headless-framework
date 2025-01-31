@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Orm.EntityFramework.DataGrid.Ordering;
-using Framework.Orm.EntityFramework.DataGrid.Pagination;
+using Framework.Primitives;
 
 namespace Framework.Orm.EntityFramework.DataGrid;
 
+[PublicAPI]
 public static class DataGridExtensions
 {
     public static ValueTask<IndexPage<T>> ToDataGridAsync<T>(
@@ -17,6 +17,13 @@ public static class DataGridExtensions
         Argument.IsNotNull(source);
         Argument.IsNotNull(request);
 
-        return source.Order(request.Orders).ToIndexPageAsync(request, cancellationToken);
+        var query = source;
+
+        if (request.Orders is { Count: > 0 })
+        {
+            query = source.OrderBy(request.Orders);
+        }
+
+        return query.ToIndexPageAsync(request.Page, cancellationToken);
     }
 }

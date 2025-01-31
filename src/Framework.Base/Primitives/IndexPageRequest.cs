@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Orm.EntityFramework.DataGrid.Pagination;
+namespace Framework.Primitives;
 
 public interface IIndexPageRequest
 {
@@ -11,7 +11,7 @@ public interface IIndexPageRequest
 
 public abstract class IndexPageRequest : IIndexPageRequest
 {
-    public int Index { get; init; }
+    public required int Index { get; init; }
 
-    public int Size { get; init; } = 25;
+    public required int Size { get; init; }
 }
