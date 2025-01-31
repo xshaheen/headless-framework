@@ -16,8 +16,26 @@ public sealed class DevSmsSender(string filePath) : ISmsSender
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var json = JsonSerializer.Serialize(request, JsonConstants.DefaultPrettyJsonOptions);
-        await File.AppendAllTextAsync(_filePath, $"{json}{Environment.NewLine}", cancellationToken);
+        var sb = new StringBuilder();
+
+        if (!string.IsNullOrEmpty(request.MessageId))
+        {
+            sb.Append("MessageId: ").AppendLine(request.MessageId);
+        }
+
+        sb.Append("To: ").AppendLine(request.Destinations.JoinAsString(", "));
+        sb.Append("Text: ").AppendLine(request.Text);
+
+        if (request.Properties is not null)
+        {
+            sb.Append("Properties: ").AppendLine(JsonSerializer.Serialize(request.Properties));
+        }
+
+        await File.AppendAllTextAsync(
+            _filePath,
+            $"{sb}{Environment.NewLine}--------------------{Environment.NewLine}",
+            cancellationToken
+        );
 
         return SendSingleSmsResponse.Succeeded();
     }

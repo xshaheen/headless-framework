@@ -2,7 +2,6 @@
 
 using Framework.Checks;
 using Framework.Emails.Contracts;
-using Framework.Serializer;
 
 namespace Framework.Emails.Dev;
 
@@ -15,8 +14,45 @@ public sealed class DevEmailSender(string filePath) : IEmailSender
         CancellationToken cancellationToken = default
     )
     {
-        var json = JsonSerializer.Serialize(request, JsonConstants.DefaultPrettyJsonOptions);
-        await File.AppendAllTextAsync(_filePath, $"{json}{Environment.NewLine}", cancellationToken);
+        var sb = new StringBuilder();
+
+        sb.Append("From: ").AppendLine(request.From.ToString());
+        sb.Append("To: ").AppendLine(request.Destination.ToAddresses.JoinAsString(", "));
+
+        if (request.Destination.CcAddresses.Count > 0)
+        {
+            sb.Append("Cc: ").AppendLine(request.Destination.CcAddresses.JoinAsString(", "));
+        }
+
+        if (request.Destination.BccAddresses.Count > 0)
+        {
+            sb.Append("Bcc: ").AppendLine(request.Destination.BccAddresses.JoinAsString(", "));
+        }
+
+        sb.Append("Subject: ").AppendLine(request.Subject);
+
+        if (request.Attachments.Count > 0)
+        {
+            sb.AppendLine("Attachments:");
+            foreach (var attachment in request.Attachments)
+            {
+                sb.Append("  Name: ").AppendLine(attachment.Name);
+            }
+        }
+
+        sb.AppendLine("Message:");
+
+        sb.AppendLine(
+            !request.MessageText.IsNullOrEmpty()
+                ? request.MessageText.RemoveCharacter('\r').Replace("\n", Environment.NewLine, StringComparison.Ordinal)
+                : request.MessageHtml
+        );
+
+        await File.AppendAllTextAsync(
+            _filePath,
+            $"{sb}{Environment.NewLine}--------------------{Environment.NewLine}",
+            cancellationToken
+        );
 
         return SendSingleEmailResponse.Succeeded();
     }
