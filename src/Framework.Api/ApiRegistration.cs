@@ -9,7 +9,6 @@ using Framework.Api.Abstractions;
 using Framework.Api.Diagnostics;
 using Framework.Api.Identity.Normalizer;
 using Framework.Api.Identity.Schemes;
-using Framework.Api.Middlewares;
 using Framework.Api.Security.Claims;
 using Framework.Api.Security.Jwt;
 using Framework.Constants;
@@ -25,7 +24,6 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Framework.Api;

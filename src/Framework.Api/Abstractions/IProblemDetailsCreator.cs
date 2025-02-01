@@ -19,7 +19,7 @@ public interface IProblemDetailsCreator
 
     ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errors);
 
-    ProblemDetails InternalError(HttpContext context);
+    ProblemDetails Forbidden(HttpContext context, IEnumerable<ErrorDescriptor> errors);
 }
 
 public sealed class ProblemDetailsCreator : IProblemDetailsCreator
@@ -78,13 +78,14 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails InternalError(HttpContext context)
+    public ProblemDetails Forbidden(HttpContext context, IEnumerable<ErrorDescriptor> errors)
     {
         return new ProblemDetails
         {
-            Status = StatusCodes.Status500InternalServerError,
-            Title = ProblemDetailTitles.UnhandledException,
-            Detail = "An error occurred while processing your request.",
+            Status = StatusCodes.Status403Forbidden,
+            Title = ProblemDetailTitles.ForbiddenRequest,
+            Detail = "Forbidden request",
+            Extensions = { ["errors"] = errors },
         };
     }
 }
