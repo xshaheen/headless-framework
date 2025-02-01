@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Serializer;
 
 namespace Framework.Sms.Dev;
 
 public sealed class DevSmsSender(string filePath) : ISmsSender
 {
+    private const string _Separator = "--------------------";
     private readonly string _filePath = Argument.IsNotNullOrEmpty(filePath);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -31,11 +31,9 @@ public sealed class DevSmsSender(string filePath) : ISmsSender
             sb.Append("Properties: ").AppendLine(JsonSerializer.Serialize(request.Properties));
         }
 
-        await File.AppendAllTextAsync(
-            _filePath,
-            $"{sb}{Environment.NewLine}--------------------{Environment.NewLine}",
-            cancellationToken
-        );
+        sb.AppendLine(_Separator);
+
+        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken);
 
         return SendSingleSmsResponse.Succeeded();
     }

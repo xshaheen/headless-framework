@@ -7,6 +7,7 @@ namespace Framework.Emails.Dev;
 
 public sealed class DevEmailSender(string filePath) : IEmailSender
 {
+    private const string _Separator = "--------------------";
     private readonly string _filePath = Argument.IsNotNullOrEmpty(filePath);
 
     public async ValueTask<SendSingleEmailResponse> SendAsync(
@@ -40,7 +41,7 @@ public sealed class DevEmailSender(string filePath) : IEmailSender
             }
         }
 
-        sb.AppendLine("Message:");
+        sb.AppendLine("Message:").AppendLine();
 
         sb.AppendLine(
             !request.MessageText.IsNullOrEmpty()
@@ -48,11 +49,9 @@ public sealed class DevEmailSender(string filePath) : IEmailSender
                 : request.MessageHtml
         );
 
-        await File.AppendAllTextAsync(
-            _filePath,
-            $"{sb}{Environment.NewLine}--------------------{Environment.NewLine}",
-            cancellationToken
-        );
+        sb.AppendLine(_Separator);
+
+        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken);
 
         return SendSingleEmailResponse.Succeeded();
     }
