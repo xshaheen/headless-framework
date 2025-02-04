@@ -85,7 +85,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
         Debug.Assert(exception is not null);
 
         var errors = exception.Errors.ToErrorDescriptors();
-        var problemDetails = _problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
+        var problemDetails = _problemDetailsCreator.UnprocessableEntity(errors);
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
@@ -96,12 +96,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
         var exception = context.Exception as EntityNotFoundException;
         Debug.Assert(exception is not null);
 
-        var problemDetails = _problemDetailsCreator.EntityNotFound(
-            context.HttpContext,
-            exception.Entity,
-            exception.Key
-        );
-
+        var problemDetails = _problemDetailsCreator.EntityNotFound(exception.Entity, exception.Key);
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
 
         context.ExceptionHandled = true;
@@ -113,7 +108,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
         var exception = context.Exception as ConflictException;
         Debug.Assert(exception is not null);
 
-        var problemDetails = _problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
+        var problemDetails = _problemDetailsCreator.Conflict(exception.Errors);
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
     }
@@ -123,10 +118,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
     {
         LogDbConcurrencyException(_logger, context.Exception);
 
-        var problemDetails = _problemDetailsCreator.Conflict(
-            context.HttpContext,
-            [GeneralMessageDescriber.ConcurrencyFailure()]
-        );
+        var problemDetails = _problemDetailsCreator.Conflict([GeneralMessageDescriber.ConcurrencyFailure()]);
 
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
         context.ExceptionHandled = true;
@@ -144,7 +136,7 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
     {
         LogUnhandledException(_logger, context.Exception);
 
-        if (context.Exception is { InnerException: OperationCanceledException })
+        if (context.Exception.InnerException is OperationCanceledException)
         {
             return _HandleRequestCanceledException(context);
         }

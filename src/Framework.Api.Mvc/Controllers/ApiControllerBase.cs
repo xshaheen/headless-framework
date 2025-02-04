@@ -79,7 +79,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected BadRequestObjectResult MalformedSyntax()
     {
-        var problemDetails = ProblemDetailsCreator.MalformedSyntax(HttpContext);
+        var problemDetails = ProblemDetailsCreator.MalformedSyntax();
         ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.BadRequest(problemDetails);
@@ -89,7 +89,7 @@ public abstract class ApiControllerBase : ControllerBase
     protected UnprocessableEntityObjectResult UnprocessableEntityProblemDetails(IEnumerable<ValidationFailure> failures)
     {
         var errors = failures.ToErrorDescriptors();
-        var problemDetails = ProblemDetailsCreator.UnprocessableEntity(HttpContext, errors);
+        var problemDetails = ProblemDetailsCreator.UnprocessableEntity(errors);
         ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.UnprocessableEntity(problemDetails);
@@ -98,7 +98,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected NotFoundObjectResult NotFoundProblemDetails(string entity, string key)
     {
-        var problemDetails = ProblemDetailsCreator.EntityNotFound(HttpContext, entity, key);
+        var problemDetails = ProblemDetailsCreator.EntityNotFound(entity, key);
         ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.NotFound(problemDetails);
@@ -107,7 +107,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(IEnumerable<ErrorDescriptor> errorDescriptors)
     {
-        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, errorDescriptors);
+        var problemDetails = ProblemDetailsCreator.Conflict(errorDescriptors);
 
         return base.Conflict(problemDetails);
     }
@@ -115,7 +115,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(ErrorDescriptor errorDescriptor)
     {
-        var problemDetails = ProblemDetailsCreator.Conflict(HttpContext, [errorDescriptor]);
+        var problemDetails = ProblemDetailsCreator.Conflict([errorDescriptor]);
         ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.Conflict(problemDetails);

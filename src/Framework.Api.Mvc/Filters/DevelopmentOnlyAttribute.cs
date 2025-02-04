@@ -26,7 +26,7 @@ public sealed class DevelopmentOnlyAttribute : Attribute, IAsyncResourceFilter
         }
 
         var factory = services.GetRequiredService<IProblemDetailsCreator>();
-        var problemDetails = factory.EndpointNotFound(context.HttpContext);
+        var problemDetails = factory.EndpointNotFound();
         await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
     }
 }

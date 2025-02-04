@@ -39,20 +39,20 @@ public sealed partial class MinimalApiExceptionFilter(
         }
         catch (ConflictException exception)
         {
-            var details = problemDetailsCreator.Conflict(context.HttpContext, exception.Errors);
+            var details = problemDetailsCreator.Conflict(exception.Errors);
 
             return TypedResults.Problem(details);
         }
         catch (ValidationException exception)
         {
             var errors = exception.Errors.ToErrorDescriptors();
-            var details = problemDetailsCreator.UnprocessableEntity(context.HttpContext, errors);
+            var details = problemDetailsCreator.UnprocessableEntity(errors);
 
             return TypedResults.Problem(details);
         }
         catch (EntityNotFoundException exception)
         {
-            var details = problemDetailsCreator.EntityNotFound(context.HttpContext, exception.Entity, exception.Key);
+            var details = problemDetailsCreator.EntityNotFound(exception.Entity, exception.Key);
 
             return TypedResults.Problem(details);
         }
@@ -61,10 +61,7 @@ public sealed partial class MinimalApiExceptionFilter(
         {
             LogDbConcurrencyException(logger, exception);
 
-            var details = problemDetailsCreator.Conflict(
-                context.HttpContext,
-                [GeneralMessageDescriber.ConcurrencyFailure()]
-            );
+            var details = problemDetailsCreator.Conflict([GeneralMessageDescriber.ConcurrencyFailure()]);
 
             return TypedResults.Problem(details);
         }
@@ -88,7 +85,7 @@ public sealed partial class MinimalApiExceptionFilter(
         {
             LogUnhandledException(logger, exception);
 
-            if (exception is { InnerException: OperationCanceledException })
+            if (exception.InnerException is OperationCanceledException)
             {
                 return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
             }
