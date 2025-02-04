@@ -51,7 +51,7 @@ public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(
             "https://tools.ietf.org/html/rfc9110#section-15.5.5",
             "endpoint-not-found",
             404,
-            "The requested endpoint '/12345678' was not found."
+            "The requested endpoint was not found."
         );
 
         jsonElement.EnumerateObject().Count().Should().Be(9);
