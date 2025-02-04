@@ -9,32 +9,32 @@ namespace Framework.Api.Abstractions;
 
 public interface IProblemDetailsCreator
 {
-    ProblemDetails EndpointNotFound(HttpContext context);
+    ProblemDetails EndpointNotFound();
 
-    ProblemDetails EntityNotFound(HttpContext context, string entity, string key);
+    ProblemDetails EntityNotFound(string entity, string key);
 
-    ProblemDetails MalformedSyntax(HttpContext context);
+    ProblemDetails MalformedSyntax();
 
-    ProblemDetails UnprocessableEntity(HttpContext context, Dictionary<string, List<ErrorDescriptor>> errors);
+    ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors);
 
-    ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errors);
+    ProblemDetails Conflict(IEnumerable<ErrorDescriptor> errors);
 
-    ProblemDetails Forbidden(HttpContext context, IEnumerable<ErrorDescriptor> errors);
+    ProblemDetails Forbidden(IEnumerable<ErrorDescriptor> errors);
 }
 
 public sealed class ProblemDetailsCreator : IProblemDetailsCreator
 {
-    public ProblemDetails EndpointNotFound(HttpContext context)
+    public ProblemDetails EndpointNotFound()
     {
         return new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
             Title = ProblemDetailTitles.EndpointNotFounded,
-            Detail = $"The requested endpoint '{context.Request.Path}' was not found.",
+            Detail = "The requested endpoint was not found.",
         };
     }
 
-    public ProblemDetails EntityNotFound(HttpContext context, string entity, string key)
+    public ProblemDetails EntityNotFound(string entity, string key)
     {
         return new ProblemDetails
         {
@@ -45,7 +45,7 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails MalformedSyntax(HttpContext context)
+    public ProblemDetails MalformedSyntax()
     {
         return new ProblemDetails
         {
@@ -56,7 +56,7 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails UnprocessableEntity(HttpContext context, Dictionary<string, List<ErrorDescriptor>> errors)
+    public ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors)
     {
         return new ProblemDetails
         {
@@ -67,7 +67,7 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails Conflict(HttpContext context, IEnumerable<ErrorDescriptor> errors)
+    public ProblemDetails Conflict(IEnumerable<ErrorDescriptor> errors)
     {
         return new ProblemDetails
         {
@@ -78,7 +78,7 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails Forbidden(HttpContext context, IEnumerable<ErrorDescriptor> errors)
+    public ProblemDetails Forbidden(IEnumerable<ErrorDescriptor> errors)
     {
         return new ProblemDetails
         {

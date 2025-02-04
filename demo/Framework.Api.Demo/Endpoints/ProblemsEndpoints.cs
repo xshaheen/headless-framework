@@ -12,10 +12,7 @@ public static class ProblemsEndpoints
     {
         var api = app.MapGroup("minimal").AddExceptionFilter();
 
-        api.MapGet(
-            "malformed-syntax",
-            (IProblemDetailsCreator factory, HttpContext context) => Results.Problem(factory.MalformedSyntax(context))
-        );
+        api.MapGet("malformed-syntax", (IProblemDetailsCreator factory) => Results.Problem(factory.MalformedSyntax()));
 
         api.MapPost(
             "entity-not-found",

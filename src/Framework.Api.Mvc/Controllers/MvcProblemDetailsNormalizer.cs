@@ -8,18 +8,18 @@ using Microsoft.Extensions.Options;
 namespace Framework.Api.Mvc.Controllers;
 
 public sealed class MvcProblemDetailsNormalizer(
-    IOptions<ApiBehaviorOptions> options,
-    IOptions<ProblemDetailsOptions>? problemDetailsOptions = null
+    IOptions<ApiBehaviorOptions> apiOptionsAccessor,
+    IOptions<ProblemDetailsOptions>? problemOptionsAccessor = null
 )
 {
-    private readonly ApiBehaviorOptions _options = options.Value;
-    private readonly Action<ProblemDetailsContext>? _configure = problemDetailsOptions?.Value.CustomizeProblemDetails;
+    private readonly ApiBehaviorOptions _apiOptions = apiOptionsAccessor.Value;
+    private readonly Action<ProblemDetailsContext>? _configure = problemOptionsAccessor?.Value.CustomizeProblemDetails;
 
     public void ApplyProblemDetailsDefaults(HttpContext httpContext, ProblemDetails problemDetails)
     {
         Debug.Assert(problemDetails.Status is not null);
 
-        if (_options.ClientErrorMapping.TryGetValue(problemDetails.Status.Value, out var clientErrorData))
+        if (_apiOptions.ClientErrorMapping.TryGetValue(problemDetails.Status.Value, out var clientErrorData))
         {
             problemDetails.Title ??= clientErrorData.Title;
             problemDetails.Type ??= clientErrorData.Link;

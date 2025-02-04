@@ -26,8 +26,7 @@ public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problem
 
         if (context.Response.StatusCode is StatusCodes.Status404NotFound)
         {
-            var problemDetails = problemDetailsCreator.EndpointNotFound(context);
-
+            var problemDetails = problemDetailsCreator.EndpointNotFound();
             await Results.Problem(problemDetails).ExecuteAsync(context);
         }
     }

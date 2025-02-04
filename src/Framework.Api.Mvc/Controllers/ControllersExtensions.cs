@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Framework.Api.Mvc.Controllers;
@@ -35,16 +34,6 @@ public static class ControllerBaseExtensions
         return controller.User.Identity?.IsAuthenticated ?? false
             ? controller.Forbid(authenticationSchemes)
             : controller.Challenge(authenticationSchemes);
-    }
-
-    /// <summary>
-    /// Creates <see cref="ObjectResult"/> that produces a <see cref="HttpStatusCode.InternalServerError"/> response.
-    /// </summary>
-    /// <param name="controller">The <see cref="Controller"/>.</param>
-    /// <param name="value">An optional value to set on <see cref="ObjectResult"/>.</param>
-    public static ActionResult InternalServerError(this ControllerBase controller, object? value = null)
-    {
-        return controller.StatusCode((int)HttpStatusCode.InternalServerError, value);
     }
 
     /// <summary>
