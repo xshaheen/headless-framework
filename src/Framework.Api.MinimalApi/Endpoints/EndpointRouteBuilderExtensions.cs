@@ -7,9 +7,10 @@ using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Routing;
 
-namespace Framework.Api.MinimalApi.Endpoints;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Microsoft.AspNetCore.Routing;
 
 [PublicAPI]
 public static class EndpointRouteBuilderExtensions
