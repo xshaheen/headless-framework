@@ -2,14 +2,31 @@
 
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Callback;
+using Framework.Payments.Paymob.CashIn.Models.Intentions;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
+using Framework.Payments.Paymob.CashIn.Models.Refunds;
 using Framework.Payments.Paymob.CashIn.Models.Transactions;
 
 namespace Framework.Payments.Paymob.CashIn;
 
 public interface IPaymobCashInBroker
 {
+    /// <summary>Create intention request.</summary>
+    /// <exception cref="PaymobCashInException"></exception>
+    [Pure]
+    Task<CashInCreateIntentionResponse?> CreateIntentionAsync(CashInCreateIntentionRequest request);
+
+    /// <summary>Refund a transaction.</summary>
+    /// <exception cref="PaymobCashInException"></exception>
+    [Pure]
+    Task<CashInCallbackTransaction?> RefundTransactionAsync(CashInRefundRequest request);
+
+    /// <summary>Void a transaction.</summary>
+    /// <exception cref="PaymobCashInException"></exception>
+    [Pure]
+    Task<CashInCallbackTransaction?> VoidTransactionAsync(CashInVoidRefundRequest request);
+
     /// <summary>Create order. Order is a logical container for a transaction(s).</summary>
     /// <exception cref="PaymobCashInException"></exception>
     [Pure]

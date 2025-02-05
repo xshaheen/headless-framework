@@ -131,6 +131,7 @@ public partial class PaymobCashInBrokerTests
         {
             Hmac = validationKey,
             ApiKey = Guid.NewGuid().ToString(),
+            SecretKey = Guid.NewGuid().ToString(),
         });
         var sut = new PaymobCashInBroker(null!, null!, options);
         var transaction = JsonSerializer.Deserialize<CashInCallbackTransaction>(transactionJson);
@@ -157,6 +158,7 @@ public partial class PaymobCashInBrokerTests
         {
             Hmac = validationKey,
             ApiKey = Guid.NewGuid().ToString(),
+            SecretKey = Guid.NewGuid().ToString(),
         });
         var sut = new PaymobCashInBroker(null!, null!, options);
         var token = JsonSerializer.Deserialize<CashInCallbackToken>(tokenJson);

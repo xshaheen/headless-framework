@@ -19,6 +19,7 @@ public sealed class PaymobCashInFixture : IDisposable
             ApiBaseUrl = Server.Urls[0],
             Hmac = Guid.NewGuid().ToString(),
             ApiKey = Guid.NewGuid().ToString(),
+            SecretKey = Guid.NewGuid().ToString(),
         };
 
         OptionsAccessor = Substitute.For<IOptionsMonitor<PaymobCashInOptions>>();
