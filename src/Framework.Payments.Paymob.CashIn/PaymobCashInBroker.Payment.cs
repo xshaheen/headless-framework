@@ -56,13 +56,13 @@ public partial class PaymobCashInBroker
     private async Task<TResponse> _PayAsync<TResponse>(CashInPayRequest request)
     {
         var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/payments/pay");
-        using var response = await httpClient.PostAsJsonAsync(requestUrl, request);
+        using var response = await httpClient.PostAsJsonAsync(requestUrl, request, _options.SerializationOptions);
 
         if (!response.IsSuccessStatusCode)
         {
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return (await response.Content.ReadFromJsonAsync<TResponse>())!;
+        return (await response.Content.ReadFromJsonAsync<TResponse>(_options.DeserializationOptions))!;
     }
 }

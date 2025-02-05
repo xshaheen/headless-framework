@@ -38,14 +38,16 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator
         var config = _options.CurrentValue;
         var requestUrl = Url.Combine(config.ApiBaseUrl, "auth/tokens");
         var request = new CashInAuthenticationTokenRequest { ApiKey = config.ApiKey };
-        using var response = await _httpClient.PostAsJsonAsync(requestUrl, request);
+        using var response = await _httpClient.PostAsJsonAsync(requestUrl, request, config.SerializationOptions);
 
         if (!response.IsSuccessStatusCode)
         {
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        var content = await response.Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>();
+        var content = await response.Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
+            config.DeserializationOptions
+        );
 
         _cachedToken = content!.Token;
         _tokenExpiration = DateTimeOffset.UtcNow.AddMinutes(55);

@@ -9,11 +9,6 @@ namespace Framework.Payments.Paymob.CashIn;
 
 public partial class PaymobCashInBroker
 {
-    private static readonly JsonSerializerOptions _IgnoreNullOptions = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     /// <summary>Create order. Order is a logical container for a transaction(s).</summary>
     public async Task<CashInCreateOrderResponse> CreateOrderAsync(CashInCreateOrderRequest request)
     {
@@ -21,13 +16,17 @@ public partial class PaymobCashInBroker
         var requestUrl = Url.Combine(_options.ApiBaseUrl, "ecommerce/orders");
         var internalRequest = new CashInCreateOrderInternalRequest(authToken, request);
 
-        using var response = await httpClient.PostAsJsonAsync(requestUrl, internalRequest, _IgnoreNullOptions);
+        using var response = await httpClient.PostAsJsonAsync(
+            requestUrl,
+            internalRequest,
+            _options.SerializationOptions
+        );
 
         if (!response.IsSuccessStatusCode)
         {
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashInCreateOrderResponse>())!;
+        return (await response.Content.ReadFromJsonAsync<CashInCreateOrderResponse>(_options.DeserializationOptions))!;
     }
 }

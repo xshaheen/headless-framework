@@ -19,13 +19,17 @@ public partial class PaymobCashInBroker
         var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/payment_keys");
         var internalRequest = new CashInPaymentKeyInternalRequest(request, authToken, _options.ExpirationPeriod);
 
-        using var response = await httpClient.PostAsJsonAsync(requestUrl, internalRequest);
+        using var response = await httpClient.PostAsJsonAsync(
+            requestUrl,
+            internalRequest,
+            _options.SerializationOptions
+        );
 
         if (!response.IsSuccessStatusCode)
         {
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashInPaymentKeyResponse>())!;
+        return (await response.Content.ReadFromJsonAsync<CashInPaymentKeyResponse>(_options.DeserializationOptions))!;
     }
 }

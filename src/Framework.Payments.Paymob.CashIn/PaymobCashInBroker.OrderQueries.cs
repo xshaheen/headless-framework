@@ -32,7 +32,7 @@ public partial class PaymobCashInBroker
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return await response.Content.ReadFromJsonAsync<CashInOrdersPage>();
+        return await response.Content.ReadFromJsonAsync<CashInOrdersPage>(_options.DeserializationOptions);
     }
 
     public async Task<CashInOrder?> GetOrderAsync(string orderId)
@@ -53,6 +53,6 @@ public partial class PaymobCashInBroker
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return await response.Content.ReadFromJsonAsync<CashInOrder>();
+        return await response.Content.ReadFromJsonAsync<CashInOrder>(_options.DeserializationOptions);
     }
 }
