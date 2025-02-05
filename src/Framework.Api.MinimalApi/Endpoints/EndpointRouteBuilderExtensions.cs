@@ -7,6 +7,7 @@ using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -42,14 +43,15 @@ public static class EndpointRouteBuilderExtensions
         where TRequest : IRequest<TResponse>
     {
         static async Task<Result<Ok<TResponse>, ProblemHttpResult>> handler(
-            TRequest? request,
+            [FromQuery] TRequest? request,
             ISender sender,
-            IProblemDetailsCreator problemDetailsCreator
+            IProblemDetailsCreator problemDetailsCreator,
+            CancellationToken cancellationToken
         )
         {
             return request is null
                 ? TypedResults.Problem(problemDetailsCreator.MalformedSyntax())
-                : TypedResults.Ok(await sender.Send(request));
+                : TypedResults.Ok(await sender.Send(request, cancellationToken));
         }
 
         return endpoints.MapGet(pattern, handler).Validate<TRequest>();
