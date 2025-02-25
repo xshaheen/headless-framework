@@ -4,10 +4,10 @@ namespace Framework.Primitives;
 
 public interface IHasOrderByRequest
 {
-    public OrderBy? Order { get; }
+    OrderBy? Order { get; }
 }
 
 public interface IHasMultiOrderByRequest
 {
-    public List<OrderBy>? Orders { get; }
+    List<OrderBy>? Orders { get; }
 }

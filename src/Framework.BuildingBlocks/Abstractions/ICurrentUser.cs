@@ -7,7 +7,7 @@ namespace Framework.Abstractions;
 
 public interface ICurrentUser
 {
-    public ClaimsPrincipal Principal { get; }
+    ClaimsPrincipal Principal { get; }
 
     bool IsAuthenticated { get; }
 
