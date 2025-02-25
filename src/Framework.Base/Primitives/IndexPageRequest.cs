@@ -4,9 +4,9 @@ namespace Framework.Primitives;
 
 public interface IIndexPageRequest
 {
-    public int Index { get; }
+    int Index { get; }
 
-    public int Size { get; }
+    int Size { get; }
 }
 
 public abstract class IndexPageRequest : IIndexPageRequest
