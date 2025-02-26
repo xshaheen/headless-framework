@@ -2,7 +2,6 @@
 
 namespace Framework.Generator.Primitives.Shared;
 
-#pragma warning disable CA1720 // Identifier contains type name
 public static class TypeNames
 {
     public const string Guid = "global::System.Guid";
