@@ -19,12 +19,12 @@
     <PackageVersion Include="AWSSDK.S3" Version="3.7.413" />
     <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.407.5" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.85" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.4.0" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.23.0" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.20.0" />
-    <PackageVersion Include="Bogus" Version="35.6.1" />
+    <PackageVersion Include="Bogus" Version="35.6.2" />
     <PackageVersion Include="ByteSize" Version="2.1.2" />
-    <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
+    <PackagVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
     <PackageVersion Include="Couchbase.Extensions.Compression.Snappier" Version="3.0.1-beta.1" />
     <PackageVersion Include="Couchbase.Extensions.DependencyInjection" Version="3.6.5" />
     <PackageVersion Include="Couchbase.Extensions.MultiOp" Version="1.0.0" />
@@ -46,7 +46,7 @@
     <PackageVersion Include="EFCore.CheckConstraints" Version="9.0.0" />
     <PackageVersion Include="FileSignatures" Version="5.1.1" />
     <PackageVersion Include="FirebaseAdmin" Version="3.1.0" />
-    <PackageVersion Include="FluentAssertions" Version="8.0.1" />
+    <PackageVersion Include="FluentAssertions" Version="8.1.1" />
     <PackageVersion Include="FluentAssertions.Analyzers" Version="0.34.1" />
     <PackageVersion Include="FluentAssertions.Json" Version="8.0.0" />
     <PackageVersion Include="FluentValidation" Version="11.11.0" />
@@ -67,10 +67,10 @@
     <PackageVersion Include="Meziantou.Extensions.Logging.Xunit" Version="1.0.8" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="9.0.1" />
-    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="9.0.1" />
-    <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="9.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="9.0.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="9.0.2" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.1" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.1" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="4.12.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
@@ -81,7 +81,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="9.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.1" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="9.1.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="9.2.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="9.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.1" />
@@ -100,7 +100,7 @@
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.1" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.0.1" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.1.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.3.1" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.6.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="Microsoft.OpenApi" Version="1.6.22" />
     <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.0.0" />
@@ -125,7 +125,7 @@
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
     <PackageVersion Include="Nuke.Common" Version="9.0.4" />
     <PackageVersion Include="PdfPig" Version="0.1.9" />
-    <PackageVersion Include="Polly.Core" Version="8.5.1" />
+    <PackageVersion Include="Polly.Core" Version="8.5.2" />
     <PackageVersion Include="Polly.Extensions" Version="8.5.1" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.5.1" />
     <PackageVersion Include="PolySharp" Version="1.15.0" />
@@ -188,11 +188,11 @@
     <GlobalPackageReference Include="AsyncFixer" Version="1.6.0" />
     <GlobalPackageReference Include="Asyncify" Version="0.9.7" />
     <GlobalPackageReference Include="Framework.Defaults" Version="0.0.25" />
-    <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
+    <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.13.2" />
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
-    <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.12.11" />
+    <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.13.1" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.186" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.188" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
