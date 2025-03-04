@@ -153,7 +153,7 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
     <PackageVersion Include="Serilog.Sinks.Seq" Version="9.0.0" />
     <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.6" />
-    <PackageVersion Include="Snappier" Version="1.1.6" />
+    <PackageVersion Include="Snappier" Version="1.2.0" />
     <PackageVersion Include="SSH.NET" Version="2024.2.0" />
     <PackageVersion Include="StackExchange.Redis" Version="2.8.24" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
