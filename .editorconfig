@@ -160,7 +160,7 @@ dotnet_diagnostic.ca1715.severity = warning
 # CA1712: Do not prefix enum values with type name
 dotnet_diagnostic.ca1712.severity = warning
 # CA1720: Identifiers should not contain type names
-dotnet_diagnostic.ca1720.severity = warning
+dotnet_diagnostic.ca1720.severity = suggestion
 # CA1725: Parameter names should match base declaration
 dotnet_diagnostic.ca1725.severity = suggestion
 # CA2009: Do not call ToImmutableCollection on an ImmutableCollection value

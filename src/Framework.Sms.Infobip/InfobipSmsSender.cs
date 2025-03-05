@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.Infobip;
 
-public sealed class InfobipSmsSender : ISmsSender
+public sealed class InfobipSmsSender : ISmsSender, IDisposable
 {
     private readonly string _sender;
     private readonly SmsApi _smsApi;
@@ -31,7 +31,7 @@ public sealed class InfobipSmsSender : ISmsSender
         CancellationToken cancellationToken = default
     )
     {
-        var destination = request.IsBatch
+        var destinations = request.IsBatch
             ? request
                 .Destinations.Select(
                     (item, index) =>
@@ -40,24 +40,18 @@ public sealed class InfobipSmsSender : ISmsSender
                             ? null
                             : request.MessageId + (index + 1).ToString(CultureInfo.InvariantCulture);
 
-                        return new SmsDestination(messageId, to: item.ToString(hasPlusPrefix: false));
+                        return new SmsDestination(to: item.ToString(hasPlusPrefix: false), messageId: messageId);
                     }
                 )
                 .ToList()
-            : [new SmsDestination(request.MessageId, to: request.Destinations[0].ToString(hasPlusPrefix: false))];
+            : [new SmsDestination(to: request.Destinations[0].ToString(hasPlusPrefix: false), messageId: request.MessageId)];
 
-        var smsMessage = new SmsTextualMessage
-        {
-            From = _sender,
-            Text = request.Text,
-            Destinations = destination,
-        };
-
-        var smsRequest = new SmsAdvancedTextualRequest { Messages = [smsMessage] };
+        var smsMessage = new SmsMessage(_sender, destinations, new SmsMessageContent(new SmsTextContent(request.Text)));
+        var smsRequest = new SmsRequest([smsMessage]);
 
         try
         {
-            var smsResponse = await _smsApi.SendSmsMessageAsync(smsRequest, cancellationToken);
+            var smsResponse = await _smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken);
             _logger.LogTrace("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
 
             return SendSingleSmsResponse.Succeeded();
@@ -69,5 +63,10 @@ public sealed class InfobipSmsSender : ISmsSender
 
             return SendSingleSmsResponse.Failed(error.ToInvariantString());
         }
+    }
+
+    public void Dispose()
+    {
+        _smsApi.Dispose();
     }
 }
