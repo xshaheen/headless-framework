@@ -347,7 +347,7 @@ public sealed class InMemoryCachingFoundatioAdapter(TimeProvider timeProvider, I
     public Task<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {

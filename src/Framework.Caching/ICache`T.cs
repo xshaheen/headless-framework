@@ -74,7 +74,7 @@ public interface ICache<T>
     Task<long> SetRemoveAsync(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
@@ -187,7 +187,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
     public Task<long> SetRemoveAsync(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {

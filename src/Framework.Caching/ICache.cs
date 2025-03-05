@@ -147,7 +147,7 @@ public interface ICache
     Task<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
-        TimeSpan expiration,
+        TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
