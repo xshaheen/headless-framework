@@ -245,7 +245,7 @@ public sealed class InMemoryCachingFoundatioAdapter(TimeProvider timeProvider, I
     {
         if (string.IsNullOrEmpty(prefix))
         {
-            return _cacheClient.Keys.AsReadOnlyList();
+            return _cacheClient.Keys.AsIReadOnlyList();
         }
 
         prefix = _GetKey(prefix);

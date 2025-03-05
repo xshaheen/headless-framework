@@ -9,12 +9,12 @@ namespace System.Collections.Generic;
 public static partial class EnumerableExtensions
 {
     /// <summary>Returns the elements of the specified sequence or an empty sequence if the sequence is <see langword="null"/>.</summary>
-    /// <typeparam name="TSource">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">The sequence to process.</param>
     /// <returns><paramref name="source"/> if it is not <see langword="null"/>; otherwise, <see cref="Enumerable.Empty{TSource}"/>.</returns>
     [SystemPure]
     [JetBrainsPure]
-    public static IEnumerable<TSource> EmptyIfNull<TSource>(this IEnumerable<TSource>? source)
+    public static IEnumerable<T> EmptyIfNull<T>(this IEnumerable<T>? source)
     {
         return source ?? [];
     }
@@ -22,121 +22,123 @@ public static partial class EnumerableExtensions
     /// <summary>
     ///   Converts an <see cref="IEnumerable{T}" /> to an <see cref="ICollection{T}" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="ICollection{T}"/>; or a new ICollection&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static ICollection<TElement> AsICollection<TElement>(this IEnumerable<TElement> source)
+    public static ICollection<T> AsICollection<T>(this IEnumerable<T> source)
     {
-        return source as ICollection<TElement> ?? source.ToList();
+        return source as ICollection<T> ?? source.ToList();
     }
 
     /// <summary>
     /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="IList{T}" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="IList{T}"/>; or a new IList&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static List<TElement> AsIList<TElement>(this IEnumerable<TElement> source)
+    public static List<T> AsIList<T>(this IEnumerable<T> source)
     {
-        return source as List<TElement> ?? source.ToList();
+        return source as List<T> ?? source.ToList();
     }
 
     /// <summary>
     /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="List{T}" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="List{T}"/>; or a new List&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static List<TElement> AsList<TElement>(this IEnumerable<TElement> source)
+    public static List<T> AsList<T>(this IEnumerable<T> source)
     {
-        return source as List<TElement> ?? source.ToList();
+        return source as List<T> ?? source.ToList();
     }
 
     /// <summary>
     /// Converts an <see cref="IEnumerable{TElement}" /> to an <see cref="Array" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="Array"/>; or a new T[] created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static TElement[] AsArray<TElement>(this IEnumerable<TElement> source)
+    public static T[] AsArray<T>(this IEnumerable<T> source)
     {
-        return source as TElement[] ?? source.ToArray();
+        return source as T[] ?? source.ToArray();
     }
 
     /// <summary>
     /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="ISet{T}" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
+    /// <param name="comparer">Equality comparer to create the new Set if needed.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="ISet{T}"/>; or a new ISet&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static ISet<TElement> AsSet<TElement>(this IEnumerable<TElement> source)
+    public static ISet<T> AsISet<T>(this IEnumerable<T> source, IEqualityComparer<T>? comparer = null)
     {
-        return source as ISet<TElement> ?? source.ToHashSet();
+        return source as ISet<T> ?? source.ToHashSet(comparer);
     }
 
     /// <summary>
     /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="HashSet{T}" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
+    /// <param name="comparer">Equality comparer to create the new Set if needed.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="HashSet{T}"/>; or a new HashSet&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static HashSet<TElement> AsHashSet<TElement>(this IEnumerable<TElement> source)
+    public static HashSet<T> AsHashSet<T>(this IEnumerable<T> source, IEqualityComparer<T>? comparer = null)
     {
-        return source as HashSet<TElement> ?? source.ToHashSet();
+        return source as HashSet<T> ?? source.ToHashSet(comparer);
     }
 
     /// <summary>
     /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="IReadOnlyCollection{T}" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="IReadOnlyCollection{T}"/>; or a new IReadOnlyCollection&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static IReadOnlyCollection<TElement> AsReadOnlyCollection<TElement>(this IEnumerable<TElement> source)
+    public static IReadOnlyCollection<T> AsIReadOnlyCollection<T>(this IEnumerable<T> source)
     {
-        return source as IReadOnlyCollection<TElement> ?? new ReadOnlyCollection<TElement>(source.AsList());
+        return source as IReadOnlyCollection<T> ?? new ReadOnlyCollection<T>(source.AsList());
     }
 
     /// <summary>
     /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="IReadOnlyList{T}" />.
     /// </summary>
-    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <typeparam name="T">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
     /// Either <paramref name="source"/> if it can be cast to <see cref="IReadOnlyList{T}"/>; or a new IReadOnlyList&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
-    public static IReadOnlyList<TElement> AsReadOnlyList<TElement>(this IEnumerable<TElement> source)
+    public static IReadOnlyList<T> AsIReadOnlyList<T>(this IEnumerable<T> source)
     {
-        return source as IReadOnlyList<TElement> ?? new ReadOnlyCollection<TElement>(source.AsList());
+        return source as IReadOnlyList<T> ?? new ReadOnlyCollection<T>(source.AsList());
     }
 
     /// <summary>
