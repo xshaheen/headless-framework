@@ -80,18 +80,33 @@ public static partial class EnumerableExtensions
     }
 
     /// <summary>
-    /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="IList{T}" />.
+    /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="ISet{T}" />.
     /// </summary>
     /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
     /// <param name="source">A sequence to convert.</param>
     /// <returns>
-    /// Either <paramref name="source"/> if it can be cast to <see cref="IList{T}"/>; or a new IList&lt;T&gt; created from <c>source</c>.
+    /// Either <paramref name="source"/> if it can be cast to <see cref="ISet{T}"/>; or a new ISet&lt;T&gt; created from <c>source</c>.
     /// </returns>
     [SystemPure]
     [JetBrainsPure]
     public static ISet<TElement> AsSet<TElement>(this IEnumerable<TElement> source)
     {
         return source as ISet<TElement> ?? source.ToHashSet();
+    }
+
+    /// <summary>
+    /// Converts an <see cref="IEnumerable{T}" /> to an <see cref="HashSet{T}" />.
+    /// </summary>
+    /// <typeparam name="TElement">The type of the elements of <paramref name="source"/>.</typeparam>
+    /// <param name="source">A sequence to convert.</param>
+    /// <returns>
+    /// Either <paramref name="source"/> if it can be cast to <see cref="HashSet{T}"/>; or a new HashSet&lt;T&gt; created from <c>source</c>.
+    /// </returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static HashSet<TElement> AsHashSet<TElement>(this IEnumerable<TElement> source)
+    {
+        return source as HashSet<TElement> ?? source.ToHashSet();
     }
 
     /// <summary>
