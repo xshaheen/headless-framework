@@ -155,7 +155,7 @@
     <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.6" />
     <PackageVersion Include="Snappier" Version="1.2.0" />
     <PackageVersion Include="SSH.NET" Version="2024.2.0" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.8.24" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.8.31" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.3.1" />
     <PackageVersion Include="Swashbuckle.AspNetCore.Annotations" Version="7.3.1" />
     <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="7.3.1" />
