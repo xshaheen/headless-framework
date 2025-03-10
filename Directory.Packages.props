@@ -103,7 +103,7 @@
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.6.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
     <PackageVersion Include="Microsoft.OpenApi" Version="1.6.22" />
-    <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.0.0" />
+    <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.1.0" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
