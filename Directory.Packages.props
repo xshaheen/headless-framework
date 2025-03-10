@@ -124,7 +124,7 @@
     <PackageVersion Include="NSwag.AspNetCore" Version="14.2.0" />
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
     <PackageVersion Include="Nuke.Common" Version="9.0.4" />
-    <PackageVersion Include="PdfPig" Version="0.1.9" />
+    <PackageVersion Include="PdfPig" Version="0.1.10" />
     <PackageVersion Include="Polly.Core" Version="8.5.2" />
     <PackageVersion Include="Polly.Extensions" Version="8.5.1" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.5.1" />
