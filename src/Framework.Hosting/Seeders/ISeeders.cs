@@ -4,5 +4,5 @@ namespace Framework.Hosting.Seeders;
 
 public interface ISeeder
 {
-    public ValueTask SeedAsync();
+    ValueTask SeedAsync();
 }

@@ -20,9 +20,9 @@ namespace Framework.ResourceLocks;
 [PublicAPI]
 public interface IResourceLockProvider
 {
-    public TimeSpan DefaultTimeUntilExpires { get; }
+    TimeSpan DefaultTimeUntilExpires { get; }
 
-    public TimeSpan DefaultAcquireTimeout { get; }
+    TimeSpan DefaultAcquireTimeout { get; }
 
     /// <summary>
     /// Acquires a resource lock for a specified resource this method will block
