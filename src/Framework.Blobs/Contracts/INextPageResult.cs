@@ -10,13 +10,13 @@ using NextPageFunc = Func<PagedFileListResult, CancellationToken, ValueTask<INex
 
 public interface INextPageResult
 {
-    public bool Success { get; }
+    bool Success { get; }
 
-    public bool HasMore { get; }
+    bool HasMore { get; }
 
-    public IReadOnlyCollection<BlobInfo> Blobs { get; }
+    IReadOnlyCollection<BlobInfo> Blobs { get; }
 
-    public NextPageFunc? NextPageFunc { get; }
+    NextPageFunc? NextPageFunc { get; }
 }
 
 public interface IHasNextPageFunc

@@ -6,7 +6,7 @@ namespace Framework.Orm.EntityFramework.DataGrid;
 
 public interface IDataGridRequest : IHasMultiOrderByRequest
 {
-    public IndexPageRequest? Page { get; }
+    IndexPageRequest? Page { get; }
 }
 
 public abstract class DataGridRequest : IDataGridRequest

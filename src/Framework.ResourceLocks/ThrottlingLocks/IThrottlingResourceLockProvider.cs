@@ -13,7 +13,7 @@ namespace Framework.ResourceLocks;
 [PublicAPI]
 public interface IThrottlingResourceLockProvider
 {
-    public TimeSpan DefaultAcquireTimeout { get; }
+    TimeSpan DefaultAcquireTimeout { get; }
 
     /// <summary>
     /// Acquires a resource lock for a specified resource this method will block

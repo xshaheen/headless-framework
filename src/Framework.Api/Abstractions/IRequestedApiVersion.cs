@@ -6,7 +6,7 @@ namespace Framework.Api.Abstractions;
 
 public interface IRequestedApiVersion
 {
-    public string? Current { get; }
+    string? Current { get; }
 }
 
 public sealed class HttpContextRequestedApiVersion(IHttpContextAccessor accessor) : IRequestedApiVersion
