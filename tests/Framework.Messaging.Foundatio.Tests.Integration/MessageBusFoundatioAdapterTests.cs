@@ -34,7 +34,7 @@ public sealed class MessageBusFoundatioAdapterTests(ITestOutputHelper output) : 
         {
             Logger.LogTrace("Got message");
             msg.Data.Should().Be("Hello");
-            msg.Items.ContainsKey("Test").Should().BeTrue();
+            msg.Items.Should().ContainKey("Test");
             countdown.Signal();
             Logger.LogTrace("Set event");
         });

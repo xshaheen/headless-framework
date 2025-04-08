@@ -2,11 +2,11 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.Messaging</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Domains\Framework.Domains.csproj" />
-    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 
 </Project>

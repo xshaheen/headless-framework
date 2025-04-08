@@ -6,9 +6,7 @@ using Framework.Domains;
 using Microsoft.Extensions.DependencyInjection;
 using Nito.AsyncEx.Synchronous;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace Framework.Messaging;
+namespace Framework.Messaging.LocalServiceProvider;
 
 public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider services) : ILocalMessagePublisher
 {

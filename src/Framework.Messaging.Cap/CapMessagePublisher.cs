@@ -6,7 +6,12 @@ namespace Framework.Messaging;
 
 public sealed class CapMessagePublisher(ICapPublisher publisher) : IMessagePublisher
 {
-    public Task PublishAsync<T>(T message, PublishMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task PublishAsync<T>(
+        T message,
+        PublishMessageOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+        where T : class
     {
         var name = MessageName.GetFrom<T>();
 

@@ -2,6 +2,7 @@
 using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Messaging;
+using Framework.Messaging.LocalServiceProvider;
 using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Redis;
@@ -47,7 +48,8 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture, ITestOutputH
         services.AddSingleton(Substitute.For<ICurrentUser>());
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
-        services.AddSingleton<ILocalMessagePublisher, ServiceProviderLocalMessagePublisher>();
+        services.AddServiceProviderLocalMessagePublisher();
+
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
             o.Subscriber(Fixture.Multiplexer.GetSubscriber()).Topic("test-lock")

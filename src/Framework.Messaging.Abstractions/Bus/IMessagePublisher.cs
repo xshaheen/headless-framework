@@ -15,6 +15,7 @@ public interface IMessagePublisher
         where T : class;
 }
 
+[PublicAPI]
 public static class IMessagePublisherExtensions
 {
     public static Task PublishAsync<T>(
