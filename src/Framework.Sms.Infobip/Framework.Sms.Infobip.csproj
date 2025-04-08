@@ -10,7 +10,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Sms\Framework.Sms.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Framework.Sms.Abstraction\Framework.Sms.Abstraction.csproj" />
   </ItemGroup>
 
 </Project>

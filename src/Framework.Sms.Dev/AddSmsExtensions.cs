@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Sms.Dev;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Sms;
+namespace Framework.Sms.Dev;
 
 [PublicAPI]
 public static class AddSmsExtensions

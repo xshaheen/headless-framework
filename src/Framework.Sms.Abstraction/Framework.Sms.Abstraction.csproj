@@ -2,10 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.Sms</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
-  </ItemGroup>
 
 </Project>
