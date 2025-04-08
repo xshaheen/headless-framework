@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
+using Framework.Permissions.Storage;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Permissions;

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
-using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Results;
 
 namespace Framework.Permissions.Grants;
@@ -49,7 +48,7 @@ public static class PermissionManagerExtensions
     {
         return permissionManager.SetAsync(
             permissionName,
-            UserPermissionGrantProvider.ProviderName,
+            PermissionGrantProviderNames.User,
             userId,
             isGranted,
             cancellationToken
@@ -65,7 +64,7 @@ public static class PermissionManagerExtensions
     {
         return permissionManager.SetAsync(
             permissionName,
-            UserPermissionGrantProvider.ProviderName,
+            PermissionGrantProviderNames.User,
             userId,
             isGranted: true,
             cancellationToken
@@ -81,7 +80,7 @@ public static class PermissionManagerExtensions
     {
         return permissionManager.SetAsync(
             permissionName,
-            UserPermissionGrantProvider.ProviderName,
+            PermissionGrantProviderNames.User,
             userId,
             isGranted: false,
             cancellationToken
@@ -98,7 +97,7 @@ public static class PermissionManagerExtensions
     {
         return permissionManager.SetAsync(
             permissionName,
-            RolePermissionGrantProvider.ProviderName,
+            PermissionGrantProviderNames.Role,
             roleName,
             isGranted,
             cancellationToken
@@ -114,7 +113,7 @@ public static class PermissionManagerExtensions
     {
         return permissionManager.SetAsync(
             permissionName,
-            RolePermissionGrantProvider.ProviderName,
+            PermissionGrantProviderNames.Role,
             roleName,
             isGranted: true,
             cancellationToken
@@ -130,7 +129,7 @@ public static class PermissionManagerExtensions
     {
         return permissionManager.SetAsync(
             permissionName,
-            RolePermissionGrantProvider.ProviderName,
+            PermissionGrantProviderNames.Role,
             roleName,
             isGranted: false,
             cancellationToken

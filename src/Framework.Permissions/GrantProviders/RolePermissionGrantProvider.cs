@@ -14,7 +14,7 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
 {
     private readonly IPermissionGrantStore _grantStore = grantStore;
 
-    public const string ProviderName = "Role";
+    public const string ProviderName = PermissionGrantProviderNames.Role;
 
     public override string Name => ProviderName;
 
