@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Framework.PushNotifications.Internals;
+namespace Framework.PushNotifications.Firebase.Internals;
 
 internal static partial class PushNotificationsLoggerExtensions
 {

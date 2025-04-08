@@ -3,10 +3,10 @@
 using System.Diagnostics;
 using FirebaseAdmin.Messaging;
 using Framework.Checks;
-using Framework.PushNotifications.Internals;
+using Framework.PushNotifications.Firebase.Internals;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.PushNotifications.Gcm;
+namespace Framework.PushNotifications.Firebase;
 
 public sealed class GoogleCloudMessagingPushNotificationService(
     ILogger<GoogleCloudMessagingPushNotificationService> logger

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
-namespace Framework.PushNotifications;
+namespace Framework.PushNotifications.Firebase;
 
 public sealed class FirebaseOptions
 {
