@@ -2,7 +2,9 @@
 
 using Framework.Checks;
 
-namespace Framework.Imaging.Contracts;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Imaging;
 
 public sealed class ImageResizeArgs
 {

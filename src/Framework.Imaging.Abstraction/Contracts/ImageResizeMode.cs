@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Imaging.Contracts;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Imaging;
 
 public enum ImageResizeMode
 {

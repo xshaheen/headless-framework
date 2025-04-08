@@ -2,6 +2,6 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Imaging.Contracts;
+namespace Framework.Imaging;
 
 public readonly record struct AddImagingBuilder(IServiceCollection Services);

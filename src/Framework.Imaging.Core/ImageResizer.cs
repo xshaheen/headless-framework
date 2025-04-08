@@ -1,26 +1,16 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Imaging.Contracts;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Imaging;
 
-public interface IImageResizer
-{
-    Task<ImageStreamResizeResult> ResizeAsync(
-        Stream stream,
-        ImageResizeArgs args,
-        CancellationToken cancellationToken = default
-    );
-}
-
 public sealed class ImageResizer(
-    IEnumerable<IImageResizerContributor> imageResizerContributors,
+    IEnumerable<IImageResizerContributor> contributors,
     IOptions<ImagingOptions> optionsAccessor
 ) : IImageResizer
 {
-    private readonly IEnumerable<IImageResizerContributor> _resizerContributors = imageResizerContributors.Reverse();
+    private readonly IEnumerable<IImageResizerContributor> _contributors = contributors.Reverse();
     private readonly ImagingOptions _imagingOptions = optionsAccessor.Value;
 
     public async Task<ImageStreamResizeResult> ResizeAsync(
@@ -46,7 +36,7 @@ public sealed class ImageResizer(
             stream = memoryStream;
         }
 
-        foreach (var resizerContributor in _resizerContributors)
+        foreach (var resizerContributor in _contributors)
         {
             var result = await resizerContributor.TryResizeAsync(stream, args, cancellationToken);
 

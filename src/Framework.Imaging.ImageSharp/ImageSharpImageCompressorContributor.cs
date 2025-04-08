@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using Framework.Constants;
-using Framework.Imaging.Contracts;
 using Framework.Imaging.ImageSharp.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Framework.Imaging.Contracts;
+namespace Framework.Imaging;
 
 public sealed class ImagingOptions
 {
