@@ -7,7 +7,7 @@ using Framework.Messaging;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Events;
 using Framework.Permissions.Models;
-using Framework.Permissions.Storage;
+using Framework.Permissions.Repositories;
 using Framework.ResourceLocks;
 using Framework.Serializer.Modifiers;
 using Microsoft.Extensions.Options;

@@ -6,7 +6,7 @@ using Framework.Checks;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
-using Framework.Settings.Storage;
+using Framework.Settings.Repositories;
 using Humanizer;
 
 namespace Framework.Settings.Values;

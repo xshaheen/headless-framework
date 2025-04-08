@@ -6,7 +6,7 @@ using Framework.Checks;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Models;
-using Framework.Permissions.Storage;
+using Framework.Permissions.Repositories;
 using Humanizer;
 using Microsoft.Extensions.Logging;
 
