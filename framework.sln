@@ -153,7 +153,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Blobs.SshNet", "s
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.DataProtection", "src\Framework.Api.DataProtection\Framework.Api.DataProtection.csproj", "{035D5235-8CEE-4B55-AE8A-B25EA9E84C4B}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Permissions", "src\Framework.Permissions\Framework.Permissions.csproj", "{07AAA09E-A478-487D-AC3D-21DB41E577F9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Permissions.Core", "src\Framework.Permissions.Core\Framework.Permissions.Core.csproj", "{07AAA09E-A478-487D-AC3D-21DB41E577F9}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Kernel", "Kernel", "{6C05A5FE-C26F-4E0B-90AF-A9667D32449B}"
 EndProject
