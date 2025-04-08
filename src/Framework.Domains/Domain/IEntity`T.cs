@@ -4,12 +4,12 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Domains;
 
-/// <summary>Defines an entity with a single primary key with "Id" property.</summary>
+/// <summary>Defines an entity with a single primary key with "ID" property.</summary>
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
 public interface IEntity<out TId> : IEntity
 {
     /// <summary>Unique identifier for this entity.</summary>
-    public TId Id { get; }
+    TId Id { get; }
 }
 
 /// <inheritdoc cref="IEntity{TId}"/>
