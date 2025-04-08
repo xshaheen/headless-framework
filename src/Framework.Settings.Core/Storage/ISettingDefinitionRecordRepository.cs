@@ -2,7 +2,7 @@
 
 using Framework.Settings.Entities;
 
-namespace Framework.Settings.Definitions;
+namespace Framework.Settings.Storage;
 
 public interface ISettingDefinitionRecordRepository
 {

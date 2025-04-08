@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Settings.Models;
+using Framework.Settings.Values;
 using Microsoft.Extensions.Configuration;
 
 namespace Framework.Settings.ValueProviders;
@@ -9,7 +10,7 @@ namespace Framework.Settings.ValueProviders;
 public sealed class ConfigurationSettingValueProvider(IConfiguration configuration) : ISettingValueReadProvider
 {
     public const string ConfigurationNamePrefix = "Settings:";
-    public const string ProviderName = "Configuration";
+    public const string ProviderName = SettingValueProviderNames.Configuration;
 
     public string Name => ProviderName;
 

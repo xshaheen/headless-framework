@@ -2,15 +2,6 @@
 
 namespace Framework.Settings.Models;
 
-public interface ISettingDefinitionContext
-{
-    SettingDefinition? GetOrDefault(string name);
-
-    IReadOnlyList<SettingDefinition> GetAll();
-
-    void Add(params ReadOnlySpan<SettingDefinition> definitions);
-}
-
 public sealed class SettingDefinitionContext(Dictionary<string, SettingDefinition> settings) : ISettingDefinitionContext
 {
     public SettingDefinition? GetOrDefault(string name)

@@ -2,7 +2,7 @@
 
 using Framework.Settings.Entities;
 
-namespace Framework.Settings.Values;
+namespace Framework.Settings.Storage;
 
 public interface ISettingValueRecordRepository
 {

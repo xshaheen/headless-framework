@@ -1,6 +1,7 @@
 ﻿using Framework.Settings;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
+using Framework.Settings.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
