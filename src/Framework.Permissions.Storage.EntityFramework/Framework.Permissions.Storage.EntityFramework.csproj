@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Permissions\Framework.Permissions.csproj" />
+    <ProjectReference Include="..\Framework.Permissions.Core\Framework.Permissions.Core.csproj" />
     <ProjectReference Include="..\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
   </ItemGroup>
 
