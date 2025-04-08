@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
-using Framework.Permissions.Results;
+using Framework.Permissions.Models;
 
 namespace Framework.Permissions.Grants;
 

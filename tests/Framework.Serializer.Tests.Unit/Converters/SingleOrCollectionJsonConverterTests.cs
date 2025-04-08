@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class SingleOrCollectionConverterTests
+public class SingleOrCollectionJsonConverterTests
 {
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
-        Converters = { new SingleOrListConverter<MyItem>(), new SingleOrHashsetConverter<MyItem>() },
+        Converters = { new SingleOrListJsonConverter<MyItem>(), new SingleOrHashsetJsonConverter<MyItem>() },
     };
 
     [Fact]

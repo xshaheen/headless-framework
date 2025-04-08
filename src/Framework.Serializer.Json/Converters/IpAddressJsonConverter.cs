@@ -2,7 +2,7 @@
 
 using System.Net;
 
-namespace Framework.Serializer.Json.Converters;
+namespace Framework.Serializer.Converters;
 
 public sealed class IpAddressJsonConverter : JsonConverter<IPAddress?>
 {

@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Serializer.Json.Converters;
+namespace Framework.Serializer.Converters;
 
 /// <summary>
 /// See <a href="https://docs.microsoft.com/en-us/dotnet/standard/serialization/system-text-json-converters-how-to#deserialize-inferred-types-to-object-properties">Deserialize inferred types to object properties</a>
 /// </summary>
-public sealed class ObjectToInferredTypesConverter : JsonConverter<object?>
+public sealed class ObjectToInferredTypesJsonConverter : JsonConverter<object?>
 {
     public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

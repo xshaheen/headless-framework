@@ -167,7 +167,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Serializers", "Serializers"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Serializer.MessagePack", "src\Framework.Serializer.MessagePack\Framework.Serializer.MessagePack.csproj", "{19052683-C580-4760-BFA6-948F71469B42}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Serializer", "src\Framework.Serializer\Framework.Serializer.csproj", "{792E70BF-E470-428F-96F3-631FDCAD45A9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Serializer.Abstraction", "src\Framework.Serializer.Abstraction\Framework.Serializer.Abstraction.csproj", "{792E70BF-E470-428F-96F3-631FDCAD45A9}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Queueing", "src\Framework.Queueing\Framework.Queueing.csproj", "{2130A59F-1483-4AF4-BB03-4BAF43D7CFE6}"
 EndProject

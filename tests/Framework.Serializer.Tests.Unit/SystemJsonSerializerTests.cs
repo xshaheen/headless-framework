@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Serializer;
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 using NetTopologySuite.IO.Converters;
 
 namespace Tests;

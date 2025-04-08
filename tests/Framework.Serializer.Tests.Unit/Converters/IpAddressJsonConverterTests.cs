@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 

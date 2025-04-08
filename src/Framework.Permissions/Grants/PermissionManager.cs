@@ -6,7 +6,6 @@ using Framework.Exceptions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
 using Framework.Permissions.Resources;
-using Framework.Permissions.Results;
 using Framework.Permissions.Storage;
 
 namespace Framework.Permissions.Grants;

@@ -6,7 +6,7 @@ using Framework.Caching;
 using Framework.Features.Entities;
 using Framework.Features.Models;
 using Framework.ResourceLocks;
-using Framework.Serializer.Json.Modifiers;
+using Framework.Serializer.Modifiers;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 

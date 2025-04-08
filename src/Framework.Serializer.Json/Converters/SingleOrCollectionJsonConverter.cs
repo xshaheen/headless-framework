@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Serializer.Json.Converters;
+namespace Framework.Serializer.Converters;
 
-public class SingleOrCollectionConverter<TCollection, TItem> : JsonConverter<TCollection>
+public class SingleOrCollectionJsonConverter<TCollection, TItem> : JsonConverter<TCollection>
     where TCollection : class, ICollection<TItem?>, new()
 {
     public override TCollection? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
@@ -57,6 +57,6 @@ public class SingleOrCollectionConverter<TCollection, TItem> : JsonConverter<TCo
     }
 }
 
-public sealed class SingleOrListConverter<TItem> : SingleOrCollectionConverter<List<TItem?>, TItem>;
+public sealed class SingleOrListJsonConverter<TItem> : SingleOrCollectionJsonConverter<List<TItem?>, TItem>;
 
-public sealed class SingleOrHashsetConverter<TItem> : SingleOrCollectionConverter<HashSet<TItem?>, TItem>;
+public sealed class SingleOrHashsetJsonConverter<TItem> : SingleOrCollectionJsonConverter<HashSet<TItem?>, TItem>;

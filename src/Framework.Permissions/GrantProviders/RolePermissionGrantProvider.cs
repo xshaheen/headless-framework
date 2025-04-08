@@ -4,7 +4,6 @@ using Framework.Abstractions;
 using Framework.Checks;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
-using Framework.Permissions.Results;
 
 namespace Framework.Permissions.GrantProviders;
 

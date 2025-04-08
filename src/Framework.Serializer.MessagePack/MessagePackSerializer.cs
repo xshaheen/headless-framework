@@ -3,8 +3,6 @@
 using MessagePack;
 using MessagePack.Resolvers;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
 namespace Framework.Serializer;
 
 public sealed class MessagePackSerializer(MessagePackSerializerOptions? options = null) : IBinarySerializer

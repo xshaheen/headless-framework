@@ -9,7 +9,7 @@ using Framework.Permissions.Events;
 using Framework.Permissions.Models;
 using Framework.Permissions.Storage;
 using Framework.ResourceLocks;
-using Framework.Serializer.Json.Modifiers;
+using Framework.Serializer.Modifiers;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 

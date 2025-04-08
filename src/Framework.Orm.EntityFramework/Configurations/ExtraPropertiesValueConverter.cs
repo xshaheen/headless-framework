@@ -3,7 +3,7 @@
 using Framework.Collections;
 using Framework.Primitives;
 using Framework.Serializer;
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -32,7 +32,7 @@ public sealed class ExtraPropertiesValueConverter()
         var option = new JsonSerializerOptions();
 
         JsonConstants.ConfigureInternalJsonOptions(option);
-        option.Converters.Add(new ObjectToInferredTypesConverter());
+        option.Converters.Add(new ObjectToInferredTypesJsonConverter());
 
         return option;
     }
