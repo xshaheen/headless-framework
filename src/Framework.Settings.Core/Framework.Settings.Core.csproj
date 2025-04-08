@@ -2,11 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.Settings</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+    <ProjectReference Include="..\Framework.Settings.Abstraction\Framework.Settings.Abstraction.csproj" />
   </ItemGroup>
 
   <ItemGroup>

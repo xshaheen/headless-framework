@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
-    <ProjectReference Include="..\Framework.Settings.Core\Framework.Settings.Core.csproj" />
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
+    <ProjectReference Include="..\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
   </ItemGroup>
 
 </Project>

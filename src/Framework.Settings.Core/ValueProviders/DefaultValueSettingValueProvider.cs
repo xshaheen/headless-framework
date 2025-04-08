@@ -1,13 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Settings.Models;
+using Framework.Settings.Values;
 
 namespace Framework.Settings.ValueProviders;
 
 /// <summary>Provides setting values from the default value of the setting definition.</summary>
 public sealed class DefaultValueSettingValueProvider : ISettingValueReadProvider
 {
-    public const string ProviderName = "DefaultValue";
+    public const string ProviderName = SettingValueProviderNames.DefaultValue;
 
     public string Name => ProviderName;
 

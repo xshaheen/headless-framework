@@ -8,7 +8,7 @@ namespace Framework.Settings.ValueProviders;
 public sealed class TenantSettingValueProvider(ISettingValueStore store, ICurrentTenant tenant)
     : StoreSettingValueProvider(store)
 {
-    public const string ProviderName = "Tenant";
+    public const string ProviderName = SettingValueProviderNames.Tenant;
 
     public override string Name => ProviderName;
 

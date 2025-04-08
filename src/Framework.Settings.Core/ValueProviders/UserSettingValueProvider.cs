@@ -9,7 +9,7 @@ namespace Framework.Settings.ValueProviders;
 public sealed class UserSettingValueProvider(ISettingValueStore store, ICurrentUser user)
     : StoreSettingValueProvider(store)
 {
-    public const string ProviderName = "User";
+    public const string ProviderName = SettingValueProviderNames.User;
 
     public override string Name => ProviderName;
 

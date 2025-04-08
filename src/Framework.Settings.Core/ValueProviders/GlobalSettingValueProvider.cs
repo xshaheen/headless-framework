@@ -7,7 +7,7 @@ namespace Framework.Settings.ValueProviders;
 /// <summary>Provides setting values from the global store no key is required.</summary>
 public sealed class GlobalSettingValueProvider(ISettingValueStore store) : StoreSettingValueProvider(store)
 {
-    public const string ProviderName = "Global";
+    public const string ProviderName = SettingValueProviderNames.Global;
 
     public override string Name => ProviderName;
 
