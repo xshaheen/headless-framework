@@ -1,22 +1,12 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Imaging.Contracts;
 
 namespace Framework.Imaging;
 
-public interface IImageCompressor
-{
-    Task<ImageStreamCompressResult> CompressAsync(
-        Stream stream,
-        ImageCompressArgs args,
-        CancellationToken cancellationToken = default
-    );
-}
-
 public sealed class ImageCompressor(IEnumerable<IImageCompressorContributor> contributors) : IImageCompressor
 {
-    private readonly IEnumerable<IImageCompressorContributor> _compressorContributors = contributors.Reverse();
+    private readonly IEnumerable<IImageCompressorContributor> _contributors = contributors.Reverse();
 
     public async Task<ImageStreamCompressResult> CompressAsync(
         Stream stream,
@@ -39,9 +29,9 @@ public sealed class ImageCompressor(IEnumerable<IImageCompressorContributor> con
             stream = memoryStream;
         }
 
-        foreach (var imageCompressorContributor in _compressorContributors)
+        foreach (var compressorContributor in _contributors)
         {
-            var result = await imageCompressorContributor.TryCompressAsync(stream, args, cancellationToken);
+            var result = await compressorContributor.TryCompressAsync(stream, args, cancellationToken);
 
             _SeekToBegin(stream);
 

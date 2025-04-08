@@ -1,14 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Imaging.Contracts;
-
 namespace Framework.Imaging;
 
-public interface IImageCompressorContributor
+public interface IImageResizer
 {
-    Task<ImageStreamCompressResult> TryCompressAsync(
+    Task<ImageStreamResizeResult> ResizeAsync(
         Stream stream,
-        ImageCompressArgs args,
+        ImageResizeArgs args,
         CancellationToken cancellationToken = default
     );
 }

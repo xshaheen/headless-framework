@@ -1,5 +1,5 @@
 ﻿using Framework.Constants;
-using Framework.Imaging.Contracts;
+using Framework.Imaging;
 using Framework.Imaging.ImageSharp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,7 +29,11 @@ public sealed class ImageSharpImageCompressorContributorTests
         var cancellationToken = CancellationToken.None;
 
         // when
-        await using var imageStream = new FileStream(_GetPathImage("happy-young-man-with-q-letter.jpg"), FileMode.Open, FileAccess.Read);
+        await using var imageStream = new FileStream(
+            _GetPathImage("happy-young-man-with-q-letter.jpg"),
+            FileMode.Open,
+            FileAccess.Read
+        );
 
         var result = await _compressorContributor.TryCompressAsync(imageStream, args, cancellationToken);
 

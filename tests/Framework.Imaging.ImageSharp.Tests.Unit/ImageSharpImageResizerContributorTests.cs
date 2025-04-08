@@ -1,5 +1,5 @@
 ﻿using Framework.Constants;
-using Framework.Imaging.Contracts;
+using Framework.Imaging;
 using Framework.Imaging.ImageSharp;
 using Microsoft.Extensions.Logging;
 
@@ -42,6 +42,7 @@ public class ImageSharpImageResizerContributorTests
         result.Result.Content.Should().NotBeNull();
         result.Result.Content.Length.Should().BePositive();
     }
+
     // bugs not change mimeType
     [Fact]
     public async Task should_change_mime_type_successfully()
@@ -50,7 +51,11 @@ public class ImageSharpImageResizerContributorTests
         const string mimeType = ContentTypes.Images.Png;
         var args = new ImageResizeArgs(mimeType);
 
-        await using var imageStream = new FileStream(_GetPathImage("happy-young-man-with-q-letter.jpg"), FileMode.Open, FileAccess.Read);
+        await using var imageStream = new FileStream(
+            _GetPathImage("happy-young-man-with-q-letter.jpg"),
+            FileMode.Open,
+            FileAccess.Read
+        );
 
         // when
         var result = await _imageResizerContributor.TryResizeAsync(imageStream, args);
@@ -65,8 +70,7 @@ public class ImageSharpImageResizerContributorTests
     {
         // given
         const int height = 200;
-        var args = new ImageResizeArgs(ImageResizeMode.Crop,null,height);
-
+        var args = new ImageResizeArgs(ImageResizeMode.Crop, null, height);
 
         await using var imageStream = new FileStream(
             _GetPathImage("happy-young-man-with-q-letter.jpg"),

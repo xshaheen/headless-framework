@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Imaging\Framework.Imaging.csproj" />
+    <ProjectReference Include="..\Framework.Imaging.Core\Framework.Imaging.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

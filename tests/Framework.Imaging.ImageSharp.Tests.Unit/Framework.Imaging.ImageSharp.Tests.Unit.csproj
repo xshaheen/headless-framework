@@ -18,7 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Imaging.ImageSharp\Framework.Imaging.ImageSharp.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Imaging\Framework.Imaging.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Imaging.Core\Framework.Imaging.Core.csproj" />
   </ItemGroup>
 
 </Project>
