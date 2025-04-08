@@ -3,7 +3,7 @@
 using Framework.Domains;
 using Framework.Messaging;
 using Framework.Settings.Entities;
-using Framework.Settings.Storage;
+using Framework.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Settings;

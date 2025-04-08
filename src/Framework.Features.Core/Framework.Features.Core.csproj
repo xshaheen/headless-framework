@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.Features</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
+    <ProjectReference Include="..\Framework.Caching\Framework.Caching.csproj" />
+    <ProjectReference Include="..\Framework.Features.Abstractions\Framework.Features.Abstractions.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Resources\Messages.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Messages.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <Compile Update="Resources\Messages.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Messages.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+</Project>

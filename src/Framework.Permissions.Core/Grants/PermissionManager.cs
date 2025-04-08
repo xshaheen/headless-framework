@@ -5,8 +5,8 @@ using Framework.Checks;
 using Framework.Exceptions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
+using Framework.Permissions.Repositories;
 using Framework.Permissions.Resources;
-using Framework.Permissions.Storage;
 
 namespace Framework.Permissions.Grants;
 

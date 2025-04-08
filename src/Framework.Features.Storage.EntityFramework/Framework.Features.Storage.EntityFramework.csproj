@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Features\Framework.Features.csproj" />
+    <ProjectReference Include="..\Framework.Features.Core\Framework.Features.Core.csproj" />
     <ProjectReference Include="..\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
   </ItemGroup>
 

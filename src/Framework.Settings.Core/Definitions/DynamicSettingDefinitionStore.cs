@@ -7,7 +7,7 @@ using Framework.ResourceLocks;
 using Framework.Serializer.Modifiers;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
-using Framework.Settings.Storage;
+using Framework.Settings.Repositories;
 using Humanizer;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;

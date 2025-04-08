@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Settings.Entities;
-using Framework.Settings.Storage;
+using Framework.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Settings;
