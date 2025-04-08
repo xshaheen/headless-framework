@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class ObjectToInferredTypesConverterTests
+public class ObjectToInferredTypesJsonConverterTests
 {
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
-        Converters = { new ObjectToInferredTypesConverter() },
+        Converters = { new ObjectToInferredTypesJsonConverter() },
     };
 
     [Fact]

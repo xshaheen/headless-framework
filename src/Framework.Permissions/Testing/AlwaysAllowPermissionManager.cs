@@ -3,7 +3,7 @@
 using Framework.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Grants;
-using Framework.Permissions.Results;
+using Framework.Permissions.Models;
 
 namespace Framework.Permissions.Testing;
 

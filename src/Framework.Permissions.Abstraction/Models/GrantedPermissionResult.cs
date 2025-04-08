@@ -2,7 +2,7 @@
 
 using Framework.Checks;
 
-namespace Framework.Permissions.Results;
+namespace Framework.Permissions.Models;
 
 public sealed class GrantedPermissionResult(string name, bool isGranted)
 {

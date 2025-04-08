@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class StringToGuidConverterTests
+public class StringToGuidJsonConverterTests
 {
-    private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToGuidConverter() } };
+    private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToGuidJsonConverter() } };
 
     [Theory]
     [InlineData("d85b1407-351d-4694-9392-03acc5870eb1", "D")]

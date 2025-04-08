@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Serializer;
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Configurations;
@@ -28,7 +28,7 @@ public sealed class JsonValueConverter<TPropertyType> : ValueConverter<TProperty
         var option = new JsonSerializerOptions();
 
         JsonConstants.ConfigureInternalJsonOptions(option);
-        option.Converters.Add(new ObjectToInferredTypesConverter());
+        option.Converters.Add(new ObjectToInferredTypesJsonConverter());
 
         return option;
     }

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Serializer.Json.Converters;
+namespace Framework.Serializer.Converters;
 
 public sealed class UnixTimeJsonConverter : JsonConverter<DateTimeOffset>
 {

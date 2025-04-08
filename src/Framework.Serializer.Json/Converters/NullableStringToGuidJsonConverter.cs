@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Serializer.Json.Converters;
+namespace Framework.Serializer.Converters;
 
-public sealed class NullableStringToGuidConverter : JsonConverter<Guid?>
+public sealed class NullableStringToGuidJsonConverter : JsonConverter<Guid?>
 {
     public override Guid? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

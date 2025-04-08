@@ -2,7 +2,7 @@
 
 using System.Text.Json.Serialization.Metadata;
 
-namespace Framework.Serializer.Json.Modifiers;
+namespace Framework.Serializer.Modifiers;
 
 public sealed class JsonSerializerModifiersOptions
 {

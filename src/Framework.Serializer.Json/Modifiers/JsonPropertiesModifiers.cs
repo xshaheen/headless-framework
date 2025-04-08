@@ -4,7 +4,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 
-namespace Framework.Serializer.Json.Modifiers;
+namespace Framework.Serializer.Modifiers;
 
 #pragma warning disable CA1000 // Do not declare static members on generic types
 public static class JsonPropertiesModifiers<TClass>

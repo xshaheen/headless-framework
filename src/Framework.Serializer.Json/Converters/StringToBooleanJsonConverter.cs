@@ -3,9 +3,9 @@
 using System.Buffers;
 using System.Buffers.Text;
 
-namespace Framework.Serializer.Json.Converters;
+namespace Framework.Serializer.Converters;
 
-public sealed class StringToBooleanConverter : JsonConverter<bool>
+public sealed class StringToBooleanJsonConverter : JsonConverter<bool>
 {
     public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

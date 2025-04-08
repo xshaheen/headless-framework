@@ -1,17 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class JsonCollectionItemConverterTests
+public class CollectionItemJsonConverterTests
 {
     private readonly JsonSerializerOptions _options;
 
-    public JsonCollectionItemConverterTests()
+    public CollectionItemJsonConverterTests()
     {
         _options = new JsonSerializerOptions();
-        _options.Converters.Add(new JsonCollectionItemConverter<string, SampleConverter>());
+        _options.Converters.Add(new CollectionItemJsonConverter<string, SampleConverter>());
     }
 
     [Fact]

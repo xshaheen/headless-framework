@@ -1,12 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class NullableStringToGuidConverterTests
+public class NullableStringToGuidJsonConverterTests
 {
-    private readonly JsonSerializerOptions _options = new() { Converters = { new NullableStringToGuidConverter() } };
+    private readonly JsonSerializerOptions _options = new()
+    {
+        Converters = { new NullableStringToGuidJsonConverter() },
+    };
 
     [Fact]
     public void guid_convertor_should_deserialize_valid_guild_normally()

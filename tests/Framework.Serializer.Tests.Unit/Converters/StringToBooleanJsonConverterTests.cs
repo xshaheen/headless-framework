@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Serializer.Json.Converters;
+using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class StringToBooleanConverterTests
+public class StringToBooleanJsonConverterTests
 {
-    private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToBooleanConverter() } };
+    private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToBooleanJsonConverter() } };
 
     [Fact]
     public void string_to_bool_converter_should_convert_valid_true_boolean_successfully()

@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.Serializer</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Serializer\Framework.Serializer.csproj" />
+    <ProjectReference Include="..\Framework.Serializer.Abstraction\Framework.Serializer.Abstraction.csproj" />
   </ItemGroup>
 
 </Project>
