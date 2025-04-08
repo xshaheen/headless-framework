@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Sql\Framework.Sql.csproj" />
+    <ProjectReference Include="..\Framework.Sql.Abstraction\Framework.Sql.Abstraction.csproj" />
   </ItemGroup>
 
   <ItemGroup>

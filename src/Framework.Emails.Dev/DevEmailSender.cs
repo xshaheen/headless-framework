@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Emails.Contracts;
 
 namespace Framework.Emails.Dev;
 

@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Emails.Dev;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Emails;
+namespace Framework.Emails.Dev;
 
 [PublicAPI]
-public static class AddEmailExtensions
+public static class AddDevEmailExtensions
 {
     public static IServiceCollection AddDevEmailSender(this IServiceCollection services, string filePath)
     {

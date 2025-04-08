@@ -2,8 +2,6 @@
 
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
-using Framework.Emails.Contracts;
-using Framework.Emails.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Emails.Aws;

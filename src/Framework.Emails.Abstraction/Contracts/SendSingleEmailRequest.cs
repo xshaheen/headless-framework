@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Emails.Contracts;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Emails;
 
 [PublicAPI]
 public sealed record SendSingleEmailRequest
