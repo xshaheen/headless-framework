@@ -2,10 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.Emails</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Framework.Emails.Core\Framework.Emails.Core.csproj" />
-  </ItemGroup>
 
 </Project>

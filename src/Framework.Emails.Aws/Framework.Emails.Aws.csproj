@@ -10,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Emails\Framework.Emails.csproj" />
+    <ProjectReference Include="..\Framework.Emails.Core\Framework.Emails.Core.csproj" />
   </ItemGroup>
 
 </Project>

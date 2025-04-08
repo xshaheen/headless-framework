@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Emails.Contracts;
-
 namespace Framework.Emails.Dev;
 
 public sealed class NoopEmailSender : IEmailSender

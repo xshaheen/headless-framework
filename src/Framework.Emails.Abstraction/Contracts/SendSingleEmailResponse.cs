@@ -2,7 +2,9 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace Framework.Emails.Contracts;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Framework.Emails;
 
 public sealed class SendSingleEmailResponse
 {

@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Emails.Contracts;
 using MimeKit;
 
-namespace Framework.Emails.Helpers;
+namespace Framework.Emails;
 
 public static class EmailToMimMessageConverter
 {
@@ -35,30 +34,21 @@ public static class EmailToMimMessageConverter
     )
     {
         message.Subject = request.Subject;
-
-        var fromAddress = new MailboxAddress(
-            name: request.From.DisplayName ?? request.From.EmailAddress,
-            address: request.From.EmailAddress
-        );
-
-        message.From.Add(fromAddress);
+        message.From.Add(request.From.MapToMailboxAddress());
 
         foreach (var to in request.Destination.ToAddresses)
         {
-            var toAddress = new MailboxAddress(name: to.DisplayName ?? to.EmailAddress, address: to.EmailAddress);
-            message.To.Add(toAddress);
+            message.To.Add(to.MapToMailboxAddress());
         }
 
         foreach (var cc in request.Destination.CcAddresses)
         {
-            var ccAddress = new MailboxAddress(name: cc.DisplayName ?? cc.EmailAddress, address: cc.EmailAddress);
-            message.Cc.Add(ccAddress);
+            message.Cc.Add(cc.MapToMailboxAddress());
         }
 
         foreach (var bcc in request.Destination.BccAddresses)
         {
-            var bccAddress = new MailboxAddress(name: bcc.DisplayName ?? bcc.EmailAddress, address: bcc.EmailAddress);
-            message.Bcc.Add(bccAddress);
+            message.Bcc.Add(bcc.MapToMailboxAddress());
         }
 
         var emailBuilder = new BodyBuilder();
@@ -81,5 +71,10 @@ public static class EmailToMimMessageConverter
         }
 
         message.Body = emailBuilder.ToMessageBody();
+    }
+
+    public static MailboxAddress MapToMailboxAddress(this EmailRequestAddress address)
+    {
+        return new MailboxAddress(address.DisplayName ?? address.EmailAddress, address.EmailAddress);
     }
 }
