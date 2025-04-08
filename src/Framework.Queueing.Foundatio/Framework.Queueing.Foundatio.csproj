@@ -10,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Queueing\Framework.Queueing.csproj" />
+    <ProjectReference Include="..\Framework.Queueing.Abstraction\Framework.Queueing.Abstraction.csproj" />
   </ItemGroup>
 
 </Project>
