@@ -71,7 +71,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Blobs.FileSystem"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Caching", "Caching", "{7D1ABA75-9EF8-4E6B-8000-F0A18CBB923F}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Caching", "src\Framework.Caching\Framework.Caching.csproj", "{7F5523AF-D4EC-45E8-8849-16A4D3EF5D7E}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Caching.Abstraction", "src\Framework.Caching.Abstraction\Framework.Caching.Abstraction.csproj", "{7F5523AF-D4EC-45E8-8849-16A4D3EF5D7E}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "PushNotifications", "PushNotifications", "{36E82089-A2EA-40C2-9526-C4FECB0D69D7}"
 EndProject
