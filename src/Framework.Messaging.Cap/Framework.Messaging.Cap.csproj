@@ -12,7 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
-    <ProjectReference Include="..\Framework.Messaging\Framework.Messaging.csproj" />
+    <ProjectReference Include="..\Framework.Messaging.Abstractions\Framework.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
   </ItemGroup>
 
 </Project>

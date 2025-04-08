@@ -2,15 +2,12 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <RootNamespace>Framework.Messaging</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Foundatio" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Messaging.Abstractions\Framework.Messaging.Abstractions.csproj" />
   </ItemGroup>
 

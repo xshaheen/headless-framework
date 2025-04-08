@@ -2,6 +2,7 @@
 using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Messaging;
+using Framework.Messaging.LocalServiceProvider;
 using Framework.Permissions;
 using Framework.Permissions.Seeders;
 using Framework.Redis;
@@ -33,6 +34,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestO
     {
         var builder = Host.CreateApplicationBuilder();
         ConfigurePermissionsServices(builder);
+
         return builder;
     }
 
@@ -49,11 +51,13 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestO
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
         services.AddSingleton(Substitute.For<IDistributedMessagePublisher>());
-        services.AddSingleton<ILocalMessagePublisher, ServiceProviderLocalMessagePublisher>();
+        services.AddServiceProviderLocalMessagePublisher();
+
         // MessageBus
         services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
             o.Subscriber(Fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
         ));
+
         services.AddMessageBusFoundatioAdapter();
         // Cache
         services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
