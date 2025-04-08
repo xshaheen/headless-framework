@@ -3,7 +3,7 @@
 namespace Framework.PushNotifications;
 
 using JetBrainsPure = PureAttribute;
-using SystemPure = global::System.Diagnostics.Contracts.PureAttribute;
+using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
 public interface IPushNotificationService
 {
