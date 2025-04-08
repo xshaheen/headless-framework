@@ -13,7 +13,7 @@ public sealed class UserPermissionGrantProvider(IPermissionGrantStore grantStore
 {
     private readonly IPermissionGrantStore _grantStore = grantStore;
 
-    public const string ProviderName = "User";
+    public const string ProviderName = PermissionGrantProviderNames.User;
 
     public override string Name => ProviderName;
 

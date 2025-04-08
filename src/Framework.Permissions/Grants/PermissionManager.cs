@@ -7,49 +7,9 @@ using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
 using Framework.Permissions.Resources;
 using Framework.Permissions.Results;
+using Framework.Permissions.Storage;
 
 namespace Framework.Permissions.Grants;
-
-public interface IPermissionManager
-{
-    Task<GrantedPermissionResult> GetAsync(
-        string permissionName,
-        ICurrentUser currentUser,
-        string? providerName = null,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<List<GrantedPermissionResult>> GetAllAsync(
-        ICurrentUser currentUser,
-        string? providerName = null,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<List<GrantedPermissionResult>> GetAllAsync(
-        IReadOnlyCollection<string> permissionNames,
-        ICurrentUser currentUser,
-        string? providerName = null,
-        CancellationToken cancellationToken = default
-    );
-
-    Task SetAsync(
-        string permissionName,
-        string providerName,
-        string providerKey,
-        bool isGranted,
-        CancellationToken cancellationToken = default
-    );
-
-    Task SetAsync(
-        IReadOnlyCollection<string> permissionNames,
-        string providerName,
-        string providerKey,
-        bool isGranted,
-        CancellationToken cancellationToken = default
-    );
-
-    Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
-}
 
 public sealed class PermissionManager(
     IPermissionDefinitionManager definitionManager,

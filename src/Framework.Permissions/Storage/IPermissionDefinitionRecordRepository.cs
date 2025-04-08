@@ -2,7 +2,7 @@
 
 using Framework.Permissions.Entities;
 
-namespace Framework.Permissions.Definitions;
+namespace Framework.Permissions.Storage;
 
 public interface IPermissionDefinitionRecordRepository
 {

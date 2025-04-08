@@ -4,7 +4,7 @@ using Framework.Abstractions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.GrantProviders;
-using Framework.Permissions.Grants;
+using Framework.Permissions.Storage;
 
 namespace Framework.Permissions.Seeders;
 

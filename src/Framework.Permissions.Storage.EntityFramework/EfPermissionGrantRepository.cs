@@ -3,7 +3,7 @@
 using Framework.Domains;
 using Framework.Messaging;
 using Framework.Permissions.Entities;
-using Framework.Permissions.Grants;
+using Framework.Permissions.Storage;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Permissions;
