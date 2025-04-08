@@ -2,11 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.ResourceLocks</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Messaging\Framework.Messaging.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks.Abstraction\Framework.ResourceLocks.Abstraction.csproj" />
   </ItemGroup>
 
 </Project>

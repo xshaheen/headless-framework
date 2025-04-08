@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Redis\Framework.Redis.csproj" />
-    <ProjectReference Include="..\Framework.ResourceLocks\Framework.ResourceLocks.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks.Core\Framework.ResourceLocks.Core.csproj" />
   </ItemGroup>
 
 </Project>
