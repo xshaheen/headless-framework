@@ -311,6 +311,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.PushNotifications
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Abstractions", "src\Framework.Features.Abstractions\Framework.Features.Abstractions.csproj", "{B848A23A-0E6A-450B-8AD9-4F074A19CB23}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Media.Indexing.Abstraction", "src\Framework.Media.Indexing.Abstraction\Framework.Media.Indexing.Abstraction.csproj", "{1931435E-59C5-492E-A06F-ECC5DCA036FD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -803,6 +805,10 @@ Global
 		{B848A23A-0E6A-450B-8AD9-4F074A19CB23}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B848A23A-0E6A-450B-8AD9-4F074A19CB23}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B848A23A-0E6A-450B-8AD9-4F074A19CB23}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1931435E-59C5-492E-A06F-ECC5DCA036FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1931435E-59C5-492E-A06F-ECC5DCA036FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1931435E-59C5-492E-A06F-ECC5DCA036FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1931435E-59C5-492E-A06F-ECC5DCA036FD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -929,6 +935,7 @@ Global
 		{6254BFA5-8CC9-430A-801E-1067A0A35306} = {36E82089-A2EA-40C2-9526-C4FECB0D69D7}
 		{47A2388C-C71B-4AC4-BF70-0AB0F3E93281} = {36E82089-A2EA-40C2-9526-C4FECB0D69D7}
 		{B848A23A-0E6A-450B-8AD9-4F074A19CB23} = {DDE5B4C3-E149-430A-BC51-E984F8435B54}
+		{1931435E-59C5-492E-A06F-ECC5DCA036FD} = {6C70BD36-5CF8-48FD-AA0B-CD63250884DF}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {84804F7F-F00C-454C-A90E-4013B6EA6263}
