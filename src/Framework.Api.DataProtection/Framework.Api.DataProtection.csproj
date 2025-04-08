@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
-    <ProjectReference Include="..\Framework.Blobs\Framework.Blobs.csproj" />
+    <ProjectReference Include="..\Framework.Blobs.Abstraction\Framework.Blobs.Abstraction.csproj" />
   </ItemGroup>
 
 </Project>

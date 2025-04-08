@@ -61,7 +61,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Emails.Mailkit", 
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Blobs", "Blobs", "{B36919A7-AE4D-4C80-93F9-DBD8D79564D0}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Blobs", "src\Framework.Blobs\Framework.Blobs.csproj", "{9BC6524E-5A66-48E0-A354-0164AE246DC8}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Blobs.Abstraction", "src\Framework.Blobs.Abstraction\Framework.Blobs.Abstraction.csproj", "{9BC6524E-5A66-48E0-A354-0164AE246DC8}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Blobs.Aws", "src\Framework.Blobs.Aws\Framework.Blobs.Aws.csproj", "{A9DE2B13-675E-4F19-B573-1F2F42AD104E}"
 EndProject
