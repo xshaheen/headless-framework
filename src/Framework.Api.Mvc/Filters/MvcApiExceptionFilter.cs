@@ -16,36 +16,11 @@ using Microsoft.Extensions.Logging;
 namespace Framework.Api.Mvc.Filters;
 
 [PublicAPI]
-public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
+public sealed partial class MvcApiExceptionFilter(
+    IProblemDetailsCreator problemDetailsCreator,
+    ILogger<MvcApiExceptionFilter> logger
+) : IAsyncExceptionFilter
 {
-    private readonly IProblemDetailsCreator _problemDetailsCreator;
-    private readonly IHostEnvironment _environment;
-    private readonly ILogger<MvcApiExceptionFilter> _logger;
-    private readonly Dictionary<Type, Func<ExceptionContext, Task>> _exceptionHandlers;
-
-    public MvcApiExceptionFilter(
-        IProblemDetailsCreator problemDetailsCreator,
-        IHostEnvironment environment,
-        ILogger<MvcApiExceptionFilter> logger
-    )
-    {
-        _problemDetailsCreator = problemDetailsCreator;
-        _environment = environment;
-        _logger = logger;
-
-        // Register known exception types and handlers.
-        _exceptionHandlers = new()
-        {
-            { typeof(ValidationException), _HandleValidationException },
-            { typeof(ConflictException), _HandleConflictException },
-            { typeof(DbUpdateConcurrencyException), _HandleDbUpdateConcurrencyException },
-            { typeof(EntityNotFoundException), _HandleEntityNotFoundException },
-            { typeof(OperationCanceledException), _HandleRequestCanceledException },
-            { typeof(RegexMatchTimeoutException), _HandleTimeoutExceptions },
-            { typeof(NotImplementedException), _HandleNotImplementedException },
-        };
-    }
-
     public async Task OnExceptionAsync(ExceptionContext context)
     {
         // If the exception is already handled, we don't need to do anything.
@@ -54,121 +29,80 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
             return;
         }
 
+        var httpContext = context.HttpContext;
+
         // If the exception is not an API exception, we don't need to do anything.
-        if (
-            !context.HttpContext.Request.CanAccept(
-                ContentTypes.Applications.Json,
-                ContentTypes.Applications.ProblemJson
-            )
-        )
+        if (!httpContext.Request.CanAccept(ContentTypes.Applications.Json, ContentTypes.Applications.ProblemJson))
         {
             return;
         }
 
-        var type = context.Exception.GetType();
-
-        if (_exceptionHandlers.TryGetValue(type, out var handler))
+        var task = context.Exception switch
         {
-            await handler(context);
+            ConflictException e => _Handle(httpContext, e),
+            ValidationException e => _Handle(httpContext, e),
+            EntityNotFoundException e => _Handle(httpContext, e),
+            DbUpdateConcurrencyException e => _Handle(httpContext, e),
+            TimeoutException e => _Handle(httpContext, e),
+            NotImplementedException e => _Handle(httpContext, e),
+            OperationCanceledException e => _Handle(httpContext, e),
+            { InnerException: OperationCanceledException e } => _Handle(httpContext, e),
+            _ => null,
+        };
 
-            return;
-        }
-
-        await _HandleUnknownException(context);
-    }
-
-    /// <summary>Handle validation exception.</summary>
-    private async Task _HandleValidationException(ExceptionContext context)
-    {
-        var exception = context.Exception as ValidationException;
-
-        Debug.Assert(exception is not null);
-
-        var errors = exception.Errors.ToErrorDescriptors();
-        var problemDetails = _problemDetailsCreator.UnprocessableEntity(errors);
-        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
-        context.ExceptionHandled = true;
-    }
-
-    /// <summary>Handle entity not found response.</summary>
-    private async Task _HandleEntityNotFoundException(ExceptionContext context)
-    {
-        var exception = context.Exception as EntityNotFoundException;
-        Debug.Assert(exception is not null);
-
-        var problemDetails = _problemDetailsCreator.EntityNotFound(exception.Entity, exception.Key);
-        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
-
-        context.ExceptionHandled = true;
-    }
-
-    /// <summary>Handle forbidden request exception.</summary>
-    private async Task _HandleConflictException(ExceptionContext context)
-    {
-        var exception = context.Exception as ConflictException;
-        Debug.Assert(exception is not null);
-
-        var problemDetails = _problemDetailsCreator.Conflict(exception.Errors);
-        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
-        context.ExceptionHandled = true;
-    }
-
-    /// <summary>Handle DbUpdateConcurrencyException.</summary>
-    private async Task _HandleDbUpdateConcurrencyException(ExceptionContext context)
-    {
-        LogDbConcurrencyException(_logger, context.Exception);
-
-        var problemDetails = _problemDetailsCreator.Conflict([GeneralMessageDescriber.ConcurrencyFailure()]);
-
-        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext);
-        context.ExceptionHandled = true;
-    }
-
-    /// <summary>Handle OperationCanceledException.</summary>
-    private static async Task _HandleRequestCanceledException(ExceptionContext context)
-    {
-        await Results.Problem(statusCode: 499).ExecuteAsync(context.HttpContext);
-        context.ExceptionHandled = true;
-    }
-
-    /// <summary>Handle request unhandled exceptions.</summary>
-    private Task _HandleUnknownException(ExceptionContext context)
-    {
-        LogUnhandledException(_logger, context.Exception);
-
-        if (context.Exception.InnerException is OperationCanceledException)
+        if (task is not null)
         {
-            return _HandleRequestCanceledException(context);
+            await task;
+            context.ExceptionHandled = true;
         }
-
-        return Task.CompletedTask;
     }
 
-    /// <summary>Handle NotImplementedException.</summary>
-    private static async Task _HandleNotImplementedException(ExceptionContext context)
+    private Task _Handle(HttpContext context, ValidationException exception)
     {
-        await Results.Problem(statusCode: StatusCodes.Status501NotImplemented).ExecuteAsync(context.HttpContext);
+        var problemDetails = problemDetailsCreator.UnprocessableEntity(exception.Errors.ToErrorDescriptors());
 
-        context.ExceptionHandled = true;
+        return Results.Problem(problemDetails).ExecuteAsync(context);
     }
 
-    /// <summary>Handle Timeout</summary>
-    private static async Task _HandleTimeoutExceptions(ExceptionContext context)
+    private Task _Handle(HttpContext context, ConflictException exception)
     {
-        await Results.Problem(statusCode: StatusCodes.Status408RequestTimeout).ExecuteAsync(context.HttpContext);
+        var problemDetails = problemDetailsCreator.Conflict(exception.Errors);
 
-        context.ExceptionHandled = true;
+        return Results.Problem(problemDetails).ExecuteAsync(context);
     }
 
-    [LoggerMessage(
-        EventId = 5001,
-        EventName = "UnhandledException",
-        Level = LogLevel.Critical,
-        Message = "Unexpected exception occured.",
-        SkipEnabledCheck = true
-    )]
-    // ReSharper disable once InconsistentNaming
-    private static partial void LogUnhandledException(ILogger logger, Exception exception);
+    private Task _Handle(HttpContext context, EntityNotFoundException exception)
+    {
+        var problemDetails = problemDetailsCreator.EntityNotFound(exception.Entity, exception.Key);
+
+        return Results.Problem(problemDetails).ExecuteAsync(context);
+    }
+
+    private Task _Handle(HttpContext context, DbUpdateConcurrencyException exception)
+    {
+        LogDbConcurrencyException(logger, exception);
+
+        var problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.ConcurrencyFailure()]);
+
+        return Results.Problem(problemDetails).ExecuteAsync(context);
+    }
+
+    private Task _Handle(HttpContext context, TimeoutException exception)
+    {
+        LogRequestTimeoutException(logger, exception);
+
+        return Results.Problem(statusCode: StatusCodes.Status408RequestTimeout).ExecuteAsync(context);
+    }
+
+    private static Task _Handle(HttpContext context, OperationCanceledException _)
+    {
+        return Results.Problem(statusCode: 499).ExecuteAsync(context);
+    }
+
+    private static Task _Handle(HttpContext context, NotImplementedException _)
+    {
+        return Results.Problem(statusCode: StatusCodes.Status501NotImplemented).ExecuteAsync(context);
+    }
 
     [LoggerMessage(
         EventId = 5003,
@@ -179,4 +113,14 @@ public sealed partial class MvcApiExceptionFilter : IAsyncExceptionFilter
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogDbConcurrencyException(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5004,
+        EventName = "RequestTimeoutException",
+        Level = LogLevel.Debug,
+        Message = "Request was timed out",
+        SkipEnabledCheck = true
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogRequestTimeoutException(ILogger logger, Exception exception);
 }
