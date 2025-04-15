@@ -7,7 +7,7 @@ public static class CacheExtensions
     public static async Task<CacheValue<T>> GetOrAddAsync<T>(
         this ICache cache,
         string key,
-        Func<Task<T>> factory,
+        Func<Task<T?>> factory,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     )
@@ -20,7 +20,7 @@ public static class CacheExtensions
         }
 
         var value = await factory();
-        await cache.UpsertAsync(key, cacheValue.Value, expiration, cancellationToken);
+        await cache.UpsertAsync(key, value, expiration, cancellationToken);
 
         return new(value, hasValue: true);
     }
