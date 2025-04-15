@@ -33,19 +33,20 @@ public static class AddCacheExtensions
 
     private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
     {
-        services.AddSingletonOptionValue<RedisCacheOptions>();
+        services.TryAddSingleton<ISerializer, SystemJsonSerializer>();
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+
+        services.AddSingletonOptionValue<RedisCacheOptions>();
 
         if (!isDefault)
         {
             services.AddKeyedSingleton<ICache, RedisCachingFoundatioAdapter>(CacheConstants.DistributedCacheProvider);
-
-            return services;
         }
-
-        services.TryAddSingleton<ISerializer, SystemJsonSerializer>();
-        services.AddSingleton<ICache, RedisCachingFoundatioAdapter>();
-        services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
+        else
+        {
+            services.AddSingleton<ICache, RedisCachingFoundatioAdapter>();
+            services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
+        }
 
         return services;
     }
