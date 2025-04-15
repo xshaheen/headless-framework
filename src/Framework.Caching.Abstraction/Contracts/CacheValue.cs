@@ -3,6 +3,8 @@
 using System.Diagnostics.CodeAnalysis;
 
 #pragma warning disable CA1000 // Do not declare static members on generic types
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
 namespace Framework.Caching;
 
 /// <summary>Cache value.</summary>

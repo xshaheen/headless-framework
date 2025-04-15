@@ -45,13 +45,13 @@ public static class AddCacheExtensions
         if (!isDefault)
         {
             services.AddKeyedSingleton<ICache, InMemoryCachingFoundatioAdapter>(CacheConstants.MemoryCacheProvider);
-
-            return services;
         }
-
-        services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
-        services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, x => x.GetRequiredService<ICache>());
-        services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
+        else
+        {
+            services.AddSingleton<ICache, InMemoryCachingFoundatioAdapter>();
+            services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, x => x.GetRequiredService<ICache>());
+            services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
+        }
 
         return services;
     }

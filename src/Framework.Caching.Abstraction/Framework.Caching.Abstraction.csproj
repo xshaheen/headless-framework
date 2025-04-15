@@ -5,8 +5,4 @@
     <RootNamespace>Framework.Caching</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Folder Include="Contracts\" />
-  </ItemGroup>
-
 </Project>
