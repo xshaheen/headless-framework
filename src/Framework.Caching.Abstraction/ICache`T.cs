@@ -8,7 +8,7 @@ public interface ICache<T>
 
     Task<bool> UpsertAsync(
         string cacheKey,
-        T cacheValue,
+        T? cacheValue,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     );
@@ -21,17 +21,17 @@ public interface ICache<T>
 
     Task<bool> TryAddAsync(
         string cacheKey,
-        T cacheValue,
+        T? cacheValue,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<bool> TryReplaceAsync(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default);
+    Task<bool> TryReplaceAsync(string key, T? value, TimeSpan expiration, CancellationToken cancellationToken = default);
 
     Task<bool> TryReplaceIfEqualAsync(
         string key,
-        T value,
-        T expected,
+        T? value,
+        T? expected,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     );
@@ -67,7 +67,7 @@ public interface ICache<T>
 
     Task<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    Task<bool> RemoveIfEqualAsync(string cacheKey, T expected);
+    Task<bool> RemoveIfEqualAsync(string cacheKey, T? expected);
 
     Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
@@ -85,7 +85,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
 {
     public Task<bool> UpsertAsync(
         string cacheKey,
-        T cacheValue,
+        T? cacheValue,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     )
@@ -104,7 +104,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
 
     public Task<bool> TryAddAsync(
         string cacheKey,
-        T cacheValue,
+        T? cacheValue,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     )
@@ -114,7 +114,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
 
     public Task<bool> TryReplaceAsync(
         string key,
-        T value,
+        T? value,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     )
@@ -124,8 +124,8 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
 
     public Task<bool> TryReplaceIfEqualAsync(
         string key,
-        T value,
-        T expected,
+        T? value,
+        T? expected,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     )
@@ -174,7 +174,7 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         return cache.RemoveAsync(cacheKey, cancellationToken);
     }
 
-    public Task<bool> RemoveIfEqualAsync(string cacheKey, T expected)
+    public Task<bool> RemoveIfEqualAsync(string cacheKey, T? expected)
     {
         return cache.RemoveIfEqualAsync(cacheKey, expected);
     }

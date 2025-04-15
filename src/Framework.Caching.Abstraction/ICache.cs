@@ -2,12 +2,13 @@
 
 namespace Framework.Caching;
 
+[PublicAPI]
 public interface ICache
 {
     #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
-    Task<bool> UpsertAsync<T>(string key, T value, TimeSpan? expiration, CancellationToken cancellationToken = default);
+    Task<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default);
 
     /// <summary>Upsert all async.</summary>
     Task<int> UpsertAllAsync<T>(
@@ -20,22 +21,22 @@ public interface ICache
     /// <returns><see langword="true"/>, if set/add success, <see langword="false"/> if <paramref name="key"/> already exists.</returns>
     Task<bool> TryInsertAsync<T>(
         string key,
-        T value,
+        T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<bool> TryReplaceAsync<T>(
         string key,
-        T value,
+        T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
     Task<bool> TryReplaceIfEqualAsync<T>(
         string key,
-        T expected,
-        T value,
+        T? expected,
+        T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
@@ -135,7 +136,7 @@ public interface ICache
     Task<bool> RemoveAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Remove only if equal the expected value.</summary>
-    Task<bool> RemoveIfEqualAsync<T>(string key, T expected, CancellationToken cancellationToken = default);
+    Task<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default);
 
     /// <summary>Removes all.</summary>
     Task<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
