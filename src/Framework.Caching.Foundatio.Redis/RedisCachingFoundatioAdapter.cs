@@ -19,13 +19,12 @@ public sealed class RedisCachingFoundatioAdapter(
 
     public Task<bool> UpsertAsync<T>(
         string key,
-        T value,
+        T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNull(value);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
         key = _GetKey(key);
@@ -49,13 +48,12 @@ public sealed class RedisCachingFoundatioAdapter(
 
     public Task<bool> TryInsertAsync<T>(
         string key,
-        T value,
+        T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNull(value);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
         key = _GetKey(key);
@@ -65,13 +63,12 @@ public sealed class RedisCachingFoundatioAdapter(
 
     public Task<bool> TryReplaceAsync<T>(
         string key,
-        T value,
+        T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNull(value);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
         key = _GetKey(key);
@@ -81,15 +78,13 @@ public sealed class RedisCachingFoundatioAdapter(
 
     public Task<bool> TryReplaceIfEqualAsync<T>(
         string key,
-        T expected,
-        T value,
+        T? expected,
+        T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNull(value);
-        Argument.IsNotNull(expected);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
         key = _GetKey(key);
@@ -318,7 +313,7 @@ public sealed class RedisCachingFoundatioAdapter(
         return _cacheClient.RemoveAsync(key);
     }
 
-    public Task<bool> RemoveIfEqualAsync<T>(string key, T expected, CancellationToken cancellationToken = default)
+    public Task<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
