@@ -65,13 +65,8 @@ public sealed partial class MinimalApiExceptionFilter(
 
             return TypedResults.Problem(details);
         }
-        // Request canceled
-        catch (OperationCanceledException)
-        {
-            return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
-        }
         // Timeout
-        catch (RegexMatchTimeoutException)
+        catch (TimeoutException)
         {
             return TypedResults.StatusCode(StatusCodes.Status408RequestTimeout);
         }
@@ -80,29 +75,17 @@ public sealed partial class MinimalApiExceptionFilter(
         {
             return TypedResults.StatusCode(StatusCodes.Status501NotImplemented);
         }
-        // Unknown exception
-        catch (Exception exception)
+        // Request canceled
+        catch (OperationCanceledException)
         {
-            LogUnhandledException(logger, exception);
-
-            if (exception.InnerException is OperationCanceledException)
-            {
-                return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
-            }
-
-            throw;
+            return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+        // Unknown exception
+        catch (Exception exception) when (exception.InnerException is OperationCanceledException)
+        {
+            return TypedResults.StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
     }
-
-    [LoggerMessage(
-        EventId = 5001,
-        EventName = "UnhandledException",
-        Level = LogLevel.Critical,
-        Message = "Unexpected exception occured.",
-        SkipEnabledCheck = true
-    )]
-    // ReSharper disable once InconsistentNaming
-    private static partial void LogUnhandledException(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 5003,
