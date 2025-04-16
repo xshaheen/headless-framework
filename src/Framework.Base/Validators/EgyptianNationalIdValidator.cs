@@ -69,6 +69,29 @@ public static class EgyptianNationalIdValidator
         return GovernorateIdMap.ContainsKey(governorateKey);
     }
 
+    public static bool TryParse(string nationalId, out int year, out int month, out int day, out string governorateName)
+    {
+        if (!IsValid(nationalId))
+        {
+            year = 0;
+            month = 0;
+            day = 0;
+            governorateName = string.Empty;
+
+            return false;
+        }
+
+        var yearCenturyIndicator = int.Parse(nationalId[..1], NumberStyles.Integer, CultureInfo.InvariantCulture);
+        var yearNumber = int.Parse(nationalId[1..3], NumberStyles.Integer, CultureInfo.InvariantCulture);
+
+        year = ((17 + yearCenturyIndicator) * 100) + yearNumber;
+        month = int.Parse(nationalId[3..5], NumberStyles.Integer, CultureInfo.InvariantCulture);
+        day = int.Parse(nationalId[5..7], NumberStyles.Integer, CultureInfo.InvariantCulture);
+        governorateName = GovernorateIdMap[nationalId[7..9]];
+
+        return true;
+    }
+
     private static FrozenDictionary<string, string> _CreateGovernorateIdMap()
     {
         var map = new Dictionary<string, string>(StringComparer.InvariantCulture)

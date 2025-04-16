@@ -58,7 +58,7 @@
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="4.0.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.3.0" />
-    <PackageVersion Include="libphonenumber-csharp" Version="9.0.1" />
+    <PackageVersion Include="libphonenumber-csharp" Version="9.0.2" />
     <PackageVersion Include="Linq2Couchbase" Version="2.1.0" />
     <PackageVersion Include="MailKit" Version="4.11.0" />
     <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.5.1" />
@@ -108,7 +108,7 @@
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
     <PackageVersion Include="morelinq" Version="4.4.0" />
-    <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="0.24.0" />
+    <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="1.0.0" />
     <PackageVersion Include="NetEscapades.EnumGenerators" Version="1.0.0-beta11" />
     <PackageVersion Include="NetTopologySuite" Version="2.5.0" />
     <PackageVersion Include="NetTopologySuite.Features" Version="2.2.0" />
@@ -131,7 +131,7 @@
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.1.1" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.1.7" />
     <PackageVersion Include="Scrutor" Version="6.0.1" />
     <PackageVersion Include="Serilog" Version="4.2.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
