@@ -14,4 +14,8 @@ public sealed record MessageEnvelop(MessageDescriptor Message) : IMessageEnvelop
     public static MessageEnvelop FromMessageDescriptor(MessageDescriptor operand) => new(operand);
 
     public static implicit operator MessageEnvelop(MessageDescriptor operand) => new(operand);
+
+    public static MessageEnvelop FromString(string operand) => new(operand);
+
+    public static implicit operator MessageEnvelop(string operand) => new(operand);
 }
