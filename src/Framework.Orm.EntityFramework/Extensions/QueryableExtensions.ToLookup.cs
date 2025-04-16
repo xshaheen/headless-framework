@@ -6,21 +6,6 @@ namespace Microsoft.EntityFrameworkCore;
 [PublicAPI]
 public static partial class QueryableExtensions
 {
-    public static async Task<HashSet<TSource>> ToHashSetAsync<TSource>(
-        this IQueryable<TSource> source,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var set = new HashSet<TSource>();
-
-        await foreach (var element in source.AsAsyncEnumerable().WithCancellation(cancellationToken))
-        {
-            set.Add(element);
-        }
-
-        return set;
-    }
-
     public static async Task<ILookup<TKey, TSelected>> ToLookupAsync<TSource, TKey, TSelected>(
         this IQueryable<TSource> source,
         Func<TSource, TKey> keySelector,
