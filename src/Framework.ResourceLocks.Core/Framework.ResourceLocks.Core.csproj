@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Messaging.Abstractions\Framework.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks.Abstraction\Framework.ResourceLocks.Abstraction.csproj" />

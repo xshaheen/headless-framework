@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Recaptcha\Framework.Recaptcha.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
   </ItemGroup>
 
 </Project>

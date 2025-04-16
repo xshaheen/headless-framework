@@ -16,6 +16,7 @@
     </PackageReference>
     <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="Nito.Disposables" />
+    <PackageReference Include="libphonenumber-csharp" />
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
