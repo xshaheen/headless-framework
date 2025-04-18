@@ -238,21 +238,46 @@ public static class ArabicLetters
 
     #endregion
 
-    public static FrozenSet<char> Sun { get; } = [Teh, Theh, Dal, Thal, Reh, Zain, Seen, Sheen, Sad, Dad, Tah, Zah, Lam, Noon];
+    public static FrozenSet<char> Sun { get; } =
+        [Teh, Theh, Dal, Thal, Reh, Zain, Seen, Sheen, Sad, Dad, Tah, Zah, Lam, Noon];
 
-    public static FrozenSet<char> Moon { get; } = [Hamza,AlefMadda,AlefHamzaAbove,AlefHamzaBelow,Alef,Beh,Jeem,Hah,Khah,Ain,Ghain,Feh,Qaf,Kaf,Meem,Heh,Waw,Yeh];
+    public static FrozenSet<char> Moon { get; } =
+        [
+            Hamza,
+            AlefMadda,
+            AlefHamzaAbove,
+            AlefHamzaBelow,
+            Alef,
+            Beh,
+            Jeem,
+            Hah,
+            Khah,
+            Ain,
+            Ghain,
+            Feh,
+            Qaf,
+            Kaf,
+            Meem,
+            Heh,
+            Waw,
+            Yeh,
+        ];
 
-    public static FrozenSet<char> Tashkeel { get; } = [Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun, Shadda];
+    public static FrozenSet<char> Tashkeel { get; } =
+        [Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun, Shadda];
 
     public static FrozenSet<char> Harakat { get; } = [Fathatan, Dammatan, Kasratan, Fatha, Damma, Kasra, Sukun];
 
     public static FrozenSet<char> Tanwin { get; } = [Fathatan, Dammatan, Kasratan];
 
-    public static FrozenSet<char> Liguatures { get; } = [LamAlef, LamAlefHamzaAbove, LamAlefHamzaBelow, LamAlefMaddaAbove];
+    public static FrozenSet<char> Liguatures { get; } =
+        [LamAlef, LamAlefHamzaAbove, LamAlefHamzaBelow, LamAlefMaddaAbove];
 
-    public static FrozenSet<char> Hamzat { get; } = [Hamza, WawHamza, YehHamza, HamzaAbove, HamzaBelow, AlefHamzaAbove, AlefHamzaBelow];
+    public static FrozenSet<char> Hamzat { get; } =
+        [Hamza, WawHamza, YehHamza, HamzaAbove, HamzaBelow, AlefHamzaAbove, AlefHamzaBelow];
 
-    public static FrozenSet<char> Alefat { get; } = [Alef, AlefMadda, AlefHamzaAbove, AlefHamzaBelow, AlefWasla, AlefMaksura, SmallAlef];
+    public static FrozenSet<char> Alefat { get; } =
+        [Alef, AlefMadda, AlefHamzaAbove, AlefHamzaBelow, AlefWasla, AlefMaksura, SmallAlef];
 
     public static FrozenSet<char> WawLike { get; } = [Waw, WawHamza, SmallWaw];
 

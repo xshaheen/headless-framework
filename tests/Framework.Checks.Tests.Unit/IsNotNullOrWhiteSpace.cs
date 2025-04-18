@@ -28,9 +28,7 @@ public class IsNotNullOrWhiteSpace
         nullActionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentNullException>()
-            .WithMessage(
-                $"{customMessage} (Parameter '{nameof(nullArgument)}')"
-            );
+            .WithMessage($"{customMessage} (Parameter '{nameof(nullArgument)}')");
 
         // given
         const string emptyArgument = "";
@@ -51,9 +49,7 @@ public class IsNotNullOrWhiteSpace
         emptyActionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentException>()
-            .WithMessage(
-                $"{customMessage} (Parameter '{nameof(emptyArgument)}')"
-            );
+            .WithMessage($"{customMessage} (Parameter '{nameof(emptyArgument)}')");
     }
 
     [Fact]

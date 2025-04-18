@@ -64,11 +64,15 @@ public class IsNegativeOrZeroTests
         { 5.5f, "Error argument must be negative or zero." },
         { 7.5, "Error argument must be negative or zero." },
         { 7.5d, "Error argument must be negative or zero." },
-        { TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture), "Error argument must be negative or zero." }
+        { TimeSpan.Parse("00:00:10", CultureInfo.InvariantCulture), "Error argument must be negative or zero." },
     };
+
     [Theory]
     [MemberData(nameof(PositiveDataWithCustomMessage))]
-    public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive_with_custom_message(object argument,string message)
+    public void is_negative_or_zero_should_throw_argument_out_of_range_exception_when_positive_with_custom_message(
+        object argument,
+        string message
+    )
     {
         Action action = argument switch
         {
@@ -82,7 +86,6 @@ public class IsNegativeOrZeroTests
             _ => throw new InvalidOperationException("Unsupported argument type"),
         };
 
-        action.Should().Throw<ArgumentOutOfRangeException>()
-            .WithMessage($"{message} (Parameter 'value')");
+        action.Should().Throw<ArgumentOutOfRangeException>().WithMessage($"{message} (Parameter 'value')");
     }
 }

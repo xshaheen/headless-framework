@@ -76,11 +76,7 @@ public sealed class PagedFileListResult : IHasNextPageFunc
         _nextPageFunc = null;
     }
 
-    public PagedFileListResult(
-        IReadOnlyCollection<BlobInfo> blobs,
-        bool hasMore,
-        NextPageFunc nextPageFunc
-    )
+    public PagedFileListResult(IReadOnlyCollection<BlobInfo> blobs, bool hasMore, NextPageFunc nextPageFunc)
     {
         Blobs = blobs;
         HasMore = hasMore;
