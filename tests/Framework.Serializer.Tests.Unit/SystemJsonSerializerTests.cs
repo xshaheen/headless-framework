@@ -11,10 +11,28 @@ public class SystemJsonSerializerTests
     private readonly SystemJsonSerializer _serializer = new(new JsonSerializerOptions());
 
     [Fact]
-    public void serialize_object_should_write_to_stream()
+    public void serialize_type_should_write_to_stream()
     {
         // given
         var obj = new TestClass { Name = "Test", Age = 30 };
+        using var stream = new MemoryStream();
+
+        // when
+        _serializer.Serialize(obj, stream);
+        stream.Position = 0;
+        using var reader = new StreamReader(stream);
+
+        var result = reader.ReadToEnd();
+
+        // then
+        result.Should().Be("{\"Name\":\"Test\",\"Age\":30}");
+    }
+
+    [Fact]
+    public void serialize_object_should_write_to_stream()
+    {
+        // given
+        object obj = new TestClass { Name = "Test", Age = 30 };
         using var stream = new MemoryStream();
 
         // when
@@ -40,7 +58,7 @@ public class SystemJsonSerializerTests
 
         // then
         result.Should().NotBeNull();
-        result!.Name.Should().NotBeNullOrWhiteSpace().And.Be("Test");
+        result.Name.Should().NotBeNullOrWhiteSpace().And.Be("Test");
         result.Age.Should().Be(30);
     }
 
@@ -59,7 +77,7 @@ public class SystemJsonSerializerTests
         var result = readerStream.ReadToEnd();
 
         // then
-        result.Should().BeNullOrWhiteSpace();
+        result.Should().Be("null");
     }
 
     [Fact]
