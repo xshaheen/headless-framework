@@ -41,10 +41,16 @@ public class IsOneOfTests
         };
 
         // then
-        action.Should().ThrowExactly<ArgumentException>()
-            .WithMessage($"The argument \"{nameof(argument)}\"=<{argument}> must be one of [1,2,5,7]. (Parameter 'argument')");
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage(
+                $"The argument \"{nameof(argument)}\"=<{argument}> must be one of [1,2,5,7]. (Parameter 'argument')"
+            );
 
-        actionWithCustomMessage.Should().ThrowExactly<ArgumentException>()
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
             .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
@@ -95,10 +101,14 @@ public class IsOneOfTests
         var actionWithCustomMessage = () => Argument.IsOneOf(argument, validValues, null, customMessage);
 
         // then
-        action.Should().ThrowExactly<ArgumentException>()
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
             .WithMessage("The argument \"argument\"=<4.5> must be one of [1,2.5,3]. (Parameter 'argument')");
 
-        actionWithCustomMessage.Should().ThrowExactly<ArgumentException>()
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
             .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 

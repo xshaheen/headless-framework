@@ -23,7 +23,7 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
 
         foreach (var slideId in ids)
         {
-            var relationshipId = ((SlideId) slideId).RelationshipId?.Value;
+            var relationshipId = ((SlideId)slideId).RelationshipId?.Value;
 
             if (
                 relationshipId is null
