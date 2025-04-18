@@ -98,7 +98,8 @@ public sealed class ComparableTypesTests
         // given
         const int argument = 5;
         const int expected = 5;
-        var customMessage = $"Error {nameof(argument)} is equal {nameof(expected)} must be {nameof(argument)} less than {expected}";
+        var customMessage =
+            $"Error {nameof(argument)} is equal {nameof(expected)} must be {nameof(argument)} less than {expected}";
 
         // when
         Action action = () => Argument.IsLessThan(argument, expected);
@@ -171,9 +172,7 @@ public sealed class ComparableTypesTests
         actionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentException>()
-            .WithMessage(
-                $"{customMessage} (Parameter 'minimumValue')"
-            );
+            .WithMessage($"{customMessage} (Parameter 'minimumValue')");
     }
 
     [Fact]
@@ -205,7 +204,8 @@ public sealed class ComparableTypesTests
 
         // when
         Action action = () => Argument.IsInclusiveBetween(argument, minimumValue, maximumValue);
-        Action actionWithCustomMessage = () => Argument.IsInclusiveBetween(argument, minimumValue, maximumValue, customMessage);
+        Action actionWithCustomMessage = () =>
+            Argument.IsInclusiveBetween(argument, minimumValue, maximumValue, customMessage);
 
         // then
         action
@@ -218,9 +218,7 @@ public sealed class ComparableTypesTests
         actionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
-            .WithMessage(
-                $"{customMessage} (Parameter 'argument')"
-            );
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -237,11 +235,13 @@ public sealed class ComparableTypesTests
         const int argument = 1;
         const int minimumValue = 3;
         const int maximumValue = 10;
-        var customMessage = $"Error {nameof(minimumValue)} not between {nameof(minimumValue)} and {nameof(maximumValue)}.";
+        var customMessage =
+            $"Error {nameof(minimumValue)} not between {nameof(minimumValue)} and {nameof(maximumValue)}.";
 
         // when
         Action action = () => Argument.IsExclusiveBetween(argument, minimumValue, maximumValue);
-        Action actionWithCustomMessage = () => Argument.IsExclusiveBetween(argument, minimumValue, maximumValue, customMessage);
+        Action actionWithCustomMessage = () =>
+            Argument.IsExclusiveBetween(argument, minimumValue, maximumValue, customMessage);
 
         // then
         action
@@ -254,8 +254,6 @@ public sealed class ComparableTypesTests
         actionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
-            .WithMessage(
-                $"{customMessage} (Parameter 'argument')"
-            );
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 }

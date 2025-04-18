@@ -28,7 +28,7 @@ public sealed class EqualTests
         var customMessage = $"Error {nameof(obj1)} not the same {nameof(obj2)}.";
         // when
         var action = () => Argument.IsReferenceEqualTo(obj1, obj2);
-        var actionWithCustomMessage = () => Argument.IsReferenceEqualTo(obj1, obj2,customMessage);
+        var actionWithCustomMessage = () => Argument.IsReferenceEqualTo(obj1, obj2, customMessage);
 
         // then
         action
@@ -64,7 +64,7 @@ public sealed class EqualTests
 
         // when
         var action = () => Argument.IsReferenceNotEqualTo(obj1, obj2);
-        var actionWithCustomMessage = () => Argument.IsReferenceNotEqualTo(obj1, obj2,customMessage);
+        var actionWithCustomMessage = () => Argument.IsReferenceNotEqualTo(obj1, obj2, customMessage);
 
         // then
         action

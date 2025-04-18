@@ -51,7 +51,7 @@ public sealed class CollectionElementsTests
 
         // when
         Action action = () => Argument.HasNoNullOrEmptyElements(argument);
-        Action actionWithCustomMessage = () => Argument.HasNoNullOrEmptyElements(argument,customMessage);
+        Action actionWithCustomMessage = () => Argument.HasNoNullOrEmptyElements(argument, customMessage);
 
         // then
         action
@@ -87,7 +87,7 @@ public sealed class CollectionElementsTests
 
         // when
         Action action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
-        Action actionWithCustomMessage = () => Argument.HasNoNullOrWhiteSpaceElements(argument,customMessage);
+        Action actionWithCustomMessage = () => Argument.HasNoNullOrWhiteSpaceElements(argument, customMessage);
 
         // then
         action
@@ -100,9 +100,7 @@ public sealed class CollectionElementsTests
         actionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentException>()
-            .WithMessage(
-                $"{customMessage} (Parameter 'argument')"
-            );
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]
@@ -139,8 +137,6 @@ public sealed class CollectionElementsTests
         actionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentException>()
-            .WithMessage(
-                $"{customMessage} (Parameter 'argument')"
-            );
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 }

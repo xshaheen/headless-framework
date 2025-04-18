@@ -32,5 +32,5 @@ public sealed class SnowflakeId
         _generator = new IdGenerator(generatorId, options);
     }
 
-    public  long NewId() => _generator.CreateId();
+    public long NewId() => _generator.CreateId();
 }

@@ -28,7 +28,6 @@ public class IsNotNullOrEmptyTests
             .ThrowExactly<ArgumentNullException>()
             .WithMessage($"{nullCustomMessage} (Parameter 'argumentNull')");
 
-
         // given
         const string argumentEmpty = "";
         var emptyCustomMessage = $"Error {argumentEmpty} is empty";
@@ -81,7 +80,6 @@ public class IsNotNullOrEmptyTests
             .ThrowExactly<ArgumentNullException>()
             .WithMessage($"{nullCustomMessage} (Parameter 'argumentNull')");
 
-
         // given
         IReadOnlyCollection<int> argumentEmpty = new List<int>();
         var emptyCustomMessage = $"Error collection is empty";
@@ -133,7 +131,6 @@ public class IsNotNullOrEmptyTests
             .Should()
             .ThrowExactly<ArgumentNullException>()
             .WithMessage($"{nullCustomMessage} (Parameter 'argumentNull')");
-
 
         // given
         IEnumerable<int> argumentEmpty = new List<int>();

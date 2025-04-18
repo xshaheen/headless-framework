@@ -8,7 +8,12 @@ public interface ICache
     #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
-    Task<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default);
+    Task<bool> UpsertAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Upsert all async.</summary>
     Task<int> UpsertAllAsync<T>(

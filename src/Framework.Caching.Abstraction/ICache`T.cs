@@ -26,7 +26,12 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    Task<bool> TryReplaceAsync(string key, T? value, TimeSpan expiration, CancellationToken cancellationToken = default);
+    Task<bool> TryReplaceAsync(
+        string key,
+        T? value,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    );
 
     Task<bool> TryReplaceIfEqualAsync(
         string key,

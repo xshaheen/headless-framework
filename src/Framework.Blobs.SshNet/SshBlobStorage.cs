@@ -549,8 +549,8 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var directoryPath = _BuildContainerPath(container);
 
-        var result = new PagedFileListResult((_, token) =>
-            _GetFilesAsync(container[0], directoryPath, blobSearchPattern, 1, pageSize, token)
+        var result = new PagedFileListResult(
+            (_, token) => _GetFilesAsync(container[0], directoryPath, blobSearchPattern, 1, pageSize, token)
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();

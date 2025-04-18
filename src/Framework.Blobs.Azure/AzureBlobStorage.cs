@@ -417,8 +417,8 @@ public sealed class AzureBlobStorage : IBlobStorage
         var client = _GetContainerClient(containerUrl);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult(async (_, token) =>
-            await _GetFilesAsync(client, criteria, pageSize, previousNextPageResult: null, token)
+        var result = new PagedFileListResult(
+            async (_, token) => await _GetFilesAsync(client, criteria, pageSize, previousNextPageResult: null, token)
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();

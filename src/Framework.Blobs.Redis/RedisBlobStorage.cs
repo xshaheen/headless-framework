@@ -82,10 +82,11 @@ public sealed class RedisBlobStorage : IBlobStorage
             var saveInfoTask = database.HashSetAsync(infoContainer, blobPath, memory.ToArray());
 
             await Run.WithRetriesAsync(
-                async () => await Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions().AnyContext(),
-                logger: _logger,
-                cancellationToken: cancellationToken
-            ).AnyContext();
+                    async () => await Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions().AnyContext(),
+                    logger: _logger,
+                    cancellationToken: cancellationToken
+                )
+                .AnyContext();
         }
         catch (Exception e)
         {
@@ -108,21 +109,19 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(
-            async blob =>
+        var tasks = blobs.Select(async blob =>
+        {
+            try
             {
-                try
-                {
-                    await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                    return Result<Exception>.Success();
-                }
-                catch (Exception e)
-                {
-                    return Result<Exception>.Fail(e);
-                }
+                return Result<Exception>.Success();
             }
-        );
+            catch (Exception e)
+            {
+                return Result<Exception>.Fail(e);
+            }
+        });
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
@@ -146,7 +145,12 @@ public sealed class RedisBlobStorage : IBlobStorage
         return await _DeleteAsync(blobPath, infoContainer, blobsContainer, cancellationToken);
     }
 
-    private async Task<bool> _DeleteAsync(string blobPath, string infoContainer, string blobsContainer, CancellationToken cancellationToken)
+    private async Task<bool> _DeleteAsync(
+        string blobPath,
+        string infoContainer,
+        string blobsContainer,
+        CancellationToken cancellationToken
+    )
     {
         _logger.LogTrace("Deleting {Path}", blobPath);
 
@@ -154,12 +158,12 @@ public sealed class RedisBlobStorage : IBlobStorage
         var deleteInfoTask = database.HashDeleteAsync(infoContainer, blobPath);
         var deleteBlobTask = database.HashDeleteAsync(blobsContainer, blobPath);
 
-
         var result = await Run.WithRetriesAsync(
-            async () => await Task.WhenAll(deleteInfoTask, deleteBlobTask).WithAggregatedExceptions().AnyContext(),
-            logger: _logger,
-            cancellationToken: cancellationToken
-        ).AnyContext();
+                async () => await Task.WhenAll(deleteInfoTask, deleteBlobTask).WithAggregatedExceptions().AnyContext(),
+                logger: _logger,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
 
         return result[0] || result[1];
     }
@@ -181,19 +185,17 @@ public sealed class RedisBlobStorage : IBlobStorage
             return [];
         }
 
-        var tasks = blobNames.Select(
-            async fileName =>
+        var tasks = blobNames.Select(async fileName =>
+        {
+            try
             {
-                try
-                {
-                    return await DeleteAsync(container, fileName, cancellationToken);
-                }
-                catch (Exception e)
-                {
-                    return Result<bool, Exception>.Fail(e);
-                }
+                return await DeleteAsync(container, fileName, cancellationToken);
             }
-        );
+            catch (Exception e)
+            {
+                return Result<bool, Exception>.Fail(e);
+            }
+        });
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
@@ -204,25 +206,24 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken).AnyContext();
+        var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken)
+            .AnyContext();
 
         _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs, blobSearchPattern);
 
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
 
-        var tasks = blobs.Select(
-            async blob =>
+        var tasks = blobs.Select(async blob =>
+        {
+            try
             {
-                try
-                {
-                  return await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, cancellationToken);
-                }
-                catch (Exception e)
-                {
-                    return Result<bool, Exception>.Fail(e);
-                }
+                return await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, cancellationToken);
             }
-        );
+            catch (Exception e)
+            {
+                return Result<bool, Exception>.Fail(e);
+            }
+        });
 
         var results = await Task.WhenAll(tasks).WithAggregatedExceptions();
         var count = results.Count(r => r.Succeeded);
@@ -331,7 +332,11 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         _logger.LogTrace("Checking if {Path} exists", blobPath);
 
-        return await Run.WithRetriesAsync(() => Database.HashExistsAsync(infoContainer, blobPath), logger: _logger, cancellationToken: cancellationToken);
+        return await Run.WithRetriesAsync(
+            () => Database.HashExistsAsync(infoContainer, blobPath),
+            logger: _logger,
+            cancellationToken: cancellationToken
+        );
     }
 
     #endregion
@@ -353,10 +358,11 @@ public sealed class RedisBlobStorage : IBlobStorage
         _logger.LogTrace("Getting file stream for {Path}", blobPath);
 
         var fileContent = await Run.WithRetriesAsync(
-            () => Database.HashGetAsync(blobsContainer, blobPath),
-            logger: _logger,
-            cancellationToken: cancellationToken
-        ).AnyContext();
+                () => Database.HashGetAsync(blobsContainer, blobPath),
+                logger: _logger,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
 
         if (fileContent.IsNull)
         {
@@ -396,7 +402,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             return null;
         }
 
-        return _serializer.Deserialize<BlobInfo>((byte[]) blobInfo!);
+        return _serializer.Deserialize<BlobInfo>((byte[])blobInfo!);
     }
 
     #endregion
@@ -417,7 +423,9 @@ public sealed class RedisBlobStorage : IBlobStorage
         var (_, infoContainer) = _BuildContainerPath(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult((_, token) => _GetFilesPageAsync(infoContainer, criteria, 1, pageSize, token));
+        var result = new PagedFileListResult(
+            (_, token) => _GetFilesPageAsync(infoContainer, criteria, 1, pageSize, token)
+        );
         await result.NextPageAsync(cancellationToken).AnyContext();
 
         return result;
@@ -461,7 +469,9 @@ public sealed class RedisBlobStorage : IBlobStorage
             Success = true,
             HasMore = hasMore,
             Blobs = list,
-            NextPageFunc = hasMore ? (_, token) => _GetFilesPageAsync(container, criteria, page + 1, pageSize, token) : null,
+            NextPageFunc = hasMore
+                ? (_, token) => _GetFilesPageAsync(container, criteria, page + 1, pageSize, token)
+                : null,
         };
     }
 
@@ -503,14 +513,18 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         List<BlobInfo> list = [];
 
-        await foreach (var hashEntry in Database.HashScanAsync(container, $"{criteria.Prefix}*").WithCancellation(cancellationToken))
+        await foreach (
+            var hashEntry in Database
+                .HashScanAsync(container, $"{criteria.Prefix}*")
+                .WithCancellation(cancellationToken)
+        )
         {
             if (hashEntry.Value.IsNull)
             {
                 continue;
             }
 
-            var blobInfo = _serializer.Deserialize<BlobInfo>((byte[]) hashEntry.Value!)!;
+            var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
 
             if (criteria.Pattern != null && !criteria.Pattern.IsMatch(blobInfo.BlobKey))
             {
