@@ -12,6 +12,23 @@ public sealed class DbMigrationSeeder<TDbContext>(IServiceProvider provider) : I
 {
     public async ValueTask SeedAsync()
     {
-        await provider.MigrateDbContextAsync<TDbContext>();
+        try
+        {
+            await provider.MigrateDbContextAsync<TDbContext>();
+        }
+        catch (Exception e)
+        {
+            try
+            {
+                await provider.MigrateDbContextByFactoryAsync<TDbContext>();
+            }
+            catch
+            {
+                throw new InvalidOperationException(
+                    "Failed to migrate the database using both the DbContext and DbContextFactory methods.",
+                    e
+                );
+            }
+        }
     }
 }
