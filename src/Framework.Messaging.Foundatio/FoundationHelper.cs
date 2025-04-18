@@ -8,8 +8,9 @@ namespace Framework.Messaging;
 
 public static class FoundationHelper
 {
-    public static ISerializer JsonSerializer => new SystemTextJsonSerializer(
-        serializeOptions: JsonConstants.DefaultInternalJsonOptions,
-        deserializeOptions: JsonConstants.DefaultInternalJsonOptions
-    );
+    public static ISerializer JsonSerializer =>
+        new SystemTextJsonSerializer(
+            serializeOptions: JsonConstants.DefaultInternalJsonOptions,
+            deserializeOptions: JsonConstants.DefaultInternalJsonOptions
+        );
 }

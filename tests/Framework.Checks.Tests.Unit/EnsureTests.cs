@@ -49,7 +49,6 @@ public sealed class EnsureTests
         var falseAction = () => Ensure.False(falseCondition);
         var falseActionWithCustomMessage = () => Ensure.False(falseCondition, customMessageEnsureFalse);
 
-
         // then
         falseAction
             .Should()

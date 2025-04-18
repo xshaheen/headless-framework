@@ -31,7 +31,7 @@ public sealed class IsInEnumTests
         var customMessage = $"Error {nameof(argument)} = {argument} invalid for <SampleEnum>";
         // when
         Action action = () => Argument.IsInEnum(argument);
-        Action actionWithCustomMessage = () => Argument.IsInEnum(argument,customMessage);
+        Action actionWithCustomMessage = () => Argument.IsInEnum(argument, customMessage);
 
         // then
         action
@@ -41,12 +41,7 @@ public sealed class IsInEnumTests
                 "The argument \"argument\" = 99 is NOT invalid for Enum type <SampleEnum>. (Parameter: 'argument')"
             );
 
-        actionWithCustomMessage
-            .Should()
-            .ThrowExactly<InvalidEnumArgumentException>()
-            .WithMessage(
-                $"{customMessage}"
-            );
+        actionWithCustomMessage.Should().ThrowExactly<InvalidEnumArgumentException>().WithMessage($"{customMessage}");
     }
 
     [Fact]
@@ -68,7 +63,7 @@ public sealed class IsInEnumTests
 
         // when
         Action action = () => Argument.IsInEnum<SampleEnum>(argument);
-        Action actionWithCustomMessage = () => Argument.IsInEnum<SampleEnum>(argument,customMessage);
+        Action actionWithCustomMessage = () => Argument.IsInEnum<SampleEnum>(argument, customMessage);
 
         // then
         action
@@ -78,11 +73,6 @@ public sealed class IsInEnumTests
                 "The argument \"argument\" = 99 is NOT invalid for Enum type <SampleEnum>. (Parameter: 'argument')"
             );
 
-        actionWithCustomMessage
-            .Should()
-            .ThrowExactly<InvalidEnumArgumentException>()
-            .WithMessage(
-                $"{customMessage}"
-            );
+        actionWithCustomMessage.Should().ThrowExactly<InvalidEnumArgumentException>().WithMessage($"{customMessage}");
     }
 }
