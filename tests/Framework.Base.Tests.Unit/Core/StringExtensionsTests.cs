@@ -246,4 +246,36 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
         // assert
         result.Should().Be(expected);
     }
+
+    [Theory]
+    [InlineData("Customer.FirstName", "customer.firstName")]
+    [InlineData("Customers[0].FirstName", "customers[0].firstName")]
+    [InlineData("OrderDetails.Product.UnitPrice", "orderDetails.product.unitPrice")]
+    [InlineData("ID", "iD")]
+    [InlineData("XML", "xML")]
+    [InlineData("", "")]
+    [InlineData("AlreadyCamelCase", "alreadyCamelCase")]
+    [InlineData("User_Name", "user_Name")]
+    [InlineData("user.Profile.HOME_ADDRESS", "user.profile.hOME_ADDRESS")]
+    public void CamelizePropertyPath_ShouldCorrectlyConvertToCamelCase(string input, string expected)
+    {
+        // Act
+        var result = input.CamelizePropertyPath();
+
+        // Assert
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void CamelizePropertyPath_WithNullInput_ShouldReturnNull()
+    {
+        // Arrange
+        string? input = null;
+
+        // Act
+        var result = input.CamelizePropertyPath();
+
+        // Assert
+        result.Should().BeNull();
+    }
 }
