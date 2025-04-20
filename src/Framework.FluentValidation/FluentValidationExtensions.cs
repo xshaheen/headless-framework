@@ -43,7 +43,7 @@ public static class FluentValidationExtensions
             .GroupBy(
                 failure => failure.PropertyName,
                 failure => new ErrorDescriptor(
-                    code: string.IsNullOrEmpty(failure.ErrorCode)
+                    code: string.IsNullOrWhiteSpace(failure.ErrorCode)
                         ? failure.ErrorMessage
                         : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
                     description: failure.ErrorMessage,
@@ -52,8 +52,8 @@ public static class FluentValidationExtensions
                 StringComparer.Ordinal
             )
             .ToDictionary(
-                failureGroup => failureGroup.Key.NormalizePropertyPath(),
-                failureGroup => (List<ErrorDescriptor>)[.. failureGroup],
+                failureGroup => failureGroup.Key.CamelizePropertyPath(),
+                failureGroup => failureGroup.ToList(),
                 StringComparer.Ordinal
             );
     }
