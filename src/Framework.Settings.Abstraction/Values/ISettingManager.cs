@@ -20,15 +20,15 @@ public interface ISettingManager
     /// <returns></returns>
     Task<string?> GetOrDefaultAsync(
         string settingName,
-        string providerName,
-        string? providerKey,
+        string? providerName = null,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     );
 
     Task<List<SettingValue>> GetAllAsync(
         string providerName,
-        string? providerKey,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     );
