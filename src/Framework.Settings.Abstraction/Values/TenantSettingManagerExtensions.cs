@@ -71,7 +71,7 @@ public static class TenantSettingManagerExtensions
         );
     }
 
-    public static Task<T?> GetForTenantAsync<T>(
+    public static Task<T?> FindForTenantAsync<T>(
         this ISettingManager settingManager,
         string tenantId,
         string name,
@@ -79,7 +79,7 @@ public static class TenantSettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAsync<T>(
+        return settingManager.FindAsync<T>(
             name,
             SettingValueProviderNames.Tenant,
             tenantId,
@@ -88,14 +88,14 @@ public static class TenantSettingManagerExtensions
         );
     }
 
-    public static Task<T?> GetForCurrentTenantAsync<T>(
+    public static Task<T?> FindForCurrentTenantAsync<T>(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAsync<T>(
+        return settingManager.FindAsync<T>(
             name,
             SettingValueProviderNames.Tenant,
             providerKey: null,
@@ -104,7 +104,7 @@ public static class TenantSettingManagerExtensions
         );
     }
 
-    public static Task<string?> GetForTenantAsync(
+    public static Task<string?> FindForTenantAsync(
         this ISettingManager settingManager,
         string tenantId,
         string name,
@@ -112,7 +112,7 @@ public static class TenantSettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetOrDefaultAsync(
+        return settingManager.FindAsync(
             name,
             SettingValueProviderNames.Tenant,
             tenantId,
@@ -121,14 +121,14 @@ public static class TenantSettingManagerExtensions
         );
     }
 
-    public static Task<string?> GetForCurrentTenantAsync(
+    public static Task<string?> FindForCurrentTenantAsync(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetOrDefaultAsync(
+        return settingManager.FindAsync(
             name,
             SettingValueProviderNames.Tenant,
             providerKey: null,
@@ -203,6 +203,57 @@ public static class TenantSettingManagerExtensions
         string? tenantId,
         string name,
         string? value,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return tenantId is not null
+            ? settingManager.SetForTenantAsync(tenantId, name, value, forceToSet, cancellationToken)
+            : settingManager.SetGlobalAsync(name, value, cancellationToken);
+    }
+
+    public static Task SetForTenantAsync<T>(
+        this ISettingManager settingManager,
+        string tenantId,
+        string name,
+        T? value,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return settingManager.SetAsync(
+            name,
+            value,
+            SettingValueProviderNames.Tenant,
+            tenantId,
+            forceToSet,
+            cancellationToken
+        );
+    }
+
+    public static Task SetForCurrentTenantAsync<T>(
+        this ISettingManager settingManager,
+        string name,
+        T? value,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return settingManager.SetAsync(
+            name,
+            value,
+            SettingValueProviderNames.Tenant,
+            providerKey: null,
+            forceToSet,
+            cancellationToken
+        );
+    }
+
+    public static Task SetForTenantOrGlobalAsync<T>(
+        this ISettingManager settingManager,
+        string? tenantId,
+        string name,
+        T? value,
         bool forceToSet = false,
         CancellationToken cancellationToken = default
     )
