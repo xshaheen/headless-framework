@@ -13,8 +13,8 @@ public interface ISerializer
     void Serialize(object? value, Stream output);
 }
 
-public interface ITextSerializer : ISerializer;
-
 public interface IBinarySerializer : ISerializer;
+
+public interface ITextSerializer : ISerializer;
 
 public interface IJsonSerializer : ITextSerializer;
