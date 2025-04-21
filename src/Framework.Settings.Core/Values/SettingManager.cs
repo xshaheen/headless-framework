@@ -18,7 +18,7 @@ public sealed class SettingManager(
     ISettingsErrorsDescriptor errorsDescriptor
 ) : ISettingManager
 {
-    public Task<string?> GetOrDefaultAsync(
+    public Task<string?> FindAsync(
         string settingName,
         string? providerName = null,
         string? providerKey = null,
