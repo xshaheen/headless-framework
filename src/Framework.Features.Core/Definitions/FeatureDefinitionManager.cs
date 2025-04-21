@@ -10,7 +10,7 @@ public sealed class FeatureDefinitionManager(
     IDynamicFeatureDefinitionStore dynamicStore
 ) : IFeatureDefinitionManager
 {
-    public async Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<FeatureDefinition?> FindAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(name);
 

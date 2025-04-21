@@ -26,6 +26,11 @@ public interface ISettingManager
         CancellationToken cancellationToken = default
     );
 
+    Task<Dictionary<string, SettingValue>> GetAllAsync(
+        string[] settingNames,
+        CancellationToken cancellationToken = default
+    );
+
     Task<List<SettingValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,

@@ -6,7 +6,7 @@ namespace Framework.Features.Definitions;
 
 public interface IFeatureDefinitionManager
 {
-    Task<FeatureDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
+    Task<FeatureDefinition?> FindAsync(string name, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<FeatureDefinition>> GetFeaturesAsync(CancellationToken cancellationToken = default);
 

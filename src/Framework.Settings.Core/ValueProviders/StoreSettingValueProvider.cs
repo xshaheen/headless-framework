@@ -13,7 +13,7 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
 
     public async Task<string?> GetOrDefaultAsync(
         SettingDefinition setting,
-        string? providerKey,
+        string? providerKey = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -22,7 +22,7 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
 
     public async Task<List<SettingValue>> GetAllAsync(
         SettingDefinition[] settings,
-        string? providerKey,
+        string? providerKey = null,
         CancellationToken cancellationToken = default
     )
     {
