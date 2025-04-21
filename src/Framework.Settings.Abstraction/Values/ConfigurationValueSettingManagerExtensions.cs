@@ -5,7 +5,7 @@ namespace Framework.Settings.Values;
 [PublicAPI]
 public static class ConfigurationValueSettingManagerExtensions
 {
-    public static async Task<bool> IsTrueConfigurationAsync(
+    public static async Task<bool> IsTrueInConfigurationAsync(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
@@ -21,7 +21,7 @@ public static class ConfigurationValueSettingManagerExtensions
         );
     }
 
-    public static async Task<bool> IsFalseConfigurationAsync(
+    public static async Task<bool> IsFalseInConfigurationAsync(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
@@ -37,14 +37,14 @@ public static class ConfigurationValueSettingManagerExtensions
         );
     }
 
-    public static Task<T?> GetConfigurationAsync<T>(
+    public static Task<T?> FindInConfigurationAsync<T>(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAsync<T>(
+        return settingManager.FindAsync<T>(
             name,
             SettingValueProviderNames.Configuration,
             providerKey: null,
@@ -53,14 +53,14 @@ public static class ConfigurationValueSettingManagerExtensions
         );
     }
 
-    public static Task<string?> GetConfigurationAsync(
+    public static Task<string?> FindInConfigurationAsync(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetOrDefaultAsync(
+        return settingManager.FindAsync(
             name,
             SettingValueProviderNames.Configuration,
             providerKey: null,
@@ -69,7 +69,7 @@ public static class ConfigurationValueSettingManagerExtensions
         );
     }
 
-    public static Task<List<SettingValue>> GetAllConfigurationAsync(
+    public static Task<List<SettingValue>> GetAllInConfigurationAsync(
         this ISettingManager settingManager,
         bool fallback = true,
         CancellationToken cancellationToken = default
