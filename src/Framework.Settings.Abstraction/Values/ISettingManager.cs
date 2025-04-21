@@ -18,7 +18,7 @@ public interface ISettingManager
     /// <param name="fallback">Force the value finds fallback to other providers.</param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns></returns>
-    Task<string?> GetOrDefaultAsync(
+    Task<string?> FindAsync(
         string settingName,
         string? providerName = null,
         string? providerKey = null,
