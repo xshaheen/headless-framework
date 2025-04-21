@@ -68,7 +68,7 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
         var randomSettingName = Test.Faker.Random.String2(5, 10);
 
         // when
-        var definition = await definitionManager.GetOrDefaultAsync(randomSettingName);
+        var definition = await definitionManager.FindAsync(randomSettingName);
 
         // then
         definition.Should().BeNull();
@@ -86,7 +86,7 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
         var existDefinition = definitions[0];
 
         // when
-        var definition = await definitionManager.GetOrDefaultAsync(existDefinition.Name);
+        var definition = await definitionManager.FindAsync(existDefinition.Name);
 
         // then
         definition.Should().NotBeNull();

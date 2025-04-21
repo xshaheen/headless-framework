@@ -59,7 +59,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         var oneOfTheDefinedSetting = _Definitions[0];
 
         // when
-        var definition = await definitionManager.GetOrDefaultAsync(oneOfTheDefinedSetting.Name);
+        var definition = await definitionManager.FindAsync(oneOfTheDefinedSetting.Name);
 
         // then
         definition.Should().NotBeNull();
@@ -77,7 +77,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         var randomSettingName = Test.Faker.Random.String2(5, 10);
 
         // when
-        var definition = await definitionManager.GetOrDefaultAsync(randomSettingName);
+        var definition = await definitionManager.FindAsync(randomSettingName);
 
         // then
         definition.Should().BeNull();
