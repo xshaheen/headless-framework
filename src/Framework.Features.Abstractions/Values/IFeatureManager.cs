@@ -37,7 +37,7 @@ public interface IFeatureManager
     /// <param name="cancellationToken">The abort token.</param>
     Task<List<FeatureValue>> GetAllAsync(
         string providerName,
-        string? providerKey,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     );

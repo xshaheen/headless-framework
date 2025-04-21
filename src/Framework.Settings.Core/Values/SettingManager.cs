@@ -20,21 +20,18 @@ public sealed class SettingManager(
 {
     public Task<string?> GetOrDefaultAsync(
         string settingName,
-        string providerName,
-        string? providerKey,
+        string? providerName = null,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(settingName);
-        Argument.IsNotNull(providerName);
-
         return _CoreGetOrDefaultAsync(settingName, providerName, providerKey, fallback, cancellationToken);
     }
 
     public async Task<List<SettingValue>> GetAllAsync(
         string providerName,
-        string? providerKey,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
@@ -182,14 +179,14 @@ public sealed class SettingManager(
     }
 
     private async Task<string?> _CoreGetOrDefaultAsync(
-        string name,
+        string settingName,
         string? providerName,
         string? providerKey,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(name);
+        Argument.IsNotNull(settingName);
 
         if (!fallback)
         {
@@ -197,8 +194,8 @@ public sealed class SettingManager(
         }
 
         var definition =
-            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
-            ?? throw new ConflictException(await errorsDescriptor.NotDefined(name));
+            await definitionManager.GetOrDefaultAsync(settingName, cancellationToken)
+            ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName));
 
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 
