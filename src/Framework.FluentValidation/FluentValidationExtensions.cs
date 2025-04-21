@@ -42,13 +42,27 @@ public static class FluentValidationExtensions
         return failures
             .GroupBy(
                 failure => failure.PropertyName,
-                failure => new ErrorDescriptor(
-                    code: string.IsNullOrWhiteSpace(failure.ErrorCode)
+                failure =>
+                {
+                    var code = string.IsNullOrWhiteSpace(failure.ErrorCode)
                         ? failure.ErrorMessage
-                        : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode),
-                    description: failure.ErrorMessage,
-                    paramsDictionary: failure.FormattedMessagePlaceholderValues
-                ),
+                        : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode);
+
+                    if (
+                        failure.FormattedMessagePlaceholderValues.Count > 0 &&
+                        failure.FormattedMessagePlaceholderValues.TryGetValue("PropertyPath", out var value) &&
+                        value is string propertyPath
+                    )
+                    {
+                        failure.FormattedMessagePlaceholderValues["PropertyPath"] = propertyPath.CamelizePropertyPath();
+                    }
+
+                    return new ErrorDescriptor(
+                        code: code,
+                        description: failure.ErrorMessage,
+                        paramsDictionary: failure.FormattedMessagePlaceholderValues
+                    );
+                },
                 StringComparer.Ordinal
             )
             .ToDictionary(
