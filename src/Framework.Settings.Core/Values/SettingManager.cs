@@ -29,6 +29,54 @@ public sealed class SettingManager(
         return _CoreGetOrDefaultAsync(settingName, providerName, providerKey, fallback, cancellationToken);
     }
 
+    public async Task<Dictionary<string, SettingValue>> GetAllAsync(
+        string[] settingNames,
+        CancellationToken cancellationToken = default
+    )
+    {
+         Argument.IsNotNullOrEmpty(settingNames);
+
+         var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken);
+         var settingDefinitions = allSettingDefinitions.Where(x => settingNames.Contains(x.Name, StringComparer.Ordinal)).ToList();
+         var result = settingDefinitions.ToDictionary(x => x.Name, x => new SettingValue(x.Name, value: null), StringComparer.Ordinal);
+
+         foreach (var provider in valueProviderManager.Providers.Reverse())
+         {
+             var supportedDefinitions = settingDefinitions
+                 .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                 .ToArray();
+
+             var settingValues = await provider.GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken);
+             var notNullValues = settingValues.Where(x => x.Value != null).ToList();
+
+             foreach (var settingValue in notNullValues)
+             {
+                 var settingDefinition = settingDefinitions.First(
+                     x => string.Equals(x.Name, settingValue.Name, StringComparison.Ordinal)
+                );
+
+                 if (settingDefinition.IsEncrypted)
+                 {
+                     settingValue.Value = encryptionService.Decrypt(settingDefinition, settingValue.Value);
+                 }
+
+                 if (result.TryGetValue(settingValue.Name, out var value) && value.Value == null)
+                 {
+                    value.Value = settingValue.Value;
+                 }
+             }
+
+             settingDefinitions.RemoveAll(x => notNullValues.Exists(v => string.Equals(v.Name, x.Name, StringComparison.Ordinal)));
+
+             if (settingDefinitions.Count == 0)
+             {
+                 break;
+             }
+         }
+
+         return result;
+    }
+
     public async Task<List<SettingValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
@@ -110,7 +158,7 @@ public sealed class SettingManager(
         Argument.IsNotNull(providerName);
 
         var setting =
-            await definitionManager.GetOrDefaultAsync(settingName, cancellationToken)
+            await definitionManager.FindAsync(settingName, cancellationToken)
             ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName));
 
         var providers = valueProviderManager
@@ -194,7 +242,7 @@ public sealed class SettingManager(
         }
 
         var definition =
-            await definitionManager.GetOrDefaultAsync(settingName, cancellationToken)
+            await definitionManager.FindAsync(settingName, cancellationToken)
             ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName));
 
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
