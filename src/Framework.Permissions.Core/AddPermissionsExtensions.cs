@@ -125,6 +125,9 @@ public static class AddPermissionsExtensions
         services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
         services.TryAddSingleton<IPermissionManager, PermissionManager>();
 
+        services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
+        services.AddSingleton<IAuthorizationHandler, PermissionsRequirementHandler>();
+
         return services;
     }
 }
