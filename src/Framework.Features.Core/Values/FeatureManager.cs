@@ -92,7 +92,7 @@ public sealed class FeatureManager(
         Argument.IsNotNull(providerName);
 
         var feature =
-            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
+            await definitionManager.FindAsync(name, cancellationToken)
             ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name));
 
         var providers = valueProviderManager
@@ -169,7 +169,7 @@ public sealed class FeatureManager(
         foreach (var featureNameValue in featureNameValues)
         {
             var feature =
-                await definitionManager.GetOrDefaultAsync(featureNameValue.Name, cancellationToken)
+                await definitionManager.FindAsync(featureNameValue.Name, cancellationToken)
                 ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(featureNameValue.Name));
 
             foreach (var provider in writableProviders)
@@ -195,7 +195,7 @@ public sealed class FeatureManager(
         }
 
         var definition =
-            await definitionManager.GetOrDefaultAsync(name, cancellationToken)
+            await definitionManager.FindAsync(name, cancellationToken)
             ?? throw new ConflictException(await errorsDescriptor.FeatureIsNotDefined(name));
 
         IEnumerable<IFeatureValueReadProvider> providers = valueProviderManager.ValueProviders;

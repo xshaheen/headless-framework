@@ -13,13 +13,13 @@ public interface ISettingValueReadProvider
 
     Task<string?> GetOrDefaultAsync(
         SettingDefinition setting,
-        string? providerKey,
+        string? providerKey = null,
         CancellationToken cancellationToken = default
     );
 
     Task<List<SettingValue>> GetAllAsync(
         SettingDefinition[] settings,
-        string? providerKey,
+        string? providerKey = null,
         CancellationToken cancellationToken = default
     );
 }

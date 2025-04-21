@@ -24,7 +24,7 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        var permission = await definitionManager.GetOrDefaultAsync(permissionName, cancellationToken);
+        var permission = await definitionManager.FindAsync(permissionName, cancellationToken);
 
         if (permission?.IsEnabled != true)
         {
@@ -56,7 +56,7 @@ public sealed class PermissionManager(
 
         foreach (var permissionName in permissionNames)
         {
-            var permission = await definitionManager.GetOrDefaultAsync(permissionName, cancellationToken);
+            var permission = await definitionManager.FindAsync(permissionName, cancellationToken);
 
             if (permission is not null)
             {
@@ -100,7 +100,7 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        var permission = await definitionManager.GetOrDefaultAsync(permissionName, cancellationToken);
+        var permission = await definitionManager.FindAsync(permissionName, cancellationToken);
 
         if (permission is null)
         {
