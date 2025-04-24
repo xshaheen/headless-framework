@@ -95,10 +95,29 @@ public static class TypeExtensions
             && type.Name.Contains("AnonymousType", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Gets the first generic type argument if the type is a generic type with exactly one type parameter.
+    /// </summary>
+    /// <param name="type">The type to inspect.</param>
+    /// <returns>
+    /// The first generic type argument if the type has exactly one generic parameter;
+    /// otherwise, returns null.
+    /// </returns>
     [MustUseReturnValue]
     public static Type? GetInnerType(this Type type)
     {
-        return !type.IsGenericType || type.GetGenericArguments().Length > 1 ? null : type.GetGenericArguments()[0];
+        return type.IsGenericType && type.GetGenericArguments() is { Length: 1 } args ? args[0] : null;
+    }
+
+    /// <summary>
+    /// Retrieves the inner types of a <param name="type"></param> if it is a generic type; otherwise, returns an empty array.
+    /// </summary>
+    /// <param name="type">The type to retrieve the inner types from.</param>
+    /// <returns>An array of <see cref="System.Type"/> representing the inner types of the generic type, or an empty array if the type is not generic or has no generic arguments.</returns>
+    [MustUseReturnValue]
+    public static Type[] GetInnerTypes(this Type type)
+    {
+        return type.IsGenericType && type.GetGenericArguments() is { Length: > 0 } args ? args : [];
     }
 
     [MustUseReturnValue]
