@@ -35,32 +35,41 @@ public static class FluentValidationExtensions
         };
     }
 
-    public static Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptors(
-        this IEnumerable<ValidationFailure> failures
-    )
+    public static Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptors(this IEnumerable<ValidationFailure> failures)
     {
         return failures
             .GroupBy(
                 failure => failure.PropertyName,
                 failure =>
                 {
-                    var code = string.IsNullOrWhiteSpace(failure.ErrorCode)
-                        ? failure.ErrorMessage
-                        : FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode);
+                    var paramsDictionary = failure.FormattedMessagePlaceholderValues;
+                    string errorCode;
 
-                    if (
-                        failure.FormattedMessagePlaceholderValues.Count > 0 &&
-                        failure.FormattedMessagePlaceholderValues.TryGetValue("PropertyPath", out var value) &&
-                        value is string propertyPath
-                    )
+                    if (string.IsNullOrWhiteSpace(failure.ErrorCode))
                     {
-                        failure.FormattedMessagePlaceholderValues["PropertyPath"] = propertyPath.CamelizePropertyPath();
+                        errorCode = failure.ErrorMessage;
+                    }
+                    else
+                    {
+                        errorCode = FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode);
+
+                        // Normalize the fluent validation property path
+                        if (
+                            // Is fluent validation error code
+                            !string.Equals(errorCode, failure.ErrorCode, StringComparison.Ordinal) &&
+                            paramsDictionary.Count > 0 &&
+                            paramsDictionary.TryGetValue("PropertyPath", out var value) &&
+                            value is string propertyPath
+                        )
+                        {
+                            paramsDictionary["PropertyPath"] = propertyPath.CamelizePropertyPath();
+                        }
                     }
 
                     return new ErrorDescriptor(
-                        code: code,
+                        code: errorCode,
                         description: failure.ErrorMessage,
-                        paramsDictionary: failure.FormattedMessagePlaceholderValues
+                        paramsDictionary: paramsDictionary
                     );
                 },
                 StringComparer.Ordinal
