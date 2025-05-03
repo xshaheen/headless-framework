@@ -7,7 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 // ReSharper disable once CheckNamespace
 namespace Framework.Hosting.Seeders;
 
-public sealed class DbMigrationSeeder<TDbContext>(IServiceProvider provider) : ISeeder
+[SeederPriority(int.MinValue)]
+public sealed class DbMigrationPreSeeder<TDbContext>(IServiceProvider provider) : IPreSeeder
     where TDbContext : DbContext
 {
     public async ValueTask SeedAsync()
