@@ -22,7 +22,7 @@ public static class DbSeedersExtensions
         services.AddTransient<ISeeder, T>().AddTransient<T>();
     }
 
-    public static async Task PreSeedAsync(this IServiceProvider services, bool runInParallel = true)
+    public static async Task PreSeedAsync(this IServiceProvider services, bool runInParallel = false)
     {
         await using var scope = services.CreateAsyncScope();
 
@@ -51,7 +51,7 @@ public static class DbSeedersExtensions
         logger.LogInformation(">>> Pre-Seeding completed");
     }
 
-    public static async Task SeedAsync(this IServiceProvider services, bool runInParallel = true)
+    public static async Task SeedAsync(this IServiceProvider services, bool runInParallel = false)
     {
         await using var scope = services.CreateAsyncScope();
 
