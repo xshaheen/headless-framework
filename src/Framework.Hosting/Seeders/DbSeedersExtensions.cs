@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using MoreLinq;
 
 namespace Framework.Hosting.Seeders;
@@ -25,41 +26,57 @@ public static class DbSeedersExtensions
     {
         await using var scope = services.CreateAsyncScope();
 
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<ISeeder>>();
+
         var preSeeders = scope.ServiceProvider
             .GetServices<IPreSeeder>()
-            .OrderBy(x => x.GetType().GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0);
+            .Select(x => (Seeder: x, Type: x.GetType()))
+            .OrderBy(x => x.Type.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0);
+
+        logger.LogInformation(">>> Pre-Seeding");
 
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(preSeeders, async (seeder, _) => await seeder.SeedAsync());
+            await Parallel.ForEachAsync(preSeeders, async (x, _) => await x.Seeder.SeedAsync());
         }
         else
         {
-            foreach (var seeder in preSeeders)
+            foreach (var (seeder, type) in preSeeders)
             {
+                logger.LogInformation(">>> Pre-Seeding using {TypeName}", type.Name);
                 await seeder.SeedAsync();
             }
         }
+
+        logger.LogInformation(">>> Pre-Seeding completed");
     }
 
     public static async Task SeedAsync(this IServiceProvider services, bool runInParallel = true)
     {
         await using var scope = services.CreateAsyncScope();
 
-        var preSeeders = scope.ServiceProvider
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<ISeeder>>();
+
+        var seeders = scope.ServiceProvider
             .GetServices<ISeeder>()
-            .OrderBy(x => x.GetType().GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0);
+            .Select(x => (Seeder: x, Type: x.GetType()))
+            .OrderBy(x => x.Type.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0);
+
+        logger.LogInformation(">>> Seeding");
 
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(preSeeders, async (seeder, _) => await seeder.SeedAsync());
+            await Parallel.ForEachAsync(seeders, async (x, _) => await x.Seeder.SeedAsync());
         }
         else
         {
-            foreach (var seeder in preSeeders)
+            foreach (var (seeder, type) in seeders)
             {
+                logger.LogInformation(">>> Seeding using {TypeName}", type.Name);
                 await seeder.SeedAsync();
             }
         }
+
+        logger.LogInformation(">>> Seeding completed");
     }
 }
