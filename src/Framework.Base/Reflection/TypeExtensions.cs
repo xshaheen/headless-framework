@@ -110,7 +110,7 @@ public static class TypeExtensions
     }
 
     /// <summary>
-    /// Retrieves the inner types of a <param name="type"></param> if it is a generic type; otherwise, returns an empty array.
+    /// Retrieves the inner types of a type if it is a generic type; otherwise, returns an empty array.
     /// </summary>
     /// <param name="type">The type to retrieve the inner types from.</param>
     /// <returns>An array of <see cref="System.Type"/> representing the inner types of the generic type, or an empty array if the type is not generic or has no generic arguments.</returns>
