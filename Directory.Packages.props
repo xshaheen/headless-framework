@@ -15,10 +15,10 @@
     <PackageVersion Include="AutoBogus" Version="2.13.1" />
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
     <PackageVersion Include="AutoFixture" Version="5.0.0-preview0012" />
-    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="3.7.400" />
-    <PackageVersion Include="AWSSDK.S3" Version="3.7.415.24" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="3.7.408.22" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="3.7.400.119" />
+    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.0" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.0.3" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.0.2" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.0.2" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.24.0" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.21.0" />
@@ -100,7 +100,7 @@
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.4.0" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.9.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
-    <PackageVersion Include="Microsoft.OpenApi" Version="1.6.22" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="1.6.24" />
     <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.0.0" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
