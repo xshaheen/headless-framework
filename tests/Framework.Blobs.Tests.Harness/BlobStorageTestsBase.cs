@@ -14,9 +14,9 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 {
     protected abstract IBlobStorage GetStorage();
 
-    protected static string ContainerName => "storage";
+    protected virtual string ContainerName => "storage";
 
-    protected static string[] Container => [ContainerName];
+    protected virtual string[] Container => [ContainerName];
 
     public virtual async Task can_get_empty_file_list_on_missing_directory()
     {

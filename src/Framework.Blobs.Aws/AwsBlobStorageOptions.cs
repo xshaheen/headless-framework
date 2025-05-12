@@ -9,6 +9,8 @@ public sealed class AwsBlobStorageOptions
 {
     public bool UseChunkEncoding { get; set; } = true;
 
+    public bool DisablePayloadSigning { get; set; }
+
     public S3CannedACL? CannedAcl { get; set; }
 
     public ILoggerFactory? LoggerFactory { get; set; }

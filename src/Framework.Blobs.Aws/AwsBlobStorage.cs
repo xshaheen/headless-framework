@@ -65,7 +65,9 @@ public sealed class AwsBlobStorage : IBlobStorage
             return;
         }
 
-        await _s3.PutBucketAsync(new PutBucketRequest { BucketName = bucketName }, cancellationToken);
+        var request = new PutBucketRequest { BucketName = bucketName };
+
+        await _s3.PutBucketAsync(request, cancellationToken);
         _CreatedBuckets.TryAdd(bucketName, value: true);
     }
 
@@ -102,6 +104,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             UseChunkEncoding = _options.UseChunkEncoding,
             CannedACL = _options.CannedAcl,
             Headers = { CacheControl = _DefaultCacheControl },
+            DisablePayloadSigning = _options.DisablePayloadSigning,
         };
 
         if (metadata is not null)
@@ -135,18 +138,19 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(container);
 
         var tasks = blobs.Select(async blob =>
-        {
-            try
             {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+                try
+                {
+                    await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                return Result<Exception>.Success();
+                    return Result<Exception>.Success();
+                }
+                catch (Exception e)
+                {
+                    return Result<Exception>.Fail(e);
+                }
             }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        );
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
@@ -232,7 +236,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             foreach (var objectKey in objectKeys)
             {
-                var deleteError = e.Response.DeleteErrors.Find(x =>
+                var deleteError = e.Response.DeleteErrors?.Find(x =>
                     string.Equals(x.Key, objectKey.Key, StringComparison.Ordinal)
                 );
 
@@ -307,6 +311,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 continue;
             }
 
+            deleteRequest.Objects ??= [];
             deleteRequest.Objects.AddRange(keys);
 
             _logger.LogInformation(
@@ -317,19 +322,16 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             var deleteResponse = await _s3.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
 
-            if (deleteResponse.DeleteErrors.Count > 0)
+            if (deleteResponse.DeleteErrors is not null && deleteResponse.DeleteErrors.Count > 0)
             {
                 // retry 1 time, continue.
-                var deleteRetryRequest = new DeleteObjectsRequest { BucketName = bucket };
-
-                deleteRetryRequest.Objects.AddRange(
-                    deleteResponse.DeleteErrors.Select(e => new KeyVersion { Key = e.Key })
-                );
+                var objects = deleteResponse.DeleteErrors.ConvertAll(e => new KeyVersion { Key = e.Key });
+                var deleteRetryRequest = new DeleteObjectsRequest { BucketName = bucket, Objects = objects };
 
                 var deleteRetryResponse = await _s3.DeleteObjectsAsync(deleteRetryRequest, cancellationToken)
                     .AnyContext();
 
-                if (deleteRetryResponse.DeleteErrors.Count > 0)
+                if (deleteRetryResponse.DeleteErrors is not null && deleteRetryResponse.DeleteErrors.Count > 0)
                 {
                     errors.AddRange(deleteRetryResponse.DeleteErrors);
                 }
@@ -337,13 +339,13 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             _logger.LogTrace(
                 "Deleted {FileCount} files matching {SearchPattern}",
-                deleteResponse.DeletedObjects.Count,
+                deleteResponse.DeletedObjects?.Count ?? 0,
                 blobSearchPattern
             );
 
-            count += deleteResponse.DeletedObjects.Count;
-            deleteRequest.Objects.Clear();
-        } while (listResponse.IsTruncated && !cancellationToken.IsCancellationRequested);
+            count += deleteResponse.DeletedObjects?.Count ?? 0;
+            deleteRequest.Objects?.Clear();
+        } while (listResponse.IsTruncated is true && !cancellationToken.IsCancellationRequested);
 
         if (errors.Count > 0)
         {
@@ -585,8 +587,8 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
 
-        var modified = new DateTimeOffset(response.LastModified);
-        var created = _GetUploadedDate(response.Metadata, modified);
+        var created = _GetUploadedDate(response.Metadata);
+        var modified = response.LastModified is null ? created : new(response.LastModified.Value);
 
         return new BlobInfo
         {
@@ -615,8 +617,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult(
-            (_, token) => _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
+        var result = new PagedFileListResult((_, token) => _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();
@@ -659,15 +660,17 @@ public sealed class AwsBlobStorage : IBlobStorage
             };
         }
 
+        var hasMore = response.IsTruncated is true;
+
         return new NextPageResult
         {
             Success = response.HttpStatusCode.IsSuccessStatusCode(),
-            HasMore = response.IsTruncated,
+            HasMore = hasMore,
             Blobs = _MatchesPattern(response.S3Objects, criteria.Pattern)
                 .Select(_ToBlobInfo)
                 .Where(spec => !_IsDirectory(spec))
                 .ToList(),
-            NextPageFunc = response.IsTruncated
+            NextPageFunc = hasMore
                 ? (_, token) => _GetFilesAsync(bucket, criteria, pageSize, response.NextContinuationToken, token)
                 : null,
         };
@@ -675,14 +678,15 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     private static BlobInfo _ToBlobInfo(S3Object blob)
     {
-        var modified = new DateTimeOffset(blob.LastModified);
+        var modified = blob.LastModified is null ? DateTimeOffset.MinValue : new(blob.LastModified.Value);
 
         return new()
         {
             BlobKey = blob.Key,
+            // NOTE: The correct one is stored in the metadata collection, and it is not available here.
             Created = modified,
             Modified = modified,
-            Size = blob.Size,
+            Size = blob.Size ?? 0,
         };
     }
 
@@ -691,14 +695,20 @@ public sealed class AwsBlobStorage : IBlobStorage
         return file.Size is 0 && file.BlobKey.EndsWith('/');
     }
 
-    private static IEnumerable<S3Object> _MatchesPattern(IEnumerable<S3Object?> blobs, Regex? pattern)
+    private static IEnumerable<S3Object> _MatchesPattern(IEnumerable<S3Object?>? blobs, Regex? pattern)
     {
-        return blobs.Where(blob =>
+        if (blobs is null)
         {
-            var path = blob?.Key;
+            return [];
+        }
 
-            return path is not null && pattern?.IsMatch(path) != false;
-        })!;
+        return blobs.Where(blob =>
+            {
+                var path = blob?.Key;
+
+                return path is not null && pattern?.IsMatch(path) != false;
+            }
+        )!;
     }
 
     private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
@@ -759,9 +769,9 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     #region Metadata Converters
 
-    private static Dictionary<string, string?>? _ToDictionary(MetadataCollection metadata)
+    private static Dictionary<string, string?>? _ToDictionary(MetadataCollection? metadata)
     {
-        if (metadata.Count == 0)
+        if (metadata is null || metadata.Count == 0)
         {
             return null;
         }
@@ -780,13 +790,18 @@ public sealed class AwsBlobStorage : IBlobStorage
         return dictionary;
     }
 
-    private static DateTimeOffset _GetUploadedDate(MetadataCollection metadata, DateTimeOffset defaultValue)
+    private static DateTimeOffset _GetUploadedDate(MetadataCollection? metadata)
     {
+        if (metadata is null || metadata.Count == 0)
+        {
+            return DateTimeOffset.MinValue;
+        }
+
         var createdValue = metadata[_UploadDateMetadataKey];
 
         if (createdValue is null)
         {
-            return defaultValue;
+            return DateTimeOffset.MinValue;
         }
 
         return DateTimeOffset.TryParseExact(
@@ -797,7 +812,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             out var value
         )
             ? value
-            : defaultValue;
+            : DateTimeOffset.MinValue;
     }
 
     #endregion
