@@ -37,14 +37,14 @@ public static class GlobalSettingManagerExtensions
         );
     }
 
-    public static Task<T?> GetGlobalAsync<T>(
+    public static Task<T?> FindGlobalAsync<T>(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAsync<T>(
+        return settingManager.FindAsync<T>(
             name,
             SettingValueProviderNames.Global,
             providerKey: null,
@@ -53,14 +53,14 @@ public static class GlobalSettingManagerExtensions
         );
     }
 
-    public static Task<string?> GetGlobalAsync(
+    public static Task<string?> FindGlobalAsync(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetOrDefaultAsync(
+        return settingManager.FindAsync(
             name,
             SettingValueProviderNames.Global,
             providerKey: null,
@@ -87,6 +87,22 @@ public static class GlobalSettingManagerExtensions
         this ISettingManager settingManager,
         string name,
         string? value,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return settingManager.SetAsync(
+            name,
+            value,
+            SettingValueProviderNames.Global,
+            providerKey: null,
+            cancellationToken: cancellationToken
+        );
+    }
+
+    public static Task SetGlobalAsync<T>(
+        this ISettingManager settingManager,
+        string name,
+        T? value,
         CancellationToken cancellationToken = default
     )
     {

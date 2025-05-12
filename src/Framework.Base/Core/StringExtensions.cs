@@ -799,9 +799,15 @@ public static class StringExtensions
         return str.TryParse(null, out value);
     }
 
+    /// <summary>
+    /// Normalizes the format of a property path by ensuring each segment of the path is in camelCase.
+    /// </summary>
+    /// <param name="propertyName">The property path to normalize.</param>
+    /// <returns>The normalized property path, with each segment formatted in camelCase.</returns>
+    /// <example>var result = "User.FirstName".CamelizePropertyPath(); // Returns "user.firstName"</example>
     [SystemPure]
     [JetBrainsPure]
-    public static string NormalizePropertyPath(this string propertyName)
+    public static string CamelizePropertyPath(this string propertyName)
     {
         if (string.IsNullOrEmpty(propertyName))
         {

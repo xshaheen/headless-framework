@@ -71,7 +71,7 @@ public static class UserSettingManagerExtensions
         );
     }
 
-    public static Task<T?> GetForUserAsync<T>(
+    public static Task<T?> FindForUserAsync<T>(
         this ISettingManager settingManager,
         string userId,
         string name,
@@ -79,17 +79,17 @@ public static class UserSettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAsync<T>(name, SettingValueProviderNames.User, userId, fallback, cancellationToken);
+        return settingManager.FindAsync<T>(name, SettingValueProviderNames.User, userId, fallback, cancellationToken);
     }
 
-    public static Task<T?> GetForCurrentUserAsync<T>(
+    public static Task<T?> FindForCurrentUserAsync<T>(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAsync<T>(
+        return settingManager.FindAsync<T>(
             name,
             SettingValueProviderNames.User,
             providerKey: null,
@@ -98,7 +98,7 @@ public static class UserSettingManagerExtensions
         );
     }
 
-    public static Task<string?> GetForUserAsync(
+    public static Task<string?> FindForUserAsync(
         this ISettingManager settingManager,
         string userId,
         string name,
@@ -106,7 +106,7 @@ public static class UserSettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetOrDefaultAsync(
+        return settingManager.FindAsync(
             name,
             SettingValueProviderNames.User,
             userId,
@@ -115,14 +115,14 @@ public static class UserSettingManagerExtensions
         );
     }
 
-    public static Task<string?> GetForCurrentUserAsync(
+    public static Task<string?> FindForCurrentUserAsync(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetOrDefaultAsync(
+        return settingManager.FindAsync(
             name,
             SettingValueProviderNames.User,
             providerKey: null,
@@ -178,6 +178,43 @@ public static class UserSettingManagerExtensions
         this ISettingManager settingManager,
         string name,
         string? value,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return settingManager.SetAsync(
+            name,
+            value,
+            SettingValueProviderNames.User,
+            providerKey: null,
+            forceToSet,
+            cancellationToken
+        );
+    }
+
+    public static Task SetForUserAsync<T>(
+        this ISettingManager settingManager,
+        string userId,
+        string name,
+        T? value,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return settingManager.SetAsync(
+            name,
+            value,
+            SettingValueProviderNames.User,
+            userId,
+            forceToSet,
+            cancellationToken
+        );
+    }
+
+    public static Task SetForCurrentUserAsync<T>(
+        this ISettingManager settingManager,
+        string name,
+        T? value,
         bool forceToSet = false,
         CancellationToken cancellationToken = default
     )

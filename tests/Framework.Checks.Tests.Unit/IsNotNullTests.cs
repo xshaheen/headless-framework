@@ -25,22 +25,18 @@ public class IsNotNullTests
 
         // when
         Action action = () => Argument.IsNotNull(collection);
-        Action actionWithCustomMessage = () => Argument.IsNotNull(collection,customMessage);
+        Action actionWithCustomMessage = () => Argument.IsNotNull(collection, customMessage);
 
         // then
         action
             .Should()
             .ThrowExactly<ArgumentNullException>()
-            .WithMessage(
-                $"Required argument \"{nameof(collection)}\" was null. (Parameter '{nameof(collection)}')"
-            );
+            .WithMessage($"Required argument \"{nameof(collection)}\" was null. (Parameter '{nameof(collection)}')");
 
         actionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentNullException>()
-            .WithMessage(
-                $"{customMessage} (Parameter '{nameof(collection)}')"
-            );
+            .WithMessage($"{customMessage} (Parameter '{nameof(collection)}')");
     }
 
     [Fact]

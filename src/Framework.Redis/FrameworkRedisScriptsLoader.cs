@@ -75,12 +75,12 @@ public sealed class FrameworkRedisScriptsLoader(
                 var loadSetIfHigherScriptTask = setIfHigher.LoadAsync(server);
                 var loadSetIfLowerScriptTask = setIfLower.LoadAsync(server);
 
-               var results =  await Task.WhenAll(
-                       loadIncrementScriptTask,
-                       loadRemoveScriptTask,
-                       loadReplaceScriptTask,
-                       loadSetIfHigherScriptTask,
-                       loadSetIfLowerScriptTask
+                var results = await Task.WhenAll(
+                        loadIncrementScriptTask,
+                        loadRemoveScriptTask,
+                        loadReplaceScriptTask,
+                        loadSetIfHigherScriptTask,
+                        loadSetIfLowerScriptTask
                     )
                     .WithAggregatedExceptions()
                     .AnyContext();
@@ -90,7 +90,6 @@ public sealed class FrameworkRedisScriptsLoader(
                 ReplaceIfEqualScript = results[2];
                 SetIfHigherScript = results[3];
                 SetIfLowerScript = results[4];
-
             }
 
             _scriptsLoaded = true;
@@ -113,9 +112,10 @@ public sealed class FrameworkRedisScriptsLoader(
         await LoadScriptsAsync().AnyContext();
 
         var redisResult = await db.ScriptEvaluateAsync(
-            ReplaceIfEqualScript!,
-            _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl)
-        ).AnyContext();
+                ReplaceIfEqualScript!,
+                _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl)
+            )
+            .AnyContext();
 
         var result = (int)redisResult;
 
@@ -215,7 +215,8 @@ public sealed class FrameworkRedisScriptsLoader(
         return new { key, expected };
     }
 
-    private static object _GetIncrementParameters<T>(string resource, T value, TimeSpan ttl) where T : INumber<T>
+    private static object _GetIncrementParameters<T>(string resource, T value, TimeSpan ttl)
+        where T : INumber<T>
     {
         return new
         {
@@ -225,11 +226,22 @@ public sealed class FrameworkRedisScriptsLoader(
         };
     }
 
-    private static object _GetIfParameters<T>(string key, T value, TimeSpan? ttl) where T : INumber<T>
+    private static object _GetIfParameters<T>(string key, T value, TimeSpan? ttl)
+        where T : INumber<T>
     {
         return ttl.HasValue
-            ? new { key = (RedisKey) key, value, expires = (int) ttl.Value.TotalMilliseconds }
-            : new { key = (RedisKey) key, value, expires = RedisValue.EmptyString };
+            ? new
+            {
+                key = (RedisKey)key,
+                value,
+                expires = (int)ttl.Value.TotalMilliseconds,
+            }
+            : new
+            {
+                key = (RedisKey)key,
+                value,
+                expires = RedisValue.EmptyString,
+            };
     }
 
     #endregion

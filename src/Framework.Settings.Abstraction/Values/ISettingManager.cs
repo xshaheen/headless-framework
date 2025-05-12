@@ -18,17 +18,22 @@ public interface ISettingManager
     /// <param name="fallback">Force the value finds fallback to other providers.</param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns></returns>
-    Task<string?> GetOrDefaultAsync(
+    Task<string?> FindAsync(
         string settingName,
-        string providerName,
-        string? providerKey,
+        string? providerName = null,
+        string? providerKey = null,
         bool fallback = true,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<Dictionary<string, SettingValue>> GetAllAsync(
+        string[] settingNames,
         CancellationToken cancellationToken = default
     );
 
     Task<List<SettingValue>> GetAllAsync(
         string providerName,
-        string? providerKey,
+        string? providerKey = null,
         bool fallback = true,
         CancellationToken cancellationToken = default
     );

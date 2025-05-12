@@ -3,10 +3,10 @@
 using Framework.Domains;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
-using Framework.Permissions.Filters;
 using Framework.Permissions.GrantProviders;
 using Framework.Permissions.Grants;
 using Framework.Permissions.Models;
+using Framework.Permissions.Requirements;
 using Framework.Permissions.Resources;
 using Framework.Permissions.Seeders;
 using Framework.Permissions.Testing;
@@ -73,10 +73,6 @@ public static class AddPermissionsExtensions
         services.AddOrReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
         services.AddOrReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
 
-        services.AddOrReplaceSingleton<
-            IMethodInvocationAuthorizationService,
-            AlwaysAllowMethodInvocationAuthorizationService
-        >();
 
         return services;
     }
@@ -85,7 +81,7 @@ public static class AddPermissionsExtensions
     {
         services.Configure<PermissionManagementProvidersOptions>(options =>
         {
-            // Last added provider has the highest priority
+            // Last-added provider has the highest priority
             options.GrantProviders.Add<RolePermissionGrantProvider>();
             options.GrantProviders.Add<UserPermissionGrantProvider>();
         });
@@ -124,6 +120,9 @@ public static class AddPermissionsExtensions
         services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
         services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
         services.TryAddSingleton<IPermissionManager, PermissionManager>();
+
+        services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
+        services.AddSingleton<IAuthorizationHandler, PermissionsRequirementHandler>();
 
         return services;
     }

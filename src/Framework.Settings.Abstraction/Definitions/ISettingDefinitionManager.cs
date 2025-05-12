@@ -12,5 +12,5 @@ public interface ISettingDefinitionManager
 {
     Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default);
 
-    Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default);
+    Task<SettingDefinition?> FindAsync(string name, CancellationToken cancellationToken = default);
 }

@@ -10,9 +10,9 @@ namespace Framework.Hosting.Seeders;
 [PublicAPI]
 public static class AddDbMigrationSeederExtensions
 {
-    public static void AddDbMigrationSeeder<TContext>(this IServiceCollection services)
+    public static void AddDbMigrationPreSeeder<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
-        services.AddSeeder<DbMigrationSeeder<TContext>>();
+        services.AddPreSeeder<DbMigrationPreSeeder<TContext>>();
     }
 }

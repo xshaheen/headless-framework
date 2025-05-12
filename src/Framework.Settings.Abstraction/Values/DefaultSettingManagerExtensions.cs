@@ -37,14 +37,14 @@ public static class DefaultSettingManagerExtensions
         );
     }
 
-    public static Task<T?> GetDefaultAsync<T>(
+    public static Task<T?> FindDefaultAsync<T>(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetAsync<T>(
+        return settingManager.FindAsync<T>(
             name,
             SettingValueProviderNames.DefaultValue,
             providerKey: null,
@@ -53,14 +53,14 @@ public static class DefaultSettingManagerExtensions
         );
     }
 
-    public static Task<string?> GetDefaultAsync(
+    public static Task<string?> FindDefaultAsync(
         this ISettingManager settingManager,
         string name,
         bool fallback = true,
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.GetOrDefaultAsync(
+        return settingManager.FindAsync(
             name,
             SettingValueProviderNames.DefaultValue,
             providerKey: null,

@@ -25,13 +25,17 @@ public sealed class IsNotEmptyTests
 
         // when
         var action = () => Argument.IsNotEmpty(collection);
-        var actionWithCustomMessage = () => Argument.IsNotEmpty(collection,customMessage);
+        var actionWithCustomMessage = () => Argument.IsNotEmpty(collection, customMessage);
 
         // then
-        action.Should().ThrowExactly<ArgumentException>()
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
             .WithMessage("Required argument \"collection\" was empty. (Parameter 'collection')");
 
-        actionWithCustomMessage.Should().ThrowExactly<ArgumentException>()
+        actionWithCustomMessage
+            .Should()
+            .ThrowExactly<ArgumentException>()
             .WithMessage($"{customMessage} (Parameter 'collection')");
     }
 

@@ -10,7 +10,7 @@ public sealed class SettingDefinitionManager(
     IDynamicSettingDefinitionStore dynamicStore
 ) : ISettingDefinitionManager
 {
-    public async Task<SettingDefinition?> GetOrDefaultAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<SettingDefinition?> FindAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(name);
 

@@ -70,9 +70,7 @@ public class IsNotDefault
         actionWithCustomMessage
             .Should()
             .ThrowExactly<ArgumentException>()
-            .WithMessage(
-                $"{customMessage} (Parameter 'argument')"
-            );
+            .WithMessage($"{customMessage} (Parameter 'argument')");
     }
 
     [Fact]

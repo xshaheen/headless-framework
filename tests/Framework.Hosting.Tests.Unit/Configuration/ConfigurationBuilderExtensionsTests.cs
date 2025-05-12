@@ -87,6 +87,7 @@ public class ConfigurationBuilderExtensionsTests
         isElseActionExecuted.Should().BeFalse();
         configuration.GetSection("Key").Value.Should().Be("Secret");
     }
+
     [Fact]
     public void configuration_builder_add_if_else_should_execute_else_action_when_condition_is_false()
     {

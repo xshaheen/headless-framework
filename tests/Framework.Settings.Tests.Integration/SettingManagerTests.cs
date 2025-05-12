@@ -33,7 +33,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
 
         // when
-        var settingValue = await settingManager.GetDefaultAsync("Setting1");
+        var settingValue = await settingManager.FindDefaultAsync("Setting1");
 
         // then
         settingValue.Should().Be("Value1");
@@ -92,7 +92,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
 
         // when
         await settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");
-        var settingValue = await settingManager.GetForUserAsync(userId, name: settingName);
+        var settingValue = await settingManager.FindForUserAsync(userId, name: settingName);
 
         // then
         settingValue.Should().Be("NewValue");
@@ -112,7 +112,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
 
         // when
         await settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");
-        var settingValue = await settingManager.GetForUserAsync(userId, name: settingName);
+        var settingValue = await settingManager.FindForUserAsync(userId, name: settingName);
 
         // then
         settingValue.Should().Be("NewValue");
@@ -146,8 +146,8 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         await dynamicStore2.SaveAsync();
 
         // when: get dynamic settings from host1
-        var host1LocalSetting = await settingManager1.GetDefaultAsync(host1Setting);
-        var host1DynamicSetting = await settingManager1.GetDefaultAsync(host2Setting);
+        var host1LocalSetting = await settingManager1.FindDefaultAsync(host1Setting);
+        var host1DynamicSetting = await settingManager1.FindDefaultAsync(host2Setting);
 
         // then: dynamic settings should be returned
         host1LocalSetting.Should().Be(host1SettingValue);
@@ -157,8 +157,8 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         await dynamicStore1.SaveAsync();
 
         // when: get dynamic settings from host1
-        var host2LocalSetting = await settingManager2.GetDefaultAsync(host2Setting);
-        var host2DynamicSetting = await settingManager2.GetDefaultAsync(host1Setting);
+        var host2LocalSetting = await settingManager2.FindDefaultAsync(host2Setting);
+        var host2DynamicSetting = await settingManager2.FindDefaultAsync(host1Setting);
 
         // then: dynamic settings should be returned
         host2LocalSetting.Should().Be(host2SettingValue);
@@ -170,19 +170,19 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
 
         // then: dynamic setting value should be changed
 
-        (await settingManager1.GetForUserAsync(userId, host1Setting))
+        (await settingManager1.FindForUserAsync(userId, host1Setting))
             .Should()
             .Be("NewValue1");
-        (await settingManager2.GetForUserAsync(userId, host1Setting)).Should().Be("NewValue1");
+        (await settingManager2.FindForUserAsync(userId, host1Setting)).Should().Be("NewValue1");
 
         // when: change dynamic setting value in host2
         await settingManager2.SetForUserAsync(userId, host2Setting, "NewValue2");
 
         // then: dynamic setting value should be changed
-        (await settingManager2.GetForUserAsync(userId, host2Setting))
+        (await settingManager2.FindForUserAsync(userId, host2Setting))
             .Should()
             .Be("NewValue2");
-        (await settingManager1.GetForUserAsync(userId, host2Setting)).Should().Be("NewValue2");
+        (await settingManager1.FindForUserAsync(userId, host2Setting)).Should().Be("NewValue2");
     }
 
     private HostApplicationBuilder _CreateDynamicEnabledHostBuilder<T>()
