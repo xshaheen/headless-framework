@@ -1,10 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
-    <xsd:element name="root" msdata:IsDataSet="true">
-
-    </xsd:element>
+    <xsd:element name="root" msdata:IsDataSet="true"></xsd:element>
   </xsd:schema>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -34,7 +31,7 @@
     <value>The permission '{0}' is disabled.</value>
   </data>
   <data name="permissions:provider-not-found" xml:space="preserve">
-    <value>Unknown permission management provider: {0}</value>
+    <value>Unknown permission management provider: {0}.</value>
   </data>
   <data name="permissions:provider-not-defined" xml:space="preserve">
     <value>The permission '{0}' does not have a provider '{1}'.</value>
