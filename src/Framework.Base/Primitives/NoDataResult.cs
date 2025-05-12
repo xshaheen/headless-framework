@@ -14,7 +14,7 @@ public readonly struct NoDataResult : IResult<IReadOnlyList<ErrorDescriptor>>, I
 
     public bool Failed => !Succeeded;
 
-    public IReadOnlyList<ErrorDescriptor> Errors { get; private init; } = Array.Empty<ErrorDescriptor>();
+    public IReadOnlyList<ErrorDescriptor> Errors { get; private init; } = [];
 
     public TResult Match<TResult>(Func<TResult> success, Func<IReadOnlyList<ErrorDescriptor>, TResult> failure)
     {

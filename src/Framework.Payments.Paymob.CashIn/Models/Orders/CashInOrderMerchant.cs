@@ -38,14 +38,14 @@ public sealed class CashInOrderMerchant
     [JsonPropertyName("phones")]
     public IReadOnlyList<string> Phones
     {
-        get => _phones ?? Array.Empty<string>();
+        get => _phones ?? [];
         init => _phones = value;
     }
 
     [JsonPropertyName("company_emails")]
     public IReadOnlyList<string> CompanyEmails
     {
-        get => _companyEmails ?? Array.Empty<string>();
+        get => _companyEmails ?? [];
         init => _companyEmails = value;
     }
 

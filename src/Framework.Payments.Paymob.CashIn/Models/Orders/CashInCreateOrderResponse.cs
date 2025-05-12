@@ -86,14 +86,14 @@ public sealed class CashInCreateOrderResponse
     [JsonPropertyName("items")]
     public IReadOnlyList<CashInOrderItem> Items
     {
-        get => _items ?? Array.Empty<CashInOrderItem>();
+        get => _items ?? [];
         init => _items = value;
     }
 
     [JsonPropertyName("delivery_status")]
     public IReadOnlyList<object?> DeliveryStatus
     {
-        get => _deliveryStatus ?? Array.Empty<object?>();
+        get => _deliveryStatus ?? [];
         init => _deliveryStatus = value;
     }
 
