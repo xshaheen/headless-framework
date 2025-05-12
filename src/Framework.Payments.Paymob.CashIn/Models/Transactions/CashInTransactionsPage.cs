@@ -19,7 +19,7 @@ public sealed class CashInTransactionsPage
     [JsonPropertyName("results")]
     public IReadOnlyCollection<CashInTransaction> Results
     {
-        get => _results ?? Array.Empty<CashInTransaction>();
+        get => _results ?? [];
         init => _results = value;
     }
 

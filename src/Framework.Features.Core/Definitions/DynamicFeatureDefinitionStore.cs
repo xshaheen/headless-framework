@@ -71,7 +71,7 @@ public sealed class DynamicFeatureDefinitionStore(
     {
         if (!_options.IsDynamicFeatureStoreEnabled)
         {
-            return Array.Empty<FeatureDefinition>();
+            return [];
         }
 
         using (await _syncSemaphore.LockAsync(cancellationToken))
@@ -87,7 +87,7 @@ public sealed class DynamicFeatureDefinitionStore(
     {
         if (!_options.IsDynamicFeatureStoreEnabled)
         {
-            return Array.Empty<FeatureGroupDefinition>();
+            return [];
         }
 
         using (await _syncSemaphore.LockAsync(cancellationToken))

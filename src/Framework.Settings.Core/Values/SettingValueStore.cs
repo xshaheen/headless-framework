@@ -292,7 +292,7 @@ public sealed class SettingValueStore(
     {
         if (names.Length == 0)
         {
-            return Array.Empty<SettingDefinition>();
+            return [];
         }
 
         var definitions = await definitionManager.GetAllAsync(cancellationToken);

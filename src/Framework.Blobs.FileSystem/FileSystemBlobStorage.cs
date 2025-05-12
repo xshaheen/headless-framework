@@ -134,7 +134,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         if (blobNames.Count == 0)
         {
-            return ValueTask.FromResult<IReadOnlyList<Result<bool, Exception>>>(Array.Empty<Result<bool, Exception>>());
+            return ValueTask.FromResult<IReadOnlyList<Result<bool, Exception>>>([]);
         }
 
         IReadOnlyList<Result<bool, Exception>> results = blobNames
@@ -443,10 +443,11 @@ public sealed class FileSystemBlobStorage : IBlobStorage
             return PagedFileListResult.Empty;
         }
 
-        var result = new PagedFileListResult((_, _) =>
-            ValueTask.FromResult<INextPageResult>(
-                _GetFiles(baseDirectoryPath, directoryPath, blobSearchPattern, 1, pageSize)
-            )
+        var result = new PagedFileListResult(
+            (_, _) =>
+                ValueTask.FromResult<INextPageResult>(
+                    _GetFiles(baseDirectoryPath, directoryPath, blobSearchPattern, 1, pageSize)
+                )
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();

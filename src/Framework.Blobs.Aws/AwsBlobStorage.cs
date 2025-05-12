@@ -200,7 +200,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         if (blobNames.Count == 0)
         {
-            return Array.Empty<Result<bool, Exception>>();
+            return [];
         }
 
         var (bucket, keyPrefix) = (container[0], Url.Combine([.. container.Skip(1)]));
@@ -654,7 +654,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             {
                 Success = true,
                 HasMore = false,
-                Blobs = Array.Empty<BlobInfo>(),
+                Blobs = [],
                 NextPageFunc = null,
             };
         }

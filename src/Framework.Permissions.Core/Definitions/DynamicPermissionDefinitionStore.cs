@@ -79,7 +79,7 @@ public sealed class DynamicPermissionDefinitionStore(
     {
         if (!_options.IsDynamicPermissionStoreEnabled)
         {
-            return Array.Empty<PermissionDefinition>();
+            return [];
         }
 
         using (await _syncSemaphore.LockAsync(cancellationToken))
@@ -95,7 +95,7 @@ public sealed class DynamicPermissionDefinitionStore(
     {
         if (!_options.IsDynamicPermissionStoreEnabled)
         {
-            return Array.Empty<PermissionGroupDefinition>();
+            return [];
         }
 
         using (await _syncSemaphore.LockAsync(cancellationToken))

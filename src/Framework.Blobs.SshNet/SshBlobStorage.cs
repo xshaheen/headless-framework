@@ -197,7 +197,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
         if (blobNames.Count == 0)
         {
-            return Array.Empty<Result<bool, Exception>>();
+            return [];
         }
 
         var tasks = blobNames.Select(async fileName =>
@@ -549,8 +549,8 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var directoryPath = _BuildContainerPath(container);
 
-        var result = new PagedFileListResult((_, token) =>
-            _GetFilesAsync(container[0], directoryPath, blobSearchPattern, 1, pageSize, token)
+        var result = new PagedFileListResult(
+            (_, token) => _GetFilesAsync(container[0], directoryPath, blobSearchPattern, 1, pageSize, token)
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();

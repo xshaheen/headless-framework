@@ -34,7 +34,7 @@ public static class IndexPageExtensions
 
         if (total == 0)
         {
-            return new IndexPage<T>(Array.Empty<T>(), index, size, total);
+            return new IndexPage<T>([], index, size, total);
         }
 
         var items =
@@ -109,7 +109,7 @@ public static class IndexPageExtensions
 
         if (total == 0)
         {
-            return new(Array.Empty<TResult>(), index, size, total);
+            return new([], index, size, total);
         }
 
         var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
@@ -171,7 +171,7 @@ public static class IndexPageExtensions
 
         if (total == 0)
         {
-            return new(Array.Empty<TSource>(), 0, 0, 0);
+            return new([], 0, 0, 0);
         }
 
         var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);
@@ -198,7 +198,7 @@ public static class IndexPageExtensions
 
         if (total == 0)
         {
-            return new(Array.Empty<TSource>(), index, size, total);
+            return new([], index, size, total);
         }
 
         var orderQuery = ascending ? source.OrderBy(orderBy) : source.OrderByDescending(orderBy);

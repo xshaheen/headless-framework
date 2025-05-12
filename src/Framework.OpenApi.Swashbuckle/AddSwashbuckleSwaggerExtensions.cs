@@ -8,7 +8,6 @@ using Framework.OpenApi.Swashbuckle.Extensions;
 using Framework.OpenApi.Swashbuckle.OperationFilters;
 using Framework.Primitives;
 using Framework.Reflection;
-using MicroElements.Swashbuckle.FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +23,6 @@ public static class AddSwashbuckleSwaggerExtensions
 {
     public static IServiceCollection AddFrameworkSwashbuckleSwagger(this IServiceCollection services)
     {
-        services.AddFluentValidationRulesToSwagger();
         services.AddSwaggerGen(options =>
         {
             options.OperationFilter<ApiVersionOperationFilter>();
@@ -74,11 +72,7 @@ public static class AddSwashbuckleSwaggerExtensions
             options.AddSecurityDefinition(_ApiKeyDefinitionName, _CreateApiKeySecurityDefinition());
 
             options.AddSecurityRequirement(
-                new()
-                {
-                    [_CreateBearerSecurityRequirement()] = Array.Empty<string>(),
-                    [_CreateApiKeySecurityRequirement()] = Array.Empty<string>(),
-                }
+                new() { [_CreateBearerSecurityRequirement()] = [], [_CreateApiKeySecurityRequirement()] = [] }
             );
         });
 
