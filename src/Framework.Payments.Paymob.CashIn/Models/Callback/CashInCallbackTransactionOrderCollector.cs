@@ -38,14 +38,14 @@ public sealed class CashInCallbackTransactionOrderCollector
     [JsonPropertyName("phones")]
     public IReadOnlyList<object?> Phones
     {
-        get => _phones ?? Array.Empty<object?>();
+        get => _phones ?? [];
         init => _phones = value;
     }
 
     [JsonPropertyName("company_emails")]
     public IReadOnlyList<object?> CompanyEmails
     {
-        get => _companyEmails ?? Array.Empty<object?>();
+        get => _companyEmails ?? [];
         init => _companyEmails = value;
     }
 }

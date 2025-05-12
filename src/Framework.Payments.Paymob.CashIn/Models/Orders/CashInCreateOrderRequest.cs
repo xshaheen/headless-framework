@@ -33,8 +33,7 @@ public sealed class CashInCreateOrderRequest
     /// <summary>
     /// The list of objects contains the contents of the order if it is existing.
     /// </summary>
-    public IEnumerable<CashInCreateOrderRequestOrderItem> Items { get; private init; } =
-        Array.Empty<CashInCreateOrderRequestOrderItem>();
+    public IEnumerable<CashInCreateOrderRequestOrderItem> Items { get; private init; } = [];
 
     /// <summary>Create order without delivery.</summary>
     public static CashInCreateOrderRequest CreateOrder(
