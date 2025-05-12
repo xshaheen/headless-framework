@@ -42,9 +42,9 @@ public sealed class EmailRequestDestination
 {
     public required IReadOnlyList<EmailRequestAddress> ToAddresses { get; init; }
 
-    public IReadOnlyList<EmailRequestAddress> BccAddresses { get; init; } = Array.Empty<EmailRequestAddress>();
+    public IReadOnlyList<EmailRequestAddress> BccAddresses { get; init; } = [];
 
-    public IReadOnlyList<EmailRequestAddress> CcAddresses { get; init; } = Array.Empty<EmailRequestAddress>();
+    public IReadOnlyList<EmailRequestAddress> CcAddresses { get; init; } = [];
 }
 
 public sealed class EmailRequestAttachment

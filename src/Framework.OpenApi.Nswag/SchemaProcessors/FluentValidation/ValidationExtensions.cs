@@ -44,8 +44,7 @@ internal static class ValidationExtensions
     public static bool HasNoCondition(this IValidationRule rule) =>
         rule is { HasCondition: false, HasAsyncCondition: false };
 
-    public static IEnumerable<TValue> EmptyIfNull<TValue>(this IEnumerable<TValue>? collection) =>
-        collection ?? Array.Empty<TValue>();
+    public static IEnumerable<TValue> EmptyIfNull<TValue>(this IEnumerable<TValue>? collection) => collection ?? [];
 
     public static bool IsSupportedSwaggerNumericNumeric(this object value) =>
         value is int or long or float or double or decimal;

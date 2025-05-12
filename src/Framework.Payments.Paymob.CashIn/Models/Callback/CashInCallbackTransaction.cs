@@ -146,7 +146,7 @@ public sealed class CashInCallbackTransaction
     [JsonPropertyName("transaction_processed_callback_responses")]
     public IReadOnlyList<TransactionProcessedCallbackResponse> TransactionProcessedCallbackResponses
     {
-        get { return _transactionProcessedCallbackResponses ?? Array.Empty<TransactionProcessedCallbackResponse>(); }
+        get { return _transactionProcessedCallbackResponses ?? []; }
         init { _transactionProcessedCallbackResponses = value; }
     }
 

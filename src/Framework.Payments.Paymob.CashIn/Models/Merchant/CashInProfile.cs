@@ -32,14 +32,14 @@ public sealed class CashInProfile
     [JsonPropertyName("phones")]
     public IReadOnlyList<string> Phones
     {
-        get => _phones ?? Array.Empty<string>();
+        get => _phones ?? [];
         init => _phones = value;
     }
 
     [JsonPropertyName("company_emails")]
     public IReadOnlyList<string> CompanyEmails
     {
-        get => _companyEmails ?? Array.Empty<string>();
+        get => _companyEmails ?? [];
         init => _companyEmails = value;
     }
 
@@ -229,21 +229,21 @@ public sealed class CashInProfile
     [JsonPropertyName("custom_export_columns")]
     public IReadOnlyList<object?> CustomExportColumns
     {
-        get => _customExportColumns ?? Array.Empty<object?>();
+        get => _customExportColumns ?? [];
         init => _customExportColumns = value;
     }
 
     [JsonPropertyName("server_IP")]
     public IReadOnlyList<object?> ServerIp
     {
-        get => _serverIp ?? Array.Empty<object?>();
+        get => _serverIp ?? [];
         init => _serverIp = value;
     }
 
     [JsonPropertyName("permissions")]
     public IReadOnlyList<object?> Permissions
     {
-        get => _permissions ?? Array.Empty<object?>();
+        get => _permissions ?? [];
         init => _permissions = value;
     }
 

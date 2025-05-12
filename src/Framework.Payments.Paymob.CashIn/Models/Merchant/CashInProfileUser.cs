@@ -45,14 +45,14 @@ public sealed class CashInProfileUser
     [JsonPropertyName("groups")]
     public IReadOnlyList<object?> Groups
     {
-        get => _groups ?? Array.Empty<object?>();
+        get => _groups ?? [];
         init => _groups = value;
     }
 
     [JsonPropertyName("user_permissions")]
     public IReadOnlyList<int> UserPermissions
     {
-        get => _userPermissions ?? Array.Empty<int>();
+        get => _userPermissions ?? [];
         init => _userPermissions = value;
     }
 

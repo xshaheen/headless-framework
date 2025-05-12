@@ -19,7 +19,7 @@ public sealed class CashOutGetTransactionsResponse
     [JsonPropertyName("results")]
     public IReadOnlyList<CashOutTransaction> Results
     {
-        get => _results ?? Array.Empty<CashOutTransaction>();
+        get => _results ?? [];
         init => _results = value;
     }
 }

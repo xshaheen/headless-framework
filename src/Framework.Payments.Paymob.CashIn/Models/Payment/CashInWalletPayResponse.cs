@@ -125,7 +125,7 @@ public sealed class CashInWalletPayResponse
     [JsonPropertyName("transaction_processed_callback_responses")]
     public IReadOnlyList<object?> TransactionProcessedCallbackResponses
     {
-        get => _transactionProcessedCallbackResponses ?? Array.Empty<object?>();
+        get => _transactionProcessedCallbackResponses ?? [];
         init => _transactionProcessedCallbackResponses = value;
     }
 

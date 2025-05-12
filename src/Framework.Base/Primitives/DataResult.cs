@@ -16,7 +16,7 @@ public readonly struct DataResult<T>() : IResult<T, IReadOnlyList<ErrorDescripto
 
     public T? Data { get; init; } = default;
 
-    public IReadOnlyList<ErrorDescriptor> Errors { get; init; } = Array.Empty<ErrorDescriptor>();
+    public IReadOnlyList<ErrorDescriptor> Errors { get; init; } = [];
 
     public TResult Match<TResult>(Func<TResult> success, Func<IReadOnlyList<ErrorDescriptor>, TResult> failure)
     {
