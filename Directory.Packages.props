@@ -61,7 +61,7 @@
     <PackageVersion Include="Linq2Couchbase" Version="2.1.0" />
     <PackageVersion Include="MailKit" Version="4.12.0" />
     <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.5.1" />
-    <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.27" />
+    <PackageVersion Include="Mediator.Abstractions" Version="3.0.0-preview.65" />
     <PackageVersion Include="MessagePack" Version="3.1.3" />
     <PackageVersion Include="Meziantou.Extensions.Logging.Xunit" Version="1.0.11" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.4" />
@@ -71,8 +71,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.4" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.4" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="4.12.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="4.13.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.12.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.12.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.4" />
@@ -101,7 +101,7 @@
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.9.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
     <PackageVersion Include="Microsoft.OpenApi" Version="1.6.24" />
-    <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.0.0" />
+    <PackageVersion Include="Microsoft.Sbom.Tool" Version="3.1.0" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
