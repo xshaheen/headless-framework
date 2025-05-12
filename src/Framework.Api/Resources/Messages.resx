@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <root>
-  <xsd:schema id="root"
-              xmlns=""
-              xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-              xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
-    <xsd:element name="root" msdata:IsDataSet="true">
-
-    </xsd:element>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true"></xsd:element>
   </xsd:schema>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -135,7 +130,7 @@
     <comment>General | Failed to connect to google or facebook to login.</comment>
   </data>
   <data name="auth:invalid_login_token" xml:space="preserve">
-    <value>Invalid login token,</value>
+    <value>Invalid login token.</value>
   </data>
   <data name="auth:remove_password_requires_alternate_login" xml:space="preserve">
     <value>In order to remove the password, the account must have an alternative to login.</value>
