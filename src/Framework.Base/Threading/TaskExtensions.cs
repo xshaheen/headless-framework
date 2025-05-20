@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Nito.AsyncEx;
 
@@ -82,7 +83,7 @@ public static class TaskExtensions
                         : task,
                 cancellationToken: CancellationToken.None,
                 continuationOptions: TaskContinuationOptions.NotOnCanceled
-                    | TaskContinuationOptions.ExecuteSynchronously,
+                | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler: TaskScheduler.Default
             )
             .Unwrap();
@@ -106,7 +107,7 @@ public static class TaskExtensions
                         : task,
                 cancellationToken: CancellationToken.None,
                 continuationOptions: TaskContinuationOptions.NotOnCanceled
-                    | TaskContinuationOptions.ExecuteSynchronously,
+                | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler: TaskScheduler.Default
             )
             .Unwrap();
@@ -159,6 +160,69 @@ public static class TaskExtensions
     public static ConfiguredCancelableAsyncEnumerable<TResult> AnyContext<TResult>(this IAsyncEnumerable<TResult> task)
     {
         return task.ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    #endregion
+
+    #region Get Result
+
+    /// <summary>
+    /// Gets the result of a <see cref="Task{TResult}"/> if available, or <see langword="default"/> otherwise.
+    /// </summary>
+    /// <typeparam name="T">The type of <see cref="Task{TResult}"/> to get the result for.</typeparam>
+    /// <param name="task">The input <see cref="Task{TResult}"/> instance to get the result for.</param>
+    /// <returns>The result of <paramref name="task"/> if completed successfully, or <see langword="default"/> otherwise.</returns>
+    /// <remarks>This method does not block if <paramref name="task"/> has not completed yet.</remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static T? GetResultOrDefault<T>(this Task<T?> task)
+    {
+#pragma warning disable VSTHRD104 // Justification: Its intended to be used.
+        return task.Status == TaskStatus.RanToCompletion ? task.Result : default;
+#pragma warning restore VSTHRD104
+    }
+
+    // See: https://github.com/CommunityToolkit/dotnet/blob/main/src/CommunityToolkit.Common/Extensions/TaskExtensions.cs
+
+    /// <summary>
+    /// Gets the result of a <see cref="Task"/> if available, or <see langword="null"/> otherwise.
+    /// </summary>
+    /// <param name="task">The input <see cref="Task"/> instance to get the result for.</param>
+    /// <returns>The result of <paramref name="task"/> if completed successfully, or <see langword="default"/> otherwise.</returns>
+    /// <remarks>
+    /// This method does not block if <paramref name="task"/> has not completed yet. Furthermore, it is not generic
+    /// and uses reflection to access the <see cref="Task{TResult}.Result"/> property and boxes the result if it's
+    /// a value type, which adds overhead. It should only be used when using generics is not possible.
+    /// </remarks>
+    [RequiresUnreferencedCode("This method uses reflection to try to access the Task<T>.Result property of the input Task instance.")]
+    public static object? GetResultOrDefault(this Task task)
+    {
+        // Check if the instance is a completed Task
+        if (task.Status is not TaskStatus.RanToCompletion)
+        {
+            return null;
+        }
+
+        // We need an explicit check to ensure the input task is not the cached
+        // Task.CompletedTask instance, because that can internally be stored as
+        // a Task<T> for some given T (eg. on .NET 6 it's VoidTaskResult), which
+        // would cause the following code to return that result instead of null.
+        if (task == Task.CompletedTask)
+        {
+            return null;
+        }
+
+        // Try to get the Task<T>.Result property. This method would've
+        // been called anyway after the type checks, but using that to
+        // validate the input type saves some additional reflection calls.
+        // Furthermore, doing this also makes the method flexible enough to
+        // case whether the input Task<T> is actually an instance of some
+        // runtime-specific type that inherits from Task<T>.
+#pragma warning disable REFL009
+        var propertyInfo = task.GetType().GetProperty("Result");
+#pragma warning restore REFL009
+
+        // Return the result, if possible
+        return propertyInfo?.GetValue(task);
     }
 
     #endregion
