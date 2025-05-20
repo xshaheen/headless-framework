@@ -65,7 +65,7 @@ public static partial class RegexPatterns
     )]
     public static partial Regex ArabicCharacters { get; }
 
-    ///<summary>Represent RTL characters range use it to check whither a string contain RTL characters.</summary>
+    ///<summary>Represent RTL characters range use it to check whither a string contains RTL characters.</summary>
     [GeneratedRegex(
         pattern: @"[\u0600-\u06ff]|[\u0750-\u077f]|[\ufb50-\ufbc1]|[\ufbd3-\ufd3f]|[\ufd50-\ufd8f]|[\ufd92-\ufdc7]|[\ufe70-\ufefc]|[\uFDF0-\uFDFD]",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
@@ -186,6 +186,28 @@ public static partial class RegexPatterns
     )]
     public static partial Regex XmlTag { get; }
 
+    [GeneratedRegex(
+        pattern:  "<!--.*?-->",
+        options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
+    )]
+    public static partial Regex HtmlComments { get; }
+
+    [GeneratedRegex(
+        pattern:  "(?s)<script.*?(/>|</script>)",
+        options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
+    )]
+    public static partial Regex HtmlScripts { get; }
+
+    [GeneratedRegex(
+        pattern:  "(?s)<style.*?(/>|</style>)",
+        options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
+    )]
+    public static partial Regex HtmlStyles { get; }
+
+
     /// <summary>Represent a file with extension absolute/relative URL.</summary>
     /// <example>/api.example.com/file.jpg</example>
     /// <example>/builder/file.png</example>
@@ -198,14 +220,6 @@ public static partial class RegexPatterns
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex FilePathUrl { get; }
-
-    /// <summary>Represent file Name with extension having 3 chars.</summary>
-    [GeneratedRegex(
-        pattern: @"^[\w,\s-]+\.[A-Za-z]{3}$",
-        options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
-        matchTimeoutMilliseconds: MatchTimeoutMilliseconds
-    )]
-    public static partial Regex FileNameWithExtension { get; }
 
     /// <summary>Represent integer number.</summary>
     [GeneratedRegex(
