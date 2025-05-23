@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public sealed class MvcProblemDetailsTests(ITestOutputHelper output) : TestBase(output)
+public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(output)
 {
     #region Entity Not Found (Middleware rewriter)
 

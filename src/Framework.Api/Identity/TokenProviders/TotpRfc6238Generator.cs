@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+
 using System.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
@@ -7,29 +8,30 @@ using Framework.Checks;
 
 namespace Framework.Api.Identity.TokenProviders;
 
-internal static class TotpRfc6238Generator
+public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 {
-    private const int _Variance = 2; // Allow a variance of no greater than 9 minutes in either direction
-    private static readonly TimeSpan _Timestep = TimeSpan.FromMinutes(3);
     private static readonly UTF8Encoding _Encoding = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
-    public static int GenerateCode(byte[] securityToken, string? modifier = null)
+    public int GenerateCode(byte[] securityToken, TimeSpan timestep, string? modifier = null)
     {
         Argument.IsNotNull(securityToken);
+        Argument.IsPositive(timestep);
 
         var modifierBytes = modifier is not null ? _Encoding.GetBytes(modifier) : null;
 
-        return _ComputeTotp(securityToken, _GetCurrentTimeStepNumber(_Timestep), modifierBytes);
+        return _ComputeTotp(securityToken, _GetCurrentTimeStepNumber(timestep), modifierBytes);
     }
 
-    public static bool ValidateCode(byte[] securityToken, int code, string? modifier = null)
+    public bool ValidateCode(byte[] securityToken, int code, TimeSpan timestep, int variance = 2, string? modifier = null)
     {
         Argument.IsNotNull(securityToken);
+        Argument.IsPositive(timestep);
+        Argument.IsPositiveOrZero(variance);
 
-        var currentTimeStep = _GetCurrentTimeStepNumber(_Timestep);
+        var currentTimeStep = _GetCurrentTimeStepNumber(timestep);
         var modifierBytes = modifier is not null ? _Encoding.GetBytes(modifier) : null;
 
-        for (var i = -_Variance; i <= _Variance; i++)
+        for (var i = -variance; i <= variance; i++)
         {
             var computedTotp = _ComputeTotp(securityToken, (ulong) ((long) currentTimeStep + i), modifierBytes);
 
@@ -40,6 +42,13 @@ internal static class TotpRfc6238Generator
         }
 
         return false; // No match
+    }
+
+    private ulong _GetCurrentTimeStepNumber(TimeSpan timestep)
+    {
+        var delta = timeProvider.GetUtcNow() - DateTimeOffset.UnixEpoch;
+
+        return (ulong) (delta.Ticks / timestep.Ticks);
     }
 
     private static int _ComputeTotp(byte[] key, ulong timestepNumber, byte[]? modifierBytes)
@@ -88,12 +97,5 @@ internal static class TotpRfc6238Generator
         Buffer.BlockCopy(modifierBytes, 0, combined, input.Length, modifierBytes.Length);
 
         return combined;
-    }
-
-    private static ulong _GetCurrentTimeStepNumber(TimeSpan timestep)
-    {
-        var delta = DateTimeOffset.UtcNow - DateTimeOffset.UnixEpoch;
-
-        return (ulong) (delta.Ticks / timestep.Ticks);
     }
 }
