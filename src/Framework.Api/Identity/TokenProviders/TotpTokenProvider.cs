@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Api.Identity.TokenProviders;
 
-public class TotpTokenProvider<TUser>(IOptions<TotpTokenProviderOptions> optionsAccessor) : IUserTwoFactorTokenProvider<TUser> where TUser : class
+public class TotpTokenProvider<TUser>(TotpRfc6238Generator generator, IOptions<TotpTokenProviderOptions> optionsAccessor) : IUserTwoFactorTokenProvider<TUser> where TUser : class
 {
     private readonly TotpTokenProviderOptions _options = optionsAccessor.Value;
 
@@ -18,7 +18,7 @@ public class TotpTokenProvider<TUser>(IOptions<TotpTokenProviderOptions> options
 
         var securityToken = await manager.CreateSecurityTokenAsync(user).ConfigureAwait(false);
         var modifier = await _GetUserModifierAsync(purpose, manager, user).ConfigureAwait(false);
-        var code = TotpRfc6238Generator.GenerateCode(securityToken, modifier).ToString("D6", CultureInfo.InvariantCulture);
+        var code = generator.GenerateCode(securityToken, _options.Timestep, modifier).ToString("D6", CultureInfo.InvariantCulture);
 
         return code;
     }
@@ -35,7 +35,7 @@ public class TotpTokenProvider<TUser>(IOptions<TotpTokenProviderOptions> options
         var securityToken = await manager.CreateSecurityTokenAsync(user).ConfigureAwait(false);
         var modifier = await _GetUserModifierAsync(purpose, manager, user).ConfigureAwait(false);
 
-        return TotpRfc6238Generator.ValidateCode(securityToken, code, modifier);
+        return generator.ValidateCode(securityToken, code, _options.Timestep, _options.Variance, modifier);
     }
 
     private async Task<string> _GetUserModifierAsync(string purpose, UserManager<TUser> manager, TUser user)
