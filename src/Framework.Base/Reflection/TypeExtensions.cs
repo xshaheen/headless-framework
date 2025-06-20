@@ -11,6 +11,26 @@ namespace System;
 [PublicAPI]
 public static class TypeExtensions
 {
+    public static string GetFriendlyTypeName(this Type type)
+    {
+        if (!type.IsGenericType)
+        {
+            return type.Name;
+        }
+
+        var typeName = type.Name;
+        var backtickIndex = typeName.IndexOf('`', StringComparison.Ordinal);
+
+        if (backtickIndex > 0)
+        {
+            typeName = typeName[..backtickIndex];
+        }
+
+        var genericArguments = type.GetGenericArguments().Select(t => t.GetFriendlyTypeName());
+
+        return $"{typeName}<{string.Join(", ", genericArguments)}>";
+    }
+
     [MustUseReturnValue]
     public static string GetFullNameWithAssemblyName(this Type type)
     {

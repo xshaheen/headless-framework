@@ -43,7 +43,7 @@ public static class DbSeedersExtensions
         {
             foreach (var (seeder, type) in preSeeders)
             {
-                logger.LogInformation(">>> Pre-Seeding using {TypeName}", type.Name);
+                logger.LogInformation(">>> Pre-Seeding using {TypeName}", type.GetFriendlyTypeName());
                 await seeder.SeedAsync();
             }
         }
@@ -72,7 +72,7 @@ public static class DbSeedersExtensions
         {
             foreach (var (seeder, type) in seeders)
             {
-                logger.LogInformation(">>> Seeding using {TypeName}", type.Name);
+                logger.LogInformation(">>> Seeding using {TypeName}", type.GetFriendlyTypeName());
                 await seeder.SeedAsync();
             }
         }
