@@ -40,4 +40,10 @@
   <data name="url:invalid" xml:space="preserve">
     <value>عنوان URL غير صالح.</value>
   </data>
+  <data name="geo:invalid_latitude" xml:space="preserve">
+    <value>قيمة خط العرض غير صالحة. يجب أن يكون بين -90 و 90.</value>
+  </data>
+  <data name="geo:invalid_longitude" xml:space="preserve">
+    <value>قيمة خط الطول غير صالحة. يجب أن يكون بين 180 و 180.</value>
+  </data>
 </root>

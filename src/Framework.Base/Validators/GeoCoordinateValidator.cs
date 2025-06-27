@@ -5,6 +5,11 @@ namespace Framework.Validators;
 [PublicAPI]
 public static class GeoCoordinateValidator
 {
+    public const int LongitudeMinValue = -180;
+    public const int LongitudeMaxValue = 180;
+    public const int LatitudeMinValue = -90;
+    public const int LatitudeMaxValue = 90;
+
     public static bool IsValid(double latitude, double longitude)
     {
         return IsValidLatitude(latitude) && IsValidLongitude(longitude);
@@ -12,11 +17,11 @@ public static class GeoCoordinateValidator
 
     public static bool IsValidLongitude(double longitude)
     {
-        return double.IsFinite(longitude) && longitude is >= -180 and <= 180;
+        return double.IsFinite(longitude) && longitude is >= LongitudeMinValue and <= LongitudeMaxValue;
     }
 
     public static bool IsValidLatitude(double latitude)
     {
-        return double.IsFinite(latitude) && latitude is >= -90 and <= 90;
+        return double.IsFinite(latitude) && latitude is >= LatitudeMinValue and <= LatitudeMaxValue;
     }
 }

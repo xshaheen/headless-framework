@@ -8,6 +8,9 @@
 //------------------------------------------------------------------------------
 
 namespace Framework.FluentValidation.Resources {
+    using System;
+    
+    
     /// <summary>
     ///   A strongly-typed resource class, for looking up localized strings, etc.
     /// </summary>
@@ -80,6 +83,24 @@ namespace Framework.FluentValidation.Resources {
         internal static string collection_unique_elements {
             get {
                 return ResourceManager.GetString("collection:unique_elements", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Invalid latitude value. It must be between -90 and 90..
+        /// </summary>
+        internal static string geo_invalid_latitude {
+            get {
+                return ResourceManager.GetString("geo:invalid_latitude", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Invalid longitude value. It must be between -180 and 180..
+        /// </summary>
+        internal static string geo_invalid_longitude {
+            get {
+                return ResourceManager.GetString("geo:invalid_longitude", resourceCulture);
             }
         }
         
