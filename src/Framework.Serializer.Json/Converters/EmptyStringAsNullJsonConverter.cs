@@ -22,6 +22,13 @@ public sealed class EmptyStringAsNullJsonConverter<T> : JsonConverter<T?>
 
     public override void Write(Utf8JsonWriter writer, T? value, JsonSerializerOptions options)
     {
+        if (value is "")
+        {
+            writer.WriteNullValue();
+
+            return;
+        }
+
         JsonSerializer.Serialize(writer, value, options);
     }
 }
