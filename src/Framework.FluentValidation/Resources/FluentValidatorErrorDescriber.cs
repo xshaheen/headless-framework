@@ -6,6 +6,19 @@ namespace Framework.FluentValidation.Resources;
 
 public static class FluentValidatorErrorDescriber
 {
+    public static class Geo
+    {
+        public static ErrorDescriptor InvalidLongitude()
+        {
+            return new("geo:invalid_longitude", FluentValidatorErrors.geo_invalid_longitude);
+        }
+
+        public static ErrorDescriptor InvalidLatitude()
+        {
+            return new("geo:invalid_latitude", FluentValidatorErrors.geo_invalid_latitude);
+        }
+    }
+
     public static class Collections
     {
         public static ErrorDescriptor MaximumElementsValidator()

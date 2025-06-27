@@ -43,4 +43,10 @@
   <data name="url:invalid" xml:space="preserve">
     <value>The URL is invalid.</value>
   </data>
+  <data name="geo:invalid_latitude" xml:space="preserve">
+    <value>Invalid latitude value. It must be between -90 and 90.</value>
+  </data>
+  <data name="geo:invalid_longitude" xml:space="preserve">
+    <value>Invalid longitude value. It must be between -180 and 180.</value>
+  </data>
 </root>

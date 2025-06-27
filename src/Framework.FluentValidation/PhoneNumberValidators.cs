@@ -15,12 +15,12 @@ public static class PhoneNumberValidators
 
     public static IRuleBuilderOptions<T, int?> PhoneCountryCode<T>(this IRuleBuilder<T, int?> builder)
     {
-        return builder.GreaterThan(0).WithMessage("Invalid Country Code");
+        return builder.GreaterThan(0);
     }
 
     public static IRuleBuilderOptions<T, int> PhoneCountryCode<T>(this IRuleBuilder<T, int> builder)
     {
-        return builder.GreaterThan(0).WithMessage("Invalid Country Code");
+        return builder.GreaterThan(0);
     }
 
     public static IRuleBuilderOptions<T, string?> BasicPhoneNumber<T>(this IRuleBuilder<T, string?> builder)
