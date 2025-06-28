@@ -5,11 +5,12 @@ using Framework.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Serilog.Configuration;
 using Serilog.Enrichers.Span;
 using Serilog.Events;
 using Serilog.Formatting;
-using Serilog.Formatting.Compact;
 using Serilog.Formatting.Display;
+using Serilog.Formatting.Json;
 using Serilog.Sinks.SystemConsole.Themes;
 
 namespace Framework.Logging.Serilog;
@@ -26,6 +27,7 @@ public static class SerilogFactory
         var loggerConfiguration = new LoggerConfiguration();
 
         loggerConfiguration.ConfigureBootstrapLoggerConfiguration();
+
         return loggerConfiguration;
     }
 
@@ -63,12 +65,9 @@ public static class SerilogFactory
                     .Filter.ByIncludingOnly(x =>
                         x.Level is LogEventLevel.Fatal or LogEventLevel.Error or LogEventLevel.Warning
                     )
-                    .WriteTo.File(
+                    .WriteTo._File(
                         formatter: new MessageTemplateTextFormatter(OutputTemplate),
-                        path: "Logs/bootstrap-.log",
-                        shared: true,
-                        rollingInterval: RollingInterval.Day,
-                        retainedFileCountLimit: 5
+                        path: "Logs/bootstrap-.log"
                     )
             );
         });
@@ -140,7 +139,7 @@ public static class SerilogFactory
         {
             ITextFormatter textFormatter = isDev
                 ? new MessageTemplateTextFormatter(OutputTemplate)
-                : new CompactJsonFormatter();
+                : new JsonFormatter(formatProvider: CultureInfo.InvariantCulture);
 
             loggerConfiguration._WriteToLogFiles(textFormatter);
         }
@@ -170,36 +169,31 @@ public static class SerilogFactory
             sink.Logger(logger =>
                     logger
                         .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Fatal)
-                        .WriteTo.File(
-                            formatter: textFormatter,
-                            path: "Logs/fatal-.log",
-                            shared: true,
-                            rollingInterval: RollingInterval.Day,
-                            retainedFileCountLimit: 5
-                        )
+                        .WriteTo._File(formatter: textFormatter, path: "Logs/fatal-.log")
                 )
                 .WriteTo.Logger(logger =>
                     logger
                         .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Error)
-                        .WriteTo.File(
-                            formatter: textFormatter,
-                            path: "Logs/error-.log",
-                            shared: true,
-                            rollingInterval: RollingInterval.Day,
-                            retainedFileCountLimit: 5
-                        )
+                        .WriteTo._File(formatter: textFormatter, path: "Logs/error-.log")
                 )
                 .WriteTo.Logger(logger =>
                     logger
                         .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Warning)
-                        .WriteTo.File(
-                            formatter: textFormatter,
-                            path: "Logs/warning-.log",
-                            shared: true,
-                            rollingInterval: RollingInterval.Day,
-                            retainedFileCountLimit: 5
-                        )
+                        .WriteTo._File(formatter: textFormatter, path: "Logs/warning-.log")
                 )
+        );
+    }
+
+    private static LoggerConfiguration _File(this LoggerSinkConfiguration config, ITextFormatter formatter, string path)
+    {
+        return config.File(
+            formatter: formatter,
+            path: path,
+            buffered: true,
+            shared: true,
+            flushToDiskInterval: TimeSpan.FromSeconds(1),
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 5
         );
     }
 }

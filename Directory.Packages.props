@@ -17,7 +17,7 @@
     <PackageVersion Include="AutoFixture" Version="5.0.0-preview0012" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.2" />
     <PackageVersion Include="AWSSDK.S3" Version="4.0.3.1" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.0.11" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.1" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.0.11" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.1" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.24.1" />
@@ -132,22 +132,17 @@
     <PackageVersion Include="Scalar.AspNetCore" Version="2.5.3" />
     <PackageVersion Include="Scrutor" Version="6.1.0" />
     <PackageVersion Include="Serilog" Version="4.3.0" />
-    <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.2.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Span" Version="3.1.0" />
     <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
-    <PackageVersion Include="Serilog.Expressions" Version="5.0.0" />
     <PackageVersion Include="Serilog.Extensions.Hosting" Version="9.0.0" />
-    <PackageVersion Include="Serilog.Formatting.Compact" Version="3.0.0" />
     <PackageVersion Include="Serilog.Settings.Configuration" Version="9.0.0" />
-    <PackageVersion Include="Serilog.Sinks.ApplicationInsights" Version="4.0.0" />
     <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageVersion Include="Serilog.Sinks.Debug" Version="3.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageVersion Include="Serilog.Sinks.Seq" Version="9.0.0" />
     <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.10" />
     <PackageVersion Include="Snappier" Version="1.2.0" />
     <PackageVersion Include="SSH.NET" Version="2025.0.0" />
