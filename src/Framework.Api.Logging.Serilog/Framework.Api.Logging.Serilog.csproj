@@ -5,10 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Enrichers.ClientInfo" />
-    <PackageReference Include="Serilog.Sinks.ApplicationInsights" />
-    <PackageReference Include="Serilog.Sinks.Seq" />
   </ItemGroup>
 
   <ItemGroup>
