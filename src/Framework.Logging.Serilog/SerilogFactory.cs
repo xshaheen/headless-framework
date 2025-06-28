@@ -190,7 +190,6 @@ public static class SerilogFactory
             formatter: formatter,
             path: path,
             buffered: true,
-            shared: true,
             flushToDiskInterval: TimeSpan.FromSeconds(1),
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: 5
