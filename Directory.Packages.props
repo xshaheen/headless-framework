@@ -16,9 +16,9 @@
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
     <PackageVersion Include="AutoFixture" Version="5.0.0-preview0012" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.2" />
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.3.1" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.1" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.0.11" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.4.1" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.1.1" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.0.12" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.1" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.24.1" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.21.0" />
@@ -70,9 +70,9 @@
     <PackageVersion Include="Microsoft.AspNetCore.MiddlewareAnalysis" Version="9.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.6" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.6" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="4.12.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.12.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.12.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="9.0.6" />
@@ -183,7 +183,7 @@
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.13.1" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.202" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.205" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
