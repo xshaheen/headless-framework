@@ -102,7 +102,6 @@ public static class AddNswagSwaggerExtensions
     {
         app.UseOpenApi(settings =>
         {
-            settings.DocumentName = "v1";
             settings.Path = "/openapi/{documentName}.json";
             documentSettings?.Invoke(settings);
         });
