@@ -9,11 +9,12 @@ public static class AddScalarExtensions
 {
     public static WebApplication MapFrameworkScalarOpenApi(
         this WebApplication app,
-        Action<ScalarOptions>? setupAction = null
+        Action<ScalarOptions>? setupAction = null,
+        string endpointPrefix = "/scalar"
     )
     {
         app.MapScalarApiReference(
-            endpointPrefix: "/scalar",
+            endpointPrefix: endpointPrefix,
             (options, _) =>
             {
                 options.OpenApiRoutePattern = "/openapi/{documentName}.json";
