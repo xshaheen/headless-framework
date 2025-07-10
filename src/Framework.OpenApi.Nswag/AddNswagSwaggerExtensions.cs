@@ -257,8 +257,6 @@ public static class AddNswagSwaggerExtensions
         settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
         settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
         settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
-        // Custom Mappings
-        settings.SchemaSettings.AddBuildingBlocksPrimitiveMappings();
     }
 
     private static void _ConfigureGeneratorSettingsByFramework(
