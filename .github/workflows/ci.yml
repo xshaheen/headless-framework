@@ -103,7 +103,7 @@ jobs:
           name: packages-results
 
       - name: ".NET NuGet Add Source"
-        run: dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.NUGET_API_KEY }} --store-password-in-clear-text
         shell: pwsh
 
       - name: ".NET NuGet Push"
