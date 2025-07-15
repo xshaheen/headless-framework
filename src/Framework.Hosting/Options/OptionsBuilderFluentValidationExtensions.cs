@@ -19,17 +19,14 @@ public static class OptionsBuilderFluentValidationExtensions
     )
         where TOptions : class
     {
-        optionsBuilder.Services.AddSingleton<IValidateOptions<TOptions>>(
-            provider => new FluentValidationValidateOptions<TOptions>(
-                optionsBuilder.Name,
-                provider.GetRequiredService<IValidator<TOptions>>()
-            )
+        optionsBuilder.Services.AddTransient<IValidateOptions<TOptions>>(
+            provider => new FluentValidationValidateOptions<TOptions>(optionsBuilder.Name, provider)
         );
 
         return optionsBuilder;
     }
 
-    private sealed class FluentValidationValidateOptions<TOptions>(string? optionName, IValidator<TOptions> validator)
+    private sealed class FluentValidationValidateOptions<TOptions>(string? optionName, IServiceProvider serviceProvider)
         : IValidateOptions<TOptions>
         where TOptions : class
     {
@@ -53,11 +50,15 @@ public static class OptionsBuilderFluentValidationExtensions
 
             var builder = new ValidateOptionsResultBuilder();
 
+            using var scope = serviceProvider.CreateAsyncScope();
+            var validator = serviceProvider.GetRequiredService<IValidator<TOptions>>();
+
             var validationResult = validator.Validate(options);
 
             if (!validationResult.IsValid)
             {
                 var optionTypeName = typeof(TOptions).Name;
+
                 foreach (var error in validationResult.Errors)
                 {
                     builder.AddError(error.ErrorMessage, $"{optionTypeName}.{error.PropertyName}");
