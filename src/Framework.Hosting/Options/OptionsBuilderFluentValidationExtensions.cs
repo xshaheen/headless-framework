@@ -50,8 +50,8 @@ public static class OptionsBuilderFluentValidationExtensions
 
             var builder = new ValidateOptionsResultBuilder();
 
-            using var scope = serviceProvider.CreateAsyncScope();
-            var validator = serviceProvider.GetRequiredService<IValidator<TOptions>>();
+            using var scope = serviceProvider.CreateScope();
+            var validator = scope.ServiceProvider.GetRequiredService<IValidator<TOptions>>();
 
             var validationResult = validator.Validate(options);
 
