@@ -16,67 +16,55 @@ namespace Framework.OpenApi.Nswag.SchemaProcessors;
 /// <summary>
 /// Swagger <see cref="ISchemaProcessor"/> that uses FluentValidation validators instead System.ComponentModel based attributes.
 /// </summary>
-public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
+public sealed class FluentValidationSchemaProcessor(
+    IServiceProvider serviceProvider,
+    IEnumerable<FluentValidationRule>? rules = null
+) : ISchemaProcessor
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger _logger;
-    private readonly IReadOnlyList<FluentValidationRule> _rules;
-
-    public FluentValidationSchemaProcessor(
-        IServiceProvider serviceProvider,
-        IEnumerable<FluentValidationRule>? rules = null
-    )
-    {
-        _serviceProvider = serviceProvider;
-        _logger =
-            serviceProvider.GetService<ILoggerFactory>()?.CreateLogger(typeof(FluentValidationSchemaProcessor))
-            ?? NullLogger.Instance;
-        _rules = FluentValidationRule.DefaultRules;
-
-        if (rules is null)
-        {
-            return;
-        }
-
-        var ruleMap = _rules.ToDictionary(rule => rule.RuleName, rule => rule, StringComparer.Ordinal);
-
-        foreach (var rule in rules)
-        {
-            // Add or replace rule
-            ruleMap[rule.RuleName] = rule;
-        }
-
-        _rules = ruleMap.Values.ToList();
-    }
+    private readonly ILogger _logger = _CreateLogger(serviceProvider);
+    private readonly IReadOnlyList<FluentValidationRule> _rules = _CreateRules(rules);
 
     public void Process(SchemaProcessorContext context)
     {
         if (context.Schema is { IsObject: true, Properties.Count: > 0 })
         {
-            var validator = _GetValidator(context.ContextualType);
+            _HandleObject(context);
+        }
+        else
+        {
+            // Not an object but is a property of an object type
+            // (e.g. a class that used as a query parameters so it's not an object in swagger)
+            // but we still have a validator for its declaring type so we can apply rules to it.
+            _HandleProperty(context);
+        }
+    }
 
-            if (validator is null)
-            {
-                return;
-            }
+    private void _HandleObject(SchemaProcessorContext context)
+    {
+#pragma warning disable MA0045 // Justification: We are using a scope to resolve the validator, this is fine.
+        using var scope = serviceProvider.CreateScope();
+#pragma warning restore MA0045
+        var validator = _GetValidator(scope.ServiceProvider, context.ContextualType);
 
-            _ApplyRulesToSchema(context, validator);
-
-            try
-            {
-                _AddRulesFromIncludedValidators(context, validator);
-            }
-            catch (Exception e)
-            {
-                _logger.LogWarning(0, e, "Applying IncludeRules for type '{Type}' fails", context.ContextualType.Name);
-            }
-
+        if (validator is null)
+        {
             return;
         }
 
-        // Not an object but is a property of an object type
-        // (e.g. a class that used as a query parameters so it's not an object in swagger)
-        // but we still have a validator for its declaring type so we can apply rules to it.
+        _ApplyRulesToSchema(context, validator);
+
+        try
+        {
+            _AddRulesFromIncludedValidators(context, validator);
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(0, e, "Applying IncludeRules for type '{Type}' fails", context.ContextualType.Name);
+        }
+    }
+
+    private void _HandleProperty(SchemaProcessorContext context)
+    {
         if (
             context.ContextualType.Context
             is not ContextualPropertyInfo { PropertyInfo.DeclaringType: not null } contextualProperty
@@ -92,7 +80,8 @@ public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
             return;
         }
 
-        var declaringTypeValidator = _GetValidator(declaringType);
+        using var scope = serviceProvider.CreateScope();
+        var declaringTypeValidator = _GetValidator(scope.ServiceProvider, declaringType);
         var propertyName = contextualProperty.PropertyInfo.Name;
 
         if (declaringTypeValidator is null)
@@ -134,23 +123,6 @@ public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
                     );
                 }
             }
-        }
-    }
-
-    private IValidator? _GetValidator(Type type)
-    {
-        try
-        {
-            var validatorType = typeof(IValidator<>).MakeGenericType(type);
-            var validator = _serviceProvider.GetService(validatorType) as IValidator;
-
-            return validator;
-        }
-        catch (Exception e)
-        {
-            _logger.LogWarning(0, e, "GetValidator for type '{TypeName}' fails", type.Name);
-
-            return null;
         }
     }
 
@@ -246,5 +218,50 @@ public sealed class FluentValidationSchemaProcessor : ISchemaProcessor
             _ApplyRulesToSchema(context, includeValidator);
             _AddRulesFromIncludedValidators(context, includeValidator);
         }
+    }
+
+    private IValidator? _GetValidator(IServiceProvider provider, Type type)
+    {
+        try
+        {
+            var validatorType = typeof(IValidator<>).MakeGenericType(type);
+            var validator = provider.GetService(validatorType) as IValidator;
+
+            return validator;
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(0, e, "GetValidator for type '{TypeName}' fails", type.Name);
+
+            return null;
+        }
+    }
+
+    private static ILogger _CreateLogger(IServiceProvider provider)
+    {
+        var loggerFactory = provider.GetService<ILoggerFactory>();
+
+        return loggerFactory?.CreateLogger(typeof(FluentValidationSchemaProcessor)) ?? NullLogger.Instance;
+    }
+
+    private static IReadOnlyList<FluentValidationRule> _CreateRules(IEnumerable<FluentValidationRule>? rules)
+    {
+        if (rules is null)
+        {
+            return FluentValidationRule.DefaultRules;
+        }
+
+        var map = FluentValidationRule.DefaultRules.ToDictionary(
+            rule => rule.RuleName,
+            rule => rule,
+            StringComparer.Ordinal
+        );
+
+        foreach (var rule in rules)
+        {
+            map[rule.RuleName] = rule; // Add or replace rule
+        }
+
+        return map.Values.ToList();
     }
 }
