@@ -33,7 +33,7 @@ public sealed class OptionsBuilderFluentValidationExtensionsTests
     {
         // given
         var serviceCollection = new ServiceCollection();
-        serviceCollection.AddSingleton<IValidator<MyOptions>, MyOptionsValidator>();
+        serviceCollection.AddScoped<IValidator<MyOptions>, MyOptionsValidator>();
 
         serviceCollection.AddOptions<MyOptions>().ValidateFluentValidation();
 

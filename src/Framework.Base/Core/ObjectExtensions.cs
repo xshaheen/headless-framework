@@ -38,7 +38,9 @@ public static class ObjectExtensions
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+#nullable disable
     public static bool In<T>(this T item, params T[] collection)
+#nullable restore
     {
         return collection.Contains(item);
     }
@@ -63,6 +65,7 @@ public static class ObjectExtensions
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [OverloadResolutionPriority(0)]
     public static bool In<T>(this T item, IEnumerable<T> collection)
     {
         return collection.Contains(item);
@@ -75,6 +78,7 @@ public static class ObjectExtensions
     [JetBrainsPure]
     [SystemPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [OverloadResolutionPriority(5)]
     public static bool In<T>(this T item, ICollection<T> collection)
     {
         Argument.IsNotNull(collection);
