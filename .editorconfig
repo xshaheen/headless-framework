@@ -188,7 +188,7 @@ dotnet_diagnostic.ca1008.severity = suggestion
 # CA0184: 'is' expression's given expression is never of the provided type
 dotnet_diagnostic.cs0184.severity = error
 # CA2249: Consider using 'string.Contains' instead of 'string.IndexOf'
-dotnet_diagnostic.ca2249.severity = suggestion
+dotnet_diagnostic.ca2249.severity = warning
 # CA1018: Mark attributes with AttributeUsageAttribute
 dotnet_diagnostic.ca1018.severity = warning
 # CA1047: Do not declare protected member in sealed type
