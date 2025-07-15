@@ -61,6 +61,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: "Remove Existing Nuget Source"
+        run: dotnet nuget remove source github.com
+        shell: pwsh
+
       - name: "Add Nuget Source"
         run: dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.NUGET_API_KEY }}
         shell: pwsh
