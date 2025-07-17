@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Cysharp.Text;
 using Framework.Primitives;
 
 namespace Framework.Exceptions;
@@ -7,10 +8,24 @@ namespace Framework.Exceptions;
 [PublicAPI]
 public sealed class ConflictException : Exception
 {
+    public const string DefaultErrorCode = "error";
+
     public ConflictException(ErrorDescriptor error)
-        : base("Conflict: " + _BuildErrorMessage(error))
+        : base(_BuildErrorMessage(error))
     {
         Errors = [error];
+    }
+
+    public ConflictException([LocalizationRequired] string error, string code = DefaultErrorCode)
+        : base(_BuildErrorMessage(error))
+    {
+        Errors = [new(code, error)];
+    }
+
+    public ConflictException([LocalizationRequired] string error, Exception inner)
+        : base(_BuildErrorMessage(error), inner)
+    {
+        Errors = [new(DefaultErrorCode, error)];
     }
 
     public ConflictException(IReadOnlyList<ErrorDescriptor> errors)
@@ -19,29 +34,23 @@ public sealed class ConflictException : Exception
         Errors = errors;
     }
 
-    public ConflictException([LocalizationRequired] string error)
-        : base($"Conflict: {error}")
-    {
-        Errors = [new ErrorDescriptor("error", error)];
-    }
-
-    public ConflictException([LocalizationRequired] string error, Exception innerException)
-        : base($"Conflict: {error}", innerException)
-    {
-        Errors = [new ErrorDescriptor("error", error)];
-    }
-
     public IReadOnlyList<ErrorDescriptor> Errors { get; }
 
     private static string _BuildErrorMessage(IEnumerable<ErrorDescriptor> errors)
     {
-        var arr = errors.Select(error => $"{Environment.NewLine} -- {_BuildErrorMessage(error)}");
+        var builder = ZString.CreateStringBuilder();
 
-        return "Conflict:" + string.Concat(arr);
+        builder.Append("Conflict:");
+
+        foreach (var error in errors)
+        {
+            builder.Append($"{Environment.NewLine}-- {_BuildErrorMessage(error)}");
+        }
+
+        return builder.ToString();
     }
 
-    private static string _BuildErrorMessage(ErrorDescriptor error)
-    {
-        return $"{error.Code}: {error.Description}";
-    }
+    private static string _BuildErrorMessage(ErrorDescriptor error) => $"Conflict: {error}";
+
+    private static string _BuildErrorMessage(string error) => $"Conflict: {error}";
 }

@@ -37,4 +37,30 @@ public static class GeoValidators
             .Must(latitude => latitude is null || GeoCoordinateValidator.IsValidLongitude(latitude.Value))
             .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
     }
+
+    public static IRuleBuilderOptions<T, string> Latitude<T>(this IRuleBuilder<T, string> builder)
+    {
+        return builder
+            .Must(latitude =>
+                latitude is null
+                || (
+                    double.TryParse(latitude, CultureInfo.InvariantCulture, out var lat)
+                    && GeoCoordinateValidator.IsValidLatitude(lat)
+                )
+            )
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLatitude());
+    }
+
+    public static IRuleBuilderOptions<T, string> Longitude<T>(this IRuleBuilder<T, string> builder)
+    {
+        return builder
+            .Must(longitude =>
+                longitude is null
+                || (
+                    double.TryParse(longitude, CultureInfo.InvariantCulture, out var lon)
+                    && GeoCoordinateValidator.IsValidLongitude(lon)
+                )
+            )
+            .WithErrorDescriptor(FluentValidatorErrorDescriber.Geo.InvalidLongitude());
+    }
 }

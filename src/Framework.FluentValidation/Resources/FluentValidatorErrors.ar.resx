@@ -46,4 +46,7 @@
   <data name="geo:invalid_longitude" xml:space="preserve">
     <value>قيمة خط الطول غير صالحة. يجب أن يكون بين 180 و 180.</value>
   </data>
+  <data name="strings:only_numbers" xml:space="preserve">
+    <value>يجب أن يحتوي الحقل على أرقام فقط.</value>
+  </data>
 </root>
