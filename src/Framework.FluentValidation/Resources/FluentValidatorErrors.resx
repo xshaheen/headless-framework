@@ -49,4 +49,7 @@
   <data name="geo:invalid_longitude" xml:space="preserve">
     <value>Invalid longitude value. It must be between -180 and 180.</value>
   </data>
+  <data name="strings:only_numbers" xml:space="preserve">
+    <value>The field must contain only numbers.</value>
+  </data>
 </root>

@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Results;
+using Framework.Constants;
 using Framework.FluentValidation;
+using Framework.FluentValidation.Resources;
 using Framework.Primitives;
 
 #pragma warning disable IDE0130
@@ -35,7 +37,9 @@ public static class FluentValidationExtensions
         };
     }
 
-    public static Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptors(this IEnumerable<ValidationFailure> failures)
+    public static Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptors(
+        this IEnumerable<ValidationFailure> failures
+    )
     {
         return failures
             .GroupBy(
@@ -56,10 +60,10 @@ public static class FluentValidationExtensions
                         // Normalize the fluent validation property path
                         if (
                             // Is fluent validation error code
-                            !string.Equals(errorCode, failure.ErrorCode, StringComparison.Ordinal) &&
-                            paramsDictionary.Count > 0 &&
-                            paramsDictionary.TryGetValue("PropertyPath", out var value) &&
-                            value is string propertyPath
+                            !string.Equals(errorCode, failure.ErrorCode, StringComparison.Ordinal)
+                            && paramsDictionary.Count > 0
+                            && paramsDictionary.TryGetValue("PropertyPath", out var value)
+                            && value is string propertyPath
                         )
                         {
                             paramsDictionary["PropertyPath"] = propertyPath.CamelizePropertyPath();

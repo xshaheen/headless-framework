@@ -69,6 +69,8 @@ public sealed class ErrorDescriptor
         description = Description;
         severity = Severity;
     }
+
+    public override string ToString() => $"{Code}: {Description}";
 }
 
 public enum ValidationSeverity

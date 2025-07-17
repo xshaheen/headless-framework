@@ -19,6 +19,14 @@ public static class FluentValidatorErrorDescriber
         }
     }
 
+    public static class Strings
+    {
+        public static ErrorDescriptor OnlyNumberValidator()
+        {
+            return new(code: "strings:only_number", description: FluentValidatorErrors.strings_only_numbers);
+        }
+    }
+
     public static class Collections
     {
         public static ErrorDescriptor MaximumElementsValidator()

@@ -141,6 +141,15 @@ namespace Framework.FluentValidation.Resources {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to The field must contain only numbers..
+        /// </summary>
+        internal static string strings_only_numbers {
+            get {
+                return ResourceManager.GetString("strings:only_numbers", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to The URL is invalid..
         /// </summary>
         internal static string url_invalid {
