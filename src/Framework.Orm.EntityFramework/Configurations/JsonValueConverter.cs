@@ -6,12 +6,10 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Configurations;
 
-public sealed class JsonValueConverter<TPropertyType> : ValueConverter<TPropertyType, string>
+public sealed class JsonValueConverter<TPropertyType>()
+    : ValueConverter<TPropertyType, string>(d => _SerializeObject(d), s => _DeserializeObject(s))
 {
     private static readonly JsonSerializerOptions _Options = _CreateJsonOptions();
-
-    public JsonValueConverter()
-        : base(d => _SerializeObject(d), s => _DeserializeObject(s)) { }
 
     private static string _SerializeObject(TPropertyType d)
     {
