@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Linq.Expressions;
 using Framework.Domains;
+using Framework.Linq;
 using Framework.Orm.EntityFramework.Configurations;
 using Framework.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -11,15 +14,44 @@ namespace Microsoft.EntityFrameworkCore;
 
 public static class EntityTypeBuilderExtensions
 {
-    public static void ConfigureFrameworkConvention(this EntityTypeBuilder b)
+    /// <summary>
+    /// It allows you to add a query filter to an entity type, combining it with
+    /// any existing query filter if any using a logical AND operation
+    /// it differs from <see cref="EntityTypeBuilder{TEntity}.HasQueryFilter(Expression{Func{TEntity, bool}})"/>
+    /// because it merges the new filter with the existing one instead of replacing it.
+    /// </summary>
+    public static EntityTypeBuilder<TEntity> AndHasQueryFilter<TEntity>(
+        this EntityTypeBuilder<TEntity> builder,
+        Expression<Func<TEntity, bool>> filter
+    )
+        where TEntity : class
     {
-        b.TryConfigureConcurrencyStamp();
-        b.TryConfigureExtraProperties();
-        b.TryConfigureDeleteAudit();
-        b.TryConfigureCreateAudit();
-        b.TryConfigureUpdateAudit();
-        b.TryConfigureSuspendAudit();
-        b.TryConfigureDeleteAudit();
+#pragma warning disable EF1001 // Is an internal API
+        var queryFilterAnnotation = builder.Metadata.FindAnnotation(CoreAnnotationNames.QueryFilter);
+#pragma warning restore EF1001
+
+        if (queryFilterAnnotation is { Value: Expression<Func<TEntity, bool>> existingFilter })
+        {
+            filter = filter.And(existingFilter);
+        }
+
+        return builder.HasQueryFilter(filter);
+    }
+
+    /// <summary>
+    /// Configures all framework conventions for the given entity type builder.
+    /// Applies concurrency stamp, extra properties, delete audit, create audit,
+    /// update audit, and suspend audit configurations.
+    /// </summary>
+    public static void ConfigureFrameworkConvention(this EntityTypeBuilder builder)
+    {
+        builder.TryConfigureConcurrencyStamp();
+        builder.TryConfigureExtraProperties();
+        builder.TryConfigureDeleteAudit();
+        builder.TryConfigureCreateAudit();
+        builder.TryConfigureUpdateAudit();
+        builder.TryConfigureSuspendAudit();
+        builder.TryConfigureDeleteAudit();
     }
 
     #region Configure ICreateAudit
@@ -348,10 +380,10 @@ public static class EntityTypeBuilderExtensions
         }
     }
 
-    public static void ConfigureSuspendAudit<T>(this EntityTypeBuilder<T> b)
+    public static void ConfigureSuspendAudit<T>(this EntityTypeBuilder<T> builder)
         where T : class, ISuspendAudit
     {
-        b.Cast<EntityTypeBuilder>().TryConfigureSuspendAudit();
+        builder.Cast<EntityTypeBuilder>().TryConfigureSuspendAudit();
     }
 
     #endregion

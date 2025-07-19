@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore.ValueGeneration;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
+[PublicAPI]
 public static class DbContextOptionsBuilderExtensions
 {
     /// <summary>

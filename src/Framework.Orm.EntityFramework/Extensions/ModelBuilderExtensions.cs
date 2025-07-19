@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
+[PublicAPI]
 public static class ModelBuilderExtensions
 {
     /// <summary>
