@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Framework.Abstractions;
 using Framework.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -18,8 +19,7 @@ public abstract class IdentityDbContextBase<
     TUserLogin,
     TRoleClaim,
     TUserToken
->(DbContextOptions options)
-    : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>(options)
+> : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>
     where TUser : IdentityUser<TKey>
     where TRole : IdentityRole<TKey>
     where TKey : IEquatable<TKey>
@@ -29,7 +29,26 @@ public abstract class IdentityDbContextBase<
     where TRoleClaim : IdentityRoleClaim<TKey>
     where TUserToken : IdentityUserToken<TKey>
 {
-    protected abstract string DefaultSchema { get; }
+    private readonly DbContextEntityProcessor _entityProcessor;
+    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
+
+    public abstract string DefaultSchema { get; }
+
+    public DbContextGlobalFiltersStatus FilterStatus { get; } = new();
+
+    protected IdentityDbContextBase(
+        ICurrentUser currentUser,
+        ICurrentTenant currentTenant,
+        IGuidGenerator guidGenerator,
+        IClock clock,
+        DbContextOptions options
+    )
+        : base(options)
+    {
+        FilterStatus = new();
+        _entityProcessor = new(currentUser, guidGenerator, clock);
+        _modelCreatingProcessor = new(currentTenant, clock, FilterStatus);
+    }
 
     #region Core Save Changes
 
@@ -38,7 +57,7 @@ public abstract class IdentityDbContextBase<
         CancellationToken cancellationToken = default
     )
     {
-        var report = this.ProcessEntriesMessagesBeforeSave();
+        var report = _entityProcessor.ProcessEntries(this);
 
         if (report.DistributedEmitters.Count == 0)
         {
@@ -81,7 +100,7 @@ public abstract class IdentityDbContextBase<
 
     protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
-        var report = this.ProcessEntriesMessagesBeforeSave();
+        var report = _entityProcessor.ProcessEntries(this);
 
         if (report.DistributedEmitters.Count == 0)
         {
@@ -393,6 +412,7 @@ public abstract class IdentityDbContextBase<
     {
         builder.HasDefaultSchema(DefaultSchema);
         base.OnModelCreating(builder);
+        _modelCreatingProcessor.ProcessModelCreating(builder);
     }
 
     #endregion
