@@ -107,7 +107,9 @@ public class ObjectToInferredTypesJsonConverterTests
     public void object_to_types_converter_should_throw_when_trying_to_convert_invalid_json()
     {
         // given
+#pragma warning disable JSON001 // Invalid JSON pattern
         const string json = "{ this is invalid JSON ";
+#pragma warning restore JSON001 // Invalid JSON pattern
 
         // when
         Action act = () => JsonSerializer.Deserialize<object>(json, _jsonOptions);

@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup Label="Package References">
