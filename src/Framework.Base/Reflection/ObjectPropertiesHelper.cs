@@ -32,49 +32,96 @@ public static class ObjectPropertiesHelper
     )
         where TObject : notnull
     {
-        var cacheKey =
-            $"{obj.GetType().FullName}-"
-            + $"{propertySelector}-"
-            + $"{(ignoreAttributeTypes is not null ? "-" + string.Join('-', ignoreAttributeTypes.Select(x => x.FullName)) : "")}";
+        var objType = obj.GetType();
+        var cacheKey = _GetCacheKey(objType, propertySelector.ToString(), ignoreAttributeTypes);
 
         var property = _CachedObjectProperties.GetOrAdd(
             cacheKey,
-            valueFactory: static (_, state) =>
+            valueFactory: static (key, args) =>
             {
-                var (obj, propertySelector, ignoreAttributeTypes) = state;
-
-                if (propertySelector.Body.NodeType is not ExpressionType.MemberAccess)
-                {
-                    return null;
-                }
-
-                var memberExpression = (MemberExpression)propertySelector.Body;
-
-                var propertyInfo = Array.Find(
-                    array: obj.GetType().GetProperties(),
-                    match: info =>
-                        string.Equals(info.Name, memberExpression.Member.Name, StringComparison.Ordinal)
-                        && info.GetSetMethod(nonPublic: true) is not null
-                );
-
-                if (propertyInfo is null)
-                {
-                    return null;
-                }
-
-                if (
-                    ignoreAttributeTypes?.Any(ignoreAttribute => propertyInfo.IsDefined(ignoreAttribute, inherit: true))
-                    is true
-                )
-                {
-                    return null;
-                }
-
-                return propertyInfo;
+                var (objType, propertySelector, ignoreAttributeTypes) = args;
+                var propertyName = _GetPropertyName(propertySelector);
+                return _GetWritablePropertyInfo(objType, propertyName, ignoreAttributeTypes);
             },
-            (obj, propertySelector, ignoreAttributeTypes)
+            factoryArgument: (objType, propertySelector, ignoreAttributeTypes)
         );
 
         property?.SetValue(obj, valueFactory(obj));
+    }
+
+    public static void TrySetPropertyToNull<TObject>(
+        TObject obj,
+        string propertyName,
+        params Type[] ignoreAttributeTypes
+    )
+        where TObject : notnull
+    {
+        var objType = obj.GetType();
+        var cacheKey = _GetCacheKey(objType, "x => x." + propertyName, ignoreAttributeTypes);
+
+        var property = _CachedObjectProperties.GetOrAdd(
+            cacheKey,
+            static (key, args) =>
+            {
+                var (objType, propertyName, ignoreAttributeTypes) = args;
+                return _GetWritablePropertyInfo(objType, propertyName, ignoreAttributeTypes);
+            },
+            factoryArgument: (objType, propertyName, ignoreAttributeTypes)
+        );
+
+        if (property?.PropertyType.IsNullableType() is true)
+        {
+            property.SetValue(obj, value: null);
+        }
+    }
+
+    private static PropertyInfo? _GetWritablePropertyInfo(Type objType, string? propertyName, Type[]? ignoreAttr)
+    {
+        if (propertyName is null)
+        {
+            return null;
+        }
+
+        var propertyInfo = objType
+            .GetProperties()
+            .FirstOrDefault(x => string.Equals(x.Name, propertyName, StringComparison.Ordinal));
+
+        if (propertyInfo?.CanWrite is not true)
+        {
+            return null;
+        }
+
+        if (ignoreAttr?.Any(attr => propertyInfo.IsDefined(attr, inherit: true)) is true)
+        {
+            return null;
+        }
+
+        var setMethod = propertyInfo.GetSetMethod(nonPublic: true);
+
+        if (setMethod is null)
+        {
+            return null;
+        }
+
+        return propertyInfo;
+    }
+
+    private static string? _GetPropertyName(LambdaExpression propertySelector)
+    {
+        var memberExpression = propertySelector.Body.NodeType switch
+        {
+            ExpressionType.Convert => propertySelector.Body.As<UnaryExpression>()?.Operand.As<MemberExpression>(),
+            ExpressionType.MemberAccess => propertySelector.Body.As<MemberExpression>(),
+            _ => null,
+        };
+
+        return memberExpression?.Member.Name;
+    }
+
+    private static string _GetCacheKey(Type objType, string propertySelector, Type[]? attr)
+    {
+        var attrKey = attr is null ? "" : "-" + string.Join('-', attr.Select(x => x.FullName));
+
+        return $"{objType.FullName}-{propertySelector}{attrKey}";
     }
 }
