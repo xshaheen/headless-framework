@@ -38,6 +38,25 @@ public static class EntityTypeBuilderExtensions
         return builder.HasQueryFilter(filter);
     }
 
+    /// <inheritdoc cref="AndHasQueryFilter{TEntity}(EntityTypeBuilder{TEntity},Expression{Func{TEntity,bool}})"/>
+    public static void AndHasQueryFilter<TEntity>(
+        this EntityTypeBuilder builder,
+        Expression<Func<TEntity, bool>> filter
+    )
+        where TEntity : class
+    {
+#pragma warning disable EF1001 // Is an internal API
+        var queryFilterAnnotation = builder.Metadata.FindAnnotation(CoreAnnotationNames.QueryFilter);
+#pragma warning restore EF1001
+
+        if (queryFilterAnnotation is { Value: Expression<Func<TEntity, bool>> existingFilter })
+        {
+            filter = filter.And(existingFilter);
+        }
+
+        builder.HasQueryFilter(filter);
+    }
+
     /// <summary>
     /// Configures all framework conventions for the given entity type builder.
     /// Applies concurrency stamp, extra properties, delete audit, create audit,

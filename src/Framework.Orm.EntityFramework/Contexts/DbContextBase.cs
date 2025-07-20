@@ -1,14 +1,33 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Framework.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Framework.Orm.EntityFramework.Contexts;
 
-public abstract class DbContextBase(DbContextOptions options) : DbContext(options)
+public abstract class DbContextBase : DbContext
 {
-    protected abstract string DefaultSchema { get; }
+    private readonly DbContextEntityProcessor _entityProcessor;
+    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
+    public abstract string DefaultSchema { get; }
+
+    public DbContextGlobalFiltersStatus FilterStatus { get; } = new();
+
+    protected DbContextBase(
+        ICurrentUser currentUser,
+        ICurrentTenant currentTenant,
+        IGuidGenerator guidGenerator,
+        IClock clock,
+        DbContextOptions options
+    )
+        : base(options)
+    {
+        FilterStatus = new();
+        _entityProcessor = new(currentUser, guidGenerator, clock);
+        _modelCreatingProcessor = new(currentTenant, clock, FilterStatus);
+    }
 
     #region Core Save Changes
 
@@ -17,7 +36,7 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
         CancellationToken cancellationToken = default
     )
     {
-        var report = this.ProcessEntriesMessagesBeforeSave();
+        var report = _entityProcessor.ProcessEntries(this);
 
         if (report.DistributedEmitters.Count == 0)
         {
@@ -42,6 +61,7 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
                 static async state =>
                 {
                     var (context, report, acceptAllChangesOnSuccess, cancellationToken) = state;
+
                     await using var transaction = await context.Database.BeginTransactionAsync(
                         IsolationLevel.ReadCommitted,
                         cancellationToken
@@ -60,7 +80,7 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
 
     protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
-        var report = this.ProcessEntriesMessagesBeforeSave();
+        var report = _entityProcessor.ProcessEntries(this);
 
         if (report.DistributedEmitters.Count == 0)
         {
@@ -78,13 +98,13 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
             return result;
         }
 
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         return Database
             .CreateExecutionStrategy()
             .Execute(
                 (this, report, acceptAllChangesOnSuccess),
                 static state =>
                 {
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
                     var (context, report, acceptAllChangesOnSuccess) = state;
 
                     using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -96,9 +116,9 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
                     transaction.Commit();
 
                     return result;
-#pragma warning restore MA0045
                 }
             );
+#pragma warning restore MA0045
     }
 
     #endregion
@@ -372,6 +392,7 @@ public abstract class DbContextBase(DbContextOptions options) : DbContext(option
     {
         modelBuilder.HasDefaultSchema(DefaultSchema);
         base.OnModelCreating(modelBuilder);
+        _modelCreatingProcessor.ProcessModelCreating(modelBuilder);
     }
 
     #endregion

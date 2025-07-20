@@ -6,5 +6,5 @@ namespace Framework.Domains;
 
 public interface IHasConcurrencyStamp
 {
-    string? ConcurrencyStamp { get; set; }
+    string? ConcurrencyStamp { get; }
 }
