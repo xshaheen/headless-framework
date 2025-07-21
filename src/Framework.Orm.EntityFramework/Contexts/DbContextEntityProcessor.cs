@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Specialized;
 using System.ComponentModel.DataAnnotations.Schema;
 using Framework.Abstractions;
 using Framework.Domains;
