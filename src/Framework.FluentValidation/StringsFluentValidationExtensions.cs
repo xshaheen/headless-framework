@@ -10,7 +10,9 @@ namespace FluentValidation;
 [PublicAPI]
 public static class StringsFluentValidationExtensions
 {
+#nullable disable
     public static IRuleBuilderOptions<T, string> OnlyIntegers<T>(this IRuleBuilder<T, string> builder)
+#nullable restore
     {
         return builder
             .Matches(RegexPatterns.IntegerNumber)
