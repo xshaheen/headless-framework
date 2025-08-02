@@ -137,11 +137,7 @@ public static class SerilogFactory
 
         if (writeToFiles)
         {
-            ITextFormatter textFormatter = isDev
-                ? new MessageTemplateTextFormatter(OutputTemplate)
-                : new JsonFormatter(formatProvider: CultureInfo.InvariantCulture);
-
-            loggerConfiguration._WriteToLogFiles(textFormatter);
+            loggerConfiguration._WriteToLogFiles(new MessageTemplateTextFormatter(OutputTemplate));
         }
 
         return loggerConfiguration;
