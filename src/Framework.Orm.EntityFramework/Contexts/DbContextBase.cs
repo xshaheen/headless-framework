@@ -12,12 +12,13 @@ namespace Framework.Orm.EntityFramework.Contexts;
 
 public abstract class DbContextBase : DbContext
 {
-    private readonly DbContextEntityProcessor _entityProcessor;
-    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
-    private readonly EntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
     public abstract string DefaultSchema { get; }
 
     public DbContextGlobalFiltersStatus FilterStatus { get; }
+
+    private readonly EntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
+    private readonly DbContextEntityProcessor _entityProcessor;
+    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
 
     protected DbContextBase(
         ICurrentUser currentUser,
@@ -29,6 +30,7 @@ public abstract class DbContextBase : DbContext
         : base(options)
     {
         FilterStatus = new();
+        _navigationModifiedTracker = new();
         _entityProcessor = new(currentUser, guidGenerator, clock);
         _modelCreatingProcessor = new(currentTenant, clock, FilterStatus);
         SyncNavigationTracker();

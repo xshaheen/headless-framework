@@ -2,6 +2,7 @@
 
 using System.Data;
 using Framework.Abstractions;
+using Framework.Orm.EntityFramework.ChangeTrackers;
 using Framework.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -31,10 +32,11 @@ public abstract class IdentityDbContextBase<
 {
     private readonly DbContextEntityProcessor _entityProcessor;
     private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
+    private readonly EntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
 
     public abstract string DefaultSchema { get; }
 
-    public DbContextGlobalFiltersStatus FilterStatus { get; } = new();
+    public DbContextGlobalFiltersStatus FilterStatus { get; }
 
     protected IdentityDbContextBase(
         ICurrentUser currentUser,
@@ -46,8 +48,16 @@ public abstract class IdentityDbContextBase<
         : base(options)
     {
         FilterStatus = new();
+        _navigationModifiedTracker = new();
         _entityProcessor = new(currentUser, guidGenerator, clock);
         _modelCreatingProcessor = new(currentTenant, clock, FilterStatus);
+        SyncNavigationTracker();
+    }
+
+    public void SyncNavigationTracker()
+    {
+        ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
+        ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
     }
 
     #region Core Save Changes
@@ -82,6 +92,7 @@ public abstract class IdentityDbContextBase<
                 static async state =>
                 {
                     var (context, report, acceptAllChangesOnSuccess, cancellationToken) = state;
+
                     await using var transaction = await context.Database.BeginTransactionAsync(
                         IsolationLevel.ReadCommitted,
                         cancellationToken
@@ -118,13 +129,13 @@ public abstract class IdentityDbContextBase<
             return result;
         }
 
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         return Database
             .CreateExecutionStrategy()
             .Execute(
                 (this, report, acceptAllChangesOnSuccess),
                 static state =>
                 {
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
                     var (context, report, acceptAllChangesOnSuccess) = state;
 
                     using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -136,9 +147,9 @@ public abstract class IdentityDbContextBase<
                     transaction.Commit();
 
                     return result;
-#pragma warning restore MA0045
                 }
             );
+#pragma warning restore MA0045
     }
 
     #endregion
