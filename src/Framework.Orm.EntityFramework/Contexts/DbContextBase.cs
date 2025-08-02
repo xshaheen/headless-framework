@@ -2,7 +2,10 @@
 
 using System.Data;
 using Framework.Abstractions;
+using Framework.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Framework.Orm.EntityFramework.Contexts;
@@ -11,9 +14,10 @@ public abstract class DbContextBase : DbContext
 {
     private readonly DbContextEntityProcessor _entityProcessor;
     private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
+    private readonly EntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
     public abstract string DefaultSchema { get; }
 
-    public DbContextGlobalFiltersStatus FilterStatus { get; } = new();
+    public DbContextGlobalFiltersStatus FilterStatus { get; }
 
     protected DbContextBase(
         ICurrentUser currentUser,
@@ -27,6 +31,13 @@ public abstract class DbContextBase : DbContext
         FilterStatus = new();
         _entityProcessor = new(currentUser, guidGenerator, clock);
         _modelCreatingProcessor = new(currentTenant, clock, FilterStatus);
+        SyncNavigationTracker();
+    }
+
+    public void SyncNavigationTracker()
+    {
+        ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
+        ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
     }
 
     #region Core Save Changes

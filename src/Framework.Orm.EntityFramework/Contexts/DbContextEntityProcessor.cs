@@ -46,7 +46,6 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         return report;
     }
 
-    // Pass cached user/account IDs to avoid repeated property access
     private void _ProcessEntry(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
     {
         switch (entry.State)
@@ -83,14 +82,14 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         var idProperty = entry.Property(nameof(IEntity<>.Id)).Metadata.PropertyInfo!;
 
         if (
-            idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>() is DatabaseGeneratedAttribute attr
-            && attr.DatabaseGeneratedOption is not DatabaseGeneratedOption.None
+            idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>() is
+            { DatabaseGeneratedOption: not DatabaseGeneratedOption.None }
         )
         {
             return;
         }
 
-        ObjectPropertiesHelper.TrySetProperty(entity, x => x.Id, () => guidGenerator.Create());
+        ObjectPropertiesHelper.TrySetProperty(entity, x => x.Id, guidGenerator.Create);
     }
 
     private void _TrySetCreateAudit(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
@@ -167,7 +166,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
     private void _TrySetUpdateAuditDate(EntityEntry entry, IUpdateAudit entity)
     {
-        if (entity.DateUpdated == default || !entry.Property(nameof(IUpdateAudit.DateUpdated)).IsModified)
+        if (entity.DateUpdated == null || !entry.Property(nameof(IUpdateAudit.DateUpdated)).IsModified)
         {
             ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateUpdated, () => clock.UtcNow);
         }
@@ -244,7 +243,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
     private void _TrySetDeleteAuditDate(EntityEntry entry, IDeleteAudit entity)
     {
-        if (entity.DateDeleted == default || !entry.Property(nameof(IDeleteAudit.DateDeleted)).IsModified)
+        if (entity.DateDeleted == null || !entry.Property(nameof(IDeleteAudit.DateDeleted)).IsModified)
         {
             ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateDeleted, () => clock.UtcNow);
         }
@@ -324,7 +323,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
     private void _TrySetSuspendAuditDate(EntityEntry entry, ISuspendAudit entity)
     {
-        if (entity.DateSuspended == default || !entry.Property(nameof(ISuspendAudit.DateSuspended)).IsModified)
+        if (entity.DateSuspended == null || !entry.Property(nameof(ISuspendAudit.DateSuspended)).IsModified)
         {
             ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateSuspended, () => clock.UtcNow);
         }
@@ -376,7 +375,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
     private static void _TrySetConcurrencyStamp(EntityEntry entry)
     {
-        if (entry.Entity is IHasConcurrencyStamp entity && entity.ConcurrencyStamp is null)
+        if (entry.Entity is IHasConcurrencyStamp { ConcurrencyStamp: null } entity)
         {
             ObjectPropertiesHelper.TrySetProperty(entity, x => x.ConcurrencyStamp, () => Guid.NewGuid().ToString("N"));
         }
