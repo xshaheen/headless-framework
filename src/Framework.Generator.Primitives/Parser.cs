@@ -3,6 +3,7 @@
 using Framework.Generator.Primitives.Extensions;
 using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 
@@ -50,13 +51,8 @@ internal static class Parser
 
         var symbol = ctx.SemanticModel.GetDeclaredSymbol(typeSyntax, ct);
 
-        if (symbol is not INamedTypeSymbol typeSymbol)
-        {
-            return null;
-        }
-
-        return !typeSymbol.IsAbstract && typeSymbol.AllInterfaces.Any(x => x.IsImplementIPrimitive())
-            ? typeSymbol
+        return symbol is not null && !symbol.IsAbstract && symbol.AllInterfaces.Any(x => x.IsImplementIPrimitive())
+            ? symbol
             : null;
     }
 
