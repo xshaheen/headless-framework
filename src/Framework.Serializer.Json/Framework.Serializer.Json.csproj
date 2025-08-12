@@ -9,8 +9,4 @@
     <ProjectReference Include="..\Framework.Serializer.Abstraction\Framework.Serializer.Abstraction.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="NetTopologySuite.IO.GeoJSON4STJ" />
-  </ItemGroup>
-
 </Project>

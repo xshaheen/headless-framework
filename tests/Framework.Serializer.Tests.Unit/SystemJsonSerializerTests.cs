@@ -2,7 +2,6 @@
 
 using Framework.Serializer;
 using Framework.Serializer.Converters;
-using NetTopologySuite.IO.Converters;
 
 namespace Tests;
 
@@ -104,7 +103,6 @@ public class SystemJsonSerializerTests
         var options = JsonConstants.CreateWebJsonOptions();
 
         // then
-        options.Converters.Should().Contain(c => c is GeoJsonConverterFactory);
         options.Converters.Should().Contain(c => c is IpAddressJsonConverter);
     }
 

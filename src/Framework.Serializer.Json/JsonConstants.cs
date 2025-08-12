@@ -2,7 +2,6 @@
 
 using System.Text.Encodings.Web;
 using Framework.Serializer.Converters;
-using NetTopologySuite.IO.Converters;
 
 namespace Framework.Serializer;
 
@@ -10,11 +9,19 @@ public static class JsonConstants
 {
     public static readonly JsonSerializerOptions DefaultWebJsonOptions = CreateWebJsonOptions();
     public static readonly JsonSerializerOptions DefaultInternalJsonOptions = CreateInternalJsonOptions();
-    public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = new() { WriteIndented = true };
+    public static readonly JsonSerializerOptions DefaultPrettyJsonOptions = CreatePrettyJsonOptions();
 
     public static JsonSerializerOptions CreateWebJsonOptions()
     {
         return ConfigureWebJsonOptions(new JsonSerializerOptions());
+    }
+
+    public static JsonSerializerOptions CreatePrettyJsonOptions()
+    {
+        var webJsonOptions = CreateWebJsonOptions();
+        webJsonOptions.WriteIndented = true;
+
+        return webJsonOptions;
     }
 
     public static JsonSerializerOptions CreateInternalJsonOptions()
@@ -82,7 +89,6 @@ public static class JsonConstants
         }
 
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false));
-        options.Converters.Add(new GeoJsonConverterFactory());
         options.Converters.Add(new IpAddressJsonConverter());
     }
 }
