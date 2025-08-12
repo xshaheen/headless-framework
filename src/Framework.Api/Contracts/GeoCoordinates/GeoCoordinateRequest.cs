@@ -4,7 +4,6 @@ using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using Framework.Primitives;
 using Framework.Validators;
-using NetTopologySuite.Geometries;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
 // ReSharper disable once CheckNamespace
@@ -19,20 +18,12 @@ public sealed record GeoCoordinateRequest(double Latitude, double Longitude)
         return format.ToString(CultureInfo.InvariantCulture);
     }
 
-    public Coordinate ToCoordinate() => this;
-
     public GeoCoordinate ToGeoCoordinate() => this;
 
     [return: NotNullIfNotNull(nameof(operand))]
     public static implicit operator GeoCoordinate?(GeoCoordinateRequest? operand)
     {
         return operand is null ? null : new() { Latitude = operand.Latitude, Longitude = operand.Longitude };
-    }
-
-    [return: NotNullIfNotNull(nameof(operand))]
-    public static implicit operator Coordinate?(GeoCoordinateRequest? operand)
-    {
-        return operand is null ? null : new(operand.Longitude, operand.Latitude);
     }
 }
 
