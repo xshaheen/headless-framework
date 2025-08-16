@@ -69,18 +69,22 @@ public abstract class IdentityDbContextBase<
     {
         var report = _entityProcessor.ProcessEntries(this);
 
-        if (report.DistributedEmitters.Count == 0)
+        // No need to be in transaction if there are no emitters
+        if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
-            await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
+            var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
-            return await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            return result;
         }
 
+        // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
             await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
+            _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
         }
@@ -103,6 +107,7 @@ public abstract class IdentityDbContextBase<
                     await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
 
                     await transaction.CommitAsync(cancellationToken);
+                    context._navigationModifiedTracker.RemoveModifiedEntityEntries();
 
                     return result;
                 }
@@ -113,22 +118,27 @@ public abstract class IdentityDbContextBase<
     {
         var report = _entityProcessor.ProcessEntries(this);
 
-        if (report.DistributedEmitters.Count == 0)
+        // No need to be in transaction if there are no emitters
+        if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
-            PublishMessages(report.LocalEmitters);
+            var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+            _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
-            return _BaseSaveChanges(acceptAllChangesOnSuccess);
+            return result;
         }
 
+        // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
             PublishMessages(report.LocalEmitters);
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
+            _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
         }
 
+        // No current transaction, create a new one
 #pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         return Database
             .CreateExecutionStrategy()
@@ -145,6 +155,7 @@ public abstract class IdentityDbContextBase<
                     context.PublishMessages(report.DistributedEmitters, transaction);
 
                     transaction.Commit();
+                    context._navigationModifiedTracker.RemoveModifiedEntityEntries();
 
                     return result;
                 }

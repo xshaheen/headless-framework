@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Framework.Sql.Sqlite\Framework.Sql.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
 
 </Project>
