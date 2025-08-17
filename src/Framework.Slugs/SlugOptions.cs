@@ -21,13 +21,13 @@ public sealed class SlugOptions
 
     public bool CanEndWithSeparator { get; set; }
 
-    public List<UnicodeRange> AllowedRanges { get; } =
-        [
-            UnicodeRange.Create('A', 'Z'),
-            UnicodeRange.Create('a', 'z'),
-            UnicodeRange.Create('0', '9'),
-            UnicodeRange.Create('ؠ', 'ي'),
-        ];
+    public List<UnicodeRange> AllowedRanges { get; set; } =
+    [
+        UnicodeRange.Create('A', 'Z'),
+        UnicodeRange.Create('a', 'z'),
+        UnicodeRange.Create('0', '9'),
+        UnicodeRange.Create('ؠ', 'ي'),
+    ];
 
     public Dictionary<string, string> Replacements { get; } =
         new(StringComparer.Ordinal)
