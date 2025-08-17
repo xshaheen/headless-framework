@@ -16,6 +16,9 @@ namespace Tests;
 
 public sealed class DbContextBaseTests : IDisposable
 {
+    private readonly UserId _userId;
+    private readonly DateTimeOffset _now;
+
     private readonly TestDb _db;
     private readonly SqliteConnection _connection;
     private readonly TestClock _clock = new();
@@ -25,8 +28,15 @@ public sealed class DbContextBaseTests : IDisposable
 
     public DbContextBaseTests()
     {
+        _userId = new UserId(Guid.NewGuid().ToString());
+        _currentUser.UserId = _userId;
+
+        _now = new DateTimeOffset(2025, 1, 2, 12, 0, 0, TimeSpan.Zero);
+        _clock.TimeProvider = new FakeTimeProvider(_now);
+
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
+
         var options = new DbContextOptionsBuilder<TestDb>().UseSqlite(_connection).Options;
         _db = new TestDb(_currentUser, _currentTenant, _guidGenerator, _clock, options);
         _db.Database.EnsureCreated();
@@ -39,30 +49,32 @@ public sealed class DbContextBaseTests : IDisposable
     }
 
     [Fact]
-    public void save_changes_without_emitters_should_not_publish_messages()
+    public async Task save_changes_without_emitters_should_not_publish_messages()
     {
         // given
         var entity = new BasicEntity { Name = "no-op" };
         _db.Basics.Add(entity);
 
         // when
-        _db.SaveChanges();
+        await _db.SaveChangesAsync();
 
         // then
+        var basicCount = await _db.Basics.CountAsync();
+        basicCount.Should().Be(1);
         _db.EmittedLocalMessages.Should().BeEmpty();
         _db.EmittedDistributedMessages.Should().BeEmpty();
-        _db.Basics.Count().Should().Be(1);
     }
+
+    // Add
 
     [Fact]
     public void save_changes_add_should_set_guid_id_create_audit_and_concurrency_stamp_and_emit_local_messages()
     {
         // given
-        var now = new DateTimeOffset(2025, 1, 1, 10, 0, 0, TimeSpan.Zero);
         var entity = new TestEntity { Name = "created", TenantId = "T1" };
 
-        _clock.TimeProvider = new FakeTimeProvider(now);
-        _currentUser.UserId = new UserId(Guid.NewGuid().ToString());
+        CreateAuditSetter<TestEntity>.SetDateCreated(entity, _now);
+
         _db.Tests.Add(entity);
 
         // when
@@ -70,27 +82,37 @@ public sealed class DbContextBaseTests : IDisposable
 
         // then
         entity.Id.Should().NotBe(Guid.Empty);
-        entity.DateCreated.Should().Be(now);
-        entity.CreatedById.Should().Be(_currentUser.UserId);
+        entity.DateCreated.Should().Be(_now);
+        entity.CreatedById.Should().Be(_userId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
+        entity.DateUpdated.Should().BeNull();
+        entity.UpdatedById.Should().BeNull();
+        entity.IsDeleted.Should().BeFalse();
+        entity.DateDeleted.Should().BeNull();
+        entity.DeletedById.Should().BeNull();
+        entity.IsSuspended.Should().BeFalse();
+        entity.DateSuspended.Should().BeNull();
+        entity.SuspendedById.Should().BeNull();
 
         // Local messages: Created + Changed
         _db.EmittedLocalMessages.Should().ContainSingle();
         var local = _db.EmittedLocalMessages.Single();
         local.Emitter.Should().Be(entity);
-        local.EmittedMessages.Should().HaveCount(2);
-        local.EmittedMessages.Should().Contain(m => m is EntityCreatedEventData<TestEntity>);
-        local.EmittedMessages.Count(m => m is EntityUpdatedEventData<TestEntity>).Should().Be(1);
+        local.Messages.Should().HaveCount(2);
+        var createdMessage = local.Messages.OfType<EntityCreatedEventData<TestEntity>>().Single();
+        createdMessage.Entity.Should().Be(entity);
+        var changedMessage = local.Messages.OfType<EntityChangedEventData<TestEntity>>().Single();
+        changedMessage.Entity.Should().Be(entity);
     }
+
+    // Update
 
     [Fact]
     public void save_changes_update_should_set_update_audit_and_update_concurrency_stamp_and_emit_updated_message()
     {
         // given
-        var now = new DateTimeOffset(2025, 1, 2, 12, 0, 0, TimeSpan.Zero);
+
         var entity = new TestEntity { Name = "initial", TenantId = "T1" };
-        _clock.TimeProvider = new FakeTimeProvider(now);
-        _currentUser.UserId = new UserId(Guid.NewGuid().ToString());
         _db.Tests.Add(entity);
         _db.SaveChanges();
         var oldStamp = entity.ConcurrencyStamp;
@@ -100,26 +122,23 @@ public sealed class DbContextBaseTests : IDisposable
         _db.SaveChanges();
 
         // then
-        entity.DateUpdated.Should().Be(now);
-        entity.UpdatedById.Should().Be(_currentUser.UserId);
+        entity.DateUpdated.Should().Be(_now);
+        entity.UpdatedById.Should().Be(_userId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.ConcurrencyStamp.Should().NotBe(oldStamp);
 
         // Local messages: Updated + Changed
         _db.EmittedLocalMessages.Should().NotBeEmpty();
         var last = _db.EmittedLocalMessages[^1];
-        last.EmittedMessages.Should().HaveCount(2);
-        last.EmittedMessages.Should().AllBeOfType<EntityUpdatedEventData<TestEntity>>();
+        last.Messages.Should().HaveCount(2);
+        last.Messages.Should().AllBeOfType<EntityUpdatedEventData<TestEntity>>();
     }
 
     [Fact]
     public void save_changes_soft_delete_should_set_delete_audit_and_emit_deleted_message()
     {
         // given
-        var now = new DateTimeOffset(2025, 1, 3, 8, 0, 0, TimeSpan.Zero);
         var entity = new TestEntity { Name = "to-delete", TenantId = "T1" };
-        _clock.TimeProvider = new FakeTimeProvider(now);
-        _currentUser.UserId = new UserId(Guid.NewGuid().ToString());
         _db.Tests.Add(entity);
         _db.SaveChanges();
 
@@ -130,22 +149,18 @@ public sealed class DbContextBaseTests : IDisposable
 
         // then
         entity.IsDeleted.Should().BeTrue();
-        entity.DateDeleted.Should().Be(now);
-        entity.DeletedById.Should().Be(_currentUser.UserId);
+        entity.DateDeleted.Should().Be(_now);
+        entity.DeletedById.Should().Be(_userId);
 
         var evt = _db.EmittedLocalMessages[^1];
-        evt.EmittedMessages.Should().ContainSingle(m => m is EntityDeletedEventData<TestEntity>);
+        evt.Messages.Should().ContainSingle(m => m is EntityDeletedEventData<TestEntity>);
     }
 
     [Fact]
     public void save_changes_suspend_should_set_suspend_audit()
     {
         // given
-        var now = new DateTimeOffset(2025, 1, 4, 7, 0, 0, TimeSpan.Zero);
         var entity = new TestEntity { Name = "to-suspend", TenantId = "T1" };
-        _clock.TimeProvider = new FakeTimeProvider(now);
-        _currentUser.UserId = new UserId(Guid.NewGuid().ToString());
-
         _db.Tests.Add(entity);
         _db.SaveChanges();
 
@@ -156,8 +171,8 @@ public sealed class DbContextBaseTests : IDisposable
 
         // then
         entity.IsSuspended.Should().BeTrue();
-        entity.DateSuspended.Should().Be(now);
-        entity.SuspendedById.Should().Be(_currentUser.UserId);
+        entity.DateSuspended.Should().Be(_now);
+        entity.SuspendedById.Should().Be(_userId);
     }
 
     [Fact]
@@ -178,8 +193,8 @@ public sealed class DbContextBaseTests : IDisposable
         _db.EmittedDistributedMessages.Should().ContainSingle();
         var dist = _db.EmittedDistributedMessages.Single();
         dist.Emitter.Should().Be(entity);
-        dist.EmittedMessages.Should().ContainSingle();
-        dist.EmittedMessages.Single().Should().BeOfType<TestDistributedMessage>();
+        dist.Messages.Should().ContainSingle();
+        dist.Messages.Single().Should().BeOfType<TestDistributedMessage>();
 
         tx.Commit();
     }
