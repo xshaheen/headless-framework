@@ -6,5 +6,10 @@ namespace Framework.Orm.EntityFramework.Contexts;
 
 public sealed record EmitterDistributedMessages(
     IDistributedMessageEmitter Emitter,
-    IReadOnlyList<IDistributedMessage> EmittedMessages
-);
+    IReadOnlyList<IDistributedMessage> Messages
+)
+{
+    public IDistributedMessageEmitter Emitter { get; } = Emitter;
+
+    public IReadOnlyList<IDistributedMessage> Messages { get; } = Messages.DistinctBy(x => x.UniqueId).ToList();
+}

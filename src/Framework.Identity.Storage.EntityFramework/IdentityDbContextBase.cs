@@ -85,6 +85,7 @@ public abstract class IdentityDbContextBase<
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
+            report.ClearEmitterMessages();
 
             return result;
         }
@@ -108,6 +109,7 @@ public abstract class IdentityDbContextBase<
 
                     await transaction.CommitAsync(cancellationToken);
                     context._navigationModifiedTracker.RemoveModifiedEntityEntries();
+                    report.ClearEmitterMessages();
 
                     return result;
                 }
@@ -134,6 +136,7 @@ public abstract class IdentityDbContextBase<
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
+            report.ClearEmitterMessages();
 
             return result;
         }
@@ -156,6 +159,7 @@ public abstract class IdentityDbContextBase<
 
                     transaction.Commit();
                     context._navigationModifiedTracker.RemoveModifiedEntityEntries();
+                    report.ClearEmitterMessages();
 
                     return result;
                 }

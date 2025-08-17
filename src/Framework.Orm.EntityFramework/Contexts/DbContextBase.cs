@@ -67,6 +67,7 @@ public abstract class DbContextBase : DbContext
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
+            report.ClearEmitterMessages();
 
             return result;
         }
@@ -89,7 +90,9 @@ public abstract class DbContextBase : DbContext
                     await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
 
                     await transaction.CommitAsync(cancellationToken);
+
                     context._navigationModifiedTracker.RemoveModifiedEntityEntries();
+                    report.ClearEmitterMessages();
 
                     return result;
                 }
@@ -116,6 +119,7 @@ public abstract class DbContextBase : DbContext
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
+            report.ClearEmitterMessages();
 
             return result;
         }
@@ -138,6 +142,7 @@ public abstract class DbContextBase : DbContext
 
                     transaction.Commit();
                     context._navigationModifiedTracker.RemoveModifiedEntityEntries();
+                    report.ClearEmitterMessages();
 
                     return result;
                 }
