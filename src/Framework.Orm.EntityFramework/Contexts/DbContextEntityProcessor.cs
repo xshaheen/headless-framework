@@ -452,7 +452,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
     private static void _PublishEntityChanged(ILocalMessageEmitter entity)
     {
-        var eventType = typeof(EntityUpdatedEventData<>).MakeGenericType(entity.GetType());
+        var eventType = typeof(EntityChangedEventData<>).MakeGenericType(entity.GetType());
         var eventMessage = (ILocalMessage)Activator.CreateInstance(eventType, entity)!;
         entity.AddMessage(eventMessage);
     }
