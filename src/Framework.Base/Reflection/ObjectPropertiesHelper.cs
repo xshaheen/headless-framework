@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Framework.Reflection;
 
@@ -13,7 +14,7 @@ public static class ObjectPropertiesHelper
         StringComparer.Ordinal
     );
 
-    public static void TrySetProperty<TObject, TValue>(
+    public static bool TrySetProperty<TObject, TValue>(
         TObject obj,
         Expression<Func<TObject, TValue>> propertySelector,
         Func<TValue> valueFactory,
@@ -21,10 +22,10 @@ public static class ObjectPropertiesHelper
     )
         where TObject : notnull
     {
-        TrySetProperty(obj, propertySelector, _ => valueFactory(), ignoreAttributeTypes);
+        return TrySetProperty(obj, propertySelector, _ => valueFactory(), ignoreAttributeTypes);
     }
 
-    public static void TrySetProperty<TObject, TValue>(
+    public static bool TrySetProperty<TObject, TValue>(
         TObject obj,
         Expression<Func<TObject, TValue>> propertySelector,
         Func<TObject, TValue> valueFactory,
@@ -37,7 +38,7 @@ public static class ObjectPropertiesHelper
 
         var property = _CachedObjectProperties.GetOrAdd(
             cacheKey,
-            valueFactory: static (key, args) =>
+            valueFactory: static (_, args) =>
             {
                 var (objType, propertySelector, ignoreAttributeTypes) = args;
                 var propertyName = _GetPropertyName(propertySelector);
@@ -46,10 +47,17 @@ public static class ObjectPropertiesHelper
             factoryArgument: (objType, propertySelector, ignoreAttributeTypes)
         );
 
-        property?.SetValue(obj, valueFactory(obj));
+        if (property is null)
+        {
+            return false;
+        }
+
+        property.SetValue(obj, valueFactory(obj));
+
+        return true;
     }
 
-    public static void TrySetPropertyToNull<TObject>(
+    public static bool TrySetPropertyToNull<TObject>(
         TObject obj,
         string propertyName,
         params Type[] ignoreAttributeTypes
@@ -61,7 +69,7 @@ public static class ObjectPropertiesHelper
 
         var property = _CachedObjectProperties.GetOrAdd(
             cacheKey,
-            static (key, args) =>
+            static (_, args) =>
             {
                 var (objType, propertyName, ignoreAttributeTypes) = args;
                 return _GetWritablePropertyInfo(objType, propertyName, ignoreAttributeTypes);
@@ -72,7 +80,11 @@ public static class ObjectPropertiesHelper
         if (property?.PropertyType.IsNullableType() is true)
         {
             property.SetValue(obj, value: null);
+
+            return true;
         }
+
+        return false;
     }
 
     private static PropertyInfo? _GetWritablePropertyInfo(Type objType, string? propertyName, Type[]? ignoreAttr)
