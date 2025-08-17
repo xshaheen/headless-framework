@@ -21,13 +21,15 @@ public sealed class SlugOptions
 
     public bool CanEndWithSeparator { get; set; }
 
+#pragma warning disable CA2227 // Collection properties should be initialized to avoid null reference exceptions.
     public List<UnicodeRange> AllowedRanges { get; set; } =
-    [
-        UnicodeRange.Create('A', 'Z'),
-        UnicodeRange.Create('a', 'z'),
-        UnicodeRange.Create('0', '9'),
-        UnicodeRange.Create('ؠ', 'ي'),
-    ];
+#pragma warning restore CA2227
+        [
+            UnicodeRange.Create('A', 'Z'),
+            UnicodeRange.Create('a', 'z'),
+            UnicodeRange.Create('0', '9'),
+            UnicodeRange.Create('ؠ', 'ي'),
+        ];
 
     public Dictionary<string, string> Replacements { get; } =
         new(StringComparer.Ordinal)
