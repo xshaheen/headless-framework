@@ -7,7 +7,7 @@ namespace Framework.Testing.Helpers;
 
 public sealed class TestCurrentTenant : ICurrentTenant
 {
-    public bool IsAvailable { get; set; }
+    public bool IsAvailable => Id != null;
 
     public string? Id { get; set; }
 
@@ -17,13 +17,11 @@ public sealed class TestCurrentTenant : ICurrentTenant
     {
         Id = id;
         Name = name;
-        IsAvailable = true;
 
         return new Disposable(() =>
         {
             Id = null;
             Name = null;
-            IsAvailable = false;
         });
     }
 }
