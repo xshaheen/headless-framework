@@ -37,8 +37,8 @@ public sealed class DbContextBaseTests : IDisposable
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        var options = new DbContextOptionsBuilder<TestDb>().UseSqlite(_connection).Options;
-        _db = new TestDb(_currentUser, _currentTenant, _guidGenerator, _clock, options);
+        var dbContextOptions = new DbContextOptionsBuilder<TestDb>().UseSqlite(_connection).Options;
+        _db = new TestDb(_currentUser, _currentTenant, _guidGenerator, _clock, dbContextOptions);
         _db.Database.EnsureCreated();
     }
 
@@ -72,8 +72,6 @@ public sealed class DbContextBaseTests : IDisposable
     {
         // given
         var entity = new TestEntity { Name = "created", TenantId = "T1" };
-
-        CreateAuditSetter<TestEntity>.SetDateCreated(entity, _now);
 
         _db.Tests.Add(entity);
 
@@ -131,8 +129,13 @@ public sealed class DbContextBaseTests : IDisposable
         _db.EmittedLocalMessages.Should().NotBeEmpty();
         var last = _db.EmittedLocalMessages[^1];
         last.Messages.Should().HaveCount(2);
-        last.Messages.Should().AllBeOfType<EntityUpdatedEventData<TestEntity>>();
+        var updatedMessage = last.Messages.OfType<EntityUpdatedEventData<TestEntity>>().Single();
+        updatedMessage.Entity.Should().Be(entity);
+        var changedMessage = last.Messages.OfType<EntityChangedEventData<TestEntity>>().Single();
+        changedMessage.Entity.Should().Be(entity);
     }
+
+    // Delete
 
     [Fact]
     public void save_changes_soft_delete_should_set_delete_audit_and_emit_deleted_message()
@@ -156,6 +159,8 @@ public sealed class DbContextBaseTests : IDisposable
         evt.Messages.Should().ContainSingle(m => m is EntityDeletedEventData<TestEntity>);
     }
 
+    // Suspend
+
     [Fact]
     public void save_changes_suspend_should_set_suspend_audit()
     {
@@ -174,6 +179,8 @@ public sealed class DbContextBaseTests : IDisposable
         entity.DateSuspended.Should().Be(_now);
         entity.SuspendedById.Should().Be(_userId);
     }
+
+    // Publish messages
 
     [Fact]
     public void distributed_and_local_messages_should_publish_within_existing_transaction()
@@ -198,6 +205,8 @@ public sealed class DbContextBaseTests : IDisposable
 
         tx.Commit();
     }
+
+    // ExecuteTransactionAsync
 
     [Fact]
     public async Task execute_transaction_async_should_commit_or_rollback_by_return_value()
@@ -227,43 +236,54 @@ public sealed class DbContextBaseTests : IDisposable
         (await _db.Basics.CountAsync()).Should().Be(1);
     }
 
+    // Global filters
+
     [Fact]
     public void global_filters_should_filter_by_tenant_delete_and_suspend_flags_and_can_be_disabled()
     {
         // given
-        _currentTenant.Change("TENANT-1");
-        var e1 = new TestEntity { Name = "a", TenantId = "TENANT-1" };
-        var e2 = new TestEntity { Name = "b", TenantId = "TENANT-2" };
-        var e3 = new TestEntity { Name = "c", TenantId = "TENANT-1" };
-        var e4 = new TestEntity { Name = "d", TenantId = "TENANT-1" };
-        _db.Tests.AddRange(e1, e2, e3, e4);
+        var a = new TestEntity { Name = "a", TenantId = "TENANT-1" };
+        var b = new TestEntity { Name = "b", TenantId = "TENANT-2" };
+        var c = new TestEntity { Name = "c", TenantId = "TENANT-1" };
+        var d = new TestEntity { Name = "d", TenantId = "TENANT-1" };
+        _db.Tests.AddRange(a, b, c, d);
         _db.SaveChanges();
 
-        // soft delete e3 and suspend e4
-        e3.MarkDeleted();
-        e4.MarkSuspended();
-        _db.UpdateRange(e3, e4);
+        // soft delete c
+        c.MarkDeleted();
+        // suspend d
+        d.MarkSuspended();
+        _db.UpdateRange(c, d);
         _db.SaveChanges();
 
         // when/then: default filters on
-        _db.Tests.Select(x => x.Name).ToArray().Should().BeEquivalentTo(["a"]);
+        _currentTenant.Change("TENANT-1");
+        var items = _db.Tests.Select(x => x.Name).ToArray();
+        items.Should().BeEquivalentTo("a");
+
+        _currentTenant.Change(null);
+        items = _db.Tests.Select(x => x.Name).ToArray();
+        items.Should().BeEquivalentTo("a", "b");
 
         // disable delete filter -> suspended still filtered
         using (_db.FilterStatus.ChangeDeleteFilterEnabled(false))
         {
-            _db.Tests.Select(x => x.Name).ToArray().Should().BeEquivalentTo(["a"]);
+            items = _db.Tests.Select(x => x.Name).ToArray();
+            items.Should().BeEquivalentTo("a", "c");
         }
 
         // disable suspended filter -> deleted still filtered
         using (_db.FilterStatus.ChangeSuspendedFilterEnabled(false))
         {
-            _db.Tests.Select(x => x.Name).ToArray().Should().BeEquivalentTo(["a"]);
+            items = _db.Tests.Select(x => x.Name).ToArray();
+            items.Should().BeEquivalentTo("a");
         }
 
         // disable tenant filter -> still filters by delete/suspend
         using (_db.FilterStatus.ChangeTenantFilterEnabled(false))
         {
-            _db.Tests.Select(x => x.Name).ToArray().Should().BeEquivalentTo(["a", "b"]);
+            items = _db.Tests.Select(x => x.Name).ToArray();
+            items.Should().BeEquivalentTo("a", "b");
         }
 
         // disable all -> all visible
@@ -271,7 +291,8 @@ public sealed class DbContextBaseTests : IDisposable
         using (_db.FilterStatus.ChangeDeleteFilterEnabled(false))
         using (_db.FilterStatus.ChangeSuspendedFilterEnabled(false))
         {
-            _db.Tests.Select(x => x.Name).ToArray().Should().BeEquivalentTo(["a", "b", "c", "d"]);
+            items = _db.Tests.Select(x => x.Name).ToArray();
+            items.Should().BeEquivalentTo("a", "b", "c", "d");
         }
     }
 
@@ -281,7 +302,7 @@ public sealed class DbContextBaseTests : IDisposable
         IGuidGenerator guidGenerator,
         IClock clock,
         DbContextOptions options
-    ) : DbContextBase(currentUser, currentTenant, guidGenerator, clock, options)
+    ) : HeadlessDbContext(currentUser, currentTenant, guidGenerator, clock, options)
     {
         public DbSet<TestEntity> Tests { get; set; }
 
@@ -336,13 +357,13 @@ public sealed class DbContextBaseTests : IDisposable
             IDeleteAudit<UserId>,
             ISuspendAudit<UserId>,
             IHasConcurrencyStamp,
-            IMultiTenant<string>
+            IMultiTenant
     {
         public Guid Id { get; private init; }
 
         public required string Name { get; set; }
 
-        public string TenantId { get; init; } = "";
+        public TenantId TenantId { get; init; } = "";
 
         // Audits
         public DateTimeOffset DateCreated { get; private init; }
