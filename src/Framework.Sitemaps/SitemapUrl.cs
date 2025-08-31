@@ -36,7 +36,8 @@ public sealed class SitemapUrl
         DateTime? lastModified = null,
         ChangeFrequency? changeFrequency = null,
         float? priority = null,
-        IEnumerable<SitemapImage>? images = null
+        IEnumerable<SitemapImage>? images = null,
+        string[]? writeAlternateLanguageCodes = null
     )
     {
         AlternateLocations = alternateLocations;
@@ -44,6 +45,7 @@ public sealed class SitemapUrl
         ChangeFrequency = changeFrequency;
         Priority = priority;
         Images = images;
+        WriteAlternateLanguageCodes = writeAlternateLanguageCodes;
     }
 
     /// <summary>Gets the full URL of the page.</summary>
@@ -62,11 +64,14 @@ public sealed class SitemapUrl
     /// <remarks>Currently (2021) Google ignore it.</remarks>
     public ChangeFrequency? ChangeFrequency { get; }
 
-    /// <summary>Gets alternate localized URLs of the page.</summary>
-    public IEnumerable<SitemapAlternateUrl>? AlternateLocations { get; }
-
     /// <summary>
     /// Encloses all information about a single image. Each &lt;url&gt; tag can contain up to 1,000 image tags.
     /// </summary>
     public IEnumerable<SitemapImage>? Images { get; }
+
+    /// <summary>Gets alternate localized URLs of the page.</summary>
+    public IEnumerable<SitemapAlternateUrl>? AlternateLocations { get; }
+
+    /// <summary>Forces writing alternate URLs only for the specified language/region codes. null means all.</summary>
+    public string[]? WriteAlternateLanguageCodes { get; set; }
 }
