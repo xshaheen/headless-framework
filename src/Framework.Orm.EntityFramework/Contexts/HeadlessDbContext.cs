@@ -3,42 +3,24 @@
 using System.Data;
 using Framework.Abstractions;
 using Framework.Orm.EntityFramework.ChangeTrackers;
-using Framework.Orm.EntityFramework.Contexts;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Framework.Identity.Storage.EntityFramework;
+namespace Framework.Orm.EntityFramework.Contexts;
 
-public abstract class IdentityDbContextBase<
-    TUser,
-    TRole,
-    TKey,
-    TUserClaim,
-    TUserRole,
-    TUserLogin,
-    TRoleClaim,
-    TUserToken
-> : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>
-    where TUser : IdentityUser<TKey>
-    where TRole : IdentityRole<TKey>
-    where TKey : IEquatable<TKey>
-    where TUserClaim : IdentityUserClaim<TKey>
-    where TUserRole : IdentityUserRole<TKey>
-    where TUserLogin : IdentityUserLogin<TKey>
-    where TRoleClaim : IdentityRoleClaim<TKey>
-    where TUserToken : IdentityUserToken<TKey>
+public abstract class HeadlessDbContext : DbContext
 {
-    private readonly DbContextEntityProcessor _entityProcessor;
-    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
-    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
-
     public abstract string DefaultSchema { get; }
 
     public DbContextGlobalFiltersStatus FilterStatus { get; }
 
-    protected IdentityDbContextBase(
+    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
+    private readonly DbContextEntityProcessor _entityProcessor;
+    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
+
+    protected HeadlessDbContext(
         ICurrentUser currentUser,
         ICurrentTenant currentTenant,
         IGuidGenerator guidGenerator,
@@ -108,6 +90,7 @@ public abstract class IdentityDbContextBase<
                     await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
 
                     await transaction.CommitAsync(cancellationToken);
+
                     context._navigationModifiedTracker.RemoveModifiedEntityEntries();
                     report.ClearEmitterMessages();
 
@@ -434,11 +417,11 @@ public abstract class IdentityDbContextBase<
 
     #region Model Creating
 
-    protected override void OnModelCreating(ModelBuilder builder)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        builder.HasDefaultSchema(DefaultSchema);
-        base.OnModelCreating(builder);
-        _modelCreatingProcessor.ProcessModelCreating(builder);
+        modelBuilder.HasDefaultSchema(DefaultSchema);
+        base.OnModelCreating(modelBuilder);
+        _modelCreatingProcessor.ProcessModelCreating(modelBuilder);
     }
 
     #endregion

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Configurations;
 
+// TODO: Consider use generic type converter for IPrimitive types
 /// <summary>ValueConverter for <see cref = "UserId"/></summary>
 public sealed class UserIdValueConverter : ValueConverter<UserId, string>
 {

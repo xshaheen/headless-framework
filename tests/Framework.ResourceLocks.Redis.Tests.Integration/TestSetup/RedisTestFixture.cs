@@ -32,7 +32,7 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
         await ConnectionMultiplexer.FlushAllAsync();
 
-        var scriptLoader = new FrameworkRedisScriptsLoader(ConnectionMultiplexer);
+        var scriptLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
         await scriptLoader.LoadScriptsAsync();
 
         LockStorage = new(ConnectionMultiplexer, scriptLoader);

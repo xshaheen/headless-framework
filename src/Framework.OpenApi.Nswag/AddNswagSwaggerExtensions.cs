@@ -26,7 +26,7 @@ public static class AddNswagSwaggerExtensions
 
     public static IServiceCollection AddFrameworkNswagOpenApi(
         this IServiceCollection services,
-        Action<FrameworkNswagOptions>? setupFrameworkAction = null,
+        Action<HeadlessNswagOptions>? setupFrameworkAction = null,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings>? setupGeneratorActions = null
     )
     {
@@ -44,7 +44,7 @@ public static class AddNswagSwaggerExtensions
 
     public static IServiceCollection AddFrameworkNswagOpenApi(
         this IServiceCollection services,
-        Action<FrameworkNswagOptions>? setupFrameworkAction,
+        Action<HeadlessNswagOptions>? setupFrameworkAction,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider> setupGeneratorActions
     )
     {
@@ -261,10 +261,10 @@ public static class AddNswagSwaggerExtensions
 
     private static void _ConfigureGeneratorSettingsByFramework(
         AspNetCoreOpenApiDocumentGeneratorSettings settings,
-        Action<FrameworkNswagOptions>? setupFrameworkAction
+        Action<HeadlessNswagOptions>? setupFrameworkAction
     )
     {
-        var frameworkOptions = new FrameworkNswagOptions();
+        var frameworkOptions = new HeadlessNswagOptions();
         setupFrameworkAction?.Invoke(frameworkOptions);
 
         if (frameworkOptions.AddBearerSecurity)

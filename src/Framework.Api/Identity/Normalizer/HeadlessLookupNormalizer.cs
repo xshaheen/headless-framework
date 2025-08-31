@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Identity;
 namespace Framework.Api.Identity.Normalizer;
 
 [PublicAPI]
-public sealed class FrameworkLookupNormalizer : ILookupNormalizer
+public sealed class HeadlessLookupNormalizer : ILookupNormalizer
 {
     public string? NormalizeName(string? name) => LookupNormalizer.NormalizeUserName(name);
 

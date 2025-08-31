@@ -20,8 +20,8 @@ public static class ModelConfigurationBuilderExtensions
         b.Properties<Money>().HaveConversion<MoneyValueConverter>().HavePrecision(32, 10);
         b.Properties<UserId>().HaveConversion<UserIdValueConverter>();
         b.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
-        b.Properties<File>().HaveConversion<FileValueConverter>();
-        b.Properties<Image>().HaveConversion<ImageValueConverter>();
+        b.Properties<File>().HaveConversion<JsonValueConverter<File>>();
+        b.Properties<Image>().HaveConversion<JsonValueConverter<Image>>();
         b.Properties<Locales>().HaveConversion<LocalesValueConverter, LocalesValueComparer>();
         b.Properties<ExtraProperties>().HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
     }

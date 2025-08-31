@@ -2,7 +2,7 @@
 
 namespace Framework.Queueing.Internals;
 
-internal sealed class FrameworkQueueEntryAdapter<TValue>(Foundatio.Queues.IQueueEntry<TValue> entry)
+internal sealed class HeadlessQueueEntryAdapter<TValue>(Foundatio.Queues.IQueueEntry<TValue> entry)
     : IQueueEntry<TValue>
     where TValue : class
 {

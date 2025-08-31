@@ -12,9 +12,9 @@ namespace Framework.Orm.EntityFramework.ChangeTrackers;
 /// Tracks modified navigations in Entity Framework Core.
 /// because EF Core does not track navigation properties by default.
 /// <a href="https://github.com/dotnet/efcore/issues/24076#issuecomment-1996623874">EF Core Issue #24076</a>
-/// Note: This class only track entities that implement <see cref="IEntity"/> interface. 
+/// Note: This class only track entities that implement <see cref="IEntity"/> interface.
 /// </summary>
-public sealed class EntityFrameworkNavigationModifiedTracker
+public sealed class HeadlessEntityFrameworkNavigationModifiedTracker
 {
     public void ChangeTrackerTracked(object? sender, EntityTrackedEventArgs e)
     {
@@ -28,14 +28,14 @@ public sealed class EntityFrameworkNavigationModifiedTracker
         _DetectChanges(e.Entry);
     }
 
-    private readonly Dictionary<string, TrackerEntityEntry> _trackers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HeadlessEntityEntry> _trackers = new(StringComparer.Ordinal);
 
     public List<EntityEntry> GetModifiedEntityEntries()
     {
         return _trackers.Where(x => x.Value.IsModified).Select(x => x.Value.Entry).ToList();
     }
 
-    public TrackerNavigationEntry? GetNavigationEntry(EntityEntry entry, int navigationEntryIndex)
+    public HeadlessNavigationEntry? GetNavigationEntry(EntityEntry entry, int navigationEntryIndex)
     {
         var entryId = _GetEntityEntryIdentity(entry);
 
@@ -115,7 +115,7 @@ public sealed class EntityFrameworkNavigationModifiedTracker
 
         if (!_trackers.ContainsKey(entryId))
         {
-            _trackers.Add(entryId, new TrackerEntityEntry(entryId, entry));
+            _trackers.Add(entryId, new HeadlessEntityEntry(entryId, entry));
         }
     }
 

@@ -194,7 +194,7 @@ public sealed class QueueFoundatioAdapter<T> : IQueue<T>
         };
     }
 
-    private static FrameworkQueueEntryAdapter<T> _MapEntry(Foundatio.Queues.IQueueEntry<T> entry)
+    private static HeadlessQueueEntryAdapter<T> _MapEntry(Foundatio.Queues.IQueueEntry<T> entry)
     {
         return new(entry);
     }

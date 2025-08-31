@@ -2,7 +2,7 @@
 
 namespace Framework.OpenApi.Nswag;
 
-public sealed class FrameworkNswagOptions
+public sealed class HeadlessNswagOptions
 {
     public bool AddBearerSecurity { get; set; } = true;
 

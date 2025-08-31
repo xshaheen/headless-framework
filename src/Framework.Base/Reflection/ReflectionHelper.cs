@@ -216,4 +216,35 @@ public static class ReflectionHelper
 
         return true;
     }
+
+    public static bool IsAssignableToGenericType(this Type type, Type genericType)
+    {
+        while (true)
+        {
+            var info = type.GetTypeInfo();
+
+            if (info.IsGenericType && type.GetGenericTypeDefinition() == genericType)
+            {
+                return true;
+            }
+
+            foreach (var interfaceType in info.GetInterfaces())
+            {
+                if (
+                    interfaceType.GetTypeInfo().IsGenericType
+                    && interfaceType.GetGenericTypeDefinition() == genericType
+                )
+                {
+                    return true;
+                }
+            }
+
+            if (info.BaseType == null)
+            {
+                return false;
+            }
+
+            type = info.BaseType;
+        }
+    }
 }

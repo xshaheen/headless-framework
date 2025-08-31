@@ -25,15 +25,13 @@ public sealed class LocalesValueConverter()
 }
 
 [PublicAPI]
-public sealed class LocalesValueComparer : ValueComparer<Locales?>
+public sealed class LocaleValueComparer()
+    : ValueComparer<Locales?>(
+        equalsExpression: (t1, t2) => _IsEqual(t1, t2),
+        hashCodeExpression: t => t == null ? 0 : t.GetHashCode(),
+        snapshotExpression: t => t == null ? null : new Locales(t)
+    )
 {
-    public LocalesValueComparer()
-        : base(
-            equalsExpression: (t1, t2) => _IsEqual(t1, t2),
-            hashCodeExpression: t => t == null ? 0 : t.GetHashCode(),
-            snapshotExpression: t => t == null ? null : new Locales(t)
-        ) { }
-
     private static bool _IsEqual(Locales? d1, Locales? d2)
     {
         if (d1 is null && d2 is null)

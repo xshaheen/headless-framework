@@ -8,7 +8,7 @@ namespace Framework.ResourceLocks.Redis;
 
 public sealed class RedisThrottlingResourceLockStorage(
     IConnectionMultiplexer multiplexer,
-    FrameworkRedisScriptsLoader scriptsLoader
+    HeadlessRedisScriptsLoader scriptsLoader
 ) : IThrottlingResourceLockStorage
 {
     private IDatabase Db => multiplexer.GetDatabase();

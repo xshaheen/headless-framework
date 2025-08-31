@@ -4,8 +4,8 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Domains;
 
-public interface IMultiTenant<out TId>
+public interface IMultiTenant
 {
     /// <summary>ID of the related tenant.</summary>
-    TId TenantId { get; }
+    string? TenantId { get; }
 }

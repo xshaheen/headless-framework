@@ -6,7 +6,7 @@ using Framework.Domains;
 
 namespace Framework.Permissions.Entities;
 
-public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant<string?>
+public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant
 {
     public string Name { get; private set; }
 

@@ -27,6 +27,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
             if (entry.Entity is IDistributedMessageEmitter distributedMessageEmitter)
             {
                 var messages = distributedMessageEmitter.GetDistributedMessages();
+
                 if (messages.Count > 0)
                 {
                     report.DistributedEmitters.Add(new(distributedMessageEmitter, messages));
@@ -36,6 +37,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
             if (entry.Entity is ILocalMessageEmitter localMessageEmitter)
             {
                 var messages = localMessageEmitter.GetLocalMessages();
+
                 if (messages.Count > 0)
                 {
                     report.LocalEmitters.Add(new(localMessageEmitter, messages));
@@ -51,10 +53,12 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         switch (entry.State)
         {
             case EntityState.Added:
+                // TODO: Set tenant id if applicable
                 _TrySetGuidId(entry);
                 _TrySetCreateAudit(entry, currentUserId, currentAccountId);
                 _TrySetConcurrencyStamp(entry);
                 _TryPublishCreatedLocalMessage(entry);
+
                 break;
             case EntityState.Modified:
                 _TrySetUpdateAudit(entry, currentUserId, currentAccountId);
@@ -62,10 +66,12 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
                 _TrySetSuspendAudit(entry, currentUserId, currentAccountId);
                 _TryUpdateConcurrencyStamp(entry);
                 _TryPublishUpdatedLocalMessage(entry);
+
                 // TODO: Raise suspended/deleted/restored events
                 break;
             case EntityState.Deleted:
                 _TryPublishDeletedLocalMessage(entry);
+
                 break;
         }
     }
@@ -145,6 +151,8 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         if (byUser is not null && byUser.CreatedById == null && currentUserId is not null)
         {
             ObjectPropertiesHelper.TrySetProperty(byUser, x => x.CreatedById, () => currentUserId);
+
+            return;
         }
 
         if (byAccount is not null && byAccount.CreatedById == null && currentAccountId is not null)
@@ -166,9 +174,18 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
     private void _TrySetUpdateAuditDate(EntityEntry entry, IUpdateAudit entity)
     {
-        if (entity.DateUpdated == null || !entry.Property(nameof(IUpdateAudit.DateUpdated)).IsModified)
+        var propertyEntry = entry.Property(nameof(IUpdateAudit.DateUpdated));
+
+        if (entity.DateUpdated != null && propertyEntry.IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateUpdated, () => clock.UtcNow);
+            // If the property is modified, we do not set it again.
+            return;
+        }
+
+        if (ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateUpdated, () => clock.UtcNow))
+        {
+            // If the property was successfully set, mark it as modified.
+            propertyEntry.IsModified = true;
         }
     }
 
@@ -190,7 +207,9 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         }
 
         // If UpdatedById is already set as modified, do not proceed.
-        if (entry.Property(nameof(IUpdateAudit<>.UpdatedById)).IsModified)
+        var propertyEntry = entry.Property(nameof(IUpdateAudit<>.UpdatedById));
+
+        if (propertyEntry.IsModified)
         {
             return;
         }
@@ -207,12 +226,22 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
         if (byUser is not null && byUser.UpdatedById is null && currentUserId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byUser, x => x.UpdatedById, () => currentUserId);
+            if (ObjectPropertiesHelper.TrySetProperty(byUser, x => x.UpdatedById, () => currentUserId))
+            {
+                // If the property was successfully set, mark it as modified.
+                propertyEntry.IsModified = true;
+            }
+
+            return;
         }
 
         if (byAccount is not null && byAccount.UpdatedById is null && currentAccountId is not null)
         {
-            ObjectPropertiesHelper.TrySetProperty(byAccount, x => x.UpdatedById, () => currentAccountId);
+            if (ObjectPropertiesHelper.TrySetProperty(byAccount, x => x.UpdatedById, () => currentAccountId))
+            {
+                // If the property was successfully set, mark it as modified.
+                propertyEntry.IsModified = true;
+            }
         }
     }
 
