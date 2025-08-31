@@ -32,7 +32,7 @@ public abstract class IdentityDbContextBase<
 {
     private readonly DbContextEntityProcessor _entityProcessor;
     private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
-    private readonly EntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
+    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
 
     public abstract string DefaultSchema { get; }
 

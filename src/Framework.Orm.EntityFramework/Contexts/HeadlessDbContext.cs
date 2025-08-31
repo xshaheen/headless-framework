@@ -10,17 +10,17 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Framework.Orm.EntityFramework.Contexts;
 
-public abstract class DbContextBase : DbContext
+public abstract class HeadlessDbContext : DbContext
 {
     public abstract string DefaultSchema { get; }
 
     public DbContextGlobalFiltersStatus FilterStatus { get; }
 
-    private readonly EntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
+    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
     private readonly DbContextEntityProcessor _entityProcessor;
     private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
 
-    protected DbContextBase(
+    protected HeadlessDbContext(
         ICurrentUser currentUser,
         ICurrentTenant currentTenant,
         IGuidGenerator guidGenerator,

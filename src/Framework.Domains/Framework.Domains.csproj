@@ -4,4 +4,12 @@
     <TargetFramework>net9.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Folder Include="Primitives\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Primitives\TenantId.cs" />
+  </ItemGroup>
+
 </Project>

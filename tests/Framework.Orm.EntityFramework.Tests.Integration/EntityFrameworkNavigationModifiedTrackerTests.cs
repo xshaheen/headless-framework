@@ -11,11 +11,11 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly TestDb _db;
-    private readonly EntityFrameworkNavigationModifiedTracker _sut;
+    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _sut;
 
     public EntityFrameworkNavigationModifiedTrackerTests()
     {
-        _sut = new EntityFrameworkNavigationModifiedTracker();
+        _sut = new HeadlessEntityFrameworkNavigationModifiedTracker();
 
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();

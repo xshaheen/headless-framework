@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Framework.Orm.EntityFramework.ChangeTrackers;
 
-public sealed class TrackerNavigationEntry(NavigationEntry entry)
+public sealed class HeadlessNavigationEntry(NavigationEntry entry)
 {
     public bool IsModified { get; set; }
 

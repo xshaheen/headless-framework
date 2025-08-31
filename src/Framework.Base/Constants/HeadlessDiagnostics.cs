@@ -6,16 +6,16 @@ using System.Reflection;
 
 namespace Framework.Constants;
 
-public static class FrameworkDiagnostics
+public static class HeadlessDiagnostics
 {
     public static ActivitySource ActivitySource { get; }
 
     public static Meter Meter { get; }
 
-    static FrameworkDiagnostics()
+    static HeadlessDiagnostics()
     {
-        var product = typeof(FrameworkDiagnostics).Assembly.GetAssemblyProduct() ?? "Framework";
-        var version = typeof(FrameworkDiagnostics).Assembly.GetAssemblyVersion() ?? "1.0.0";
+        var product = typeof(HeadlessDiagnostics).Assembly.GetAssemblyProduct() ?? "Framework";
+        var version = typeof(HeadlessDiagnostics).Assembly.GetAssemblyVersion() ?? "1.0.0";
 
         ActivitySource = new(product, version);
         Meter = new(version, version);

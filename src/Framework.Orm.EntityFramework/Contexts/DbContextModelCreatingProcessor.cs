@@ -82,6 +82,7 @@ public sealed class DbContextModelCreatingProcessor(
 
     private void _InvokeConfigureQueryFilters(ModelBuilder builder, IMutableEntityType type)
     {
+        // Note: this is executed once per db context instance
         _ConfigureQueryFiltersMethod.MakeGenericMethod(type.ClrType).Invoke(this, [builder, type]);
     }
 
@@ -108,12 +109,10 @@ public sealed class DbContextModelCreatingProcessor(
     private Expression<Func<TEntity, bool>>? _CreateFilterExpression<TEntity>(ModelBuilder builder)
         where TEntity : class
     {
+        // Note: filters are applied once, so the expressions is cached, and it should depend on a properties and not cached values.
+
         var entityType = typeof(TEntity);
-
-        var isMultiTenant = entityType
-            .GetInterfaces()
-            .Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IMultiTenant<>));
-
+        var isMultiTenant = entityType.IsAssignableTo<IMultiTenant>();
         var isDeleteAudit = entityType.IsAssignableTo<IDeleteAudit>();
         var isSuspendAudit = entityType.IsAssignableTo<ISuspendAudit>();
 
@@ -127,7 +126,7 @@ public sealed class DbContextModelCreatingProcessor(
 
         if (isMultiTenant)
         {
-            var columnName = getColumnName(mutableEntityType, nameof(IMultiTenant<int>.TenantId));
+            var columnName = getColumnName(mutableEntityType, nameof(IMultiTenant.TenantId));
             expression = e =>
                 !filtersStatus.IsTenantFilterEnabled || EF.Property<string?>(e, columnName) == CurrentTenantId;
         }

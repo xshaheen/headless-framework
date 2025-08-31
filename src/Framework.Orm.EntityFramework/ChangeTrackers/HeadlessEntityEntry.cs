@@ -5,14 +5,14 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Framework.Orm.EntityFramework.ChangeTrackers;
 
-public sealed class TrackerEntityEntry(string id, EntityEntry entry)
+public sealed class HeadlessEntityEntry(string id, EntityEntry entry)
 {
     public string Id { get; } = id;
 
     public EntityEntry Entry { get; } = entry;
 
-    public List<TrackerNavigationEntry> Navigations { get; } =
-        [.. entry.Navigations.Select(x => new TrackerNavigationEntry(x))];
+    public List<HeadlessNavigationEntry> Navigations { get; } =
+        [.. entry.Navigations.Select(x => new HeadlessNavigationEntry(x))];
 
     public bool IsModified
     {

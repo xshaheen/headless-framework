@@ -363,7 +363,7 @@ public sealed class DbContextBaseTests : IDisposable
 
         public required string Name { get; set; }
 
-        public TenantId TenantId { get; init; } = "";
+        public string TenantId { get; init; } = "";
 
         // Audits
         public DateTimeOffset DateCreated { get; private init; }

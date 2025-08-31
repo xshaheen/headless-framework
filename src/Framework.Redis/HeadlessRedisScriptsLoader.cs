@@ -7,10 +7,10 @@ using StackExchange.Redis;
 
 namespace Framework.Redis;
 
-public sealed class FrameworkRedisScriptsLoader(
+public sealed class HeadlessRedisScriptsLoader(
     IConnectionMultiplexer multiplexer,
     TimeProvider? timeProvider = null,
-    ILogger<FrameworkRedisScriptsLoader>? logger = null
+    ILogger<HeadlessRedisScriptsLoader>? logger = null
 )
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;

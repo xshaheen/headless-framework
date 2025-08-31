@@ -31,12 +31,12 @@ public sealed class ResourceLockProvider(
         StringComparer.Ordinal
     );
 
-    private readonly Counter<int> _lockTimeoutCounter = FrameworkDiagnostics.Meter.CreateCounter<int>(
+    private readonly Counter<int> _lockTimeoutCounter = HeadlessDiagnostics.Meter.CreateCounter<int>(
         "framework.lock.failed",
         description: "Number of failed attempts to acquire a lock"
     );
 
-    private readonly Histogram<double> _lockWaitTimeHistogram = FrameworkDiagnostics.Meter.CreateHistogram<double>(
+    private readonly Histogram<double> _lockWaitTimeHistogram = HeadlessDiagnostics.Meter.CreateHistogram<double>(
         "framework.lock.wait.time",
         unit: "ms",
         description: "Time waiting for locks"
@@ -279,7 +279,7 @@ public sealed class ResourceLockProvider(
 
     private static Activity? _StartLockActivity(string resource)
     {
-        var activity = FrameworkDiagnostics.ActivitySource.StartActivity(nameof(TryAcquireAsync));
+        var activity = HeadlessDiagnostics.ActivitySource.StartActivity(nameof(TryAcquireAsync));
 
         if (activity is null)
         {

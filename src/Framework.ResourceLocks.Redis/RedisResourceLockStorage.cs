@@ -9,7 +9,7 @@ namespace Framework.ResourceLocks.Redis;
 
 public sealed class RedisResourceLockStorage(
     IConnectionMultiplexer multiplexer,
-    FrameworkRedisScriptsLoader scriptsLoader
+    HeadlessRedisScriptsLoader scriptsLoader
 ) : IResourceLockStorage
 {
     private IDatabase Db => multiplexer.GetDatabase();

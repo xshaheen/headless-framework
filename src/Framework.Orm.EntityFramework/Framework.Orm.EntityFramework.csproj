@@ -19,4 +19,8 @@
     <ProjectReference Include="..\Framework.Orm.Dapper\Framework.Orm.Dapper.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Messages\" />
+  </ItemGroup>
+
 </Project>

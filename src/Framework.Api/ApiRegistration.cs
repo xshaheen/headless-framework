@@ -83,7 +83,7 @@ public static class ApiRegistration
         builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
         builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
 
-        builder.Services.AddOrReplaceSingleton<ILookupNormalizer, FrameworkLookupNormalizer>();
+        builder.Services.AddOrReplaceSingleton<ILookupNormalizer, HeadlessLookupNormalizer>();
         builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
 
         builder.Services.ConfigureHttpClientDefaults(http =>

@@ -27,7 +27,7 @@ public sealed class CacheTestFixture(IMessageSink messageSink)
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
         await ConnectionMultiplexer.FlushAllAsync();
 
-        var scriptLoader = new FrameworkRedisScriptsLoader(ConnectionMultiplexer);
+        var scriptLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
         await scriptLoader.LoadScriptsAsync();
         await ConnectionMultiplexer.FlushAllAsync();
     }
