@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Xml;
 
 namespace Framework.Sitemaps;
@@ -119,8 +120,15 @@ public static class SitemapUrls
         }
 
         // write with alternates
+        Debug.Assert(sitemapUrl.AlternateLocations is not null);
 
-        foreach (var url in sitemapUrl.AlternateLocations!)
+        var filteredAlternates = sitemapUrl.WriteAlternateLanguageCodes is null
+            ? sitemapUrl.AlternateLocations
+            : sitemapUrl.AlternateLocations.Where(predicate: alt =>
+                sitemapUrl.WriteAlternateLanguageCodes!.Contains(alt.LanguageCode, StringComparer.OrdinalIgnoreCase)
+            );
+
+        foreach (var url in filteredAlternates)
         {
             await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null);
 
