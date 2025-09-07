@@ -4,8 +4,8 @@ namespace Framework.Payments.Paymob.CashIn.Models.Intentions;
 
 public sealed class CashInCreateIntentionResponseCreationExtras
 {
-    [JsonPropertyName("ee")]
-    public required int Ee { get; init; }
+    [JsonExtensionData]
+    public IDictionary<string, object?>? ExtensionData { get; init; }
 
     [JsonPropertyName("merchant_order_id")]
     public required string MerchantOrderId { get; init; }

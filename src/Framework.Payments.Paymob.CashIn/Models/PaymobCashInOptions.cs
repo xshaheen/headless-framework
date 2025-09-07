@@ -44,7 +44,13 @@ public sealed record PaymobCashInOptions
 
     /// <summary>Deserialization options for JSON.</summary>
     public JsonSerializerOptions DeserializationOptions { get; set; } =
-        new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+        new(JsonSerializerDefaults.Web)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNameCaseInsensitive = true,
+            NumberHandling = JsonNumberHandling.AllowReadingFromString,
+            AllowTrailingCommas = true,
+        };
 }
 
 public sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCashInOptions>
