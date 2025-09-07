@@ -37,11 +37,11 @@ public sealed class CashInCreateIntentionResponse
     [JsonPropertyName("object")]
     public required string Object { get; init; }
 
-    [JsonPropertyName("payment_keys")]
-    public List<CashInCreateIntentionResponsePaymentKey> PaymentKeys { get; init; } = [];
-
     [JsonPropertyName("intention_detail")]
     public required CashInCreateIntentionResponseIntentionDetail IntentionDetail { get; init; }
+
+    [JsonPropertyName("payment_keys")]
+    public List<CashInCreateIntentionResponsePaymentKey> PaymentKeys { get; init; } = [];
 
     [JsonPropertyName("payment_methods")]
     public required List<CashInCreateIntentionResponsePaymentMethod> PaymentMethods { get; init; }
