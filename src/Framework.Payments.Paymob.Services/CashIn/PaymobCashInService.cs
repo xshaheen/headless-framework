@@ -4,6 +4,7 @@ using Framework.Checks;
 using Framework.Exceptions;
 using Framework.Payments.Paymob.CashIn;
 using Framework.Payments.Paymob.CashIn.Models.Callback;
+using Framework.Payments.Paymob.CashIn.Models.Intentions;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
 using Framework.Payments.Paymob.CashIn.Models.Refunds;
@@ -29,7 +30,21 @@ public interface IPaymobCashInService
     Task<PaymobKioskCashInResponse> StartAsync(PaymobKioskCashInRequest request);
 
     [Pure]
+    Task<CashInCreateIntentionResponse?> StartAsync(CashInCreateIntentionRequest request);
+
+    /// <summary>
+    /// A refund transaction is essentially a reverse transaction, representing a normal transaction that occurs
+    /// in the opposite direction. Please note that transaction fees will apply to the refund transaction.
+    /// </summary>
+    [Pure]
     Task<CashInCallbackTransaction?> RefundAsync(PaymobRefundRequest request);
+
+    /// <summary>
+    /// A void transaction is a reversal action that allows you to cancel a transaction that occurred on the same
+    /// business day, without incurring any transaction fees.
+    /// </summary>
+    [Pure]
+    Task<CashInCallbackTransaction?> VoidAsync(PaymobVoidRequest request);
 }
 
 public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<PaymobCashInService> logger)
@@ -157,7 +172,14 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         );
     }
 
-    public Task<CashInCallbackTransaction?> RefundAsync(PaymobVoidRequest request)
+    public Task<CashInCreateIntentionResponse?> StartAsync(CashInCreateIntentionRequest request)
+    {
+        Argument.IsNotNull(request);
+
+        return broker.CreateIntentionAsync(request);
+    }
+
+    public Task<CashInCallbackTransaction?> VoidAsync(PaymobVoidRequest request)
     {
         Argument.IsNotNull(request);
 
