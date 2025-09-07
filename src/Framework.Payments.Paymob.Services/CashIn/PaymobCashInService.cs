@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.Exceptions;
 using Framework.Payments.Paymob.CashIn;
+using Framework.Payments.Paymob.CashIn.Models.Callback;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
+using Framework.Payments.Paymob.CashIn.Models.Refunds;
 using Framework.Payments.Paymob.Services.CashIn.Requests;
 using Framework.Payments.Paymob.Services.CashIn.Responses;
 using Framework.Payments.Paymob.Services.Resources;
@@ -23,7 +26,10 @@ public interface IPaymobCashInService
     Task<PaymobWalletCashInResponse> StartAsync(PaymobWalletCashInRequest request);
 
     [Pure]
-    Task<PaymobAcceptCashInResponse> StartAsync(PaymobKioskCashInRequest request);
+    Task<PaymobKioskCashInResponse> StartAsync(PaymobKioskCashInRequest request);
+
+    [Pure]
+    Task<CashInCallbackTransaction?> RefundAsync(PaymobRefundRequest request);
 }
 
 public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<PaymobCashInService> logger)
@@ -82,7 +88,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         );
     }
 
-    public async Task<PaymobAcceptCashInResponse> StartAsync(PaymobKioskCashInRequest request)
+    public async Task<PaymobKioskCashInResponse> StartAsync(PaymobKioskCashInRequest request)
     {
         var (orderId, paymentKey) = await _StartAsync(
             request.Customer,
@@ -110,7 +116,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
 
-        return new PaymobAcceptCashInResponse(
+        return new PaymobKioskCashInResponse(
             BillingReference: payResponse.Data.BillReference.ToString(CultureInfo.InvariantCulture),
             OrderId: orderId.ToString(CultureInfo.InvariantCulture),
             Expiration: request.ExpirationSeconds
@@ -148,6 +154,24 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         return new PaymobCardSavedTokenCashInResponse(
             IsSuccess: payResponse.Success.Equals("true", StringComparison.OrdinalIgnoreCase),
             OrderId: orderId.ToString(CultureInfo.InvariantCulture)
+        );
+    }
+
+    public Task<CashInCallbackTransaction?> RefundAsync(PaymobVoidRequest request)
+    {
+        Argument.IsNotNull(request);
+
+        return broker.VoidTransactionAsync(new(request.TransactionId));
+    }
+
+    public Task<CashInCallbackTransaction?> RefundAsync(PaymobRefundRequest request)
+    {
+        Argument.IsNotNull(request);
+
+        var amountCents = (int)Math.Ceiling(request.Amount * 100);
+
+        return broker.RefundTransactionAsync(
+            new(request.TransactionId, amountCents.ToString(CultureInfo.InvariantCulture))
         );
     }
 
