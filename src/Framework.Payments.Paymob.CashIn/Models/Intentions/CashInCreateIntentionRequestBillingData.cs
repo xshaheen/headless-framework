@@ -15,7 +15,7 @@ public sealed class CashInCreateIntentionRequestBillingData
     public required string Email { get; init; }
 
     [JsonPropertyName("country")]
-    public required string Country { get; init; }
+    public string? Country { get; init; }
 
     [JsonPropertyName("city")]
     public string? City { get; init; }

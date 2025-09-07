@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Encodings.Web;
 using FluentValidation;
 using Framework.FluentValidation;
 
@@ -36,11 +37,15 @@ public sealed record PaymobCashInOptions
     public int ExpirationPeriod { get; set; } = 3600;
 
     /// <summary>New intention API secret key for the merchant.</summary>
-    public required string SecretKey { get; init; }
+    public required string SecretKey { get; set; }
 
     /// <summary>Serialization options for JSON.</summary>
     public JsonSerializerOptions SerializationOptions { get; set; } =
-        new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+        new(JsonSerializerDefaults.Web)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        };
 
     /// <summary>Deserialization options for JSON.</summary>
     public JsonSerializerOptions DeserializationOptions { get; set; } =
