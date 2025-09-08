@@ -9,7 +9,7 @@ public sealed class CashInCallbackTransactionDataMigsTransaction
     public required string Id { get; init; }
 
     [JsonPropertyName("frequency")]
-    public required string Frequency { get; init; }
+    public string? Frequency { get; init; }
 
     [JsonPropertyName("authorizationCode")]
     public string? AuthorizationCode { get; init; }
@@ -33,7 +33,7 @@ public sealed class CashInCallbackTransactionDataMigsTransaction
     public required string Currency { get; init; }
 
     [JsonPropertyName("acquirer")]
-    public required CashInCallbackTransactionDataAcquirer Acquirer { get; init; }
+    public CashInCallbackTransactionDataAcquirer? Acquirer { get; init; }
 
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; init; }

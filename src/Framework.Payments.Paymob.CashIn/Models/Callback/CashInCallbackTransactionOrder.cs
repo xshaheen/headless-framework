@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Payments.Paymob.CashIn.Internal;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 
@@ -8,9 +9,6 @@ namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 [PublicAPI]
 public sealed class CashInCallbackTransactionOrder
 {
-    private readonly IReadOnlyList<object?>? _deliveryStatus;
-    private readonly IReadOnlyList<object?>? _items;
-
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
@@ -61,7 +59,7 @@ public sealed class CashInCallbackTransactionOrder
     public int DeliveryVatCents { get; init; }
 
     [JsonPropertyName("payment_method")]
-    public required string PaymentMethod { get; init; }
+    public string? PaymentMethod { get; init; }
 
     [JsonPropertyName("api_source")]
     public string? ApiSource { get; init; }
@@ -94,17 +92,19 @@ public sealed class CashInCallbackTransactionOrder
     public object? WalletNotification { get; init; }
 
     [JsonPropertyName("items")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> Items
     {
-        get => _items ?? [];
-        init => _items = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("delivery_status")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> DeliveryStatus
     {
-        get => _deliveryStatus ?? [];
-        init => _deliveryStatus = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonExtensionData]
