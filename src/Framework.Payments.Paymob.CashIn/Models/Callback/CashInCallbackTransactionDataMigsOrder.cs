@@ -11,10 +11,10 @@ public sealed class CashInCallbackTransactionDataMigsOrder
     public bool AcceptPartialAmount { get; init; }
 
     [JsonPropertyName("id")]
-    public required string Id { get; init; }
+    public string? Id { get; init; }
 
     [JsonPropertyName("status")]
-    public required string Status { get; init; }
+    public string? Status { get; init; }
 
     [JsonPropertyName("totalAuthorizedAmount")]
     public decimal TotalAuthorizedAmount { get; init; }
@@ -33,7 +33,7 @@ public sealed class CashInCallbackTransactionDataMigsOrder
     public decimal Amount { get; init; }
 
     [JsonPropertyName("currency")]
-    public required string Currency { get; init; }
+    public string? Currency { get; init; }
 
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; init; }
