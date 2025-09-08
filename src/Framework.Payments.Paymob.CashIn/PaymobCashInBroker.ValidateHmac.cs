@@ -8,6 +8,11 @@ namespace Framework.Payments.Paymob.CashIn;
 
 public partial class PaymobCashInBroker
 {
+    public bool Validate(CashInCallbackQueryParameters queryParameters)
+    {
+        return Validate(queryParameters.ToConcatenatedString(), queryParameters.Hmac);
+    }
+
     public bool Validate(CashInCallbackTransaction transaction, string hmac)
     {
         return Validate(transaction.ToConcatenatedString(), hmac);

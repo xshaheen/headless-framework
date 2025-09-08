@@ -88,6 +88,12 @@ public interface IPaymobCashInBroker
     bool Validate(string concatenatedString, string hmac);
 
     /// <summary>Validate the identity and integrity for "Paymob Accept" callback submission.</summary>
+    /// <param name="queryParameters">Received query parameters.</param>
+    /// <returns>True if is valid, otherwise return false.</returns>
+    [Pure]
+    bool Validate(CashInCallbackQueryParameters queryParameters);
+
+    /// <summary>Validate the identity and integrity for "Paymob Accept" callback submission.</summary>
     /// <param name="transaction">Received transaction.</param>
     /// <param name="hmac">Received HMAC.</param>
     /// <returns>True if is valid, otherwise return false.</returns>
