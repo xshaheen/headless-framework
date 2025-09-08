@@ -2,14 +2,13 @@
 
 using Framework.Payments.Paymob.CashIn.Internal;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
+using Humanizer;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 
 [PublicAPI]
 public sealed class CashInCallbackTransaction
 {
-    private readonly IReadOnlyList<TransactionProcessedCallbackResponse>? _transactionProcessedCallbackResponses;
-
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
@@ -146,9 +145,9 @@ public sealed class CashInCallbackTransaction
     [JsonPropertyName("transaction_processed_callback_responses")]
     public IReadOnlyList<TransactionProcessedCallbackResponse> TransactionProcessedCallbackResponses
     {
-        get { return _transactionProcessedCallbackResponses ?? []; }
-        init { _transactionProcessedCallbackResponses = value; }
-    }
+        get => field ?? [];
+        init;
+    } = null!;
 
     [JsonPropertyName("other_endpoint_reference")]
     public object? OtherEndpointReference { get; init; }
@@ -207,48 +206,48 @@ public sealed class CashInCallbackTransaction
 
     public bool IsCard()
     {
-        return string.Equals(SourceData?.Type, "card", StringComparison.Ordinal);
+        return string.Equals(SourceData?.Type, "card", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsWallet()
     {
-        return string.Equals(SourceData?.Type, "wallet", StringComparison.Ordinal);
+        return string.Equals(SourceData?.Type, "wallet", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsCashCollection()
     {
-        return string.Equals(SourceData?.Type, "cash_present", StringComparison.Ordinal);
+        return string.Equals(SourceData?.Type, "cash_present", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsAcceptKiosk()
     {
-        return string.Equals(SourceData?.Type, "aggregator", StringComparison.Ordinal);
+        return string.Equals(SourceData?.Type, "aggregator", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsFromIFrame()
     {
-        return string.Equals(ApiSource, "IFRAME", StringComparison.Ordinal);
+        return string.Equals(ApiSource, "IFRAME", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsInvoice()
     {
-        return string.Equals(ApiSource, "INVOICE", StringComparison.Ordinal);
+        return string.Equals(ApiSource, "INVOICE", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsInsufficientFundError()
     {
-        return string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.Ordinal);
+        return string.Equals(Data?.TxnResponseCode, "INSUFFICIENT_FUNDS", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsAuthenticationFailedError()
     {
-        return string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.Ordinal);
+        return string.Equals(Data?.TxnResponseCode, "AUTHENTICATION_FAILED", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsDeclinedError()
     {
         // "data.message": may be "Do not honour", or "Invalid card number", ...
-        return string.Equals(Data?.TxnResponseCode, "DECLINED", StringComparison.Ordinal);
+        return string.Equals(Data?.TxnResponseCode, "DECLINED", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsRiskChecksError()
@@ -260,31 +259,37 @@ public sealed class CashInCallbackTransaction
             );
     }
 
-    public (string CardNumber, string? Type, string? Bank)? Card()
+    public CashInCardInfo? Card()
     {
         if (!IsCard())
         {
             return null;
         }
 
-        var last4 = Data?.CardNum ?? SourceData?.Pan ?? "xxxx";
-        var bank = _GetFromExtensions("card_holder_bank") ?? "Other";
+        var cardNumber = Data?.CardNum ?? SourceData?.Pan ?? "xxxx";
+
+        var bank = _GetFromExtensions("card_holder_bank");
+        bank = string.Equals(bank, "-", StringComparison.Ordinal) ? null : bank;
+
         var type = Data?.CardType ?? SourceData?.SubType ?? _GetFromExtensions("card_type");
 
         type = type?.ToUpperInvariant() switch
         {
             "MASTERCARD" => "MasterCard",
             "VISA" => "Visa",
-            _ => type,
+            _ => type.Humanize(),
         };
 
-        return (last4, type, string.Equals(bank, "-", StringComparison.Ordinal) ? null : bank);
+        return new(cardNumber, type, bank);
     }
 
     private string? _GetFromExtensions(string name)
     {
-        return ExtensionData is null ? null
-            : ExtensionData.TryGetValue(name, out var value) ? ((JsonElement?)value)?.GetString()
-            : null;
+        if (ExtensionData is null)
+        {
+            return null;
+        }
+
+        return ExtensionData.TryGetValue(name, out var value) ? ((JsonElement?)value)?.GetString() : null;
     }
 }
