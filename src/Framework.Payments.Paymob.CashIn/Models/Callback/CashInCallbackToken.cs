@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Payments.Paymob.CashIn.Internal;
+using Humanizer;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 
@@ -61,5 +62,17 @@ public sealed class CashInCallbackToken
                 AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter.EgyptTimeZone.GetUtcOffset(dateTime)
             )
             : DateTimeOffset.Parse(CreatedAt, CultureInfo.InvariantCulture);
+    }
+
+    public CashInCardInfo Card()
+    {
+        var type = CardSubtype?.ToUpperInvariant() switch
+        {
+            "MASTERCARD" => "MasterCard",
+            "VISA" => "Visa",
+            _ => CardSubtype.Humanize(),
+        };
+
+        return new(MaskedPan, type, Bank: null);
     }
 }
