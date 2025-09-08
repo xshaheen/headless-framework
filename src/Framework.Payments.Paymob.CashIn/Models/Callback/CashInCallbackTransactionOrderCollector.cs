@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Payments.Paymob.CashIn.Internal;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Callback;
@@ -7,9 +8,6 @@ namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 [PublicAPI]
 public sealed class CashInCallbackTransactionOrderCollector
 {
-    private readonly IReadOnlyList<object?>? _companyEmails;
-    private readonly IReadOnlyList<object?>? _phones;
-
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
@@ -36,16 +34,18 @@ public sealed class CashInCallbackTransactionOrderCollector
     public string? Street { get; init; }
 
     [JsonPropertyName("phones")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> Phones
     {
-        get => _phones ?? [];
-        init => _phones = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("company_emails")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> CompanyEmails
     {
-        get => _companyEmails ?? [];
-        init => _companyEmails = value;
+        get => field ?? [];
+        init;
     }
 }

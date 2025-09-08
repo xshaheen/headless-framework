@@ -6,22 +6,22 @@ namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransactionDataAcquirer
 {
     [JsonPropertyName("settlementDate")]
-    public required string SettlementDate { get; init; }
+    public string? SettlementDate { get; init; }
 
     [JsonPropertyName("timeZone")]
-    public required string TimeZone { get; init; }
+    public string? TimeZone { get; init; }
 
     [JsonPropertyName("id")]
-    public required string Id { get; init; }
+    public string? Id { get; init; }
 
     [JsonPropertyName("date")]
-    public required string Date { get; init; }
+    public string? Date { get; init; }
 
     [JsonPropertyName("merchantId")]
-    public required string MerchantId { get; init; }
+    public string? MerchantId { get; init; }
 
     [JsonPropertyName("transactionId")]
-    public required string TransactionId { get; init; }
+    public string? TransactionId { get; init; }
 
     [JsonPropertyName("batch")]
     public int Batch { get; init; }

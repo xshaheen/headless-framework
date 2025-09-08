@@ -15,7 +15,7 @@ public sealed class CashInPayPaymentKeyClaims
     public int UserId { get; init; }
 
     [JsonPropertyName("currency")]
-    public required string Currency { get; init; }
+    public string? Currency { get; init; }
 
     [JsonPropertyName("exp")]
     public int Exp { get; init; }
@@ -24,13 +24,13 @@ public sealed class CashInPayPaymentKeyClaims
     public int OrderId { get; init; }
 
     [JsonPropertyName("pmk_ip")]
-    public required string PmkIp { get; init; }
+    public string? PmkIp { get; init; }
 
     [JsonPropertyName("lock_order_when_paid")]
     public bool LockOrderWhenPaid { get; init; }
 
     [JsonPropertyName("billing_data")]
-    public required CashInPayPaymentKeyClaimsBillingData BillingData { get; init; }
+    public CashInPayPaymentKeyClaimsBillingData? BillingData { get; init; }
 
     [JsonExtensionData]
     public IDictionary<string, object?>? ExtensionData { get; init; }

@@ -6,7 +6,7 @@ namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 public sealed class CashInCallbackTransactionDataMigsTransaction
 {
     [JsonPropertyName("id")]
-    public required string Id { get; init; }
+    public string? Id { get; init; }
 
     [JsonPropertyName("frequency")]
     public string? Frequency { get; init; }
@@ -30,7 +30,7 @@ public sealed class CashInCallbackTransactionDataMigsTransaction
     public decimal Amount { get; init; }
 
     [JsonPropertyName("currency")]
-    public required string Currency { get; init; }
+    public string? Currency { get; init; }
 
     [JsonPropertyName("acquirer")]
     public CashInCallbackTransactionDataAcquirer? Acquirer { get; init; }
