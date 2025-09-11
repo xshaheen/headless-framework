@@ -89,25 +89,20 @@ public static class EnumExtensions
     public static string GetLocaleName(this Enum value, string locale, string? fallbackLocale = null)
     {
         var allLocale = value.GetLocale().ToArray();
+        var curr = allLocale.FirstOrDefault(x => string.Equals(x.Locale, locale, StringComparison.Ordinal));
 
-        var displayName = allLocale
-            .FirstOrDefault(x => string.Equals(x.Locale, locale, StringComparison.Ordinal))
-            ?.DisplayName;
-
-        if (!string.IsNullOrWhiteSpace(displayName))
+        if (!string.IsNullOrWhiteSpace(curr?.DisplayName))
         {
-            return displayName;
+            return curr.DisplayName;
         }
 
         if (!string.IsNullOrWhiteSpace(fallbackLocale))
         {
-            displayName = allLocale
-                .FirstOrDefault(x => string.Equals(x.Locale, fallbackLocale, StringComparison.Ordinal))
-                ?.DisplayName;
+            curr = allLocale.FirstOrDefault(x => string.Equals(x.Locale, fallbackLocale, StringComparison.Ordinal));
 
-            if (!string.IsNullOrWhiteSpace(displayName))
+            if (!string.IsNullOrWhiteSpace(curr?.DisplayName))
             {
-                return displayName;
+                return curr.DisplayName;
             }
         }
 
