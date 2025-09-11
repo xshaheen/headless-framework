@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Framework.Checks;
 
 namespace Framework.Reflection;
 
@@ -38,9 +39,10 @@ public static class ReflectionHelper
     /// <param name="inherit">Inherit attribute from base classes</param>
     public static TAttribute? GetFirstAttribute<TAttribute>(this MemberInfo memberInfo, bool inherit = true)
         where TAttribute : Attribute
-    //Get attribute on the member
     {
-        return memberInfo.GetCustomAttributes(typeof(TAttribute), inherit).Cast<TAttribute>().First();
+        var attributes = memberInfo.GetCustomAttributes(typeof(TAttribute), inherit);
+
+        return attributes.Length == 0 ? null : (TAttribute)attributes[0];
     }
 
     /// <summary>
@@ -107,14 +109,9 @@ public static class ReflectionHelper
 
     public static bool IsFlagsEnum(this Type type)
     {
-        ArgumentNullException.ThrowIfNull(type);
+        Argument.IsNull(type);
 
-        if (!type.IsEnum)
-        {
-            return false;
-        }
-
-        return type.IsDefined(typeof(FlagsAttribute), inherit: true);
+        return type.IsEnum && type.IsDefined(typeof(FlagsAttribute), inherit: true);
     }
 
     public static bool IsSubClassOfGeneric(this Type child, Type parent)

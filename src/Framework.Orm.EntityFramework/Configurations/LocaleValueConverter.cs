@@ -8,32 +8,33 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Orm.EntityFramework.Configurations;
 
 [PublicAPI]
-public sealed class LocaleValueConverter() : ValueConverter<Locale?, string?>(x => _Serialize(x), x => _Deserialize(x))
+public sealed class LocalesValueConverter()
+    : ValueConverter<Locales?, string?>(x => _Serialize(x), x => _Deserialize(x))
 {
-    private static string _Serialize(Locale? locale)
+    private static string _Serialize(Locales? locale)
     {
         return JsonSerializer.Serialize(locale, JsonConstants.DefaultInternalJsonOptions);
     }
 
-    private static Locale? _Deserialize(string? json)
+    private static Locales? _Deserialize(string? json)
     {
         return string.IsNullOrEmpty(json) || string.Equals(json, "{}", StringComparison.Ordinal)
             ? null
-            : JsonSerializer.Deserialize<Locale>(json, JsonConstants.DefaultInternalJsonOptions);
+            : JsonSerializer.Deserialize<Locales>(json, JsonConstants.DefaultInternalJsonOptions);
     }
 }
 
 [PublicAPI]
-public sealed class LocaleValueComparer : ValueComparer<Locale?>
+public sealed class LocalesValueComparer : ValueComparer<Locales?>
 {
-    public LocaleValueComparer()
+    public LocalesValueComparer()
         : base(
             equalsExpression: (t1, t2) => _IsEqual(t1, t2),
             hashCodeExpression: t => t == null ? 0 : t.GetHashCode(),
-            snapshotExpression: t => t == null ? null : new Locale(t)
+            snapshotExpression: t => t == null ? null : new Locales(t)
         ) { }
 
-    private static bool _IsEqual(Locale? d1, Locale? d2)
+    private static bool _IsEqual(Locales? d1, Locales? d2)
     {
         if (d1 is null && d2 is null)
         {

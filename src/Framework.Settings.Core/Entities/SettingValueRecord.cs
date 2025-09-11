@@ -36,6 +36,8 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>
 
     public string? ProviderKey { get; private set; }
 
+    // TODO: Add DateCreated, DateUpdated, CreatedBy, UpdatedBy, ...
+
     public override string ToString()
     {
         return $"{base.ToString()}, Name = {Name}, Value = {Value}, ProviderName = {ProviderName}, ProviderKey = {ProviderKey}";
