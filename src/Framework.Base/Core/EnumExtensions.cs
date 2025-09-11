@@ -2,6 +2,10 @@
 
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Reflection;
+using Framework.Checks;
+using Framework.Primitives;
+using Framework.Reflection;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -10,48 +14,62 @@ namespace System;
 [PublicAPI]
 public static class EnumExtensions
 {
-    [SystemPure]
-    [JetBrainsPure]
-    public static string GetDisplayName(this Enum? value)
+    [SystemPure, JetBrainsPure, MustUseReturnValue]
+    public static MemberInfo GetEnumMemberInfo(this Enum enumValue)
     {
-        if (value is null)
-        {
-            return string.Empty;
-        }
-
-        var attribute = _GetFirstAttributeOrDefault<DisplayAttribute>(value);
-
-        return attribute is null ? value.ToString() : attribute.Name ?? value.ToString();
+        return Argument.IsNotNull(enumValue).GetType().GetMember(enumValue.ToString())[0];
     }
 
-    [SystemPure]
-    [JetBrainsPure]
-    public static string GetDescription(this Enum? value)
-    {
-        if (value is null)
-        {
-            return string.Empty;
-        }
-
-        var attribute = _GetFirstAttributeOrDefault<DescriptionAttribute>(value);
-
-        return attribute is null ? value.ToString() : attribute.Description;
-    }
-
-    [SystemPure]
-    [JetBrainsPure]
-    private static T? _GetFirstAttributeOrDefault<T>(Enum? value)
+    [SystemPure, JetBrainsPure, MustUseReturnValue]
+    public static T? GetFirstAttribute<T>(this Enum? enumValue)
         where T : Attribute
     {
-        if (value is null)
+        return enumValue?.GetEnumMemberInfo().GetFirstAttribute<T>(inherit: false);
+    }
+
+    [SystemPure, JetBrainsPure, MustUseReturnValue]
+    public static string GetDisplayName(this Enum? enumValue)
+    {
+        if (enumValue is null)
+        {
+            return string.Empty;
+        }
+
+        var attribute = enumValue.GetFirstAttribute<DisplayAttribute>();
+
+        return string.IsNullOrWhiteSpace(attribute?.Name) ? enumValue.ToString() : attribute.Name;
+    }
+
+    [SystemPure, JetBrainsPure, MustUseReturnValue]
+    public static string? GetDescription(this Enum? enumValue)
+    {
+        if (enumValue is null)
         {
             return null;
         }
 
-        var member = value.GetType().GetMember(value.ToString());
+        var attribute = enumValue.GetFirstAttribute<DescriptionAttribute>();
 
-        var attributes = member[0].GetCustomAttributes(typeof(T), inherit: false);
+        return string.IsNullOrWhiteSpace(attribute?.Description) ? null : attribute.Description;
+    }
 
-        return (T)attributes[0];
+    [SystemPure, JetBrainsPure, MustUseReturnValue]
+    public static IEnumerable<LocaleAttribute> GetLocaleAttributes(this Enum enumValue)
+    {
+        return Argument.IsNotNull(enumValue).GetEnumMemberInfo().GetCustomAttributes<LocaleAttribute>(inherit: false);
+    }
+
+    [SystemPure, JetBrainsPure, MustUseReturnValue]
+    public static IEnumerable<ValueLocale> GetLocale(this Enum enumValue)
+    {
+        var attributes = Argument.IsNotNull(enumValue).GetLocaleAttributes();
+
+        return attributes.Select(attr => new ValueLocale
+        {
+            Locale = attr.Locale,
+            DisplayName = attr.DisplayName,
+            Description = attr.Description,
+            Value = Convert.ToInt32(enumValue, CultureInfo.InvariantCulture),
+        });
     }
 }

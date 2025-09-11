@@ -22,7 +22,7 @@ public static class ModelConfigurationBuilderExtensions
         b.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
         b.Properties<File>().HaveConversion<FileValueConverter>();
         b.Properties<Image>().HaveConversion<ImageValueConverter>();
-        b.Properties<Locale>().HaveConversion<LocaleValueConverter, LocaleValueComparer>();
+        b.Properties<Locales>().HaveConversion<LocalesValueConverter, LocalesValueComparer>();
         b.Properties<ExtraProperties>().HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
     }
 }
