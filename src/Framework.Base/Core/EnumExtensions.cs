@@ -6,6 +6,7 @@ using System.Reflection;
 using Framework.Checks;
 using Framework.Primitives;
 using Framework.Reflection;
+using Humanizer;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -35,9 +36,21 @@ public static class EnumExtensions
             return string.Empty;
         }
 
-        var attribute = enumValue.GetFirstAttribute<DisplayAttribute>();
+        var displayName = enumValue.GetFirstAttribute<DisplayNameAttribute>()?.DisplayName;
 
-        return string.IsNullOrWhiteSpace(attribute?.Name) ? enumValue.ToString() : attribute.Name;
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            return displayName;
+        }
+
+        displayName = enumValue.GetFirstAttribute<DisplayAttribute>()?.Name;
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            return displayName;
+        }
+
+        return enumValue.ToString().Humanize();
     }
 
     [SystemPure, JetBrainsPure, MustUseReturnValue]
@@ -71,5 +84,33 @@ public static class EnumExtensions
             Description = attr.Description,
             Value = Convert.ToInt32(enumValue, CultureInfo.InvariantCulture),
         });
+    }
+
+    public static string GetLocaleName(this Enum value, string locale, string? fallbackLocale = null)
+    {
+        var allLocale = value.GetLocale().ToArray();
+
+        var displayName = allLocale
+            .FirstOrDefault(x => string.Equals(x.Locale, locale, StringComparison.Ordinal))
+            ?.DisplayName;
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            return displayName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fallbackLocale))
+        {
+            displayName = allLocale
+                .FirstOrDefault(x => string.Equals(x.Locale, fallbackLocale, StringComparison.Ordinal))
+                ?.DisplayName;
+
+            if (!string.IsNullOrWhiteSpace(displayName))
+            {
+                return displayName;
+            }
+        }
+
+        return value.GetDisplayName();
     }
 }
