@@ -57,6 +57,7 @@ public static class ApiRegistration
         builder.Services.AddFrameworkApiConfigurations();
 
         builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
+        builder.Services.TryAddSingleton<ICurrentLocale, CurrentCultureCurrentLocale>();
         builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
         builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
         builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
@@ -15,6 +16,10 @@ namespace System;
 [PublicAPI]
 public static class EnumExtensions
 {
+    private sealed record CacheKey(Type EnumType, int Value);
+
+    private static readonly ConcurrentDictionary<CacheKey, AllLocaleValue> _LocaleCache = new();
+
     [SystemPure, JetBrainsPure, MustUseReturnValue]
     public static MemberInfo GetEnumMemberInfo(this Enum enumValue)
     {
@@ -45,12 +50,7 @@ public static class EnumExtensions
 
         displayName = enumValue.GetFirstAttribute<DisplayAttribute>()?.Name;
 
-        if (!string.IsNullOrWhiteSpace(displayName))
-        {
-            return displayName;
-        }
-
-        return enumValue.ToString().Humanize();
+        return !string.IsNullOrWhiteSpace(displayName) ? displayName : enumValue.ToString().Humanize();
     }
 
     [SystemPure, JetBrainsPure, MustUseReturnValue]
@@ -67,45 +67,70 @@ public static class EnumExtensions
     }
 
     [SystemPure, JetBrainsPure, MustUseReturnValue]
-    public static IEnumerable<LocaleAttribute> GetLocaleAttributes(this Enum enumValue)
+    public static AllLocaleValue GetAllLocales(this Enum enumValue)
     {
-        return Argument.IsNotNull(enumValue).GetEnumMemberInfo().GetCustomAttributes<LocaleAttribute>(inherit: false);
+        Argument.IsNotNull(enumValue);
+
+        return _LocaleCache.GetOrAdd(
+            key: new(enumValue.GetType(), Value: Convert.ToInt32(enumValue, CultureInfo.InvariantCulture)),
+            valueFactory: static (key, enumValue1) =>
+            {
+                var defaultValue = new EnumLocale
+                {
+                    DisplayName = enumValue1.GetDisplayName(),
+                    Description = enumValue1.GetDescription(),
+                    Value = key.Value,
+                };
+
+                var locales = enumValue1
+                    .GetEnumMemberInfo()
+                    .GetCustomAttributes<LocaleAttribute>(inherit: false)
+                    .Select(attr => new KeyEnumLocale
+                    {
+                        Key = attr.Locale,
+                        Locale = new()
+                        {
+                            DisplayName = attr.DisplayName,
+                            Description = attr.Description,
+                            Value = key.Value,
+                        },
+                    })
+                    .ToArray();
+
+                return new AllLocaleValue(defaultValue, locales);
+            },
+            factoryArgument: enumValue
+        );
     }
 
     [SystemPure, JetBrainsPure, MustUseReturnValue]
-    public static IEnumerable<ValueLocale> GetLocale(this Enum enumValue)
+    public static EnumLocale GetLocale(this Enum value, string locale, string? fallbackLocale = null)
     {
-        var attributes = Argument.IsNotNull(enumValue).GetLocaleAttributes();
+        var (defaultValue, locales) = value.GetAllLocales();
 
-        return attributes.Select(attr => new ValueLocale
+        var main = locales.FirstOrDefault(x => string.Equals(x.Key, locale, StringComparison.Ordinal));
+
+        if (main is not null)
         {
-            Locale = attr.Locale,
-            DisplayName = attr.DisplayName,
-            Description = attr.Description,
-            Value = Convert.ToInt32(enumValue, CultureInfo.InvariantCulture),
-        });
-    }
-
-    public static string GetLocaleName(this Enum value, string locale, string? fallbackLocale = null)
-    {
-        var allLocale = value.GetLocale().ToArray();
-        var curr = allLocale.FirstOrDefault(x => string.Equals(x.Locale, locale, StringComparison.Ordinal));
-
-        if (!string.IsNullOrWhiteSpace(curr?.DisplayName))
-        {
-            return curr.DisplayName;
+            return main.Locale;
         }
 
         if (!string.IsNullOrWhiteSpace(fallbackLocale))
         {
-            curr = allLocale.FirstOrDefault(x => string.Equals(x.Locale, fallbackLocale, StringComparison.Ordinal));
+            var fallback = locales.FirstOrDefault(x => string.Equals(x.Key, fallbackLocale, StringComparison.Ordinal));
 
-            if (!string.IsNullOrWhiteSpace(curr?.DisplayName))
+            if (!string.IsNullOrWhiteSpace(fallback?.Locale.DisplayName))
             {
-                return curr.DisplayName;
+                return fallback.Locale;
             }
         }
 
-        return value.GetDisplayName();
+        return defaultValue;
+    }
+
+    [SystemPure, JetBrainsPure, MustUseReturnValue]
+    public static string GetLocaleName(this Enum value, string locale, string? fallbackLocale = null)
+    {
+        return value.GetLocale(locale, fallbackLocale).DisplayName;
     }
 }

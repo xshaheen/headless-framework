@@ -84,7 +84,9 @@ public static class Run
                     logger.LogError(ex, "Retry error: {Message}", ex.Message);
                 }
 
-                await timeProvider.SafeDelay(currentBackoffTime.Milliseconds(), cancellationToken).AnyContext();
+                await timeProvider
+                    .DelayUntilElapsedOrCancel(currentBackoffTime.Milliseconds(), cancellationToken)
+                    .AnyContext();
             }
 
             if (retryInterval == null)

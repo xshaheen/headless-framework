@@ -14,10 +14,17 @@ public class LocaleAttribute(string locale, string displayName, string? descript
     public string? Description { get; } = description;
 }
 
-public record ValueLocale
-{
-    public required string Locale { get; init; }
+public sealed record AllLocaleValue(EnumLocale Default, KeyEnumLocale[] Locales);
 
+public record KeyEnumLocale
+{
+    public required string Key { get; init; }
+
+    public required EnumLocale Locale { get; init; }
+}
+
+public record EnumLocale
+{
     public required string DisplayName { get; init; }
 
     public string? Description { get; init; }

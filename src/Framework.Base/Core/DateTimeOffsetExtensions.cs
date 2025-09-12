@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Framework.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -9,6 +10,12 @@ namespace System;
 [PublicAPI]
 public static class DateTimeOffsetExtensions
 {
+    /// <summary>
+    /// Converts the specified <see cref="DateTimeOffset"/> to the given <see cref="TimeZoneInfo"/>.
+    /// </summary>
+    /// <param name="dateTimeOffset">The date and time to convert.</param>
+    /// <param name="timezone">The target time zone.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> representing the same moment in the specified time zone.</returns>
     [SystemPure]
     [JetBrainsPure]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
