@@ -25,7 +25,7 @@ public sealed class LocalesValueConverter()
 }
 
 [PublicAPI]
-public sealed class LocaleValueComparer()
+public sealed class LocalesValueComparer()
     : ValueComparer<Locales?>(
         equalsExpression: (t1, t2) => _IsEqual(t1, t2),
         hashCodeExpression: t => t == null ? 0 : t.GetHashCode(),
