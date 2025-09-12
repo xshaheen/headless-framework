@@ -13,6 +13,12 @@ public interface IRequestContext
     /// <summary>Get tenant information.</summary>
     ICurrentTenant Tenant { get; }
 
+    /// <summary>Get locale information.</summary>
+    ICurrentLocale Locale { get; }
+
+    /// <summary>Get time zone information.</summary>
+    ICurrentTimeZone TimeZone { get; }
+
     /// <summary>Get web client information.</summary>
     IWebClientInfoProvider WebClient { get; }
 
@@ -39,6 +45,8 @@ public sealed class HttpRequestContext(
     IHttpContextAccessor accessor,
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,
+    ICurrentLocale currentLocale,
+    ICurrentTimeZone currentTimeZone,
     IWebClientInfoProvider webClientInfoProvider,
     IClock clock
 ) : IRequestContext
@@ -49,6 +57,10 @@ public sealed class HttpRequestContext(
     public ICurrentUser User => currentUser;
 
     public ICurrentTenant Tenant => currentTenant;
+
+    public ICurrentLocale Locale => currentLocale;
+
+    public ICurrentTimeZone TimeZone => currentTimeZone;
 
     public IWebClientInfoProvider WebClient => webClientInfoProvider;
 

@@ -74,6 +74,7 @@ public static class ApiRegistration
 
         builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
         builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
+        builder.Services.TryAddSingleton<ICurrentTimeZone, LocalCurrentTimeZone>();
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         builder.Services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
         builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
