@@ -11,6 +11,11 @@ public static class GeneralMessageDescriber
         return new(code: "g:concurrency_failure", description: Messages.g_concurrency_failure);
     }
 
+    public static ErrorDescriptor DuplicatedRequest()
+    {
+        return new(code: "g:duplicated_request", description: Messages.g_duplicated_request);
+    }
+
     public static ErrorDescriptor UnknownError()
     {
         return new(code: "g:unknown_error", description: Messages.g_unknown_error);

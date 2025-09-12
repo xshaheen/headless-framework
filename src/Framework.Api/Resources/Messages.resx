@@ -174,4 +174,7 @@
   <data name="user:already_unlocked" xml:space="preserve">
     <value>User is not locked out.</value>
   </data>
+  <data name="g:duplicated_request" xml:space="preserve">
+    <value>Duplicated request detected.</value>
+  </data>
 </root>
