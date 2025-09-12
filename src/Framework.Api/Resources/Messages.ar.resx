@@ -169,4 +169,7 @@
   <data name="user:email_already_linked_to_other_user" xml:space="preserve">
     <value>البريد الإلكتروني {0} مرتبط بالفعل بمستخدم آخر.</value>
   </data>
+  <data name="g:duplicated_request" xml:space="preserve">
+    <value>طلب مكرر.</value>
+  </data>
 </root>

@@ -17,9 +17,9 @@ public interface IProblemDetailsCreator
 
     ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors);
 
-    ProblemDetails Conflict(IEnumerable<ErrorDescriptor> errors);
+    ProblemDetails Conflict(params IEnumerable<ErrorDescriptor> errors);
 
-    ProblemDetails Forbidden(IEnumerable<ErrorDescriptor> errors);
+    ProblemDetails Forbidden(params IEnumerable<ErrorDescriptor> errors);
 }
 
 public sealed class ProblemDetailsCreator : IProblemDetailsCreator
@@ -67,7 +67,7 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails Conflict(IEnumerable<ErrorDescriptor> errors)
+    public ProblemDetails Conflict(params IEnumerable<ErrorDescriptor> errors)
     {
         return new ProblemDetails
         {
@@ -78,7 +78,7 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails Forbidden(IEnumerable<ErrorDescriptor> errors)
+    public ProblemDetails Forbidden(params IEnumerable<ErrorDescriptor> errors)
     {
         return new ProblemDetails
         {

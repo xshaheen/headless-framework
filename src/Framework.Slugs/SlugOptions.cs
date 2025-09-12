@@ -21,7 +21,9 @@ public sealed class SlugOptions
 
     public bool CanEndWithSeparator { get; set; }
 
-    public List<UnicodeRange> AllowedRanges { get; } =
+#pragma warning disable CA2227 // Collection properties should be initialized to avoid null reference exceptions.
+    public List<UnicodeRange> AllowedRanges { get; set; } =
+#pragma warning restore CA2227
         [
             UnicodeRange.Create('A', 'Z'),
             UnicodeRange.Create('a', 'z'),

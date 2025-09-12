@@ -7,6 +7,28 @@ namespace Framework.Api.Middlewares;
 
 public static class AddMiddlewareExtensions
 {
+    /// <summary>Adds the idempotency middleware.</summary>
+    public static IServiceCollection AddIdempotencyMiddleware(
+        this IServiceCollection services,
+        Action<IdempotencyMiddlewareOptions>? setupAction
+    )
+    {
+        services.Configure<IdempotencyMiddlewareOptions, IdempotencyMiddlewareOptionsValidator>(setupAction);
+
+        return services.AddSingleton<IdempotencyMiddleware>();
+    }
+
+    /// <summary>Adds the idempotency middleware.</summary>
+    public static IServiceCollection AddIdempotencyMiddleware(
+        this IServiceCollection services,
+        Action<IdempotencyMiddlewareOptions, IServiceProvider>? setupAction
+    )
+    {
+        services.Configure<IdempotencyMiddlewareOptions, IdempotencyMiddlewareOptionsValidator>(setupAction);
+
+        return services.AddSingleton<IdempotencyMiddleware>();
+    }
+
     /// <summary>Adds the server timing middleware.</summary>
     public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)
     {
