@@ -46,23 +46,6 @@ public static class TaskExtensions
 
     #endregion
 
-    #region Safe Delay
-
-    public static async Task SafeDelay(
-        this TimeProvider timeProvider,
-        TimeSpan delay,
-        CancellationToken cancellationToken
-    )
-    {
-        try
-        {
-            await timeProvider.Delay(delay, cancellationToken);
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    #endregion
-
     #region AggregateException
 
     /// <summary>
@@ -83,7 +66,7 @@ public static class TaskExtensions
                         : task,
                 cancellationToken: CancellationToken.None,
                 continuationOptions: TaskContinuationOptions.NotOnCanceled
-                | TaskContinuationOptions.ExecuteSynchronously,
+                    | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler: TaskScheduler.Default
             )
             .Unwrap();
@@ -107,7 +90,7 @@ public static class TaskExtensions
                         : task,
                 cancellationToken: CancellationToken.None,
                 continuationOptions: TaskContinuationOptions.NotOnCanceled
-                | TaskContinuationOptions.ExecuteSynchronously,
+                    | TaskContinuationOptions.ExecuteSynchronously,
                 scheduler: TaskScheduler.Default
             )
             .Unwrap();
@@ -193,7 +176,9 @@ public static class TaskExtensions
     /// and uses reflection to access the <see cref="Task{TResult}.Result"/> property and boxes the result if it's
     /// a value type, which adds overhead. It should only be used when using generics is not possible.
     /// </remarks>
-    [RequiresUnreferencedCode("This method uses reflection to try to access the Task<T>.Result property of the input Task instance.")]
+    [RequiresUnreferencedCode(
+        "This method uses reflection to try to access the Task<T>.Result property of the input Task instance."
+    )]
     public static object? GetResultOrDefault(this Task task)
     {
         // Check if the instance is a completed Task
@@ -204,7 +189,7 @@ public static class TaskExtensions
 
         // We need an explicit check to ensure the input task is not the cached
         // Task.CompletedTask instance, because that can internally be stored as
-        // a Task<T> for some given T (eg. on .NET 6 it's VoidTaskResult), which
+        // a Task<T> for some given T (e.g. on .NET 6 it's VoidTaskResult), which
         // would cause the following code to return that result instead of null.
         if (task == Task.CompletedTask)
         {

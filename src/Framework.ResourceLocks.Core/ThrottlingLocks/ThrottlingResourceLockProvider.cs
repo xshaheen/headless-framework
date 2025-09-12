@@ -87,12 +87,12 @@ public sealed class ThrottlingResourceLockProvider(
                 if (sleepUntil > _Now())
                 {
                     logger.LogThrottlingSleepUntil(resource, sleepUntil - _Now());
-                    await timeProvider.SafeDelay(sleepUntil - _Now(), cts.Token).AnyContext();
+                    await timeProvider.DelayUntilElapsedOrCancel(sleepUntil - _Now(), cts.Token).AnyContext();
                 }
                 else
                 {
                     logger.LogThrottlingDefaultSleep(resource);
-                    await timeProvider.SafeDelay(50.Milliseconds(), cts.Token).AnyContext();
+                    await timeProvider.DelayUntilElapsedOrCancel(50.Milliseconds(), cts.Token).AnyContext();
                 }
             }
             catch (OperationCanceledException)
@@ -109,7 +109,7 @@ public sealed class ThrottlingResourceLockProvider(
                     break;
                 }
 
-                await timeProvider.SafeDelay(50.Milliseconds(), cts.Token).AnyContext();
+                await timeProvider.DelayUntilElapsedOrCancel(50.Milliseconds(), cts.Token).AnyContext();
             }
         } while (!cts.IsCancellationRequested);
 

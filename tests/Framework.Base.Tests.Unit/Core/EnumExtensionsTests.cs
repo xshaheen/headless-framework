@@ -114,19 +114,25 @@ public sealed class EnumExtensionsTests
         const PaymentType value = PaymentType.Cash;
 
         // when
-        var locales = value.GetLocale().ToList();
+        var locales = value.GetAllLocales().Locales;
 
         // then
         locales.Should().HaveCount(2);
         locales
             .Should()
             .ContainSingle(l =>
-                l.Locale == "en" && l.DisplayName == "Cash" && l.Description == "Payment made by cash" && l.Value == 1
+                l.Key == "en"
+                && l.Locale.DisplayName == "Cash"
+                && l.Locale.Description == "Payment made by cash"
+                && l.Locale.Value == 1
             );
         locales
             .Should()
             .ContainSingle(l =>
-                l.Locale == "ar" && l.DisplayName == "نقدا" && l.Description == "الدفع نقدا" && l.Value == 1
+                l.Key == "ar"
+                && l.Locale.DisplayName == "نقدا"
+                && l.Locale.Description == "الدفع نقدا"
+                && l.Locale.Value == 1
             );
     }
 
@@ -137,7 +143,7 @@ public sealed class EnumExtensionsTests
         const PaymentType value = PaymentType.Unknown;
 
         // when
-        var locales = value.GetLocale();
+        var locales = value.GetAllLocales().Locales;
 
         // then
         locales.Should().BeEmpty();

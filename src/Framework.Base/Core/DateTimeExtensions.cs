@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System;
@@ -7,6 +9,24 @@ namespace System;
 [PublicAPI]
 public static class DateTimeExtensions
 {
+    /// <summary>
+    /// Converts the specified <see cref="DateTime"/> to a <see cref="DateTimeOffset"/> in the given <see cref="TimeZoneInfo"/>,
+    /// considering the date and time as unspecified and applying the correct offset (including DST if applicable).
+    /// </summary>
+    /// <param name="dateTime">The <see cref="DateTime"/> to convert.</param>
+    /// <param name="timezone">The target <see cref="TimeZoneInfo"/>.</param>
+    /// <returns>A <see cref="DateTimeOffset"/> representing the same date and time in the specified timezone.</returns>
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTimeOffset AsTimezone(this DateTime dateTime, TimeZoneInfo timezone)
+    {
+        Argument.IsNotNull(timezone);
+        var unspecifiedDateTime = DateTime.SpecifyKind(dateTime, DateTimeKind.Unspecified);
+        var offset = timezone.GetUtcOffset(unspecifiedDateTime); // Use GetUtcOffset to account for DST if applicable
+
+        return new DateTimeOffset(unspecifiedDateTime, offset);
+    }
+
     [SystemPure]
     [JetBrainsPure]
     public static DateTime ClearTime(this DateTime dateTime)
