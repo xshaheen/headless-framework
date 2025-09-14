@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
+[PublicAPI]
 public static class PhoneNumberConfiguration
 {
     public static void HasComplexPhoneNumber<TEntity>(

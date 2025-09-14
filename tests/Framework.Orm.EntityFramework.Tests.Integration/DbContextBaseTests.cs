@@ -1,82 +1,99 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Framework.Abstractions;
 using Framework.Domains;
+using Framework.Orm.EntityFramework;
 using Framework.Orm.EntityFramework.Contexts;
 using Framework.Primitives;
 using Framework.Testing.Helpers;
+using JetBrains.Annotations;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Tests;
 
-public sealed class DbContextBaseTests : IDisposable
+[MustDisposeResource]
+public sealed class HeadlessDbContextTests : IDisposable
 {
     private readonly UserId _userId;
     private readonly DateTimeOffset _now;
 
-    private readonly TestDb _db;
     private readonly SqliteConnection _connection;
     private readonly TestClock _clock = new();
     private readonly TestCurrentTenant _currentTenant = new();
     private readonly TestCurrentUser _currentUser = new();
     private readonly SequentialAsStringGuidGenerator _guidGenerator = new();
+    private readonly ServiceProvider _serviceProvider;
 
-    public DbContextBaseTests()
+    public HeadlessDbContextTests()
     {
-        _userId = new UserId(Guid.NewGuid().ToString());
-        _currentUser.UserId = _userId;
-
-        _now = new DateTimeOffset(2025, 1, 2, 12, 0, 0, TimeSpan.Zero);
-        _clock.TimeProvider = new FakeTimeProvider(_now);
-
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        var dbContextOptions = new DbContextOptionsBuilder<TestDb>().UseSqlite(_connection).Options;
-        _db = new TestDb(_currentUser, _currentTenant, _guidGenerator, _clock, dbContextOptions);
-        _db.Database.EnsureCreated();
+        var services = new ServiceCollection();
+
+        services.AddSingleton<IClock>(_clock);
+        services.AddSingleton<ICurrentTenant>(_currentTenant);
+        services.AddSingleton<ICurrentUser>(_currentUser);
+        services.AddSingleton<IGuidGenerator>(_guidGenerator);
+        services.AddHeadlessDbContext<TestDb>(options => options.UseSqlite(_connection));
+
+        _serviceProvider = services.BuildServiceProvider();
+        _userId = new UserId(Guid.NewGuid().ToString());
+        _currentUser.UserId = _userId;
+        _now = new DateTimeOffset(2025, 1, 2, 12, 0, 0, TimeSpan.Zero);
+        _clock.TimeProvider = new FakeTimeProvider(_now);
     }
 
     public void Dispose()
     {
         _connection.Dispose();
-        _db.Dispose();
+        _serviceProvider.Dispose();
     }
 
     [Fact]
     public async Task save_changes_without_emitters_should_not_publish_messages()
     {
         // given
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
+
         var entity = new BasicEntity { Name = "no-op" };
-        _db.Basics.Add(entity);
+        db.Basics.Add(entity);
 
         // when
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         // then
-        var basicCount = await _db.Basics.CountAsync();
+        var basicCount = await db.Basics.CountAsync();
         basicCount.Should().Be(1);
-        _db.EmittedLocalMessages.Should().BeEmpty();
-        _db.EmittedDistributedMessages.Should().BeEmpty();
+        db.EmittedLocalMessages.Should().BeEmpty();
+        db.EmittedDistributedMessages.Should().BeEmpty();
     }
 
     // Add
 
     [Fact]
-    public void save_changes_add_should_set_guid_id_create_audit_and_concurrency_stamp_and_emit_local_messages()
+    public async Task save_changes_add_should_set_guid_id_create_audit_and_concurrency_stamp_and_emit_local_messages()
     {
         // given
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
+
         var entity = new TestEntity { Name = "created", TenantId = "T1" };
 
-        _db.Tests.Add(entity);
+        db.Tests.Add(entity);
 
         // when
-        _db.SaveChanges();
+        await db.SaveChangesAsync();
 
         // then
         entity.Id.Should().NotBe(Guid.Empty);
@@ -93,8 +110,8 @@ public sealed class DbContextBaseTests : IDisposable
         entity.SuspendedById.Should().BeNull();
 
         // Local messages: Created + Changed
-        _db.EmittedLocalMessages.Should().ContainSingle();
-        var local = _db.EmittedLocalMessages.Single();
+        db.EmittedLocalMessages.Should().ContainSingle();
+        var local = db.EmittedLocalMessages.Single();
         local.Emitter.Should().Be(entity);
         local.Messages.Should().HaveCount(2);
         var createdMessage = local.Messages.OfType<EntityCreatedEventData<TestEntity>>().Single();
@@ -106,18 +123,20 @@ public sealed class DbContextBaseTests : IDisposable
     // Update
 
     [Fact]
-    public void save_changes_update_should_set_update_audit_and_update_concurrency_stamp_and_emit_updated_message()
+    public async Task save_changes_update_should_set_update_audit_and_update_concurrency_stamp_and_emit_updated_message()
     {
         // given
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
 
         var entity = new TestEntity { Name = "initial", TenantId = "T1" };
-        _db.Tests.Add(entity);
-        _db.SaveChanges();
+        db.Tests.Add(entity);
+        await db.SaveChangesAsync();
         var oldStamp = entity.ConcurrencyStamp;
 
         // when
         entity.Name = "updated";
-        _db.SaveChanges();
+        await db.SaveChangesAsync();
 
         // then
         entity.DateUpdated.Should().Be(_now);
@@ -126,8 +145,8 @@ public sealed class DbContextBaseTests : IDisposable
         entity.ConcurrencyStamp.Should().NotBe(oldStamp);
 
         // Local messages: Updated + Changed
-        _db.EmittedLocalMessages.Should().NotBeEmpty();
-        var last = _db.EmittedLocalMessages[^1];
+        db.EmittedLocalMessages.Should().NotBeEmpty();
+        var last = db.EmittedLocalMessages[^1];
         last.Messages.Should().HaveCount(2);
         var updatedMessage = last.Messages.OfType<EntityUpdatedEventData<TestEntity>>().Single();
         updatedMessage.Entity.Should().Be(entity);
@@ -138,41 +157,47 @@ public sealed class DbContextBaseTests : IDisposable
     // Delete
 
     [Fact]
-    public void save_changes_soft_delete_should_set_delete_audit_and_emit_deleted_message()
+    public async Task save_changes_soft_delete_should_set_delete_audit_and_emit_deleted_message()
     {
         // given
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
+
         var entity = new TestEntity { Name = "to-delete", TenantId = "T1" };
-        _db.Tests.Add(entity);
-        _db.SaveChanges();
+        db.Tests.Add(entity);
+        await db.SaveChangesAsync();
 
         // when
         entity.MarkDeleted();
-        _db.Update(entity);
-        _db.SaveChanges();
+        db.Update(entity);
+        await db.SaveChangesAsync();
 
         // then
         entity.IsDeleted.Should().BeTrue();
         entity.DateDeleted.Should().Be(_now);
         entity.DeletedById.Should().Be(_userId);
 
-        var evt = _db.EmittedLocalMessages[^1];
+        var evt = db.EmittedLocalMessages[^1];
         evt.Messages.Should().ContainSingle(m => m is EntityDeletedEventData<TestEntity>);
     }
 
     // Suspend
 
     [Fact]
-    public void save_changes_suspend_should_set_suspend_audit()
+    public async Task save_changes_suspend_should_set_suspend_audit()
     {
         // given
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
+
         var entity = new TestEntity { Name = "to-suspend", TenantId = "T1" };
-        _db.Tests.Add(entity);
-        _db.SaveChanges();
+        db.Tests.Add(entity);
+        await db.SaveChangesAsync();
 
         // when
         entity.MarkSuspended();
-        _db.Update(entity);
-        _db.SaveChanges();
+        db.Update(entity);
+        await db.SaveChangesAsync();
 
         // then
         entity.IsSuspended.Should().BeTrue();
@@ -183,27 +208,30 @@ public sealed class DbContextBaseTests : IDisposable
     // Publish messages
 
     [Fact]
-    public void distributed_and_local_messages_should_publish_within_existing_transaction()
+    public async Task distributed_and_local_messages_should_publish_within_existing_transaction()
     {
         // given
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
+
         var entity = new TestEntity { Name = "with-msgs", TenantId = "T1" };
         entity.AddMessage(new TestDistributedMessage("hello"));
-        _db.Tests.Add(entity);
+        db.Tests.Add(entity);
 
-        using var tx = _db.Database.BeginTransaction();
+        await using var tx = await db.Database.BeginTransactionAsync();
 
         // when
-        _db.SaveChanges();
+        await db.SaveChangesAsync();
 
         // then
-        _db.EmittedLocalMessages.Should().NotBeEmpty();
-        _db.EmittedDistributedMessages.Should().ContainSingle();
-        var dist = _db.EmittedDistributedMessages.Single();
+        db.EmittedLocalMessages.Should().NotBeEmpty();
+        db.EmittedDistributedMessages.Should().ContainSingle();
+        var dist = db.EmittedDistributedMessages.Single();
         dist.Emitter.Should().Be(entity);
         dist.Messages.Should().ContainSingle();
         dist.Messages.Single().Should().BeOfType<TestDistributedMessage>();
 
-        tx.Commit();
+        await tx.CommitAsync();
     }
 
     // ExecuteTransactionAsync
@@ -212,90 +240,101 @@ public sealed class DbContextBaseTests : IDisposable
     public async Task execute_transaction_async_should_commit_or_rollback_by_return_value()
     {
         // commit path
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
+
         var committed = false;
 
-        await _db.ExecuteTransactionAsync(async () =>
+        await db.ExecuteTransactionAsync(async () =>
         {
-            await _db.Basics.AddAsync(new BasicEntity { Name = "in-tx" });
+            await db.Basics.AddAsync(new BasicEntity { Name = "in-tx" });
             committed = true;
 
             return true;
         });
 
-        (await _db.Basics.CountAsync()).Should().Be(1);
+        (await db.Basics.CountAsync()).Should().Be(1);
         committed.Should().BeTrue();
 
         // rollback path
-        await _db.ExecuteTransactionAsync(async () =>
+        await db.ExecuteTransactionAsync(async () =>
         {
-            await _db.Basics.AddAsync(new BasicEntity { Name = "rolled" });
+            await db.Basics.AddAsync(new BasicEntity { Name = "rolled" });
 
             return false;
         });
 
-        (await _db.Basics.CountAsync()).Should().Be(1);
+        (await db.Basics.CountAsync()).Should().Be(1);
     }
 
     // Global filters
 
     [Fact]
-    public void global_filters_should_filter_by_tenant_delete_and_suspend_flags_and_can_be_disabled()
+    public async Task global_filters_should_filter_by_tenant_delete_and_suspend_flags_and_can_be_disabled()
     {
         // given
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
+
         var a = new TestEntity { Name = "a", TenantId = "TENANT-1" };
         var b = new TestEntity { Name = "b", TenantId = "TENANT-2" };
         var c = new TestEntity { Name = "c", TenantId = "TENANT-1" };
         var d = new TestEntity { Name = "d", TenantId = "TENANT-1" };
-        _db.Tests.AddRange(a, b, c, d);
-        _db.SaveChanges();
+        await db.Tests.AddRangeAsync(a, b, c, d);
+        await db.SaveChangesAsync();
 
         // soft delete c
         c.MarkDeleted();
         // suspend d
         d.MarkSuspended();
-        _db.UpdateRange(c, d);
-        _db.SaveChanges();
+        db.UpdateRange(c, d);
+        await db.SaveChangesAsync();
 
         // when/then: default filters on
-        _currentTenant.Change("TENANT-1");
-        var items = _db.Tests.Select(x => x.Name).ToArray();
-        items.Should().BeEquivalentTo("a");
+        using (_currentTenant.Change("TENANT-1"))
+        {
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
+            items.Should().BeEquivalentTo("a");
+        }
 
-        _currentTenant.Change(null);
-        items = _db.Tests.Select(x => x.Name).ToArray();
-        items.Should().BeEquivalentTo("a", "b");
+        using (_currentTenant.Change(null))
+        {
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
+            items.Should().BeEquivalentTo("a", "b");
+        }
 
         // disable delete filter -> suspended still filtered
-        using (_db.FilterStatus.ChangeDeleteFilterEnabled(false))
+        using (db.FilterStatus.ChangeDeleteFilterEnabled(false))
         {
-            items = _db.Tests.Select(x => x.Name).ToArray();
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a", "c");
         }
 
         // disable suspended filter -> deleted still filtered
-        using (_db.FilterStatus.ChangeSuspendedFilterEnabled(false))
+        using (db.FilterStatus.ChangeSuspendedFilterEnabled(false))
         {
-            items = _db.Tests.Select(x => x.Name).ToArray();
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a");
         }
 
         // disable tenant filter -> still filters by delete/suspend
-        using (_db.FilterStatus.ChangeTenantFilterEnabled(false))
+        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
         {
-            items = _db.Tests.Select(x => x.Name).ToArray();
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a", "b");
         }
 
         // disable all -> all visible
-        using (_db.FilterStatus.ChangeTenantFilterEnabled(false))
-        using (_db.FilterStatus.ChangeDeleteFilterEnabled(false))
-        using (_db.FilterStatus.ChangeSuspendedFilterEnabled(false))
+        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
+        using (db.FilterStatus.ChangeDeleteFilterEnabled(false))
+        using (db.FilterStatus.ChangeSuspendedFilterEnabled(false))
         {
-            items = _db.Tests.Select(x => x.Name).ToArray();
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a", "b", "c", "d");
         }
     }
 
+    [MustDisposeResource]
     private sealed class TestDb(
         ICurrentUser currentUser,
         ICurrentTenant currentTenant,

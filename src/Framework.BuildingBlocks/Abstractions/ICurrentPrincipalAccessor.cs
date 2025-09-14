@@ -9,6 +9,7 @@ public interface ICurrentPrincipalAccessor
 {
     ClaimsPrincipal Principal { get; }
 
+    [MustDisposeResource]
     IDisposable Change(ClaimsPrincipal principal);
 }
 
@@ -20,6 +21,7 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 
     protected abstract ClaimsPrincipal GetClaimsPrincipal();
 
+    [MustDisposeResource]
     public virtual IDisposable Change(ClaimsPrincipal principal)
     {
         var parent = Principal;

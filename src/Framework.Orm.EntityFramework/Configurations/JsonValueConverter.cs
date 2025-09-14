@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Configurations;
 
+[PublicAPI]
 public sealed class JsonValueConverter<TPropertyType>()
     : ValueConverter<TPropertyType, string>(d => _SerializeObject(d), s => _DeserializeObject(s))
 {

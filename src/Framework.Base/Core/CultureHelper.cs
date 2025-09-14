@@ -9,6 +9,7 @@ public static class CultureHelper
 {
     public static bool IsRtl => CultureInfo.CurrentUICulture.TextInfo.IsRightToLeft;
 
+    [MustDisposeResource]
     public static IDisposable Use(string culture, string? uiCulture = null)
     {
         Argument.IsNotNull(culture);
@@ -16,6 +17,7 @@ public static class CultureHelper
         return Use(culture: new CultureInfo(culture), uiCulture: uiCulture is null ? null : new CultureInfo(uiCulture));
     }
 
+    [MustDisposeResource]
     public static IDisposable Use(CultureInfo culture, CultureInfo? uiCulture = null)
     {
         Argument.IsNotNull(culture);
