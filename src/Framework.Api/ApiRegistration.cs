@@ -193,6 +193,7 @@ public static class ApiRegistration
         });
     }
 
+    [MustDisposeResource]
     public static IDisposable AddApiBadRequestDiagnosticListeners(this WebApplication app)
     {
         var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
@@ -202,6 +203,7 @@ public static class ApiRegistration
         return badRequestSubscription;
     }
 
+    [MustDisposeResource]
     public static IDisposable AddMiddlewareAnalysisDiagnosticListeners(this WebApplication app)
     {
         var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
@@ -211,6 +213,7 @@ public static class ApiRegistration
         return middlewareAnalysisSubscription;
     }
 
+    [MustDisposeResource]
     public static IDisposable AddFrameworkApiDiagnosticListeners(this WebApplication app)
     {
         var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();

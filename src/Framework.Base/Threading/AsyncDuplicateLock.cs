@@ -11,6 +11,7 @@ public static class AsyncDuplicateLock
 {
     private static readonly Dictionary<string, RefCounted<SemaphoreSlim>> _SemaphoreSlims = new(StringComparer.Ordinal);
 
+    [MustDisposeResource]
     public static IDisposable Lock(string key)
     {
         _GetOrCreate(key).Wait();

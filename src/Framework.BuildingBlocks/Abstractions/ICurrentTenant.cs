@@ -13,6 +13,7 @@ public interface ICurrentTenant
 
     string? Name { get; }
 
+    [MustDisposeResource]
     IDisposable Change(string? id, string? name = null);
 }
 
@@ -37,6 +38,7 @@ public sealed class CurrentTenant(ICurrentTenantAccessor currentTenantAccessor) 
 
     public IDisposable Change(string? id, string? name = null) => _SetCurrent(id, name);
 
+    [MustDisposeResource]
     private IDisposable _SetCurrent(string? tenantId, string? name = null)
     {
         var currentScope = currentTenantAccessor.Current;

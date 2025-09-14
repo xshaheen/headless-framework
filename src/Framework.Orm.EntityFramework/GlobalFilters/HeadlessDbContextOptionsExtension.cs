@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,8 +35,28 @@ public sealed class HeadlessDbContextOptionsExtension : IDbContextOptionsExtensi
 
     public void Validate(IDbContextOptions options)
     {
-        throw new NotImplementedException();
+        // No validation needed
     }
 
-    public DbContextOptionsExtensionInfo Info { get; } = null!;
+    public DbContextOptionsExtensionInfo Info => new HeadlessOptionsExtensionInfo(this);
+
+    private sealed class HeadlessOptionsExtensionInfo(IDbContextOptionsExtension extension)
+        : DbContextOptionsExtensionInfo(extension)
+    {
+        public override bool IsDatabaseProvider => false;
+
+        public override int GetServiceProviderHashCode()
+        {
+            return 0;
+        }
+
+        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
+        {
+            return other is HeadlessOptionsExtensionInfo;
+        }
+
+        public override void PopulateDebugInfo(IDictionary<string, string> debugInfo) { }
+
+        public override string LogFragment => "HeadlessOptionsExtension";
+    }
 }

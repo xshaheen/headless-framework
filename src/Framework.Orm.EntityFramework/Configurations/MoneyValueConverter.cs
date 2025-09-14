@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Orm.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "Money"/></summary>
+[PublicAPI]
 public sealed class MoneyValueConverter : ValueConverter<Money, decimal>
 {
     public MoneyValueConverter()

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Framework.Orm.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 
@@ -16,6 +17,13 @@ public sealed class HeadlessCompiledQueryCacheKeyGenerator(
     {
         var cacheKey = inner.GenerateCacheKey(query, async);
 
-        throw new NotImplementedException();
+        if (currentDbContext.Context is HeadlessDbContext ctx)
+        {
+            return new HeadlessCompiledQueryCacheKey(cacheKey, ctx.GetCompiledQueryCacheKey());
+        }
+
+        return cacheKey;
     }
+
+    private sealed record HeadlessCompiledQueryCacheKey(object CompiledQueryCacheKey, string CurrentFilterCacheKey);
 }

@@ -39,16 +39,11 @@ public sealed class HeadlessNavigationEntry(NavigationEntry entry)
 
     public static List<object>? CalculateValueList(object? currentValue)
     {
-        if (currentValue is null)
+        return currentValue switch
         {
-            return null;
-        }
-
-        if (currentValue is IEnumerable enumerable)
-        {
-            return [.. enumerable.Cast<object>()];
-        }
-
-        return [currentValue];
+            null => null,
+            IEnumerable enumerable => [.. enumerable.Cast<object>()],
+            _ => [currentValue],
+        };
     }
 }

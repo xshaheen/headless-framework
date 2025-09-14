@@ -10,7 +10,8 @@ public sealed class ChangeableTimezoneTimeProvider(TimeZoneInfo defaultTimeZone)
 
     public override TimeZoneInfo LocalTimeZone => _currentLocalTimeZone;
 
-    public IDisposable ChangeLocalTimeZone(TimeZoneInfo newTimeZone)
+    [MustDisposeResource]
+    public IDisposable ChangeTimeZone(TimeZoneInfo newTimeZone)
     {
         var previousTimeZone = _currentLocalTimeZone;
         _currentLocalTimeZone = newTimeZone;

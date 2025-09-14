@@ -19,6 +19,7 @@ public abstract class HeadlessDbContext : DbContext
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
     private readonly DbContextEntityProcessor _entityProcessor;
     private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
+    private readonly ICurrentTenant _currentTenant;
 
     protected HeadlessDbContext(
         ICurrentUser currentUser,
@@ -29,6 +30,7 @@ public abstract class HeadlessDbContext : DbContext
     )
         : base(options)
     {
+        _currentTenant = currentTenant;
         FilterStatus = new();
         _navigationModifiedTracker = new();
         _entityProcessor = new(currentUser, guidGenerator, clock);
@@ -425,4 +427,9 @@ public abstract class HeadlessDbContext : DbContext
     }
 
     #endregion
+
+    public string GetCompiledQueryCacheKey()
+    {
+        return $"{_currentTenant?.ToString() ?? "Null"}:{FilterStatus.IsDeleteFilterEnabled}:{FilterStatus.IsSuspendedFilterEnabled}:{FilterStatus.IsTenantFilterEnabled}";
+    }
 }
