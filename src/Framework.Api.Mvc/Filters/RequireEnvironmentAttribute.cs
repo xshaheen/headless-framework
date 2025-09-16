@@ -1,4 +1,4 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Api.Abstractions;
 using Microsoft.AspNetCore.Hosting;
@@ -11,14 +11,16 @@ namespace Framework.Api.Mvc.Filters;
 
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-public sealed class DevelopmentOnlyAttribute : Attribute, IAsyncResourceFilter
+public sealed class RequireEnvironmentAttribute(string environmentName) : Attribute, IAsyncResourceFilter
 {
+    public string EnvironmentName { get; } = environmentName;
+
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
         var services = context.HttpContext.RequestServices;
         var environment = services.GetRequiredService<IWebHostEnvironment>();
 
-        if (environment.IsDevelopment())
+        if (environment.IsEnvironment(EnvironmentName))
         {
             await next();
 
