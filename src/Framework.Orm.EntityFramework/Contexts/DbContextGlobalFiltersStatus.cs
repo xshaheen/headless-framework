@@ -14,7 +14,7 @@ public sealed class DbContextGlobalFiltersStatus
 
     internal string GetCacheKey()
     {
-        return $"{(IsDeleteFilterEnabled ? 1 : 0)}{(IsSuspendedFilterEnabled ? 1 : 0)}{(IsTenantFilterEnabled ? 1 : 0)}";
+        return $"{IsDeleteFilterEnabled}:{IsSuspendedFilterEnabled}:{IsTenantFilterEnabled}";
     }
 
     [MustDisposeResource]

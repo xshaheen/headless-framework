@@ -430,6 +430,6 @@ public abstract class HeadlessDbContext : DbContext
 
     public string GetCompiledQueryCacheKey()
     {
-        return $"{_currentTenant?.ToString() ?? "Null"}:{FilterStatus.IsDeleteFilterEnabled}:{FilterStatus.IsSuspendedFilterEnabled}:{FilterStatus.IsTenantFilterEnabled}";
+        return $"{_currentTenant?.ToString() ?? "Null"}:{FilterStatus.GetCacheKey()}";
     }
 }

@@ -133,7 +133,8 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         }
 
         // If CreatedById is already set as modified, do not proceed.
-        if (entry.Property(nameof(ICreateAudit<>.CreatedById)).IsModified)
+
+        if (entry.Property(nameof(ICreateAudit<>.CreatedById)) is { IsModified: true, CurrentValue: not null })
         {
             return;
         }
@@ -176,7 +177,11 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
     {
         var propertyEntry = entry.Property(nameof(IUpdateAudit.DateUpdated));
 
-        if (entity.DateUpdated != null && propertyEntry.IsModified)
+        if (
+            entity.DateUpdated != null
+            && propertyEntry.IsModified
+            && propertyEntry.CurrentValue != propertyEntry.OriginalValue
+        )
         {
             // If the property is modified, we do not set it again.
             return;
@@ -209,17 +214,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         // If UpdatedById is already set as modified, do not proceed.
         var propertyEntry = entry.Property(nameof(IUpdateAudit<>.UpdatedById));
 
-        if (propertyEntry.IsModified)
-        {
-            return;
-        }
-
-        // If UpdatedBy navigation is present and modified, do not proceed.
-        var updatedBy = entry.Navigations.FirstOrDefault(p =>
-            string.Equals(p.Metadata.Name, nameof(IUpdateAudit<,>.UpdatedBy), StringComparison.Ordinal)
-        );
-
-        if (updatedBy?.IsModified is true)
+        if (propertyEntry.IsModified && propertyEntry.CurrentValue != propertyEntry.OriginalValue)
         {
             return;
         }
@@ -296,17 +291,8 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         }
 
         // If UpdatedById is already set as modified, do not proceed.
-        if (entry.Property(nameof(IDeleteAudit<>.DeletedById)).IsModified)
-        {
-            return;
-        }
-
-        // If UpdatedBy navigation is present and modified, do not proceed.
-        var updatedBy = entry.Navigations.FirstOrDefault(p =>
-            string.Equals(p.Metadata.Name, nameof(IDeleteAudit<,>.DeletedBy), StringComparison.Ordinal)
-        );
-
-        if (updatedBy?.IsModified is true)
+        var propertyEntry = entry.Property(nameof(IDeleteAudit<>.DeletedById));
+        if (propertyEntry.IsModified && propertyEntry.CurrentValue != propertyEntry.OriginalValue)
         {
             return;
         }
@@ -376,17 +362,9 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         }
 
         // If SuspendedById is already set as modified, do not proceed.
-        if (entry.Property(nameof(ISuspendAudit<>.SuspendedById)).IsModified)
-        {
-            return;
-        }
+        var propertyEntry = entry.Property(nameof(ISuspendAudit<>.SuspendedById));
 
-        // If SuspendedBy navigation is present and modified, do not proceed.
-        var suspendedBy = entry.Navigations.FirstOrDefault(p =>
-            string.Equals(p.Metadata.Name, nameof(ISuspendAudit<,>.SuspendedBy), StringComparison.Ordinal)
-        );
-
-        if (suspendedBy?.IsModified is true)
+        if (propertyEntry.IsModified && propertyEntry.CurrentValue != propertyEntry.OriginalValue)
         {
             return;
         }
