@@ -44,8 +44,8 @@ public static class HeadlessServiceCollectionExtensions
         services.AddDbContext<TDbContext>(
             (serviceProvider, optionsBuilder) =>
             {
-                optionsBuilder.AddHeadlessDbContextOptionsExtension();
                 optionsAction?.Invoke(serviceProvider, optionsBuilder);
+                optionsBuilder.AddHeadlessDbContextOptionsExtension();
             },
             contextLifetime,
             optionsLifetime
