@@ -62,13 +62,13 @@ public sealed class CashInCallbackQueryParameters
     [JsonPropertyName("owner")]
     public required long Owner { get; init; }
 
-    [JsonPropertyName("source_data_type")]
+    [JsonPropertyName("source_data.type")]
     public required string SourceDataType { get; init; }
 
-    [JsonPropertyName("source_data_pan")]
+    [JsonPropertyName("source_data.pan")]
     public required string SourceDataPan { get; init; }
 
-    [JsonPropertyName("source_data_sub_type")]
+    [JsonPropertyName("source_data.sub_type")]
     public required string SourceDataSubType { get; init; }
 
     [JsonPropertyName("profile_id")]
@@ -107,7 +107,7 @@ public sealed class CashInCallbackQueryParameters
     [JsonPropertyName("merchant_order_id")]
     public string? MerchantOrderId { get; init; }
 
-    [JsonPropertyName("data_message")]
+    [JsonPropertyName("data.message")]
     public string? DataMessage { get; init; }
 
     [JsonPropertyName("acq_response_code")]
