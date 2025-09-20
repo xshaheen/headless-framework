@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers.Text;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using Cysharp.Text;
@@ -833,5 +834,23 @@ public static class StringExtensions
         }
 
         return new string(newSpan, 0, index);
+    }
+
+    public static string ToBase64(this string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        return Convert.ToBase64String(bytes);
+    }
+
+    public static string ToBase64(this ReadOnlySpan<byte> value)
+    {
+        return Convert.ToBase64String(value);
+    }
+
+    public static string DecodeBase64(this string base64Value)
+    {
+        var bytes = Convert.FromBase64String(base64Value);
+
+        return Encoding.UTF8.GetString(bytes);
     }
 }

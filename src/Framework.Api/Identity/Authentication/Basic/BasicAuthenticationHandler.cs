@@ -89,7 +89,7 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
 
         try
         {
-            var decodedCredentials = Encoding.UTF8.GetString(Convert.FromBase64String(encodedCredentials));
+            var decodedCredentials = encodedCredentials.DecodeBase64();
             var separatorPosition = decodedCredentials.IndexOf(':', StringComparison.Ordinal);
 
             if (separatorPosition >= 0)

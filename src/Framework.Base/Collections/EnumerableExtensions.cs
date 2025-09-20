@@ -141,6 +141,17 @@ public static partial class EnumerableExtensions
         return source as IReadOnlyList<T> ?? new ReadOnlyCollection<T>(source.AsList());
     }
 
+    public static Dictionary<TKey, TValue> AsDictionary<TKey, TValue>(this IDictionary<TKey, TValue> dict)
+        where TKey : notnull
+    {
+        if (dict is Dictionary<TKey, TValue> dictionary)
+        {
+            return dictionary;
+        }
+
+        return dict.ToDictionary(kv => kv.Key, kv => kv.Value);
+    }
+
     /// <summary>
     /// Concatenates the members of a constructed <see cref="IEnumerable{T}"/> collection of type
     /// System.String, using the
