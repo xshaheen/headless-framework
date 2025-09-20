@@ -269,7 +269,7 @@ public static partial class EnumerableExtensions
         ArgumentNullException.ThrowIfNull(task);
 
 #pragma warning disable VSTHRD003
-        var result = await task.ConfigureAwait(false);
+        var result = await task.AnyContext();
 #pragma warning restore VSTHRD003
 
         return result.ToList();
@@ -280,7 +280,7 @@ public static partial class EnumerableExtensions
         ArgumentNullException.ThrowIfNull(task);
 
 #pragma warning disable VSTHRD003
-        var result = await task.ConfigureAwait(false);
+        var result = await task.AnyContext();
 #pragma warning restore VSTHRD003
 
         return result.ToArray();

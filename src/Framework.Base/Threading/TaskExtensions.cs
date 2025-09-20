@@ -32,7 +32,7 @@ public static class TaskExtensions
             {
 #pragma warning disable VSTHRD003 // Justification: Its intended to be used.
                 // No need to resume on the original SynchronizationContext
-                await task.ConfigureAwait(false);
+                await task.AnyContext();
 #pragma warning restore VSTHRD003
             }
             catch
@@ -101,6 +101,7 @@ public static class TaskExtensions
     #region AnyContext
 
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task)
     {
 #pragma warning disable VSTHRD003 // Justification: Its intended to be used.
@@ -109,6 +110,7 @@ public static class TaskExtensions
     }
 
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredTaskAwaitable AnyContext(this Task task)
     {
 #pragma warning disable VSTHRD003 // Justification: Its intended to be used.
@@ -117,6 +119,16 @@ public static class TaskExtensions
     }
 
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ConfiguredCancelableAsyncEnumerable<T> AnyContext<T>(this ConfiguredCancelableAsyncEnumerable<T> task)
+    {
+#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+#pragma warning restore VSTHRD003
+    }
+
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredValueTaskAwaitable<TResult> AnyContext<TResult>(this ValueTask<TResult> task)
     {
 #pragma warning disable VSTHRD003 // Justification: Its intended to be used.
@@ -125,6 +137,7 @@ public static class TaskExtensions
     }
 
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredValueTaskAwaitable AnyContext(this ValueTask task)
     {
 #pragma warning disable VSTHRD003 // Justification: Its intended to be used.
@@ -133,6 +146,7 @@ public static class TaskExtensions
     }
 
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this AwaitableDisposable<TResult> task)
         where TResult : IDisposable
     {
@@ -140,6 +154,7 @@ public static class TaskExtensions
     }
 
     [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredCancelableAsyncEnumerable<TResult> AnyContext<TResult>(this IAsyncEnumerable<TResult> task)
     {
         return task.ConfigureAwait(continueOnCapturedContext: false);

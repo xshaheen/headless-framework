@@ -49,10 +49,10 @@ public sealed class TusAzureStore
         var lockLogger = loggerFactory.CreateLogger<AzureBlobFileLock>();
         _lockProvider = new AzureBlobFileLockProvider(_containerClient, _options, lockLogger);
 
-        InitializeAsync().GetAwaiter().GetResult();
+        _InitializeAsync().GetAwaiter().GetResult();
     }
 
-    private async Task InitializeAsync()
+    private async Task _InitializeAsync()
     {
         if (_options.CreateContainerIfNotExists)
         {
@@ -74,14 +74,14 @@ public sealed class TusAzureStore
 
     public async Task<bool> FileExistAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobClient = GetBlobClient(fileId);
+        var blobClient = _GetBlobClient(fileId);
 
         return await _blobHelper.BlobExistsAsync(blobClient, cancellationToken);
     }
 
     public async Task<long?> GetUploadLengthAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await GetBlobInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         return blobInfo != null
             ? MetadataHelper.GetUploadLength(blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
@@ -90,7 +90,7 @@ public sealed class TusAzureStore
 
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await GetBlobInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         if (blobInfo == null)
             return 0;
@@ -99,15 +99,15 @@ public sealed class TusAzureStore
 
         return blobType switch
         {
-            BlobType.AppendBlob => await GetAppendBlobOffset(fileId, cancellationToken),
-            BlobType.BlockBlob => await GetBlockBlobOffset(fileId, cancellationToken),
+            BlobType.AppendBlob => await _GetAppendBlobOffset(fileId, cancellationToken),
+            BlobType.BlockBlob => await _GetBlockBlobOffset(fileId, cancellationToken),
             _ => 0,
         };
     }
 
     public async Task<long> AppendDataAsync(string fileId, Stream data, CancellationToken cancellationToken)
     {
-        var blobInfo = await GetBlobInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         if (blobInfo == null)
         {
@@ -131,13 +131,13 @@ public sealed class TusAzureStore
         {
             long bytesWritten = blobType switch
             {
-                BlobType.AppendBlob => await AppendToAppendBlob(fileId, data, cancellationToken),
-                BlobType.BlockBlob => await AppendToBlockBlob(fileId, data, cancellationToken),
+                BlobType.AppendBlob => await _AppendToAppendBlob(fileId, data, cancellationToken),
+                BlobType.BlockBlob => await _AppendToBlockBlob(fileId, data, cancellationToken),
                 _ => throw new InvalidOperationException($"Unsupported blob type: {blobType}"),
             };
 
             // Update metadata with new block count if needed
-            await UpdateBlobMetadataAfterAppend(fileId, blobType, cancellationToken);
+            await _UpdateBlobMetadataAfterAppend(fileId, blobType, cancellationToken);
 
             return bytesWritten;
         }
@@ -170,7 +170,7 @@ public sealed class TusAzureStore
         try
         {
             // Parse TUS metadata
-            var tusMetadata = ParseMetadata(metadata);
+            var tusMetadata = _ParseMetadata(metadata);
 
             // Determine blob type based on strategy
             var blobType = BlobStrategyHelper.DetermineBlobType(_options, uploadLength, tusMetadata);
@@ -183,7 +183,7 @@ public sealed class TusAzureStore
             MetadataHelper.SetBlockCount(blobMetadata, 0);
 
             // Create the actual blob based on type
-            await CreateBlobByType(fileId, blobType, blobMetadata, cancellationToken);
+            await _CreateBlobByType(fileId, blobType, blobMetadata, cancellationToken);
 
             _logger.LogInformation(
                 "Created file {FileId} with upload length {UploadLength} using {BlobType}",
@@ -204,7 +204,7 @@ public sealed class TusAzureStore
 
     public async Task<string?> GetUploadMetadataAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await GetBlobInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         if (blobInfo == null)
             return null;
@@ -213,7 +213,7 @@ public sealed class TusAzureStore
             blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
         );
 
-        return SerializeMetadata(tusMetadata);
+        return _SerializeMetadata(tusMetadata);
     }
 
     #endregion
@@ -233,7 +233,7 @@ public sealed class TusAzureStore
 
         try
         {
-            var blobClient = GetBlobClient(fileId);
+            var blobClient = _GetBlobClient(fileId);
             var blobInfo = await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
 
             if (blobInfo == null)
@@ -284,7 +284,7 @@ public sealed class TusAzureStore
 
     public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobClient = GetBlobClient(fileId);
+        var blobClient = _GetBlobClient(fileId);
         var deleted = await _blobHelper.DeleteBlobIfExistsAsync(blobClient, cancellationToken);
 
         if (deleted)
@@ -303,7 +303,7 @@ public sealed class TusAzureStore
 
     public async Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken)
     {
-        var blobClient = GetBlobClient(fileId);
+        var blobClient = _GetBlobClient(fileId);
 
         try
         {
@@ -332,7 +332,7 @@ public sealed class TusAzureStore
 
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await GetBlobInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         return blobInfo != null
             ? MetadataHelper.GetExpirationDate(blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
@@ -360,7 +360,7 @@ public sealed class TusAzureStore
 
                 if (expirationDate.HasValue && expirationDate.Value <= now)
                 {
-                    var fileId = ExtractFileIdFromBlobName(blobItem.Name);
+                    var fileId = _ExtractFileIdFromBlobName(blobItem.Name);
 
                     if (!string.IsNullOrEmpty(fileId))
                     {
@@ -408,7 +408,7 @@ public sealed class TusAzureStore
 
     public async Task<ITusFile?> GetFileAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobClient = GetBlobClient(fileId);
+        var blobClient = _GetBlobClient(fileId);
         var blobInfo = await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
 
         if (blobInfo == null)
@@ -441,14 +441,14 @@ public sealed class TusAzureStore
 
     #region Private Helper Methods
 
-    private async Task CreateBlobByType(
+    private async Task _CreateBlobByType(
         string fileId,
         BlobType blobType,
         Dictionary<string, string> metadata,
         CancellationToken cancellationToken
     )
     {
-        var blobClient = GetBlobClient(fileId);
+        var blobClient = _GetBlobClient(fileId);
 
         switch (blobType)
         {
@@ -473,7 +473,7 @@ public sealed class TusAzureStore
         }
     }
 
-    private async Task<long> AppendToAppendBlob(string fileId, Stream data, CancellationToken cancellationToken)
+    private async Task<long> _AppendToAppendBlob(string fileId, Stream data, CancellationToken cancellationToken)
     {
         var appendBlobClient = _containerClient.GetAppendBlobClient(
             _blobHelper.GetBlobName(fileId, _options.BlobPrefix)
@@ -482,7 +482,7 @@ public sealed class TusAzureStore
         return await _appendBlobHandler.AppendDataAsync(appendBlobClient, data, cancellationToken);
     }
 
-    private async Task<long> AppendToBlockBlob(string fileId, Stream data, CancellationToken cancellationToken)
+    private async Task<long> _AppendToBlockBlob(string fileId, Stream data, CancellationToken cancellationToken)
     {
         var blockBlobClient = _containerClient.GetBlockBlobClient(_blobHelper.GetBlobName(fileId, _options.BlobPrefix));
 
@@ -492,7 +492,7 @@ public sealed class TusAzureStore
         return await _blockBlobHandler.AppendDataAsync(blockBlobClient, data, blobInfo, cancellationToken);
     }
 
-    private async Task<long> GetAppendBlobOffset(string fileId, CancellationToken cancellationToken)
+    private async Task<long> _GetAppendBlobOffset(string fileId, CancellationToken cancellationToken)
     {
         var appendBlobClient = _containerClient.GetAppendBlobClient(
             _blobHelper.GetBlobName(fileId, _options.BlobPrefix)
@@ -501,14 +501,14 @@ public sealed class TusAzureStore
         return await _appendBlobHandler.GetUploadOffsetAsync(appendBlobClient, cancellationToken);
     }
 
-    private async Task<long> GetBlockBlobOffset(string fileId, CancellationToken cancellationToken)
+    private async Task<long> _GetBlockBlobOffset(string fileId, CancellationToken cancellationToken)
     {
         var blockBlobClient = _containerClient.GetBlockBlobClient(_blobHelper.GetBlobName(fileId, _options.BlobPrefix));
 
         return await _blockBlobHandler.GetUploadOffsetAsync(blockBlobClient, cancellationToken);
     }
 
-    private async Task UpdateBlobMetadataAfterAppend(
+    private async Task _UpdateBlobMetadataAfterAppend(
         string fileId,
         BlobType blobType,
         CancellationToken cancellationToken
@@ -517,7 +517,7 @@ public sealed class TusAzureStore
         if (blobType == BlobType.BlockBlob)
         {
             // Update block count in metadata for block blobs
-            var blobClient = GetBlobClient(fileId);
+            var blobClient = _GetBlobClient(fileId);
             var blobInfo = await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
 
             if (blobInfo != null)
@@ -531,28 +531,28 @@ public sealed class TusAzureStore
         }
     }
 
-    private BlobClient GetBlobClient(string fileId)
+    private BlobClient _GetBlobClient(string fileId)
     {
         var blobName = _blobHelper.GetBlobName(fileId, _options.BlobPrefix);
 
         return _containerClient.GetBlobClient(blobName);
     }
 
-    private async Task<AzureBlobInfo?> GetBlobInfoAsync(string fileId, CancellationToken cancellationToken)
+    private async Task<AzureBlobInfo?> _GetBlobInfoAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobClient = GetBlobClient(fileId);
+        var blobClient = _GetBlobClient(fileId);
 
         return await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
     }
 
-    private string ExtractFileIdFromBlobName(string blobName)
+    private string _ExtractFileIdFromBlobName(string blobName)
     {
         var prefix = _options.BlobPrefix.TrimEnd('/') + "/";
 
         return blobName.StartsWith(prefix) ? blobName[prefix.Length..] : string.Empty;
     }
 
-    private Dictionary<string, string> ParseMetadata(string? metadata)
+    private Dictionary<string, string> _ParseMetadata(string? metadata)
     {
         var result = new Dictionary<string, string>();
 
@@ -587,7 +587,7 @@ public sealed class TusAzureStore
         return result;
     }
 
-    private string SerializeMetadata(Dictionary<string, string> metadata)
+    private string _SerializeMetadata(Dictionary<string, string> metadata)
     {
         if (!metadata.Any())
             return string.Empty;

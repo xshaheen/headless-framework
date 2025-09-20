@@ -23,7 +23,7 @@ public sealed class ServerTimingMiddleware : IMiddleware
 
         if (!context.Response.SupportsTrailers())
         {
-            await next(context).ConfigureAwait(false);
+            await next(context).AnyContext();
 
             return;
         }
@@ -31,7 +31,7 @@ public sealed class ServerTimingMiddleware : IMiddleware
         context.Response.DeclareTrailer(_ServerTimingHttpHeader);
 
         var timestamp = Stopwatch.GetTimestamp();
-        await next(context).ConfigureAwait(false);
+        await next(context).AnyContext();
         var elapsedTime = Stopwatch.GetElapsedTime(timestamp);
 
         FormattableString serverTiming = $"app;dur={(long)elapsedTime.TotalMicroseconds}.0";

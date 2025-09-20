@@ -17,7 +17,7 @@ public static partial class EnumerableExtensions
         foreach (var item in source)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await action(item).ConfigureAwait(false);
+            await action(item).AnyContext();
         }
     }
 
@@ -33,7 +33,7 @@ public static partial class EnumerableExtensions
         foreach (var item in source)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await action(item, cancellationToken).ConfigureAwait(false);
+            await action(item, cancellationToken).AnyContext();
         }
     }
 
@@ -51,7 +51,7 @@ public static partial class EnumerableExtensions
         foreach (var item in source)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await action(item, index).ConfigureAwait(false);
+            await action(item, index).AnyContext();
             index++;
         }
     }
@@ -70,7 +70,7 @@ public static partial class EnumerableExtensions
         foreach (var item in source)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await action(item, index, cancellationToken).ConfigureAwait(false);
+            await action(item, index, cancellationToken).AnyContext();
             index++;
         }
     }

@@ -31,14 +31,14 @@ public static class BlobStrategyHelper
 
             case AzureBlobStrategy.Auto:
                 // Intelligent decision based on file characteristics
-                return DetermineOptimalBlobType(config, uploadLength, metadata);
+                return _DetermineOptimalBlobType(config, uploadLength, metadata);
 
             default:
                 return BlobType.BlockBlob;
         }
     }
 
-    private static BlobType DetermineOptimalBlobType(
+    private static BlobType _DetermineOptimalBlobType(
         TusAzureStoreOptions config,
         long? uploadLength,
         Dictionary<string, string> metadata
