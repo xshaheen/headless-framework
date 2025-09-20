@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.IO.Pipelines;
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Specialized;
 using Framework.Tus.Helpers;
@@ -84,7 +85,9 @@ public sealed class TusAzureStore
         var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         return blobInfo != null
-            ? MetadataHelper.GetUploadLength(blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
+            ? MetadataHelper.GetUploadLength(
+                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
+            )
             : null;
     }
 
@@ -93,9 +96,13 @@ public sealed class TusAzureStore
         var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         if (blobInfo == null)
+        {
             return 0;
+        }
 
-        var blobType = MetadataHelper.GetBlobType(blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
+        var blobType = MetadataHelper.GetBlobType(
+            blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
+        );
 
         return blobType switch
         {
@@ -114,7 +121,9 @@ public sealed class TusAzureStore
             throw new InvalidOperationException($"File {fileId} does not exist");
         }
 
-        var blobType = MetadataHelper.GetBlobType(blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
+        var blobType = MetadataHelper.GetBlobType(
+            blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
+        );
 
         // Get lock for this file
         var fileLock = await _lockProvider.AquireLock(fileId);
@@ -207,10 +216,12 @@ public sealed class TusAzureStore
         var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         if (blobInfo == null)
+        {
             return null;
+        }
 
         var tusMetadata = MetadataHelper.DecodeTusMetadata(
-            blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+            blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
         );
 
         return _SerializeMetadata(tusMetadata);
@@ -234,7 +245,7 @@ public sealed class TusAzureStore
         try
         {
             var blobClient = _GetBlobClient(fileId);
-            var blobInfo = await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
+            var blobInfo = await _GetBlobInfoAsync(blobClient, cancellationToken);
 
             if (blobInfo == null)
             {
@@ -242,7 +253,7 @@ public sealed class TusAzureStore
             }
 
             // Check if we need to change blob type based on the now-known length
-            var metadataDict = blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            var metadataDict = blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
             var currentBlobType = MetadataHelper.GetBlobType(metadataDict);
             var tusMetadata = MetadataHelper.DecodeTusMetadata(metadataDict);
             var optimalBlobType = BlobStrategyHelper.DetermineBlobType(_options, uploadLength, tusMetadata);
@@ -259,7 +270,7 @@ public sealed class TusAzureStore
             }
 
             // Update metadata
-            var updatedMetadata = new Dictionary<string, string>(blobInfo.Metadata);
+            var updatedMetadata = new Dictionary<string, string>(blobInfo.Metadata, StringComparer.Ordinal);
             MetadataHelper.SetUploadLength(updatedMetadata, uploadLength);
 
             await blobClient.SetMetadataAsync(updatedMetadata, cancellationToken: cancellationToken);
@@ -307,7 +318,7 @@ public sealed class TusAzureStore
 
         try
         {
-            var blobInfo = await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
+            var blobInfo = await _GetBlobInfoAsync(blobClient, cancellationToken);
 
             if (blobInfo == null)
             {
@@ -316,7 +327,7 @@ public sealed class TusAzureStore
                 return;
             }
 
-            var metadata = new Dictionary<string, string>(blobInfo.Metadata);
+            var metadata = new Dictionary<string, string>(blobInfo.Metadata, StringComparer.Ordinal);
             MetadataHelper.SetExpirationDate(metadata, expires);
 
             await blobClient.SetMetadataAsync(metadata, cancellationToken: cancellationToken);
@@ -335,7 +346,9 @@ public sealed class TusAzureStore
         var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
 
         return blobInfo != null
-            ? MetadataHelper.GetExpirationDate(blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value))
+            ? MetadataHelper.GetExpirationDate(
+                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
+            )
             : null;
     }
 
@@ -355,7 +368,7 @@ public sealed class TusAzureStore
             )
             {
                 var expirationDate = MetadataHelper.GetExpirationDate(
-                    blobItem.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                    blobItem.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
                 );
 
                 if (expirationDate.HasValue && expirationDate.Value <= now)
@@ -409,27 +422,29 @@ public sealed class TusAzureStore
     public async Task<ITusFile?> GetFileAsync(string fileId, CancellationToken cancellationToken)
     {
         var blobClient = _GetBlobClient(fileId);
-        var blobInfo = await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
+        var blobInfo = await _GetBlobInfoAsync(blobClient, cancellationToken);
 
         if (blobInfo == null)
+        {
             return null;
+        }
 
         var tusFile = new TusAzureFile
         {
             FileId = fileId,
             BlobName = blobInfo.BlobName,
             UploadLength = MetadataHelper.GetUploadLength(
-                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
             ),
             UploadOffset = blobInfo.Size,
             Metadata = MetadataHelper.DecodeTusMetadata(
-                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
             ),
             ExpirationDate = MetadataHelper.GetExpirationDate(
-                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
             ),
             CreatedDate = MetadataHelper.GetCreatedDate(
-                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                blobInfo.Metadata.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
             ),
             LastModified = blobInfo.LastModified,
         };
@@ -453,17 +468,13 @@ public sealed class TusAzureStore
         switch (blobType)
         {
             case BlobType.AppendBlob:
-                var appendBlobClient = _containerClient.GetAppendBlobClient(
-                    _blobHelper.GetBlobName(fileId, _options.BlobPrefix)
-                );
+                var appendBlobClient = _containerClient.GetAppendBlobClient(_GetBlobName(fileId));
                 await _appendBlobHandler.CreateBlobAsync(appendBlobClient, metadata, cancellationToken);
 
                 break;
 
             case BlobType.BlockBlob:
-                var blockBlobClient = _containerClient.GetBlockBlobClient(
-                    _blobHelper.GetBlobName(fileId, _options.BlobPrefix)
-                );
+                var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
                 await _blockBlobHandler.CreateBlobAsync(blockBlobClient, metadata, cancellationToken);
 
                 break;
@@ -475,16 +486,14 @@ public sealed class TusAzureStore
 
     private async Task<long> _AppendToAppendBlob(string fileId, Stream data, CancellationToken cancellationToken)
     {
-        var appendBlobClient = _containerClient.GetAppendBlobClient(
-            _blobHelper.GetBlobName(fileId, _options.BlobPrefix)
-        );
+        var appendBlobClient = _containerClient.GetAppendBlobClient(_GetBlobName(fileId));
 
         return await _appendBlobHandler.AppendDataAsync(appendBlobClient, data, cancellationToken);
     }
 
     private async Task<long> _AppendToBlockBlob(string fileId, Stream data, CancellationToken cancellationToken)
     {
-        var blockBlobClient = _containerClient.GetBlockBlobClient(_blobHelper.GetBlobName(fileId, _options.BlobPrefix));
+        var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
 
         // Create a minimal BlobInfo for the handler
         var blobInfo = new TusAzureBlobInfo { FileId = fileId, Type = BlobType.BlockBlob };
@@ -494,16 +503,14 @@ public sealed class TusAzureStore
 
     private async Task<long> _GetAppendBlobOffset(string fileId, CancellationToken cancellationToken)
     {
-        var appendBlobClient = _containerClient.GetAppendBlobClient(
-            _blobHelper.GetBlobName(fileId, _options.BlobPrefix)
-        );
+        var appendBlobClient = _containerClient.GetAppendBlobClient(_GetBlobName(fileId));
 
         return await _appendBlobHandler.GetUploadOffsetAsync(appendBlobClient, cancellationToken);
     }
 
     private async Task<long> _GetBlockBlobOffset(string fileId, CancellationToken cancellationToken)
     {
-        var blockBlobClient = _containerClient.GetBlockBlobClient(_blobHelper.GetBlobName(fileId, _options.BlobPrefix));
+        var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
 
         return await _blockBlobHandler.GetUploadOffsetAsync(blockBlobClient, cancellationToken);
     }
@@ -518,12 +525,12 @@ public sealed class TusAzureStore
         {
             // Update block count in metadata for block blobs
             var blobClient = _GetBlobClient(fileId);
-            var blobInfo = await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
+            var blobInfo = await _GetBlobInfoAsync(blobClient, cancellationToken);
 
             if (blobInfo != null)
             {
                 var blockList = await _blobHelper.GetCommittedBlockListAsync(blobClient, cancellationToken);
-                var metadata = new Dictionary<string, string>(blobInfo.Metadata);
+                var metadata = new Dictionary<string, string>(blobInfo.Metadata, StringComparer.Ordinal);
                 MetadataHelper.SetBlockCount(metadata, blockList.Count);
 
                 await blobClient.SetMetadataAsync(metadata, cancellationToken: cancellationToken);
@@ -533,31 +540,24 @@ public sealed class TusAzureStore
 
     private BlobClient _GetBlobClient(string fileId)
     {
-        var blobName = _blobHelper.GetBlobName(fileId, _options.BlobPrefix);
-
-        return _containerClient.GetBlobClient(blobName);
-    }
-
-    private async Task<AzureBlobInfo?> _GetBlobInfoAsync(string fileId, CancellationToken cancellationToken)
-    {
-        var blobClient = _GetBlobClient(fileId);
-
-        return await _blobHelper.GetBlobInfoAsync(blobClient, cancellationToken);
+        return _containerClient.GetBlobClient(_GetBlobName(fileId));
     }
 
     private string _ExtractFileIdFromBlobName(string blobName)
     {
-        var prefix = _options.BlobPrefix.TrimEnd('/') + "/";
+        var prefix = _options.BlobPrefix.EnsureEndsWith('/');
 
-        return blobName.StartsWith(prefix) ? blobName[prefix.Length..] : string.Empty;
+        return blobName.StartsWith(prefix, StringComparison.Ordinal) ? blobName[prefix.Length..] : string.Empty;
     }
 
     private Dictionary<string, string> _ParseMetadata(string? metadata)
     {
-        var result = new Dictionary<string, string>();
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
 
         if (string.IsNullOrWhiteSpace(metadata))
+        {
             return result;
+        }
 
         // TUS metadata format: key1 base64value1,key2 base64value2
         var pairs = metadata.Split(',');
@@ -573,7 +573,7 @@ public sealed class TusAzureStore
 
                 try
                 {
-                    var value = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(base64Value));
+                    var value = Encoding.UTF8.GetString(Convert.FromBase64String(base64Value));
                     result[key] = value;
                 }
                 catch (FormatException)
@@ -589,17 +589,19 @@ public sealed class TusAzureStore
 
     private string _SerializeMetadata(Dictionary<string, string> metadata)
     {
-        if (!metadata.Any())
+        if (metadata.Count == 0)
+        {
             return string.Empty;
+        }
 
         var parts = metadata.Select(kvp =>
         {
-            var base64Value = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(kvp.Value));
+            var base64Value = Convert.ToBase64String(Encoding.UTF8.GetBytes(kvp.Value));
 
             return $"{kvp.Key} {base64Value}";
         });
 
-        return string.Join(",", parts);
+        return string.Join(',', parts);
     }
 
     #endregion
@@ -609,6 +611,41 @@ public sealed class TusAzureStore
     public void Dispose()
     {
         _logger.LogDebug("TusAzureStore disposed");
+    }
+
+    #endregion
+
+    #region Helpers
+
+    private string _GetBlobName(string fileId)
+    {
+        return $"{_options.BlobPrefix.EnsureEndsWith('/')}{fileId}";
+    }
+
+    private async Task<AzureBlobInfo?> _GetBlobInfoAsync(string fileId, CancellationToken cancellationToken = default)
+    {
+        var blobClient = _GetBlobClient(fileId);
+
+        return await _GetBlobInfoAsync(blobClient, cancellationToken);
+    }
+
+    private static async Task<AzureBlobInfo?> _GetBlobInfoAsync(
+        BlobClient client,
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            var propertiesResponse = await client.GetPropertiesAsync(cancellationToken: cancellationToken);
+
+            return propertiesResponse.HasValue
+                ? AzureBlobInfo.FromBlobProperties(propertiesResponse.Value, client.Name)
+                : null;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
     }
 
     #endregion

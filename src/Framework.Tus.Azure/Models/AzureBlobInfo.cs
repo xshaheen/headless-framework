@@ -14,6 +14,8 @@ public sealed class AzureBlobInfo
 
     public required IDictionary<string, string> Metadata { get; init; }
 
+    public required DateTimeOffset CreatedOn { get; init; }
+
     public required DateTimeOffset LastModified { get; init; }
 
     public required string ETag { get; init; }
@@ -24,6 +26,7 @@ public sealed class AzureBlobInfo
         {
             BlobName = blobName,
             Size = properties.ContentLength,
+            CreatedOn = properties.CreatedOn,
             Metadata = properties.Metadata,
             LastModified = properties.LastModified,
             ETag = properties.ETag.ToString(),

@@ -62,7 +62,9 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
     public async Task ReleaseIfHeld()
     {
         if (_disposed || !_isLocked || _leaseClient == null)
+        {
             return;
+        }
 
         try
         {
@@ -90,7 +92,9 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
     public void Dispose()
     {
         if (_disposed)
+        {
             return;
+        }
 
         try
         {

@@ -29,22 +29,6 @@ public class AzureBlobHelper(ILogger<AzureBlobHelper> logger)
         }
     }
 
-    public async Task<AzureBlobInfo?> GetBlobInfoAsync(
-        BlobClient blobClient,
-        CancellationToken cancellationToken = default
-    )
-    {
-        try
-        {
-            var propertiesResponse = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken);
-            return AzureBlobInfo.FromBlobProperties(propertiesResponse.Value, blobClient.Name);
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
-            return null;
-        }
-    }
-
     public async Task<List<BlobBlock>> GetCommittedBlockListAsync(
         BlobClient blobClient,
         CancellationToken cancellationToken = default

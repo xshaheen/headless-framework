@@ -56,9 +56,13 @@ public static class MetadataHelper
     public static void SetUploadLength(Dictionary<string, string> metadata, long? uploadLength)
     {
         if (uploadLength.HasValue)
+        {
             metadata[_UploadLengthKey] = uploadLength.Value.ToString();
+        }
         else
+        {
             metadata.Remove(_UploadLengthKey);
+        }
     }
 
     public static long? GetUploadLength(Dictionary<string, string> metadata)
@@ -71,9 +75,13 @@ public static class MetadataHelper
     public static void SetExpirationDate(Dictionary<string, string> metadata, DateTimeOffset? expirationDate)
     {
         if (expirationDate.HasValue)
+        {
             metadata[_ExpirationKey] = expirationDate.Value.ToString("O");
+        }
         else
+        {
             metadata.Remove(_ExpirationKey);
+        }
     }
 
     public static DateTimeOffset? GetExpirationDate(Dictionary<string, string> metadata)
@@ -133,7 +141,9 @@ public static class MetadataHelper
 
         // Ensure it starts with a letter or underscore
         if (!char.IsLetter(sanitized[0]) && sanitized[0] != '_')
+        {
             sanitized = "_" + sanitized;
+        }
 
         return sanitized;
     }
