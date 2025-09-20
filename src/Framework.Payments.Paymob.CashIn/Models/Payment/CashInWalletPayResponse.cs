@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Payments.Paymob.CashIn.Internal;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 
@@ -8,8 +9,6 @@ namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 [PublicAPI]
 public sealed class CashInWalletPayResponse
 {
-    private readonly IReadOnlyList<object?>? _transactionProcessedCallbackResponses;
-
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
@@ -123,10 +122,11 @@ public sealed class CashInWalletPayResponse
     public object? ParentTransaction { get; init; }
 
     [JsonPropertyName("transaction_processed_callback_responses")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> TransactionProcessedCallbackResponses
     {
-        get => _transactionProcessedCallbackResponses ?? [];
-        init => _transactionProcessedCallbackResponses = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonExtensionData]

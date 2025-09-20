@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Payments.Paymob.CashIn.Internal;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Merchant;
@@ -7,9 +8,6 @@ namespace Framework.Payments.Paymob.CashIn.Models.Merchant;
 [PublicAPI]
 public sealed class CashInProfileUser
 {
-    private readonly IReadOnlyList<object?>? _groups;
-    private readonly IReadOnlyList<int>? _userPermissions;
-
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
@@ -43,17 +41,19 @@ public sealed class CashInProfileUser
     public DateTimeOffset? LastLogin { get; init; }
 
     [JsonPropertyName("groups")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> Groups
     {
-        get => _groups ?? [];
-        init => _groups = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("user_permissions")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<int> UserPermissions
     {
-        get => _userPermissions ?? [];
-        init => _userPermissions = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonExtensionData]

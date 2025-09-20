@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Payments.Paymob.CashIn.Internal;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Merchant;
@@ -7,12 +8,6 @@ namespace Framework.Payments.Paymob.CashIn.Models.Merchant;
 [PublicAPI]
 public sealed class CashInProfile
 {
-    private readonly IReadOnlyList<string>? _companyEmails;
-    private readonly IReadOnlyList<object?>? _customExportColumns;
-    private readonly IReadOnlyList<object?>? _permissions;
-    private readonly IReadOnlyList<string>? _phones;
-    private readonly IReadOnlyList<object?>? _serverIp;
-
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
@@ -30,17 +25,19 @@ public sealed class CashInProfile
     public required string ProfileType { get; init; }
 
     [JsonPropertyName("phones")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<string> Phones
     {
-        get => _phones ?? [];
-        init => _phones = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("company_emails")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<string> CompanyEmails
     {
-        get => _companyEmails ?? [];
-        init => _companyEmails = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("company_name")]
@@ -227,24 +224,27 @@ public sealed class CashInProfile
     public object? BankRelated { get; init; }
 
     [JsonPropertyName("custom_export_columns")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> CustomExportColumns
     {
-        get => _customExportColumns ?? [];
-        init => _customExportColumns = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("server_IP")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> ServerIp
     {
-        get => _serverIp ?? [];
-        init => _serverIp = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("permissions")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<object?> Permissions
     {
-        get => _permissions ?? [];
-        init => _permissions = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonExtensionData]
