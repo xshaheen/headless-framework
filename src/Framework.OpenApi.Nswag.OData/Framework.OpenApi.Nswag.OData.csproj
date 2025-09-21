@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.OpenApi.Nswag.OData</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,7 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.OpenApi.Swashbuckle\Framework.OpenApi.Swashbuckle.csproj" />
+    <ProjectReference Include="..\Framework.OpenApi.Nswag\Framework.OpenApi.Nswag.csproj" />
   </ItemGroup>
 
 </Project>

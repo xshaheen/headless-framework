@@ -43,8 +43,6 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
         )
         {
             responses.Add(_UnauthorizedStatusCode, _UnauthorizedResponse);
-
-            return true;
         }
 
         return true;

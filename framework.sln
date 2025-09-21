@@ -97,8 +97,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Api.Logging.Seril
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.OpenApi.Nswag", "src\Framework.OpenApi.Nswag\Framework.OpenApi.Nswag.csproj", "{393BC744-61C8-4819-8D25-E1F2EDCF0A10}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.OpenApi.Swashbuckle", "src\Framework.OpenApi.Swashbuckle\Framework.OpenApi.Swashbuckle.csproj", "{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Orm.EntityFramework", "src\Framework.Orm.EntityFramework\Framework.Orm.EntityFramework.csproj", "{4544F0BD-8441-485F-B25D-7FED64D2759E}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Framework.Messaging.Cap", "src\Framework.Messaging.Cap\Framework.Messaging.Cap.csproj", "{CFE0418B-0A40-496C-A387-2F42829707B5}"
@@ -197,7 +195,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Settings.Tests.In
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Api.OpenApi", "Api.OpenApi", "{85ED3E8C-AB65-4CE4-8514-14B0850986A2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Swashbuckle.OData", "src\Framework.OpenApi.Swashbuckle.OData\Framework.OpenApi.Swashbuckle.OData.csproj", "{B91E5E8B-B5BB-471E-8068-8F927EBAD53F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.OpenApi.Nswag.OData", "src\Framework.OpenApi.Nswag.OData\Framework.OpenApi.Nswag.OData.csproj", "{B91E5E8B-B5BB-471E-8068-8F927EBAD53F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Framework.Features.Storage.EntityFramework", "src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj", "{3A9266E7-A6CA-4C33-9E18-4501F9504816}"
 EndProject
@@ -463,10 +461,6 @@ Global
 		{393BC744-61C8-4819-8D25-E1F2EDCF0A10}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{393BC744-61C8-4819-8D25-E1F2EDCF0A10}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{393BC744-61C8-4819-8D25-E1F2EDCF0A10}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747}.Release|Any CPU.Build.0 = Release|Any CPU
 		{4544F0BD-8441-485F-B25D-7FED64D2759E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{4544F0BD-8441-485F-B25D-7FED64D2759E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4544F0BD-8441-485F-B25D-7FED64D2759E}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -906,7 +900,6 @@ Global
 		{D297639E-4EF2-45FB-9B17-B1C39C0D1BED} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{590DF3E1-CC61-460A-9693-81D7128F75C3} = {803B73EC-8061-4DF5-90D0-FD22AC252646}
 		{393BC744-61C8-4819-8D25-E1F2EDCF0A10} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
-		{DE9F6CDC-6250-40A7-B64C-BF1F26BEE747} = {85ED3E8C-AB65-4CE4-8514-14B0850986A2}
 		{4544F0BD-8441-485F-B25D-7FED64D2759E} = {4681258C-BF42-4688-B619-513EB2658D82}
 		{CFE0418B-0A40-496C-A387-2F42829707B5} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
 		{517A2DBC-FD71-4DC9-AAEA-9D2CD8E0A5A0} = {99E5CB50-FC8E-47F7-8FDB-55192EF8C7E6}
