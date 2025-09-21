@@ -66,7 +66,7 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, I
         using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<IFeatureDefinitionManager>();
-        var randomSettingName = Test.Faker.Random.String2(5, 10);
+        var randomSettingName = Faker.Random.String2(5, 10);
 
         // when
         var definition = await definitionManager.FindAsync(randomSettingName);

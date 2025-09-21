@@ -2,13 +2,13 @@
 
 using Foundatio.Serializer;
 using Framework.Serializer;
-using ISerializer = Foundatio.Serializer.ISerializer;
+using ITextSerializer = Foundatio.Serializer.ITextSerializer;
 
 namespace Framework.Messaging;
 
 public static class FoundationHelper
 {
-    public static ISerializer JsonSerializer =>
+    public static ITextSerializer JsonSerializer =>
         new SystemTextJsonSerializer(
             serializeOptions: JsonConstants.DefaultInternalJsonOptions,
             deserializeOptions: JsonConstants.DefaultInternalJsonOptions

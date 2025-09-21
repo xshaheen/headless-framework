@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Payments.Paymob.CashIn.Internal;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Orders;
@@ -7,9 +8,6 @@ namespace Framework.Payments.Paymob.CashIn.Models.Orders;
 [PublicAPI]
 public sealed class CashInOrderMerchant
 {
-    private readonly IReadOnlyList<string>? _companyEmails;
-    private readonly IReadOnlyList<string>? _phones;
-
     [JsonPropertyName("id")]
     public int Id { get; init; }
 
@@ -36,17 +34,19 @@ public sealed class CashInOrderMerchant
     public string Street { get; init; } = string.Empty;
 
     [JsonPropertyName("phones")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<string> Phones
     {
-        get => _phones ?? [];
-        init => _phones = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonPropertyName("company_emails")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<string> CompanyEmails
     {
-        get => _companyEmails ?? [];
-        init => _companyEmails = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonExtensionData]

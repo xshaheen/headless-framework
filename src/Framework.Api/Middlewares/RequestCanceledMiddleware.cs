@@ -21,7 +21,7 @@ public sealed partial class RequestCanceledMiddleware(ILogger<RequestCanceledMid
 
         try
         {
-            await next(context).ConfigureAwait(false);
+            await next(context).AnyContext();
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {

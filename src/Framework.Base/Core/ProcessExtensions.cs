@@ -188,11 +188,11 @@ public static class ProcessExtensions
                         registration = cancellationToken.Register(() => process.TryToKill());
                     }
 
-                    await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+                    await process.WaitForExitAsync(cancellationToken).AnyContext();
                 }
                 finally
                 {
-                    await registration.DisposeAsync().ConfigureAwait(false);
+                    await registration.DisposeAsync().AnyContext();
                 }
 
                 observer.OnNext(

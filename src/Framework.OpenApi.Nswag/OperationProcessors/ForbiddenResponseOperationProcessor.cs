@@ -59,8 +59,6 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
         )
         {
             responses.Add(_ForbiddenStatusCode, _ForbiddenResponse);
-
-            return true;
         }
 
         return true;

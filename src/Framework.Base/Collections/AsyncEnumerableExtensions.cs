@@ -17,7 +17,7 @@ public static class AsyncEnumerableExtensions
     {
         var list = new List<T>();
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             list.Add(item);
         }
@@ -30,7 +30,7 @@ public static class AsyncEnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await foreach (var _ in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var _ in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             return true;
         }
@@ -44,7 +44,7 @@ public static class AsyncEnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (predicate(item))
             {
@@ -61,12 +61,12 @@ public static class AsyncEnumerableExtensions
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in first.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in first.WithCancellation(cancellationToken).AnyContext())
         {
             yield return item;
         }
 
-        await foreach (var item in second.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in second.WithCancellation(cancellationToken).AnyContext())
         {
             yield return item;
         }
@@ -90,7 +90,7 @@ public static class AsyncEnumerableExtensions
     {
         comparer ??= EqualityComparer<T>.Default;
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (comparer.Equals(item, value))
             {
@@ -108,7 +108,7 @@ public static class AsyncEnumerableExtensions
     {
         var result = 0;
 
-        await foreach (var _ in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var _ in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             result++;
         }
@@ -124,7 +124,7 @@ public static class AsyncEnumerableExtensions
     {
         var result = 0;
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (predicate(item))
             {
@@ -151,7 +151,7 @@ public static class AsyncEnumerableExtensions
     {
         var hashSet = new HashSet<T>(comparer);
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (hashSet.Add(item))
             {
@@ -178,7 +178,7 @@ public static class AsyncEnumerableExtensions
     {
         var hashSet = new HashSet<TKey>(comparer);
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             var key = getKey(item);
 
@@ -203,7 +203,7 @@ public static class AsyncEnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (predicate(item))
             {
@@ -228,7 +228,7 @@ public static class AsyncEnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (predicate(item))
             {
@@ -256,7 +256,7 @@ public static class AsyncEnumerableExtensions
         var hasValue = false;
         T result = default!;
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (predicate(item))
             {
@@ -289,7 +289,7 @@ public static class AsyncEnumerableExtensions
     {
         T? result = default;
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (predicate(item))
             {
@@ -307,7 +307,7 @@ public static class AsyncEnumerableExtensions
     {
         var result = 0L;
 
-        await foreach (var _ in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var _ in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             result++;
         }
@@ -323,7 +323,7 @@ public static class AsyncEnumerableExtensions
     {
         var result = 0L;
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (predicate(item))
             {
@@ -339,7 +339,7 @@ public static class AsyncEnumerableExtensions
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (item is TResult result)
             {
@@ -354,7 +354,7 @@ public static class AsyncEnumerableExtensions
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             yield return selector(item);
         }
@@ -371,7 +371,7 @@ public static class AsyncEnumerableExtensions
             yield break;
         }
 
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             yield return item;
 
@@ -388,7 +388,7 @@ public static class AsyncEnumerableExtensions
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (!selector(item))
             {
@@ -413,12 +413,12 @@ public static class AsyncEnumerableExtensions
 
             if (count > 0)
             {
-                while (count > 0 && await enumerator.MoveNextAsync().ConfigureAwait(false))
+                while (count > 0 && await enumerator.MoveNextAsync().AnyContext())
                 {
                     count--;
                 }
 
-                while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+                while (await enumerator.MoveNextAsync().AnyContext())
                 {
                     yield return enumerator.Current;
                 }
@@ -428,7 +428,7 @@ public static class AsyncEnumerableExtensions
         {
             if (enumerator is not null)
             {
-                await enumerator.DisposeAsync().ConfigureAwait(false);
+                await enumerator.DisposeAsync().AnyContext();
             }
         }
     }
@@ -439,7 +439,7 @@ public static class AsyncEnumerableExtensions
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (selector(item))
             {
@@ -456,7 +456,7 @@ public static class AsyncEnumerableExtensions
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).ConfigureAwait(false))
+        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
         {
             if (selector(item))
             {
