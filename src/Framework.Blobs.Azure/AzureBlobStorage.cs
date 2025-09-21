@@ -48,19 +48,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         _mimeTypeProvider = mimeTypeProvider;
         _clock = clock;
         _logger = settings.LoggerFactory?.CreateLogger<AzureBlobStorage>() ?? NullLogger<AzureBlobStorage>.Instance;
-
-        _blobClientOptions = new()
-        {
-            Retry =
-            {
-                MaxRetries = 3,
-                Mode = RetryMode.Exponential,
-                Delay = TimeSpan.FromSeconds(0.4),
-                NetworkTimeout = TimeSpan.FromSeconds(10),
-                MaxDelay = TimeSpan.FromMinutes(1),
-            },
-        };
-
+        _blobClientOptions = settings.BlobClientOptions;
         _accountUrl = settings.AccountUrl;
         _keyCredential = new(settings.AccountName, settings.AccountKey);
         _serviceClient = new(new Uri(_accountUrl, UriKind.Absolute), _keyCredential, _blobClientOptions);

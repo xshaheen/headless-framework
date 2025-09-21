@@ -12,13 +12,8 @@ public sealed class BasicAuthenticationValue : AuthenticationHeaderValue
         : base(BasicScheme) { }
 
     public BasicAuthenticationValue(string userName, string password)
-        : base(BasicScheme, parameter: _ToBase64String($"{userName}:{password}")) { }
+        : base(BasicScheme, parameter: $"{userName}:{password}".ToBase64()) { }
 
     public BasicAuthenticationValue(string value)
-        : base(BasicScheme, parameter: _ToBase64String(value)) { }
-
-    private static string _ToBase64String(string value)
-    {
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(value), Base64FormattingOptions.None);
-    }
+        : base(BasicScheme, parameter: value.ToBase64()) { }
 }

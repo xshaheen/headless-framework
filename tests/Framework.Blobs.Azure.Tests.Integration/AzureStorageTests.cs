@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Specialized;
 using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Azure;
@@ -19,6 +21,8 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture, ITestOutputH
             AccountName = "devstoreaccount1",
             AccountKey = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
             AccountUrl = fixture.Container.GetBlobEndpoint(),
+            LoggerFactory = LoggerFactory,
+            BlobClientOptions = new(BlobClientOptions.ServiceVersion.V2024_11_04),
         };
 
         var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageOptions>(options);

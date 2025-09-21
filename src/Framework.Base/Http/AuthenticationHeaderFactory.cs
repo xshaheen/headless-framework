@@ -12,27 +12,18 @@ public static class AuthenticationHeaderFactory
         Argument.IsNotNullOrWhiteSpace(userName);
         Argument.IsNotNull(password);
 
-        var encodedCredential = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{userName}:{password}"),
-            Base64FormattingOptions.None
-        );
-
-        return new(BasicAuthenticationValue.BasicScheme, encodedCredential);
+        return new(BasicAuthenticationValue.BasicScheme, $"{userName}:{password}".ToBase64());
     }
 
     public static AuthenticationHeaderValue CreateBasic(string value)
     {
         Argument.IsNotNullOrWhiteSpace(value);
 
-        var encodedCredential = Convert.ToBase64String(Encoding.UTF8.GetBytes(value), Base64FormattingOptions.None);
-
-        return new(BasicAuthenticationValue.BasicScheme, encodedCredential);
+        return new(BasicAuthenticationValue.BasicScheme, value.ToBase64());
     }
 
     public static AuthenticationHeaderValue CreateBasic(ReadOnlySpan<byte> value)
     {
-        var encodedCredential = Convert.ToBase64String(value);
-
-        return new(BasicAuthenticationValue.BasicScheme, encodedCredential);
+        return new(BasicAuthenticationValue.BasicScheme, value.ToBase64());
     }
 }

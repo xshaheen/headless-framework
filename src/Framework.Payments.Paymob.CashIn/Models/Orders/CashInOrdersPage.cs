@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Framework.Payments.Paymob.CashIn.Models.Orders;
 
 [PublicAPI]
 public sealed class CashInOrdersPage
 {
-    private readonly IReadOnlyCollection<CashInOrder>? _results;
-
     [JsonPropertyName("count")]
     public int Count { get; init; }
 
@@ -17,10 +17,11 @@ public sealed class CashInOrdersPage
     public string? Previous { get; init; }
 
     [JsonPropertyName("results")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyCollection<CashInOrder> Results
     {
-        get => _results ?? [];
-        init => _results = value;
+        get => field ?? [];
+        init;
     }
 
     [JsonExtensionData]

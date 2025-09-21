@@ -5,11 +5,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OData" />
+    <PackageReference Include="tusdotnet" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Framework.OpenApi.Swashbuckle\Framework.OpenApi.Swashbuckle.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 
 </Project>

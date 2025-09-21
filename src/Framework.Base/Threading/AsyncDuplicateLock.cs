@@ -20,7 +20,7 @@ public static class AsyncDuplicateLock
 
     public static async Task<IDisposable> LockAsync(string key)
     {
-        await _GetOrCreate(key).WaitAsync().ConfigureAwait(false);
+        await _GetOrCreate(key).WaitAsync().AnyContext();
 
         return new Releaser(key);
     }
