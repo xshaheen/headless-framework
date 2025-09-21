@@ -12,7 +12,7 @@ public sealed class AzureBlobInfo
 
     public required long Size { get; init; }
 
-    public required IDictionary<string, string> Metadata { get; init; }
+    public required Dictionary<string, string> Metadata { get; init; }
 
     public required DateTimeOffset CreatedOn { get; init; }
 
@@ -27,7 +27,7 @@ public sealed class AzureBlobInfo
             BlobName = blobName,
             Size = properties.ContentLength,
             CreatedOn = properties.CreatedOn,
-            Metadata = properties.Metadata,
+            Metadata = properties.Metadata.AsDictionary(),
             LastModified = properties.LastModified,
             ETag = properties.ETag.ToString(),
         };

@@ -4,37 +4,37 @@ using FluentValidation;
 
 namespace Framework.Tus.Options;
 
-public class TusAzureStoreOptions
+public sealed class TusAzureStoreOptions
 {
+    /// <summary>The connection string to the Azure Blob Storage account.</summary>
     public required string ConnectionString { get; set; }
 
+    /// <summary>The name of the Azure Blob Storage container to use for storing uploads.</summary>
     public string ContainerName { get; set; } = "tus-uploads";
 
+    /// <summary>A prefix to add to all blob names within the container.</summary>
     public string BlobPrefix { get; set; } = "uploads/";
 
+    /// <summary>Whether to create the container if it does not already exist.</summary>
     public bool CreateContainerIfNotExists { get; set; } = true;
 
-    public AzureBlobStrategy BlobStrategy { get; set; } = AzureBlobStrategy.Auto;
-
-    // Append Blob limits (Go tusd compatible)
-    public long AppendBlobSizeLimit { get; set; } = 195L * 1024 * 1024 * 1024; // 195GB
-
-    public int AppendBlobMaxChunkSize { get; set; } = 4 * 1024 * 1024; // 4MB
+    /// <summary>
+    /// Whether to enable chunk splitting for large uploads. When enabled, large chunks will be split into smaller chunks
+    /// that comply with Azure Blob Storage limits. This is useful for clients that may send large chunks.
+    /// </summary>
+    public bool EnableChunkSplitting { get; set; } = true;
 
     // Block Blob limits
-    public long BlockBlobSizeLimit { get; set; } = 4750L * 1024 * 1024 * 1024; // 4.75TB
+    public long BlockBlobSizeLimit { get; set; } = 4750L * 1024 * 1024 * 1024; // 4.75TB  (Azure limit)
 
-    public int BlockBlobMaxChunkSize { get; set; } = 100 * 1024 * 1024; // 100MB
+    public int BlobMaxChunkSize { get; set; } = 100 * 1024 * 1024; // 100MB
 
-    public int BlockBlobDefaultChunkSize { get; set; } = 4 * 1024 * 1024; // 4MB
-
-    // Chunk splitting configuration
-    public bool EnableChunkSplitting { get; set; } = true;
+    public int BlobDefaultChunkSize { get; set; } = 4 * 1024 * 1024; // 4MB
 
     public int MaxChunkSplitSize { get; set; } = 32 * 1024 * 1024; // 32MB
 
     // Visibility configuration (Go tusd compatible)
-    public bool HideBlobUntilComplete { get; set; } = false;
+    public bool HideBlobUntilComplete { get; set; }
 
     // Locking configuration
     public TimeSpan DefaultLeaseTime { get; set; } = TimeSpan.FromMinutes(1);
@@ -58,11 +58,7 @@ public class TusAzureStoreOptionsValidator : AbstractValidator<TusAzureStoreOpti
 
         RuleFor(x => x.ContainerName).NotEmpty();
 
-        RuleFor(x => x.AppendBlobMaxChunkSize)
-            .InclusiveBetween(1, 4 * 1024 * 1024) // 4MB
-            .WithMessage("AppendBlobMaxChunkSize must be between 1 byte and 4MB");
-
-        RuleFor(x => x.BlockBlobMaxChunkSize)
+        RuleFor(x => x.BlobMaxChunkSize)
             .InclusiveBetween(1, 100 * 1024 * 1024) // 100MB
             .WithMessage("BlockBlobMaxChunkSize must be between 1 byte and 100MB");
 

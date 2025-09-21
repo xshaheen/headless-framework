@@ -842,9 +842,14 @@ public static class StringExtensions
         return Convert.ToBase64String(bytes);
     }
 
-    public static string ToBase64(this ReadOnlySpan<byte> value)
+    public static string ToBase64(this ReadOnlySpan<byte> bytes)
     {
-        return Convert.ToBase64String(value);
+        return Convert.ToBase64String(bytes);
+    }
+
+    public static string ToBase64(this byte[] bytes)
+    {
+        return Convert.ToBase64String(bytes);
     }
 
     public static string DecodeBase64(this string base64Value)

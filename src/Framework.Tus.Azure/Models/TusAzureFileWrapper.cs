@@ -7,7 +7,7 @@ using tusdotnet.Models;
 
 namespace Framework.Tus.Models;
 
-public class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blobClient, ILogger logger) : ITusFile
+public sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blobClient, ILogger logger) : ITusFile
 {
     public string Id => azureFile.FileId;
 
@@ -18,9 +18,9 @@ public class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blobClient, 
             var response = await blobClient.DownloadStreamingAsync(cancellationToken: cancellationToken);
             return response.Value.Content;
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            logger.LogError(ex, "Failed to get content for file {FileId}", Id);
+            logger.LogError(e, "Failed to get content for file {FileId}", Id);
             throw;
         }
     }
@@ -37,7 +37,7 @@ public class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blobClient, 
         foreach (var (key, value) in metadata)
         {
             // Create a metadata instance from the parsed result
-            var parsed = Metadata.Parse($"{key} {Convert.ToBase64String(Encoding.UTF8.GetBytes(value))}");
+            var parsed = Metadata.Parse($"{key} {value.ToBase64()}");
 
             if (parsed.TryGetValue(key, out var metadataValue))
             {

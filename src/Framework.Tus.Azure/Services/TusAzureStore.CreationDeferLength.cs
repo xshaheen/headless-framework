@@ -1,0 +1,34 @@
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Microsoft.Extensions.Logging;
+using tusdotnet.Interfaces;
+
+namespace Framework.Tus.Services;
+
+public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
+{
+    public async Task SetUploadLengthAsync(string fileId, long uploadLength, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var blobClient = _GetBlobClient(fileId);
+
+            // Check if file exists
+            var blobInfo =
+                await _GetBlobInfoAsync(blobClient, cancellationToken)
+                ?? throw new InvalidOperationException($"File {fileId} does not exist");
+
+            // Update metadata
+            _SetUploadLength(blobInfo.Metadata, uploadLength);
+            await blobClient.SetMetadataAsync(blobInfo.Metadata, cancellationToken: cancellationToken);
+
+            _logger.LogDebug("Set upload length for file {FileId} to {UploadLength}", fileId, uploadLength);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Failed to set upload length for file {FileId}", fileId);
+
+            throw;
+        }
+    }
+}
