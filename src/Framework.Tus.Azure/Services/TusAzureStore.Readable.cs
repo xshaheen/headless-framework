@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Storage.Blobs;
 using Framework.Tus.Models;
 using tusdotnet.Interfaces;
 
@@ -10,25 +11,8 @@ public sealed partial class TusAzureStore : ITusReadableStore
     public async Task<ITusFile?> GetFileAsync(string fileId, CancellationToken cancellationToken)
     {
         var blobClient = _GetBlobClient(fileId);
-        var blobInfo = await _GetBlobInfoAsync(blobClient, cancellationToken);
+        var tusFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken);
 
-        if (blobInfo == null)
-        {
-            return null;
-        }
-
-        var tusFile = new TusAzureFile
-        {
-            FileId = fileId,
-            BlobName = blobInfo.BlobName,
-            UploadLength = _GetUploadLength(blobInfo.Metadata),
-            UploadOffset = blobInfo.Size,
-            Metadata = _DecodeMetadata(blobInfo.Metadata),
-            ExpirationDate = _GetExpirationDate(blobInfo.Metadata),
-            CreatedDate = _GetCreatedDate(blobInfo.Metadata),
-            LastModified = blobInfo.LastModified,
-        };
-
-        return new TusAzureFileWrapper(tusFile, blobClient, _logger);
+        return tusFile == null ? null : new TusAzureFileWrapper(tusFile, blobClient, _logger);
     }
 }

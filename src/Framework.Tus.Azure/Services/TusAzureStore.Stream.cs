@@ -4,6 +4,7 @@ using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 using Azure.Storage.Blobs.Specialized;
 using Framework.Checks;
+using Microsoft.Extensions.Logging;
 
 namespace Framework.Tus.Services;
 
@@ -14,11 +15,13 @@ public sealed partial class TusAzureStore
         Argument.IsNotNull(fileId);
         Argument.IsNotNull(pipeReader);
 
+        _logger.LogTrace("Appending data using the Stream for file '{FileId}'", fileId);
+
         var blobClient = _GetBlobClient(fileId);
         var blockBlobClient = _GetBlockBlobClient(fileId);
 
-        var blobInfo =
-            await _GetBlobInfoAsync(blobClient, cancellationToken)
+        var azureFile =
+            await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken)
             ?? throw new InvalidOperationException($"File {fileId} does not exist");
 
         var committedBlocks = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken);
@@ -29,7 +32,7 @@ public sealed partial class TusAzureStore
         if (_options.EnableChunkSplitting)
         {
             // Split large chunks into Azure-compatible sizes
-            var maxChunkSize = _CalculateOptimalChunkSize(_GetUploadLength(blobInfo.Metadata));
+            var maxChunkSize = _CalculateOptimalChunkSize(azureFile.Metadata.UploadLength);
             var newBlockIds = new List<string>();
 
             await foreach (var chunk in _SplitStreamAsync(pipeReader, maxChunkSize, cancellationToken))
@@ -63,8 +66,8 @@ public sealed partial class TusAzureStore
 
         // Update metadata with new block count
         var blockList = await _GetCommittedBlocksAsync(blockBlobClient, cancellationToken);
-        _SetBlockCount(blobInfo.Metadata, blockList.Count);
-        await blobClient.SetMetadataAsync(blobInfo.Metadata, cancellationToken: cancellationToken);
+        azureFile.Metadata.BlockCount = blockList.Count;
+        await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken);
 
         return bytesWritten;
     }

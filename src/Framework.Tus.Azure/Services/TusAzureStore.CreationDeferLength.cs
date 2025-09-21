@@ -1,5 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Storage.Blobs;
+using Framework.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
 
@@ -15,12 +17,12 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
 
             // Check if file exists
             var blobInfo =
-                await _GetBlobInfoAsync(blobClient, cancellationToken)
+                await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken)
                 ?? throw new InvalidOperationException($"File {fileId} does not exist");
 
             // Update metadata
-            _SetUploadLength(blobInfo.Metadata, uploadLength);
-            await blobClient.SetMetadataAsync(blobInfo.Metadata, cancellationToken: cancellationToken);
+            blobInfo.Metadata.UploadLength = uploadLength;
+            await _UpdateMetadataAsync(blobClient, blobInfo, cancellationToken);
 
             _logger.LogDebug("Set upload length for file {FileId} to {UploadLength}", fileId, uploadLength);
         }

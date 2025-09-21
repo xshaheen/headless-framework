@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
     <ProjectReference Include="..\..\src\Framework.Tus.Azure\Framework.Tus.Azure.csproj" />
   </ItemGroup>
 

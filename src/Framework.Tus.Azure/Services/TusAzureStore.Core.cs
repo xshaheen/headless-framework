@@ -26,14 +26,14 @@ public sealed partial class TusAzureStore
 
     public async Task<long?> GetUploadLengthAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken);
 
-        return blobInfo != null ? _GetUploadLength(blobInfo.Metadata) : null;
+        return blobInfo?.Metadata.UploadLength;
     }
 
     public async Task<long> GetUploadOffsetAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
+        var blobInfo = await _GetTusFileInfoAsync(fileId, cancellationToken);
 
         if (blobInfo == null)
         {

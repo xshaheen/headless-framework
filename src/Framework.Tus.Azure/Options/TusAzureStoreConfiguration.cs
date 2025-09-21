@@ -33,9 +33,6 @@ public sealed class TusAzureStoreOptions
 
     public int MaxChunkSplitSize { get; set; } = 32 * 1024 * 1024; // 32MB
 
-    // Visibility configuration (Go tusd compatible)
-    public bool HideBlobUntilComplete { get; set; }
-
     // Locking configuration
     public TimeSpan DefaultLeaseTime { get; set; } = TimeSpan.FromMinutes(1);
 

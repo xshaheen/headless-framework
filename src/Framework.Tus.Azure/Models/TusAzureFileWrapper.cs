@@ -27,24 +27,6 @@ public sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blobC
 
     public async Task<Dictionary<string, Metadata>> GetMetadataAsync(CancellationToken cancellationToken)
     {
-        return await Task.FromResult(_ConvertToTusMetadata(azureFile.Metadata));
-    }
-
-    private static Dictionary<string, Metadata> _ConvertToTusMetadata(Dictionary<string, string> metadata)
-    {
-        var result = new Dictionary<string, Metadata>(StringComparer.Ordinal);
-
-        foreach (var (key, value) in metadata)
-        {
-            // Create a metadata instance from the parsed result
-            var parsed = Metadata.Parse($"{key} {value.ToBase64()}");
-
-            if (parsed.TryGetValue(key, out var metadataValue))
-            {
-                result[key] = metadataValue;
-            }
-        }
-
-        return result;
+        return await Task.FromResult(azureFile.Metadata.ToTus());
     }
 }

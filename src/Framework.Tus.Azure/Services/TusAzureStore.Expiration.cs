@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs.Models;
+using Framework.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
 
@@ -14,18 +15,18 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
         try
         {
-            var blobInfo = await _GetBlobInfoAsync(blobClient, cancellationToken);
+            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, cancellationToken);
 
-            if (blobInfo == null)
+            if (azureFile == null)
             {
                 _logger.LogWarning("Cannot set expiration for non-existent file {FileId}", fileId);
 
                 return;
             }
 
-            _SetExpirationDate(blobInfo.Metadata, expires);
+            azureFile.Metadata.DateExpiration = expires;
+            await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken);
 
-            await blobClient.SetMetadataAsync(blobInfo.Metadata, cancellationToken: cancellationToken);
             _logger.LogDebug("Set expiration for file {FileId} to {ExpirationDate}", fileId, expires);
         }
         catch (Exception e)
@@ -38,9 +39,9 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
     public async Task<DateTimeOffset?> GetExpirationAsync(string fileId, CancellationToken cancellationToken)
     {
-        var blobInfo = await _GetBlobInfoAsync(fileId, cancellationToken);
+        var azureFile = await _GetTusFileInfoAsync(fileId, cancellationToken);
 
-        return blobInfo != null ? _GetExpirationDate(blobInfo.Metadata) : null;
+        return azureFile?.Metadata.DateExpiration;
     }
 
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
@@ -58,7 +59,9 @@ public sealed partial class TusAzureStore : ITusExpirationStore
                 )
             )
             {
-                if (_GetExpirationDate(blobItem.Metadata) <= now)
+                var metadata = TusAzureMetadata.FromAzure(blobItem.Metadata);
+
+                if (metadata.DateExpiration <= now)
                 {
                     var fileId = _ExtractFileIdFromBlobName(blobItem.Name);
 

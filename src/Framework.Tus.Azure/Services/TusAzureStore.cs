@@ -60,6 +60,11 @@ public sealed partial class TusAzureStore
         }
     }
 
+    private static async Task _UpdateMetadataAsync(BlobClient blobClient, TusAzureFile file, CancellationToken token)
+    {
+        await blobClient.SetMetadataAsync(file.Metadata.ToAzure(), cancellationToken: token);
+    }
+
     private Task<List<BlobBlock>> _GetCommittedBlocksAsync(string fileId, CancellationToken token)
     {
         return _GetCommittedBlocksAsync(_GetBlockBlobClient(fileId), token);
@@ -79,21 +84,25 @@ public sealed partial class TusAzureStore
         }
     }
 
-    private async Task<AzureBlobInfo?> _GetBlobInfoAsync(string fileId, CancellationToken token)
+    private async Task<TusAzureFile?> _GetTusFileInfoAsync(string fileId, CancellationToken token)
     {
         var blobClient = _GetBlobClient(fileId);
 
-        return await _GetBlobInfoAsync(blobClient, token);
+        return await _GetTusFileInfoAsync(blobClient, fileId, token);
     }
 
-    private static async Task<AzureBlobInfo?> _GetBlobInfoAsync(BlobClient client, CancellationToken token)
+    private static async Task<TusAzureFile?> _GetTusFileInfoAsync(
+        BlobClient client,
+        string fileId,
+        CancellationToken token
+    )
     {
         try
         {
             var propertiesResponse = await client.GetPropertiesAsync(cancellationToken: token);
 
             return propertiesResponse.HasValue
-                ? AzureBlobInfo.FromBlobProperties(propertiesResponse.Value, client.Name)
+                ? TusAzureFile.FromBlobProperties(fileId, client.Name, propertiesResponse.Value)
                 : null;
         }
         catch (RequestFailedException e) when (e.Status == 404)

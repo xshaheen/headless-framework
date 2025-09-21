@@ -1,26 +1,34 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Storage.Blobs.Models;
+using Framework.Tus.Options;
 using tusdotnet.Models;
 
 namespace Framework.Tus.Models;
 
 public sealed class TusAzureFile
 {
+    private TusAzureFile() { }
+
     public required string FileId { get; init; }
 
     public required string BlobName { get; init; }
 
-    public long? UploadLength { get; init; }
+    public long CurrentContentLength { get; init; }
 
-    public long UploadOffset { get; init; }
+    public required string ETag { get; init; }
 
-    public Dictionary<string, string> Metadata { get; init; } = new(StringComparer.Ordinal);
+    public required TusAzureMetadata Metadata { get; init; }
 
-    public DateTimeOffset? ExpirationDate { get; init; }
-
-    public DateTimeOffset CreatedDate { get; init; }
-
-    public DateTimeOffset LastModified { get; init; }
-
-    public bool IsComplete => UploadOffset >= UploadLength;
+    public static TusAzureFile FromBlobProperties(string fileId, string blobName, BlobProperties properties)
+    {
+        return new TusAzureFile
+        {
+            FileId = fileId,
+            BlobName = blobName,
+            CurrentContentLength = properties.ContentLength,
+            Metadata = TusAzureMetadata.FromAzure(properties.Metadata),
+            ETag = properties.ETag.ToString(),
+        };
+    }
 }
