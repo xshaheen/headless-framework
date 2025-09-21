@@ -9,11 +9,11 @@ namespace Framework.Tus.Models;
 
 public sealed partial class TusAzureMetadata
 {
-    private const string _TusMetadataPrefix = "tus_";
-    private const string _UploadLengthKey = "tus_upload_length";
-    private const string _ExpirationKey = "tus_expiration";
-    private const string _CreatedDateKey = "tus_created";
-    private const string _BlockCountKey = "tus_block_count";
+    public const string TusMetadataPrefix = "tus_";
+    public const string UploadLengthKey = "tus_upload_length";
+    public const string ExpirationKey = "tus_expiration";
+    public const string CreatedDateKey = "tus_created";
+    public const string BlockCountKey = "tus_block_count";
 
     private TusAzureMetadata(IDictionary<string, string> decodedMetadata)
     {
@@ -50,19 +50,19 @@ public sealed partial class TusAzureMetadata
 
     private DateTimeOffset _GetDateCreated()
     {
-        return _decodedMetadata.TryGetValue(_CreatedDateKey, out var value) && _ParseDateTimeOffset(value, out var date)
+        return _decodedMetadata.TryGetValue(CreatedDateKey, out var value) && _ParseDateTimeOffset(value, out var date)
             ? date
             : DateTimeOffset.UtcNow;
     }
 
     private void _SetDateCreated(DateTimeOffset createdDate)
     {
-        _decodedMetadata[_CreatedDateKey] = createdDate.ToString("O");
+        _decodedMetadata[CreatedDateKey] = createdDate.ToString("O");
     }
 
     private DateTimeOffset? _GetExpirationDate()
     {
-        return _decodedMetadata.TryGetValue(_ExpirationKey, out var value) && _ParseDateTimeOffset(value, out var date)
+        return _decodedMetadata.TryGetValue(ExpirationKey, out var value) && _ParseDateTimeOffset(value, out var date)
             ? date
             : null;
     }
@@ -71,11 +71,11 @@ public sealed partial class TusAzureMetadata
     {
         if (expirationDate.HasValue)
         {
-            _decodedMetadata[_ExpirationKey] = expirationDate.Value.ToString("O");
+            _decodedMetadata[ExpirationKey] = expirationDate.Value.ToString("O");
         }
         else
         {
-            _decodedMetadata.Remove(_ExpirationKey);
+            _decodedMetadata.Remove(ExpirationKey);
         }
     }
 
@@ -83,18 +83,18 @@ public sealed partial class TusAzureMetadata
     {
         if (uploadLength.HasValue)
         {
-            _decodedMetadata[_UploadLengthKey] = uploadLength.Value.ToString(CultureInfo.InvariantCulture);
+            _decodedMetadata[UploadLengthKey] = uploadLength.Value.ToString(CultureInfo.InvariantCulture);
         }
         else
         {
-            _decodedMetadata.Remove(_UploadLengthKey);
+            _decodedMetadata.Remove(UploadLengthKey);
         }
     }
 
     private long? _GetUploadLength()
     {
         return
-            _decodedMetadata.TryGetValue(_UploadLengthKey, out var value)
+            _decodedMetadata.TryGetValue(UploadLengthKey, out var value)
             && long.TryParse(value, CultureInfo.InvariantCulture, out var length)
             ? length
             : 0;
@@ -102,13 +102,13 @@ public sealed partial class TusAzureMetadata
 
     private void _SetBlockCount(int blockCount)
     {
-        _decodedMetadata[_BlockCountKey] = blockCount.ToString(CultureInfo.InvariantCulture);
+        _decodedMetadata[BlockCountKey] = blockCount.ToString(CultureInfo.InvariantCulture);
     }
 
     private int _GetBlockCount()
     {
         return
-            _decodedMetadata.TryGetValue(_BlockCountKey, out var value)
+            _decodedMetadata.TryGetValue(BlockCountKey, out var value)
             && int.TryParse(value, CultureInfo.InvariantCulture, out var count)
             ? count
             : 0;
@@ -133,7 +133,7 @@ public sealed partial class TusAzureMetadata
 
         foreach (var (key, value) in _decodedMetadata)
         {
-            if (!key.StartsWith(_TusMetadataPrefix, StringComparison.Ordinal) || _IsSystemMetadataKey(key))
+            if (!key.StartsWith(TusMetadataPrefix, StringComparison.Ordinal) || _IsSystemMetadataKey(key))
             {
                 continue; // Skip non-tus metadata and system keys
             }
@@ -143,7 +143,7 @@ public sealed partial class TusAzureMetadata
                 sb.Append(',');
             }
 
-            sb.Append(CultureInfo.InvariantCulture, $"{key[_TusMetadataPrefix.Length..]} {value.ToBase64()}");
+            sb.Append(CultureInfo.InvariantCulture, $"{key[TusMetadataPrefix.Length..]} {value.ToBase64()}");
         }
 
         return sb.ToString();
@@ -170,7 +170,7 @@ public sealed partial class TusAzureMetadata
 
         foreach (var (key, value) in parseResult.Metadata)
         {
-            result[_SanitizeAzureMetadataKey($"{_TusMetadataPrefix}{key}")] = value.GetString(Encoding.UTF8);
+            result[_SanitizeAzureMetadataKey($"{TusMetadataPrefix}{key}")] = value.GetString(Encoding.UTF8);
         }
 
         return new TusAzureMetadata(result);
@@ -214,7 +214,7 @@ public sealed partial class TusAzureMetadata
 
     private static bool _IsSystemMetadataKey(string key)
     {
-        return key is _UploadLengthKey or _ExpirationKey or _CreatedDateKey or _BlockCountKey;
+        return key is UploadLengthKey or ExpirationKey or CreatedDateKey or BlockCountKey;
     }
 
     #endregion

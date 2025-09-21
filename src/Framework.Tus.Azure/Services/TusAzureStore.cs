@@ -37,7 +37,7 @@ public sealed partial class TusAzureStore
         _fileIdProvider = fileIdProvider ?? _DefaultFileIdProvider;
         _logger = logger;
 
-        var blobServiceClient = new BlobServiceClient(_options.ConnectionString);
+        var blobServiceClient = new BlobServiceClient(_options.ConnectionString, options.BlobClientOptions);
         _containerClient = blobServiceClient.GetBlobContainerClient(_options.ContainerName);
 
         if (_options.CreateContainerIfNotExists)

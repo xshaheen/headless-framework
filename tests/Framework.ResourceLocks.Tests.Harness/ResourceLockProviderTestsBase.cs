@@ -21,11 +21,11 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_lock_with_try_acquire()
     {
         var lockProvider = GetLockProvider();
-        var resource = Test.Faker.Random.String2(3, 20);
+        var resource = Faker.Random.String2(3, 20);
         await using var handle = await lockProvider.TryAcquireAsync(resource);
 
         handle.Should().NotBeNull();
-        handle!.Resource.Should().Be(resource);
+        handle.Resource.Should().Be(resource);
         handle.LockId.Should().NotBeNullOrEmpty();
         handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
         handle.RenewalCount.Should().Be(0);
@@ -35,7 +35,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_not_acquire_when_already_locked()
     {
         var lockProvider = GetLockProvider();
-        var resource = Test.Faker.Random.String2(3, 20);
+        var resource = Faker.Random.String2(3, 20);
         var acquireTimeout = TimeSpan.FromSeconds(1);
 
         await using (var handle = await lockProvider.TryAcquireAsync(resource, null, acquireTimeout))
@@ -61,8 +61,8 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_obtain_multiple_locks()
     {
         var lockProvider = GetLockProvider();
-        var resource1 = Test.Faker.Random.String2(3, 20);
-        var resource2 = Test.Faker.Random.String2(3, 20);
+        var resource1 = Faker.Random.String2(3, 20);
+        var resource2 = Faker.Random.String2(3, 20);
 
         await using var handle = await lockProvider.TryAcquireAsync(resource1);
 
@@ -79,7 +79,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
     public virtual async Task should_release_lock_multiple_times()
     {
         var locker = GetLockProvider();
-        var resource = Test.Faker.Random.String2(3, 10);
+        var resource = Faker.Random.String2(3, 10);
 
         var lock1 = await locker.TryAcquireAsync(
             resource,
@@ -88,7 +88,7 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
         );
 
         lock1.Should().NotBeNull();
-        await lock1!.ReleaseAsync();
+        await lock1.ReleaseAsync();
         (await locker.IsLockedAsync(resource)).Should().BeFalse();
 
         var lock2 = await locker.TryAcquireAsync(
@@ -107,14 +107,14 @@ public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : 
         await lock1.DisposeAsync();
         (await locker.IsLockedAsync(resource)).Should().BeTrue();
 
-        await lock2!.ReleaseAsync();
+        await lock2.ReleaseAsync();
         (await locker.IsLockedAsync(resource)).Should().BeFalse();
     }
 
     public virtual async Task should_timeout_when_try_to_lock_acquired_resource()
     {
         var locker = GetLockProvider();
-        var resource = Test.Faker.Random.String2(3, 10);
+        var resource = Faker.Random.String2(3, 10);
 
         Logger.LogInformation("################## Acquiring lock #1");
         var testLock = await locker.TryAcquireAsync(resource, timeUntilExpires: TimeSpan.FromMilliseconds(250));

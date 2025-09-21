@@ -74,7 +74,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
-        var randomSettingName = Test.Faker.Random.String2(5, 10);
+        var randomSettingName = Faker.Random.String2(5, 10);
 
         // when
         var definition = await definitionManager.FindAsync(randomSettingName);

@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Bogus;
 using Framework.Testing.Helpers;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
@@ -15,6 +16,8 @@ public abstract class TestBase : IDisposable
     protected ILoggerFactory LoggerFactory { get; }
 
     protected ILogger Logger { get; }
+
+    protected virtual Faker Faker { get; set; } = new();
 
     protected TestBase(ITestOutputHelper output)
     {

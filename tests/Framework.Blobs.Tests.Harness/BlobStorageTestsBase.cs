@@ -524,7 +524,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
                 var eventPost = await _GetPostAndSetWorkMarkAsync(
                     storage,
                     container,
-                    Test.Faker.Random.Int(0, 25).ToString(CultureInfo.InvariantCulture) + ".json"
+                    Faker.Random.Int(0, 25).ToString(CultureInfo.InvariantCulture) + ".json"
                 );
 
                 if (eventPost == null)
@@ -532,7 +532,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
                     return;
                 }
 
-                if (Test.Faker.Random.Bool())
+                if (Faker.Random.Bool())
                 {
                     await _CompletePostAsync(storage, container, blobName, eventPost.ProjectId, DateTime.UtcNow);
                 }
@@ -568,7 +568,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] container = [Test.Faker.Random.String2(5, 25)];
+        string[] container = [Faker.Random.String2(5, 25)];
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DeleteAllAsync(container).AsTask();
@@ -582,8 +582,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] container = [Test.Faker.Random.String2(5, 25)];
-        var blobName = Test.Faker.Random.String2(5, 25);
+        string[] container = [Faker.Random.String2(5, 25)];
+        var blobName = Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DeleteAsync(container, blobName).AsTask();
@@ -597,8 +597,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] container = [Test.Faker.Random.String2(5, 25)];
-        string[] blobNames = [Test.Faker.Random.String2(5, 25)];
+        string[] container = [Faker.Random.String2(5, 25)];
+        string[] blobNames = [Faker.Random.String2(5, 25)];
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.BulkDeleteAsync(container, blobNames).AsTask();
@@ -612,10 +612,10 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] sourceContainer = [Test.Faker.Random.String2(5, 25)];
-        string[] destinationContainer = [Test.Faker.Random.String2(5, 25)];
-        var blobName = Test.Faker.Random.String2(5, 25);
-        var newBlobName = Test.Faker.Random.String2(5, 25);
+        string[] sourceContainer = [Faker.Random.String2(5, 25)];
+        string[] destinationContainer = [Faker.Random.String2(5, 25)];
+        var blobName = Faker.Random.String2(5, 25);
+        var newBlobName = Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.RenameAsync(sourceContainer, blobName, destinationContainer, newBlobName).AsTask();
@@ -629,10 +629,10 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] sourceContainer = [Test.Faker.Random.String2(5, 25)];
-        string[] destinationContainer = [Test.Faker.Random.String2(5, 25)];
-        var blobName = Test.Faker.Random.String2(5, 25);
-        var newBlobName = Test.Faker.Random.String2(5, 25);
+        string[] sourceContainer = [Faker.Random.String2(5, 25)];
+        string[] destinationContainer = [Faker.Random.String2(5, 25)];
+        var blobName = Faker.Random.String2(5, 25);
+        var newBlobName = Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.CopyAsync(sourceContainer, blobName, destinationContainer, newBlobName).AsTask();
@@ -646,8 +646,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] container = [Test.Faker.Random.String2(5, 25)];
-        var blobName = Test.Faker.Random.String2(5, 25);
+        string[] container = [Faker.Random.String2(5, 25)];
+        var blobName = Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.ExistsAsync(container, blobName).AsTask();
@@ -661,8 +661,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] container = [Test.Faker.Random.String2(5, 25)];
-        var blobName = Test.Faker.Random.String2(5, 25);
+        string[] container = [Faker.Random.String2(5, 25)];
+        var blobName = Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.DownloadAsync(container, blobName).AsTask();
@@ -676,8 +676,8 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] container = [Test.Faker.Random.String2(5, 25)];
-        var blobName = Test.Faker.Random.String2(5, 25);
+        string[] container = [Faker.Random.String2(5, 25)];
+        var blobName = Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.GetBlobInfoAsync(container, blobName).AsTask();
@@ -691,7 +691,7 @@ public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(
 
         await ResetAsync(storage);
 
-        string[] container = [Test.Faker.Random.String2(5, 25)];
+        string[] container = [Faker.Random.String2(5, 25)];
 
         // ReSharper disable once AccessToDisposedClosure
         var action = () => storage.GetPagedListAsync(container).AsTask();
