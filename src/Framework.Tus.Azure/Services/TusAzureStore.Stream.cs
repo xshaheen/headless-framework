@@ -10,10 +10,10 @@ namespace Framework.Tus.Services;
 
 public sealed partial class TusAzureStore
 {
-    public async Task<long> AppendDataAsync(string fileId, Stream pipeReader, CancellationToken cancellationToken)
+    public async Task<long> AppendDataAsync(string fileId, Stream stream, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(fileId);
-        Argument.IsNotNull(pipeReader);
+        Argument.IsNotNull(stream);
 
         _logger.LogTrace("Appending data using the Stream for file '{FileId}'", fileId);
 
@@ -35,7 +35,7 @@ public sealed partial class TusAzureStore
             var maxChunkSize = _CalculateOptimalChunkSize(azureFile.Metadata.UploadLength);
             var newBlockIds = new List<string>();
 
-            await foreach (var chunk in _SplitStreamAsync(pipeReader, maxChunkSize, cancellationToken))
+            await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken))
             {
                 await using (chunk)
                 {
@@ -54,12 +54,12 @@ public sealed partial class TusAzureStore
         {
             // Direct staging and commit
             var blockId = _GenerateBlockId(nextBlockNumber);
-            await blockBlobClient.StageBlockAsync(blockId, pipeReader, cancellationToken: cancellationToken);
+            await blockBlobClient.StageBlockAsync(blockId, stream, cancellationToken: cancellationToken);
 
             var allBlockIds = committedBlocks.Select(b => b.Name).Concat([blockId]).ToList();
             await blockBlobClient.CommitBlockListAsync(allBlockIds, cancellationToken: cancellationToken);
 
-            totalBytesWritten = pipeReader.Length;
+            totalBytesWritten = stream.Length;
         }
 
         var bytesWritten = totalBytesWritten;

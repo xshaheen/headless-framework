@@ -1,6 +1,10 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Core;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Specialized;
 using FluentValidation;
+using Framework.FluentValidation;
 
 namespace Framework.Tus.Options;
 
@@ -43,8 +47,23 @@ public sealed class TusAzureStoreOptions
 
     public TimeSpan BlockListCacheTime { get; set; } = TimeSpan.FromMinutes(5);
 
+    // TODO: Use/optimize these settings
+
     /// <summary>Commit every N blocks for large uploads.</summary>
     public int CommitBatchSize { get; set; } = 10;
+
+    public SpecializedBlobClientOptions BlobClientOptions { get; set; } =
+        new()
+        {
+            Retry =
+            {
+                MaxRetries = 3,
+                Mode = RetryMode.Exponential,
+                Delay = TimeSpan.FromSeconds(0.4),
+                NetworkTimeout = TimeSpan.FromSeconds(10),
+                MaxDelay = TimeSpan.FromMinutes(1),
+            },
+        };
 }
 
 public class TusAzureStoreOptionsValidator : AbstractValidator<TusAzureStoreOptions>
@@ -64,5 +83,6 @@ public class TusAzureStoreOptionsValidator : AbstractValidator<TusAzureStoreOpti
             .WithMessage("DefaultLeaseTime must be between 15 seconds and 60 minutes");
 
         RuleFor(x => x.CommitBatchSize).GreaterThan(0);
+        RuleFor(x => x.BlobClientOptions).NotNull();
     }
 }
