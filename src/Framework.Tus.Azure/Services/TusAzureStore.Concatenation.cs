@@ -52,8 +52,8 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.ConcatType = "partial";
 
             await blobClient.UploadAsync(
-                content: Stream.Null, // TODO: set content type
-                httpHeaders: new BlobHttpHeaders { ContentType = ContentTypes.Applications.OctetStream },
+                content: Stream.Null,
+                httpHeaders: await _blobHttpHeadersProvider.GetBlobHttpHeadersAsync(blobMetadata.ToUser()),
                 metadata: blobMetadata.ToAzure(),
                 cancellationToken: cancellationToken
             );

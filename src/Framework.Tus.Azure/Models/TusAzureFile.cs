@@ -6,7 +6,7 @@ using tusdotnet.Models;
 
 namespace Framework.Tus.Models;
 
-public sealed class TusAzureFile
+internal sealed class TusAzureFile
 {
     private TusAzureFile() { }
 
