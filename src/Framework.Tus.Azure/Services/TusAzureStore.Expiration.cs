@@ -47,7 +47,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
     {
         var expiredFiles = new List<string>();
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
 
         try
         {

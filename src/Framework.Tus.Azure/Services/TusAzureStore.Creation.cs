@@ -23,7 +23,7 @@ public sealed partial class TusAzureStore : ITusCreationStore
             // Metadata
             var blobMetadata = TusAzureMetadata.FromTus(metadata);
 
-            blobMetadata.DateCreated = DateTimeOffset.UtcNow;
+            blobMetadata.DateCreated = _timeProvider.GetUtcNow();
             blobMetadata.UploadLength = uploadLength;
             blobMetadata.BlockCount = 0;
 
@@ -33,7 +33,7 @@ public sealed partial class TusAzureStore : ITusCreationStore
             var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
 
             await blockBlobClient.UploadAsync(
-                content: Stream.Null,
+                content: Stream.Null, // TODO: set content type
                 httpHeaders: new BlobHttpHeaders { ContentType = ContentTypes.Applications.OctetStream },
                 metadata: blobMetadata.ToAzure(),
                 cancellationToken: cancellationToken

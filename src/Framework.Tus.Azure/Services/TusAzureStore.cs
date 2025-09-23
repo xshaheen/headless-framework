@@ -11,6 +11,7 @@ using Framework.Tus.Locks;
 using Framework.Tus.Models;
 using Framework.Tus.Options;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using tusdotnet.Interfaces;
 using tusdotnet.Stores;
 using tusdotnet.Stores.FileIdProviders;
@@ -25,17 +26,20 @@ public sealed partial class TusAzureStore
     private readonly TusAzureStoreOptions _options;
     private readonly BlobContainerClient _containerClient;
     private readonly ILogger<TusAzureStore> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly ITusFileIdProvider _fileIdProvider;
 
     public TusAzureStore(
         TusAzureStoreOptions options,
-        ILogger<TusAzureStore> logger,
+        ILoggerFactory loggerFactory,
+        TimeProvider? timeProvider = null,
         ITusFileIdProvider? fileIdProvider = null
     )
     {
         _options = options;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _fileIdProvider = fileIdProvider ?? _DefaultFileIdProvider;
-        _logger = logger;
+        _logger = loggerFactory?.CreateLogger<TusAzureStore>() ?? NullLogger<TusAzureStore>.Instance;
 
         var blobServiceClient = new BlobServiceClient(_options.ConnectionString, options.BlobClientOptions);
         _containerClient = blobServiceClient.GetBlobContainerClient(_options.ContainerName);
@@ -50,7 +54,9 @@ public sealed partial class TusAzureStore
     {
         try
         {
+#pragma warning disable MA0045 // Use Async
             _containerClient.CreateIfNotExists();
+#pragma warning restore MA0045
             _logger.LogInformation("Initialized Azure Blob container: {ContainerName}", _options.ContainerName);
         }
         catch (Exception ex)
