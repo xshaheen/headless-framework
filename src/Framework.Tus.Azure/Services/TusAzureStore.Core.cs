@@ -18,7 +18,7 @@ public sealed partial class TusAzureStore
 
             return response.Value;
         }
-        catch (RequestFailedException ex) when (ex.Status == 404)
+        catch (RequestFailedException e) when (e.Status == 404)
         {
             return false;
         }

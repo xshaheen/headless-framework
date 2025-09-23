@@ -14,6 +14,8 @@ public sealed partial class TusAzureMetadata
     public const string ExpirationKey = "tus_expiration";
     public const string CreatedDateKey = "tus_created";
     public const string BlockCountKey = "tus_block_count";
+    public const string ConcatTypeKey = "tus_concat_type";
+    public const string PartialUploadsKey = "tus_partial_uploads";
 
     private TusAzureMetadata(IDictionary<string, string> decodedMetadata)
     {
@@ -44,6 +46,41 @@ public sealed partial class TusAzureMetadata
     {
         get => _GetBlockCount();
         set => _SetBlockCount(value);
+    }
+
+    public string? ConcatType
+    {
+        get => _decodedMetadata.TryGetValue(ConcatTypeKey, out var value) ? value : null;
+        set
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                _decodedMetadata.Remove(ConcatTypeKey);
+            }
+            else
+            {
+                _decodedMetadata[ConcatTypeKey] = value;
+            }
+        }
+    }
+
+    public string[]? PartialUploads
+    {
+        get =>
+            _decodedMetadata.TryGetValue(PartialUploadsKey, out var value)
+                ? value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                : null;
+        set
+        {
+            if (value == null || value.Length == 0)
+            {
+                _decodedMetadata.Remove(PartialUploadsKey);
+            }
+            else
+            {
+                _decodedMetadata[PartialUploadsKey] = string.Join(',', value);
+            }
+        }
     }
 
     #region Read/Write Helpers
@@ -214,7 +251,13 @@ public sealed partial class TusAzureMetadata
 
     private static bool _IsSystemMetadataKey(string key)
     {
-        return key is UploadLengthKey or ExpirationKey or CreatedDateKey or BlockCountKey;
+        return key
+            is UploadLengthKey
+                or ExpirationKey
+                or CreatedDateKey
+                or BlockCountKey
+                or ConcatTypeKey
+                or PartialUploadsKey;
     }
 
     #endregion

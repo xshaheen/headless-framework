@@ -35,7 +35,7 @@ public sealed class TusAzureStoreTests : TestBase
 
         var blobServiceClient = new BlobServiceClient(connectionString, clientOptions);
         _containerClient = blobServiceClient.GetBlobContainerClient(_ContainerName);
-        _store = new TusAzureStore(storeOptions, LoggerFactory.CreateLogger<TusAzureStore>());
+        _store = new TusAzureStore(storeOptions, LoggerFactory);
     }
 
     /* Creation Store */
