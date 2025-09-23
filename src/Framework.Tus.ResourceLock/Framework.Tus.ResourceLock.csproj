@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Framework.Tus</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.ResourceLocks.Abstraction\Framework.ResourceLocks.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Tus\Framework.Tus.csproj" />
+  </ItemGroup>
+
+</Project>
