@@ -83,8 +83,6 @@ internal static class DapperSourceFilesGeneratorEmitter
             .AppendLine("return value switch")
             .OpenBracket(); // start switch expression
 
-        // TODO: Enhance support for SByte, byte, UInt16, UInt32, UInt64
-
         ReadOnlySpan<string> switchCases = data.UnderlyingType switch
         {
             PrimitiveUnderlyingType.String => [$"string stringValue => new {data.ClassName}(stringValue),"],
@@ -97,6 +95,14 @@ internal static class DapperSourceFilesGeneratorEmitter
             [
                 $"bool boolValue => new {data.ClassName}(boolValue)",
                 $"string stringValue when !string.IsNullOrEmpty(stringValue) && bool.TryParse(stringValue, out var result) => new {data.ClassName}(result)",
+            ],
+            PrimitiveUnderlyingType.Byte =>
+            [
+                $"byte byteValue => new {data.ClassName}(byteValue)",
+                $"short shortValue and < byte.MaxValue and > byte.MinValue => new {data.ClassName}((byte)shortValue)",
+                $"int intValue and < byte.MaxValue and > byte.MinValue => new {data.ClassName}((byte)intValue)",
+                $"long longValue and < byte.MaxValue and > byte.MinValue => new {data.ClassName}((byte)longValue)",
+                $"string stringValue when !string.IsNullOrEmpty(stringValue) && byte.TryParse(stringValue, {StaticValues.InvariantCulture}, out var result) => new {data.ClassName}(result)",
             ],
             PrimitiveUnderlyingType.Int16 =>
             [
