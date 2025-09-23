@@ -16,20 +16,17 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture, ITestOutputH
 {
     protected override IBlobStorage GetStorage()
     {
-        var options = new AzureStorageOptions
-        {
-            AccountName = "devstoreaccount1",
-            AccountKey = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-            AccountUrl = fixture.Container.GetBlobEndpoint(),
-            LoggerFactory = LoggerFactory,
-            BlobClientOptions = new(BlobClientOptions.ServiceVersion.V2024_11_04),
-        };
+        var blobServiceClient = new BlobServiceClient(
+            fixture.Container.GetConnectionString(),
+            new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
+        );
 
-        var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageOptions>(options);
+        var azureStorageOptions = new AzureStorageOptions { LoggerFactory = LoggerFactory };
+        var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
 
-        return new AzureBlobStorage(mimeTypeProvider, clock, optionsAccessor);
+        return new AzureBlobStorage(blobServiceClient, mimeTypeProvider, clock, optionsAccessor);
     }
 
     [Fact]
