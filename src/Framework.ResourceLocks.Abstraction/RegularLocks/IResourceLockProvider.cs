@@ -18,20 +18,16 @@ public interface IResourceLockProvider
     /// </summary>
     /// <param name="resource">The resource to acquire the lock for.</param>
     /// <param name="timeUntilExpires">
-    /// The amount of time until the lock expires. The allowed values are:
-    /// <list type="bullet">
-    /// <item><see langword="null"/>: means the default value <see cref="DefaultTimeUntilExpires"/> (20 minutes).</item>
-    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.</item>
-    /// <item>Value greater than 0.</item>
-    /// </list>
+    /// The amount of time until the lock expires. The allowed values are:<br/>
+    /// * <see langword="null"/>: means the default value <see cref="DefaultTimeUntilExpires"/> (20 minutes).<br/>
+    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.<br/>
+    /// * Value greater than 0.<br/>
     /// </param>
     /// <param name="acquireTimeout">
-    /// The amount of time to wait for the lock to be acquired. The allowed values are:
-    /// <list type="bullet">
-    /// <item><see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/> (30 seconds).</item>
-    /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire</item>
-    /// <item>Value greater than or equal to 0.</item>
-    /// </list>
+    /// The amount of time to wait for the lock to be acquired. The allowed values are:<br/>
+    /// * <see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/> (30 seconds).<br/>
+    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire<br/>
+    /// * Value greater than or equal to 0.<br/>
     /// </param>
     /// <param name="cancellationToken"></param>
     /// <returns>
