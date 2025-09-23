@@ -131,11 +131,11 @@ public static class JsonInternalConverters
 
     /// <summary>Returns a <see cref="JsonConverter{T}"/> instance that converts <see cref="ulong"/> values.</summary>
     /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
-    public static JsonConverter<ulong> UInt64Converter => _uint64Converter ??= GetInternalConverter<ulong>();
+    public static JsonConverter<ulong> UInt64Converter => _uint64Converter ??= JsonMetadataServices.UInt64Converter;
 
     internal static JsonConverter<T> GetInternalConverter<T>()
     {
-        // Todo keep track and remove later.
+        // SET JsonConverter<T>.IsInternalConverter to false (via reflection) to avoid any issues
 
         var jsonConverterType = typeof(JsonConverter<>).MakeGenericType(typeof(T));
 

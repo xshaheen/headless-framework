@@ -28,30 +28,24 @@ public sealed class AzureBlobStorage : IBlobStorage
     private const string _UploadDateMetadataKey = "uploadDate";
     private const string _ExtensionMetadataKey = "extension";
 
-    private readonly string _accountUrl;
-    private readonly SpecializedBlobClientOptions _blobClientOptions;
-    private readonly StorageSharedKeyCredential _keyCredential;
-    private readonly BlobServiceClient _serviceClient;
-
+    private readonly BlobServiceClient _blobServiceClient;
     private readonly IMimeTypeProvider _mimeTypeProvider;
     private readonly IClock _clock;
-    private readonly ILogger _logger;
+    private readonly AzureStorageOptions _option;
+    private readonly ILogger<AzureBlobStorage> _logger;
 
     public AzureBlobStorage(
+        BlobServiceClient blobServiceClient,
         IMimeTypeProvider mimeTypeProvider,
         IClock clock,
-        IOptionsSnapshot<AzureStorageOptions> configOptions
+        IOptionsSnapshot<AzureStorageOptions> optionAccessor
     )
     {
-        var settings = configOptions.Value;
-
+        _blobServiceClient = blobServiceClient;
         _mimeTypeProvider = mimeTypeProvider;
         _clock = clock;
-        _logger = settings.LoggerFactory?.CreateLogger<AzureBlobStorage>() ?? NullLogger<AzureBlobStorage>.Instance;
-        _blobClientOptions = settings.BlobClientOptions;
-        _accountUrl = settings.AccountUrl;
-        _keyCredential = new(settings.AccountName, settings.AccountKey);
-        _serviceClient = new(new Uri(_accountUrl, UriKind.Absolute), _keyCredential, _blobClientOptions);
+        _option = optionAccessor.Value;
+        _logger = _option.LoggerFactory?.CreateLogger<AzureBlobStorage>() ?? NullLogger<AzureBlobStorage>.Instance;
     }
 
     #region Create Container
@@ -60,17 +54,21 @@ public sealed class AzureBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
 
-        var containerUrl = _BuildContainerUrl(container).ContainerUrl;
+        var blobContainer = _GetContainer(container);
 
-        if (_CreatedContainers.ContainsKey(containerUrl))
+        if (_CreatedContainers.ContainsKey(blobContainer))
         {
             return;
         }
 
-        var containerClient = _GetContainerClient(containerUrl);
-        await containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob, cancellationToken: cancellationToken);
+        var containerClient = _blobServiceClient.GetBlobContainerClient(blobContainer);
 
-        _CreatedContainers.TryAdd(containerUrl, value: true);
+        await containerClient.CreateIfNotExistsAsync(
+            _option.ContainerPublicAccessType,
+            cancellationToken: cancellationToken
+        );
+
+        _CreatedContainers.TryAdd(blobContainer, value: true);
     }
 
     #endregion
@@ -88,10 +86,12 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        await CreateContainerAsync(container, cancellationToken);
+        if (_option.CreateContainerIfNotExists)
+        {
+            await CreateContainerAsync(container, cancellationToken);
+        }
 
-        var blobUrl = _BuildBlobUrl(blobName, container);
-        var blobClient = _GetBlobClient(blobUrl);
+        var blobClient = _GetBlobClient(container, blobName);
 
         var httpHeader = new BlobHttpHeaders
         {
@@ -146,8 +146,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var blobUrl = _BuildBlobUrl(blobName, container);
-        var blobClient = _GetBlobClient(blobUrl);
+        var blobClient = _GetBlobClient(container, blobName);
 
         var response = await blobClient.DeleteIfExistsAsync(
             DeleteSnapshotsOption.IncludeSnapshots,
@@ -174,8 +173,9 @@ public sealed class AzureBlobStorage : IBlobStorage
             return [];
         }
 
-        var batch = _serviceClient.GetBlobBatchClient();
-        var blobUrls = blobNames.Select(blobName => new Uri(_BuildBlobUrl(blobName, container), UriKind.Absolute));
+        var batch = _blobServiceClient.GetBlobBatchClient();
+
+        var blobUrls = _NormalizeBlobUrls(container, blobNames);
 
         try
         {
@@ -210,7 +210,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             var names = files.Blobs.Select(file => file.BlobKey).ToArray();
             var results = await BulkDeleteAsync(container, names, cancellationToken);
             count += results.Count(x => x.Succeeded);
-            await files.NextPageAsync().AnyContext();
+            await files.NextPageAsync(cancellationToken).AnyContext();
         } while (files.HasMore);
 
         _logger.LogTrace(
@@ -240,17 +240,18 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(newBlobName);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
-        // Ensure the new container exists
-        await CreateContainerAsync(newBlobContainer, cancellationToken);
+        if (_option.CreateContainerIfNotExists)
+        {
+            await CreateContainerAsync(newBlobContainer, cancellationToken);
+        }
 
-        var oldBlobUrl = _BuildBlobUrl(blobName, blobContainer);
-        var newBlobUrl = _BuildBlobUrl(newBlobName, newBlobContainer);
-        var newBlobClient = _GetBlobClient(newBlobUrl);
+        var oldBlobClient = _GetBlobClient(blobContainer, blobName);
+        var newBlobClient = _GetBlobClient(newBlobContainer, newBlobName);
 
         try
         {
             var copyResult = await newBlobClient.StartCopyFromUriAsync(
-                new Uri(oldBlobUrl, UriKind.Absolute),
+                oldBlobClient.Uri,
                 cancellationToken: cancellationToken
             );
 
@@ -312,10 +313,8 @@ public sealed class AzureBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var blobUrl = _BuildBlobUrl(blobName, container);
-        var client = _GetBlobClient(blobUrl);
-
-        var response = await client.ExistsAsync(cancellationToken);
+        var blobClient = _GetBlobClient(container, blobName);
+        var response = await blobClient.ExistsAsync(cancellationToken);
 
         return response.Value;
     }
@@ -330,13 +329,13 @@ public sealed class AzureBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        var client = _GetBlobClient(_BuildBlobUrl(blobName, container));
+        var blobClient = _GetBlobClient(container, blobName);
 
         var memoryStream = new MemoryStream();
 
         try
         {
-            await client.DownloadToAsync(memoryStream, cancellationToken);
+            await blobClient.DownloadToAsync(memoryStream, cancellationToken);
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.BlobNotFound || e.ErrorCode == BlobErrorCode.ContainerNotFound)
@@ -358,8 +357,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        var blobUrl = _BuildBlobUrl(blobName, container);
-        var blobClient = _GetBlobClient(blobUrl);
+        var blobClient = _GetBlobClient(container, blobName);
 
         Response<BlobProperties>? blobProperties;
 
@@ -401,12 +399,12 @@ public sealed class AzureBlobStorage : IBlobStorage
         Argument.IsPositive(pageSize);
         Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
-        var containerUrl = _BuildContainerUrl(container).ContainerUrl;
-        var client = _GetContainerClient(containerUrl);
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_GetContainer(container));
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
         var result = new PagedFileListResult(
-            async (_, token) => await _GetFilesAsync(client, criteria, pageSize, previousNextPageResult: null, token)
+            async (_, token) =>
+                await _GetFilesAsync(containerClient, criteria, pageSize, previousNextPageResult: null, token)
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();
@@ -586,33 +584,43 @@ public sealed class AzureBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Build Clients
-
-    private BlobClient _GetBlobClient(string blobUrl)
-    {
-        return new(new Uri(blobUrl, UriKind.Absolute), _keyCredential, _blobClientOptions);
-    }
-
-    private BlobContainerClient _GetContainerClient(string containerUrl)
-    {
-        return new(new Uri(containerUrl, UriKind.Absolute), _keyCredential, _blobClientOptions);
-    }
-
-    #endregion
 
     #region Build URLs
 
-    private string _BuildBlobUrl(string blobName, string[] container)
+
+    private BlobClient _GetBlobClient(string[] container, string blobName)
     {
-        return Url.Combine([_accountUrl, .. container, blobName]);
+        var (blobContainer, blobPath) = _NormalizeBlob(container, blobName);
+        var containerClient = _blobServiceClient.GetBlobContainerClient(blobContainer);
+        var blobClient = containerClient.GetBlobClient(blobPath);
+
+        return blobClient;
     }
 
-    private (string Container, string ContainerUrl) _BuildContainerUrl(string[] containers)
+    private List<Uri> _NormalizeBlobUrls(string[] container, IReadOnlyCollection<string> blobNames)
     {
-        var bucket = containers[0];
-        var bucketUrl = Url.Combine(_accountUrl, containers[0]);
+        var prefix =
+            _blobServiceClient.Uri.AbsoluteUri.EnsureEndsWith('/')
+            + container.Select(_NormalizeSlashes).JoinAsString('/');
 
-        return (bucket, bucketUrl);
+        return blobNames.Select(blobName => new Uri($"{prefix}/{blobName}")).ToList();
+    }
+
+    private static (string Container, string Blob) _NormalizeBlob(string[] containers, string blobName)
+    {
+        var blob = containers.Skip(1).Append(blobName).Select(_NormalizeSlashes).JoinAsString('/');
+
+        return (_GetContainer(containers), blob);
+    }
+
+    private static string _GetContainer(string[] containers)
+    {
+        return _NormalizeSlashes(containers[0]);
+    }
+
+    private static string _NormalizeSlashes(string x)
+    {
+        return _NormalizePath(x).RemovePostfix('/').RemovePrefix('/');
     }
 
     [return: NotNullIfNotNull(nameof(path))]
