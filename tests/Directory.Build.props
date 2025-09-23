@@ -4,7 +4,7 @@
 
   <PropertyGroup>
     <!--
-    xUnit1044: Avoid using TheoryData type arguments that are not serializable (TODO: Read more about)
+    xUnit1044: Avoid using TheoryData type arguments that are not serializable
     -->
     <NoWarn>$(NoWarn);xUnit1044</NoWarn>
   </PropertyGroup>
