@@ -7,7 +7,7 @@ using tusdotnet.Models;
 
 namespace Framework.Tus.Models;
 
-public sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blobClient, ILogger logger) : ITusFile
+internal sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blobClient, ILogger logger) : ITusFile
 {
     public string Id => azureFile.FileId;
 

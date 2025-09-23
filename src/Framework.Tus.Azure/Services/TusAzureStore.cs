@@ -24,24 +24,30 @@ public sealed partial class TusAzureStore
     private static readonly GuidFileIdProvider _DefaultFileIdProvider = new();
 
     private readonly TusAzureStoreOptions _options;
-    private readonly BlobContainerClient _containerClient;
-    private readonly ILogger<TusAzureStore> _logger;
-    private readonly TimeProvider _timeProvider;
+    private readonly ITusAzureBlobHttpHeadersProvider _blobHttpHeadersProvider;
     private readonly ITusFileIdProvider _fileIdProvider;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly TimeProvider _timeProvider;
+
+    private readonly ILogger<TusAzureStore> _logger;
+    private readonly BlobContainerClient _containerClient;
 
     public TusAzureStore(
+        BlobServiceClient blobServiceClient,
         TusAzureStoreOptions options,
-        ILoggerFactory loggerFactory,
-        TimeProvider? timeProvider = null,
-        ITusFileIdProvider? fileIdProvider = null
+        ITusAzureBlobHttpHeadersProvider? blobHttpHeadersProvider = null,
+        ITusFileIdProvider? fileIdProvider = null,
+        ILoggerFactory? loggerFactory = null,
+        TimeProvider? timeProvider = null
     )
     {
         _options = options;
+        _blobHttpHeadersProvider = blobHttpHeadersProvider ?? new DefaultTusAzureBlobHttpHeadersProvider();
+        _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _fileIdProvider = fileIdProvider ?? _DefaultFileIdProvider;
-        _logger = loggerFactory?.CreateLogger<TusAzureStore>() ?? NullLogger<TusAzureStore>.Instance;
+        _logger = _loggerFactory.CreateLogger<TusAzureStore>();
 
-        var blobServiceClient = new BlobServiceClient(_options.ConnectionString, options.BlobClientOptions);
         _containerClient = blobServiceClient.GetBlobContainerClient(_options.ContainerName);
 
         if (_options.CreateContainerIfNotExists)
@@ -55,7 +61,7 @@ public sealed partial class TusAzureStore
         try
         {
 #pragma warning disable MA0045 // Use Async
-            _containerClient.CreateIfNotExists();
+            _containerClient.CreateIfNotExists(_options.ContainerPublicAccessType);
 #pragma warning restore MA0045
             _logger.LogInformation("Initialized Azure Blob container: {ContainerName}", _options.ContainerName);
         }

@@ -33,8 +33,8 @@ public sealed partial class TusAzureStore : ITusCreationStore
             var blockBlobClient = _containerClient.GetBlockBlobClient(_GetBlobName(fileId));
 
             await blockBlobClient.UploadAsync(
-                content: Stream.Null, // TODO: set content type
-                httpHeaders: new BlobHttpHeaders { ContentType = ContentTypes.Applications.OctetStream },
+                content: Stream.Null,
+                httpHeaders: await _blobHttpHeadersProvider.GetBlobHttpHeadersAsync(blobMetadata.ToUser()),
                 metadata: blobMetadata.ToAzure(),
                 cancellationToken: cancellationToken
             );
