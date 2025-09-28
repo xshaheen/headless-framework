@@ -1,19 +1,14 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.IO.Pipelines;
-using System.Runtime.CompilerServices;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
-using Framework.Constants;
-using Framework.Tus.Locks;
 using Framework.Tus.Models;
 using Framework.Tus.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using tusdotnet.Interfaces;
-using tusdotnet.Stores;
 using tusdotnet.Stores.FileIdProviders;
 
 namespace Framework.Tus.Services;
@@ -93,6 +88,20 @@ public sealed partial class TusAzureStore
         catch (RequestFailedException e) when (e.Status == 404)
         {
             return [];
+        }
+    }
+
+    private static async Task<(List<BlobBlock> Committed, List<BlobBlock> Uncommitted)> _GetBlocksAsync(BlockBlobClient client, CancellationToken token)
+    {
+        try
+        {
+            var blockListResponse = await client.GetBlockListAsync(BlockListTypes.Committed, cancellationToken: token);
+
+            return (blockListResponse.Value.CommittedBlocks.AsList(), blockListResponse.Value.UncommittedBlocks.AsList());
+        }
+        catch (RequestFailedException e) when (e.Status == 404)
+        {
+            return ([], []);
         }
     }
 

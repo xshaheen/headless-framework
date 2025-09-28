@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs.Models;
-using Framework.Tus.Options;
-using tusdotnet.Models;
 
 namespace Framework.Tus.Models;
 
