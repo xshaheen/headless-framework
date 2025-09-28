@@ -2,7 +2,6 @@
 
 using Azure;
 using Azure.Storage.Blobs.Specialized;
-using tusdotnet.Interfaces;
 
 namespace Framework.Tus.Services;
 

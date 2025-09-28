@@ -2,7 +2,6 @@
 
 using Azure.Storage.Blobs.Models;
 using Framework.Constants;
-using Framework.Tus.Models;
 
 namespace Framework.Tus.Services;
 

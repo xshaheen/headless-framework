@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure;
-using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Framework.Checks;
-using Framework.Constants;
 using Framework.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
@@ -48,7 +46,6 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
             blobMetadata.DateCreated = _timeProvider.GetUtcNow();
             blobMetadata.UploadLength = uploadLength;
-            blobMetadata.BlockCount = 0;
             blobMetadata.ConcatType = "partial";
 
             await blobClient.UploadAsync(

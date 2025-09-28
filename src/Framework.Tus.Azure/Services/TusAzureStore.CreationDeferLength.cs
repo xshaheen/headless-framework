@@ -1,7 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Azure.Storage.Blobs;
-using Framework.Tus.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
 

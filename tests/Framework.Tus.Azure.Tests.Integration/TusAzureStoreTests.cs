@@ -63,9 +63,6 @@ public sealed class TusAzureStoreTests : TestBase
         // Upload length should be set correctly
         properties.Value.Metadata.Should().ContainKey(TusAzureMetadata.UploadLengthKey);
         properties.Value.Metadata[TusAzureMetadata.UploadLengthKey].Should().Be(uploadLength.ToInvariantString());
-        // New files should have 0 blocks committed
-        properties.Value.Metadata.Should().ContainKey(TusAzureMetadata.BlockCountKey);
-        properties.Value.Metadata[TusAzureMetadata.BlockCountKey].Should().Be("0");
     }
 
     // -- GetUploadMetadata
