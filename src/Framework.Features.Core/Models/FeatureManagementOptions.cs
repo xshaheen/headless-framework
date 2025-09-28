@@ -14,7 +14,7 @@ public sealed class FeatureManagementOptions
     public bool IsDynamicFeatureStoreEnabled { get; set; }
 
     /// <summary>A lock key for the feature update across all the applications.</summary>
-    public string CrossApplicationsCommonLockKey { get; set; } = "Common_FeaturesUpdateLock";
+    public string CrossApplicationsCommonLockKey { get; set; } = "features:common_update_lock";
 
     /// <summary>Default: 10 minutes.</summary>
     public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = 10.Minutes();
@@ -35,7 +35,7 @@ public sealed class FeatureManagementOptions
     public TimeSpan CommonFeaturesUpdatedStampCacheExpiration { get; set; } = 30.Days();
 
     /// <summary>A stamp when changed the application updates its local cache.</summary>
-    public string CommonFeaturesUpdatedStampCacheKey { get; set; } = "FeaturesUpdatedLocalStamp";
+    public string CommonFeaturesUpdatedStampCacheKey { get; set; } = "features:updated_local_stamp";
 
     /// <summary>Default: 30 seconds.</summary>
     public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();

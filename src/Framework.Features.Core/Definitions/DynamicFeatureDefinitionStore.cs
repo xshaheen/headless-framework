@@ -46,10 +46,10 @@ public sealed class DynamicFeatureDefinitionStore(
     /// A lock key for the application features update to allow only one instance to try
     /// to save the changes at a time.
     /// </summary>
-    private readonly string _appSaveLockKey = $"{application.ApplicationName}_FeaturesUpdateLock";
+    private readonly string _appSaveLockKey = $"features:{application.ApplicationName}_update_lock";
 
     /// <summary>A hash of the application features to check if there are changes and need to save them.</summary>
-    private readonly string _appSaveFeaturesHashCacheKey = $"{application.ApplicationName}_FeaturesHash";
+    private readonly string _appSaveFeaturesHashCacheKey = $"features:{application.ApplicationName}_hash";
 
     #region Get Methods
 

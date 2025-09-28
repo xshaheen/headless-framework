@@ -49,10 +49,10 @@ public sealed class DynamicPermissionDefinitionStore(
     /// A lock key for the application permissions update to allow only one instance to try
     /// to save the changes at a time.
     /// </summary>
-    private readonly string _appSaveLockKey = $"{application.ApplicationName}_PermissionsUpdateLock";
+    private readonly string _appSaveLockKey = $"permissions:{application.ApplicationName}_update_lock";
 
     /// <summary>A hash of the application permissions to check if there are changes and need to save them.</summary>
-    private readonly string _appSavePermissionsHashCacheKey = $"{application.ApplicationName}_PermissionsHash";
+    private readonly string _appSavePermissionsHashCacheKey = $"permissions:{application.ApplicationName}_hash";
 
     #region Get Methods
 
