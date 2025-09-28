@@ -14,7 +14,7 @@ public sealed class SettingManagementOptions
     public bool SaveStaticSettingsToDatabase { get; set; } = true;
 
     /// <summary>A lock key for the setting update across all the applications.</summary>
-    public string CrossApplicationsCommonLockKey { get; set; } = "Common_SettingsUpdateLock";
+    public string CrossApplicationsCommonLockKey { get; set; } = "settings:common_update_lock";
 
     /// <summary>Default: 10 minutes.</summary>
     public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = 10.Minutes();
@@ -35,7 +35,7 @@ public sealed class SettingManagementOptions
     public TimeSpan CommonSettingsUpdatedStampCacheExpiration { get; set; } = 30.Days();
 
     /// <summary>A stamp when changed the application updates its local cache.</summary>
-    public string CommonSettingsUpdatedStampCacheKey { get; set; } = "SettingsUpdatedLocalStamp";
+    public string CommonSettingsUpdatedStampCacheKey { get; set; } = "settings:updated_local_stamp";
 
     /// <summary>Default: 30 seconds.</summary>
     public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();

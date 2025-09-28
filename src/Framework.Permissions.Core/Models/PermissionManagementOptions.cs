@@ -14,7 +14,7 @@ public sealed class PermissionManagementOptions
     public bool IsDynamicPermissionStoreEnabled { get; set; }
 
     /// <summary>A lock key for the permission update across all the applications.</summary>
-    public string CrossApplicationsCommonLockKey { get; set; } = "Common_PermissionsUpdateLock";
+    public string CrossApplicationsCommonLockKey { get; set; } = "permissions:common_update_lock";
 
     /// <summary>Default: 10 minutes.</summary>
     public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = 10.Minutes();
@@ -35,7 +35,7 @@ public sealed class PermissionManagementOptions
     public TimeSpan CommonPermissionsUpdatedStampCacheExpiration { get; set; } = 30.Days();
 
     /// <summary>A stamp when changed the application updates its local cache.</summary>
-    public string CommonPermissionsUpdatedStampCacheKey { get; set; } = "PermissionsUpdatedLocalStamp";
+    public string CommonPermissionsUpdatedStampCacheKey { get; set; } = "permissions:updated_local_stamp";
 
     /// <summary>Default: 30 seconds.</summary>
     public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();

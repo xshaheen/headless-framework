@@ -47,10 +47,10 @@ public sealed class DynamicSettingDefinitionStore(
     /// A lock key for the application features update to allow only one instance to try
     /// to save the changes at a time.
     /// </summary>
-    private readonly string _appSaveLockKey = $"{application.ApplicationName}_SettingsUpdateLock";
+    private readonly string _appSaveLockKey = $"settings:{application.ApplicationName}_update_lock";
 
     /// <summary>A hash of the application features to check if there are changes and need to save them.</summary>
-    private readonly string _appSaveFeaturesHashCacheKey = $"{application.ApplicationName}_SettingsHash";
+    private readonly string _appSaveFeaturesHashCacheKey = $"settings:{application.ApplicationName}_hash";
 
     #region Get Methods
 
