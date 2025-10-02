@@ -2,6 +2,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,7 +13,7 @@ namespace Framework.IO;
 
 /// <summary>Exposes <see cref="ReadOnlySequence{T}"/> as a <see cref="Stream"/></summary>
 /// <remarks>
-/// Copy of https://github.com/dotnet/Nerdbank.Streams/blob/main/src/Nerdbank.Streams/ReadOnlySequenceStream.cs
+/// Copy of <a href="https://github.com/dotnet/Nerdbank.Streams/blob/main/src/Nerdbank.Streams/ReadOnlySequenceStream.cs"></a>
 /// </remarks>
 internal class ReadOnlySequenceStream : Stream
 {
@@ -37,19 +38,14 @@ internal class ReadOnlySequenceStream : Stream
         _position = readOnlySequence.Start;
     }
 
-    /// <inheritdoc/>
     public override bool CanRead => !IsDisposed;
 
-    /// <inheritdoc/>
     public override bool CanSeek => !IsDisposed;
 
-    /// <inheritdoc/>
     public override bool CanWrite => false;
 
-    /// <inheritdoc/>
     public override long Length => _ReturnOrThrowDisposed(_readOnlySequence.Length);
 
-    /// <inheritdoc/>
     public override long Position
     {
         get => _readOnlySequence.Slice(0, _position).Length;
@@ -62,11 +58,6 @@ internal class ReadOnlySequenceStream : Stream
 
     public bool IsDisposed { get; private set; }
 
-    public override void Flush() => _ThrowDisposedOr(new NotSupportedException());
-
-    public override Task FlushAsync(CancellationToken cancellationToken) =>
-        throw _ThrowDisposedOr(new NotSupportedException());
-
     public override int Read(byte[] buffer, int offset, int count)
     {
         var remaining = _readOnlySequence.Slice(_position);
@@ -77,7 +68,6 @@ internal class ReadOnlySequenceStream : Stream
         return (int)toCopy.Length;
     }
 
-    /// <inheritdoc/>
     public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -98,7 +88,6 @@ internal class ReadOnlySequenceStream : Stream
         return _lastReadTask = Task.FromResult(bytesRead);
     }
 
-    /// <inheritdoc/>
     public override int ReadByte()
     {
         var remaining = _readOnlySequence.Slice(_position);
@@ -114,7 +103,6 @@ internal class ReadOnlySequenceStream : Stream
         return -1;
     }
 
-    /// <inheritdoc/>
     public override long Seek(long offset, SeekOrigin origin)
     {
         Ensure.NotDisposed(IsDisposed, this);
@@ -159,20 +147,6 @@ internal class ReadOnlySequenceStream : Stream
         return Position;
     }
 
-    /// <inheritdoc/>
-    public override void SetLength(long value) => _ThrowDisposedOr(new NotSupportedException());
-
-    /// <inheritdoc/>
-    public override void Write(byte[] buffer, int offset, int count) => _ThrowDisposedOr(new NotSupportedException());
-
-    /// <inheritdoc/>
-    public override void WriteByte(byte value) => _ThrowDisposedOr(new NotSupportedException());
-
-    /// <inheritdoc/>
-    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-        throw _ThrowDisposedOr(new NotSupportedException());
-
-    /// <inheritdoc/>
     public override async Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
     {
         foreach (var segment in _readOnlySequence)
@@ -181,7 +155,6 @@ internal class ReadOnlySequenceStream : Stream
         }
     }
 
-    /// <inheritdoc/>
     public override int Read(Span<byte> buffer)
     {
         var remaining = _readOnlySequence.Slice(_position);
@@ -192,7 +165,6 @@ internal class ReadOnlySequenceStream : Stream
         return (int)toCopy.Length;
     }
 
-    /// <inheritdoc/>
     public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -200,14 +172,6 @@ internal class ReadOnlySequenceStream : Stream
         return new ValueTask<int>(Read(buffer.Span));
     }
 
-    /// <inheritdoc/>
-    public override void Write(ReadOnlySpan<byte> buffer) => throw _ThrowDisposedOr(new NotSupportedException());
-
-    /// <inheritdoc/>
-    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
-        throw _ThrowDisposedOr(new NotSupportedException());
-
-    /// <inheritdoc/>
     protected override void Dispose(bool disposing)
     {
         if (!IsDisposed)
@@ -218,6 +182,45 @@ internal class ReadOnlySequenceStream : Stream
         }
     }
 
+    #region Not Supported
+
+    public override void SetLength(long value) => _ThrowDisposedOrNotSupported();
+
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        _ThrowDisposedOrNotSupported();
+    }
+
+    public override void WriteByte(byte value)
+    {
+        _ThrowDisposedOrNotSupported();
+    }
+
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        _ThrowDisposedOrNotSupported();
+
+        return Task.CompletedTask;
+    }
+
+    public override void Write(ReadOnlySpan<byte> buffer) => _ThrowDisposedOrNotSupported();
+
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        _ThrowDisposedOrNotSupported();
+
+        return ValueTask.CompletedTask;
+    }
+
+    public override void Flush() => _ThrowDisposedOrNotSupported();
+
+    public override Task FlushAsync(CancellationToken cancellationToken)
+    {
+        _ThrowDisposedOrNotSupported();
+
+        return Task.CompletedTask;
+    }
+
     private T _ReturnOrThrowDisposed<T>(T value)
     {
         Ensure.NotDisposed(IsDisposed, this);
@@ -225,10 +228,13 @@ internal class ReadOnlySequenceStream : Stream
         return value;
     }
 
-    private Exception _ThrowDisposedOr(Exception e)
+    [DoesNotReturn]
+    private void _ThrowDisposedOrNotSupported()
     {
         Ensure.NotDisposed(IsDisposed, this);
 
-        throw e;
+        throw new NotSupportedException();
     }
+
+    #endregion
 }

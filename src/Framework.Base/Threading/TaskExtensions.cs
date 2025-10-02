@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using Framework.Checks;
 using Nito.AsyncEx;
 
 #pragma warning disable IDE0130
@@ -224,6 +225,109 @@ public static class TaskExtensions
         // Return the result, if possible
         return propertyInfo?.GetValue(task);
     }
+
+    #endregion
+
+    #region WithCancellation
+
+#pragma warning disable VSTHRD003
+    /// <summary>
+    /// Wraps a task with one that will complete as cancelled based on a cancellation token,
+    /// allowing someone to await a task but be able to break out early by cancelling the token.
+    /// </summary>
+    /// <typeparam name="T">The type of value returned by the task.</typeparam>
+    /// <param name="task">The task to wrap.</param>
+    /// <param name="cancellationToken">The token that can be canceled to break out of the await.</param>
+    /// <returns>The wrapping task.</returns>
+    public static Task<T> WithCancellation<T>(this Task<T> task, CancellationToken cancellationToken)
+    {
+        _ = Argument.IsNotNull(task);
+
+        if (!cancellationToken.CanBeCanceled || task.IsCompleted)
+        {
+            return task;
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<T>(cancellationToken);
+        }
+
+        return _WithCancellationSlow(task, cancellationToken);
+    }
+
+    /// <summary>
+    /// Wraps a task with one that will complete as cancelled based on a cancellation token,
+    /// allowing someone to await a task but be able to break out early by cancelling the token.
+    /// </summary>
+    /// <param name="task">The task to wrap.</param>
+    /// <param name="cancellationToken">The token that can be canceled to break out of the await.</param>
+    /// <returns>The wrapping task.</returns>
+    public static Task WithCancellation(this Task task, CancellationToken cancellationToken)
+    {
+        _ = Argument.IsNotNull(task);
+
+        if (!cancellationToken.CanBeCanceled || task.IsCompleted)
+        {
+            return task;
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled(cancellationToken);
+        }
+
+        return _WithCancellationSlow(task, continueOnCapturedContext: false, cancellationToken: cancellationToken);
+    }
+
+    private static async Task<T> _WithCancellationSlow<T>(Task<T> task, CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+
+        await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
+        {
+            if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+
+        // Rethrow any fault/cancellation exception, even if we awaited above.
+        // But if we skipped the above if branched, this will actually yield
+        // on an incompleted task.
+        return await task.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Wraps a task with one that will complete as cancelled based on a cancellation token,
+    /// allowing someone to await a task but be able to break out early by cancelling the token.
+    /// </summary>
+    /// <param name="task">The task to wrap.</param>
+    /// <param name="continueOnCapturedContext">A value indicating whether *internal* continuations required to respond to cancellation should run on the current <see cref="SynchronizationContext"/>.</param>
+    /// <param name="cancellationToken">The token that can be canceled to break out of to await.</param>
+    /// <returns>The wrapping task.</returns>
+    private static async Task _WithCancellationSlow(
+        this Task task,
+        bool continueOnCapturedContext,
+        CancellationToken cancellationToken
+    )
+    {
+        var tcs = new TaskCompletionSource<bool>();
+
+        await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
+        {
+            if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(continueOnCapturedContext))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+
+        // Rethrow any fault/cancellation exception, even if we awaited above.
+        // But if we skipped the above if branched, this will actually yield
+        // on an incompleted task.
+        await task.ConfigureAwait(continueOnCapturedContext);
+    }
+#pragma warning restore VSTHRD003
 
     #endregion
 }
