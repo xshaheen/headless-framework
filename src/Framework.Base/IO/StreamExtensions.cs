@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using Cysharp.Text;
 using Framework.Checks;
 using Framework.Core;
+using Framework.IO;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -13,6 +15,36 @@ namespace System.IO;
 [PublicAPI]
 public static class StreamExtensions
 {
+    #region Converter
+
+    /// <summary>
+    /// Exposes a <see cref="ReadOnlySequence{T}"/> of <see cref="byte"/> as a <see cref="Stream"/>.
+    /// </summary>
+    /// <param name="readOnlySequence">The sequence of bytes to expose as a stream.</param>
+    /// <returns>The readable stream.</returns>
+    public static Stream ToStream(
+        this ReadOnlySequence<byte> readOnlySequence,
+        Action<object?>? disposeAction = null,
+        object? disposeActionArg = null
+    )
+    {
+        return new ReadOnlySequenceStream(readOnlySequence, disposeAction, disposeActionArg);
+    }
+
+    #endregion
+
+    #region Slice
+
+    /// <summary>
+    /// Creates a <see cref="Stream"/> that can read no more than a given number of bytes from an underlying stream.
+    /// </summary>
+    /// <param name="stream">The stream to read from.</param>
+    /// <param name="length">The number of bytes to read from the parent stream.</param>
+    /// <returns>A stream that ends after <paramref name="length"/> bytes are read.</returns>
+    public static Stream ReadSlice(this Stream stream, long length) => new NestedStream(stream, length);
+
+    #endregion
+
     #region Get All Text
 
     [MustUseReturnValue]
