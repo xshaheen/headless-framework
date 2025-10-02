@@ -70,9 +70,9 @@ public sealed class ApiExtraInformationOperationProcessor : IOperationProcessor
         OpenApiOperation operation
     )
     {
-        foreach (var parameter in operation.Parameters)
+        foreach (var parameter in operation.Parameters ?? [])
         {
-            var description = context.ApiDescription.ParameterDescriptions.FirstOrDefault(x =>
+            var description = context.ApiDescription?.ParameterDescriptions?.FirstOrDefault(x =>
                 string.Equals(x.Name, parameter.Name, StringComparison.OrdinalIgnoreCase)
             );
 
