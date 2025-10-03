@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
@@ -83,46 +84,62 @@ public sealed partial class TusAzureStore
 
             if (hasher is null) // No checksum, upload directly
             {
-                Debug.Assert(stream.CanSeek, "Stream must be seekable in direct staging mode without checksum");
+                if (!stream.CanSeek)
+                {
+                    throw new ArgumentException(
+                        @"Stream must be seekable when EnableChunkSplitting is false and no checksum is requested. Either enable chunk splitting or use a seekable stream.",
+                        nameof(stream)
+                    );
+                }
+
                 await blockBlobClient.StageBlockAsync(blockId, stream, cancellationToken: cancellationToken);
                 return ([blockId], stream.Length);
             }
 
             // Read entire stream into MemoryStream for hashing and upload
-            await using var memoryStream = new MemoryStream();
-            await stream.CopyToAsync(memoryStream, cancellationToken);
+            // Pre-allocate capacity if stream length is known to avoid resizing
+            var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)stream.Length : 0;
+            await using var memoryStream = new MemoryStream(capacity);
+            await stream.CopyToAsync(memoryStream, cancellationToken).AnyContext();
 
             memoryStream.Position = 0; // Reset position for hashing
             hasher.TransformFinalBlock(memoryStream.GetBuffer(), 0, (int)memoryStream.Length);
 
             memoryStream.Position = 0; // Reuse MemoryStream for upload
-            await blockBlobClient.StageBlockAsync(blockId, memoryStream, cancellationToken: cancellationToken);
+            await blockBlobClient
+                .StageBlockAsync(blockId, memoryStream, cancellationToken: cancellationToken)
+                .AnyContext();
             return ([blockId], memoryStream.Length);
         }
 
         var maxChunkSize = _CalculateOptimalChunkSize(fileUploadLength);
-        var chunkBlockIds = new List<string>();
+
+        // Pre-allocate list capacity to avoid resizing during iteration
+        var estimatedChunkCount = fileUploadLength.HasValue
+            ? (int)Math.Ceiling((double)fileUploadLength.Value / maxChunkSize)
+            : 16; // Default capacity if length unknown
+
+        var chunkBlockIds = new List<string>(estimatedChunkCount);
         var bytesWritten = 0L;
 
-        await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken))
+        await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken).AnyContext())
         {
-            await using (chunk)
-            {
-                var blockId = _GenerateBlockId(nextBlockNumber++);
+            var blockId = _GenerateBlockId(nextBlockNumber++);
 
-                // Calculate hash for this chunk if needed
-                if (hasher is not null)
-                {
-                    hasher.TransformBlock(chunk.GetBuffer(), 0, (int)chunk.Length, outputBuffer: null, 0);
-                    chunk.Position = 0;
-                }
+            // Calculate hash for this chunk if needed
+            // TransformBlock uses the buffer synchronously - safe with shared buffer approach
+            hasher?.TransformBlock(chunk.Array!, chunk.Offset, chunk.Count, outputBuffer: null, 0);
 
-                // Upload the chunk as a block (rewind after hashing consumed the stream)
-                await blockBlobClient.StageBlockAsync(blockId, chunk, cancellationToken: cancellationToken);
+            // Upload the chunk as a block
+            // MemoryStream wrapper is necessary (Azure SDK requires Stream) but doesn't copy data
+            // Azure SDK reads/buffers the stream synchronously - safe with shared buffer approach
+            await using var chunkStream = new MemoryStream(chunk.Array!, chunk.Offset, chunk.Count, writable: false);
+            await blockBlobClient
+                .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
+                .AnyContext();
 
-                chunkBlockIds.Add(blockId);
-                bytesWritten += chunk.Length;
-            }
+            chunkBlockIds.Add(blockId);
+            bytesWritten += chunk.Count;
         }
 
         // Finalize hash if needed (TransformFinalBlock with empty data)
@@ -132,42 +149,118 @@ public sealed partial class TusAzureStore
     }
 
     /// <summary>Splits a stream into chunks of the specified maximum size.</summary>
-    private static async IAsyncEnumerable<MemoryStream> _SplitStreamAsync(
+    /// <param name="sourceStream">The source stream to read and split into chunks.</param>
+    /// <param name="chunkSize">Maximum size of each chunk in bytes.</param>
+    /// <param name="cancellationToken">Token to cancel the async enumeration.</param>
+    /// <returns>Async enumerable of ArraySegments referencing portions of a pooled buffer.</returns>
+    /// <remarks>
+    /// <para>
+    /// Performance optimizations:
+    /// - Uses ArrayPool to eliminate buffer allocations (single buffer reused for all chunks)
+    /// - Returns ArraySegment (stack struct) to avoid heap allocations
+    /// - Clears buffer on return to prevent data leaks between uploads
+    /// </para>
+    /// <para>
+    /// CRITICAL SAFETY CONSTRAINT: This implementation uses a SINGLE pooled buffer that is reused
+    /// for all chunks. The buffer is rented once at the start and returned only when enumeration completes.
+    /// Each ArraySegment references this shared buffer.
+    /// </para>
+    /// <para>
+    /// CALLER REQUIREMENTS:
+    /// 1. MUST consume each chunk synchronously before the next iteration (await foreach guarantees this)
+    /// 2. MUST NOT store ArraySegment references beyond the iteration body
+    /// 3. MUST complete all async operations (hash + upload) before moving to next chunk
+    /// </para>
+    /// <para>
+    /// Why this is safe in current usage:
+    /// - await foreach ensures synchronous iteration (waits for each iteration to complete)
+    /// - Caller immediately hashes the chunk (TransformBlock uses buffer synchronously)
+    /// - Caller immediately uploads via MemoryStream (Azure SDK buffers data synchronously)
+    /// - Both operations complete before next yield return is reached
+    /// </para>
+    /// <para>
+    /// If Azure SDK behavior changes to read streams lazily/asynchronously, this could cause
+    /// data corruption. Monitor Azure SDK updates and consider per-chunk buffer allocation if needed.
+    /// </para>
+    /// </remarks>
+    private static IAsyncEnumerable<ArraySegment<byte>> _SplitStreamAsync(
         Stream sourceStream,
         int chunkSize,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(sourceStream);
         Argument.IsPositive(chunkSize);
 
-        var buffer = new byte[chunkSize];
+        return enumerable(sourceStream, chunkSize, cancellationToken);
 
-        while (true)
+        static async IAsyncEnumerable<ArraySegment<byte>> enumerable(
+            Stream sourceStream,
+            int chunkSize,
+            [EnumeratorCancellation] CancellationToken cancellationToken
+        )
         {
-            var bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, chunkSize), cancellationToken);
-
-            if (bytesRead == 0)
+            // Validate chunk size doesn't exceed Azure's 100MB block limit
+            if (chunkSize > 100 * 1024 * 1024)
             {
-                break;
+                throw new ArgumentOutOfRangeException(
+                    nameof(chunkSize),
+                    chunkSize,
+                    @"Chunk size cannot exceed Azure Blob Storage's 100MB block limit"
+                );
             }
 
-            var chunk = new MemoryStream(bytesRead);
-            await chunk.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-            chunk.Position = 0; // Reset to start for reading
+            // Rent buffer from shared pool (reused for all chunks to minimize memory consumption)
+            var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
 
-            yield return chunk;
+            try
+            {
+                while (true)
+                {
+                    var bytesRead = await sourceStream
+                        .ReadAsync(buffer.AsMemory(0, chunkSize), cancellationToken)
+                        .AnyContext();
+
+                    if (bytesRead == 0)
+                    {
+                        break;
+                    }
+
+                    // Return segment of the shared pooled buffer
+                    // IMPORTANT: This segment is only valid until the next iteration!
+                    // Caller MUST consume (hash + upload) before continuing enumeration
+                    yield return new ArraySegment<byte>(buffer, 0, bytesRead);
+                }
+            }
+            finally
+            {
+                // Return buffer to pool for reuse
+                // clearArray: true ensures sensitive file data doesn't leak to other uploads
+                ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            }
         }
     }
 
     /// <summary>Calculates the optimal chunk size based on total data size and blob type</summary>
+    /// <remarks>
+    /// Strategy:
+    /// - Unknown size: Use default chunk size
+    /// - 0 bytes: Use default chunk size (edge case)
+    /// - &lt; 10MB: Use minimum of default chunk or file size (avoid oversized chunks)
+    /// - &lt; 100MB: Use default chunk size (4MB typically)
+    /// - ≥ 100MB: Use max chunk size (100MB) for better throughput
+    /// </remarks>
     private int _CalculateOptimalChunkSize(long? totalSize)
     {
-        return totalSize switch
+        if (!totalSize.HasValue || totalSize.Value == 0)
         {
-            0 => _options.BlobDefaultChunkSize,
+            return _options.BlobDefaultChunkSize;
+        }
+
+        return totalSize.Value switch
+        {
             // (Less than 10MB) For small files, use smaller chunks to reduce memory usage
-            < 10 * 1024 * 1024 => Math.Min(_options.BlobDefaultChunkSize, (int)totalSize),
+            < 10 * 1024 * 1024 => Math.Min(_options.BlobDefaultChunkSize, (int)totalSize.Value),
             // (Less than 100MB) For medium files, use default chunk size
             < 100 * 1024 * 1024 => _options.BlobDefaultChunkSize,
             // (100MB and above) For large files, use larger chunks for better performance
