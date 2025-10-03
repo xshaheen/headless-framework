@@ -67,7 +67,6 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
                 _TryUpdateConcurrencyStamp(entry);
                 _TryPublishUpdatedLocalMessage(entry);
 
-                // TODO: Raise suspended/deleted/restored events
                 break;
             case EntityState.Deleted:
                 _TryPublishDeletedLocalMessage(entry);

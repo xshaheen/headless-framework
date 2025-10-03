@@ -199,8 +199,12 @@ public sealed class HeadlessDbContextTests : IDisposable
         entity.DateDeleted.Should().Be(_now);
         entity.DeletedById.Should().Be(_userId);
 
-        var evt = db.EmittedLocalMessages[^1];
-        evt.Messages.Should().ContainSingle(m => m is EntityDeletedEventData<TestEntity>);
+        var last = db.EmittedLocalMessages[^1];
+        last.Messages.Should().HaveCount(2);
+        var updatedMessage = last.Messages.OfType<EntityUpdatedEventData<TestEntity>>().Single();
+        updatedMessage.Entity.Should().Be(entity);
+        var changedMessage = last.Messages.OfType<EntityChangedEventData<TestEntity>>().Single();
+        changedMessage.Entity.Should().Be(entity);
     }
 
     // Suspend
@@ -313,13 +317,19 @@ public sealed class HeadlessDbContextTests : IDisposable
         await db.SaveChangesAsync();
 
         // when/then: default filters on
+        using (_currentTenant.Change(null))
+        {
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
+            items.Should().BeEmpty();
+        }
+
         using (_currentTenant.Change("TENANT-1"))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a");
         }
 
-        using (_currentTenant.Change(null))
+        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a", "b");

@@ -7,7 +7,7 @@ namespace Framework.Linq;
 /// <summary>
 /// Predicate builder.
 /// This is part of the solution which solves the expression parameter problem when going to Entity Framework.
-/// For more information about this solution, please refer to http://blogs.msdn.com/b/meek/archive/2008/05/02/linq-to-entities-combining-predicates.aspx.
+/// For more information about this solution, please refer to https://learn.microsoft.com/en-us/archive/blogs/meek/linq-to-entities-combining-predicates
 /// </summary>
 [PublicAPI]
 public static class PredicateBuilder
@@ -18,36 +18,22 @@ public static class PredicateBuilder
 
     public static Expression<Func<T, bool>> Or<T>(this IEnumerable<Expression<Func<T, bool>>> expressions)
     {
-        var result = False<T>();
-
-        foreach (var expression in expressions)
-        {
-            result = result.Or(expression);
-        }
-
-        return result;
+        return expressions.Aggregate(seed: False<T>(), (current, expression) => current.Or(expression));
     }
 
     public static Expression<Func<T, bool>> And<T>(this IEnumerable<Expression<Func<T, bool>>> expressions)
     {
-        var result = True<T>();
-
-        foreach (var expression in expressions)
-        {
-            result = result.And(expression);
-        }
-
-        return result;
+        return expressions.Aggregate(seed: True<T>(), (current, expression) => current.And(expression));
     }
 
-    public static Expression<Func<T, bool>> AndNot<T>(this Expression<Func<T, bool>> e1, Expression<Func<T, bool>> e2)
+    public static Expression<Func<T, bool>> AndNot<T>(this Expression<Func<T, bool>> f, Expression<Func<T, bool>> s)
     {
-        return e1.And(e2.Not());
+        return f.And(s.Not());
     }
 
-    public static Expression<Func<T, bool>> OrNot<T>(this Expression<Func<T, bool>> e1, Expression<Func<T, bool>> e2)
+    public static Expression<Func<T, bool>> OrNot<T>(this Expression<Func<T, bool>> f, Expression<Func<T, bool>> s)
     {
-        return e1.Or(e2.Not());
+        return f.Or(s.Not());
     }
 
     /// <summary>Negates the given expression by applying a logical NOT operation.</summary>
@@ -61,22 +47,22 @@ public static class PredicateBuilder
 
     /// <summary>Combines two given expressions by using the AND.</summary>
     /// <typeparam name="T">The type of the object.</typeparam>
-    /// <param name="e1">The first part of the expression.</param>
-    /// <param name="e2">The second part of the expression.</param>
+    /// <param name="f">The first part of the expression.</param>
+    /// <param name="s">The second part of the expression.</param>
     /// <returns>The combined expression.</returns>
-    public static Expression<Func<T, bool>> And<T>(this Expression<Func<T, bool>> e1, Expression<Func<T, bool>> e2)
+    public static Expression<Func<T, bool>> And<T>(this Expression<Func<T, bool>> f, Expression<Func<T, bool>> s)
     {
-        return e1._Compose(e2, Expression.AndAlso);
+        return f._Compose(s, Expression.AndAlso);
     }
 
     /// <summary>Combines two given expressions by using the OR.</summary>
     /// <typeparam name="T">The type of the object.</typeparam>
-    /// <param name="e1">The first part of the expression.</param>
-    /// <param name="e2">The second part of the expression.</param>
+    /// <param name="f">The first part of the expression.</param>
+    /// <param name="s">The second part of the expression.</param>
     /// <returns>The combined expression.</returns>
-    public static Expression<Func<T, bool>> Or<T>(this Expression<Func<T, bool>> e1, Expression<Func<T, bool>> e2)
+    public static Expression<Func<T, bool>> Or<T>(this Expression<Func<T, bool>> f, Expression<Func<T, bool>> s)
     {
-        return e1._Compose(e2, Expression.OrElse);
+        return f._Compose(s, Expression.OrElse);
     }
 
     #region Helpers
@@ -88,9 +74,11 @@ public static class PredicateBuilder
     )
     {
         // build parameter map (from parameters of second to parameters of first)
-        var map = first
-            .Parameters.Select((f, i) => new { f, s = second.Parameters[i] })
-            .ToDictionary(p => p.s, p => p.f);
+        Dictionary<ParameterExpression, ParameterExpression> map = new(second.Parameters.Count);
+        for (var i = 0; i < second.Parameters.Count; i++)
+        {
+            map.Add(second.Parameters[i], first.Parameters[i]);
+        }
 
         // replace parameters in the second lambda expression with parameters from the first
         var secondBody = ParameterRebinder.ReplaceParameters(map, second.Body);
@@ -102,7 +90,7 @@ public static class PredicateBuilder
     /// <summary>
     /// Represents the parameter rebinder used for rebinding the parameters for the given expressions.
     /// This is part of the solution which solves the expression parameter problem when going to Entity Framework.
-    /// For more information about this solution, please refer to <a href="http://blogs.msdn.com/b/meek/archive/2008/05/02/linq-to-entities-combining-predicates.aspx"></a>.
+    /// For more information about this solution, please refer to <a href="https://learn.microsoft.com/en-us/archive/blogs/meek/linq-to-entities-combining-predicates"></a>.
     /// </summary>
     private sealed class ParameterRebinder(Dictionary<ParameterExpression, ParameterExpression>? m) : ExpressionVisitor
     {
