@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using System.Linq.Expressions;
 using System.Reflection;
 using Framework.Abstractions;
@@ -20,6 +19,12 @@ public sealed class DbContextModelCreatingProcessor(
 )
 {
     public string? CurrentTenantId => currentTenant.Id;
+
+    public bool IsDeleteFilterEnabled => filtersStatus.IsDeleteFilterEnabled;
+
+    public bool IsSuspendedFilterEnabled => filtersStatus.IsSuspendedFilterEnabled;
+
+    public bool IsTenantFilterEnabled => filtersStatus.IsTenantFilterEnabled;
 
     public void ProcessModelCreating(ModelBuilder modelBuilder)
     {
@@ -97,11 +102,11 @@ public sealed class DbContextModelCreatingProcessor(
     {
         if (type.BaseType is null)
         {
-            var filter = _CreateFilterExpression<TEntity>(builder);
+            var expression = _CreateFilterExpression<TEntity>(builder);
 
-            if (filter is not null)
+            if (expression is not null)
             {
-                builder.Entity<TEntity>().AndHasQueryFilter(filter);
+                builder.Entity<TEntity>().AndHasQueryFilter(expression);
             }
         }
     }
@@ -112,6 +117,7 @@ public sealed class DbContextModelCreatingProcessor(
         // Note: filters are applied once, so the expressions is cached, and it should depend on a properties and not cached values.
 
         var entityType = typeof(TEntity);
+
         var isMultiTenant = entityType.IsAssignableTo<IMultiTenant>();
         var isDeleteAudit = entityType.IsAssignableTo<IDeleteAudit>();
         var isSuspendAudit = entityType.IsAssignableTo<ISuspendAudit>();
@@ -126,35 +132,31 @@ public sealed class DbContextModelCreatingProcessor(
 
         if (isMultiTenant)
         {
-            var columnName = getColumnName(mutableEntityType, nameof(IMultiTenant.TenantId));
-            expression = e =>
-                !filtersStatus.IsTenantFilterEnabled || EF.Property<string?>(e, columnName) == CurrentTenantId;
+            var columnName = _GetColumnName(mutableEntityType, nameof(IMultiTenant.TenantId));
+            expression = x => !IsTenantFilterEnabled || EF.Property<string?>(x, columnName) == CurrentTenantId;
         }
 
         if (isDeleteAudit)
         {
-            var columnName = getColumnName(mutableEntityType, nameof(IDeleteAudit.IsDeleted));
-            Expression<Func<TEntity, bool>> filter = e =>
-                !filtersStatus.IsDeleteFilterEnabled || !EF.Property<bool>(e, columnName);
+            var columnName = _GetColumnName(mutableEntityType, nameof(IDeleteAudit.IsDeleted));
+            Expression<Func<TEntity, bool>> filter = x => !IsDeleteFilterEnabled || !EF.Property<bool>(x, columnName);
             expression = expression?.And(filter) ?? filter;
         }
 
         if (isSuspendAudit)
         {
-            var columnName = getColumnName(mutableEntityType, nameof(ISuspendAudit.IsSuspended));
-
-            Expression<Func<TEntity, bool>> filter = e =>
-                !filtersStatus.IsSuspendedFilterEnabled || !EF.Property<bool>(e, columnName);
-
+            var columnName = _GetColumnName(mutableEntityType, nameof(ISuspendAudit.IsSuspended));
+            Expression<Func<TEntity, bool>> filter = x =>
+                !IsSuspendedFilterEnabled || !EF.Property<bool>(x, columnName);
             expression = expression?.And(filter) ?? filter;
         }
 
         return expression;
+    }
 
-        static string getColumnName(IMutableEntityType type, string name)
-        {
-            return type.FindProperty(name)?.GetColumnName() ?? name;
-        }
+    private static string _GetColumnName(IMutableEntityType type, string name)
+    {
+        return type.FindProperty(name)?.GetColumnName() ?? name;
     }
 
     #endregion

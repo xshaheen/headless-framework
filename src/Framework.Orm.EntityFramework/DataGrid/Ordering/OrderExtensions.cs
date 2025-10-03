@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Framework.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

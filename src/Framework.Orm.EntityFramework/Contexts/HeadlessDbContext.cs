@@ -4,8 +4,6 @@ using System.Data;
 using Framework.Abstractions;
 using Framework.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Framework.Orm.EntityFramework.Contexts;
@@ -428,8 +426,8 @@ public abstract class HeadlessDbContext : DbContext
 
     #endregion
 
-    public string GetCompiledQueryCacheKey()
+    internal string GetCompiledQueryCacheKey()
     {
-        return $"{_currentTenant?.ToString() ?? "Null"}:{FilterStatus.GetCacheKey()}";
+        return $"{_currentTenant?.Id ?? "Null"}:{FilterStatus.GetCacheKey()}";
     }
 }
