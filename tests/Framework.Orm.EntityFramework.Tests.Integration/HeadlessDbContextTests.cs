@@ -1,16 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using FluentAssertions;
-using Framework.Abstractions;
+﻿using Framework.Abstractions;
 using Framework.Domains;
 using Framework.Orm.EntityFramework;
 using Framework.Orm.EntityFramework.Contexts;
 using Framework.Primitives;
 using Framework.Testing.Helpers;
-using JetBrains.Annotations;
 using Meziantou.Extensions.Logging.Xunit;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +11,6 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Xunit;
 
 namespace Tests;
 
@@ -306,7 +298,8 @@ public sealed class HeadlessDbContextTests : IDisposable
         var b = new TestEntity { Name = "b", TenantId = "TENANT-2" };
         var c = new TestEntity { Name = "c", TenantId = "TENANT-1" };
         var d = new TestEntity { Name = "d", TenantId = "TENANT-1" };
-        await db.Tests.AddRangeAsync(a, b, c, d);
+        var x = new TestEntity { Name = "x", TenantId = null };
+        await db.Tests.AddRangeAsync(a, b, c, d, x);
         await db.SaveChangesAsync();
 
         // soft delete c
@@ -320,7 +313,7 @@ public sealed class HeadlessDbContextTests : IDisposable
         using (_currentTenant.Change(null))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
-            items.Should().BeEmpty();
+            items.Should().BeEquivalentTo("x");
         }
 
         using (_currentTenant.Change("TENANT-1"))
@@ -329,17 +322,17 @@ public sealed class HeadlessDbContextTests : IDisposable
             items.Should().BeEquivalentTo("a");
         }
 
-        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
-        {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
-            items.Should().BeEquivalentTo("a", "b");
-        }
-
         // disable delete filter -> suspended still filtered
         using (db.FilterStatus.ChangeDeleteFilterEnabled(false))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a", "c");
+        }
+
+        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
+        {
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
+            items.Should().BeEquivalentTo("a", "b", "x");
         }
 
         // disable suspended filter -> deleted still filtered
@@ -434,7 +427,7 @@ public sealed class HeadlessDbContextTests : IDisposable
 
         public required string Name { get; set; }
 
-        public string TenantId { get; init; } = "";
+        public string? TenantId { get; init; }
 
         // Audits
         public DateTimeOffset DateCreated { get; private init; }

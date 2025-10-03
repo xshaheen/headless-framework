@@ -14,18 +14,10 @@ namespace Framework.Orm.EntityFramework.Contexts;
 
 public sealed class DbContextModelCreatingProcessor(
     ICurrentTenant currentTenant,
-    IClock clock,
-    DbContextGlobalFiltersStatus filtersStatus
+    IGlobalFilters globalFilters,
+    IClock clock
 )
 {
-    public string? CurrentTenantId => currentTenant.Id;
-
-    public bool IsDeleteFilterEnabled => filtersStatus.IsDeleteFilterEnabled;
-
-    public bool IsSuspendedFilterEnabled => filtersStatus.IsSuspendedFilterEnabled;
-
-    public bool IsTenantFilterEnabled => filtersStatus.IsTenantFilterEnabled;
-
     public void ProcessModelCreating(ModelBuilder modelBuilder)
     {
         foreach (var mutableEntityType in modelBuilder.Model.GetEntityTypes())
@@ -133,13 +125,15 @@ public sealed class DbContextModelCreatingProcessor(
         if (isMultiTenant)
         {
             var columnName = _GetColumnName(mutableEntityType, nameof(IMultiTenant.TenantId));
-            expression = x => !IsTenantFilterEnabled || EF.Property<string?>(x, columnName) == CurrentTenantId;
+            expression = x =>
+                !globalFilters.IsTenantFilterEnabled || EF.Property<string?>(x, columnName) == currentTenant.Id;
         }
 
         if (isDeleteAudit)
         {
             var columnName = _GetColumnName(mutableEntityType, nameof(IDeleteAudit.IsDeleted));
-            Expression<Func<TEntity, bool>> filter = x => !IsDeleteFilterEnabled || !EF.Property<bool>(x, columnName);
+            Expression<Func<TEntity, bool>> filter = x =>
+                !globalFilters.IsDeleteFilterEnabled || !EF.Property<bool>(x, columnName);
             expression = expression?.And(filter) ?? filter;
         }
 
@@ -147,7 +141,7 @@ public sealed class DbContextModelCreatingProcessor(
         {
             var columnName = _GetColumnName(mutableEntityType, nameof(ISuspendAudit.IsSuspended));
             Expression<Func<TEntity, bool>> filter = x =>
-                !IsSuspendedFilterEnabled || !EF.Property<bool>(x, columnName);
+                !globalFilters.IsSuspendedFilterEnabled || !EF.Property<bool>(x, columnName);
             expression = expression?.And(filter) ?? filter;
         }
 

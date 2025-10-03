@@ -32,7 +32,7 @@ public abstract class HeadlessDbContext : DbContext
         FilterStatus = new();
         _navigationModifiedTracker = new();
         _entityProcessor = new(currentUser, guidGenerator, clock);
-        _modelCreatingProcessor = new(currentTenant, clock, FilterStatus);
+        _modelCreatingProcessor = new(currentTenant, FilterStatus, clock);
         SyncNavigationTracker();
     }
 

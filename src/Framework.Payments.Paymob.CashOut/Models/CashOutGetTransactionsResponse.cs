@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Framework.Payments.Paymob.CashOut.Models;
 
 [PublicAPI]
 public sealed class CashOutGetTransactionsResponse
 {
-    private IReadOnlyList<CashOutTransaction>? _results;
-
     [JsonPropertyName("count")]
     public int Count { get; init; }
 
@@ -17,9 +17,10 @@ public sealed class CashOutGetTransactionsResponse
     public string? Previous { get; init; }
 
     [JsonPropertyName("results")]
+    [field: AllowNull, MaybeNull]
     public IReadOnlyList<CashOutTransaction> Results
     {
-        get => _results ?? [];
-        init => _results = value;
+        get => field ?? [];
+        init;
     }
 }

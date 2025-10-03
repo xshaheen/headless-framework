@@ -131,6 +131,7 @@ When running integration tests, ensure Docker is available for container-based d
 - Write an up to date code
 - Ensure all code is null-safe use NRT and required keyword
 - Use init instead of setters when possible
+- When build target the exact project you want to run the command against (e.g. dotnet build src/Framework.Orm.EntityFramework/Framework.Orm.EntityFramework.csproj) for faster execution.
 
 ## Naming conventions
 

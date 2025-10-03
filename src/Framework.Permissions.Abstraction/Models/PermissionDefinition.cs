@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
 
 namespace Framework.Permissions.Models;
 
 public sealed class PermissionDefinition : ICanAddChildPermission
 {
-    private string? _displayName;
     private readonly List<PermissionDefinition> _children;
 
     internal PermissionDefinition(string name, string? displayName = null, bool isEnabled = true)
@@ -23,10 +23,11 @@ public sealed class PermissionDefinition : ICanAddChildPermission
     public string Name { get; }
 
     /// <summary>Display name of the permission.</summary>
+    [field: AllowNull, MaybeNull]
     public string DisplayName
     {
-        get => _displayName!;
-        set => _displayName = Argument.IsNotNull(value);
+        get;
+        set => field = Argument.IsNotNull(value);
     }
 
     /// <summary>Parent of this permission if one exists. If set, this permission can be granted only if parent is granted.</summary>

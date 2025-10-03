@@ -4,7 +4,16 @@ using Nito.Disposables;
 
 namespace Framework.Orm.EntityFramework.Contexts;
 
-public sealed class DbContextGlobalFiltersStatus
+public interface IGlobalFilters
+{
+    bool IsDeleteFilterEnabled { get; }
+
+    bool IsTenantFilterEnabled { get; }
+
+    bool IsSuspendedFilterEnabled { get; }
+}
+
+public sealed class DbContextGlobalFiltersStatus : IGlobalFilters
 {
     public bool IsDeleteFilterEnabled { get; private set; } = true;
 
