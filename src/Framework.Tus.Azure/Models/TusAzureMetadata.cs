@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
-using Framework.Tus.Options;
 using tusdotnet.Models;
 using tusdotnet.Parsers;
 
@@ -12,10 +11,11 @@ internal sealed partial class TusAzureMetadata
     public const string UploadLengthKey = "tus_upload_length";
     public const string ExpirationKey = "tus_expiration";
     public const string CreatedDateKey = "tus_created";
-    public const string BlockCountKey = "tus_block_count";
     public const string ConcatTypeKey = "tus_concat_type";
     public const string PartialUploadsKey = "tus_partial_uploads";
     public const string FileNameKey = "tus_filename";
+    public const string LastChunkBlocksKey = "tus_last_chunk_blocks";
+    public const string LastChunkChecksumKey = "tus_last_chunk_checksum";
 
     private TusAzureMetadata(IDictionary<string, string> decodedMetadata)
     {
@@ -101,14 +101,39 @@ internal sealed partial class TusAzureMetadata
         }
     }
 
-    public int BlockCount
+    public string[]? LastChunkBlocks
     {
         get =>
-            _decodedMetadata.TryGetValue(BlockCountKey, out var value)
-            && int.TryParse(value, CultureInfo.InvariantCulture, out var count)
-                ? count
-                : 0;
-        set => _decodedMetadata[BlockCountKey] = value.ToString(CultureInfo.InvariantCulture);
+            _decodedMetadata.TryGetValue(LastChunkBlocksKey, out var value) && !string.IsNullOrEmpty(value)
+                ? value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                : null;
+        set
+        {
+            if (value == null || value.Length == 0)
+            {
+                _decodedMetadata.Remove(LastChunkBlocksKey);
+            }
+            else
+            {
+                _decodedMetadata[LastChunkBlocksKey] = string.Join(',', value);
+            }
+        }
+    }
+
+    public string? LastChunkChecksum
+    {
+        get => _decodedMetadata.TryGetValue(LastChunkChecksumKey, out var value) ? value : null;
+        set
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                _decodedMetadata.Remove(LastChunkChecksumKey);
+            }
+            else
+            {
+                _decodedMetadata[LastChunkChecksumKey] = value;
+            }
+        }
     }
 
     public string? ConcatType
@@ -265,9 +290,10 @@ internal sealed partial class TusAzureMetadata
             is UploadLengthKey
                 or ExpirationKey
                 or CreatedDateKey
-                or BlockCountKey
                 or ConcatTypeKey
-                or PartialUploadsKey;
+                or PartialUploadsKey
+                or LastChunkBlocksKey
+                or LastChunkChecksumKey;
     }
 
     #endregion
