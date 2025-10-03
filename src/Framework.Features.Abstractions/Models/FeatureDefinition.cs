@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
 
 namespace Framework.Features.Models;
 
 public sealed class FeatureDefinition : ICanCreateChildFeature
 {
-    private string? _displayName;
     private readonly List<FeatureDefinition> _children;
 
     internal FeatureDefinition(
@@ -35,10 +35,11 @@ public sealed class FeatureDefinition : ICanCreateChildFeature
     public string Name { get; }
 
     /// <summary>Display name of the feature.</summary>
+    [field: AllowNull, MaybeNull]
     public string DisplayName
     {
-        get => _displayName!;
-        set => _displayName = Argument.IsNotNull(value);
+        get;
+        set => field = Argument.IsNotNull(value);
     }
 
     /// <summary>Display description of the feature.</summary>

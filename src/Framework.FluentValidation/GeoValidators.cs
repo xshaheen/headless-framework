@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Framework.FluentValidation.Resources;
-using Framework.Primitives;
 using Framework.Validators;
 
 namespace Framework.FluentValidation;

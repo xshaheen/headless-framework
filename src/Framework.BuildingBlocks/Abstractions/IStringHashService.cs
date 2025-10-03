@@ -40,14 +40,15 @@ public sealed class StringHashService(StringHashOptions options) : IStringHashSe
 {
     public string Create(string value, string salt)
     {
-        using var algorithm = new Rfc2898DeriveBytes(
+        var bytes = Rfc2898DeriveBytes.Pbkdf2(
             value,
             Encoding.UTF8.GetBytes(salt),
             options.Iterations,
-            options.Algorithm
+            options.Algorithm,
+            options.Size
         );
 
-        return Convert.ToBase64String(algorithm.GetBytes(options.Size));
+        return Convert.ToBase64String(bytes);
     }
 }
 

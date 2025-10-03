@@ -20,13 +20,6 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// </summary>
     public static readonly FullGeoCoordinate Unknown = new();
 
-    private readonly double _course;
-    private readonly double _horizontalAccuracy;
-    private readonly double _latitude;
-    private readonly double _longitude;
-    private readonly double _speed;
-    private readonly double _verticalAccuracy;
-
     /// <summary>
     ///     Initializes a new instance of the GeoCoordinate class from latitude, longitude, altitude, horizontal accuracy,
     ///     vertical accuracy, speed, and course.
@@ -88,7 +81,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <exception cref="ArgumentOutOfRangeException">Latitude is set outside the valid range.</exception>
     public double Latitude
     {
-        get { return _latitude; }
+        get;
         init
         {
             if (value is > 90.0 or < -90.0)
@@ -99,7 +92,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
                 );
             }
 
-            _latitude = value;
+            field = value;
         }
     }
 
@@ -112,7 +105,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <exception cref="ArgumentOutOfRangeException">Longitude is set outside the valid range.</exception>
     public double Longitude
     {
-        get { return _longitude; }
+        get;
         init
         {
             if (value is > 180.0 or < -180.0)
@@ -123,7 +116,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
                 );
             }
 
-            _longitude = value;
+            field = value;
         }
     }
 
@@ -136,7 +129,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <exception cref="ArgumentOutOfRangeException">HorizontalAccuracy is set outside the valid range.</exception>
     public double HorizontalAccuracy
     {
-        get { return _horizontalAccuracy; }
+        get;
         init
         {
             if (value < 0.0)
@@ -147,7 +140,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
                 );
             }
 
-            _horizontalAccuracy = value == 0.0 ? double.NaN : value;
+            field = value == 0.0 ? double.NaN : value;
         }
     }
 
@@ -160,7 +153,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <exception cref="ArgumentOutOfRangeException">VerticalAccuracy is set outside the valid range.</exception>
     public double VerticalAccuracy
     {
-        get { return _verticalAccuracy; }
+        get;
         init
         {
             if (value < 0.0)
@@ -171,7 +164,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
                 );
             }
 
-            _verticalAccuracy = value == 0.0 ? double.NaN : value;
+            field = value == 0.0 ? double.NaN : value;
         }
     }
 
@@ -184,7 +177,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <exception cref="ArgumentOutOfRangeException">Speed is set outside the valid range.</exception>
     public double Speed
     {
-        get { return _speed; }
+        get;
         init
         {
             if (value < 0.0)
@@ -192,7 +185,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
                 throw new ArgumentOutOfRangeException(nameof(value), "Argument `Speed` must be non negative");
             }
 
-            _speed = value;
+            field = value;
         }
     }
 
@@ -205,7 +198,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
     /// <exception cref="ArgumentOutOfRangeException">Course is set outside the valid range.</exception>
     public double Course
     {
-        get { return _course; }
+        get;
         init
         {
             if (value is < 0.0 or > 360.0)
@@ -213,7 +206,7 @@ public sealed class FullGeoCoordinate : IEquatable<FullGeoCoordinate>
                 throw new ArgumentOutOfRangeException(nameof(value), "Argument `Course` must be in range 0 to 360");
             }
 
-            _course = value;
+            field = value;
         }
     }
 

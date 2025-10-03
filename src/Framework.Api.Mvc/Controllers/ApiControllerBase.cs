@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using FluentValidation.Results;
 using Framework.Api.Abstractions;
@@ -15,17 +16,15 @@ namespace Framework.Api.Mvc.Controllers;
 [ApiController]
 public abstract class ApiControllerBase : ControllerBase
 {
-    private IConfiguration? _config;
-    private ISender? _sender;
-    private IProblemDetailsCreator? _problemDetailsCreator;
-
+    [field: AllowNull, MaybeNull]
     protected IConfiguration Configuration =>
-        _config ??=
+        field ??=
             HttpContext.RequestServices.GetService<IConfiguration>()
             ?? throw new InvalidOperationException($"{nameof(IConfiguration)} service not registered");
 
+    [field: AllowNull, MaybeNull]
     protected ISender Sender =>
-        _sender ??=
+        field ??=
             HttpContext.RequestServices.GetService<ISender>()
             ?? throw new InvalidOperationException($"{nameof(ISender)} service not registered");
 
@@ -33,8 +32,9 @@ public abstract class ApiControllerBase : ControllerBase
         HttpContext.RequestServices.GetService<MvcProblemDetailsNormalizer>()
         ?? throw new InvalidOperationException($"{nameof(MvcProblemDetailsNormalizer)} service not registered");
 
+    [field: AllowNull, MaybeNull]
     private IProblemDetailsCreator ProblemDetailsCreator =>
-        _problemDetailsCreator ??=
+        field ??=
             HttpContext.RequestServices.GetService<IProblemDetailsCreator>()
             ?? throw new InvalidOperationException($"{nameof(ProblemDetailsCreator)} service not registered");
 

@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
 
 namespace Framework.Permissions.Models;
 
 public sealed class PermissionGroupDefinition : ICanAddChildPermission
 {
-    private string? _displayName;
     private readonly List<PermissionDefinition> _permissions;
 
     public PermissionGroupDefinition(string name, string? displayName = null)
@@ -21,10 +21,11 @@ public sealed class PermissionGroupDefinition : ICanAddChildPermission
     public string Name { get; }
 
     /// <summary>The display name of the group.</summary>
+    [field: AllowNull, MaybeNull]
     public string DisplayName
     {
-        get => _displayName!;
-        set => _displayName = Argument.IsNotNull(value);
+        get;
+        set => field = Argument.IsNotNull(value);
     }
 
     /// <summary>A list of custom properties for this permission group.</summary>

@@ -7,9 +7,9 @@ using Framework.Api.Middlewares;
 using Framework.Caching;
 using Framework.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Middlewares;
 
@@ -47,10 +47,7 @@ public sealed class IdempotencyMiddlewareTests
     {
         var ctx = new DefaultHttpContext();
         // Provide DI for Results.Problem(...) to resolve ProblemDetailsService
-        var services = new ServiceCollection()
-            .AddLogging()
-            .AddProblemDetails()
-            .BuildServiceProvider();
+        var services = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider();
         ctx.RequestServices = services;
 
         // Ensure response body is readable for assertions
@@ -177,7 +174,7 @@ public sealed class IdempotencyMiddlewareTests
         // assert
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be((int)HttpStatusCode.Conflict);
-    context.Response.ContentType.Should().StartWith("application/problem+json");
+        context.Response.ContentType.Should().StartWith("application/problem+json");
 
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body, leaveOpen: true);

@@ -10,7 +10,6 @@ using Serilog.Enrichers.Span;
 using Serilog.Events;
 using Serilog.Formatting;
 using Serilog.Formatting.Display;
-using Serilog.Formatting.Json;
 using Serilog.Sinks.SystemConsole.Themes;
 
 namespace Framework.Logging.Serilog;

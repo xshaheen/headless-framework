@@ -12,7 +12,7 @@ public sealed class SshBlobTestFixture : IAsyncLifetime, ICollectionFixture<SshB
         .WithImage("atmoz/sftp:latest")
         .WithPortBinding(2222, 22)
         .WithCommand("framework:password:::storage")
-        .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(22))
+        .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(22))
         .Build();
 
     /// <summary>This runs before all the test run and Called just after the constructor</summary>

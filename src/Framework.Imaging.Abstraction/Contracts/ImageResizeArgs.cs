@@ -8,12 +8,9 @@ namespace Framework.Imaging;
 
 public sealed class ImageResizeArgs
 {
-    private readonly int _width;
-    private readonly int _height;
-
     public int Width
     {
-        get => _width;
+        get;
         private init
         {
             if (value < 0)
@@ -21,13 +18,13 @@ public sealed class ImageResizeArgs
                 throw new ArgumentException("Width cannot be negative!", nameof(value));
             }
 
-            _width = value;
+            field = value;
         }
     }
 
     public int Height
     {
-        get => _height;
+        get;
         private init
         {
             if (value < 0)
@@ -35,7 +32,7 @@ public sealed class ImageResizeArgs
                 throw new ArgumentException("Height cannot be negative!", nameof(value));
             }
 
-            _height = value;
+            field = value;
         }
     }
 

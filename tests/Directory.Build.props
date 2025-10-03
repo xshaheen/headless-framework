@@ -21,7 +21,6 @@
     <PackageReference Include="Bogus" />
     <PackageReference Include="DeepCloner" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="FluentAssertions.Json" />
     <PackageReference Include="NSubstitute" />
   </ItemGroup>
 

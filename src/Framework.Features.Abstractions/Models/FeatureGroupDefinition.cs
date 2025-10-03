@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
 
 namespace Framework.Features.Models;
 
 public sealed class FeatureGroupDefinition : ICanCreateChildFeature
 {
-    private string? _displayName;
     private readonly List<FeatureDefinition> _features;
 
     internal FeatureGroupDefinition(string name, string? displayName = null)
@@ -21,10 +21,11 @@ public sealed class FeatureGroupDefinition : ICanCreateChildFeature
     public string Name { get; }
 
     /// <summary>Display name of the group.</summary>
+    [field: AllowNull, MaybeNull]
     public string DisplayName
     {
-        get => _displayName!;
-        set => _displayName = Argument.IsNotNull(value);
+        get;
+        set => field = Argument.IsNotNull(value);
     }
 
     /// <summary>List of features in this group.</summary>

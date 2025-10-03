@@ -86,9 +86,7 @@ public sealed class StringEncryptionService(StringEncryptionOptions options) : I
 
         var plainTextBytes = Encoding.UTF8.GetBytes(plainText);
 
-        using var password = new Rfc2898DeriveBytes(passPhrase, salt, _Iterations, _hashAlgorithm);
-
-        var keyBytes = password.GetBytes(options.KeySize / 8);
+        var keyBytes = Rfc2898DeriveBytes.Pbkdf2(passPhrase, salt, _Iterations, _hashAlgorithm, options.KeySize / 8);
 
         using var symmetricKey = Aes.Create();
         symmetricKey.Mode = CipherMode.CBC;
@@ -116,9 +114,13 @@ public sealed class StringEncryptionService(StringEncryptionOptions options) : I
 
         var cipherTextBytes = Convert.FromBase64String(cipherText);
 
-        using var password = new Rfc2898DeriveBytes(passPhrase, salt, _Iterations, _hashAlgorithm);
-
-        var keyBytes = password.GetBytes(options.KeySize / 8);
+        var keyBytes = Rfc2898DeriveBytes.Pbkdf2(
+            password: passPhrase,
+            salt: salt,
+            iterations: _Iterations,
+            hashAlgorithm: _hashAlgorithm,
+            outputLength: options.KeySize / 8
+        );
 
         using var symmetricKey = Aes.Create();
         symmetricKey.Mode = CipherMode.CBC;
