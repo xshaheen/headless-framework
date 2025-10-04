@@ -1,44 +1,70 @@
 # Copilot Instructions
 
-This is a modern headless .NET Core framework for building web/general applications
+This is a modern headless .NET Core framework for building web/general applications.
+
+---
 
 ## Project Overview
 
-This is **cs-framework**, a modern, headless .NET framework designed for building web applications and services. It provides composable NuGet packages for common functionality like APIs, databases, messaging, caching, and more.
+This is **headless-framework**, a modern, headless .NET framework designed for building web applications and services.
+It provides composable NuGet packages for common functionality like APIs, databases, messaging, caching, and more.
 
 **Key characteristics:**
-- Unopinionated and modular design - use only what you need
-- Supports .NET 9.0 with preview language features enabled
-- Uses centralized package management via Directory.Packages.props
-- Extensive test coverage with both unit and integration tests
 
-## Architecture
+* Unopinionated and modular design - use only what you need.
+* Supports .NET 9.0 with preview language features enabled.
+* Uses centralized package management via `Directory.Packages.props`.
+* Extensive test coverage with both unit and integration tests.
 
-The framework follows a modular architecture with clear separation of concerns:
+---
+
+## Architecture & Structure
+
+The framework follows a modular architecture with clear separation of concerns.
 
 ### Source Structure (`src/`)
-- **Framework.Base** - Core abstractions and utilities
-- **Framework.Api*** - Web API related packages (MVC, Minimal APIs, validation, etc.)
-- **Framework.Database*** - Database providers (SQL Server, PostgreSQL, SQLite)
-- **Framework.Orm*** - ORM integrations (Entity Framework, Dapper, Couchbase)
-- **Framework.Messaging*** - Message queue abstractions and implementations
-- **Framework.Caching*** - Caching abstractions and providers
-- **Framework.Blobs*** - File storage abstractions (Azure, AWS, FileSystem, etc.)
-- **Framework.Emails*** - Email service providers
-- **Framework.Sms*** - SMS service providers
-- **Framework.Testing** - Testing utilities and helpers
+
+The framework is organized into functional domains:
+
+* **Framework.Base** - Core abstractions, utilities, and base interfaces.
+* **Framework.Api*** - Web API related packages (MVC, Minimal APIs, validation, etc.).
+* **Framework.Database*** - Database providers (SQL Server, PostgreSQL, SQLite).
+* **Framework.Orm*** - ORM integrations (Entity Framework, Dapper, Couchbase).
+* **Framework.Messaging*** - Message queue abstractions and implementations.
+* **Framework.Caching*** - Caching abstractions and providers (Redis, Memory, etc.).
+* **Framework.Blobs*** - File storage abstractions (Azure, AWS S3, FileSystem, SSH, Redis).
+* **Framework.Emails*** - Email service providers (AWS SES, SendGrid, MailKit, etc.).
+* **Framework.Sms*** - SMS service providers (Twilio, Vonage, Infobip, etc.).
+* **Framework.Testing** - Testing utilities and helpers.
+* **Framework.Features*** - Feature flags and toggles.
+* **Framework.Permissions*** - Permission and authorization abstractions.
+* **Framework.Settings*** - Settings management abstractions.
 
 ### Test Structure (`tests/`)
-- Unit tests: `*.Tests.Unit` or `*.Tests.Units`
-- Integration tests: `*.Tests.Integration` or `*.Tests.Integrations`
-- Test harnesses: `*.Tests.Harness` for shared test infrastructure
 
-## Development Commands
+* **Unit tests**: `*.Tests.Unit` or `*.Tests.Units`
+    * Fast, isolated tests with mocked dependencies.
+    * No external dependencies (databases, networks, etc.).
+* **Integration tests**: `*.Tests.Integration` or `*.Tests.Integrations`
+    * Tests with real dependencies using Testcontainers.
+    * Requires Docker for execution.
+* **Test harnesses**: `*.Tests.Harness`
+    * Provides shared infrastructure, common fixtures, and test data builders for testing projects.
 
-### Build System
-The project uses NUKE build system. Use these commands:
+---
 
-```bash
+## Development Workflow & Commands
+
+### Build System (NUKE)
+
+The project uses the NUKE build system for automation. All commands must be compatible with **PowerShell Core (pwsh)**.
+
+**PowerShell:**
+
+```powershell
+# Clean artifacts and build outputs
+.\build.ps1 Clean
+
 # Build the solution
 .\build.ps1 Compile
 
@@ -47,93 +73,188 @@ The project uses NUKE build system. Use these commands:
 
 # Create NuGet packages
 .\build.ps1 Pack
+```
 
+**Linux/macOS (Bash):**
+
+```bash
 # Clean artifacts and build outputs
-.\build.ps1 Clean
-```
+./build.sh Clean
 
-For cross-platform development:
-```bash
-# On Linux/macOS
+# Build the solution
 ./build.sh Compile
+
+# Run all tests
 ./build.sh Test
+
+# Create NuGet packages
+./build.sh Pack
 ```
 
-### Common .NET Commands
+### Common .NET CLI Commands
 
-```bash
-# Build solution
+For faster execution, target the specific project you want to build or test instead of the entire solution.
+
+```powershell
+# Restore all NuGet packages
+dotnet restore
+
+# Build the entire solution (slower)
 dotnet build
 
-# Run specific test project
-dotnet test tests/Framework.Base.Tests.Unit
+# Build a specific project (PREFERRED - much faster)
+dotnet build src/Framework.Orm.EntityFramework/Framework.Orm.EntityFramework.csproj
 
-# Restore packages
-dotnet restore
+# Run a specific test project
+dotnet test tests/Framework.Base.Tests.Unit/Framework.Base.Tests.Unit.csproj
+
+# Run a specific test by name
+dotnet test --filter "FullyQualifiedName~test_method_name"
 
 # Format code (requires dotnet-csharpier tool)
 dotnet csharpier .
 
-# Entity Framework migrations (when applicable)
+# Add an Entity Framework migration
 dotnet ef migrations add <MigrationName> --project <ProjectPath>
+
+# Update the database with migrations
+dotnet ef database update --project <ProjectPath>
 ```
 
-### Tools
-Available via `dotnet tool restore`:
-- **csharpier** - Code formatter
-- **dotnet-ef** - Entity Framework CLI
-- **minver** - Automatic versioning
-- **husky** - Git hooks
+### Development Tools
 
-## Code Standards
+The following tools are available via dotnet tool restore from the `.config/dotnet-tools.json` manifest:
 
-### C# Conventions (from .github/copilot-instructions.md)
-- Use nullable reference types (NRT) and `required` keyword
-- Prefer `init` over setters when possible
-- Pascal case with underscore prefix for private methods (`_PrivateMethod`)
-- Camel case for local methods (`localMethod`)
+- csharpier: An opinionated code formatter.
+- dotnet-ef: The command-line tool for Entity Framework Core.
+- minver: A tool for automatic semantic versioning from git history.
+- husky: A tool for managing Git hooks (e.g., for pre-commit actions).
 
-### Testing Conventions
-- Test method names: `should_<feature>_<behavior>_when_<condition>`
-- Use Given-When-Then pattern
-- Testing stack: xUnit, FluentAssertions, Bogus, NSubstitute, DeepCloner
-- Test containers available for integration tests (SQL Server, PostgreSQL, Redis, etc.)
+## Code Standards & Conventions
 
-### Package Management
-- **NEVER** include version numbers in project references
-- All package versions are managed centrally in `Directory.Packages.props`
-- Use `ManagePackageVersionsCentrally` for consistent dependency management
+### C# Language Features & Patterns
 
-## Important Files
+**Modern C# is required:**
 
-- **Directory.Packages.props** - Central package version management
-- **Directory.Build.props** - Common MSBuild properties
-- **global.json** - .NET SDK version (9.0.0 with preview features)
-- **framework.sln** - Main solution file
-- **.editorconfig** - Code formatting rules
-- **build/Build.cs** - NUKE build script
+* ✅ **Nullable Reference Types (NRT)**: All code must be null-safe.
+* ✅ **File-scoped namespaces**: Always use `namespace X;` instead of `namespace X { }`.
+* ✅ **Primary Constructors**: Use for dependency injection and simple classes.
+* ✅ **`required` keyword**: Use for mandatory properties.
+* ✅ **`init` accessors**: Prefer `init` over `set` for immutable-after-construction properties.
+* ✅ **Pattern matching**: Prefer modern pattern matching over old-style checks.
+* ✅ **Collection expressions**: Use `[]` for collections (e.g., `int[] numbers = [1, 2, 3];`).
+* ✅ **UTF-8 string literals**: Use `"text"u8` when appropriate.
+* ✅ **`sealed` classes**: Prefer sealing classes by default unless inheritance is explicitly needed.
 
-## Integration Testing
+**Example:**
 
-The framework includes extensive integration test infrastructure:
-- **Testcontainers** for database and service dependencies
-- **Test harnesses** in `*.Tests.Harness` projects for shared setup
-- Docker Compose configurations for complex integration scenarios
-- Name test method with should_<feature>_<behavior>_when_<condition>
-- Use the given-when-then pattern for writing tests.
-- Testing Lib: xUnit, FluentAssertions, Bogus, NSubstitute and DeepCloner
-- 
-When running integration tests, ensure Docker is available for container-based dependencies.
+```csharp
+// CORRECT: File-scoped namespace, primary constructor, sealed class, required/init properties
+namespace Framework.MyFeature;
 
-## Preferences
+public sealed class MyService(IDependency dependency) : IMyService
+{
+    public required string ConfigValue { get; init; }
 
-- Terminal commands to be compatible with powershell core
-- Write an up to date code
-- Ensure all code is null-safe use NRT and required keyword
-- Use init instead of setters when possible
-- When build target the exact project you want to run the command against (e.g. dotnet build src/Framework.Orm.EntityFramework/Framework.Orm.EntityFramework.csproj) for faster execution.
+    public async Task<Result> DoSomethingAsync(string? input)
+    {
+        // Use pattern matching and modern C#
+        return input switch
+        {
+            null => Result.Failure("Input required"),
+            "" => Result.Failure("Input cannot be empty"),
+            _ => await dependency.ProcessAsync(input)
+        };
+    }
+}
+```
 
-## Naming conventions
+### Naming Conventions (Strictly Enforced by .editorconfig)
 
-- Pascal case prefixed with underscore for private methods
-- Camel case for local methods
+| Element                      | Convention                               | Example                                               |
+|:-----------------------------|:-----------------------------------------|:------------------------------------------------------|
+| **Private Fields**           | `_camelCase`                             | `private readonly IService _service;`                 |
+| **Private `const`/`static`** | `_PascalCase`                            | `private const string _DefaultValue = "default";`     |
+| **Public/Protected Fields**  | **DISALLOWED** (use properties)          | N/A                                                   |
+| **Public Methods**           | `PascalCase`                             | `public async Task ProcessDataAsync()`                |
+| **Private Methods**          | `_PascalCase` (prefixed with underscore) | `private void _ValidateInput(string input)`           |
+| **Local Functions**          | `camelCase`                              | `void logError(string msg) => _logger.LogError(msg);` |
+| **Properties**               | `PascalCase`                             | `public required string ApiKey { get; init; }`        |
+| **Classes/Structs/Records**  | `PascalCase`                             | `public sealed class UserService`                     |
+| **Interfaces**               | `IPascalCase` (prefixed with `I`)        | `public interface IUserRepository`                    |
+| **Type Parameters**          | `TPascalCase` (prefixed with `T`)        | `public class Result<TValue>`                         |
+| **Parameters/Locals**        | `camelCase`                              | `string userId`, `var user = new User();`             |
+
+## Testing Standards
+
+- Test Naming Convention: `should_{action}_{expected_behavior}_when_{condition}`.
+- Pattern: Use the Given-When-Then pattern for structuring tests.
+
+### Testing Stack:
+
+- xUnit: Test framework.
+- FluentAssertions: Fluent assertion library.
+- NSubstitute: Mocking framework.
+- Bogus: Test data generator.
+- DeepCloner: Deep cloning for test data.
+- Testcontainers: Docker containers for integration tests.
+
+```csharp
+[Fact]
+public async Task should_return_user_when_id_is_valid()
+{
+    // given
+    var userId = "user-123";
+    var expectedUser = new User { Id = userId };
+    _repository.GetByIdAsync(userId).Returns(expectedUser);
+    var service = new UserService(_repository);
+
+    // when
+    var result = await service.GetUserAsync(userId);
+
+    // then
+    result.Should().BeEquivalentTo(expectedUser);
+}
+```
+
+## Package Management
+
+- ✅ All package versions MUST be managed centrally in the Directory.Packages.props file.
+- ❌ NEVER include a Version attribute in <PackageReference> elements within .csproj files.
+
+## Formatting & Style (.editorconfig)
+
+- Indentation: 4 spaces.
+- Line Endings: LF (Unix-style).
+- Charset: UTF-8.
+- Braces: Required for multi-line statements.
+- var usage: Use when the type is apparent from the right side of the assignment.
+
+## Performance & Best Practices
+
+- Async/Await: Always use async/await for I/O. Use `AnyContext()` which is extention that replace
+  `ConfigureAwait(false)` in library code. Avoid async void, .Result, and .Wait().
+- Cancellation Tokens: Always accept and pass CancellationToken in async methods.
+- Logging: Use structured logging with ILogger<T> and message templates (e.g., _logger.LogInformation("Processing
+  {UserId}", userId)).
+- Null Safety: All code must be null-safe using NRTs. Use is not null, ?., and ?? for checks and assignments.
+
+## Additional Resources
+
+- [.NET 9 Documentation](https://learn.microsoft.com/dotnet/core/whats-new/dotnet-9)
+- [C# 12 Features](https://learn.microsoft.com/dotnet/csharp/whats-new/csharp-12)
+- [EditorConfig Documentation](https://editorconfig.org/)
+- [xUnit Documentation](https://xunit.net/)
+- [FluentAssertions Documentation](https://fluentassertions.com/)
+- [Testcontainers for .NET](https://dotnet.testcontainers.org/)
+
+---
+
+**Remember**: This is a library/framework project, not an application. Always consider:
+
+- Public API surface area
+- Breaking changes
+- Backward compatibility
+- Performance implications
+- Thread safety
+- Proper disposal of resources
