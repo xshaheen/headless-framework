@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
+using Framework.Orm.EntityFramework.ChangeTrackers;
 using Framework.Orm.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,7 +40,7 @@ public static class HeadlessServiceCollectionExtensions
         services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
         services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
 
-        services.TryAddScoped<DbContextGlobalFiltersStatus>();
+        services.TryAddSingleton<IHeadlessEntityModelProcessor, HeadlessEntityModelProcessor>();
 
         services.AddDbContext<TDbContext>(
             (serviceProvider, optionsBuilder) =>

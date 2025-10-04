@@ -30,7 +30,7 @@ public sealed class CurrentTenantTests
         var currentTenant = new CurrentTenant(currentTenantAccessor);
 
         // when
-        currentTenant.Change("123", "Test Tenant");
+        using var _ = currentTenant.Change("123", "Test Tenant");
 
         var isAvailable = currentTenant.IsAvailable;
 
@@ -47,7 +47,7 @@ public sealed class CurrentTenantTests
         var currentTenant = new CurrentTenant(currentTenantAccessor);
 
         // when
-        currentTenant.Change("123", "New Tenant");
+        using var _ = currentTenant.Change("123", "New Tenant");
 
         // then
         currentTenant.Id.Should().Be("123");
@@ -86,7 +86,7 @@ public sealed class CurrentTenantTests
         var currentTenant = new CurrentTenant(currentTenantAccessor);
 
         // when
-        currentTenant.Change(null, null);
+        using var _ = currentTenant.Change(null);
 
         // then
         currentTenant.Id.Should().BeNull();

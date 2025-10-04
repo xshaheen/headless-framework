@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Framework.Abstractions;
 using Framework.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -12,35 +11,23 @@ public abstract class HeadlessDbContext : DbContext
 {
     public abstract string DefaultSchema { get; }
 
-    public DbContextGlobalFiltersStatus FilterStatus { get; }
+    private readonly IHeadlessEntityModelProcessor _entityProcessor;
+    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
-    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
-    private readonly DbContextEntityProcessor _entityProcessor;
-    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
-    private readonly ICurrentTenant _currentTenant;
-
-    protected HeadlessDbContext(
-        ICurrentUser currentUser,
-        ICurrentTenant currentTenant,
-        IGuidGenerator guidGenerator,
-        IClock clock,
-        DbContextOptions options
-    )
+    protected HeadlessDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
         : base(options)
     {
-        _currentTenant = currentTenant;
-        FilterStatus = new();
-        _navigationModifiedTracker = new();
-        _entityProcessor = new(currentUser, guidGenerator, clock);
-        _modelCreatingProcessor = new(currentTenant, FilterStatus, clock);
-        SyncNavigationTracker();
+        _entityProcessor = entityProcessor;
+        _SyncNavigationTracker();
     }
 
-    public void SyncNavigationTracker()
+    private void _SyncNavigationTracker()
     {
         ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
         ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
     }
+
+    internal string GetCompiledQueryCacheKey() => _entityProcessor.GetCompiledQueryCacheKey();
 
     #region Core Save Changes
 
@@ -421,13 +408,8 @@ public abstract class HeadlessDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema(DefaultSchema);
         base.OnModelCreating(modelBuilder);
-        _modelCreatingProcessor.ProcessModelCreating(modelBuilder);
+        _entityProcessor.ProcessModelCreating(modelBuilder);
     }
 
     #endregion
-
-    internal string GetCompiledQueryCacheKey()
-    {
-        return $"{_currentTenant?.Id ?? "Null"}:{FilterStatus.GetCacheKey()}";
-    }
 }

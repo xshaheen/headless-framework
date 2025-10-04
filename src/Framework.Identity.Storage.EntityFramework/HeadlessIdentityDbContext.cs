@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Framework.Abstractions;
 using Framework.Orm.EntityFramework.ChangeTrackers;
 using Framework.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
@@ -9,9 +8,9 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Framework.Identity.Storage.EntityFramework;
+namespace Framework.Orm.EntityFramework;
 
-public abstract class IdentityDbContextBase<
+public abstract class HeadlessIdentityDbContext<
     TUser,
     TRole,
     TKey,
@@ -30,31 +29,19 @@ public abstract class IdentityDbContextBase<
     where TRoleClaim : IdentityRoleClaim<TKey>
     where TUserToken : IdentityUserToken<TKey>
 {
-    private readonly DbContextEntityProcessor _entityProcessor;
-    private readonly DbContextModelCreatingProcessor _modelCreatingProcessor;
-    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker;
+    private readonly IHeadlessEntityModelProcessor _entityProcessor;
+    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
     public abstract string DefaultSchema { get; }
 
-    public DbContextGlobalFiltersStatus FilterStatus { get; }
-
-    protected IdentityDbContextBase(
-        ICurrentUser currentUser,
-        ICurrentTenant currentTenant,
-        IGuidGenerator guidGenerator,
-        IClock clock,
-        DbContextOptions options
-    )
+    protected HeadlessIdentityDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
         : base(options)
     {
-        FilterStatus = new();
-        _navigationModifiedTracker = new();
-        _entityProcessor = new(currentUser, guidGenerator, clock);
-        _modelCreatingProcessor = new(currentTenant, FilterStatus, clock);
-        SyncNavigationTracker();
+        _entityProcessor = entityProcessor;
+        _SyncNavigationTracker();
     }
 
-    public void SyncNavigationTracker()
+    private void _SyncNavigationTracker()
     {
         ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
         ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
@@ -438,7 +425,7 @@ public abstract class IdentityDbContextBase<
     {
         builder.HasDefaultSchema(DefaultSchema);
         base.OnModelCreating(builder);
-        _modelCreatingProcessor.ProcessModelCreating(builder);
+        _entityProcessor.ProcessModelCreating(builder);
     }
 
     #endregion
