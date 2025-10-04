@@ -15,6 +15,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 [MustDisposeResource]
+[Collection("HeadlessDbContextTests")]
 public sealed class HeadlessDbContextTests : IDisposable
 {
     private readonly UserId _userId;
@@ -298,8 +299,8 @@ public sealed class HeadlessDbContextTests : IDisposable
         var b = new TestEntity { Name = "b", TenantId = "TENANT-2" };
         var c = new TestEntity { Name = "c", TenantId = "TENANT-1" };
         var d = new TestEntity { Name = "d", TenantId = "TENANT-1" };
-        var x = new TestEntity { Name = "x", TenantId = null };
-        await db.Tests.AddRangeAsync(a, b, c, d, x);
+        var e = new TestEntity { Name = "e", TenantId = null };
+        await db.Tests.AddRangeAsync(a, b, c, d, e);
         await db.SaveChangesAsync();
 
         // soft delete c
@@ -313,7 +314,7 @@ public sealed class HeadlessDbContextTests : IDisposable
         using (_currentTenant.Change(null))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
-            items.Should().BeEquivalentTo("x");
+            items.Should().BeEquivalentTo("e");
         }
 
         using (_currentTenant.Change("TENANT-1"))
@@ -322,51 +323,41 @@ public sealed class HeadlessDbContextTests : IDisposable
             items.Should().BeEquivalentTo("a");
         }
 
-        // disable delete filter -> suspended still filtered
-        using (db.FilterStatus.ChangeDeleteFilterEnabled(false))
+        // Allow deleted, Current tenant is <null>
         {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
+            var items = await db.Tests.IgnoreNotDeletedFilter().Select(x => x.Name).ToArrayAsync();
+            items.Should().BeEquivalentTo("e");
+        }
+
+        // Allow deleted, Current tenant is TENANT-1
+        using (_currentTenant.Change("TENANT-1"))
+        {
+            var items = await db.Tests.IgnoreNotDeletedFilter().Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a", "c");
         }
 
-        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
+        // using (db.FilterStatus.ChangeTenantFilterEnabled(false))
         {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
-            items.Should().BeEquivalentTo("a", "b", "x");
-        }
-
-        // disable suspended filter -> deleted still filtered
-        using (db.FilterStatus.ChangeSuspendedFilterEnabled(false))
-        {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
-            items.Should().BeEquivalentTo("a");
-        }
-
-        // disable tenant filter -> still filters by delete/suspend
-        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
-        {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
-            items.Should().BeEquivalentTo("a", "b");
+            var items = await db.Tests.IgnoreMultiTenancyFilter().Select(x => x.Name).ToArrayAsync();
+            items.Should().BeEquivalentTo("a", "b", "e");
         }
 
         // disable all -> all visible
-        using (db.FilterStatus.ChangeTenantFilterEnabled(false))
-        using (db.FilterStatus.ChangeDeleteFilterEnabled(false))
-        using (db.FilterStatus.ChangeSuspendedFilterEnabled(false))
         {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
-            items.Should().BeEquivalentTo("a", "b", "c", "d");
+            var items = await db
+                .Tests.IgnoreMultiTenancyFilter()
+                .IgnoreNotDeletedFilter()
+                .IgnoreNotSuspendedFilter()
+                .Select(x => x.Name)
+                .ToArrayAsync();
+
+            items.Should().BeEquivalentTo("a", "b", "c", "d", "e");
         }
     }
 
     [MustDisposeResource]
-    private sealed class TestDb(
-        ICurrentUser currentUser,
-        ICurrentTenant currentTenant,
-        IGuidGenerator guidGenerator,
-        IClock clock,
-        DbContextOptions options
-    ) : HeadlessDbContext(currentUser, currentTenant, guidGenerator, clock, options)
+    private sealed class TestDb(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
+        : HeadlessDbContext(entityProcessor, options)
     {
         public DbSet<TestEntity> Tests { get; set; }
 

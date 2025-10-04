@@ -1,18 +1,169 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Reflection;
 using Framework.Abstractions;
 using Framework.Domains;
+using Framework.Orm.EntityFramework.Configurations;
 using Framework.Primitives;
 using Framework.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Framework.Orm.EntityFramework.Contexts;
 
-public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGenerator guidGenerator, IClock clock)
+public interface IHeadlessEntityModelProcessor
 {
+    void ProcessModelCreating(ModelBuilder modelBuilder);
+
+    ProcessBeforeSaveReport ProcessEntries(DbContext db);
+
+    string GetCompiledQueryCacheKey();
+}
+
+public sealed class HeadlessEntityModelProcessor(
+    ICurrentTenant currentTenant,
+    ICurrentUser currentUser,
+    IGuidGenerator guidGenerator,
+    IClock clock
+) : IHeadlessEntityModelProcessor
+{
+    #region Process Model Creating
+
+    public void ProcessModelCreating(ModelBuilder modelBuilder)
+    {
+        foreach (var mutableEntityType in modelBuilder.Model.GetEntityTypes())
+        {
+            _ConfigureConvention(modelBuilder, mutableEntityType);
+            _ConfigureValueConverter(modelBuilder, mutableEntityType);
+            _InvokeConfigureQueryFilters(modelBuilder, mutableEntityType);
+        }
+    }
+
+    private static void _ConfigureConvention(ModelBuilder builder, IMutableEntityType type)
+    {
+        if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
+        {
+            builder.Entity(type.ClrType).ConfigureFrameworkConvention();
+        }
+    }
+
+    private void _ConfigureValueConverter(ModelBuilder builder, IMutableEntityType type)
+    {
+        if (
+            type.BaseType is not null
+            || type.IsOwned()
+            || type.ClrType.IsDefined(typeof(OwnedAttribute), inherit: true)
+        )
+        {
+            return;
+        }
+
+        var dateTimeType = typeof(DateTime);
+        var nullableDateTimeType = typeof(DateTime?);
+
+        var properties = type.GetProperties()
+            .Where(property =>
+                property.PropertyInfo is { CanWrite: true }
+                && (
+                    property.PropertyInfo.PropertyType == dateTimeType
+                    || property.PropertyInfo.PropertyType == nullableDateTimeType
+                )
+            )
+            .ToList();
+
+        if (properties.Count == 0)
+        {
+            return;
+        }
+
+        var dateTimeConverter = new NormalizeDateTimeValueConverter(clock);
+        var nullableDateTimeConverter = new NullableNormalizeDateTimeValueConverter(clock);
+
+        foreach (var property in properties)
+        {
+            ValueConverter converter = property.ClrType == dateTimeType ? dateTimeConverter : nullableDateTimeConverter;
+            builder.Entity(type.ClrType).Property(property.Name).HasConversion(converter);
+        }
+    }
+
+    private void _InvokeConfigureQueryFilters(ModelBuilder builder, IMutableEntityType type)
+    {
+        // Note: this is executed once per db context instance
+        _ConfigureQueryFiltersMethod.MakeGenericMethod(type.ClrType).Invoke(this, [builder, type]);
+    }
+
+    // Note: DeclaredOnly will not include overrides methods if you will make ConfigureQueryFilters virtual.
+    private static readonly MethodInfo _ConfigureQueryFiltersMethod = typeof(HeadlessEntityModelProcessor).GetMethod(
+        nameof(_ConfigureQueryFilters),
+        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+    )!;
+
+    private void _ConfigureQueryFilters<TEntity>(ModelBuilder builder, IMutableEntityType type)
+        where TEntity : class
+    {
+        if (type.BaseType is not null)
+        {
+            return;
+        }
+
+        // Note: filters are applied once, so the expressions is cached, and it should depend
+        //       on a properties and not cached values.
+
+        var entityType = typeof(TEntity);
+        var entityBuilder = builder.Entity<TEntity>();
+
+        if (entityType.IsAssignableTo<IMultiTenant>())
+        {
+            var tenantIdName = _GetColumnName(entityBuilder.Metadata, nameof(IMultiTenant.TenantId));
+
+            entityBuilder.HasQueryFilter(
+                HeadlessQueryFilters.MultiTenancyFilter,
+                x => EF.Property<string?>(x, tenantIdName) == currentTenant.Id
+            );
+        }
+
+        if (entityType.IsAssignableTo<IDeleteAudit>())
+        {
+            var isDeletedName = _GetColumnName(entityBuilder.Metadata, nameof(IDeleteAudit.IsDeleted));
+
+            entityBuilder.HasQueryFilter(
+                HeadlessQueryFilters.NotDeletedFilter,
+                x => !EF.Property<bool>(x, isDeletedName)
+            );
+        }
+
+        if (entityType.IsAssignableTo<ISuspendAudit>())
+        {
+            var isSuspendedName = _GetColumnName(entityBuilder.Metadata, nameof(ISuspendAudit.IsSuspended));
+
+            entityBuilder.HasQueryFilter(
+                HeadlessQueryFilters.NotSuspendedFilter,
+                x => !EF.Property<bool>(x, isSuspendedName)
+            );
+        }
+    }
+
+    private static string _GetColumnName(IMutableEntityType type, string name)
+    {
+        return type.FindProperty(name)?.GetColumnName() ?? name;
+    }
+
+    #endregion
+
+    #region Query Cache Key
+
+    public string GetCompiledQueryCacheKey()
+    {
+        return $"Tenant:{currentTenant.Id ?? "<null>"}";
+    }
+
+    #endregion
+
+    #region Process Entries
+
     public ProcessBeforeSaveReport ProcessEntries(DbContext db)
     {
         var report = new ProcessBeforeSaveReport();
@@ -53,8 +204,8 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         switch (entry.State)
         {
             case EntityState.Added:
-                // TODO: Set tenant id if applicable
                 _TrySetGuidId(entry);
+                _TrySetMultiTenantId(entry);
                 _TrySetCreateAudit(entry, currentUserId, currentAccountId);
                 _TrySetConcurrencyStamp(entry);
                 _TryPublishCreatedLocalMessage(entry);
@@ -75,7 +226,24 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
         }
     }
 
+    #endregion
+
     #region Process Properties
+
+    private void _TrySetMultiTenantId(EntityEntry entry)
+    {
+        if (entry.Entity is not IMultiTenant entity || !string.IsNullOrEmpty(entity.TenantId))
+        {
+            return;
+        }
+
+        if (entry.Property(nameof(IMultiTenant.TenantId)) is { IsModified: true, CurrentValue: not (null or "") })
+        {
+            return;
+        }
+
+        ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => currentTenant.Id);
+    }
 
     private void _TrySetGuidId(EntityEntry entry)
     {
@@ -291,6 +459,7 @@ public sealed class DbContextEntityProcessor(ICurrentUser currentUser, IGuidGene
 
         // If UpdatedById is already set as modified, do not proceed.
         var propertyEntry = entry.Property(nameof(IDeleteAudit<>.DeletedById));
+
         if (propertyEntry.IsModified && propertyEntry.CurrentValue != propertyEntry.OriginalValue)
         {
             return;
