@@ -15,7 +15,6 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 [MustDisposeResource]
-[Collection("HeadlessDbContextTests")]
 public sealed class HeadlessDbContextTests : IDisposable
 {
     private readonly UserId _userId;
@@ -336,7 +335,6 @@ public sealed class HeadlessDbContextTests : IDisposable
             items.Should().BeEquivalentTo("a", "c");
         }
 
-        // using (db.FilterStatus.ChangeTenantFilterEnabled(false))
         {
             var items = await db.Tests.IgnoreMultiTenancyFilter().Select(x => x.Name).ToArrayAsync();
             items.Should().BeEquivalentTo("a", "b", "e");
