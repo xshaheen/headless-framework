@@ -4,7 +4,7 @@ using Framework.Orm.EntityFramework;
 using Framework.Orm.EntityFramework.Contexts;
 using Framework.Primitives;
 using Framework.Testing.Helpers;
-using Meziantou.Extensions.Logging.Xunit;
+using Framework.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -15,7 +15,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 [MustDisposeResource]
-public sealed class HeadlessDbContextTests : IDisposable
+public sealed class HeadlessDbContextTests : TestBase
 {
     private readonly UserId _userId;
     private readonly DateTimeOffset _now;
@@ -24,53 +24,47 @@ public sealed class HeadlessDbContextTests : IDisposable
     private readonly TestCurrentTenant _currentTenant = new();
     private readonly TestCurrentUser _currentUser = new();
     private readonly ServiceProvider _serviceProvider;
-    private readonly SqliteConnection _sqliteConnection;
-    private readonly XUnitLoggerProvider _xUnitLoggerProvider;
 
     public HeadlessDbContextTests(ITestOutputHelper output)
+        : base(output)
     {
-        const string datasourceMemory = "DataSource=:memory:";
-
         var services = new ServiceCollection();
 
-        _xUnitLoggerProvider = new XUnitLoggerProvider(
-            output,
-            new XUnitLoggerOptions
-            {
-                IncludeLogLevel = false,
-                IncludeScopes = true,
-                IncludeCategory = false,
-            }
-        );
-
-        services.AddLogging(x => x.AddProvider(_xUnitLoggerProvider));
+        services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddSingleton<IClock>(_clock);
         services.AddSingleton<ICurrentTenant>(_currentTenant);
         services.AddSingleton<ICurrentUser>(_currentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
 
-        // Create and open a single SQLite connection for the test class lifetime
-        _sqliteConnection = new SqliteConnection(datasourceMemory);
-        _sqliteConnection.Open();
-        services.AddSingleton(_sqliteConnection);
-        services.AddHeadlessDbContext<TestDb>(options => options.UseSqlite(_sqliteConnection));
+        services.AddSingleton(_ =>
+        {
+            var connection = new SqliteConnection("DataSource=:memory:");
+            connection.Open();
+            return connection;
+        });
+
+        services.AddHeadlessDbContext<TestDb>(
+            (provider, options) => options.UseSqlite(provider.GetRequiredService<SqliteConnection>())
+        );
 
         _serviceProvider = services.BuildServiceProvider();
+        _serviceProvider.EnsureDbCreated<TestDb>();
+        _serviceProvider.MigrateDbContext<TestDb>();
+
         _userId = new UserId(Guid.NewGuid().ToString());
         _currentUser.UserId = _userId;
-        _now = new DateTimeOffset(2025, 1, 2, 12, 0, 0, TimeSpan.Zero);
+        _now = Faker.Date.RecentOffset();
         _clock.TimeProvider = new FakeTimeProvider(_now);
-        using var scope = _serviceProvider.CreateScope();
-        using var db = scope.ServiceProvider.GetRequiredService<TestDb>();
-        db.Database.EnsureCreated();
-        db.Database.Migrate();
     }
 
-    public void Dispose()
+    protected override void Dispose(bool disposing)
     {
-        _xUnitLoggerProvider.Dispose();
-        _serviceProvider.Dispose();
-        _sqliteConnection.Dispose();
+        if (disposing)
+        {
+            _serviceProvider.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     [Fact]
