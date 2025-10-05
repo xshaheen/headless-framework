@@ -4,11 +4,12 @@ using FileSignatures;
 using FluentValidation;
 using FluentValidation.TestHelper;
 using Framework.FluentValidation;
+using Framework.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 
 namespace Tests;
 
-public class FileValidatorsTests
+public sealed class FileValidatorsTests : TestBase
 {
     private const int _MinimalFileSize = 512;
     private const int _MaximalFileSize = 2048;
@@ -257,7 +258,7 @@ public class FileValidatorsTests
         var model = new FileUploadTestModel { UploadedFile = mockFile };
 
         // when
-        var result = await validator.TestValidateAsync(model);
+        var result = await validator.TestValidateAsync(model, cancellationToken: AbortToken);
 
         // then
         result.IsValid.Should().BeTrue();
@@ -281,7 +282,7 @@ public class FileValidatorsTests
         var model = new FileUploadTestModel { UploadedFile = mockFile };
 
         // when
-        var result = await validator.TestValidateAsync(model);
+        var result = await validator.TestValidateAsync(model, cancellationToken: AbortToken);
 
         // then
         result.IsValid.Should().BeFalse();

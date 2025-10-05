@@ -1,9 +1,10 @@
 ﻿using System.Diagnostics;
 using Framework.Core;
+using Framework.Testing.Tests;
 
 namespace Tests.Core;
 
-public sealed class RunTests
+public sealed class RunTests : TestBase
 {
     [Fact]
     public async Task should_complete_task_after_delay_when_delayed_async_is_called()
@@ -21,7 +22,7 @@ public sealed class RunTests
 
         // when
         var timestamp = Stopwatch.GetTimestamp();
-        await Run.DelayedAsync(delay, action);
+        await Run.DelayedAsync(delay, action, cancellationToken: AbortToken);
         var elapsed = Stopwatch.GetElapsedTime(timestamp);
 
         // then
@@ -76,7 +77,7 @@ public sealed class RunTests
         }
 
         // when
-        var result = await Run.WithRetriesAsync(callback, maxAttempts: 5);
+        var result = await Run.WithRetriesAsync(callback, maxAttempts: 5, cancellationToken: AbortToken);
 
         // then
         result.Should().Be(42);

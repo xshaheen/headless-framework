@@ -6,7 +6,7 @@ using Framework.FluentValidation;
 
 namespace Tests;
 
-public sealed class PhoneNumberValidators_PhoneNumberTests
+public sealed class PhoneNumberValidatorsPhoneNumberTests
 {
     private readonly TestModelValidator _sut = new();
 

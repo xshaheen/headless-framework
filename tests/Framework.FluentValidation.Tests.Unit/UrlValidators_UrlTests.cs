@@ -6,7 +6,7 @@ using Framework.FluentValidation;
 
 namespace Tests;
 
-public sealed class UrlValidators_UrlTests
+public sealed class UrlValidatorsUrlTests
 {
     private readonly TestModelValidator _sut = new();
 

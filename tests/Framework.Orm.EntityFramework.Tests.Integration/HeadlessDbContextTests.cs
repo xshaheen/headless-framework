@@ -25,8 +25,7 @@ public sealed class HeadlessDbContextTests : TestBase
     private readonly TestCurrentUser _currentUser = new();
     private readonly ServiceProvider _serviceProvider;
 
-    public HeadlessDbContextTests(ITestOutputHelper output)
-        : base(output)
+    public HeadlessDbContextTests()
     {
         var services = new ServiceCollection();
 
@@ -57,14 +56,10 @@ public sealed class HeadlessDbContextTests : TestBase
         _clock.TimeProvider = new FakeTimeProvider(_now);
     }
 
-    protected override void Dispose(bool disposing)
+    protected override async ValueTask DisposeAsyncCore()
     {
-        if (disposing)
-        {
-            _serviceProvider.Dispose();
-        }
-
-        base.Dispose(disposing);
+        await _serviceProvider.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 
     [Fact]
@@ -78,10 +73,10 @@ public sealed class HeadlessDbContextTests : TestBase
         db.Basics.Add(entity);
 
         // when
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // then
-        var basicCount = await db.Basics.CountAsync();
+        var basicCount = await db.Basics.CountAsync(AbortToken);
         basicCount.Should().Be(1);
         db.EmittedLocalMessages.Should().BeEmpty();
         db.EmittedDistributedMessages.Should().BeEmpty();
@@ -101,7 +96,7 @@ public sealed class HeadlessDbContextTests : TestBase
         db.Tests.Add(entity);
 
         // when
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         entity.Id.Should().NotBe(Guid.Empty);
@@ -139,12 +134,12 @@ public sealed class HeadlessDbContextTests : TestBase
 
         var entity = new TestEntity { Name = "initial", TenantId = "T1" };
         db.Tests.Add(entity);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
         var oldStamp = entity.ConcurrencyStamp;
 
         // when
         entity.Name = "updated";
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         entity.DateUpdated.Should().Be(_now);
@@ -173,12 +168,12 @@ public sealed class HeadlessDbContextTests : TestBase
 
         var entity = new TestEntity { Name = "to-delete", TenantId = "T1" };
         db.Tests.Add(entity);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // when
         entity.MarkDeleted();
         db.Update(entity);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         entity.IsDeleted.Should().BeTrue();
@@ -204,12 +199,12 @@ public sealed class HeadlessDbContextTests : TestBase
 
         var entity = new TestEntity { Name = "to-suspend", TenantId = "T1" };
         db.Tests.Add(entity);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // when
         entity.MarkSuspended();
         db.Update(entity);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         entity.IsSuspended.Should().BeTrue();
@@ -230,10 +225,10 @@ public sealed class HeadlessDbContextTests : TestBase
         entity.AddMessage(new TestDistributedMessage("hello"));
         db.Tests.Add(entity);
 
-        await using var tx = await db.Database.BeginTransactionAsync();
+        await using var tx = await db.Database.BeginTransactionAsync(AbortToken);
 
         // when
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // then
         db.EmittedLocalMessages.Should().NotBeEmpty();
@@ -243,7 +238,7 @@ public sealed class HeadlessDbContextTests : TestBase
         dist.Messages.Should().ContainSingle();
         dist.Messages.Single().Should().BeOfType<TestDistributedMessage>();
 
-        await tx.CommitAsync();
+        await tx.CommitAsync(AbortToken);
     }
 
     // ExecuteTransactionAsync
@@ -265,7 +260,7 @@ public sealed class HeadlessDbContextTests : TestBase
             return true;
         });
 
-        (await db.Basics.CountAsync()).Should().Be(1);
+        (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
         committed.Should().BeTrue();
 
         // rollback path
@@ -276,7 +271,7 @@ public sealed class HeadlessDbContextTests : TestBase
             return false;
         });
 
-        (await db.Basics.CountAsync()).Should().Be(1);
+        (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
     }
 
     // Global filters
@@ -294,43 +289,43 @@ public sealed class HeadlessDbContextTests : TestBase
         var d = new TestEntity { Name = "d", TenantId = "TENANT-1" };
         var e = new TestEntity { Name = "e", TenantId = null };
         await db.Tests.AddRangeAsync(a, b, c, d, e);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // soft delete c
         c.MarkDeleted();
         // suspend d
         d.MarkSuspended();
         db.UpdateRange(c, d);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(AbortToken);
 
         // when/then: default filters on
         using (_currentTenant.Change(null))
         {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("e");
         }
 
         using (_currentTenant.Change("TENANT-1"))
         {
-            var items = await db.Tests.Select(x => x.Name).ToArrayAsync();
+            var items = await db.Tests.Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("a");
         }
 
         // Allow deleted, Current tenant is <null>
         {
-            var items = await db.Tests.IgnoreNotDeletedFilter().Select(x => x.Name).ToArrayAsync();
+            var items = await db.Tests.IgnoreNotDeletedFilter().Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("e");
         }
 
         // Allow deleted, Current tenant is TENANT-1
         using (_currentTenant.Change("TENANT-1"))
         {
-            var items = await db.Tests.IgnoreNotDeletedFilter().Select(x => x.Name).ToArrayAsync();
+            var items = await db.Tests.IgnoreNotDeletedFilter().Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("a", "c");
         }
 
         {
-            var items = await db.Tests.IgnoreMultiTenancyFilter().Select(x => x.Name).ToArrayAsync();
+            var items = await db.Tests.IgnoreMultiTenancyFilter().Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("a", "b", "e");
         }
 
@@ -341,7 +336,7 @@ public sealed class HeadlessDbContextTests : TestBase
                 .IgnoreNotDeletedFilter()
                 .IgnoreNotSuspendedFilter()
                 .Select(x => x.Name)
-                .ToArrayAsync();
+                .ToArrayAsync(AbortToken);
 
             items.Should().BeEquivalentTo("a", "b", "c", "d", "e");
         }

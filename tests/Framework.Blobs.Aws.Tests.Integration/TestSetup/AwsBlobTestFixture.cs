@@ -2,10 +2,11 @@
 
 using Testcontainers.LocalStack;
 using Testcontainers.Xunit;
+using Xunit.Sdk;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(AwsBlobTestFixture))]
+[CollectionDefinition]
 public sealed class AwsBlobTestFixture(IMessageSink messageSink)
     : ContainerFixture<LocalStackBuilder, LocalStackContainer>(messageSink),
         ICollectionFixture<AwsBlobTestFixture>

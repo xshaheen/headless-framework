@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public abstract class ResourceThrottlingLockProviderTestsBase(ITestOutputHelper output) : TestBase(output)
+public abstract class ResourceThrottlingLockProviderTestsBase : TestBase
 {
     protected TimeProvider TimeProvider { get; } = TimeProvider.System;
 

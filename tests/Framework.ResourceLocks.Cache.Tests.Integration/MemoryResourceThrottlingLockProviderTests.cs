@@ -8,8 +8,7 @@ public sealed class MemoryResourceThrottlingLockProviderTests : ResourceThrottli
 {
     private readonly InMemoryCachingFoundatioAdapter _cache;
 
-    public MemoryResourceThrottlingLockProviderTests(ITestOutputHelper output)
-        : base(output)
+    public MemoryResourceThrottlingLockProviderTests()
     {
         _cache = new InMemoryCachingFoundatioAdapter(TimeProvider, new InMemoryCacheOptions());
     }
@@ -17,6 +16,12 @@ public sealed class MemoryResourceThrottlingLockProviderTests : ResourceThrottli
     protected override IThrottlingResourceLockStorage GetLockStorage()
     {
         return new CacheThrottlingResourceLockStorage(_cache);
+    }
+
+    protected override ValueTask DisposeAsyncCore()
+    {
+        _cache.Dispose();
+        return base.DisposeAsyncCore();
     }
 
     [Fact]
@@ -29,15 +34,5 @@ public sealed class MemoryResourceThrottlingLockProviderTests : ResourceThrottli
     public override Task should_throttle_concurrent_calls_async()
     {
         return base.should_throttle_concurrent_calls_async();
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-
-        if (disposing)
-        {
-            _cache.Dispose();
-        }
     }
 }

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class FileSystemBlobStorageTests(ITestOutputHelper output) : BlobStorageTestsBase(output)
+public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 {
     private readonly string _baseDirectoryPath = Directory.CreateTempSubdirectory().FullName;
 
@@ -135,34 +135,34 @@ public sealed class FileSystemBlobStorageTests(ITestOutputHelper output) : BlobS
         using var storage = (FileSystemBlobStorage)GetStorage();
         await ResetAsync(storage);
 
-        var result = await storage.GetPagedListAsync(container);
+        var result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().BeEmpty();
-        (await result.NextPageAsync()).Should().BeFalse();
+        (await result.NextPageAsync(AbortToken)).Should().BeFalse();
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().BeEmpty();
 
         const string directory = "EmptyDirectory/";
         Directory.CreateDirectory(Path.Combine(_baseDirectoryPath, containerName, directory));
 
-        result = await storage.GetPagedListAsync(container);
+        result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().BeEmpty();
-        (await result.NextPageAsync()).Should().BeFalse();
+        (await result.NextPageAsync(AbortToken)).Should().BeFalse();
         result.HasMore.Should().BeFalse();
         result.Blobs.Should().BeEmpty();
 
         // Ensure the directory will not be returned via get file info
-        var info = await storage.GetBlobInfoAsync(container, directory);
+        var info = await storage.GetBlobInfoAsync(container, directory, AbortToken);
         info.Should().BeNull();
 
         // Ensure delete files can remove all files including fake folders
-        await storage.DeleteAllAsync(container, "*");
+        await storage.DeleteAllAsync(container, "*", AbortToken);
 
         // Assert folder was removed by Delete Files
         Directory.Exists(Path.Combine(_baseDirectoryPath, containerName, directory)).Should().BeFalse();
 
-        info = await storage.GetBlobInfoAsync(container, directory);
+        info = await storage.GetBlobInfoAsync(container, directory, AbortToken);
         info.Should().BeNull();
     }
 

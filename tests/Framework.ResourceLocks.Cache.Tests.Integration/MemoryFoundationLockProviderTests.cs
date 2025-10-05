@@ -14,8 +14,7 @@ public class MemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
     private readonly InMemoryCachingFoundatioAdapter _cache;
     private readonly CacheResourceLockStorage _storage;
 
-    public MemoryFoundationLockProviderTests(ITestOutputHelper output)
-        : base(output)
+    public MemoryFoundationLockProviderTests()
     {
         _foundatioMessageBus = new InMemoryMessageBus(o => o.Topic("test-lock").LoggerFactory(LoggerFactory));
         _messageBus = new(_foundatioMessageBus, GuidGenerator);
@@ -23,16 +22,12 @@ public class MemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
         _storage = new CacheResourceLockStorage(_cache);
     }
 
-    protected override void Dispose(bool disposing)
+    protected override ValueTask DisposeAsyncCore()
     {
-        base.Dispose(disposing);
-
-        if (disposing)
-        {
-            _foundatioMessageBus?.Dispose();
-            _messageBus?.Dispose();
-            _cache?.Dispose();
-        }
+        _foundatioMessageBus?.Dispose();
+        _messageBus?.Dispose();
+        _cache?.Dispose();
+        return base.DisposeAsyncCore();
     }
 
     protected override IResourceLockProvider GetLockProvider()

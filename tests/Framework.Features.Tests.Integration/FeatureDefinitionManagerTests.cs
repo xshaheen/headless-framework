@@ -3,15 +3,13 @@
 using Framework.Features;
 using Framework.Features.Definitions;
 using Framework.Features.Models;
-using Framework.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(FeaturesTestFixture))]
-public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, ITestOutputHelper output)
-    : FeaturesTestBase(fixture, output)
+[Collection<FeaturesTestFixture>]
+public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture) : FeaturesTestBase(fixture)
 {
     private static readonly FeatureGroupDefinition[] _GroupDefinitions =
     [
@@ -30,8 +28,8 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, I
         var definitionManager = scope.ServiceProvider.GetRequiredService<IFeatureDefinitionManager>();
 
         // when
-        var groups = await definitionManager.GetGroupsAsync();
-        var features = await definitionManager.GetFeaturesAsync();
+        var groups = await definitionManager.GetGroupsAsync(AbortToken);
+        var features = await definitionManager.GetFeaturesAsync(AbortToken);
 
         // then
         groups.Should().BeEmpty();
@@ -48,8 +46,8 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, I
         var definitionManager = scope.ServiceProvider.GetRequiredService<IFeatureDefinitionManager>();
 
         // when
-        var groups = await definitionManager.GetGroupsAsync();
-        var definitions = await definitionManager.GetFeaturesAsync();
+        var groups = await definitionManager.GetGroupsAsync(AbortToken);
+        var definitions = await definitionManager.GetFeaturesAsync(AbortToken);
 
         // then
         groups.Should().HaveCount(3);
@@ -69,7 +67,7 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, I
         var randomSettingName = Faker.Random.String2(5, 10);
 
         // when
-        var definition = await definitionManager.FindAsync(randomSettingName);
+        var definition = await definitionManager.FindAsync(randomSettingName, AbortToken);
 
         // then
         definition.Should().BeNull();
@@ -83,11 +81,11 @@ public sealed class FeatureDefinitionManagerTests(FeaturesTestFixture fixture, I
         using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<IFeatureDefinitionManager>();
-        var definitions = await definitionManager.GetFeaturesAsync();
+        var definitions = await definitionManager.GetFeaturesAsync(AbortToken);
         var existDefinition = definitions[0];
 
         // when
-        var definition = await definitionManager.FindAsync(existDefinition.Name);
+        var definition = await definitionManager.FindAsync(existDefinition.Name, AbortToken);
 
         // then
         definition.Should().NotBeNull();

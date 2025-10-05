@@ -4,7 +4,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(NpgsqlTestFixture))]
+[Collection<NpgsqlTestFixture>]
 public sealed class NpgsqlConnectionFactoryTests(NpgsqlTestFixture fixture) : SqlConnectionFactoryTestBase
 {
     public override string GetConnection()
@@ -55,15 +55,15 @@ public sealed class NpgsqlConnectionFactoryTests(NpgsqlTestFixture fixture) : Sq
         var connection = await sut.GetOpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE test (id INT PRIMARY KEY, Name TEXT)";
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(AbortToken);
 
         // when
         command.CommandText = "INSERT INTO test (Id, Name) VALUES (1, 'test')";
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(AbortToken);
 
         // then
         command.CommandText = "SELECT COUNT(*) FROM test";
-        var result = await command.ExecuteScalarAsync();
+        var result = await command.ExecuteScalarAsync(AbortToken);
         result.Should().Be(1);
     }
 }

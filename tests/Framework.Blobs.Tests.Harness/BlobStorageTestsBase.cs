@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public abstract class BlobStorageTestsBase(ITestOutputHelper output) : TestBase(output)
+public abstract class BlobStorageTestsBase : TestBase
 {
     protected abstract IBlobStorage GetStorage();
 

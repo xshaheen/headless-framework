@@ -19,8 +19,8 @@ using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
-[Collection(nameof(FeaturesTestFixture))]
-public abstract class FeaturesTestBase(FeaturesTestFixture fixture, ITestOutputHelper output) : TestBase(output)
+[Collection<FeaturesTestFixture>]
+public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
 {
     protected FeaturesTestFixture Fixture { get; } = fixture;
 

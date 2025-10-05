@@ -6,7 +6,7 @@ using Framework.FluentValidation;
 
 namespace Tests;
 
-public sealed class CollectionValidators_MinimumElementsTests
+public sealed class CollectionValidatorsMinimumElementsTests
 {
     private readonly Faker _faker = new();
 

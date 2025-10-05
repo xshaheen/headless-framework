@@ -9,7 +9,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(CacheTestFixture))]
+[Collection<CacheTestFixture>]
 public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
 {
     private readonly RedisMessageBus _foundatioMessageBus;
@@ -17,8 +17,7 @@ public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
     private readonly RedisCachingFoundatioAdapter _cache;
     private readonly CacheResourceLockStorage _storage;
 
-    public RedisResourceLockProviderTests(CacheTestFixture fixture, ITestOutputHelper output)
-        : base(output)
+    public RedisResourceLockProviderTests(CacheTestFixture fixture)
     {
         _foundatioMessageBus = new RedisMessageBus(o =>
             o.Subscriber(fixture.ConnectionMultiplexer.GetSubscriber()).Topic("test-lock").LoggerFactory(LoggerFactory)
@@ -35,16 +34,12 @@ public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
         _storage = new CacheResourceLockStorage(_cache);
     }
 
-    protected override void Dispose(bool disposing)
+    protected override ValueTask DisposeAsyncCore()
     {
-        base.Dispose(disposing);
-
-        if (disposing)
-        {
-            _foundatioMessageBus?.Dispose();
-            _messageBus?.Dispose();
-            _cache?.Dispose();
-        }
+        _foundatioMessageBus?.Dispose();
+        _messageBus?.Dispose();
+        _cache?.Dispose();
+        return base.DisposeAsyncCore();
     }
 
     protected override IResourceLockProvider GetLockProvider()

@@ -1,17 +1,15 @@
 ﻿using System.IO.Pipelines;
-using System.Text.Unicode;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Specialized;
 using Framework.Testing.Tests;
 using Framework.Tus.Models;
 using Framework.Tus.Options;
 using Framework.Tus.Services;
-using Microsoft.Extensions.Logging;
 using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(TusAzureFixture))]
+[Collection<TusAzureFixture>]
 public sealed class TusAzureStoreTests : TestBase
 {
     private readonly TusAzureStore _store;
@@ -19,8 +17,7 @@ public sealed class TusAzureStoreTests : TestBase
     private const string _ContainerName = "tuscontainer";
     private const string _BlobPrefix = "tusfiles/";
 
-    public TusAzureStoreTests(TusAzureFixture fixture, ITestOutputHelper output)
-        : base(output)
+    public TusAzureStoreTests(TusAzureFixture fixture)
     {
         var blobServiceClient = new BlobServiceClient(
             fixture.Container.GetConnectionString(),
@@ -52,9 +49,9 @@ public sealed class TusAzureStoreTests : TestBase
         fileId.Should().NotBeNullOrEmpty();
         // Blob should exist
         var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
-        var exists = await blobClient.ExistsAsync();
+        var exists = await blobClient.ExistsAsync(AbortToken);
         exists.Value.Should().BeTrue();
-        var properties = await blobClient.GetPropertiesAsync();
+        var properties = await blobClient.GetPropertiesAsync(cancellationToken: AbortToken);
         // Filename should be set correctly
         properties.Value.Metadata.Should().ContainKey(fileKey);
         properties.Value.Metadata[fileKey].Should().Be(fileName);
@@ -103,7 +100,7 @@ public sealed class TusAzureStoreTests : TestBase
 
         // then
         var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
-        var properties = await blobClient.GetPropertiesAsync();
+        var properties = await blobClient.GetPropertiesAsync(cancellationToken: AbortToken);
         properties.Value.Metadata.Should().ContainKey(TusAzureMetadata.UploadLengthKey);
         properties.Value.Metadata[TusAzureMetadata.UploadLengthKey].Should().Be(newUploadLength.ToInvariantString());
     }
@@ -168,7 +165,7 @@ public sealed class TusAzureStoreTests : TestBase
         {
             var blockId = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
             await using var stream = new MemoryStream(new byte[size]);
-            await blockBlobClient.StageBlockAsync(blockId, stream);
+            await blockBlobClient.StageBlockAsync(blockId, stream, cancellationToken: AbortToken);
             blockIds.Add(blockId);
         }
 
@@ -226,12 +223,12 @@ public sealed class TusAzureStoreTests : TestBase
         var metadata = $"filename {fileName.ToBase64()}";
         var fileId = await _store.CreateFileAsync(uploadLength, metadata, CancellationToken.None);
         var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
-        var existsBeforeDeletion = await blobClient.ExistsAsync();
+        var existsBeforeDeletion = await blobClient.ExistsAsync(AbortToken);
         existsBeforeDeletion.Value.Should().BeTrue();
 
         // when
         await _store.DeleteFileAsync(fileId, CancellationToken.None);
-        var existsAfterDeletion = await blobClient.ExistsAsync();
+        var existsAfterDeletion = await blobClient.ExistsAsync(AbortToken);
         const string nonExistentFileId = "nonexistentfileid";
         // Deleting a non-existent file should not throw
         var act = async () => await _store.DeleteFileAsync(nonExistentFileId, CancellationToken.None);
@@ -329,7 +326,7 @@ public sealed class TusAzureStoreTests : TestBase
         const string nonExistentFileId = "nonexistentfileid";
         var dataToAppend = Faker.Random.Bytes(3_000);
         var pipe = PipeWriter.Create(new MemoryStream());
-        await pipe.WriteAsync(dataToAppend);
+        await pipe.WriteAsync(dataToAppend, AbortToken);
 
         // when
         // ReSharper disable once AccessToDisposedClosure
@@ -359,7 +356,7 @@ public sealed class TusAzureStoreTests : TestBase
         await _store.SetExpirationAsync(fileId, expectedExpirationTime, CancellationToken.None);
         // then
         var blobClient = _containerClient.GetBlobClient(_BlobPrefix + fileId);
-        var properties = await blobClient.GetPropertiesAsync();
+        var properties = await blobClient.GetPropertiesAsync(cancellationToken: AbortToken);
         properties.Value.Metadata.Should().ContainKey(TusAzureMetadata.ExpirationKey);
         var storedExpiration = DateTimeOffset.Parse(
             properties.Value.Metadata[TusAzureMetadata.ExpirationKey],

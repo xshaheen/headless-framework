@@ -2,11 +2,12 @@
 
 using Testcontainers.Azurite;
 using Testcontainers.Xunit;
+using Xunit.Sdk;
 
 namespace Tests.TestSetup;
 
 [UsedImplicitly]
-[CollectionDefinition(nameof(AzureBlobTestFixture))]
+[CollectionDefinition]
 public sealed class AzureBlobTestFixture(IMessageSink messageSink)
     : ContainerFixture<AzuriteBuilder, AzuriteContainer>(messageSink),
         ICollectionFixture<AzureBlobTestFixture>

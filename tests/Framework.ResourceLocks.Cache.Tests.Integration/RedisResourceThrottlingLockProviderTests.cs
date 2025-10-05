@@ -7,14 +7,13 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(CacheTestFixture))]
-public sealed class RedisResourceThrottlingLockProviderTests : ResourceThrottlingLockProviderTestsBase, IAsyncLifetime
+[Collection<CacheTestFixture>]
+public sealed class RedisResourceThrottlingLockProviderTests : ResourceThrottlingLockProviderTestsBase
 {
     private readonly CacheTestFixture _fixture;
     private readonly RedisCachingFoundatioAdapter _cache;
 
-    public RedisResourceThrottlingLockProviderTests(CacheTestFixture fixture, ITestOutputHelper output)
-        : base(output)
+    public RedisResourceThrottlingLockProviderTests(CacheTestFixture fixture)
     {
         _cache = new RedisCachingFoundatioAdapter(
             new SystemJsonSerializer(),
@@ -30,16 +29,15 @@ public sealed class RedisResourceThrottlingLockProviderTests : ResourceThrottlin
         return new CacheThrottlingResourceLockStorage(_cache);
     }
 
-    public async Task InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         await _fixture.ConnectionMultiplexer.FlushAllAsync();
     }
 
-    public Task DisposeAsync()
+    protected override ValueTask DisposeAsyncCore()
     {
         _cache.Dispose();
-
-        return Task.CompletedTask;
+        return base.DisposeAsyncCore();
     }
 
     [Fact]

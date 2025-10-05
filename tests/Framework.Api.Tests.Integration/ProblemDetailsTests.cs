@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(output)
+public sealed class ProblemDetailsTests : TestBase
 {
     #region Entity Not Found (Middleware rewriter)
 
@@ -35,7 +35,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/12345678", stringContent);
+        using var response = await client.PostAsync("/12345678", stringContent, AbortToken);
         await _VerifyEndpointNotFound(response);
     }
 
@@ -80,7 +80,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
     {
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
-        using var response = await client.GetAsync("/mvc/malformed-syntax");
+        using var response = await client.GetAsync("/mvc/malformed-syntax", AbortToken);
         await _VerifyMalformedSyntax(response);
     }
 
@@ -89,7 +89,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
     {
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
-        using var response = await client.GetAsync("/minimal/malformed-syntax");
+        using var response = await client.GetAsync("/minimal/malformed-syntax", AbortToken);
         await _VerifyMalformedSyntax(response);
     }
 
@@ -139,7 +139,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/minimal/entity-not-found", stringContent);
+        using var response = await client.PostAsync("/minimal/entity-not-found", stringContent, AbortToken);
         await _VerifyEntityNotFound(response);
     }
 
@@ -149,7 +149,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/mvc/entity-not-found", stringContent);
+        using var response = await client.PostAsync("/mvc/entity-not-found", stringContent, AbortToken);
         await _VerifyEntityNotFound(response);
     }
 
@@ -204,7 +204,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/minimal/conflict", stringContent);
+        using var response = await client.PostAsync("/minimal/conflict", stringContent, AbortToken);
         await _VerifyConflict(response);
     }
 
@@ -214,7 +214,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/mvc/conflict", stringContent);
+        using var response = await client.PostAsync("/mvc/conflict", stringContent, AbortToken);
         await _VerifyConflict(response);
     }
 
@@ -270,7 +270,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/minimal/unprocessable", stringContent);
+        using var response = await client.PostAsync("/minimal/unprocessable", stringContent, AbortToken);
         await _VerifyUnprocessable(response);
     }
 
@@ -280,7 +280,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/mvc/unprocessable-entity", stringContent);
+        using var response = await client.PostAsync("/mvc/unprocessable-entity", stringContent, AbortToken);
         await _VerifyUnprocessable(response);
     }
 
@@ -362,7 +362,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/minimal/internal-error", stringContent);
+        using var response = await client.PostAsync("/minimal/internal-error", stringContent, AbortToken);
         await _VerifyInternalServerError(response);
     }
 
@@ -372,7 +372,7 @@ public sealed class ProblemDetailsTests(ITestOutputHelper output) : TestBase(out
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/mvc/internal-error", stringContent);
+        using var response = await client.PostAsync("/mvc/internal-error", stringContent, AbortToken);
         await _VerifyInternalServerError(response);
     }
 

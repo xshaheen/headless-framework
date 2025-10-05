@@ -3,14 +3,12 @@
 using Framework.Permissions;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Models;
-using Framework.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixture, ITestOutputHelper output)
-    : PermissionsTestBase(fixture, output)
+public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixture) : PermissionsTestBase(fixture)
 {
     private static readonly PermissionGroupDefinition[] _GroupDefinitions =
     [
@@ -29,8 +27,8 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
         var definitionManager = scope.ServiceProvider.GetRequiredService<IPermissionDefinitionManager>();
 
         // when
-        var groups = await definitionManager.GetGroupsAsync();
-        var permissions = await definitionManager.GetPermissionsAsync();
+        var groups = await definitionManager.GetGroupsAsync(AbortToken);
+        var permissions = await definitionManager.GetPermissionsAsync(AbortToken);
 
         // then
         groups.Should().BeEmpty();
@@ -47,8 +45,8 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
         var definitionManager = scope.ServiceProvider.GetRequiredService<IPermissionDefinitionManager>();
 
         // when
-        var groups = await definitionManager.GetGroupsAsync();
-        var definitions = await definitionManager.GetPermissionsAsync();
+        var groups = await definitionManager.GetGroupsAsync(AbortToken);
+        var definitions = await definitionManager.GetPermissionsAsync(AbortToken);
 
         // then
         groups.Should().HaveCount(3);
@@ -68,7 +66,7 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
         var randomSettingName = Faker.Random.String2(5, 10);
 
         // when
-        var definition = await definitionManager.FindAsync(randomSettingName);
+        var definition = await definitionManager.FindAsync(randomSettingName, AbortToken);
 
         // then
         definition.Should().BeNull();
@@ -82,11 +80,11 @@ public sealed class PermissionDefinitionManagerTests(PermissionsTestFixture fixt
         using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
         await using var scope = host.Services.CreateAsyncScope();
         var definitionManager = scope.ServiceProvider.GetRequiredService<IPermissionDefinitionManager>();
-        var definitions = await definitionManager.GetPermissionsAsync();
+        var definitions = await definitionManager.GetPermissionsAsync(AbortToken);
         var existDefinition = definitions[0];
 
         // when
-        var definition = await definitionManager.FindAsync(existDefinition.Name);
+        var definition = await definitionManager.FindAsync(existDefinition.Name, AbortToken);
 
         // then
         definition.Should().NotBeNull();

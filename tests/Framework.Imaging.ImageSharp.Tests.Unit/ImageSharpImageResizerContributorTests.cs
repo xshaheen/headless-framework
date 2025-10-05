@@ -1,11 +1,12 @@
 ﻿using Framework.Constants;
 using Framework.Imaging;
 using Framework.Imaging.ImageSharp;
+using Framework.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public class ImageSharpImageResizerContributorTests
+public sealed class ImageSharpImageResizerContributorTests : TestBase
 {
     private readonly ImageSharpImageResizerContributor _imageResizerContributor;
 
@@ -30,7 +31,7 @@ public class ImageSharpImageResizerContributorTests
         );
 
         // when
-        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args);
+        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args, AbortToken);
 
         // then
 
@@ -58,7 +59,7 @@ public class ImageSharpImageResizerContributorTests
         );
 
         // when
-        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args);
+        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args, AbortToken);
 
         // then
         result.State.Should().Be(ImageProcessState.Done);
@@ -79,7 +80,7 @@ public class ImageSharpImageResizerContributorTests
         );
 
         // when
-        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args);
+        var result = await _imageResizerContributor.TryResizeAsync(imageStream, args, AbortToken);
 
         // then
         result.State.Should().Be(ImageProcessState.Done);

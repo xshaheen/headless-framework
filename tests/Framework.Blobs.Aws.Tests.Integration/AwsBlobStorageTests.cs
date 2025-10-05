@@ -11,9 +11,8 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(AwsBlobTestFixture))]
-public sealed class AwsBlobStorageTests(AwsBlobTestFixture fixture, ITestOutputHelper output)
-    : BlobStorageTestsBase(output)
+[Collection<AwsBlobTestFixture>]
+public sealed class AwsBlobStorageTests(AwsBlobTestFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {

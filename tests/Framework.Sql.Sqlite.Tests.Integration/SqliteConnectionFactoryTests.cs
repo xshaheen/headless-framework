@@ -53,15 +53,15 @@ public sealed class SqliteConnectionFactoryTests : SqlConnectionFactoryTestBase
         var connection = await sut.GetOpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)";
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(AbortToken);
 
         // when
         command.CommandText = "INSERT INTO test (name) VALUES ('test')";
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(AbortToken);
 
         // then
         command.CommandText = "SELECT COUNT(*) FROM test";
-        var result = await command.ExecuteScalarAsync();
+        var result = await command.ExecuteScalarAsync(AbortToken);
         result.Should().Be(1);
     }
 }

@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Testing.Tests;
+
 namespace Tests.IO;
 
-public sealed class StreamExtensionsTests
+public sealed class StreamExtensionsTests : TestBase
 {
     #region Get All Text
 
@@ -33,7 +35,7 @@ public sealed class StreamExtensionsTests
         stream.Position = Random.Shared.Next(0, bytes.Length);
 
         // when
-        var result = await stream.GetAllTextAsync();
+        var result = await stream.GetAllTextAsync(AbortToken);
 
         // then
         result.Should().Be(text);
@@ -68,7 +70,7 @@ public sealed class StreamExtensionsTests
         await using var stream = new MemoryStream(bytes);
 
         // when
-        var result = await stream.GetAllBytesAsync();
+        var result = await stream.GetAllBytesAsync(AbortToken);
 
         // then
         result.Should().BeEquivalentTo(bytes);
@@ -102,10 +104,10 @@ public sealed class StreamExtensionsTests
         await using var stream = new MemoryStream();
 
         // when
-        await stream.WriteTextAsync(text);
+        await stream.WriteTextAsync(text, AbortToken);
 
         // then
-        var resultText = await stream.GetAllTextAsync();
+        var resultText = await stream.GetAllTextAsync(AbortToken);
         resultText.Should().Be(text);
         stream.Position.Should().Be(Encoding.UTF8.GetByteCount(text));
     }
@@ -146,7 +148,7 @@ public sealed class StreamExtensionsTests
         stream.Position = Random.Shared.Next(0, bytes.Length); // It should not affect the result
 
         // when
-        await using var memoryStream = await stream.CreateMemoryStreamAsync();
+        await using var memoryStream = await stream.CreateMemoryStreamAsync(AbortToken);
 
         // then
         memoryStream.Should().NotBeNull();

@@ -3,14 +3,12 @@
 using Framework.Settings;
 using Framework.Settings.Definitions;
 using Framework.Settings.Models;
-using Framework.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, ITestOutputHelper output)
-    : SettingsTestBase(fixture, output)
+public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
     private static readonly List<SettingDefinition> _Definitions = TestData.CreateDefinitionFaker().Generate(5);
 
@@ -24,7 +22,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
 
         // when
-        var definitions = await definitionManager.GetAllAsync();
+        var definitions = await definitionManager.GetAllAsync(AbortToken);
 
         // then
         definitions.Should().BeEmpty();
@@ -40,7 +38,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         var definitionManager = scope.ServiceProvider.GetRequiredService<ISettingDefinitionManager>();
 
         // when
-        var definitions = await definitionManager.GetAllAsync();
+        var definitions = await definitionManager.GetAllAsync(AbortToken);
 
         // then
         definitions.Should().NotBeEmpty();
@@ -59,7 +57,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         var oneOfTheDefinedSetting = _Definitions[0];
 
         // when
-        var definition = await definitionManager.FindAsync(oneOfTheDefinedSetting.Name);
+        var definition = await definitionManager.FindAsync(oneOfTheDefinedSetting.Name, AbortToken);
 
         // then
         definition.Should().NotBeNull();
@@ -77,7 +75,7 @@ public sealed class SettingDefinitionManagerTests(SettingsTestFixture fixture, I
         var randomSettingName = Faker.Random.String2(5, 10);
 
         // when
-        var definition = await definitionManager.FindAsync(randomSettingName);
+        var definition = await definitionManager.FindAsync(randomSettingName, AbortToken);
 
         // then
         definition.Should().BeNull();

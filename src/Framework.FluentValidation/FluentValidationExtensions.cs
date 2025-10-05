@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Results;
-using Framework.Constants;
 using Framework.FluentValidation;
-using Framework.FluentValidation.Resources;
 using Framework.Primitives;
 
 #pragma warning disable IDE0130

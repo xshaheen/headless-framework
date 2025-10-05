@@ -6,7 +6,7 @@ using Framework.FluentValidation;
 
 namespace Tests;
 
-public sealed class CollectionValidators_UniqueElementsTests
+public sealed class CollectionValidatorsUniqueElementsTests
 {
     private sealed class TestModel(IEnumerable<string>? elements)
     {

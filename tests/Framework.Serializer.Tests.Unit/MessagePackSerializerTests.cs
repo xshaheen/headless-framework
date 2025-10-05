@@ -106,7 +106,7 @@ public class MessagePackSerializerTests
 
         // then
         result.Should().NotBeNull();
-        result!.Name.Should().Be("Alice");
+        result.Name.Should().Be("Alice");
         result.Age.Should().Be(30);
     }
 
@@ -124,7 +124,7 @@ public class MessagePackSerializerTests
 
         // then
         result.Should().NotBeNull();
-        result!.Name.Should().Be("Bob");
+        result.Name.Should().Be("Bob");
         result.Age.Should().Be(40);
     }
 
@@ -158,7 +158,7 @@ public class MessagePackSerializerTests
 
         // then
         result.Should().NotBeNull();
-        result!.Name.Should().Be("Bob");
+        result.Name.Should().Be("Bob");
         result.Age.Should().Be(40);
     }
 

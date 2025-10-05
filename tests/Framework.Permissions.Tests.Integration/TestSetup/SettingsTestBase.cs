@@ -17,8 +17,8 @@ using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
-[Collection(nameof(PermissionsTestFixture))]
-public abstract class PermissionsTestBase(PermissionsTestFixture fixture, ITestOutputHelper output) : TestBase(output)
+[Collection<PermissionsTestFixture>]
+public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : TestBase
 {
     public PermissionsTestFixture Fixture { get; } = fixture;
 

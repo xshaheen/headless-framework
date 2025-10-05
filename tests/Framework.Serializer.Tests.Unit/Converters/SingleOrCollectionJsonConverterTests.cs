@@ -23,8 +23,8 @@ public class SingleOrCollectionJsonConverterTests
         // then
         result.Should().NotBeNull();
         result.Should().ContainSingle();
-        result![0].Id.Should().Be(1);
-        result![0].Name.Should().Be("Item 1");
+        result[0].Id.Should().Be(1);
+        result[0].Name.Should().Be("Item 1");
     }
 
     [Fact]
@@ -39,10 +39,10 @@ public class SingleOrCollectionJsonConverterTests
         // then
         result.Should().NotBeNull();
         result.Should().HaveCount(2);
-        result![0].Id.Should().Be(1);
-        result![0].Name.Should().Be("Item 1");
-        result![1].Id.Should().Be(2);
-        result![1].Name.Should().Be("Item 2");
+        result[0].Id.Should().Be(1);
+        result[0].Name.Should().Be("Item 1");
+        result[1].Id.Should().Be(2);
+        result[1].Name.Should().Be("Item 2");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class SingleOrCollectionJsonConverterTests
         // then
         result.Should().NotBeNull();
         result.Should().ContainSingle();
-        result![0].Id.Should().Be(1);
+        result[0].Id.Should().Be(1);
         result[0].Name.Should().Be("Item 1");
     }
 

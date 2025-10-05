@@ -3,50 +3,84 @@
 using Bogus;
 using Framework.Testing.Helpers;
 using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
+using Xunit;
+using Xunit.Sdk;
+using Xunit.v3;
+
+[assembly: CaptureConsole]
 
 namespace Framework.Testing.Tests;
 
-public abstract class TestBase : IDisposable
+// IAsyncLifetime -> to perform per-test initialization/cleanup work
+// IClassFixture<TFixture> -> to perform per-class initialization/cleanup work
+// ICollectionFixture & IAsyncLifetime -> to perform per-collection initialization/cleanup work
+// AssemblyFixtureAttribute -> to perform some per-assembly initialization/cleanup work
+// BeforeAfterTestAttribute -> to perform per-test initialization/cleanup work (with access to the test method info)
+// ITestPipelineStartup & TestPipelineStartupAttribute -> to perform some global initialization/cleanup work
+
+public abstract class TestBase : IAsyncLifetime
 {
     private bool _disposed;
 
-    protected ILoggerProvider LoggerProvider { get; }
+    protected ILoggerProvider LoggerProvider { get; private set; }
 
-    protected ILoggerFactory LoggerFactory { get; }
+    protected ILoggerFactory LoggerFactory { get; private set; }
 
     protected ILogger Logger { get; }
 
+    protected static CancellationToken AbortToken => TestContext.Current.CancellationToken;
+
     protected virtual Faker Faker { get; set; } = new();
 
-    protected TestBase(ITestOutputHelper output)
+    /// <summary>
+    /// Attempt to cancel the currently executing test, if one is executing. This will
+    /// signal the <see cref="AbortToken"/> for cancellation.
+    /// </summary>
+    protected void AbortCurrentTests()
     {
-        var (loggerProvider, loggerFactory) = TestHelpers.CreateXUnitLoggerFactory(output);
+        TestContext.Current.CancelCurrentTest();
+    }
 
+    /// <summary>Initial, sync setup.</summary>
+    protected TestBase()
+    {
+        var (loggerProvider, loggerFactory) = TestHelpers.CreateXUnitLoggerFactory(
+            TestContext.Current.TestOutputHelper
+        );
         LoggerFactory = loggerFactory;
         LoggerProvider = loggerProvider;
         Logger = LoggerFactory.CreateLogger(GetType());
     }
 
-    public void Dispose()
+    /// <summary>Initial, async setup and called just after the constructor</summary>
+    public virtual ValueTask InitializeAsync()
     {
-        Dispose(disposing: true);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>Teardown and runs after each test</summary>
+    public async ValueTask DisposeAsync()
+    {
+        // Do not change this code. Put cleanup code in 'DisposeAsyncCore()' method.
+        await DisposeAsyncCore();
+        // Suppress finalization to prevent the finalizer from running.
         GC.SuppressFinalize(this);
     }
 
-    protected virtual void Dispose(bool disposing)
+    /// <summary>The core asynchronous cleanup logic.</summary>
+    protected virtual ValueTask DisposeAsyncCore()
     {
         if (_disposed)
         {
-            return;
+            return ValueTask.CompletedTask;
         }
 
-        if (disposing)
-        {
-            LoggerFactory?.Dispose();
-            LoggerProvider?.Dispose();
-        }
-
+        LoggerFactory?.Dispose();
+        LoggerFactory = null!;
+        LoggerProvider?.Dispose();
+        LoggerProvider = null!;
         _disposed = true;
+
+        return ValueTask.CompletedTask;
     }
 }
