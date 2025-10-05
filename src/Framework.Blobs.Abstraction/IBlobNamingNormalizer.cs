@@ -28,7 +28,7 @@ public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
 
         foreach (var c in fileName)
         {
-            if (!FileNameHelper.InvalidFileNameChars.Contains(c))
+            if (!FileNames.InvalidFileNameChars.Contains(c))
             {
                 sb.Append(c);
             }
