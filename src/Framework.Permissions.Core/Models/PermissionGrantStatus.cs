@@ -8,3 +8,28 @@ public enum PermissionGrantStatus
     Granted,
     Prohibited,
 }
+
+public static class PermissionGrantStatusExtensions
+{
+    extension(PermissionGrantStatus)
+    {
+        internal static PermissionGrantStatus From(bool? isGranted)
+        {
+            return isGranted switch
+            {
+                true => PermissionGrantStatus.Granted,
+                false => PermissionGrantStatus.Prohibited,
+                null => PermissionGrantStatus.Undefined,
+            };
+        }
+
+        internal static PermissionGrantStatus From(bool isGranted)
+        {
+            return isGranted switch
+            {
+                true => PermissionGrantStatus.Granted,
+                false => PermissionGrantStatus.Prohibited,
+            };
+        }
+    }
+}
