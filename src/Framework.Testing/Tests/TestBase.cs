@@ -36,7 +36,7 @@ public abstract class TestBase : IAsyncLifetime
     /// Attempt to cancel the currently executing test, if one is executing. This will
     /// signal the <see cref="AbortToken"/> for cancellation.
     /// </summary>
-    protected void AbortCurrentTests()
+    protected static void AbortCurrentTests()
     {
         TestContext.Current.CancelCurrentTest();
     }
