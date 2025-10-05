@@ -359,7 +359,7 @@ public sealed class HeadlessDbContextTests : TestBase
 
         public List<EmitterLocalMessages> EmittedLocalMessages { get; } = [];
 
-        public override string DefaultSchema => "dbo";
+        public override string DefaultSchema => "";
 
         protected override Task PublishMessagesAsync(
             List<EmitterDistributedMessages> emitters,

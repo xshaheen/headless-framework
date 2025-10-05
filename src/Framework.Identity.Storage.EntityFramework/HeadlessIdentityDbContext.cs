@@ -423,7 +423,10 @@ public abstract class HeadlessIdentityDbContext<
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
-        builder.HasDefaultSchema(DefaultSchema);
+        if (!DefaultSchema.IsNullOrWhiteSpace())
+        {
+            builder.HasDefaultSchema(DefaultSchema);
+        }
         base.OnModelCreating(builder);
         _entityProcessor.ProcessModelCreating(builder);
     }

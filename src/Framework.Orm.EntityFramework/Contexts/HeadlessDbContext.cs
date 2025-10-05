@@ -406,7 +406,10 @@ public abstract class HeadlessDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasDefaultSchema(DefaultSchema);
+        if (!DefaultSchema.IsNullOrWhiteSpace())
+        {
+            modelBuilder.HasDefaultSchema(DefaultSchema);
+        }
         base.OnModelCreating(modelBuilder);
         _entityProcessor.ProcessModelCreating(modelBuilder);
     }
