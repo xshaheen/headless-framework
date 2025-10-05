@@ -18,7 +18,7 @@ public static class ToObjectExtensions
     /// <returns>Converted object</returns>
     public static T? To<T>(this object? obj, JsonSerializerOptions? options = null)
     {
-        if (obj is null || (obj is string && string.IsNullOrWhiteSpace(obj.ToString())))
+        if (obj is null)
         {
             return default;
         }

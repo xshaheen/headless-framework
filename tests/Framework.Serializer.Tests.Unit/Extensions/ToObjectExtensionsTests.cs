@@ -118,16 +118,6 @@ public sealed class ToObjectExtensionsTests
     }
 
     [Fact]
-    public void To_EmptyString_ReturnsDefault()
-    {
-        const string emptyString = "   ";
-
-        var result = emptyString.To<TestClass>();
-
-        result.Should().BeNull();
-    }
-
-    [Fact]
     public void To_Enum_ParsesCorrectly()
     {
         const string input = "Value2";
@@ -157,6 +147,6 @@ public sealed class ToObjectExtensionsTests
     {
         Value1,
         Value2,
-        Value3
+        Value3,
     }
 }

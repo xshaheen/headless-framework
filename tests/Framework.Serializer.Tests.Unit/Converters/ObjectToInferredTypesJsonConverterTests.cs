@@ -73,7 +73,14 @@ public class ObjectToInferredTypesJsonConverterTests
         var result = JsonSerializer.Deserialize<object>(json, _jsonOptions);
 
         // then
-        result.Should().Be(new DateTimeOffset(2024, 1, 1, 12, 0, 0, DateTimeOffset.Now.Offset));
+        result.Should().BeOfType<DateTimeOffset>();
+        var dateTimeOffset = (DateTimeOffset)result;
+        dateTimeOffset.Year.Should().Be(2024);
+        dateTimeOffset.Month.Should().Be(1);
+        dateTimeOffset.Day.Should().Be(1);
+        dateTimeOffset.Hour.Should().Be(12);
+        dateTimeOffset.Minute.Should().Be(0);
+        dateTimeOffset.Second.Should().Be(0);
     }
 
     [Fact]

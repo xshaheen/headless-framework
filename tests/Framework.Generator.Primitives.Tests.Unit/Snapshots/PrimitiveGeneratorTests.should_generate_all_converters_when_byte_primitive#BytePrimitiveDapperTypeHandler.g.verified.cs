@@ -27,7 +27,11 @@ public sealed class BytePrimitiveDapperTypeHandler : global::Dapper.SqlMapper.Ty
     {
         return value switch
         {
-            byte primitiveValue => new BytePrimitive(primitiveValue),
+            byte byteValue => new BytePrimitive(byteValue)
+            short shortValue and < byte.MaxValue and > byte.MinValue => new BytePrimitive((byte)shortValue)
+            int intValue and < byte.MaxValue and > byte.MinValue => new BytePrimitive((byte)intValue)
+            long longValue and < byte.MaxValue and > byte.MinValue => new BytePrimitive((byte)longValue)
+            string stringValue when !string.IsNullOrEmpty(stringValue) && byte.TryParse(stringValue, global::System.Globalization.CultureInfo.InvariantCulture, out var result) => new BytePrimitive(result)
             _ => throw new global::System.InvalidCastException($"Unable to cast object of type {value.GetType()} to BytePrimitive"),
         };
     }

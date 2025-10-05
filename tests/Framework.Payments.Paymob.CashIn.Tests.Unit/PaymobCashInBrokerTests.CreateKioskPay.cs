@@ -13,7 +13,7 @@ public partial class PaymobCashInBrokerTests
     public async Task should_make_call_and_return_response_when_create_kiosk_pay_request()
     {
         // given
-        var requestPaymentKey = _Faker.Random.String(10);
+        var requestPaymentKey = _Faker.Random.String2(10, 50);
 
         var request = new CashInPayRequest { Source = CashInSource.Kiosk, PaymentToken = requestPaymentKey };
 

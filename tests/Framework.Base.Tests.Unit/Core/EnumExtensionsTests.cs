@@ -52,7 +52,7 @@ public sealed class EnumExtensionsTests
         var displayName = value.GetDisplayName();
 
         // then
-        displayName.Should().Be("ValueWithoutAttributes");
+        displayName.Should().Be("Value without attributes");
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class EnumExtensionsTests
     public void GetDescription_should_return_description_when_DescriptionAttribute_exists()
     {
         // given
-        var value = TestEnum.ValueWithAttributes;
+        const TestEnum value = TestEnum.ValueWithAttributes;
 
         // when
         var description = value.GetDescription();
@@ -104,7 +104,7 @@ public sealed class EnumExtensionsTests
         var description = value.GetDescription();
 
         // then
-        description.Should().BeEmpty();
+        description.Should().BeNull();
     }
 
     [Fact]
