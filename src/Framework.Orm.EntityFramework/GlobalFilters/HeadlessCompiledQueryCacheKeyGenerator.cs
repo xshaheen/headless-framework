@@ -15,15 +15,36 @@ public sealed class HeadlessCompiledQueryCacheKeyGenerator(
 {
     public object GenerateCacheKey(Expression query, bool async)
     {
-        var cacheKey = inner.GenerateCacheKey(query, async);
+        var innerCacheKey = inner.GenerateCacheKey(query, async);
 
-        if (currentDbContext.Context is HeadlessDbContext ctx)
+        if (currentDbContext.Context is HeadlessDbContext db)
         {
-            return new HeadlessCompiledQueryCacheKey(cacheKey, ctx.GetCompiledQueryCacheKey());
+            return new HeadlessCompiledQueryCacheKey(innerCacheKey, db.TenantId);
         }
 
-        return cacheKey;
+        return innerCacheKey;
     }
 
-    private sealed record HeadlessCompiledQueryCacheKey(object CompiledQueryCacheKey, string CurrentFilterCacheKey);
+    private readonly struct HeadlessCompiledQueryCacheKey(object innerCacheKey, string? tenantId)
+        : IEquatable<HeadlessCompiledQueryCacheKey>
+    {
+        private readonly object _innerCacheKey = innerCacheKey;
+        private readonly string? _tenantId = tenantId;
+
+        public override bool Equals(object? obj)
+        {
+            return obj is HeadlessCompiledQueryCacheKey key && Equals(key);
+        }
+
+        public bool Equals(HeadlessCompiledQueryCacheKey other)
+        {
+            return _innerCacheKey.Equals(other._innerCacheKey)
+                && string.Equals(_tenantId, other._tenantId, StringComparison.Ordinal);
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(_innerCacheKey, _tenantId);
+        }
+    }
 }

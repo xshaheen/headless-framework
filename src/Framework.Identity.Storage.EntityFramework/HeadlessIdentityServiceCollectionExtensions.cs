@@ -1,11 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Abstractions;
-using Framework.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Orm.EntityFramework;
 
@@ -95,18 +92,11 @@ public static class HeadlessIdentityServiceCollectionExtensions
         where TRoleClaim : IdentityRoleClaim<TKey>
         where TUserToken : IdentityUserToken<TKey>
     {
-        services.TryAddSingleton<IClock, Clock>();
-        services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-        services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
-        services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
-
-        services.TryAddSingleton<IHeadlessEntityModelProcessor, HeadlessEntityModelProcessor>();
-
         services.AddDbContext<TDbContext>(
             (serviceProvider, optionsBuilder) =>
             {
                 optionsAction?.Invoke(serviceProvider, optionsBuilder);
-                optionsBuilder.AddHeadlessDbContextOptionsExtension();
+                optionsBuilder.AddHeadlessExtension();
             },
             contextLifetime,
             optionsLifetime
