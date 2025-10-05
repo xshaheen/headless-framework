@@ -9,12 +9,15 @@
     <NoWarn>$(NoWarn);xUnit1044</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Content Include="../xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
     <Using Include="FluentAssertions" />
     <Using Include="Xunit" />
-    <Using Include="Xunit.Abstractions" />
   </ItemGroup>
 
   <ItemGroup Label="Global Packages">

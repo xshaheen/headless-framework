@@ -8,8 +8,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture fixture, ITestOutputHelper output)
-    : PermissionsTestBase(fixture, output)
+public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture fixture) : PermissionsTestBase(fixture)
 {
     private static readonly PermissionGroupDefinition _GroupDefinition = TestData.CreateGroupDefinition();
 
@@ -31,13 +30,13 @@ public sealed class DynamicPermissionDefinitionStoreTests(PermissionsTestFixture
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicPermissionDefinitionStore>();
-        var groupsBefore = await store.GetGroupsAsync();
-        var definitionsBefore = await store.GetPermissionsAsync();
+        var groupsBefore = await store.GetGroupsAsync(AbortToken);
+        var definitionsBefore = await store.GetPermissionsAsync(AbortToken);
 
         // when
-        await store.SaveAsync();
-        var definitionsAfter = await store.GetPermissionsAsync();
-        var groupsAfter = await store.GetGroupsAsync();
+        await store.SaveAsync(AbortToken);
+        var definitionsAfter = await store.GetPermissionsAsync(AbortToken);
+        var groupsAfter = await store.GetGroupsAsync(AbortToken);
 
         // then
         definitionsBefore.Should().BeEmpty();

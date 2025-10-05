@@ -8,7 +8,7 @@ using Nito.AsyncEx;
 
 namespace Tests;
 
-public sealed class MessageBusFoundatioAdapterTests(ITestOutputHelper output) : TestBase(output)
+public sealed class MessageBusFoundatioAdapterTests : TestBase
 {
     private static readonly SequentialAsBinaryGuidGenerator _GuidGenerator = new();
 
@@ -30,18 +30,21 @@ public sealed class MessageBusFoundatioAdapterTests(ITestOutputHelper output) : 
 
         var countdown = new AsyncCountdownEvent(1);
 
-        await messageBus.SubscribeAsync<MessageA>(msg =>
-        {
-            Logger.LogTrace("Got message");
-            msg.Data.Should().Be("Hello");
-            msg.Items.Should().ContainKey("Test");
-            countdown.Signal();
-            Logger.LogTrace("Set event");
-        });
+        await messageBus.SubscribeAsync<MessageA>(
+            msg =>
+            {
+                Logger.LogTrace("Got message");
+                msg.Data.Should().Be("Hello");
+                msg.Items.Should().ContainKey("Test");
+                countdown.Signal();
+                Logger.LogTrace("Set event");
+            },
+            AbortToken
+        );
 
-        await Task.Delay(100);
+        await Task.Delay(100, AbortToken);
 
-        await messageBus.PublishAsync(new MessageA { Data = "Hello", Items = { { "Test", "Test" } } });
+        await messageBus.PublishAsync(new MessageA { Data = "Hello", Items = { { "Test", "Test" } } }, AbortToken);
 
         Logger.LogTrace("Published one...");
         await countdown.WaitAsync(5.Seconds());

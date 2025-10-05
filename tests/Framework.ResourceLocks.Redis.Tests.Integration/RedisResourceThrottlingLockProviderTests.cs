@@ -4,24 +4,18 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(RedisTestFixture))]
-public sealed class RedisResourceThrottlingLockProviderTests(RedisTestFixture fixture, ITestOutputHelper output)
-    : ResourceThrottlingLockProviderTestsBase(output),
-        IAsyncLifetime
+[Collection<RedisTestFixture>]
+public sealed class RedisResourceThrottlingLockProviderTests(RedisTestFixture fixture)
+    : ResourceThrottlingLockProviderTestsBase
 {
     protected override IThrottlingResourceLockStorage GetLockStorage()
     {
         return fixture.ThrottlingLockStorage;
     }
 
-    public async Task InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         await fixture.ConnectionMultiplexer.FlushAllAsync();
-    }
-
-    public Task DisposeAsync()
-    {
-        return Task.CompletedTask;
     }
 
     [Fact]

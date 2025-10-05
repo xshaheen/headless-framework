@@ -5,10 +5,11 @@ using Framework.ResourceLocks.Redis;
 using StackExchange.Redis;
 using Testcontainers.Redis;
 using Testcontainers.Xunit;
+using Xunit.Sdk;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(RedisTestFixture), DisableParallelization = false)]
+[CollectionDefinition(DisableParallelization = false)]
 public sealed class RedisTestFixture(IMessageSink messageSink)
     : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
         ICollectionFixture<RedisTestFixture>
@@ -24,7 +25,7 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
         return base.Configure(builder).WithLabel("type", "resource_locks_redis").WithImage("redis:7.4").WithReuse(true);
     }
 
-    protected override async Task InitializeAsync()
+    protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
@@ -41,7 +42,7 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
         await ConnectionMultiplexer.FlushAllAsync();
     }
 
-    protected override async Task DisposeAsyncCore()
+    protected override async ValueTask DisposeAsyncCore()
     {
         await base.DisposeAsyncCore();
         await ConnectionMultiplexer.DisposeAsync();

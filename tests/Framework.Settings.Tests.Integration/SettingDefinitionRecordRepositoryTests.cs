@@ -7,8 +7,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class SettingDefinitionRecordRepositoryTests(SettingsTestFixture fixture, ITestOutputHelper output)
-    : SettingsTestBase(fixture, output)
+public sealed class SettingDefinitionRecordRepositoryTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
     private static readonly List<SettingDefinition> _Definition = TestData.CreateDefinitionFaker().Generate(2);
 
@@ -23,33 +22,33 @@ public sealed class SettingDefinitionRecordRepositoryTests(SettingsTestFixture f
         var serializer = scope.ServiceProvider.GetRequiredService<ISettingDefinitionSerializer>();
 
         // pre conditions: no definitions
-        var definitions = await repository.GetListAsync();
+        var definitions = await repository.GetListAsync(AbortToken);
         definitions.Should().BeEmpty();
 
         // when: save definitions
         var addedRecords = serializer.Serialize(_Definition);
-        await repository.SaveAsync(addedRecords, [], []);
+        await repository.SaveAsync(addedRecords, [], [], AbortToken);
 
         // then: definitions saved
-        definitions = await repository.GetListAsync();
+        definitions = await repository.GetListAsync(AbortToken);
         definitions.Should().HaveCount(2);
         definitions.Should().BeEquivalentTo(addedRecords);
 
         // when: delete definitions
-        await repository.SaveAsync([], [], [addedRecords[0]]);
+        await repository.SaveAsync([], [], [addedRecords[0]], AbortToken);
 
         // then: definitions deleted
         addedRecords.RemoveAt(0);
-        definitions = await repository.GetListAsync();
+        definitions = await repository.GetListAsync(AbortToken);
         definitions.Should().ContainSingle();
         definitions.Should().BeEquivalentTo(addedRecords);
 
         // when: update definitions
         addedRecords[0].DisplayName = "Updated";
-        await repository.SaveAsync([], [addedRecords[0]], []);
+        await repository.SaveAsync([], [addedRecords[0]], [], AbortToken);
 
         // then: definitions updated
-        definitions = await repository.GetListAsync();
+        definitions = await repository.GetListAsync(AbortToken);
         definitions.Should().ContainSingle();
         definitions.Should().BeEquivalentTo(addedRecords);
     }

@@ -6,6 +6,7 @@ using Framework.Api.Abstractions;
 using Framework.Api.Middlewares;
 using Framework.Caching;
 using Framework.Constants;
+using Framework.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests.Middlewares;
 
-public sealed class IdempotencyMiddlewareTests
+public sealed class IdempotencyMiddlewareTests : TestBase
 {
     private static IdempotencyMiddleware _CreateMiddleware(
         ICache? cache = null,
@@ -93,14 +94,14 @@ public sealed class IdempotencyMiddlewareTests
         var middleware = _CreateMiddleware(cache: cache);
         var context = _CreateContext(value);
         var nextCalled = false;
-        Task Next(HttpContext _)
+        Task next(HttpContext _)
         {
             nextCalled = true;
             return Task.CompletedTask;
         }
 
         // act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // assert
         nextCalled.Should().BeTrue();
@@ -125,14 +126,14 @@ public sealed class IdempotencyMiddlewareTests
         var middleware = _CreateMiddleware(cache: cache);
         var context = _CreateContext("abc-123");
         var nextCalled = false;
-        Task Next(HttpContext _)
+        Task next(HttpContext _)
         {
             nextCalled = true;
             return Task.CompletedTask;
         }
 
         // act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // assert
         nextCalled.Should().BeTrue();
@@ -162,14 +163,14 @@ public sealed class IdempotencyMiddlewareTests
         var middleware = _CreateMiddleware(cache: cache);
         var context = _CreateContext("dup-001");
         var nextCalled = false;
-        Task Next(HttpContext _)
+        Task next(HttpContext _)
         {
             nextCalled = true;
             return Task.CompletedTask;
         }
 
         // act
-        await middleware.InvokeAsync(context, Next);
+        await middleware.InvokeAsync(context, next);
 
         // assert
         nextCalled.Should().BeFalse();
@@ -178,7 +179,7 @@ public sealed class IdempotencyMiddlewareTests
 
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body, leaveOpen: true);
-        var body = await reader.ReadToEndAsync();
+        var body = await reader.ReadToEndAsync(AbortToken);
         body.Should().NotBeNullOrWhiteSpace();
 
         using var doc = JsonDocument.Parse(body);

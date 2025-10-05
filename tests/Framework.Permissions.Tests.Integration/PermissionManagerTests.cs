@@ -12,8 +12,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITestOutputHelper output)
-    : PermissionsTestBase(fixture, output)
+public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : PermissionsTestBase(fixture)
 {
     private static readonly PermissionGroupDefinition[] _GroupDefinitions =
     [
@@ -41,8 +40,13 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         var somePermission = _GroupDefinitions[0].Permissions[0];
 
         // when
-        var permissions = await permissionManager.GetAllAsync(currentUser);
-        var permission = await permissionManager.GetAsync(somePermission.Name, currentUser);
+        var permissions = await permissionManager.GetAllAsync(currentUser, cancellationToken: AbortToken);
+
+        var permission = await permissionManager.GetAsync(
+            somePermission.Name,
+            currentUser,
+            cancellationToken: AbortToken
+        );
 
         // then
         permissions.Should().HaveCount(16);
@@ -71,7 +75,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         };
 
         // when
-        var permission = await permissionManager.GetAsync("NotDefined", currentUser);
+        var permission = await permissionManager.GetAsync("NotDefined", currentUser, cancellationToken: AbortToken);
 
         // then
         permission.Should().NotBeNull();
@@ -100,10 +104,14 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         };
 
         // when: grant
-        await permissionManager.GrantToRoleAsync(somePermission.Name, roleName: roleName);
+        await permissionManager.GrantToRoleAsync(somePermission.Name, roleName: roleName, AbortToken);
 
         // then: granted
-        var permission = await permissionManager.GetAsync(somePermission.Name, currentUser);
+        var permission = await permissionManager.GetAsync(
+            somePermission.Name,
+            currentUser,
+            cancellationToken: AbortToken
+        );
 
         permission.Should().NotBeNull();
         permission.IsGranted.Should().BeTrue();
@@ -111,7 +119,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         permission.Providers.Should().ContainSingle();
         permission.Providers[0].Name.Should().Be(RolePermissionGrantProvider.ProviderName);
 
-        var permissions = await permissionManager.GetAllAsync(currentUser);
+        var permissions = await permissionManager.GetAllAsync(currentUser, cancellationToken: AbortToken);
         permissions.Should().HaveCount(16);
         var (granted, notGranted) = permissions.Partition(x => x.IsGranted);
         var grantedPermission = granted.First();
@@ -119,10 +127,10 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         notGranted.Should().HaveCount(15);
 
         // when: revoke
-        await permissionManager.RevokeFromRoleAsync(somePermission.Name, roleName);
+        await permissionManager.RevokeFromRoleAsync(somePermission.Name, roleName, cancellationToken: AbortToken);
 
         // then: revoked
-        permission = await permissionManager.GetAsync(somePermission.Name, currentUser);
+        permission = await permissionManager.GetAsync(somePermission.Name, currentUser, cancellationToken: AbortToken);
         permission.Should().NotBeNull();
         permission.IsGranted.Should().BeFalse();
         permission.Name.Should().Be(somePermission.Name);
@@ -155,10 +163,10 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         const string host2Permission = "Permission2";
 
         // given: host2 saved its local permissions to dynamic store
-        await dynamicStore2.SaveAsync();
+        await dynamicStore2.SaveAsync(AbortToken);
 
         // when: get dynamic permissions from host1
-        var host1Permissions = await permissionManager1.GetAllAsync(currentUser);
+        var host1Permissions = await permissionManager1.GetAllAsync(currentUser, cancellationToken: AbortToken);
 
         // then: dynamic permissions should be returned
         host1Permissions.Should().HaveCount(2);
@@ -166,10 +174,10 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         host1Permissions.Should().ContainSingle(x => x.Name == host2Permission);
 
         // given: host1 saved its local permissions to dynamic store
-        await dynamicStore1.SaveAsync();
+        await dynamicStore1.SaveAsync(AbortToken);
 
         // when: get dynamic permissions from host1
-        var host2Permissions = await permissionManager2.GetAllAsync(currentUser);
+        var host2Permissions = await permissionManager2.GetAllAsync(currentUser, cancellationToken: AbortToken);
 
         // then: dynamic permissions should be returned
         host2Permissions.Should().HaveCount(2);
@@ -177,22 +185,30 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture, ITest
         host2Permissions.Should().ContainSingle(x => x.Name == host2Permission);
 
         // when: change dynamic permission value in host1
-        await permissionManager1.GrantToUserAsync(host2Permission, currentUser.UserId);
+        await permissionManager1.GrantToUserAsync(host2Permission, currentUser.UserId, cancellationToken: AbortToken);
 
         // then: dynamic permission value should be available in both hosts
-        (await permissionManager1.GetAsync(host2Permission, currentUser))
+        (await permissionManager1.GetAsync(host2Permission, currentUser, cancellationToken: AbortToken))
             .IsGranted.Should()
             .BeTrue();
-        (await permissionManager2.GetAsync(host2Permission, currentUser)).IsGranted.Should().BeTrue();
+        (await permissionManager2.GetAsync(host2Permission, currentUser, cancellationToken: AbortToken))
+            .IsGranted.Should()
+            .BeTrue();
 
         // when: change dynamic permission value in host2
-        await permissionManager2.RevokeFromUserAsync(host2Permission, currentUser.UserId);
+        await permissionManager2.RevokeFromUserAsync(
+            host2Permission,
+            currentUser.UserId,
+            cancellationToken: AbortToken
+        );
 
         // then: dynamic permission value should be changed
-        (await permissionManager1.GetAsync(host2Permission, currentUser))
+        (await permissionManager1.GetAsync(host2Permission, currentUser, cancellationToken: AbortToken))
             .IsGranted.Should()
             .BeFalse();
-        (await permissionManager2.GetAsync(host2Permission, currentUser)).IsGranted.Should().BeFalse();
+        (await permissionManager2.GetAsync(host2Permission, currentUser, cancellationToken: AbortToken))
+            .IsGranted.Should()
+            .BeFalse();
     }
 
     private HostApplicationBuilder _CreateDynamicEnabledHostBuilder<T>()

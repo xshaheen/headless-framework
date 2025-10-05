@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
-using Framework.Checks;
 using Framework.Core;
 using Framework.IO;
 using Framework.Testing.Tests;
@@ -21,8 +20,7 @@ public sealed class NestedStreamTests : TestBase
 
     private CancellationToken TimeoutToken => Debugger.IsAttached ? CancellationToken.None : _timeoutTokenSource.Token;
 
-    public NestedStreamTests(ITestOutputHelper logger)
-        : base(logger)
+    public NestedStreamTests()
     {
         var random = new Random();
         var buffer = new byte[20];
@@ -31,16 +29,13 @@ public sealed class NestedStreamTests : TestBase
         _stream = _underlyingStream.ReadSlice(_DefaultNestedLength);
     }
 
-    protected override void Dispose(bool disposing)
+    protected override async ValueTask DisposeAsyncCore()
     {
-        if (disposing)
-        {
-            _stream.Dispose();
-            _underlyingStream.Dispose();
-            _timeoutTokenSource.Dispose();
-        }
+        _timeoutTokenSource.Dispose();
+        await _stream.DisposeAsync();
+        await _underlyingStream.DisposeAsync();
 
-        base.Dispose(disposing);
+        await base.DisposeAsyncCore();
     }
 
     [Fact]
@@ -261,9 +256,9 @@ public sealed class NestedStreamTests : TestBase
     [Fact]
     public async Task FlushAsync()
     {
-        await Assert.ThrowsAsync<NotSupportedException>(() => _stream.FlushAsync());
+        await Assert.ThrowsAsync<NotSupportedException>(() => _stream.FlushAsync(AbortToken));
         await _stream.DisposeAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => _stream.FlushAsync());
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => _stream.FlushAsync(AbortToken));
     }
 
     [Fact]
@@ -286,13 +281,13 @@ public sealed class NestedStreamTests : TestBase
     public async Task WriteAsync_Throws()
     {
         await Assert.ThrowsAsync<NotSupportedException>(
-            () => _stream.WriteAsync(new byte[1], 0, 1).WithCancellation(TimeoutToken)
+            () => _stream.WriteAsync(new byte[1], 0, 1, AbortToken).WithCancellation(TimeoutToken)
         );
 
         await _stream.DisposeAsync();
 
         await Assert.ThrowsAsync<ObjectDisposedException>(
-            () => _stream.WriteAsync(new byte[1], 0, 1).WithCancellation(TimeoutToken)
+            () => _stream.WriteAsync(new byte[1], 0, 1, AbortToken).WithCancellation(TimeoutToken)
         );
     }
 
@@ -395,9 +390,9 @@ public sealed class NestedStreamTests : TestBase
         var buffer = new byte[20];
         const int firstBlockLength = _DefaultNestedLength / 2;
         _underlyingStream.SetLength(firstBlockLength);
-        Assert.Equal(firstBlockLength, await _stream.ReadAsync(buffer));
+        Assert.Equal(firstBlockLength, await _stream.ReadAsync(buffer, AbortToken));
         _underlyingStream.SetLength(_DefaultNestedLength * 2);
-        Assert.Equal(_DefaultNestedLength - firstBlockLength, await _stream.ReadAsync(buffer));
+        Assert.Equal(_DefaultNestedLength - firstBlockLength, await _stream.ReadAsync(buffer, AbortToken));
     }
 
     [Fact]
@@ -416,10 +411,12 @@ public sealed class NestedStreamTests : TestBase
     {
         var buffer = new byte[20];
 
-        await Assert.ThrowsAsync<ArgumentNullException>(() => _stream.ReadAsync(null!, 0, 0));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _stream.ReadAsync(buffer, -1, buffer.Length));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _stream.ReadAsync(buffer, 0, -1));
-        await Assert.ThrowsAsync<ArgumentException>(() => _stream.ReadAsync(buffer, 1, buffer.Length));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => _stream.ReadAsync(null!, 0, 0, AbortToken));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => _stream.ReadAsync(buffer, -1, buffer.Length, AbortToken)
+        );
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => _stream.ReadAsync(buffer, 0, -1, AbortToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => _stream.ReadAsync(buffer, 1, buffer.Length, AbortToken));
     }
 
     [Fact]
@@ -435,6 +432,6 @@ public sealed class NestedStreamTests : TestBase
     {
         await _stream.DisposeAsync();
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => _stream.ReadAsync([], 0, 0));
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => _stream.ReadAsync([], 0, 0, AbortToken));
     }
 }

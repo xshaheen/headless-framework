@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Encodings.Web;
-using Meziantou.Extensions.Logging.Xunit;
+using Meziantou.Extensions.Logging.Xunit.v3;
 using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
+using Xunit;
 
 namespace Framework.Testing.Helpers;
 
@@ -35,7 +35,7 @@ public static class TestHelpers
         return JsonSerializer.Serialize(obj, JsonSerializerOptions);
     }
 
-    public static (ILoggerProvider, ILoggerFactory) CreateXUnitLoggerFactory(ITestOutputHelper output)
+    public static (ILoggerProvider, ILoggerFactory) CreateXUnitLoggerFactory(ITestOutputHelper? output)
     {
         var loggerFactory = new LoggerFactory();
 

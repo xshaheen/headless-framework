@@ -95,7 +95,7 @@ public class CollectionItemJsonConverterTests
         // then
         result.Should().NotBeNull();
         result.Should().ContainSingle();
-        result![0].Name.Should().Be("John");
+        result[0].Name.Should().Be("John");
     }
 
     [Fact]

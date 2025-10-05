@@ -11,10 +11,10 @@ public partial class PaymobCashInBrokerTests
 {
     public static readonly TheoryData<Func<PaymobCashInBroker, Task<object>>> PayRequests =
     [
-        async broker => await broker.CreateWalletPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
-        async broker => await broker.CreateKioskPayAsync(Guid.NewGuid().ToString()),
-        async broker => await broker.CreateCashCollectionPayAsync(Guid.NewGuid().ToString()),
-        async broker => await broker.CreateSavedTokenPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString()),
+        new(async b => await b.CreateWalletPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString())),
+        new(async b => await b.CreateKioskPayAsync(Guid.NewGuid().ToString())),
+        new(async b => await b.CreateCashCollectionPayAsync(Guid.NewGuid().ToString())),
+        new(async b => await b.CreateSavedTokenPayAsync(Guid.NewGuid().ToString(), Guid.NewGuid().ToString())),
     ];
 
     [Theory]

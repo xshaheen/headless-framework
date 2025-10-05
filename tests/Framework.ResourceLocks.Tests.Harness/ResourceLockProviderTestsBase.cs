@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public abstract class ResourceLockProviderTestsBase(ITestOutputHelper output) : TestBase(output)
+public abstract class ResourceLockProviderTestsBase : TestBase
 {
     protected static readonly SnowflakeIdLongIdGenerator LongGenerator = new(1);
     protected static readonly SequentialAsStringGuidGenerator GuidGenerator = new();

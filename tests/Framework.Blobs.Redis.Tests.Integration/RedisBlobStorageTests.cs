@@ -7,9 +7,8 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(RedisTestFixture))]
-public sealed class RedisBlobStorageTests(RedisTestFixture fixture, ITestOutputHelper output)
-    : BlobStorageTestsBase(output)
+[Collection<RedisTestFixture>]
+public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {

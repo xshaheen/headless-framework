@@ -2,11 +2,12 @@
 
 using Testcontainers.PostgreSql;
 using Testcontainers.Xunit;
+using Xunit.Sdk;
 
 namespace Tests.TestSetup;
 
 [UsedImplicitly]
-[CollectionDefinition(nameof(NpgsqlTestFixture))]
+[CollectionDefinition]
 public sealed class NpgsqlTestFixture(IMessageSink messageSink)
     : ContainerFixture<PostgreSqlBuilder, PostgreSqlContainer>(messageSink),
         ICollectionFixture<NpgsqlTestFixture>

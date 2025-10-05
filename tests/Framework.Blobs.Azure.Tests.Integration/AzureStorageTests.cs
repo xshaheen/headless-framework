@@ -10,9 +10,8 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(AzureBlobTestFixture))]
-public sealed class AzureStorageTests(AzureBlobTestFixture fixture, ITestOutputHelper output)
-    : BlobStorageTestsBase(output)
+[Collection<AzureBlobTestFixture>]
+public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {

@@ -8,8 +8,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixture, ITestOutputHelper output)
-    : FeaturesTestBase(fixture, output)
+public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixture) : FeaturesTestBase(fixture)
 {
     private static readonly FeatureGroupDefinition _GroupDefinition = TestData.CreateGroupDefinition();
 
@@ -31,13 +30,13 @@ public sealed class DynamicFeatureDefinitionStoreTests(FeaturesTestFixture fixtu
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicFeatureDefinitionStore>();
-        var groupsBefore = await store.GetGroupsAsync();
-        var definitionsBefore = await store.GetFeaturesAsync();
+        var groupsBefore = await store.GetGroupsAsync(AbortToken);
+        var definitionsBefore = await store.GetFeaturesAsync(AbortToken);
 
         // when
-        await store.SaveAsync();
-        var definitionsAfter = await store.GetFeaturesAsync();
-        var groupsAfter = await store.GetGroupsAsync();
+        await store.SaveAsync(AbortToken);
+        var definitionsAfter = await store.GetFeaturesAsync(AbortToken);
+        var groupsAfter = await store.GetGroupsAsync(AbortToken);
 
         // then
         definitionsBefore.Should().BeEmpty();

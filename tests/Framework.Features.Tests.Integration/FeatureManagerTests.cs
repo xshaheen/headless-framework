@@ -11,8 +11,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutputHelper output)
-    : FeaturesTestBase(fixture, output)
+public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesTestBase(fixture)
 {
     private static readonly FeatureGroupDefinition[] _GroupDefinitions =
     [
@@ -73,7 +72,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
         var oneOfFeatures = RandomHelper.GetRandomOfList(defaultFeatureValues);
 
         // when
-        var features = await featureManager.GetAllDefaultAsync();
+        var features = await featureManager.GetAllDefaultAsync(cancellationToken: AbortToken);
         var feature = await featureManager.GetDefaultAsync(oneOfFeatures.Name);
 
         // then
@@ -215,10 +214,10 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
         const string host2FeatureValue = "Value2";
 
         // given: host2 saved its local features to dynamic store
-        await dynamicStore2.SaveAsync();
+        await dynamicStore2.SaveAsync(AbortToken);
 
         // when: get dynamic features from host1
-        var host1Features = await featureManager1.GetAllDefaultAsync();
+        var host1Features = await featureManager1.GetAllDefaultAsync(cancellationToken: AbortToken);
 
         // then: dynamic features should be returned
         host1Features.Should().HaveCount(2);
@@ -226,10 +225,10 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture, ITestOutput
         host1Features.Should().ContainSingle(x => x.Name == host2Feature && x.Value == host2FeatureValue);
 
         // given: host1 saved its local features to dynamic store
-        await dynamicStore1.SaveAsync();
+        await dynamicStore1.SaveAsync(AbortToken);
 
         // when: get dynamic features from host1
-        var host2Features = await featureManager1.GetAllDefaultAsync();
+        var host2Features = await featureManager1.GetAllDefaultAsync(cancellationToken: AbortToken);
 
         // then: dynamic features should be returned
         host2Features.Should().HaveCount(2);

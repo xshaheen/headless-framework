@@ -2,10 +2,11 @@
 using System.Data;
 using System.Data.Common;
 using Framework.Sql;
+using Framework.Testing.Tests;
 
 namespace Tests;
 
-public abstract class SqlConnectionFactoryTestBase
+public abstract class SqlConnectionFactoryTestBase : TestBase
 {
     public abstract string GetConnection();
 

@@ -11,7 +11,7 @@ using Testcontainers.Redis;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition(nameof(FeaturesTestFixture))]
+[CollectionDefinition]
 public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture>, IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
@@ -28,7 +28,7 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
     public ConnectionMultiplexer Multiplexer { get; private set; } = null!;
 
     /// <summary>This runs before all tests finished and Called just after the constructor</summary>
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await _StartContainersAsync();
         await Task.WhenAll(_InitializePostgreSqlAsync(), _InitializeRedisAsync());
@@ -36,7 +36,7 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
     }
 
     /// <summary>This runs after all the tests finished and Called before Dispose()</summary>
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await SqlConnection.DisposeAsync();
         await _postgreSqlContainer.DisposeAsync();

@@ -8,16 +8,15 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection(nameof(RedisTestFixture))]
-public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBase, IAsyncLifetime
+[Collection<RedisTestFixture>]
+public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
 {
     private readonly RedisTestFixture _fixture;
     private readonly RedisMessageBus _redisMessageBus;
     private readonly MessageBusFoundatioAdapter _messageBusAdapter;
     private readonly ILogger<ResourceLockProvider> _logger;
 
-    public RedisResourceLockProviderTests(RedisTestFixture fixture, ITestOutputHelper output)
-        : base(output)
+    public RedisResourceLockProviderTests(RedisTestFixture fixture)
     {
         _fixture = fixture;
 
@@ -33,25 +32,16 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
         _logger = LoggerFactory.CreateLogger<ResourceLockProvider>();
     }
 
-    public async Task InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         await _fixture.ConnectionMultiplexer.FlushAllAsync();
     }
 
-    public Task DisposeAsync()
+    protected override ValueTask DisposeAsyncCore()
     {
-        return Task.CompletedTask;
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-
-        if (disposing)
-        {
-            _messageBusAdapter?.Dispose();
-            _redisMessageBus?.Dispose();
-        }
+        _messageBusAdapter?.Dispose();
+        _redisMessageBus?.Dispose();
+        return base.DisposeAsyncCore();
     }
 
     protected override IResourceLockProvider GetLockProvider()

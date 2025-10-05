@@ -8,8 +8,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixture, ITestOutputHelper output)
-    : SettingsTestBase(fixture, output)
+public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
     private static readonly List<SettingDefinition> _SettingDefinitions = TestData.CreateDefinitionFaker().Generate(10);
 
@@ -32,11 +31,11 @@ public sealed class DynamicSettingDefinitionStoreTests(SettingsTestFixture fixtu
 
         await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IDynamicSettingDefinitionStore>();
-        var beforeDefinitions = await store.GetAllAsync();
+        var beforeDefinitions = await store.GetAllAsync(AbortToken);
 
         // when
-        await store.SaveAsync();
-        var afterDefinitions = await store.GetAllAsync();
+        await store.SaveAsync(AbortToken);
+        var afterDefinitions = await store.GetAllAsync(AbortToken);
 
         // then
         beforeDefinitions.Should().BeEmpty();

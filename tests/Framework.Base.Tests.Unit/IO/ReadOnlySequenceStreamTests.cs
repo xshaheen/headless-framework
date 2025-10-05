@@ -1,15 +1,22 @@
 ﻿using System.Buffers;
 using Framework.IO;
+using Framework.Testing.Tests;
 
 namespace Tests.IO;
 
 #pragma warning disable FAA0002
-public class ReadOnlySequenceStreamTests
+public sealed class ReadOnlySequenceStreamTests : TestBase
 {
     private static readonly ReadOnlySequence<byte> _DefaultSequence = ReadOnlySequence<byte>.Empty;
     private static readonly ReadOnlySequence<byte> _SimpleSequence = new([1, 2, 3]);
     private static readonly ReadOnlySequence<byte> _MultiBlockSequence = _CreateMultiBlockSequence();
     private readonly Stream _defaultStream = _DefaultSequence.ToStream();
+
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await _defaultStream.DisposeAsync();
+        await base.DisposeAsyncCore();
+    }
 
     [Fact]
     public void Read_EmptySequence()
@@ -108,9 +115,9 @@ public class ReadOnlySequenceStreamTests
     [Fact]
     public async Task FlushAsync()
     {
-        await Assert.ThrowsAsync<NotSupportedException>(() => _defaultStream.FlushAsync());
+        await Assert.ThrowsAsync<NotSupportedException>(() => _defaultStream.FlushAsync(AbortToken));
         await _defaultStream.DisposeAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => _defaultStream.FlushAsync());
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => _defaultStream.FlushAsync(AbortToken));
     }
 
     [Fact]
@@ -124,9 +131,11 @@ public class ReadOnlySequenceStreamTests
     [Fact]
     public async Task WriteAsync()
     {
-        await Assert.ThrowsAsync<NotSupportedException>(() => _defaultStream.WriteAsync(new byte[1], 0, 1));
+        await Assert.ThrowsAsync<NotSupportedException>(() => _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken));
         await _defaultStream.DisposeAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => _defaultStream.WriteAsync(new byte[1], 0, 1));
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken)
+        );
     }
 
     [Fact]
@@ -233,20 +242,20 @@ public class ReadOnlySequenceStreamTests
     public void ReadAsync_ReturnsSynchronously()
     {
         var stream = _SimpleSequence.ToStream();
-        Assert.True(stream.ReadAsync(new byte[1], 0, 1).IsCompleted);
+        Assert.True(stream.ReadAsync(new byte[1], 0, 1, AbortToken).IsCompleted);
     }
 
     [Fact]
     public async Task ReadAsync_ReusesTaskResult()
     {
         var stream = _MultiBlockSequence.ToStream();
-        var task1 = stream.ReadAsync(new byte[1], 0, 1);
-        var task2 = stream.ReadAsync(new byte[1], 0, 1);
+        var task1 = stream.ReadAsync(new byte[1], 0, 1, AbortToken);
+        var task2 = stream.ReadAsync(new byte[1], 0, 1, AbortToken);
         Assert.Same(task1, task2);
         Assert.Equal(1, await task1);
 
-        var task3 = stream.ReadAsync(new byte[2], 0, 2);
-        var task4 = stream.ReadAsync(new byte[2], 0, 2);
+        var task3 = stream.ReadAsync(new byte[2], 0, 2, AbortToken);
+        var task4 = stream.ReadAsync(new byte[2], 0, 2, AbortToken);
         Assert.Same(task3, task4);
         Assert.Equal(2, await task3);
     }
@@ -256,19 +265,18 @@ public class ReadOnlySequenceStreamTests
     {
         var stream = _MultiBlockSequence.ToStream();
         var buffer = new byte[_MultiBlockSequence.Length + 2];
-        Assert.Equal(2, await stream.ReadAsync(buffer.AsMemory(0, 2)));
+        Assert.Equal(2, await stream.ReadAsync(buffer.AsMemory(0, 2), AbortToken));
         Assert.Equal(new byte[] { 1, 2, 0 }, buffer.Take(3));
         Assert.Equal(2, stream.Position);
 
-        Assert.Equal(2, await stream.ReadAsync(buffer.AsMemory(3, 2)));
+        Assert.Equal(2, await stream.ReadAsync(buffer.AsMemory(3, 2), AbortToken));
         Assert.Equal(new byte[] { 1, 2, 0, 3, 4, 0 }, buffer.Take(6));
 
-        Assert.Equal(5, await stream.ReadAsync(buffer.AsMemory(5, buffer.Length - 5)));
+        Assert.Equal(5, await stream.ReadAsync(buffer.AsMemory(5, buffer.Length - 5), AbortToken));
         Assert.Equal(new byte[] { 1, 2, 0, 3, 4, 5, 6, 7, 8, 9, 0 }, buffer);
         Assert.Equal(9, stream.Position);
 
-        Assert.Equal(0, await stream.ReadAsync(buffer));
-        Assert.Equal(0, await stream.ReadAsync(buffer));
+        Assert.Equal(0, await stream.ReadAsync(buffer, AbortToken));
         Assert.Equal(9, stream.Position);
     }
 
@@ -277,7 +285,7 @@ public class ReadOnlySequenceStreamTests
     {
         var stream = _MultiBlockSequence.ToStream();
         var ms = new MemoryStream();
-        await stream.CopyToAsync(ms);
+        await stream.CopyToAsync(ms, AbortToken);
         Assert.Equal(_MultiBlockSequence.ToArray(), ms.ToArray());
     }
 

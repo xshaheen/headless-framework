@@ -12,8 +12,7 @@ using Tests.TestSetup;
 
 namespace Tests;
 
-public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutputHelper output)
-    : SettingsTestBase(fixture, output)
+public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsTestBase(fixture)
 {
     private static readonly List<SettingDefinition> _Definitions =
     [
@@ -33,7 +32,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
 
         // when
-        var settingValue = await settingManager.FindDefaultAsync("Setting1");
+        var settingValue = await settingManager.FindDefaultAsync("Setting1", cancellationToken: AbortToken);
 
         // then
         settingValue.Should().Be("Value1");
@@ -49,7 +48,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
 
         // when
-        var settingValues = await settingManager.GetAllDefaultAsync();
+        var settingValues = await settingManager.GetAllDefaultAsync(cancellationToken: AbortToken);
 
         // then
         var expected = _Definitions.ConvertAll(x => new SettingValue(x.Name, x.DefaultValue));
@@ -91,8 +90,18 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         const string settingName = "Setting1";
 
         // when
-        await settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");
-        var settingValue = await settingManager.FindForUserAsync(userId, name: settingName);
+        await settingManager.SetForUserAsync(
+            userId,
+            name: settingName,
+            value: "NewValue",
+            cancellationToken: AbortToken
+        );
+
+        var settingValue = await settingManager.FindForUserAsync(
+            userId,
+            name: settingName,
+            cancellationToken: AbortToken
+        );
 
         // then
         settingValue.Should().Be("NewValue");
@@ -111,12 +120,27 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         const string settingName = "Setting4";
 
         // when
-        await settingManager.SetForUserAsync(userId, name: settingName, value: "NewValue");
-        var settingValue = await settingManager.FindForUserAsync(userId, name: settingName);
+        await settingManager.SetForUserAsync(
+            userId,
+            name: settingName,
+            value: "NewValue",
+            cancellationToken: AbortToken
+        );
+
+        var settingValue = await settingManager.FindForUserAsync(
+            userId,
+            name: settingName,
+            cancellationToken: AbortToken
+        );
 
         // then
         settingValue.Should().Be("NewValue");
-        var dbRecord = await valueRepository.FindAsync(settingName, UserSettingValueProvider.ProviderName, userId);
+        var dbRecord = await valueRepository.FindAsync(
+            settingName,
+            UserSettingValueProvider.ProviderName,
+            userId,
+            AbortToken
+        );
         dbRecord.Should().NotBeNull();
         dbRecord.Name.Should().Be(settingName);
         dbRecord.Value.Should().NotBe("NewValue");
@@ -143,22 +167,22 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
         const string host2SettingValue = "Value2";
 
         // given: host2 saved its local settings to dynamic store
-        await dynamicStore2.SaveAsync();
+        await dynamicStore2.SaveAsync(AbortToken);
 
         // when: get dynamic settings from host1
-        var host1LocalSetting = await settingManager1.FindDefaultAsync(host1Setting);
-        var host1DynamicSetting = await settingManager1.FindDefaultAsync(host2Setting);
+        var host1LocalSetting = await settingManager1.FindDefaultAsync(host1Setting, cancellationToken: AbortToken);
+        var host1DynamicSetting = await settingManager1.FindDefaultAsync(host2Setting, cancellationToken: AbortToken);
 
         // then: dynamic settings should be returned
         host1LocalSetting.Should().Be(host1SettingValue);
         host1DynamicSetting.Should().Be(host2SettingValue);
 
         // given: host1 saved its local settings to dynamic store
-        await dynamicStore1.SaveAsync();
+        await dynamicStore1.SaveAsync(AbortToken);
 
         // when: get dynamic settings from host1
-        var host2LocalSetting = await settingManager2.FindDefaultAsync(host2Setting);
-        var host2DynamicSetting = await settingManager2.FindDefaultAsync(host1Setting);
+        var host2LocalSetting = await settingManager2.FindDefaultAsync(host2Setting, cancellationToken: AbortToken);
+        var host2DynamicSetting = await settingManager2.FindDefaultAsync(host1Setting, cancellationToken: AbortToken);
 
         // then: dynamic settings should be returned
         host2LocalSetting.Should().Be(host2SettingValue);
@@ -166,23 +190,27 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture, ITestOutput
 
         // when: change dynamic setting value in host1
         var userId = Guid.NewGuid().ToString();
-        await settingManager1.SetForUserAsync(userId, host1Setting, "NewValue1");
+        await settingManager1.SetForUserAsync(userId, host1Setting, "NewValue1", cancellationToken: AbortToken);
 
         // then: dynamic setting value should be changed
 
-        (await settingManager1.FindForUserAsync(userId, host1Setting))
+        (await settingManager1.FindForUserAsync(userId, host1Setting, cancellationToken: AbortToken))
             .Should()
             .Be("NewValue1");
-        (await settingManager2.FindForUserAsync(userId, host1Setting)).Should().Be("NewValue1");
+        (await settingManager2.FindForUserAsync(userId, host1Setting, cancellationToken: AbortToken))
+            .Should()
+            .Be("NewValue1");
 
         // when: change dynamic setting value in host2
-        await settingManager2.SetForUserAsync(userId, host2Setting, "NewValue2");
+        await settingManager2.SetForUserAsync(userId, host2Setting, "NewValue2", cancellationToken: AbortToken);
 
         // then: dynamic setting value should be changed
-        (await settingManager2.FindForUserAsync(userId, host2Setting))
+        (await settingManager2.FindForUserAsync(userId, host2Setting, cancellationToken: AbortToken))
             .Should()
             .Be("NewValue2");
-        (await settingManager1.FindForUserAsync(userId, host2Setting)).Should().Be("NewValue2");
+        (await settingManager1.FindForUserAsync(userId, host2Setting, cancellationToken: AbortToken))
+            .Should()
+            .Be("NewValue2");
     }
 
     private HostApplicationBuilder _CreateDynamicEnabledHostBuilder<T>()
