@@ -92,12 +92,7 @@ public sealed class PermissionGrantStore(
         {
             logger.LogDebug("Permission found in the cache: {CacheKey}", cacheKey);
 
-            return existValueCacheItem.Value?.IsGranted switch
-            {
-                true => PermissionGrantStatus.Granted,
-                false => PermissionGrantStatus.Prohibited,
-                null => PermissionGrantStatus.Undefined,
-            };
+            return PermissionGrantStatus.From(existValueCacheItem.Value?.IsGranted);
         }
 
         logger.LogDebug("Permission not found in the cache: {CacheKey}", cacheKey);
@@ -301,7 +296,11 @@ public sealed class PermissionGrantStore(
         {
             logger.LogDebug("Found in the cache: {@CacheKeys}", cacheKeys);
 
-            return names.ToDictionary(name => name, _ => PermissionGrantStatus.Granted, StringComparer.Ordinal);
+            return cacheItemsMap.ToDictionary(
+                x => _GetPermissionNameFormCacheKey(x.Key),
+                x => PermissionGrantStatus.From(x.Value.Value?.IsGranted),
+                StringComparer.Ordinal
+            );
         }
 
         // Some cache items aren't found in the cache, get them from the database
@@ -315,12 +314,7 @@ public sealed class PermissionGrantStore(
             var item = newCacheItems.GetOrDefault(cacheKey) ?? cacheItemsMap.GetOrDefault(cacheKey)?.Value;
             var permissionName = _GetPermissionNameFormCacheKey(cacheKey);
 
-            result[permissionName] = item?.IsGranted switch
-            {
-                true => PermissionGrantStatus.Granted,
-                false => PermissionGrantStatus.Prohibited,
-                null => PermissionGrantStatus.Undefined,
-            };
+            result[permissionName] = PermissionGrantStatus.From(item?.IsGranted);
         }
 
         return result;
@@ -392,7 +386,7 @@ public sealed class PermissionGrantStore(
 
             if (string.Equals(permission.Name, permissionToFind, StringComparison.Ordinal))
             {
-                permissionIsGranted = isGranted ? PermissionGrantStatus.Granted : PermissionGrantStatus.Prohibited;
+                permissionIsGranted = PermissionGrantStatus.From(isGranted);
             }
         }
 
