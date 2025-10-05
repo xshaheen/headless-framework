@@ -14,6 +14,8 @@ public abstract class HeadlessDbContext : DbContext
     private readonly IHeadlessEntityModelProcessor _entityProcessor;
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
+    internal string? TenantId => _entityProcessor.TenantId;
+
     protected HeadlessDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
         : base(options)
     {
@@ -26,8 +28,6 @@ public abstract class HeadlessDbContext : DbContext
         ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
         ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
     }
-
-    internal string GetCompiledQueryCacheKey() => _entityProcessor.GetCompiledQueryCacheKey();
 
     #region Core Save Changes
 

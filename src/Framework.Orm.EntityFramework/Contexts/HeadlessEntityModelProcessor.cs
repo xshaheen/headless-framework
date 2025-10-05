@@ -16,11 +16,11 @@ namespace Framework.Orm.EntityFramework.Contexts;
 
 public interface IHeadlessEntityModelProcessor
 {
+    string? TenantId { get; }
+
     void ProcessModelCreating(ModelBuilder modelBuilder);
 
     ProcessBeforeSaveReport ProcessEntries(DbContext db);
-
-    string GetCompiledQueryCacheKey();
 }
 
 public sealed class HeadlessEntityModelProcessor(
@@ -30,6 +30,8 @@ public sealed class HeadlessEntityModelProcessor(
     IClock clock
 ) : IHeadlessEntityModelProcessor
 {
+    public string? TenantId => currentTenant.Id;
+
     #region Process Model Creating
 
     public void ProcessModelCreating(ModelBuilder modelBuilder)
@@ -149,15 +151,6 @@ public sealed class HeadlessEntityModelProcessor(
     private static string _GetColumnName(IMutableEntityType type, string name)
     {
         return type.FindProperty(name)?.GetColumnName() ?? name;
-    }
-
-    #endregion
-
-    #region Query Cache Key
-
-    public string GetCompiledQueryCacheKey()
-    {
-        return $"Tenant:{currentTenant.Id ?? "<null>"}";
     }
 
     #endregion
