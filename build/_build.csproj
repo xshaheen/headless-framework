@@ -19,10 +19,4 @@
     <PackageReference Include="Nuke.Common" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="..\tests\xunit.runner.json">
-      <Link>Directory.Build\tests\xunit.runner.json</Link>
-    </Content>
-  </ItemGroup>
-
 </Project>
