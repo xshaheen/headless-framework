@@ -35,7 +35,9 @@ public static class TestHelpers
         return JsonSerializer.Serialize(obj, JsonSerializerOptions);
     }
 
-    public static (ILoggerProvider, ILoggerFactory) CreateXUnitLoggerFactory(ITestOutputHelper? output)
+    public static (ILoggerProvider Provider, ILoggerFactory Factory) CreateXUnitLoggerFactory(
+        ITestOutputHelper? output = null
+    )
     {
         var loggerFactory = new LoggerFactory();
 
