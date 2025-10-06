@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Buffers.Text;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using Cysharp.Text;
@@ -808,7 +807,8 @@ public static class StringExtensions
     /// <example>var result = "User.FirstName".CamelizePropertyPath(); // Returns "user.firstName"</example>
     [SystemPure]
     [JetBrainsPure]
-    public static string CamelizePropertyPath(this string propertyName)
+    [return: NotNullIfNotNull(nameof(propertyName))]
+    public static string? CamelizePropertyPath(this string? propertyName)
     {
         if (string.IsNullOrEmpty(propertyName))
         {

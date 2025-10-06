@@ -270,7 +270,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     public void CamelizePropertyPath_WithNullInput_ShouldReturnNull()
     {
         // Arrange
-        string? input = null;
+        const string? input = null;
 
         // Act
         var result = input.CamelizePropertyPath();
