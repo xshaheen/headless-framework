@@ -62,7 +62,7 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Remove Existing Nuget Source"
-        run: dotnet nuget remove source github.com
+        run: dotnet nuget remove source github.com || echo "Source does not exist, skipping"
         shell: pwsh
 
       - name: "Add Nuget Source"
