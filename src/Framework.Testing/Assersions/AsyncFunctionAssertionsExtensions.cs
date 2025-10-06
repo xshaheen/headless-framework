@@ -5,7 +5,7 @@ using Framework.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
-namespace FluentAssertions.Specialized;
+namespace AwesomeAssertions.Specialized;
 
 [PublicAPI]
 public static class AsyncFunctionAssertionsExtensions

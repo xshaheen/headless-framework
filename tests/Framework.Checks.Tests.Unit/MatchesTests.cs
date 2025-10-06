@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
-using FluentAssertions.Extensions;
+using AwesomeAssertions.Extensions;
 using Framework.Checks;
 
 namespace Tests;
