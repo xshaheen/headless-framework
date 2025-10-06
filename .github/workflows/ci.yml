@@ -69,10 +69,6 @@ jobs:
         run: dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.NUGET_API_KEY }} --store-password-in-clear-text
         shell: pwsh
 
-      - name: "List all files"
-        run: dir . -Recurse
-        shell: pwsh
-
       - name: ".NET Nuke Build"
         run: ./build.ps1 Compile -Configuration ${{ env.CONFIGURATION }}
         shell: pwsh
