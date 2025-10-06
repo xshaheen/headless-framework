@@ -57,7 +57,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.NUGET_PACKAGES }}
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.Packages.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.Packages.props') }}-${{ hashFiles('**/*.Build.targets') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
