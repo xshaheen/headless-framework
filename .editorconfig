@@ -226,7 +226,7 @@ dotnet_diagnostic.CA1027.severity = none
 
 ############ Tests
 
-# FAA0002: Use AwesomeAssertions equivalent
+# FAA0002: Use FluentAssertions equivalent
 dotnet_diagnostic.faa0002.severity = warning
 
 ############ Analyzers

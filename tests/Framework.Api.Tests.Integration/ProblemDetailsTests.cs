@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using FluentAssertions.Extensions;
+using AwesomeAssertions.Extensions;
 using Framework.Constants;
 using Framework.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;
