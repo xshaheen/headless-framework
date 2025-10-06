@@ -86,7 +86,7 @@ public class MessagePackSerializerTests
         Stream? nullStream = null;
 
         // when
-        var act = () => _serializer.Serialize(person, nullStream);
+        var act = () => _serializer.Serialize(person, nullStream!);
 
         // then
         act.Should().Throw<MessagePackSerializationException>();

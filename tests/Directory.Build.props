@@ -24,6 +24,7 @@
     <PackageReference Include="Bogus" />
     <PackageReference Include="DeepCloner" />
     <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="AwesomeAssertions.Json" />
     <PackageReference Include="NSubstitute" />
   </ItemGroup>
 

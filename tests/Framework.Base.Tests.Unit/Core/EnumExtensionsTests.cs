@@ -1,6 +1,5 @@
 ﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using FluentAssertions;
 using Framework.Primitives;
 
 namespace Tests.Core;
