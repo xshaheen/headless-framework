@@ -1,4 +1,4 @@
-﻿using Framework.Constants;
+using Framework.Constants;
 using Framework.Imaging;
 using Framework.Imaging.ImageSharp;
 using Microsoft.Extensions.Logging;
@@ -38,7 +38,8 @@ public sealed class ImageSharpImageCompressorContributorTests
         var result = await _compressorContributor.TryCompressAsync(imageStream, args, cancellationToken);
 
         // then
-        result.Result?.Length.Should().BeLessThan(imageStream.Length);
+        result.Result.Should().NotBeNull();
+        result.Result.Length.Should().BeLessThan(imageStream.Length);
         result.State.Should().Be(ImageProcessState.Done);
         result.Should().BeOfType<ImageStreamCompressResult>();
         result.Should().NotBeNull();

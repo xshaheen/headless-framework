@@ -8,13 +8,13 @@ namespace Framework.Permissions.Entities;
 
 public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant
 {
-    public string Name { get; private set; }
+    public string Name { get; private init; }
 
-    public string ProviderName { get; private set; }
+    public string ProviderName { get; private init; }
 
-    public string ProviderKey { get; private set; }
+    public string ProviderKey { get; private init; }
 
-    public string? TenantId { get; private set; }
+    public string? TenantId { get; private init; }
 
     [UsedImplicitly]
     private PermissionGrantRecord()

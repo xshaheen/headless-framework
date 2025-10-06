@@ -1,5 +1,6 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+#pragma warning disable CA1720 // Identifier contains type name
 namespace Framework.Generator.Primitives.Shared;
 
 public static class TypeNames

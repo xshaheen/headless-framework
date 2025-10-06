@@ -35,7 +35,7 @@ public static class BlobStorageExtensions
         do
         {
             files.AddRange(result.Blobs);
-        } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync());
+        } while (result.HasMore && files.Count < limit.Value && await result.NextPageAsync(cancellationToken));
 
         return files;
     }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
 using Framework.Orm.EntityFramework.Contexts;
@@ -13,43 +13,44 @@ namespace Framework.Orm.EntityFramework;
 [PublicAPI]
 public static class HeadlessServiceCollectionExtensions
 {
-    extension<TDbContext>(IServiceCollection services) where TDbContext : HeadlessDbContext
+    public static IServiceCollection AddHeadlessDbContext<TDbContext>(
+        this IServiceCollection services,
+        Action<DbContextOptionsBuilder>? optionsAction,
+        ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
+        ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+    )
+        where TDbContext : HeadlessDbContext
     {
-        public IServiceCollection AddHeadlessDbContext(
-            Action<DbContextOptionsBuilder>? optionsAction,
-            ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
-            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
-        )
-        {
-            services.AddHeadlessDbContextServices();
+        services.AddHeadlessDbContextServices();
 
-            return services.AddHeadlessDbContext<TDbContext>(
-                (_, ob) => optionsAction?.Invoke(ob),
-                contextLifetime,
-                optionsLifetime
-            );
-        }
+        return services.AddHeadlessDbContext<TDbContext>(
+            (_, ob) => optionsAction?.Invoke(ob),
+            contextLifetime,
+            optionsLifetime
+        );
+    }
 
-        public IServiceCollection AddHeadlessDbContext(
-            Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
-            ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
-            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
-        )
-        {
-            services.AddHeadlessDbContextServices();
+    public static IServiceCollection AddHeadlessDbContext<TDbContext>(
+        this IServiceCollection services,
+        Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+        ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
+        ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+    )
+        where TDbContext : HeadlessDbContext
+    {
+        services.AddHeadlessDbContextServices();
 
-            services.AddDbContext<TDbContext>(
-                (serviceProvider, optionsBuilder) =>
-                {
-                    optionsAction?.Invoke(serviceProvider, optionsBuilder);
-                    optionsBuilder.AddHeadlessExtension();
-                },
-                contextLifetime,
-                optionsLifetime
-            );
+        services.AddDbContext<TDbContext>(
+            (serviceProvider, optionsBuilder) =>
+            {
+                optionsAction?.Invoke(serviceProvider, optionsBuilder);
+                optionsBuilder.AddHeadlessExtension();
+            },
+            contextLifetime,
+            optionsLifetime
+        );
 
-            return services;
-        }
+        return services;
     }
 
     extension(IServiceCollection services)

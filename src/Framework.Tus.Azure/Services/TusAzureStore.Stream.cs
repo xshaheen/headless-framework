@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
 using System.Diagnostics;
@@ -78,20 +78,14 @@ public sealed partial class TusAzureStore
         CancellationToken cancellationToken
     )
     {
+        Argument.CanSeek(stream);
+
         if (!_options.EnableChunkSplitting)
         {
             var blockId = _GenerateBlockId(nextBlockNumber);
 
             if (hasher is null) // No checksum, upload directly
             {
-                if (!stream.CanSeek)
-                {
-                    throw new ArgumentException(
-                        @"Stream must be seekable when EnableChunkSplitting is false and no checksum is requested. Either enable chunk splitting or use a seekable stream.",
-                        nameof(stream)
-                    );
-                }
-
                 await blockBlobClient.StageBlockAsync(blockId, stream, cancellationToken: cancellationToken);
                 return ([blockId], stream.Length);
             }
@@ -191,6 +185,8 @@ public sealed partial class TusAzureStore
     {
         Argument.IsNotNull(sourceStream);
         Argument.IsPositive(chunkSize);
+        // Validate chunk size doesn't exceed Azure's 100MB block limit
+        Argument.IsLessThanOrEqualTo(chunkSize, 100 * 1024 * 1024);
 
         return enumerable(sourceStream, chunkSize, cancellationToken);
 
@@ -200,16 +196,6 @@ public sealed partial class TusAzureStore
             [EnumeratorCancellation] CancellationToken cancellationToken
         )
         {
-            // Validate chunk size doesn't exceed Azure's 100MB block limit
-            if (chunkSize > 100 * 1024 * 1024)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(chunkSize),
-                    chunkSize,
-                    @"Chunk size cannot exceed Azure Blob Storage's 100MB block limit"
-                );
-            }
-
             // Rent buffer from shared pool (reused for all chunks to minimize memory consumption)
             var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
 

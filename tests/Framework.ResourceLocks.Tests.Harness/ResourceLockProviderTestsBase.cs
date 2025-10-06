@@ -152,7 +152,7 @@ public abstract class ResourceLockProviderTestsBase : TestBase
 
             // Cannot acquire a lock on the same resource
             var lock2Task = locker.TryAcquireAsync(resource, acquireTimeout: TimeSpan.FromMilliseconds(250));
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            await Task.Delay(TimeSpan.FromMilliseconds(250), TimeProvider);
             (await lock2Task).Should().BeNull();
         }
         finally
@@ -216,7 +216,7 @@ public abstract class ResourceLockProviderTestsBase : TestBase
             concurrency.Should().Be(1);
 
             var item = current;
-            await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)));
+            await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), TimeProvider);
             used.Add(item);
             current++;
 
@@ -254,7 +254,7 @@ public abstract class ResourceLockProviderTestsBase : TestBase
                 currentConcurrency.Should().Be(1);
 
                 var item = current;
-                await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), ct);
+                await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(5, 25)), TimeProvider, ct);
                 used.Add(item);
                 current++;
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Primitives;
 
@@ -17,6 +17,7 @@ public interface ISettingsErrorsDescriptor
     ValueTask<ErrorDescriptor> CurrentTenantNotAvailable();
 }
 
+#pragma warning disable CA1863 // Use 'CompositeFormat'
 public sealed class DefaultSettingsErrorsDescriptor : ISettingsErrorsDescriptor
 {
     public ValueTask<ErrorDescriptor> NotDefined(string settingName)

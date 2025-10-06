@@ -4,6 +4,7 @@ using Framework.Sitemaps;
 
 namespace Tests;
 
+#pragma warning disable xUnit1045 // Avoid using TheoryData type arguments that might not be serializable
 public sealed class SitemapIndexBuilderTests : TestBase
 {
     public static readonly TheoryData<List<SitemapReference>, string> TestData = new()

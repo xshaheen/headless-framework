@@ -64,7 +64,7 @@ public static class Run
 
         do
         {
-            if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
+            if (attempts > 1 && logger?.IsEnabled(LogLevel.Information) == true)
             {
                 logger.LogInformation(
                     "Retrying {Attempts} attempt after {Delay:g}...",
@@ -79,7 +79,7 @@ public static class Run
             }
             catch (Exception ex) when (attempts < maxAttempts)
             {
-                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                if (logger?.IsEnabled(LogLevel.Error) == true)
                 {
                     logger.LogError(ex, "Retry error: {Message}", ex.Message);
                 }

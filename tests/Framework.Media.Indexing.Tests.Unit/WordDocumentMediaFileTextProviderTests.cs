@@ -1,4 +1,4 @@
-﻿using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Framework.Checks;
@@ -78,12 +78,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         var stream = new MemoryStream();
         using var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document);
         document.AddMainDocumentPart();
-
-        if (document.MainDocumentPart != null)
-        {
-            document.MainDocumentPart.Document = new Document(new Body());
-        }
-
+        document.MainDocumentPart?.Document = new Document(new Body());
         document.Save();
         stream.Position = 0;
 

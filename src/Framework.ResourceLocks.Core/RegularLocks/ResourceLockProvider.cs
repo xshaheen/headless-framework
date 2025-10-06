@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -218,7 +218,8 @@ public sealed class ResourceLockProvider(
 
                 return storage.RemoveIfEqualAsync(resource, lockId);
             },
-            15
+            maxAttempts: 15,
+            timeProvider: timeProvider
         );
 
         var resourceLockReleased = new ResourceLockReleased { Resource = resource, LockId = lockId };
@@ -247,7 +248,8 @@ public sealed class ResourceLockProvider(
                 var (storage, resource, lockId, ttl) = state;
 
                 return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl);
-            }
+            },
+            timeProvider: timeProvider
         );
     }
 
@@ -262,6 +264,7 @@ public sealed class ResourceLockProvider(
         return await Run.WithRetriesAsync(
             (_storage, resource),
             static x => x._storage.ExistsAsync(x.resource),
+            timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
     }

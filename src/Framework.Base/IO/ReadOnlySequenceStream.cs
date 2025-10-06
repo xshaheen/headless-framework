@@ -1,13 +1,8 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System;
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using Framework.Checks;
-using Microsoft;
 
 namespace Framework.IO;
 
@@ -15,7 +10,7 @@ namespace Framework.IO;
 /// <remarks>
 /// Copy of <a href="https://github.com/dotnet/Nerdbank.Streams/blob/main/src/Nerdbank.Streams/ReadOnlySequenceStream.cs"></a>
 /// </remarks>
-internal class ReadOnlySequenceStream : Stream
+internal sealed class ReadOnlySequenceStream : Stream
 {
     private static readonly Task<int> _TaskOfZero = Task.FromResult(0);
     private readonly Action<object?>? _disposeAction;
@@ -71,7 +66,9 @@ internal class ReadOnlySequenceStream : Stream
     public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+#pragma warning disable MA0042 // Do not use blocking calls in an async method
         var bytesRead = Read(buffer, offset, count);
+#pragma warning restore MA0042 // Do not use blocking calls in an async method
 
         if (bytesRead == 0)
         {

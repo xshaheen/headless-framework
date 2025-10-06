@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
 using Framework.Core;
@@ -7,7 +7,8 @@ using Framework.Testing.Tests;
 
 namespace Tests.IO;
 
-#pragma warning disable FAA0002
+#pragma warning disable FAA0002 // Use AwesomeAsserion instead
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
 public sealed class NestedStreamTests : TestBase
 {
     private const int _DefaultNestedLength = 10;
@@ -377,7 +378,7 @@ public sealed class NestedStreamTests : TestBase
     public void Read_UnderlyingStreamReturnsFewerBytesThanRequested()
     {
         var buffer = new byte[20];
-        var firstBlockLength = _DefaultNestedLength / 2;
+        const int firstBlockLength = _DefaultNestedLength / 2;
         _underlyingStream.SetLength(firstBlockLength);
         Assert.Equal(firstBlockLength, _stream.Read(buffer, 0, buffer.Length));
         _underlyingStream.SetLength(_DefaultNestedLength * 2);

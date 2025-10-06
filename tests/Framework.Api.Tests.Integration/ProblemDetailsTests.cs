@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
 using AwesomeAssertions.Extensions;
@@ -54,7 +54,7 @@ public sealed class ProblemDetailsTests : TestBase
             "The requested endpoint was not found."
         );
 
-        jsonElement.EnumerateObject().Count().Should().Be(9);
+        jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 
     #endregion
@@ -108,7 +108,7 @@ public sealed class ProblemDetailsTests : TestBase
             "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax."
         );
 
-        jsonElement.EnumerateObject().Count().Should().Be(9);
+        jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 
     #endregion
@@ -171,7 +171,7 @@ public sealed class ProblemDetailsTests : TestBase
         jsonElement.GetProperty("params").GetProperty("entity").GetString().Should().Be("Entity");
         jsonElement.GetProperty("params").GetProperty("key").GetString().Should().Be("Key");
 
-        jsonElement.EnumerateObject().Count().Should().Be(10);
+        jsonElement.EnumerateObject().Should().HaveCount(10);
     }
 
     #endregion
@@ -234,9 +234,9 @@ public sealed class ProblemDetailsTests : TestBase
         );
 
         var errors = jsonElement.GetProperty("errors").EnumerateArray().ToList();
-        errors.Count.Should().Be(1);
+        errors.Should().ContainSingle();
         _ValidateErrorDescriptor(errors[0]);
-        jsonElement.EnumerateObject().Count().Should().Be(10);
+        jsonElement.EnumerateObject().Should().HaveCount(10);
     }
 
     #endregion
@@ -303,10 +303,10 @@ public sealed class ProblemDetailsTests : TestBase
         errorsObject.Should().ContainSingle();
         errorsObject[0].Name.Should().Be("property");
         var propertyErrorsArray = errorsObject[0].Value.EnumerateArray().ToList();
-        propertyErrorsArray.Count.Should().Be(1);
+        propertyErrorsArray.Should().ContainSingle();
         var error = propertyErrorsArray[0];
         _ValidateErrorDescriptor(error);
-        jsonElement.EnumerateObject().Count().Should().Be(10);
+        jsonElement.EnumerateObject().Should().HaveCount(10);
     }
 
     #endregion
@@ -392,7 +392,7 @@ public sealed class ProblemDetailsTests : TestBase
         );
 
         jsonElement.GetProperty("exception").EnumerateObject().Should().HaveCountGreaterThan(0);
-        jsonElement.EnumerateObject().Count().Should().Be(10);
+        jsonElement.EnumerateObject().Should().HaveCount(10);
     }
 
     #endregion
@@ -405,7 +405,7 @@ public sealed class ProblemDetailsTests : TestBase
         error.GetProperty("description").GetString().Should().Be("Error message");
         error.GetProperty("severity").GetString().Should().Be("information");
         error.GetProperty("params").ValueKind.Should().Be(JsonValueKind.Null);
-        error.EnumerateObject().Count().Should().Be(4);
+        error.EnumerateObject().Should().HaveCount(4);
     }
 
     private static void _ValidateCoreProblemDetails(

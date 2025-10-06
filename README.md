@@ -48,6 +48,6 @@
 
 ---
 
-## 🙌 Contributions Welcome!
+## 🙌 Contributions Welcome
 
 Feel free to submit issues, feature requests, or PRs. Let’s build the ultimate headless .NET foundation together!

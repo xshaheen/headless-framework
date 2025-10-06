@@ -30,7 +30,7 @@ public sealed class ODataOperationFilter : IOperationProcessor
         // Check for EnableQueryAttribute on method or declaring type
         var hasEnableQuery =
             methodInfo.GetCustomAttributes(inherit: true).Any(a => a is EnableQueryAttribute)
-            || methodInfo.DeclaringType?.GetCustomAttributes(true).Any(a => a is EnableQueryAttribute) == true;
+            || methodInfo.DeclaringType?.GetCustomAttributes(inherit: true).Any(a => a is EnableQueryAttribute) == true;
 
         if (hasEnableQuery || odataQueryOptionsParameter is not null)
         {

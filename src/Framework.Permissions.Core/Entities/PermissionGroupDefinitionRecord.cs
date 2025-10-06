@@ -13,7 +13,7 @@ public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasE
 
     public required string DisplayName { get; set; }
 
-    public ExtraProperties ExtraProperties { get; private set; }
+    public ExtraProperties ExtraProperties { get; private init; }
 
     public PermissionGroupDefinitionRecord()
     {

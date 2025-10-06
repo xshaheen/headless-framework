@@ -322,7 +322,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
             var deleteResponse = await _s3.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
 
-            if (deleteResponse.DeleteErrors is not null && deleteResponse.DeleteErrors.Count > 0)
+            if (deleteResponse.DeleteErrors?.Count > 0)
             {
                 // retry 1 time, continue.
                 var objects = deleteResponse.DeleteErrors.ConvertAll(e => new KeyVersion { Key = e.Key });
@@ -331,7 +331,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 var deleteRetryResponse = await _s3.DeleteObjectsAsync(deleteRetryRequest, cancellationToken)
                     .AnyContext();
 
-                if (deleteRetryResponse.DeleteErrors is not null && deleteRetryResponse.DeleteErrors.Count > 0)
+                if (deleteRetryResponse.DeleteErrors?.Count > 0)
                 {
                     errors.AddRange(deleteRetryResponse.DeleteErrors);
                 }

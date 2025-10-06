@@ -1,4 +1,4 @@
-﻿using FluentValidation;
+using FluentValidation;
 using FluentValidation.Results;
 using Framework.Api.Mvc.Controllers;
 using Framework.Exceptions;
@@ -9,6 +9,7 @@ namespace Framework.Api.Demo.Endpoints;
 
 [ApiController]
 [Route("/mvc")]
+#pragma warning disable CA1024 // Use properties where appropriate
 public sealed class ProblemsController : ApiControllerBase
 {
     [HttpGet("malformed-syntax")]

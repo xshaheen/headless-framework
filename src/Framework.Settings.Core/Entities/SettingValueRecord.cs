@@ -28,13 +28,13 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>
         ProviderKey = providerKey;
     }
 
-    public string Name { get; private set; }
+    public string Name { get; private init; }
 
     public string Value { get; internal set; }
 
-    public string ProviderName { get; private set; }
+    public string ProviderName { get; private init; }
 
-    public string? ProviderKey { get; private set; }
+    public string? ProviderKey { get; private init; }
 
     // TODO: Add DateCreated, DateUpdated, CreatedBy, UpdatedBy, ...
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Payments.Paymob.CashIn.Internal;
 using Humanizer;
@@ -201,11 +201,10 @@ public sealed class CashInCallbackQueryParameters
     public bool IsRiskChecksError()
     {
         return TxnResponseCode is "11"
-            && DataMessage is not null
-            && DataMessage.Contains(
+            && DataMessage?.Contains(
                 "transaction did not pass risk checks",
                 StringComparison.InvariantCultureIgnoreCase
-            );
+            ) == true;
     }
 
     public CashInCardInfo? Card()

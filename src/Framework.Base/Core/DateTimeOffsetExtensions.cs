@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
-using Framework.Checks;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace

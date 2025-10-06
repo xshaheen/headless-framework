@@ -54,7 +54,7 @@ public static partial class Argument
         }
 
         message ??=
-            $"The argument {paramName.ToAssertString()} = {argument} is NOT invalid for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
+            $"The argument {paramName.ToAssertString()} = {argument.ToString(CultureInfo.InvariantCulture)} is NOT invalid for Enum type <{typeof(T).Name}>. (Parameter: '{paramName}')";
 
 #pragma warning disable MA0015
         throw new InvalidEnumArgumentException(message);

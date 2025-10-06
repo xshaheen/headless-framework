@@ -111,8 +111,8 @@ public static class EntityTypeBuilderExtensions
         }
 
         const string dateCreatedName = nameof(ICreateAudit.DateCreated);
-        const string createdByIdName = nameof(ICreateAudit<string>.CreatedById);
-        const string createdByName = nameof(ICreateAudit<string, object>.CreatedBy);
+        const string createdByIdName = nameof(ICreateAudit<>.CreatedById);
+        const string createdByName = nameof(ICreateAudit<,>.CreatedBy);
 
         builder.Property(dateCreatedName).IsRequired().HasColumnName(dateCreatedName);
 
@@ -167,8 +167,8 @@ public static class EntityTypeBuilderExtensions
         }
 
         const string dateUpdatedName = nameof(IUpdateAudit.DateUpdated);
-        const string updatedByIdName = nameof(IUpdateAudit<string>.UpdatedById);
-        const string updatedByName = nameof(IUpdateAudit<string, object>.UpdatedBy);
+        const string updatedByIdName = nameof(IUpdateAudit<>.UpdatedById);
+        const string updatedByName = nameof(IUpdateAudit<,>.UpdatedBy);
 
         builder.Property(dateUpdatedName).IsRequired(false).HasColumnName(dateUpdatedName);
 
@@ -241,10 +241,10 @@ public static class EntityTypeBuilderExtensions
         const string isDeletedName = nameof(IDeleteAudit.IsDeleted);
         const string dateDeletedName = nameof(IDeleteAudit.DateDeleted);
         const string dateRestoredName = nameof(IDeleteAudit.DateRestored);
-        const string deletedByIdName = nameof(IDeleteAudit<string>.DeletedById);
-        const string restoredByIdName = nameof(IDeleteAudit<string>.RestoredById);
-        const string deletedByName = nameof(IDeleteAudit<string, object>.DeletedBy);
-        const string restoredByName = nameof(IDeleteAudit<string, object>.RestoredBy);
+        const string deletedByIdName = nameof(IDeleteAudit<>.DeletedById);
+        const string restoredByIdName = nameof(IDeleteAudit<>.RestoredById);
+        const string deletedByName = nameof(IDeleteAudit<,>.DeletedBy);
+        const string restoredByName = nameof(IDeleteAudit<,>.RestoredBy);
 
         builder.Property(isDeletedName).IsRequired().HasDefaultValue(value: false).HasColumnName(isDeletedName);
         builder.Property(dateDeletedName).IsRequired(false).HasColumnName(dateDeletedName);
@@ -338,10 +338,10 @@ public static class EntityTypeBuilderExtensions
         const string isSuspended = nameof(ISuspendAudit.IsSuspended);
         const string dateSuspendedName = nameof(ISuspendAudit.DateSuspended);
         const string dateRestoredName = nameof(ISuspendAudit.DateRestored);
-        const string suspendedByIdName = nameof(ISuspendAudit<string>.SuspendedById);
-        const string restoredByIdName = nameof(ISuspendAudit<string>.RestoredById);
-        const string suspendedByName = nameof(ISuspendAudit<string, object>.SuspendedBy);
-        const string restoredByName = nameof(ISuspendAudit<string, object>.RestoredBy);
+        const string suspendedByIdName = nameof(ISuspendAudit<>.SuspendedById);
+        const string restoredByIdName = nameof(ISuspendAudit<>.RestoredById);
+        const string suspendedByName = nameof(ISuspendAudit<,>.SuspendedBy);
+        const string restoredByName = nameof(ISuspendAudit<,>.RestoredBy);
 
         builder.Property(isSuspended).IsRequired().HasDefaultValue(value: false).HasColumnName(isSuspended);
         builder.Property(dateSuspendedName).IsRequired(false).HasColumnName(dateSuspendedName);

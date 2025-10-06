@@ -49,11 +49,6 @@ public partial class PaymobCashInBroker
 
         var content = await response.Content.ReadFromJsonAsync<TResponse>(_options.DeserializationOptions);
 
-        if (content is null)
-        {
-            return default;
-        }
-
-        return content;
+        return content ?? default;
     }
 }
