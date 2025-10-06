@@ -1,4 +1,4 @@
-﻿using System.IO.Pipelines;
+using System.IO.Pipelines;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Specialized;
 using Framework.Testing.Tests;
@@ -89,7 +89,7 @@ public sealed class TusAzureStoreTests : TestBase
     public async Task should_set_upload_length()
     {
         // given
-        var initialUploadLength = -1L;
+        const long initialUploadLength = -1L;
         var newUploadLength = Faker.Random.Number(100, 1_000);
         var fileName = Faker.System.FileName();
         var metadata = $"filename {fileName.ToBase64()}";

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Primitives;
 
@@ -13,6 +13,7 @@ public interface IFeatureErrorsDescriptor
     ValueTask<ErrorDescriptor> ProviderIsReadonly(string providerKey);
 }
 
+#pragma warning disable CA1863 // Use 'CompositeFormat'
 public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
 {
     public ValueTask<ErrorDescriptor> FeatureIsNotDefined(string featureName)

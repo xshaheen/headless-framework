@@ -526,7 +526,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
             var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
 
-            if (criteria.Pattern != null && !criteria.Pattern.IsMatch(blobInfo.BlobKey))
+            if (criteria.Pattern?.IsMatch(blobInfo.BlobKey) == false)
             {
                 continue;
             }

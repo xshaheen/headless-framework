@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
 
@@ -63,7 +63,7 @@ public class IsNotNullOrEmptyTests
     {
         // given
         IReadOnlyCollection<int>? argumentNull = null;
-        var nullCustomMessage = $"Error collection is null";
+        const string nullCustomMessage = "Error collection is null";
 
         // when
         Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
@@ -82,7 +82,7 @@ public class IsNotNullOrEmptyTests
 
         // given
         IReadOnlyCollection<int> argumentEmpty = new List<int>();
-        var emptyCustomMessage = $"Error collection is empty";
+        const string emptyCustomMessage = "Error collection is empty";
 
         // when
         Action action = () => Argument.IsNotNullOrEmpty(argumentEmpty);
@@ -115,7 +115,7 @@ public class IsNotNullOrEmptyTests
     {
         // given
         IEnumerable<int>? argumentNull = null;
-        var nullCustomMessage = $"Error elements are null";
+        const string nullCustomMessage = "Error elements are null";
 
         // when
         Action nullAction = () => Argument.IsNotNullOrEmpty(argumentNull);
@@ -134,7 +134,7 @@ public class IsNotNullOrEmptyTests
 
         // given
         IEnumerable<int> argumentEmpty = new List<int>();
-        var emptyCustomMessage = $"Error elements are empty";
+        const string emptyCustomMessage = "Error elements are empty";
 
         // when
         Action emptyAction = () => Argument.IsNotNullOrEmpty(argumentEmpty);

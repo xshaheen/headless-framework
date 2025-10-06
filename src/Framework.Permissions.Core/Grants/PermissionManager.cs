@@ -100,13 +100,9 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        var permission = await definitionManager.FindAsync(permissionName, cancellationToken);
-
-        if (permission is null)
-        {
-            // Maybe they were removed from dynamic permission definition store
-            throw new ConflictException(await errorsDescriptor.PermissionIsNotDefined(permissionName));
-        }
+        var permission =
+            await definitionManager.FindAsync(permissionName, cancellationToken)
+            ?? throw new ConflictException(await errorsDescriptor.PermissionIsNotDefined(permissionName));
 
         if (!permission.IsEnabled)
         {
@@ -120,14 +116,10 @@ public sealed class PermissionManager(
             );
         }
 
-        var provider = grantProviderManager.ValueProviders.FirstOrDefault(m =>
-            string.Equals(m.Name, providerName, StringComparison.Ordinal)
-        );
-
-        if (provider is null)
-        {
-            throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
-        }
+        var provider =
+            grantProviderManager.ValueProviders.FirstOrDefault(m =>
+                string.Equals(m.Name, providerName, StringComparison.Ordinal)
+            ) ?? throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
 
         await provider.SetAsync(permission, providerKey, isGranted, cancellationToken);
     }
@@ -176,14 +168,10 @@ public sealed class PermissionManager(
             );
         }
 
-        var provider = grantProviderManager.ValueProviders.FirstOrDefault(m =>
-            string.Equals(m.Name, providerName, StringComparison.Ordinal)
-        );
-
-        if (provider is null)
-        {
-            throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
-        }
+        var provider =
+            grantProviderManager.ValueProviders.FirstOrDefault(m =>
+                string.Equals(m.Name, providerName, StringComparison.Ordinal)
+            ) ?? throw new ConflictException(await errorsDescriptor.PermissionsProviderNotFound(providerName));
 
         await provider.SetAsync(definedPermissions, providerKey, isGranted, cancellationToken);
     }

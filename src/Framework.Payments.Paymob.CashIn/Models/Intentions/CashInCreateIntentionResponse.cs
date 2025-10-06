@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Framework.Payments.Paymob.CashIn.Models.Intentions;
 
@@ -35,7 +35,9 @@ public sealed class CashInCreateIntentionResponse
     public required List<object> CardTokens { get; init; }
 
     [JsonPropertyName("object")]
+#pragma warning disable CA1720 // Identifier contains type name
     public required string Object { get; init; }
+#pragma warning restore CA1720 // Identifier contains type name
 
     [JsonPropertyName("intention_detail")]
     public required CashInCreateIntentionResponseIntentionDetail IntentionDetail { get; init; }

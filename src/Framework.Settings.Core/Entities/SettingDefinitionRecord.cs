@@ -96,7 +96,7 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
     public string? Providers { get; set; }
 
     /// <summary>Gets the extra properties associated with this setting.</summary>
-    public ExtraProperties ExtraProperties { get; private set; }
+    public ExtraProperties ExtraProperties { get; private init; }
 
     public bool HasSameData(SettingDefinitionRecord other)
     {

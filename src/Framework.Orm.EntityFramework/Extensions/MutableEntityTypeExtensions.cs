@@ -14,17 +14,17 @@ public static class MutableEntityTypeExtensions
     {
         if (entityType.ClrType.IsAssignableTo(typeof(IEntity<long>)))
         {
-            entityType.GetProperty(nameof(IEntity<long>.Id)).ValueGenerated = ValueGenerated.Never;
+            entityType.GetProperty(nameof(IEntity<>.Id)).ValueGenerated = ValueGenerated.Never;
         }
 
         if (entityType.ClrType.IsAssignableTo(typeof(IEntity<string>)))
         {
-            entityType.GetProperty(nameof(IEntity<string>.Id)).ValueGenerated = ValueGenerated.Never;
+            entityType.GetProperty(nameof(IEntity<>.Id)).ValueGenerated = ValueGenerated.Never;
         }
 
         if (entityType.ClrType.IsAssignableTo(typeof(IEntity<Guid>)))
         {
-            entityType.GetProperty(nameof(IEntity<Guid>.Id)).ValueGenerated = ValueGenerated.Never;
+            entityType.GetProperty(nameof(IEntity<>.Id)).ValueGenerated = ValueGenerated.Never;
         }
     }
 }

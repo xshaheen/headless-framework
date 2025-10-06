@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
 
@@ -32,7 +32,7 @@ public class IsNotNullOrWhiteSpace
 
         // given
         const string emptyArgument = "";
-        customMessage = $"Error argument is empty";
+        customMessage = "Error argument is empty";
 
         // when
         Action emptyAction = () => Argument.IsNotNullOrWhiteSpace(emptyArgument);

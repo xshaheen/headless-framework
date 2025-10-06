@@ -92,7 +92,7 @@ public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
     /// <summary>Comma separated the list of provider names.</summary>
     public string? Providers { get; set; }
 
-    public ExtraProperties ExtraProperties { get; private set; }
+    public ExtraProperties ExtraProperties { get; private init; }
 
     public bool HasSameData(FeatureDefinitionRecord otherRecord)
     {

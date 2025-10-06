@@ -9,23 +9,23 @@ namespace Microsoft.Extensions.DependencyInjection;
 [PublicAPI]
 public static class MigrateDbContextExtensions
 {
-    extension<TContext>(IServiceProvider services) where TContext : DbContext
+    extension(IServiceProvider services)
     {
-        public void MigrateDbContext()
+        public void MigrateDbContext<TContext>() where TContext : DbContext
         {
             using var scope = services.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             context.Database.Migrate();
         }
 
-        public async Task MigrateDbContextAsync(CancellationToken token = default)
+        public async Task MigrateDbContextAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             await context.Database.MigrateAsync(token);
         }
 
-        public void MigrateDbContextByFactory()
+        public void MigrateDbContextByFactory<TContext>() where TContext : DbContext
         {
             using var scope = services.CreateScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
@@ -33,7 +33,7 @@ public static class MigrateDbContextExtensions
             context.Database.Migrate();
         }
 
-        public async Task MigrateDbContextByFactoryAsync(CancellationToken token = default)
+        public async Task MigrateDbContextByFactoryAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
@@ -41,21 +41,21 @@ public static class MigrateDbContextExtensions
             await context.Database.MigrateAsync(token);
         }
 
-        public void EnsureDbCreated()
+        public void EnsureDbCreated<TContext>()where TContext : DbContext
         {
             using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             context.Database.EnsureCreated();
         }
 
-        public async Task EnsureDbCreatedAsync(CancellationToken token = default)
+        public async Task EnsureDbCreatedAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             await context.Database.EnsureCreatedAsync(token);
         }
 
-        public void EnsureDbCreatedByFactory()
+        public void EnsureDbCreatedByFactory<TContext>()where TContext : DbContext
         {
             using var scope = services.CreateScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
@@ -63,7 +63,7 @@ public static class MigrateDbContextExtensions
             context.Database.EnsureCreated();
         }
 
-        public async Task EnsureDbCreatedByFactoryAsync(CancellationToken token = default)
+        public async Task EnsureDbCreatedByFactoryAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
@@ -71,21 +71,21 @@ public static class MigrateDbContextExtensions
             await context.Database.EnsureCreatedAsync(token);
         }
 
-        public void EnsureDbDeleted()
+        public void EnsureDbDeleted<TContext>()where TContext : DbContext
         {
             using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             context.Database.EnsureDeleted();
         }
 
-        public async Task EnsureDbDeletedAsync(CancellationToken token = default)
+        public async Task EnsureDbDeletedAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
             await context.Database.EnsureDeletedAsync(token);
         }
 
-        public void EnsureDbDeletedByFactory()
+        public void EnsureDbDeletedByFactory<TContext>()where TContext : DbContext
         {
             using var scope = services.CreateScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
@@ -93,7 +93,7 @@ public static class MigrateDbContextExtensions
             context.Database.EnsureDeleted();
         }
 
-        public async Task EnsureDbDeletedByFactoryAsync(CancellationToken token = default)
+        public async Task EnsureDbDeletedByFactoryAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
@@ -101,7 +101,7 @@ public static class MigrateDbContextExtensions
             await context.Database.EnsureDeletedAsync(token);
         }
 
-        public void EnsureDbRecreated()
+        public void EnsureDbRecreated<TContext>()where TContext : DbContext
         {
             using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
@@ -109,7 +109,7 @@ public static class MigrateDbContextExtensions
             context.Database.EnsureCreated();
         }
 
-        public async Task EnsureDbRecreatedAsync(CancellationToken token = default)
+        public async Task EnsureDbRecreatedAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
@@ -117,7 +117,7 @@ public static class MigrateDbContextExtensions
             await context.Database.EnsureCreatedAsync(token);
         }
 
-        public void EnsureDbRecreatedByFactory()
+        public void EnsureDbRecreatedByFactory<TContext>()where TContext : DbContext
         {
             using var scope = services.CreateScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
@@ -126,7 +126,7 @@ public static class MigrateDbContextExtensions
             context.Database.EnsureCreated();
         }
 
-        public async Task EnsureDbRecreatedByFactoryAsync(CancellationToken token = default)
+        public async Task EnsureDbRecreatedByFactoryAsync<TContext>(CancellationToken token = default) where TContext : DbContext
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();

@@ -9,7 +9,7 @@ public sealed class ObjectPropertiesHelperTests
     {
         public string? Name { get; set; }
 
-        public int Age { get; private set; }
+        public int Age { get; private init; }
 
         [IgnoreMe]
         public string? IgnoredProperty { get; set; }

@@ -17,7 +17,7 @@ public sealed class IsInEnumTests
     public void is_in_enum_generic_should_return_argument_when_valid()
     {
         // given
-        var validEnumValue = SampleEnum.Value2;
+        const SampleEnum validEnumValue = SampleEnum.Value2;
 
         // when & then
         Argument.IsInEnum(validEnumValue).Should().Be(validEnumValue);

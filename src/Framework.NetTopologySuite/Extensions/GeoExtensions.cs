@@ -1,5 +1,6 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.NetTopologySuite.Constants;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Features;
@@ -145,7 +146,9 @@ public static class GeoExtensions
 
     public static Geometry SanitizeForSqlGeography(this Geometry geometry)
     {
-        if (geometry == null || geometry.IsEmpty)
+        Argument.IsNotNull(geometry);
+
+        if (geometry.IsEmpty)
         {
             throw new InvalidOperationException("Geometry is null or empty.");
         }
@@ -153,9 +156,8 @@ public static class GeoExtensions
         // 1 Validate geometry is not null, empty, and has correct SRID
         if (geometry.SRID != GeoConstants.GoogleMapsSrid)
         {
-            throw new InvalidOperationException(
-                $"Geometry SRID must be {GeoConstants.GoogleMapsSrid}, but was {geometry.SRID}."
-            );
+            FormattableString format = $"Geometry SRID must be {GeoConstants.GoogleMapsSrid}, but was {geometry.SRID}.";
+            throw new InvalidOperationException(format.ToString(CultureInfo.InvariantCulture));
         }
 
         // 2 Validate coordinate ranges for geography
@@ -163,7 +165,8 @@ public static class GeoExtensions
         {
             if (coord.X < -180 || coord.X > 180 || coord.Y < -90 || coord.Y > 90)
             {
-                throw new InvalidOperationException($"Invalid coordinate: ({coord.X}, {coord.Y})");
+                FormattableString format = $"Invalid coordinate: ({coord.X}, {coord.Y})";
+                throw new InvalidOperationException(format.ToString(CultureInfo.InvariantCulture));
             }
         }
 

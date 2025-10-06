@@ -80,7 +80,9 @@ public sealed class FluentValidationSchemaProcessor(
             return;
         }
 
+#pragma warning disable MA0045 // Justification: We are using a scope to resolve the validator, this is fine.
         using var scope = serviceProvider.CreateScope();
+#pragma warning restore MA0045
         var declaringTypeValidator = _GetValidator(scope.ServiceProvider, declaringType);
         var propertyName = contextualProperty.PropertyInfo.Name;
 
@@ -198,7 +200,7 @@ public sealed class FluentValidationSchemaProcessor(
             var adapterType = adapter.GetType();
 
 #pragma warning disable REFL017, REFL003 // Justification: Already of type ChildValidatorAdaptor<,>
-            var adapterMethod = adapterType.GetMethod(nameof(ChildValidatorAdaptor<object, object>.GetValidator));
+            var adapterMethod = adapterType.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator));
 #pragma warning restore REFL017, REFL003
 
             if (adapterMethod is null)

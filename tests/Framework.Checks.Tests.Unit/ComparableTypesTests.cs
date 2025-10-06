@@ -35,7 +35,7 @@ public sealed class ComparableTypesTests
         action
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
-            .WithMessage($"The argument \"argument\" must be less than or equal to 10. (Parameter 'argument')");
+            .WithMessage("The argument \"argument\" must be less than or equal to 10. (Parameter 'argument')");
 
         actionWithCustomMessage
             .Should()
@@ -109,7 +109,7 @@ public sealed class ComparableTypesTests
         action
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
-            .WithMessage($"The argument \"argument\" must be less than 5. (Parameter 'argument')");
+            .WithMessage("The argument \"argument\" must be less than 5. (Parameter 'argument')");
 
         actionWithCustomMessage
             .Should()

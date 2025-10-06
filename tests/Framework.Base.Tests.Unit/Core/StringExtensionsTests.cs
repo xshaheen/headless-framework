@@ -183,7 +183,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     {
         var bytes = str.GetBytes();
         bytes.Should().NotBeNull();
-        bytes.Length.Should().BeGreaterThanOrEqualTo(str.Length);
+        bytes.Should().HaveCountGreaterThanOrEqualTo(str.Length);
         Encoding.UTF8.GetString(bytes).Should().Be(str);
     }
 
@@ -194,7 +194,7 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     {
         var bytes = str.GetBytes(Encoding.ASCII);
         bytes.Should().NotBeNull();
-        bytes.Length.Should().BeGreaterThanOrEqualTo(str.Length);
+        bytes.Should().HaveCountGreaterThanOrEqualTo(str.Length);
         Encoding.ASCII.GetString(bytes).Should().Be(str);
     }
 

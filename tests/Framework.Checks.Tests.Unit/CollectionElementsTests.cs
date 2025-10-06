@@ -11,7 +11,7 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = ["value1", null, "value3"];
-        var customMessage = "The collection must not contains null elements.";
+        const string customMessage = "The collection must not contains null elements.";
 
         // when
         Action action = () => Argument.HasNoNulls(argument);
@@ -47,7 +47,7 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = ["value1", "", "value3"];
-        var customMessage = "The collection must not contains empty elements.";
+        const string customMessage = "The collection must not contains empty elements.";
 
         // when
         Action action = () => Argument.HasNoNullOrEmptyElements(argument);
@@ -83,7 +83,7 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", " ", "value3" };
-        var customMessage = "The collection must not contains white space elements.";
+        const string customMessage = "The collection must not contains white space elements.";
 
         // when
         Action action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
@@ -121,7 +121,7 @@ public sealed class CollectionElementsTests
     {
         // given
         IReadOnlyCollection<string?> argument = new List<string?> { "value1", null, "value3" };
-        var customMessage = "The collection must not contains null elements";
+        const string customMessage = "The collection must not contains null elements";
         // when
         Action action = () => Argument.HasNoNullOrWhiteSpaceElements(argument);
         Action actionWithCustomMessage = () => Argument.HasNoNullOrWhiteSpaceElements(argument, customMessage);

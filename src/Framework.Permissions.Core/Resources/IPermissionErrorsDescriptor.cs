@@ -24,6 +24,7 @@ public interface IPermissionErrorsDescriptor
     ValueTask<ErrorDescriptor> PermissionProviderNotDefined(string permissionName, string providerName);
 }
 
+#pragma warning disable CA1863 // Use 'CompositeFormat'
 public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescriptor
 {
     public ValueTask<ErrorDescriptor> SomePermissionsAreNotDefined(IReadOnlyCollection<string> permissionNames)
@@ -106,6 +107,7 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
 
     public ValueTask<ErrorDescriptor> PermissionProviderNotDefined(string permissionName, string providerName)
     {
+
         var description = string.Format(
             CultureInfo.InvariantCulture,
             Messages.permissions_provider_not_defined,

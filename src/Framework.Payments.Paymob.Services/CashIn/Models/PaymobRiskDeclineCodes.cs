@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Framework.Payments.Paymob.Services.CashIn.Models;
 
@@ -68,7 +68,7 @@ public static class PaymobRiskDeclineCodes
     public const int EmailIsDisposable = 154;
 
     /// <summary>
-    /// IP address is in a global blacklist, it means that that the IP address has been flagged as a potential source of malicious activity. This can happen for a number of reasons, such as: IP address has been used to send spam or phishing emails. IP address has been used to launch DDoS attacks. IP address has been infected with malware. IP address has been used to commit other types of cybercrime.
+    /// IP address is in a global blacklist, it means that the IP address has been flagged as a potential source of malicious activity. This can happen for a number of reasons, such as: IP address has been used to send spam or phishing emails. IP address has been used to launch DDoS attacks. IP address has been infected with malware. IP address has been used to commit other types of cybercrime.
     /// </summary>
     public const int IpIsInGlobalBlacklist = 201;
 

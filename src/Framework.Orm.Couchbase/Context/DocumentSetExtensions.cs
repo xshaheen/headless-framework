@@ -146,7 +146,7 @@ public static class DocumentSetExtensions
         return set.Collection.GetAnyReplicaAsync(id?.ToString()!, options);
     }
 
-    public static IEnumerable<Task<IGetReplicaResult>> GetAllReplicasAsync<T, TId>(
+    public static IEnumerable<Task<IGetReplicaResult>> GetAllReplicas<T, TId>(
         this IDocumentSet<T> set,
         TId id,
         GetAllReplicasOptions? options = null

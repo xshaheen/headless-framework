@@ -22,7 +22,7 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
     /// <summary>Comma separated the list of provider names.</summary>
     public required string? Providers { get; set; }
 
-    public ExtraProperties ExtraProperties { get; private set; } = [];
+    public ExtraProperties ExtraProperties { get; private init; } = [];
 
     [UsedImplicitly]
     private PermissionDefinitionRecord()

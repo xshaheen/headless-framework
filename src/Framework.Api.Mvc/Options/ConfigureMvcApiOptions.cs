@@ -16,10 +16,7 @@ public sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, ICon
         // Disable treat Ok(null) as NoContent. https://github.com/aspnet/AspNetCore/issues/8847
         var noContentFormatter = options.OutputFormatters.OfType<HttpNoContentOutputFormatter>().FirstOrDefault();
 
-        if (noContentFormatter is not null)
-        {
-            noContentFormatter.TreatNullValueAsNoContent = false;
-        }
+        noContentFormatter?.TreatNullValueAsNoContent = false;
 
         // Returns a 406 Not Acceptable if the MIME type in the Accept HTTP header is not valid.
         options.ReturnHttpNotAcceptable = true;

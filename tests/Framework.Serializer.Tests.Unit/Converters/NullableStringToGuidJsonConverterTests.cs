@@ -21,7 +21,7 @@ public class NullableStringToGuidJsonConverterTests
         var result = JsonSerializer.Deserialize<Guid?>(json, _options);
 
         // then
-        result.Should().Be(Guid.Parse("123e4567-e89b-12d3-a456-426614174000"));
+        result.Should().Be(new Guid(0x123e4567, 0xe89b, 0x12d3, 0xa4, 0x56, 0x42, 0x66, 0x14, 0x17, 0x40, 0x0) /* 123e4567-e89b-12d3-a456-426614174000 */);
     }
 
     [Fact]
