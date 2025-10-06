@@ -123,7 +123,7 @@ public sealed class HeadlessEntityModelProcessor(
 
             entityBuilder.HasQueryFilter(
                 HeadlessQueryFilters.MultiTenancyFilter,
-                x => EF.Property<string?>(x, tenantIdName) == currentTenant.Id
+                x => EF.Property<string?>(x, tenantIdName) == TenantId
             );
         }
 
