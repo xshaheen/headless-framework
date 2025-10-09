@@ -9,7 +9,7 @@ public interface ISqlConnectionFactory : IAsyncDisposable
 {
     string GetConnectionString();
 
-    ValueTask<DbConnection> GetOpenConnectionAsync();
+    ValueTask<DbConnection> GetOpenConnectionAsync(CancellationToken cancellationToken = default);
 
-    ValueTask<DbConnection> CreateNewConnectionAsync();
+    ValueTask<DbConnection> CreateNewConnectionAsync(CancellationToken cancellationToken = default);
 }
