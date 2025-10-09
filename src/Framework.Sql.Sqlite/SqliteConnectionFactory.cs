@@ -18,15 +18,15 @@ public sealed class SqliteConnectionFactory(string connectionString) : ISqlConne
         return connectionString;
     }
 
-    public async ValueTask<SqliteConnection> CreateNewConnectionAsync()
+    public async ValueTask<SqliteConnection> CreateNewConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         return connection;
     }
 
-    public async ValueTask<SqliteConnection> GetOpenConnectionAsync()
+    public async ValueTask<SqliteConnection> GetOpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         using var _ = await _lock.LockAsync();
 
@@ -36,19 +36,19 @@ public sealed class SqliteConnectionFactory(string connectionString) : ISqlConne
         }
 
         _connection?.Dispose();
-        _connection = await CreateNewConnectionAsync();
+        _connection = await CreateNewConnectionAsync(cancellationToken);
 
         return _connection;
     }
 
-    async ValueTask<DbConnection> ISqlConnectionFactory.CreateNewConnectionAsync()
+    async ValueTask<DbConnection> ISqlConnectionFactory.CreateNewConnectionAsync(CancellationToken cancellationToken)
     {
-        return await CreateNewConnectionAsync();
+        return await CreateNewConnectionAsync(cancellationToken);
     }
 
-    async ValueTask<DbConnection> ISqlConnectionFactory.GetOpenConnectionAsync()
+    async ValueTask<DbConnection> ISqlConnectionFactory.GetOpenConnectionAsync(CancellationToken cancellationToken)
     {
-        return await GetOpenConnectionAsync();
+        return await GetOpenConnectionAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()

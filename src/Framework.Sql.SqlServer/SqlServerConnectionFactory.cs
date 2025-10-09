@@ -18,15 +18,15 @@ public sealed class SqlServerConnectionFactory(string connectionString) : ISqlCo
         return connectionString;
     }
 
-    public async ValueTask<SqlConnection> CreateNewConnectionAsync()
+    public async ValueTask<SqlConnection> CreateNewConnectionAsync(CancellationToken cancellationToken = default)
     {
         var connection = new SqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         return connection;
     }
 
-    public async ValueTask<SqlConnection> GetOpenConnectionAsync()
+    public async ValueTask<SqlConnection> GetOpenConnectionAsync(CancellationToken cancellationToken = default)
     {
         using var _ = await _lock.LockAsync();
 
@@ -36,19 +36,19 @@ public sealed class SqlServerConnectionFactory(string connectionString) : ISqlCo
         }
 
         _connection?.Dispose();
-        _connection = await CreateNewConnectionAsync();
+        _connection = await CreateNewConnectionAsync(cancellationToken);
 
         return _connection;
     }
 
-    async ValueTask<DbConnection> ISqlConnectionFactory.CreateNewConnectionAsync()
+    async ValueTask<DbConnection> ISqlConnectionFactory.CreateNewConnectionAsync(CancellationToken cancellationToken)
     {
-        return await CreateNewConnectionAsync();
+        return await CreateNewConnectionAsync(cancellationToken);
     }
 
-    async ValueTask<DbConnection> ISqlConnectionFactory.GetOpenConnectionAsync()
+    async ValueTask<DbConnection> ISqlConnectionFactory.GetOpenConnectionAsync(CancellationToken cancellationToken)
     {
-        return await GetOpenConnectionAsync();
+        return await GetOpenConnectionAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
