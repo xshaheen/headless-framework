@@ -100,7 +100,7 @@ public static class StreamExtensions
 
         using var ms = stream.CreateMemoryStream();
 
-        return ms.ToArray();
+        return ms.GetBuffer(); // Using GetBuffer to avoid an extra array allocation.
     }
 
     [MustUseReturnValue]
@@ -115,7 +115,7 @@ public static class StreamExtensions
 
         await using var ms = await stream.CreateMemoryStreamAsync(cancellationToken);
 
-        return ms.ToArray();
+        return ms.GetBuffer(); // Using GetBuffer to avoid an extra array allocation.
     }
 
     #endregion

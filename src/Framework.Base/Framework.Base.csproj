@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CommunityToolkit.HighPerformance" />
     <PackageReference Include="Flurl" />
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="IdGen" />

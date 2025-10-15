@@ -28,14 +28,18 @@ public sealed class SqlServerConnectionFactory(string connectionString) : ISqlCo
 
     public async ValueTask<SqlConnection> GetOpenConnectionAsync(CancellationToken cancellationToken = default)
     {
-        using var _ = await _lock.LockAsync();
+        using var _ = await _lock.LockAsync(cancellationToken);
 
         if (_connection is { State: ConnectionState.Open })
         {
             return _connection;
         }
 
-        _connection?.Dispose();
+        if (_connection is not null)
+        {
+            await _connection.DisposeAsync();
+        }
+
         _connection = await CreateNewConnectionAsync(cancellationToken);
 
         return _connection;
@@ -55,7 +59,7 @@ public sealed class SqlServerConnectionFactory(string connectionString) : ISqlCo
     {
         if (_connection?.State is ConnectionState.Open)
         {
-            await (_connection?.DisposeAsync() ?? ValueTask.CompletedTask);
+            await _connection.DisposeAsync();
             _connection = null;
         }
     }
