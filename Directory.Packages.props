@@ -16,15 +16,15 @@
     <PackageVersion Include="AutoBogus.NSubstitute" Version="2.13.1" />
     <PackageVersion Include="AutoFixture" Version="5.0.0-preview0012" />
     <PackageVersion Include="AwesomeAssertions" Version="9.2.0" />
-    <PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.6" />
+    <PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
     <PackageVersion Include="AwesomeAssertions.Json" Version="9.0.0" />
-    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.4" />
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.7.7" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.5.6" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.1.6" />
+    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.6" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.7.10" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.5.8" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.1.8" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.1" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.25.1" />
-    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.22.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.26.0" />
+    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.23.0" />
     <PackageVersion Include="Bogus" Version="35.6.4" />
     <PackageVersion Include="ByteSize" Version="2.1.2" />
     <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
@@ -39,7 +39,7 @@
     </PackageVersion>
     <PackageVersion Include="Dapper" Version="2.1.66" />
     <PackageVersion Include="DeepCloner" Version="0.10.4" />
-    <PackageVersion Include="DeviceDetector.NET" Version="6.4.6" />
+    <PackageVersion Include="DeviceDetector.NET" Version="6.4.7" />
     <PackageVersion Include="DistributedLock.Core" Version="1.0.7" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.3.0" />
     <PackageVersion Include="DotNetCore.CAP" Version="8.4.0" />
@@ -58,9 +58,9 @@
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="4.0.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2025.2.2" />
-    <PackageVersion Include="libphonenumber-csharp" Version="9.0.15" />
+    <PackageVersion Include="libphonenumber-csharp" Version="9.0.16" />
     <PackageVersion Include="Linq2Couchbase" Version="2.1.0" />
-    <PackageVersion Include="MailKit" Version="4.14.0" />
+    <PackageVersion Include="MailKit" Version="4.14.1" />
     <PackageVersion Include="MartinCostello.Logging.XUnit" Version="0.6.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.1" />
     <PackageVersion Include="MessagePack" Version="3.1.4" />
@@ -98,8 +98,8 @@
     <PackageVersion Include="Microsoft.Extensions.DiagnosticAdapter" Version="3.1.32" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0-rc.1.25451.107" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0-rc.1.25451.107" />
-    <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.1" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.9.0" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.2" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.10.0" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.14.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.0" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.3.3" />
@@ -130,10 +130,10 @@
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.8.10" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.9.0" />
     <PackageVersion Include="Scrutor" Version="6.1.0" />
     <PackageVersion Include="Serilog" Version="4.3.0" />
-    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.5.0" />
+    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.6.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Span" Version="3.1.0" />
@@ -147,7 +147,7 @@
     <PackageVersion Include="SixLabors.ImageSharp" Version="3.1.11" />
     <PackageVersion Include="Snappier" Version="1.2.0" />
     <PackageVersion Include="SSH.NET" Version="2025.0.0" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.9.25" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.9.32" />
     <PackageVersion Include="System.Net.Http" Version="4.3.4" />
     <PackageVersion Include="System.Reactive" Version="6.1.0" />
     <PackageVersion Include="System.Text.Encodings.Web" Version="9.0.9" />
@@ -166,10 +166,9 @@
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.2" />
     <PackageVersion Include="UnitsNet" Version="5.75.0" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.XunitV3" Version="30.20.0" />
-    <PackageVersion Include="WireMock.Net" Version="1.13.0" />
-    <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="1.13.0" />
-    <PackageVersion Include="WireMock.Net.xUnit" Version="1.13.0" />
+    <PackageVersion Include="Verify.XunitV3" Version="31.0.1" />
+    <PackageVersion Include="WireMock.Net" Version="1.14.0" />
+    <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="1.14.0" />
     <PackageVersion Include="xunit.v3" Version="3.1.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3.extensibility.core" Version="3.1.0" />
@@ -182,7 +181,7 @@
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
     <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.14.1" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.224" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.226" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
