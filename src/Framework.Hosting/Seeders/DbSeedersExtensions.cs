@@ -13,14 +13,14 @@ public static class DbSeedersExtensions
     public static void AddPreSeeder<T>(this IServiceCollection services)
         where T : class, IPreSeeder
     {
-        services.TryAddTransient<IPreSeeder, T>();
+        services.TryAddEnumerable(ServiceDescriptor.Transient<IPreSeeder, T>());
         services.TryAddTransient<T>();
     }
 
     public static void AddSeeder<T>(this IServiceCollection services)
         where T : class, ISeeder
     {
-        services.TryAddTransient<ISeeder, T>();
+        services.TryAddEnumerable(ServiceDescriptor.Transient<ISeeder, T>());
         services.TryAddTransient<T>();
     }
 
