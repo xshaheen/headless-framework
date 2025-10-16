@@ -50,7 +50,7 @@ public sealed class SqliteConnectionFactoryTests : SqlConnectionFactoryTestBase
     {
         // given
         await using var sut = GetFactory();
-        var connection = await sut.GetOpenConnectionAsync();
+        var connection = await sut.GetOpenConnectionAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)";
         await command.ExecuteNonQueryAsync(AbortToken);
