@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Azure.Core;
 using Azure.Storage.Blobs.Models;
-using Azure.Storage.Blobs.Specialized;
 using FluentValidation;
-using Framework.FluentValidation;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Blobs.Azure;

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Specialized;
 using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Azure;
@@ -21,7 +20,7 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
         );
 
         var azureStorageOptions = new AzureStorageOptions { LoggerFactory = LoggerFactory };
-        var optionsAccessor = new OptionsSnapshotWrapper<AzureStorageOptions>(azureStorageOptions);
+        var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
 
