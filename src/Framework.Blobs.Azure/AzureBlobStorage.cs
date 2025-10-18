@@ -4,8 +4,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Azure;
-using Azure.Core;
-using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
@@ -38,7 +36,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         BlobServiceClient blobServiceClient,
         IMimeTypeProvider mimeTypeProvider,
         IClock clock,
-        IOptionsSnapshot<AzureStorageOptions> optionAccessor
+        IOptions<AzureStorageOptions> optionAccessor
     )
     {
         _blobServiceClient = blobServiceClient;
