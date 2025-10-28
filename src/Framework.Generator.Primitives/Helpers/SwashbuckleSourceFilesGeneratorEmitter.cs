@@ -31,8 +31,6 @@ internal static class SwashbuckleSourceFilesGeneratorEmitter
         var usings = types.ConvertAll(x => x.Namespace);
         usings.Add("Microsoft.Extensions.DependencyInjection");
         usings.Add("Swashbuckle.AspNetCore.SwaggerGen");
-        usings.Add("Microsoft.OpenApi.Models");
-        usings.Add("Microsoft.OpenApi.Any");
         usings.Add(AbstractionConstants.Namespace);
         builder.AppendUsings(usings);
 

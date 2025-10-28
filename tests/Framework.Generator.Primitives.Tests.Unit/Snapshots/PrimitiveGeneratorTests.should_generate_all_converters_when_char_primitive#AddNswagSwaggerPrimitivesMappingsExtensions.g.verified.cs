@@ -13,8 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema;
 using NJsonSchema.Generation;
 using NJsonSchema.Generation.TypeMappers;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Any;
 using Framework.Generator.Primitives;
 
 namespace generator_Test.Converters.Extensions;
