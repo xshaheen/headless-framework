@@ -11,8 +11,6 @@
 using Framework.Primitives;
 using Microsoft.Extensions.DependencyInjection;
 using Swashbuckle.AspNetCore.SwaggerGen;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Any;
 using Framework.Generator.Primitives;
 
 [assembly: Framework.Generator.Primitives.PrimitiveAssemblyAttribute]

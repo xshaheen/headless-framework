@@ -33,8 +33,6 @@ internal static class NswagSourceFilesGeneratorEmitter
         usings.Add("NJsonSchema");
         usings.Add("NJsonSchema.Generation");
         usings.Add("NJsonSchema.Generation.TypeMappers");
-        usings.Add("Microsoft.OpenApi.Models");
-        usings.Add("Microsoft.OpenApi.Any");
         usings.Add(AbstractionConstants.Namespace);
         builder.AppendUsings(usings);
 
