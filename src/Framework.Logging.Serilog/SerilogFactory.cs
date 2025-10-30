@@ -10,9 +10,10 @@ using Serilog.Enrichers.Span;
 using Serilog.Events;
 using Serilog.Formatting;
 using Serilog.Formatting.Display;
+using Serilog.Settings.Configuration;
 using Serilog.Sinks.SystemConsole.Themes;
 
-namespace Framework.Logging.Serilog;
+namespace Framework.Logging;
 
 [PublicAPI]
 public static class SerilogFactory
@@ -110,7 +111,14 @@ public static class SerilogFactory
     )
     {
         loggerConfiguration
-            .ReadFrom.Configuration(configuration)
+            .ReadFrom.Configuration(
+                configuration,
+                new ConfigurationReaderOptions
+                {
+                    SectionName = "Serilog",
+                    FormatProvider = CultureInfo.InvariantCulture,
+                }
+            )
             .Destructure.ByTransforming<IPAddress?>(ip => ip?.ToString() ?? "")
             .Enrich.FromLogContext()
             .Enrich.WithSpan()
