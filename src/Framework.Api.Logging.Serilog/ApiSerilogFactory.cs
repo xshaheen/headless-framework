@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Constants;
-using Framework.Logging.Serilog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Core;
 
-namespace Framework.Api.Logging.Serilog;
+namespace Framework.Logging;
 
 [PublicAPI]
 public static class ApiSerilogFactory
@@ -67,12 +66,7 @@ public static class ApiSerilogFactory
     {
         var loggerConfiguration = new LoggerConfiguration();
 
-        return loggerConfiguration.ConfigureReloadableLoggerConfiguration(
-            services,
-            configuration,
-            environment,
-            writeToFiles
-        );
+        return loggerConfiguration.ConfigureApiLoggerConfiguration(services, configuration, environment, writeToFiles);
     }
 
     public static LoggerConfiguration ConfigureApiLoggerConfiguration(
@@ -86,7 +80,6 @@ public static class ApiSerilogFactory
         loggerConfiguration.ConfigureReloadableLoggerConfiguration(services, configuration, environment, writeToFiles);
 
         loggerConfiguration
-            .Enrich.WithThreadId()
             .Enrich.WithClientIp()
             .Enrich.WithCorrelationId()
             .Enrich.WithRequestHeader(HttpHeaderNames.UserAgent)
