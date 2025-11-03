@@ -18,13 +18,4 @@ public static class TimeProviderExtensions
         }
         catch (OperationCanceledException) { }
     }
-
-    public static async Task Delay(
-        this TimeProvider timeProvider,
-        TimeSpan delay,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await Task.Delay(delay, timeProvider, cancellationToken);
-    }
 }

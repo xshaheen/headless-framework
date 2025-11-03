@@ -7,11 +7,12 @@ using Microsoft.Extensions.DependencyInjection;
 // ReSharper disable once CheckNamespace
 namespace Framework.Hosting.Seeders;
 
+[PublicAPI]
 [SeederPriority(int.MinValue)]
 public sealed class DbMigrationPreSeeder<TDbContext>(IServiceProvider provider) : IPreSeeder
     where TDbContext : DbContext
 {
-    public async ValueTask SeedAsync()
+    public async ValueTask SeedAsync(CancellationToken cancellationToken)
     {
         await using var scope = provider.CreateAsyncScope();
 
@@ -20,7 +21,7 @@ public sealed class DbMigrationPreSeeder<TDbContext>(IServiceProvider provider) 
 
         if (dbContext is not null)
         {
-            await dbContext.Database.MigrateAsync();
+            await dbContext.Database.MigrateAsync(cancellationToken);
 
             return;
         }
@@ -30,8 +31,8 @@ public sealed class DbMigrationPreSeeder<TDbContext>(IServiceProvider provider) 
 
         if (factory is not null)
         {
-            await using var createdDbContext = await factory.CreateDbContextAsync();
-            await createdDbContext.Database.MigrateAsync();
+            await using var createdDbContext = await factory.CreateDbContextAsync(cancellationToken);
+            await createdDbContext.Database.MigrateAsync(cancellationToken);
 
             return;
         }

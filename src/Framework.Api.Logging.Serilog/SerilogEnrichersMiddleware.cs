@@ -6,7 +6,7 @@ using Serilog.Context;
 using Serilog.Core;
 using Serilog.Core.Enrichers;
 
-namespace Framework.Api.Logging.Serilog;
+namespace Framework.Logging;
 
 public sealed class SerilogEnrichersMiddleware(IRequestContext requestContext) : IMiddleware
 {
