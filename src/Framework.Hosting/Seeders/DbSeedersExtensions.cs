@@ -3,6 +3,7 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Framework.Hosting.Seeders;
@@ -37,16 +38,23 @@ public static class DbSeedersExtensions
 
         logger.LogInformation(">>> Pre-Seeding");
 
+        var cancellationToken =
+            scope.ServiceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
+
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(preSeeders, async (x, _) => await x.Seeder.SeedAsync());
+            await Parallel.ForEachAsync(
+                preSeeders,
+                cancellationToken,
+                async (x, _) => await x.Seeder.SeedAsync(cancellationToken)
+            );
         }
         else
         {
             foreach (var (seeder, type) in preSeeders)
             {
                 logger.LogInformation(">>> Pre-Seeding using {TypeName}", type.GetFriendlyTypeName());
-                await seeder.SeedAsync();
+                await seeder.SeedAsync(cancellationToken);
             }
         }
 
@@ -66,16 +74,23 @@ public static class DbSeedersExtensions
 
         logger.LogInformation(">>> Seeding");
 
+        var cancellationToken =
+            scope.ServiceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
+
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(seeders, async (x, _) => await x.Seeder.SeedAsync());
+            await Parallel.ForEachAsync(
+                seeders,
+                cancellationToken,
+                async (x, _) => await x.Seeder.SeedAsync(cancellationToken)
+            );
         }
         else
         {
             foreach (var (seeder, type) in seeders)
             {
                 logger.LogInformation(">>> Seeding using {TypeName}", type.GetFriendlyTypeName());
-                await seeder.SeedAsync();
+                await seeder.SeedAsync(cancellationToken);
             }
         }
 

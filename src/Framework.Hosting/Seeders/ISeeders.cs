@@ -4,5 +4,5 @@ namespace Framework.Hosting.Seeders;
 
 public interface ISeeder
 {
-    ValueTask SeedAsync();
+    ValueTask SeedAsync(CancellationToken cancellationToken = default);
 }

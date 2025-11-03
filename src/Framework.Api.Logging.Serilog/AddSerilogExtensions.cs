@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Api.Logging.Serilog;
+namespace Framework.Logging;
 
 [PublicAPI]
 public static class AddSerilogExtensions

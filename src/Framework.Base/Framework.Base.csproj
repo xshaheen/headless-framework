@@ -10,6 +10,7 @@
     <PackageReference Include="Flurl" />
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="IdGen" />
+    <PackageReference Include="Microsoft.Bcl.TimeProvider" />
     <PackageReference Include="morelinq" />
     <PackageReference Include="MimeTypes">
       <PrivateAssets>all</PrivateAssets>
