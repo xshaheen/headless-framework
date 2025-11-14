@@ -1,10 +1,10 @@
 <Project>
 
-  <Import Sdk="Framework.Defaults" Project="Sdk.props" Version="0.0.85" />
+  <Import Sdk="Framework.Defaults" Project="Sdk.props" Version="0.0.90" />
 
   <PropertyGroup>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <LangVersion>preview</LangVersion>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <ItemGroup Label="Package References">

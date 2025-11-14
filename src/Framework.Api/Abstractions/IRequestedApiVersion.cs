@@ -11,5 +11,6 @@ public interface IRequestedApiVersion
 
 public sealed class HttpContextRequestedApiVersion(IHttpContextAccessor accessor) : IRequestedApiVersion
 {
-    public string? Current => accessor.HttpContext?.GetRequestedApiVersion()?.ToString();
+    public string? Current =>
+        accessor.HttpContext?.GetRequestedApiVersion()?.ToString(format: null, CultureInfo.InvariantCulture);
 }

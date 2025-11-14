@@ -12,7 +12,7 @@ namespace Framework.Hosting.Seeders;
 public sealed class DbMigrationPreSeeder<TDbContext>(IServiceProvider provider) : IPreSeeder
     where TDbContext : DbContext
 {
-    public async ValueTask SeedAsync(CancellationToken cancellationToken)
+    public async ValueTask SeedAsync(CancellationToken cancellationToken = default)
     {
         await using var scope = provider.CreateAsyncScope();
 
