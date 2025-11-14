@@ -1,8 +1,9 @@
 using Framework.Hosting.Seeders;
+using Framework.Testing.Tests;
 
 namespace Tests.Seeders;
 
-public class SeedersTests
+public sealed class SeedersTests : TestBase
 {
     [Fact]
     public async Task seed_async_should_be_called_once_when_seeding()
@@ -14,9 +15,9 @@ public class SeedersTests
         serviceProvider.GetService(typeof(ISeeder)).Returns(seeder);
 
         // when
-        await seeder.SeedAsync();
+        await seeder.SeedAsync(AbortToken);
 
         // then
-        await seeder.Received(1).SeedAsync();
+        await seeder.Received(1).SeedAsync(AbortToken);
     }
 }

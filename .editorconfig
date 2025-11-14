@@ -232,7 +232,7 @@ dotnet_diagnostic.faa0002.severity = warning
 ############ Analyzers
 
 # RCS1021: Convert lambda expression body to expression-body
-dotnet_diagnostic.rcs1021.severity = suggestion
+dotnet_diagnostic.rcs1021.severity = none
 # AsyncFixer02: Long-running or blocking operations inside an async method
 dotnet_diagnostic.asyncfixer02.severity = error
 # VSTHRD103: Call async methods when in an async method
@@ -375,7 +375,7 @@ csharp_style_prefer_primary_constructors = true:suggestion
 [*.{cs,csx,cake,vb,vbx}]
 dotnet_code_quality_unused_parameters = all:suggestion
 dotnet_remove_unnecessary_suppression_exclusions = none:suggestion
-dotnet_style_prefer_collection_expression = true:suggestion
+dotnet_style_prefer_collection_expression = true:none
 
 dotnet_style_namespace_match_folder = true:suggestion
 dotnet_style_allow_multiple_blank_lines_experimental = true:silent
