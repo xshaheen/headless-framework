@@ -36,33 +36,32 @@ public sealed class HeadlessEntityModelProcessor(
 
     public void ProcessModelCreating(ModelBuilder modelBuilder)
     {
-        foreach (var mutableEntityType in modelBuilder.Model.GetEntityTypes())
+        foreach (var type in modelBuilder.Model.GetEntityTypes())
         {
-            _ConfigureConvention(modelBuilder, mutableEntityType);
-            _ConfigureValueConverter(modelBuilder, mutableEntityType);
-            _InvokeConfigureQueryFilters(modelBuilder, mutableEntityType);
+            if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
+            {
+                _ConfigureConvention(modelBuilder, type);
+            }
+
+            if (type.BaseType is null && !type.IsOwned())
+            {
+                _ConfigureValueConverter(modelBuilder, type);
+            }
+
+            if (type.BaseType is null && !type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
+            {
+                _InvokeConfigureQueryFilters(modelBuilder, type);
+            }
         }
     }
 
     private static void _ConfigureConvention(ModelBuilder builder, IMutableEntityType type)
     {
-        if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
-        {
-            builder.Entity(type.ClrType).ConfigureFrameworkConvention();
-        }
+        builder.Entity(type.ClrType).ConfigureFrameworkConvention();
     }
 
     private void _ConfigureValueConverter(ModelBuilder builder, IMutableEntityType type)
     {
-        if (
-            type.BaseType is not null
-            || type.IsOwned()
-            || type.ClrType.IsDefined(typeof(OwnedAttribute), inherit: true)
-        )
-        {
-            return;
-        }
-
         var dateTimeType = typeof(DateTime);
         var nullableDateTimeType = typeof(DateTime?);
 
@@ -106,11 +105,6 @@ public sealed class HeadlessEntityModelProcessor(
     private void _ConfigureQueryFilters<TEntity>(ModelBuilder builder, IMutableEntityType type)
         where TEntity : class
     {
-        if (type.BaseType is not null)
-        {
-            return;
-        }
-
         // Note: filters are applied once, so the expressions is cached, and it should depend
         //       on a properties and not cached values.
 
