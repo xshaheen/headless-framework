@@ -115,15 +115,13 @@ public static class ClaimsPrincipalExtensions
         return principal?.FindFirst(UserClaimTypes.AccountType)?.Value;
     }
 
-    public static ImmutableHashSet<string> GetRoles(this ClaimsPrincipal principal)
+    public static ImmutableHashSet<string> GetRoles(this ClaimsPrincipal? principal)
     {
-        Argument.IsNotNull(principal);
-
         var roles = principal
-            .Claims.Where(claim => string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.Ordinal))
+            ?.Claims.Where(claim => string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.Ordinal))
             .Select(claim => claim.Value)
             .ToImmutableHashSet(StringComparer.Ordinal);
 
-        return roles;
+        return roles ?? [];
     }
 }

@@ -10,7 +10,7 @@ public sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurre
 {
     public bool IsAuthenticated => UserId is not null;
 
-    public ClaimsPrincipal Principal => accessor.Principal;
+    public ClaimsPrincipal? Principal => accessor.Principal;
 
     public UserId? UserId => Principal.GetUserId();
 
@@ -19,14 +19,4 @@ public sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurre
     public AccountId? AccountId => Principal.GetAccountId();
 
     public IReadOnlySet<string> Roles => Principal.GetRoles();
-
-    public Claim? FindClaim(string claimType)
-    {
-        return Principal.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
-    }
-
-    public Claim[] FindClaims(string claimType)
-    {
-        return Principal.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray();
-    }
 }

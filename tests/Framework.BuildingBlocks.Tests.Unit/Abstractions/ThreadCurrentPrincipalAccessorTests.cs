@@ -21,12 +21,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
         );
     }
 
-    private readonly ThreadCurrentPrincipalAccessor _accessor;
-
-    public ThreadCurrentPrincipalAccessorTests()
-    {
-        _accessor = new ThreadCurrentPrincipalAccessor();
-    }
+    private readonly ThreadCurrentPrincipalAccessor _accessor = new();
 
     [Fact]
     public void change_should_set_and_restore_principal()
@@ -44,14 +39,14 @@ public sealed class ThreadCurrentPrincipalAccessorTests
         );
 
         // when
-        _accessor.Change(newPrincipal);
+        using var _ = _accessor.Change(newPrincipal);
 
         // then
         var name = _accessor
-            .Principal.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Name, StringComparison.Ordinal))
+            .Principal?.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Name, StringComparison.Ordinal))
             .Value;
         var email = _accessor
-            .Principal.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Email, StringComparison.Ordinal))
+            .Principal?.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Email, StringComparison.Ordinal))
             .Value;
 
         name.Should().Be(nameValue);
@@ -102,6 +97,7 @@ public sealed class ThreadCurrentPrincipalAccessorTests
         var disposable = _accessor.Change(newPrincipal);
 
         // then
+        _accessor.Principal.Should().NotBeNull();
         _accessor.Principal.Claims.First().Value.Should().Be(newName);
 
         // when
