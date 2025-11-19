@@ -8,7 +8,7 @@ namespace Framework.Api.Security.Claims;
 
 public sealed class HttpContextCurrentPrincipalAccessor(IHttpContextAccessor accessor) : ThreadCurrentPrincipalAccessor
 {
-    protected override ClaimsPrincipal GetClaimsPrincipal()
+    protected override ClaimsPrincipal? GetClaimsPrincipal()
     {
         return accessor.HttpContext?.User ?? base.GetClaimsPrincipal();
     }

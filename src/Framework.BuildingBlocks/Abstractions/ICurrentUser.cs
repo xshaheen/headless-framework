@@ -7,7 +7,7 @@ namespace Framework.Abstractions;
 
 public interface ICurrentUser
 {
-    ClaimsPrincipal Principal { get; }
+    ClaimsPrincipal? Principal { get; }
 
     bool IsAuthenticated { get; }
 
@@ -19,14 +19,20 @@ public interface ICurrentUser
 
     IReadOnlySet<string> Roles { get; }
 
-    Claim? FindClaim(string claimType);
+    Claim? FindClaim(string claimType)
+    {
+        return Principal?.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
+    }
 
-    Claim[] FindClaims(string claimType);
+    Claim[] FindClaims(string claimType)
+    {
+        return Principal?.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray() ?? [];
+    }
 }
 
 public sealed class NullCurrentUser : ICurrentUser
 {
-    public ClaimsPrincipal Principal => new();
+    public ClaimsPrincipal? Principal => null;
 
     public bool IsAuthenticated => false;
 
@@ -37,15 +43,11 @@ public sealed class NullCurrentUser : ICurrentUser
     public AccountId? AccountId => null;
 
     public IReadOnlySet<string> Roles => ImmutableHashSet<string>.Empty;
-
-    public Claim? FindClaim(string claimType) => null;
-
-    public Claim[] FindClaims(string claimType) => [];
 }
 
-public sealed class PrincipalCurrentUser(ClaimsPrincipal principal) : ICurrentUser
+public sealed class PrincipalCurrentUser(ClaimsPrincipal? principal) : ICurrentUser
 {
-    public ClaimsPrincipal Principal => principal;
+    public ClaimsPrincipal? Principal => principal;
 
     public bool IsAuthenticated => UserId is not null;
 
@@ -56,14 +58,4 @@ public sealed class PrincipalCurrentUser(ClaimsPrincipal principal) : ICurrentUs
     public AccountId? AccountId => principal.GetAccountId();
 
     public IReadOnlySet<string> Roles => principal.GetRoles();
-
-    public Claim? FindClaim(string claimType)
-    {
-        return principal.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
-    }
-
-    public Claim[] FindClaims(string claimType)
-    {
-        return principal.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray();
-    }
 }

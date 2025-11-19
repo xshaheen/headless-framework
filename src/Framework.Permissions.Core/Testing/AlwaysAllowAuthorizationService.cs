@@ -8,7 +8,7 @@ namespace Framework.Permissions.Testing;
 
 public sealed class AlwaysAllowAuthorizationService(ICurrentPrincipalAccessor principalAccessor) : IAuthorizationService
 {
-    public ClaimsPrincipal CurrentPrincipal => principalAccessor.Principal;
+    public ClaimsPrincipal? CurrentPrincipal => principalAccessor.Principal;
 
     public Task<AuthorizationResult> AuthorizeAsync(
         ClaimsPrincipal user,

@@ -7,22 +7,22 @@ namespace Framework.Abstractions;
 
 public interface ICurrentPrincipalAccessor
 {
-    ClaimsPrincipal Principal { get; }
+    ClaimsPrincipal? Principal { get; }
 
     [MustDisposeResource]
-    IDisposable Change(ClaimsPrincipal principal);
+    IDisposable Change(ClaimsPrincipal? principal);
 }
 
 public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 {
-    private readonly AsyncLocal<ClaimsPrincipal> _currentPrincipal = new();
+    private readonly AsyncLocal<ClaimsPrincipal?> _currentPrincipal = new();
 
-    public ClaimsPrincipal Principal => _currentPrincipal.Value ?? GetClaimsPrincipal();
+    public ClaimsPrincipal? Principal => _currentPrincipal.Value ?? GetClaimsPrincipal();
 
-    protected abstract ClaimsPrincipal GetClaimsPrincipal();
+    protected abstract ClaimsPrincipal? GetClaimsPrincipal();
 
     [MustDisposeResource]
-    public virtual IDisposable Change(ClaimsPrincipal principal)
+    public virtual IDisposable Change(ClaimsPrincipal? principal)
     {
         var parent = Principal;
         _currentPrincipal.Value = principal;
@@ -33,9 +33,8 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 
 public class ThreadCurrentPrincipalAccessor : CurrentPrincipalAccessor
 {
-    protected override ClaimsPrincipal GetClaimsPrincipal()
+    protected override ClaimsPrincipal? GetClaimsPrincipal()
     {
-        return Thread.CurrentPrincipal as ClaimsPrincipal
-            ?? throw new InvalidOperationException("Thread.CurrentPrincipal is null or not a ClaimsPrincipal.");
+        return Thread.CurrentPrincipal as ClaimsPrincipal;
     }
 }

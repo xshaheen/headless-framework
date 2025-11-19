@@ -21,14 +21,4 @@ public sealed class TestCurrentUser : ICurrentUser
     public IReadOnlySet<string> Roles => WritableRoles;
 
     public HashSet<string> WritableRoles { get; } = new(StringComparer.Ordinal);
-
-    public Claim? FindClaim(string claimType)
-    {
-        return Principal.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
-    }
-
-    public Claim[] FindClaims(string claimType)
-    {
-        return Principal.Claims.Where(c => string.Equals(c.Type, claimType, StringComparison.Ordinal)).ToArray();
-    }
 }
