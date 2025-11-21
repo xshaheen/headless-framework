@@ -54,6 +54,7 @@
     <PackageVersion Include="Flurl" Version="4.0.0" />
     <PackageVersion Include="Foundatio" Version="12.0.0" />
     <PackageVersion Include="Foundatio.Redis" Version="12.0.0" />
+    <PackageVersion Include="Humanizer" Version="3.0.1" />
     <PackageVersion Include="Humanizer.Core" Version="3.0.1" />
     <PackageVersion Include="IdGen" Version="3.0.7" />
     <PackageVersion Include="Infobip.Api.Client" Version="4.0.0" />
@@ -100,7 +101,7 @@
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.3" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.14.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.15.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.3.3" />
     <PackageVersion Include="Microsoft.Sbom.Tool" Version="4.1.4" />
