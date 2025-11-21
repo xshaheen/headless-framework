@@ -70,6 +70,7 @@ public sealed class CashInCallbackToken
         {
             "MASTERCARD" => "MasterCard",
             "VISA" => "Visa",
+            null => null,
             _ => CardSubtype.Humanize(),
         };
 

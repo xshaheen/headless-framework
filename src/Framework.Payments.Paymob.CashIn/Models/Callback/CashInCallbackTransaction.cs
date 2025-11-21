@@ -277,6 +277,7 @@ public sealed class CashInCallbackTransaction
         {
             "MASTERCARD" => "MasterCard",
             "VISA" => "Visa",
+            null => null,
             _ => type.Humanize(),
         };
 

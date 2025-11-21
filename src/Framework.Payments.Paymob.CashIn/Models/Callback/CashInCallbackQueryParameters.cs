@@ -218,6 +218,7 @@ public sealed class CashInCallbackQueryParameters
         {
             "MASTERCARD" => "MasterCard",
             "VISA" => "Visa",
+            null => null,
             _ => SourceDataSubType.Humanize(),
         };
 
