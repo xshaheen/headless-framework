@@ -1,4 +1,4 @@
 {
   "$schema": "./build.schema.json",
-  "Solution": "headless-framework.sln"
+  "Solution": "headless-framework.slnx"
 }
