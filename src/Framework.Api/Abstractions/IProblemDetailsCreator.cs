@@ -43,8 +43,10 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
-            Title = ProblemDetailTitles.EndpointNotFounded,
-            Detail = "The requested endpoint was not found.",
+            Title = ProblemDetailsConstants.Titles.EndpointNotFound,
+            Detail = ProblemDetailsConstants.Details.EndpointNotFound(
+                httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
+            ),
         };
 
         _Normalize(problemDetails);
@@ -57,8 +59,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
-            Title = ProblemDetailTitles.EntityNotFounded,
-            Detail = $"The requested entity does not exist. There is no entity matches '{entity}:{key}'.",
+            Title = ProblemDetailsConstants.Titles.EntityNotFound,
+            Detail = ProblemDetailsConstants.Details.EntityNotFound(entity, key),
             Extensions = { ["params"] = new { entity, key } },
         };
 
@@ -72,9 +74,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status400BadRequest,
-            Title = ProblemDetailTitles.BadRequest,
-            Detail =
-                "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.",
+            Title = ProblemDetailsConstants.Titles.BadRequest,
+            Detail = ProblemDetailsConstants.Details.BadRequest,
         };
 
         _Normalize(problemDetails);
@@ -86,9 +87,9 @@ public sealed class ProblemDetailsCreator(
     {
         var problemDetails = new ProblemDetails
         {
-            Title = ProblemDetailTitles.ValidationProblem,
+            Title = ProblemDetailsConstants.Titles.UnprocessableEntity,
             Status = StatusCodes.Status422UnprocessableEntity,
-            Detail = "One or more validation errors occurred.",
+            Detail = ProblemDetailsConstants.Details.UnprocessableEntity,
             Extensions = { ["errors"] = errors },
         };
 
@@ -102,8 +103,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status409Conflict,
-            Title = ProblemDetailTitles.ConflictRequest,
-            Detail = "Conflict request",
+            Title = ProblemDetailsConstants.Titles.Conflict,
+            Detail = ProblemDetailsConstants.Details.Conflict,
             Extensions = { ["errors"] = errors },
         };
 
@@ -117,8 +118,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status401Unauthorized,
-            Title = ProblemDetailTitles.Unauthorized,
-            Detail = "You are unauthenticated to access this resource.",
+            Title = ProblemDetailsConstants.Titles.Unauthorized,
+            Detail = ProblemDetailsConstants.Details.Unauthorized,
         };
 
         _Normalize(problemDetails);
@@ -131,8 +132,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status403Forbidden,
-            Title = ProblemDetailTitles.Forbidden,
-            Detail = "You are forbidden from accessing this resource.",
+            Title = ProblemDetailsConstants.Titles.Forbidden,
+            Detail = ProblemDetailsConstants.Details.Forbidden,
         };
 
         if (errors.Count > 0)

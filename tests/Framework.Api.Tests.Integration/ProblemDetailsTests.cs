@@ -7,6 +7,7 @@ using Framework.Constants;
 using Framework.Http;
 using Framework.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -50,10 +51,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc9110#section-15.5.5",
-            "endpoint-not-found",
-            404,
-            "The requested endpoint was not found."
+            ProblemDetailsConstants.Types.EndpointNotFound,
+            ProblemDetailsConstants.Titles.EndpointNotFound,
+            StatusCodes.Status404NotFound,
+            ProblemDetailsConstants.Details.EndpointNotFound("/12345678")
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -104,10 +105,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-            "bad-request",
-            400,
-            "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax."
+            ProblemDetailsConstants.Types.BadRequest,
+            ProblemDetailsConstants.Titles.BadRequest,
+            StatusCodes.Status400BadRequest,
+            ProblemDetailsConstants.Details.BadRequest
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -164,10 +165,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc9110#section-15.5.5",
-            "entity-not-found",
-            404,
-            "The requested entity does not exist. There is no entity matches 'Entity:Key'."
+            ProblemDetailsConstants.Types.EntityNotFound,
+            ProblemDetailsConstants.Titles.EntityNotFound,
+            StatusCodes.Status404NotFound,
+            ProblemDetailsConstants.Details.EntityNotFound("Entity", "Key")
         );
 
         jsonElement.GetProperty("params").GetProperty("entity").GetString().Should().Be("Entity");
@@ -229,10 +230,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc9110#section-15.5.10",
-            "conflict-request",
-            409,
-            "Conflict request"
+            ProblemDetailsConstants.Types.Conflict,
+            ProblemDetailsConstants.Titles.Conflict,
+            StatusCodes.Status409Conflict,
+            ProblemDetailsConstants.Details.Conflict
         );
 
         var errors = jsonElement.GetProperty("errors").EnumerateArray().ToList();
@@ -295,10 +296,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc4918#section-11.2",
-            "validation-problem",
-            422,
-            "One or more validation errors occurred."
+            ProblemDetailsConstants.Types.UnprocessableEntity,
+            ProblemDetailsConstants.Titles.UnprocessableEntity,
+            StatusCodes.Status422UnprocessableEntity,
+            ProblemDetailsConstants.Details.UnprocessableEntity
         );
 
         var errorsObject = jsonElement.GetProperty("errors").EnumerateObject().ToList();
@@ -391,9 +392,9 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+            ProblemDetailsConstants.Types.InternalError,
             "System.InvalidOperationException",
-            500,
+            StatusCodes.Status500InternalServerError,
             "This is a test exception."
         );
 
@@ -434,10 +435,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc9110#section-15.5.2",
-            ProblemDetailTitles.Unauthorized,
-            401,
-            "You are unauthenticated to access this resource."
+            ProblemDetailsConstants.Types.Unauthorized,
+            ProblemDetailsConstants.Titles.Unauthorized,
+            StatusCodes.Status401Unauthorized,
+            ProblemDetailsConstants.Details.Unauthorized
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -480,10 +481,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            "https://tools.ietf.org/html/rfc9110#section-15.5.4",
-            ProblemDetailTitles.Forbidden,
-            403,
-            "You are forbidden from accessing this resource."
+            ProblemDetailsConstants.Types.Forbidden,
+            ProblemDetailsConstants.Titles.Forbidden,
+            StatusCodes.Status403Forbidden,
+            ProblemDetailsConstants.Details.Forbidden
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);

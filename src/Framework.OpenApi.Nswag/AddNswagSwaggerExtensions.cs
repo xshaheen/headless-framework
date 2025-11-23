@@ -257,9 +257,7 @@ public static class AddNswagSwaggerExtensions
         settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
         settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
         settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
-        settings.OperationProcessors.Add(
-            new ProblemDetailsOperationProcessor(serviceProvider.GetRequiredService<IProblemDetailsCreator>())
-        );
+        settings.OperationProcessors.Add(new ProblemDetailsOperationProcessor());
     }
 
     private static void _ConfigureGeneratorSettingsByFramework(
