@@ -1,16 +1,15 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Api.Abstractions;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using NJsonSchema;
 using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
+// ReSharper disable InconsistentNaming
 namespace Framework.OpenApi.Nswag.OperationProcessors;
 
 /// <summary>
@@ -20,83 +19,83 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
     private readonly HeadlessProblemDetails _status400ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.BadRequest,
-        Title = ProblemDetailsConstants.Titles.BadRequest,
-        Status = StatusCodes.Status400BadRequest,
-        Detail = ProblemDetailsConstants.Details.BadRequest,
-        Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        type = ProblemDetailsConstants.Types.BadRequest,
+        title = ProblemDetailsConstants.Titles.BadRequest,
+        status = StatusCodes.Status400BadRequest,
+        detail = ProblemDetailsConstants.Details.BadRequest,
+        instance = "/public/some-endpoint",
+        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        buildNumber = "1.0.0",
+        commitNumber = "abc123def",
+        timestamp = DateTimeOffset.UtcNow,
     };
 
     private readonly HeadlessProblemDetails _status401ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.Unauthorized,
-        Title = ProblemDetailsConstants.Titles.Unauthorized,
-        Status = StatusCodes.Status401Unauthorized,
-        Detail = ProblemDetailsConstants.Details.Unauthorized,
-        Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        type = ProblemDetailsConstants.Types.Unauthorized,
+        title = ProblemDetailsConstants.Titles.Unauthorized,
+        status = StatusCodes.Status401Unauthorized,
+        detail = ProblemDetailsConstants.Details.Unauthorized,
+        instance = "/public/some-endpoint",
+        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        buildNumber = "1.0.0",
+        commitNumber = "abc123def",
+        timestamp = DateTimeOffset.UtcNow,
     };
 
     private readonly HeadlessProblemDetails _status403ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.Forbidden,
-        Title = ProblemDetailsConstants.Titles.Forbidden,
-        Status = StatusCodes.Status403Forbidden,
-        Detail = ProblemDetailsConstants.Details.Forbidden,
-        Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        type = ProblemDetailsConstants.Types.Forbidden,
+        title = ProblemDetailsConstants.Titles.Forbidden,
+        status = StatusCodes.Status403Forbidden,
+        detail = ProblemDetailsConstants.Details.Forbidden,
+        instance = "/public/some-endpoint",
+        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        buildNumber = "1.0.0",
+        commitNumber = "abc123def",
+        timestamp = DateTimeOffset.UtcNow,
     };
 
     private readonly EntityNotFoundHeadlessProblemDetails _status404ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.EntityNotFound,
-        Title = ProblemDetailsConstants.Titles.EntityNotFound,
-        Status = StatusCodes.Status404NotFound,
-        Detail = ProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
-        Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
-        Params = new EntityNotFoundHeadlessProblemDetailsParams { Entity = "User", Key = "user-123" },
+        type = ProblemDetailsConstants.Types.EntityNotFound,
+        title = ProblemDetailsConstants.Titles.EntityNotFound,
+        status = StatusCodes.Status404NotFound,
+        detail = ProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
+        instance = "/public/some-endpoint",
+        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        buildNumber = "1.0.0",
+        commitNumber = "abc123def",
+        timestamp = DateTimeOffset.UtcNow,
+        @params = new EntityNotFoundHeadlessProblemDetailsParams { entity = "User", key = "user-123" },
     };
 
     private readonly ConflictHeadlessProblemDetails _status409ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.Conflict,
-        Title = ProblemDetailsConstants.Titles.Conflict,
-        Status = StatusCodes.Status409Conflict,
-        Detail = ProblemDetailsConstants.Details.Conflict,
-        Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
-        Errors = [new("business_error", @"Some business rule failed.")],
+        type = ProblemDetailsConstants.Types.Conflict,
+        title = ProblemDetailsConstants.Titles.Conflict,
+        status = StatusCodes.Status409Conflict,
+        detail = ProblemDetailsConstants.Details.Conflict,
+        instance = "/public/some-endpoint",
+        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        buildNumber = "1.0.0",
+        commitNumber = "abc123def",
+        timestamp = DateTimeOffset.UtcNow,
+        errors = [new("business_error", @"Some business rule failed.")],
     };
 
     private readonly UnprocessableEntityHeadlessProblemDetails _status422ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.UnprocessableEntity,
-        Title = ProblemDetailsConstants.Titles.UnprocessableEntity,
-        Status = StatusCodes.Status422UnprocessableEntity,
-        Detail = ProblemDetailsConstants.Details.UnprocessableEntity,
-        Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
-        Errors = new(StringComparer.Ordinal)
+        type = ProblemDetailsConstants.Types.UnprocessableEntity,
+        title = ProblemDetailsConstants.Titles.UnprocessableEntity,
+        status = StatusCodes.Status422UnprocessableEntity,
+        detail = ProblemDetailsConstants.Details.UnprocessableEntity,
+        instance = "/public/some-endpoint",
+        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        buildNumber = "1.0.0",
+        commitNumber = "abc123def",
+        timestamp = DateTimeOffset.UtcNow,
+        errors = new(StringComparer.Ordinal)
         {
             ["email"] =
             [
@@ -165,38 +164,40 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
         problemJsonMediaType.Example = problemDetails;
     }
-}
 
-public class HeadlessProblemDetails
-{
-    public required string Type { get; init; }
-    public required string Title { get; init; }
-    public required int Status { get; init; }
-    public required string Detail { get; init; }
-    public required string Instance { get; init; }
-    public required string TraceId { get; init; }
-    public required string BuildNumber { get; init; }
-    public required string CommitNumber { get; init; }
-    public required DateTimeOffset Timestamp { get; init; }
-}
+#pragma warning disable IDE1006
+    public class HeadlessProblemDetails
+    {
+        public required string type { get; init; }
+        public required string title { get; init; }
+        public required int status { get; init; }
+        public required string detail { get; init; }
+        public required string instance { get; init; }
+        public required string traceId { get; init; }
+        public required string buildNumber { get; init; }
+        public required string commitNumber { get; init; }
+        public required DateTimeOffset timestamp { get; init; }
+    }
 
-public sealed class EntityNotFoundHeadlessProblemDetailsParams
-{
-    public required string Entity { get; init; }
-    public required string Key { get; init; }
-}
+    public sealed class EntityNotFoundHeadlessProblemDetailsParams
+    {
+        public required string entity { get; init; }
+        public required string key { get; init; }
+    }
 
-public sealed class EntityNotFoundHeadlessProblemDetails : HeadlessProblemDetails
-{
-    public required EntityNotFoundHeadlessProblemDetailsParams Params { get; init; }
-}
+    public sealed class EntityNotFoundHeadlessProblemDetails : HeadlessProblemDetails
+    {
+        public required EntityNotFoundHeadlessProblemDetailsParams @params { get; init; }
+    }
 
-public sealed class ConflictHeadlessProblemDetails : HeadlessProblemDetails
-{
-    public required List<ErrorDescriptor> Errors { get; init; }
-}
+    public sealed class ConflictHeadlessProblemDetails : HeadlessProblemDetails
+    {
+        public required List<ErrorDescriptor> errors { get; init; }
+    }
 
-public sealed class UnprocessableEntityHeadlessProblemDetails : HeadlessProblemDetails
-{
-    public required Dictionary<string, List<ErrorDescriptor>> Errors { get; init; }
+    public sealed class UnprocessableEntityHeadlessProblemDetails : HeadlessProblemDetails
+    {
+        public required Dictionary<string, List<ErrorDescriptor>> errors { get; init; }
+    }
+#pragma warning restore IDE1006
 }
