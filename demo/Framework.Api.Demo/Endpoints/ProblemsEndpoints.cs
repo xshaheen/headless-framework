@@ -13,6 +13,7 @@ public static class ProblemsEndpoints
         var api = app.MapGroup("minimal").AddExceptionFilter();
 
         api.MapGet("malformed-syntax", (IProblemDetailsCreator factory) => Results.Problem(factory.MalformedSyntax()));
+        api.MapGet("authorized", () => Results.Ok()).RequireAuthorization();
 
         api.MapPost(
             "entity-not-found",

@@ -9,23 +9,23 @@ namespace Framework.Api.Security.Claims;
 
 public interface IClaimsPrincipalFactory
 {
-    ClaimsPrincipal CreateClaimsPrincipal(IEnumerable<Claim> claims);
+    ClaimsPrincipal CreateClaimsPrincipal(params IEnumerable<Claim> claims);
 
-    ClaimsIdentity CreateClaimsIdentity(IEnumerable<Claim> claims);
+    ClaimsIdentity CreateClaimsIdentity(params IEnumerable<Claim> claims);
 }
 
 public sealed class ClaimsPrincipalFactory(IOptions<IdentityOptions> optionsAccessor) : IClaimsPrincipalFactory
 {
     private readonly IdentityOptions _options = optionsAccessor.Value;
 
-    public ClaimsPrincipal CreateClaimsPrincipal(IEnumerable<Claim> claims)
+    public ClaimsPrincipal CreateClaimsPrincipal(params IEnumerable<Claim> claims)
     {
         var id = CreateClaimsIdentity(claims);
 
         return new ClaimsPrincipal(id);
     }
 
-    public ClaimsIdentity CreateClaimsIdentity(IEnumerable<Claim> claims)
+    public ClaimsIdentity CreateClaimsIdentity(params IEnumerable<Claim> claims)
     {
         var id = new ClaimsIdentity(
             claims: claims,
