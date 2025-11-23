@@ -1,8 +1,11 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Api.Abstractions;
 using Framework.Checks;
 using Framework.Constants;
+using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using NJsonSchema;
 using NSwag;
 using NSwag.Generation.Processors;
@@ -13,17 +16,59 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// <summary>
 /// Shows an example of a ProblemDetails containing errors for known status codes in NSwag.
 /// </summary>
-public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
+public sealed class ProblemDetailsOperationProcessor(IProblemDetailsCreator problemDetailsCreator) : IOperationProcessor
 {
-    private const string _StatusCode400 = "400";
-    private const string _StatusCode401 = "401";
-    private const string _StatusCode403 = "403";
-    private const string _StatusCode404 = "404";
-    private const string _StatusCode406 = "406";
-    private const string _StatusCode409 = "409";
-    private const string _StatusCode415 = "415";
-    private const string _StatusCode422 = "422";
-    private const string _StatusCode500 = "500";
+    private readonly ProblemDetails _status400ProblemDetails = problemDetailsCreator.MalformedSyntax();
+    private readonly ProblemDetails _status404ProblemDetails = problemDetailsCreator.EntityNotFound("User", "123");
+    private readonly ProblemDetails _status403ProblemDetails = problemDetailsCreator.Forbidden();
+    private readonly ProblemDetails _status409ProblemDetails = problemDetailsCreator.Conflict(
+        new ErrorDescriptor("business_error", @"Some business rule failed.")
+    );
+
+    private readonly ProblemDetails _status422ProblemDetails = problemDetailsCreator.UnprocessableEntity(
+        new(StringComparer.Ordinal)
+        {
+            ["password"] =
+            [
+                new ErrorDescriptor(
+                    "auth:password_requires_digit",
+                    @"Passwords must have at least one digit ['0'_'9']."
+                ),
+            ],
+        }
+    );
+
+    private static readonly ProblemDetails _Status401ProblemDetails = new()
+    {
+        Type = "https://tools.ietf.org/html/rfc7235#section-3.1",
+        Title = ProblemDetailTitles.Unauthorized,
+        Status = StatusCodes.Status401Unauthorized,
+        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
+    };
+
+    private static readonly ProblemDetails _Status406ProblemDetails = new()
+    {
+        Type = "https://tools.ietf.org/html/rfc7231#section-6.5.6",
+        Title = "not-acceptable",
+        Status = StatusCodes.Status406NotAcceptable,
+        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
+    };
+
+    private static readonly ProblemDetails _Status415ProblemDetails = new()
+    {
+        Type = "https://tools.ietf.org/html/rfc7231#section-6.5.13",
+        Title = "unsupported-media-type",
+        Status = StatusCodes.Status415UnsupportedMediaType,
+        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
+    };
+
+    private static readonly ProblemDetails _Status500ProblemDetails = new()
+    {
+        Type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
+        Title = "internal-server-error",
+        Status = StatusCodes.Status500InternalServerError,
+        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
+    };
 
     public bool Process(OperationProcessorContext context)
     {
@@ -38,35 +83,35 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         return true;
     }
 
-    private static void _SetExampleResponseForKnownStatus(string statusCode, OpenApiResponse response)
+    private void _SetExampleResponseForKnownStatus(string statusCode, OpenApiResponse response)
     {
         switch (statusCode)
         {
-            case _StatusCode400:
-                _SetDefaultAndExample(response, _Status400ProblemDetails);
+            case "400":
+                _SetDefaultAndExample(response, _status400ProblemDetails);
                 break;
-            case _StatusCode401:
+            case "401":
                 _SetDefaultAndExample(response, _Status401ProblemDetails);
                 break;
-            case _StatusCode403:
-                _SetDefaultAndExample(response, _Status403ProblemDetails);
+            case "403":
+                _SetDefaultAndExample(response, _status403ProblemDetails);
                 break;
-            case _StatusCode404:
-                _SetDefaultAndExample(response, _Status404ProblemDetails);
+            case "404":
+                _SetDefaultAndExample(response, _status404ProblemDetails);
                 break;
-            case _StatusCode406:
+            case "406":
                 _SetDefaultAndExample(response, _Status406ProblemDetails);
                 break;
-            case _StatusCode409:
-                _SetDefaultAndExample(response, _Status409ProblemDetails);
+            case "409":
+                _SetDefaultAndExample(response, _status409ProblemDetails);
                 break;
-            case _StatusCode415:
+            case "415":
                 _SetDefaultAndExample(response, _Status415ProblemDetails);
                 break;
-            case _StatusCode422:
-                _SetDefaultAndExample(response, _Status422ProblemDetails);
+            case "422":
+                _SetDefaultAndExample(response, _status422ProblemDetails);
                 break;
-            case _StatusCode500:
+            case "500":
                 _SetDefaultAndExample(response, _Status500ProblemDetails);
                 break;
         }
@@ -86,80 +131,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
             problemJsonMediaType = new OpenApiMediaType { Schema = new JsonSchema { Type = JsonObjectType.Object } };
             response.Content[ContentTypes.Applications.ProblemJson] = problemJsonMediaType;
         }
+
         problemJsonMediaType.Example = problemDetails;
-
-        // Ensure ProblemXml content type exists
-        if (!response.Content.TryGetValue(ContentTypes.Applications.ProblemXml, out var problemXmlMediaType))
-        {
-            problemXmlMediaType = new OpenApiMediaType { Schema = new JsonSchema { Type = JsonObjectType.Object } };
-            response.Content[ContentTypes.Applications.ProblemXml] = problemXmlMediaType;
-        }
-        problemXmlMediaType.Example = problemDetails;
     }
-
-    // Example ProblemDetails objects for each status code
-    private static readonly object _Status400ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7231#section-6.5.1",
-        title = "Bad Request",
-        status = StatusCodes.Status400BadRequest,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        errors = new { exampleProperty1 = new[] { "The property field is required" } },
-    };
-    private static readonly object _Status401ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7235#section-3.1",
-        title = "Unauthorized",
-        status = StatusCodes.Status401Unauthorized,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
-    private static readonly object _Status403ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7231#section-6.5.3",
-        title = "Forbidden",
-        status = StatusCodes.Status403Forbidden,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
-    private static readonly object _Status404ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7231#section-6.5.4",
-        title = "Not Found",
-        status = StatusCodes.Status404NotFound,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
-    private static readonly object _Status406ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7231#section-6.5.6",
-        title = "Not Acceptable",
-        status = StatusCodes.Status406NotAcceptable,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
-    private static readonly object _Status409ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7231#section-6.5.8",
-        title = "Conflict",
-        status = StatusCodes.Status409Conflict,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
-    private static readonly object _Status415ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7231#section-6.5.13",
-        title = "Unsupported Media Type",
-        status = StatusCodes.Status415UnsupportedMediaType,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
-    private static readonly object _Status422ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc4918#section-11.2",
-        title = "Unprocessable Entity",
-        status = StatusCodes.Status422UnprocessableEntity,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
-    private static readonly object _Status500ProblemDetails = new
-    {
-        type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
-        title = "Internal Server Error",
-        status = StatusCodes.Status500InternalServerError,
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-    };
 }
