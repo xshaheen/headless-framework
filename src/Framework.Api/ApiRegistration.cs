@@ -129,14 +129,8 @@ public static class ApiRegistration
         {
             options.CustomizeProblemDetails += context =>
             {
-                var provider = context.HttpContext.RequestServices;
-                var buildInformationAccessor = provider.GetRequiredService<IBuildInformationAccessor>();
-                var timeProvider = provider.GetRequiredService<TimeProvider>();
-
-                context.ProblemDetails.Instance = context.HttpContext.Request.Path.Value ?? "";
-                context.ProblemDetails.Extensions["buildNumber"] = buildInformationAccessor.GetBuildNumber();
-                context.ProblemDetails.Extensions["commitNumber"] = buildInformationAccessor.GetCommitNumber();
-                context.ProblemDetails.Extensions["timestamp"] = timeProvider.GetUtcNow().ToString("O");
+                var normalizer = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+                normalizer.Normalize(context.ProblemDetails);
             };
         });
     }
