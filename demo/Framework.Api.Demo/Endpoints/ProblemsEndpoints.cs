@@ -14,6 +14,7 @@ public static class ProblemsEndpoints
 
         api.MapGet("malformed-syntax", (IProblemDetailsCreator factory) => Results.Problem(factory.MalformedSyntax()));
         api.MapGet("authorized", () => Results.Ok()).RequireAuthorization();
+        api.MapGet("policy-authorized", () => Results.Ok()).RequireAuthorization("NamePolicy");
 
         api.MapPost(
             "entity-not-found",

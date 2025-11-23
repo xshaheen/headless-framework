@@ -13,6 +13,14 @@ namespace Framework.Api.Demo.Endpoints;
 #pragma warning disable CA1024 // Use properties where appropriate
 public sealed class ProblemsController : ApiControllerBase
 {
+    [Authorize(Policy = "NamePolicy")]
+    [HttpGet("policy-authorized")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetPolicyAuthorized()
+    {
+        return Ok();
+    }
+
     [Authorize]
     [HttpGet("authorized")]
     [ProducesResponseType(StatusCodes.Status200OK)]
