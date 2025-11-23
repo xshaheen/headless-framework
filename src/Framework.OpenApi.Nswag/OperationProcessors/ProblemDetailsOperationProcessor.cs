@@ -38,34 +38,10 @@ public sealed class ProblemDetailsOperationProcessor(IProblemDetailsCreator prob
         }
     );
 
-    private static readonly ProblemDetails _Status401ProblemDetails = new()
-    {
-        Type = "https://tools.ietf.org/html/rfc7235#section-3.1",
-        Title = ProblemDetailTitles.Unauthorized,
-        Status = StatusCodes.Status401Unauthorized,
-        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
-    };
-
-    private static readonly ProblemDetails _Status406ProblemDetails = new()
-    {
-        Type = "https://tools.ietf.org/html/rfc7231#section-6.5.6",
-        Title = "not-acceptable",
-        Status = StatusCodes.Status406NotAcceptable,
-        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
-    };
-
-    private static readonly ProblemDetails _Status415ProblemDetails = new()
-    {
-        Type = "https://tools.ietf.org/html/rfc7231#section-6.5.13",
-        Title = "unsupported-media-type",
-        Status = StatusCodes.Status415UnsupportedMediaType,
-        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
-    };
-
     private static readonly ProblemDetails _Status500ProblemDetails = new()
     {
         Type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
-        Title = "internal-server-error",
+        Title = "Exception occurred while processing the request",
         Status = StatusCodes.Status500InternalServerError,
         Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
     };
@@ -90,23 +66,14 @@ public sealed class ProblemDetailsOperationProcessor(IProblemDetailsCreator prob
             case "400":
                 _SetDefaultAndExample(response, _status400ProblemDetails);
                 break;
-            case "401":
-                _SetDefaultAndExample(response, _Status401ProblemDetails);
-                break;
             case "403":
                 _SetDefaultAndExample(response, _status403ProblemDetails);
                 break;
             case "404":
                 _SetDefaultAndExample(response, _status404ProblemDetails);
                 break;
-            case "406":
-                _SetDefaultAndExample(response, _Status406ProblemDetails);
-                break;
             case "409":
                 _SetDefaultAndExample(response, _status409ProblemDetails);
-                break;
-            case "415":
-                _SetDefaultAndExample(response, _Status415ProblemDetails);
                 break;
             case "422":
                 _SetDefaultAndExample(response, _status422ProblemDetails);

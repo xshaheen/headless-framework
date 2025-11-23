@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Net.Http.Json;
 using AwesomeAssertions.Extensions;
 using Framework.Constants;
 using Framework.Testing.Tests;
@@ -13,7 +14,7 @@ namespace Tests;
 
 public sealed class ProblemDetailsTests : TestBase
 {
-    #region Entity Not Found (Middleware rewriter)
+    #region Endpoint Not Found (Middleware rewriter)
 
     /*
      * {
@@ -42,7 +43,7 @@ public sealed class ProblemDetailsTests : TestBase
     private static async Task _VerifyEndpointNotFound(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
         _ValidateCoreProblemDetails(
@@ -96,7 +97,7 @@ public sealed class ProblemDetailsTests : TestBase
     private static async Task _VerifyMalformedSyntax(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
         _ValidateCoreProblemDetails(
@@ -156,7 +157,7 @@ public sealed class ProblemDetailsTests : TestBase
     private static async Task _VerifyEntityNotFound(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
         _ValidateCoreProblemDetails(
@@ -221,7 +222,7 @@ public sealed class ProblemDetailsTests : TestBase
     private static async Task _VerifyConflict(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
         _ValidateCoreProblemDetails(
@@ -287,7 +288,7 @@ public sealed class ProblemDetailsTests : TestBase
     private static async Task _VerifyUnprocessable(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
         _ValidateCoreProblemDetails(
@@ -361,8 +362,10 @@ public sealed class ProblemDetailsTests : TestBase
     {
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
-        using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/minimal/internal-error", stringContent, AbortToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/minimal/internal-error");
+        request.Headers.Add("Accept", ContentTypes.Applications.Json);
+        request.Content = new StringContent(string.Empty);
+        using var response = await client.SendAsync(request, AbortToken);
         await _VerifyInternalServerError(response);
     }
 
@@ -371,15 +374,17 @@ public sealed class ProblemDetailsTests : TestBase
     {
         await using var factory = await _CreateDefaultFactory();
         using var client = factory.CreateClient();
-        using var stringContent = new StringContent(string.Empty);
-        using var response = await client.PostAsync("/mvc/internal-error", stringContent, AbortToken);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mvc/internal-error");
+        request.Headers.Add("Accept", ContentTypes.Applications.Json);
+        request.Content = new StringContent(string.Empty);
+        using var response = await client.SendAsync(request, AbortToken);
         await _VerifyInternalServerError(response);
     }
 
     private static async Task _VerifyInternalServerError(HttpResponseMessage response)
     {
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        var json = await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
         _ValidateCoreProblemDetails(
@@ -393,6 +398,63 @@ public sealed class ProblemDetailsTests : TestBase
 
         jsonElement.GetProperty("exception").EnumerateObject().Should().HaveCountGreaterThan(0);
         jsonElement.EnumerateObject().Should().HaveCount(10);
+    }
+
+    #endregion
+
+    #region Unauthorized
+
+    [Fact]
+    public async Task mvc_unauthorized_request()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/minimal/authorized");
+        request.Headers.Add("Accept", ContentTypes.Applications.Json);
+        using var response = await client.SendAsync(request, AbortToken);
+        await _ValidateUnauthorized(response);
+    }
+
+    [Fact]
+    public async Task minimal_unauthorized_request()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/minimal/authorized", AbortToken);
+        await _ValidateUnauthorized(response);
+    }
+
+    private static async Task _ValidateUnauthorized(HttpResponseMessage response)
+    {
+        var content = await response.Content.ReadAsStringAsync(AbortToken);
+        content.Should().BeEmpty();
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    #endregion
+
+    #region Method Not Allowed
+
+    [Fact]
+    public async Task mvc_method_not_allowed_request()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/mvc/malformed-syntax", "{}", AbortToken);
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        var content = await response.Content.ReadAsStringAsync(AbortToken);
+        content.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task minimal_method_not_allowed_request()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/minimal/malformed-syntax", "{}", AbortToken);
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        var content = await response.Content.ReadAsStringAsync(AbortToken);
+        content.Should().BeEmpty();
     }
 
     #endregion

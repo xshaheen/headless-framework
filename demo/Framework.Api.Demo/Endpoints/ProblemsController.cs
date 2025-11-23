@@ -3,6 +3,7 @@ using FluentValidation.Results;
 using Framework.Api.Mvc.Controllers;
 using Framework.Exceptions;
 using Framework.Primitives;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Framework.Api.Demo.Endpoints;
@@ -12,6 +13,14 @@ namespace Framework.Api.Demo.Endpoints;
 #pragma warning disable CA1024 // Use properties where appropriate
 public sealed class ProblemsController : ApiControllerBase
 {
+    [Authorize]
+    [HttpGet("authorized")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetAuthorized()
+    {
+        return Ok();
+    }
+
     [HttpGet("malformed-syntax")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetMalformedSyntax()
@@ -37,7 +46,7 @@ public sealed class ProblemsController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetConflict()
     {
-        throw new ConflictException(new ErrorDescriptor("error-code", "Error message"));
+        throw new ConflictException(new ErrorDescriptor("error-code", @"Error message"));
     }
 
     [HttpPost("unprocessable-entity")]
