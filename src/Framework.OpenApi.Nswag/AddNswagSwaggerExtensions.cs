@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Asp.Versioning.ApiExplorer;
+using Framework.Api.Abstractions;
 using Framework.Api.ApiExplorer;
 using Framework.Constants;
 using Framework.OpenApi.Nswag.OperationProcessors;
@@ -256,7 +257,9 @@ public static class AddNswagSwaggerExtensions
         settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
         settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
         settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
-        settings.OperationProcessors.Add(new ProblemDetailsOperationProcessor());
+        settings.OperationProcessors.Add(
+            new ProblemDetailsOperationProcessor(serviceProvider.GetRequiredService<IProblemDetailsCreator>())
+        );
     }
 
     private static void _ConfigureGeneratorSettingsByFramework(
