@@ -16,34 +16,98 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// <summary>
 /// Shows an example of a ProblemDetails containing errors for known status codes in NSwag.
 /// </summary>
-public sealed class ProblemDetailsOperationProcessor(IProblemDetailsCreator problemDetailsCreator) : IOperationProcessor
+public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
-    private readonly ProblemDetails _status400ProblemDetails = problemDetailsCreator.MalformedSyntax();
-    private readonly ProblemDetails _status404ProblemDetails = problemDetailsCreator.EntityNotFound("User", "123");
-    private readonly ProblemDetails _status403ProblemDetails = problemDetailsCreator.Forbidden();
-    private readonly ProblemDetails _status409ProblemDetails = problemDetailsCreator.Conflict(
-        new ErrorDescriptor("business_error", @"Some business rule failed.")
-    );
-
-    private readonly ProblemDetails _status422ProblemDetails = problemDetailsCreator.UnprocessableEntity(
-        new(StringComparer.Ordinal)
-        {
-            ["password"] =
-            [
-                new ErrorDescriptor(
-                    "auth:password_requires_digit",
-                    @"Passwords must have at least one digit ['0'_'9']."
-                ),
-            ],
-        }
-    );
-
-    private static readonly ProblemDetails _Status500ProblemDetails = new()
+    private readonly HeadlessProblemDetails _status400ProblemDetails = new()
     {
-        Type = "https://tools.ietf.org/html/rfc7231#section-6.6.1",
-        Title = "Exception occurred while processing the request",
-        Status = StatusCodes.Status500InternalServerError,
-        Extensions = { ["traceId"] = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00" },
+        Type = ProblemDetailsConstants.Types.BadRequest,
+        Title = ProblemDetailsConstants.Titles.BadRequest,
+        Status = StatusCodes.Status400BadRequest,
+        Detail = ProblemDetailsConstants.Details.BadRequest,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+    };
+
+    private readonly HeadlessProblemDetails _status401ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.Unauthorized,
+        Title = ProblemDetailsConstants.Titles.Unauthorized,
+        Status = StatusCodes.Status401Unauthorized,
+        Detail = ProblemDetailsConstants.Details.Unauthorized,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+    };
+
+    private readonly HeadlessProblemDetails _status403ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.Forbidden,
+        Title = ProblemDetailsConstants.Titles.Forbidden,
+        Status = StatusCodes.Status403Forbidden,
+        Detail = ProblemDetailsConstants.Details.Forbidden,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+    };
+
+    private readonly EntityNotFoundHeadlessProblemDetails _status404ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.EntityNotFound,
+        Title = ProblemDetailsConstants.Titles.EntityNotFound,
+        Status = StatusCodes.Status404NotFound,
+        Detail = ProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+        Params = new EntityNotFoundHeadlessProblemDetailsParams { Entity = "User", Key = "user-123" },
+    };
+
+    private readonly ConflictHeadlessProblemDetails _status409ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.Conflict,
+        Title = ProblemDetailsConstants.Titles.Conflict,
+        Status = StatusCodes.Status409Conflict,
+        Detail = ProblemDetailsConstants.Details.Conflict,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+        Errors = [new("business_error", @"Some business rule failed.")],
+    };
+
+    private readonly UnprocessableEntityHeadlessProblemDetails _status422ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.UnprocessableEntity,
+        Title = ProblemDetailsConstants.Titles.UnprocessableEntity,
+        Status = StatusCodes.Status422UnprocessableEntity,
+        Detail = ProblemDetailsConstants.Details.UnprocessableEntity,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+        Errors = new(StringComparer.Ordinal)
+        {
+            ["email"] =
+            [
+                new ErrorDescriptor("auth:invalid_email_format", @"The email address format is invalid."),
+                new ErrorDescriptor("auth:email_already_exists", @"The specified email address is already in use."),
+            ],
+            ["username"] =
+            [
+                new ErrorDescriptor("auth:username_too_short", @"The username must be at least 6 characters long."),
+            ],
+        },
     };
 
     public bool Process(OperationProcessorContext context)
@@ -66,6 +130,9 @@ public sealed class ProblemDetailsOperationProcessor(IProblemDetailsCreator prob
             case "400":
                 _SetDefaultAndExample(response, _status400ProblemDetails);
                 break;
+            case "401":
+                _SetDefaultAndExample(response, _status401ProblemDetails);
+                break;
             case "403":
                 _SetDefaultAndExample(response, _status403ProblemDetails);
                 break;
@@ -77,9 +144,6 @@ public sealed class ProblemDetailsOperationProcessor(IProblemDetailsCreator prob
                 break;
             case "422":
                 _SetDefaultAndExample(response, _status422ProblemDetails);
-                break;
-            case "500":
-                _SetDefaultAndExample(response, _Status500ProblemDetails);
                 break;
         }
     }
@@ -101,4 +165,38 @@ public sealed class ProblemDetailsOperationProcessor(IProblemDetailsCreator prob
 
         problemJsonMediaType.Example = problemDetails;
     }
+}
+
+public class HeadlessProblemDetails
+{
+    public required string Type { get; init; }
+    public required string Title { get; init; }
+    public required int Status { get; init; }
+    public required string Detail { get; init; }
+    public required string Instance { get; init; }
+    public required string TraceId { get; init; }
+    public required string BuildNumber { get; init; }
+    public required string CommitNumber { get; init; }
+    public required DateTimeOffset Timestamp { get; init; }
+}
+
+public sealed class EntityNotFoundHeadlessProblemDetailsParams
+{
+    public required string Entity { get; init; }
+    public required string Key { get; init; }
+}
+
+public sealed class EntityNotFoundHeadlessProblemDetails : HeadlessProblemDetails
+{
+    public required EntityNotFoundHeadlessProblemDetailsParams Params { get; init; }
+}
+
+public sealed class ConflictHeadlessProblemDetails : HeadlessProblemDetails
+{
+    public required List<ErrorDescriptor> Errors { get; init; }
+}
+
+public sealed class UnprocessableEntityHeadlessProblemDetails : HeadlessProblemDetails
+{
+    public required Dictionary<string, List<ErrorDescriptor>> Errors { get; init; }
 }
