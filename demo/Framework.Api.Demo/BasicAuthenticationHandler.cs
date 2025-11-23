@@ -61,7 +61,7 @@ internal sealed class BasicAuthenticationHandler(
             return Task.FromResult(AuthenticateResult.Fail("Invalid username or password"));
         }
 
-        var principal = claimsPrincipalFactory.CreateClaimsPrincipal(new Claim(JwtClaimTypes.Subject, username));
+        var principal = claimsPrincipalFactory.CreateClaimsPrincipal(new Claim(UserClaimTypes.Name, username));
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
         return Task.FromResult(AuthenticateResult.Success(ticket));

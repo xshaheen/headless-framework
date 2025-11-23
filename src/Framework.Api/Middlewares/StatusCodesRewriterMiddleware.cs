@@ -24,10 +24,29 @@ public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problem
             return;
         }
 
-        if (context.Response.StatusCode is StatusCodes.Status404NotFound)
+        switch (context.Response.StatusCode)
         {
-            var problemDetails = problemDetailsCreator.EndpointNotFound();
-            await Results.Problem(problemDetails).ExecuteAsync(context);
+            case StatusCodes.Status401Unauthorized:
+            {
+                var problemDetails = problemDetailsCreator.Unauthorized();
+                await Results.Problem(problemDetails).ExecuteAsync(context);
+
+                break;
+            }
+            case StatusCodes.Status403Forbidden:
+            {
+                var problemDetails = problemDetailsCreator.Forbidden();
+                await Results.Problem(problemDetails).ExecuteAsync(context);
+
+                break;
+            }
+            case StatusCodes.Status404NotFound:
+            {
+                var problemDetails = problemDetailsCreator.EndpointNotFound();
+                await Results.Problem(problemDetails).ExecuteAsync(context);
+
+                break;
+            }
         }
     }
 }

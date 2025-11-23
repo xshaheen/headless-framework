@@ -19,7 +19,9 @@ public interface IProblemDetailsCreator
 
     ProblemDetails Conflict(params IEnumerable<ErrorDescriptor> errors);
 
-    ProblemDetails Forbidden(params IEnumerable<ErrorDescriptor> errors);
+    ProblemDetails Unauthorized();
+
+    ProblemDetails Forbidden(params IReadOnlyCollection<ErrorDescriptor> errors);
 }
 
 public sealed class ProblemDetailsCreator : IProblemDetailsCreator
@@ -78,14 +80,30 @@ public sealed class ProblemDetailsCreator : IProblemDetailsCreator
         };
     }
 
-    public ProblemDetails Forbidden(params IEnumerable<ErrorDescriptor> errors)
+    public ProblemDetails Unauthorized()
     {
         return new ProblemDetails
         {
-            Status = StatusCodes.Status403Forbidden,
-            Title = ProblemDetailTitles.ForbiddenRequest,
-            Detail = "Forbidden request",
-            Extensions = { ["errors"] = errors },
+            Status = StatusCodes.Status401Unauthorized,
+            Title = ProblemDetailTitles.Unauthorized,
+            Detail = "You are unauthenticated to access this resource.",
         };
+    }
+
+    public ProblemDetails Forbidden(params IReadOnlyCollection<ErrorDescriptor> errors)
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status403Forbidden,
+            Title = ProblemDetailTitles.Forbidden,
+            Detail = "You are forbidden from accessing this resource.",
+        };
+
+        if (errors.Count > 0)
+        {
+            problemDetails.Extensions["errors"] = errors;
+        }
+
+        return problemDetails;
     }
 }

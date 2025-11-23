@@ -6,6 +6,7 @@ using Framework.Api.Demo.Endpoints;
 using Framework.Api.Middlewares;
 using Framework.Api.MinimalApi;
 using Framework.Api.Mvc;
+using Framework.Constants;
 using Framework.OpenApi.Nswag;
 using Microsoft.AspNetCore.Authentication;
 
@@ -24,10 +25,20 @@ builder
     {
         options.DefaultAuthenticateScheme = "Basic";
         options.DefaultChallengeScheme = "Basic";
+        options.DefaultForbidScheme = "Basic";
     })
-    .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>("Basic", configureOptions: null);
+    .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>("Basic", "Basic", configureOptions: null);
 
-builder.Services.AddAuthorization();
+builder
+    .Services.AddAuthorizationBuilder()
+    .AddPolicy(
+        "NamePolicy",
+        policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.RequireClaim(UserClaimTypes.Name, allowedValues: "admin");
+        }
+    );
 
 var app = builder.Build();
 

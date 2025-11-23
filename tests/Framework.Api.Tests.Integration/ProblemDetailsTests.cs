@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions.Extensions;
 using Framework.Constants;
+using Framework.Http;
 using Framework.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -426,9 +427,66 @@ public sealed class ProblemDetailsTests : TestBase
 
     private static async Task _ValidateUnauthorized(HttpResponseMessage response)
     {
-        var content = await response.Content.ReadAsStringAsync(AbortToken);
-        content.Should().BeEmpty();
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.5.2",
+            ProblemDetailTitles.Unauthorized,
+            401,
+            "You are unauthenticated to access this resource."
+        );
+
+        jsonElement.EnumerateObject().Should().HaveCount(9);
+    }
+
+    #endregion
+
+    #region Forbidden
+
+    [Fact]
+    public async Task mvc_forbidden_request()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/mvc/policy-authorized");
+        request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic("test", "p@ssw0rd");
+        request.Headers.Add("Accept", ContentTypes.Applications.Json);
+        using var response = await client.SendAsync(request, AbortToken);
+        await _ValidateForbidden(response);
+    }
+
+    [Fact]
+    public async Task minimal_forbidden_request()
+    {
+        await using var factory = await _CreateDefaultFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/minimal/policy-authorized");
+        request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic("test", "p@ssw0rd");
+        request.Headers.Add("Accept", ContentTypes.Applications.Json);
+        using var response = await client.SendAsync(request, AbortToken);
+        await _ValidateForbidden(response);
+    }
+
+    private static async Task _ValidateForbidden(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        var jsonElement = JsonDocument.Parse(json).RootElement;
+
+        _ValidateCoreProblemDetails(
+            jsonElement,
+            response,
+            "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+            ProblemDetailTitles.Forbidden,
+            403,
+            "You are forbidden from accessing this resource."
+        );
+
+        jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 
     #endregion
