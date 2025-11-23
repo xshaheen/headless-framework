@@ -6,11 +6,14 @@ using Framework.Api.Abstractions;
 using Framework.Api.Middlewares;
 using Framework.Caching;
 using Framework.Constants;
+using Framework.Testing.Helpers;
 using Framework.Testing.Tests;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Middlewares;
 
@@ -25,6 +28,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         ILogger<IdempotencyMiddleware>? logger = null
     )
     {
+        var now = DateTimeOffset.UtcNow;
+
         cache ??= Substitute.For<ICache>();
 
         var opts = new IdempotencyMiddlewareOptions { IdempotencyKeyExpiration = TimeSpan.FromMinutes(5) };
@@ -34,10 +39,24 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         cts ??= Substitute.For<ICancellationTokenProvider>();
         cts.Token.Returns(CancellationToken.None);
 
-        problem ??= new ProblemDetailsCreator();
+        var timeProvider = new FakeTimeProvider(now);
+        clock ??= new TestClock(timeProvider);
 
-        clock ??= Substitute.For<IClock>();
-        clock.UtcNow.Returns(DateTimeOffset.UtcNow);
+        var buildInformationAccessor = Substitute.For<IBuildInformationAccessor>();
+        buildInformationAccessor.GetBuildNumber().Returns("test-build");
+        buildInformationAccessor.GetCommitNumber().Returns("test-commit");
+
+        var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
+        httpContextAccessor.HttpContext.Returns(new DefaultHttpContext());
+
+        var apiBehaviorOptions = Options.Create(new ApiBehaviorOptions());
+
+        problem ??= new ProblemDetailsCreator(
+            timeProvider,
+            buildInformationAccessor,
+            httpContextAccessor,
+            apiBehaviorOptions
+        );
 
         logger ??= Substitute.For<ILogger<IdempotencyMiddleware>>();
 

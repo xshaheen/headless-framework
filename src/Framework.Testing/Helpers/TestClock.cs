@@ -5,9 +5,9 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Framework.Testing.Helpers;
 
-public sealed class TestClock : IClock
+public sealed class TestClock(TimeProvider? timeProvider = null) : IClock
 {
-    public TimeProvider TimeProvider { get; set; } = new FakeTimeProvider();
+    public TimeProvider TimeProvider { get; set; } = timeProvider ?? new FakeTimeProvider();
 
     private static DateTimeKind NormalizeKind => DateTimeKind.Utc;
 
