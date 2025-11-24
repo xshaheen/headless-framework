@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Net;
 using Framework.Checks;
 using Framework.Constants;
 using Microsoft.AspNetCore.Mvc;
@@ -101,34 +102,39 @@ public static class HttpContextExtensions
 
     public static string? GetIpAddress(this HttpContext httpContext)
     {
-        var forwardedForValues = httpContext.Request.Headers.TryGetValue("X-Forwarded-For", out var obj)
-            ? obj
-            : default;
+        // Check X-Forwarded-For header (standard for proxies/load balancers)
+        var forwardedFor = httpContext.Request.Headers.TryGetValue("X-Forwarded-For", out var obj)
+            ? obj.FirstOrDefault()
+            : null;
 
-        var ipAddress = forwardedForValues.FirstOrDefault();
-
-        // Is not proxy
-        if (string.IsNullOrWhiteSpace(ipAddress))
+        if (!string.IsNullOrWhiteSpace(forwardedFor))
         {
-            var ip = httpContext.Connection.RemoteIpAddress;
+            // X-Forwarded-For can contain multiple IPs, take the first (original client)
+            var ips = forwardedFor.Split(',', StringSplitOptions.RemoveEmptyEntries);
 
-            return ip is null ? null
-                : ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString()
-                : ip.ToString();
+            if (ips.Length > 0 && IPAddress.TryParse(ips[0].Trim(), out var parsedIp))
+            {
+                return parsedIp.IsIPv4MappedToIPv6 ? parsedIp.MapToIPv4().ToString() : parsedIp.ToString();
+            }
         }
 
-        // Is proxy
-        var addresses = ipAddress.Split(separator: ',');
+        // Check X-Real-IP header (nginx)
+        var realIp = httpContext.Request.Headers.TryGetValue("X-Real-IP", out var realIpObj)
+            ? realIpObj.FirstOrDefault()
+            : null;
 
-        if (addresses.Length == 0)
+        if (!string.IsNullOrWhiteSpace(realIp) && IPAddress.TryParse(realIp, out var parsedRealIp))
         {
-            return null;
+            return parsedRealIp.IsIPv4MappedToIPv6 ? parsedRealIp.MapToIPv4().ToString() : parsedRealIp.ToString();
         }
 
-        // If IP contains port, it will be after the last : (IPv6 uses : as delimiter and could have more of them)
-        return addresses[0].Contains(value: ':', StringComparison.Ordinal)
-            ? addresses[0][..addresses[0].LastIndexOf(value: ':')]
-            : addresses[0];
+        // Fallback to connection remote IP
+
+        var ip = httpContext.Connection.RemoteIpAddress;
+
+        return ip is null ? null
+            : ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString()
+            : ip.ToString();
     }
 
     public static string? GetUserAgent(this HttpContext httpContext)
