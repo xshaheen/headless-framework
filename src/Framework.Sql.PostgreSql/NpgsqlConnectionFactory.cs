@@ -28,7 +28,7 @@ public sealed class NpgsqlConnectionFactory(string connectionString) : ISqlConne
 
     public async ValueTask<NpgsqlConnection> GetOpenConnectionAsync(CancellationToken cancellationToken = default)
     {
-        using var _ = await _lock.LockAsync();
+        using var _ = await _lock.LockAsync(cancellationToken);
 
         if (_connection is { State: ConnectionState.Open })
         {
