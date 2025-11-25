@@ -51,9 +51,7 @@ internal static class Parser
 
         var symbol = ctx.SemanticModel.GetDeclaredSymbol(typeSyntax, ct);
 
-        return symbol?.IsAbstract == false && symbol.AllInterfaces.Any(x => x.IsImplementIPrimitive())
-            ? symbol
-            : null;
+        return symbol?.IsAbstract == false && symbol.AllInterfaces.Any(x => x.IsImplementIPrimitive()) ? symbol : null;
     }
 
     /// <summary>Gets the global options for the PrimitiveGenerator generator.</summary>

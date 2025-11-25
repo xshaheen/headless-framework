@@ -1,205 +1,205 @@
 <Solution>
-  <Folder Name="/Api.OpenApi/">
-    <Project Path="demo/Framework.OpenApi.Nswag.Demo/Framework.OpenApi.Nswag.Demo.csproj" />
-    <Project Path="src/Framework.OpenApi.Nswag.OData/Framework.OpenApi.Nswag.OData.csproj" />
-    <Project Path="src/Framework.OpenApi.Nswag/Framework.OpenApi.Nswag.csproj" />
-    <Project Path="src/Framework.OpenApi.Scalar/Framework.OpenApi.Scalar.csproj" />
-  </Folder>
-  <Folder Name="/Api/">
-    <Project Path="demo/Framework.Api.Demo/Framework.Api.Demo.csproj" />
-    <Project Path="src/Framework.Api.DataProtection/Framework.Api.DataProtection.csproj" />
-    <Project Path="src/Framework.Api.FluentValidation/Framework.Api.FluentValidation.csproj" />
-    <Project Path="src/Framework.Api.Logging.Serilog/Framework.Api.Logging.Serilog.csproj" />
-    <Project Path="src/Framework.Api.MinimalApi/Framework.Api.MinimalApi.csproj" />
-    <Project Path="src/Framework.Api.Mvc/Framework.Api.Mvc.csproj" />
-    <Project Path="src/Framework.Api/Framework.Api.csproj" />
-    <Project Path="tests/Framework.Api.FluentValidation.Tests.Unit/Framework.Api.FluentValidation.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.Api.Tests.Integration/Framework.Api.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Api.Tests.Unit/Framework.Api.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Blobs/">
-    <Project Path="demo/Framework.Tus.Demo/Framework.Tus.Demo.csproj" />
-    <Project Path="src/Framework.Blobs.Abstraction/Framework.Blobs.Abstraction.csproj" />
-    <Project Path="src/Framework.Blobs.Aws/Framework.Blobs.Aws.csproj" />
-    <Project Path="src/Framework.Blobs.Azure/Framework.Blobs.Azure.csproj" />
-    <Project Path="src/Framework.Blobs.FileSystem/Framework.Blobs.FileSystem.csproj" />
-    <Project Path="src/Framework.Blobs.Redis/Framework.Blobs.Redis.csproj" />
-    <Project Path="src/Framework.Blobs.SshNet/Framework.Blobs.SshNet.csproj" />
-    <Project Path="src/Framework.Tus.Azure/Framework.Tus.Azure.csproj" />
-    <Project Path="src/Framework.Tus.ResourceLock/Framework.Tus.ResourceLock.csproj" />
-    <Project Path="src/Framework.Tus/Framework.Tus.csproj" />
-    <Project Path="tests/Framework.Blobs.Aws.Tests.Integration/Framework.Blobs.Aws.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Blobs.Azure.Tests.Integration/Framework.Blobs.Azure.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Blobs.FileSystem.Tests.Integration/Framework.Blobs.FileSystem.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Blobs.Redis.Tests.Integration/Framework.Blobs.Redis.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Blobs.SshNet.Tests.Integration/Framework.Blobs.SshNet.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Blobs.Tests.Harness/Framework.Blobs.Tests.Harness.csproj" />
-    <Project Path="tests/Framework.Tus.Azure.Tests.Integration/Framework.Tus.Azure.Tests.Integration.csproj" />
-  </Folder>
-  <Folder Name="/Caching/">
-    <Project Path="src/Framework.Caching.Abstraction/Framework.Caching.Abstraction.csproj" />
-    <Project Path="src/Framework.Caching.Foundatio.Memory/Framework.Caching.Foundatio.Memory.csproj" />
-    <Project Path="src/Framework.Caching.Foundatio.Redis/Framework.Caching.Foundatio.Redis.csproj" />
-  </Folder>
-  <Folder Name="/Captcha/">
-    <Project Path="demo/Framework.Recaptcha.Demo/Framework.Recaptcha.Demo.csproj" />
-    <Project Path="src/Framework.Recaptcha/Framework.Recaptcha.csproj" />
-  </Folder>
-  <Folder Name="/Database/">
-    <Project Path="src/Framework.Redis/Framework.Redis.csproj" />
-    <Project Path="src/Framework.Sql.Abstraction/Framework.Sql.Abstraction.csproj" />
-    <Project Path="src/Framework.Sql.PostgreSql/Framework.Sql.PostgreSql.csproj" />
-    <Project Path="src/Framework.Sql.Sqlite/Framework.Sql.Sqlite.csproj" />
-    <Project Path="src/Framework.Sql.SqlServer/Framework.Sql.SqlServer.csproj" />
-    <Project Path="tests/Framework.Sql.PostgreSql.Tests.Integration/Framework.Sql.PostgreSql.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Sql.Sqlite.Tests.Integration/Framework.Sql.Sqlite.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Sql.SqlServer.Tests.Integration/Framework.Sql.SqlServer.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.Sql.Tests.Harness/Framework.Sql.Tests.Harness.csproj" />
-  </Folder>
-  <Folder Name="/Emails/">
-    <Project Path="src/Framework.Emails.Abstraction/Framework.Emails.Abstraction.csproj" />
-    <Project Path="src/Framework.Emails.Aws/Framework.Emails.Aws.csproj" />
-    <Project Path="src/Framework.Emails.Core/Framework.Emails.Core.csproj" />
-    <Project Path="src/Framework.Emails.Dev/Framework.Emails.Dev.csproj" />
-    <Project Path="src/Framework.Emails.Mailkit/Framework.Emails.Mailkit.csproj" />
-  </Folder>
-  <Folder Name="/Features/">
-    <Project Path="src/Framework.Features.Abstractions/Framework.Features.Abstractions.csproj" />
-    <Project Path="src/Framework.Features.Core/Framework.Features.Core.csproj" />
-    <Project Path="src/Framework.Features.Storage.EntityFramework/Framework.Features.Storage.EntityFramework.csproj" />
-    <Project Path="tests/Framework.Features.Tests.Integration/Framework.Features.Tests.Integration.csproj" />
-  </Folder>
-  <Folder Name="/Generators/">
-    <Project Path="src/Framework.Generator.Primitives.Abstractions/Framework.Generator.Primitives.Abstractions.csproj" />
-    <Project Path="src/Framework.Generator.Primitives/Framework.Generator.Primitives.csproj" />
-    <Project Path="tests/Framework.Generator.Primitives.Tests.Unit/Framework.Generator.Primitives.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Identities/">
-    <Project Path="src/Framework.Identity.Storage.EntityFramework/Framework.Identity.Storage.EntityFramework.csproj" />
-  </Folder>
-  <Folder Name="/Imaging/">
-    <Project Path="src/Framework.Imaging.Abstraction/Framework.Imaging.Abstraction.csproj" />
-    <Project Path="src/Framework.Imaging.Core/Framework.Imaging.Core.csproj" />
-    <Project Path="src/Framework.Imaging.ImageSharp/Framework.Imaging.ImageSharp.csproj" />
-    <Project Path="tests/Framework.Imaging.ImageSharp.Tests.Unit/Framework.Imaging.ImageSharp.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Kernel/">
-    <Project Path="src/Framework.Base/Framework.Base.csproj" />
-    <Project Path="src/Framework.BuildingBlocks/Framework.BuildingBlocks.csproj" />
-    <Project Path="src/Framework.Checks/Framework.Checks.csproj" />
-    <Project Path="src/Framework.Domains/Framework.Domains.csproj" />
-    <Project Path="src/Framework.Hosting/Framework.Hosting.csproj" />
-    <Project Path="src/Framework.NetTopologySuite/Framework.NetTopologySuite.csproj" />
-    <Project Path="src/Framework.Specifications/Framework.Specifications.csproj" />
-    <Project Path="src/Framework.Testing.Testcontainers/Framework.Testing.Testcontainers.csproj" />
-    <Project Path="src/Framework.Testing/Framework.Testing.csproj" />
-    <Project Path="tests/Framework.Base.Tests.Unit/Framework.Base.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.BuildingBlocks.Tests.Unit/Framework.BuildingBlocks.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.Checks.Tests.Unit/Framework.Checks.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.Domains.Tests.Unit/Framework.Domains.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.Hosting.Tests.Unit/Framework.Hosting.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.Specifications.Tests.Unit/Framework.Specifications.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Locks/">
-    <Project Path="src/Framework.ResourceLocks.Abstraction/Framework.ResourceLocks.Abstraction.csproj" />
-    <Project Path="src/Framework.ResourceLocks.Cache/Framework.ResourceLocks.Cache.csproj" />
-    <Project Path="src/Framework.ResourceLocks.Core/Framework.ResourceLocks.Core.csproj" />
-    <Project Path="src/Framework.ResourceLocks.Redis/Framework.ResourceLocks.Redis.csproj" />
-    <Project Path="tests/Framework.ResourceLocks.Cache.Tests.Integration/Framework.ResourceLocks.Cache.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.ResourceLocks.Redis.Tests.Integration/Framework.ResourceLocks.Redis.Tests.Integration.csproj" />
-    <Project Path="tests/Framework.ResourceLocks.Tests.Harness/Framework.ResourceLocks.Tests.Harness.csproj" />
-  </Folder>
-  <Folder Name="/MediaIndexing/">
-    <Project Path="src/Framework.Media.Indexing.Abstraction/Framework.Media.Indexing.Abstraction.csproj" />
-    <Project Path="src/Framework.Media.Indexing/Framework.Media.Indexing.csproj" />
-    <Project Path="tests/Framework.Media.Indexing.Tests.Unit/Framework.Media.Indexing.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Messaging/">
-    <Project Path="src/Framework.Messaging.Abstractions/Framework.Messaging.Abstractions.csproj" />
-    <Project Path="src/Framework.Messaging.Cap/Framework.Messaging.Cap.csproj" />
-    <Project Path="src/Framework.Messaging.Foundatio/Framework.Messaging.Foundatio.csproj" />
-    <Project Path="src/Framework.Messaging.LocalServiceProvider/Framework.Messaging.LocalServiceProvider.csproj" />
-    <Project Path="tests/Framework.Messaging.Foundatio.Tests.Integration/Framework.Messaging.Foundatio.Tests.Integration.csproj" />
-  </Folder>
-  <Folder Name="/Observability/">
-    <Project Path="src/Framework.Logging.Serilog/Framework.Logging.Serilog.csproj" />
-  </Folder>
-  <Folder Name="/Orms/">
-    <Project Path="demo/Framework.EntityFramework.Migrations.Startup/Framework.EntityFramework.Migrations.Startup.csproj" />
-    <Project Path="src/Framework.Orm.Couchbase/Framework.Orm.Couchbase.csproj" />
-    <Project Path="src/Framework.Orm.Dapper/Framework.Orm.Dapper.csproj" />
-    <Project Path="src/Framework.Orm.EntityFramework/Framework.Orm.EntityFramework.csproj" />
-    <Project Path="tests/Framework.Orm.EntityFramework.Tests.Integration/Framework.Orm.EntityFramework.Tests.Integration.csproj" />
-  </Folder>
-  <Folder Name="/Payments/">
-    <Project Path="src/Framework.Payments.Paymob.CashIn/Framework.Payments.Paymob.CashIn.csproj" />
-    <Project Path="src/Framework.Payments.Paymob.CashOut/Framework.Payments.Paymob.CashOut.csproj" />
-    <Project Path="src/Framework.Payments.Paymob.Services/Framework.Payments.Paymob.Services.csproj" />
-    <Project Path="tests/Framework.Payments.Paymob.CashIn.Tests.Unit/Framework.Payments.Paymob.CashIn.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.Payments.Paymob.CashOut.Tests.Unit/Framework.Payments.Paymob.CashOut.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Permissions/">
-    <Project Path="src/Framework.Permissions.Abstraction/Framework.Permissions.Abstraction.csproj" />
-    <Project Path="src/Framework.Permissions.Core/Framework.Permissions.Core.csproj" />
-    <Project Path="src/Framework.Permissions.Storage.EntityFramework/Framework.Permissions.Storage.EntityFramework.csproj" />
-    <Project Path="tests/Framework.Permissions.Tests.Integration/Framework.Permissions.Tests.Integration.csproj" />
-  </Folder>
-  <Folder Name="/PushNotifications/">
-    <Project Path="src/Framework.PushNotifications.Abstraction/Framework.PushNotifications.Abstraction.csproj" />
-    <Project Path="src/Framework.PushNotifications.Dev/Framework.PushNotifications.Dev.csproj" />
-    <Project Path="src/Framework.PushNotifications.Firebase/Framework.PushNotifications.Firebase.csproj" />
-  </Folder>
-  <Folder Name="/Queueing/">
-    <Project Path="src/Framework.Queueing.Abstraction/Framework.Queueing.Abstraction.csproj" />
-    <Project Path="src/Framework.Queueing.Foundatio/Framework.Queueing.Foundatio.csproj" />
-  </Folder>
-  <Folder Name="/Seo/">
-    <Project Path="src/Framework.Sitemaps/Framework.Sitemaps.csproj" />
-    <Project Path="src/Framework.Slugs/Framework.Slugs.csproj" />
-    <Project Path="tests/Framework.Sitemaps.Tests.Unit/Framework.Sitemaps.Tests.Unit.csproj" />
-    <Project Path="tests/Framework.Slugs.Tests.Unit/Framework.Slugs.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Serializers/">
-    <Project Path="src/Framework.Serializer.Abstraction/Framework.Serializer.Abstraction.csproj" />
-    <Project Path="src/Framework.Serializer.Json/Framework.Serializer.Json.csproj" />
-    <Project Path="src/Framework.Serializer.MessagePack/Framework.Serializer.MessagePack.csproj" />
-    <Project Path="tests/Framework.Serializer.Tests.Unit/Framework.Serializer.Tests.Unit.csproj" />
-  </Folder>
-  <Folder Name="/Settings/">
-    <Project Path="src/Framework.Settings.Abstraction/Framework.Settings.Abstraction.csproj" />
-    <Project Path="src/Framework.Settings.Core/Framework.Settings.Core.csproj" />
-    <Project Path="src/Framework.Settings.Storage.EntityFramework/Framework.Settings.Storage.EntityFramework.csproj" />
-    <Project Path="tests/Framework.Settings.Tests.Integration/Framework.Settings.Tests.Integration.csproj" />
-  </Folder>
-  <Folder Name="/Sms/">
-    <Project Path="src/Framework.Sms.Abstraction/Framework.Sms.Abstraction.csproj" />
-    <Project Path="src/Framework.Sms.Aws/Framework.Sms.Aws.csproj" />
-    <Project Path="src/Framework.Sms.Cequens/Framework.Sms.Cequens.csproj" />
-    <Project Path="src/Framework.Sms.Connekio/Framework.Sms.Connekio.csproj" />
-    <Project Path="src/Framework.Sms.Dev/Framework.Sms.Dev.csproj" />
-    <Project Path="src/Framework.Sms.Infobip/Framework.Sms.Infobip.csproj" />
-    <Project Path="src/Framework.Sms.Twilio/Framework.Sms.Twilio.csproj" />
-    <Project Path="src/Framework.Sms.VictoryLink/Framework.Sms.VictoryLink.csproj" />
-    <Project Path="src/Framework.Sms.Vodafone/Framework.Sms.Vodafone.csproj" />
-  </Folder>
-  <Folder Name="/Solution Items/">
-    <File Path=".editorconfig" />
-    <File Path=".gitattributes" />
-    <File Path=".github/workflows/ci.yml" />
-    <File Path=".gitignore" />
-    <File Path="Directory.Build.props" />
-    <File Path="Directory.Build.targets" />
-    <File Path="Directory.Packages.props" />
-    <File Path="Directory.Solution.props" />
-    <File Path="global.json" />
-    <File Path="nuget.config" />
-    <File Path="README.md" />
-  </Folder>
-  <Folder Name="/Validations/">
-    <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
-    <Project Path="tests/Framework.FluentValidation.Tests.Unit/Framework.FluentValidation.Tests.Unit.csproj" />
-  </Folder>
-  <Project Path="build/_build.csproj">
-    <Build Project="false" />
-  </Project>
+    <Folder Name="/Api.OpenApi/">
+        <Project Path="demo/Framework.OpenApi.Nswag.Demo/Framework.OpenApi.Nswag.Demo.csproj" />
+        <Project Path="src/Framework.OpenApi.Nswag.OData/Framework.OpenApi.Nswag.OData.csproj" />
+        <Project Path="src/Framework.OpenApi.Nswag/Framework.OpenApi.Nswag.csproj" />
+        <Project Path="src/Framework.OpenApi.Scalar/Framework.OpenApi.Scalar.csproj" />
+    </Folder>
+    <Folder Name="/Api/">
+        <Project Path="demo/Framework.Api.Demo/Framework.Api.Demo.csproj" />
+        <Project Path="src/Framework.Api.DataProtection/Framework.Api.DataProtection.csproj" />
+        <Project Path="src/Framework.Api.FluentValidation/Framework.Api.FluentValidation.csproj" />
+        <Project Path="src/Framework.Api.Logging.Serilog/Framework.Api.Logging.Serilog.csproj" />
+        <Project Path="src/Framework.Api.MinimalApi/Framework.Api.MinimalApi.csproj" />
+        <Project Path="src/Framework.Api.Mvc/Framework.Api.Mvc.csproj" />
+        <Project Path="src/Framework.Api/Framework.Api.csproj" />
+        <Project Path="tests/Framework.Api.FluentValidation.Tests.Unit/Framework.Api.FluentValidation.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Api.Tests.Integration/Framework.Api.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Api.Tests.Unit/Framework.Api.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Blobs/">
+        <Project Path="demo/Framework.Tus.Demo/Framework.Tus.Demo.csproj" />
+        <Project Path="src/Framework.Blobs.Abstraction/Framework.Blobs.Abstraction.csproj" />
+        <Project Path="src/Framework.Blobs.Aws/Framework.Blobs.Aws.csproj" />
+        <Project Path="src/Framework.Blobs.Azure/Framework.Blobs.Azure.csproj" />
+        <Project Path="src/Framework.Blobs.FileSystem/Framework.Blobs.FileSystem.csproj" />
+        <Project Path="src/Framework.Blobs.Redis/Framework.Blobs.Redis.csproj" />
+        <Project Path="src/Framework.Blobs.SshNet/Framework.Blobs.SshNet.csproj" />
+        <Project Path="src/Framework.Tus.Azure/Framework.Tus.Azure.csproj" />
+        <Project Path="src/Framework.Tus.ResourceLock/Framework.Tus.ResourceLock.csproj" />
+        <Project Path="src/Framework.Tus/Framework.Tus.csproj" />
+        <Project Path="tests/Framework.Blobs.Aws.Tests.Integration/Framework.Blobs.Aws.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.Azure.Tests.Integration/Framework.Blobs.Azure.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.FileSystem.Tests.Integration/Framework.Blobs.FileSystem.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.Redis.Tests.Integration/Framework.Blobs.Redis.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.SshNet.Tests.Integration/Framework.Blobs.SshNet.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.Tests.Harness/Framework.Blobs.Tests.Harness.csproj" />
+        <Project Path="tests/Framework.Tus.Azure.Tests.Integration/Framework.Tus.Azure.Tests.Integration.csproj" />
+    </Folder>
+    <Folder Name="/Caching/">
+        <Project Path="src/Framework.Caching.Abstraction/Framework.Caching.Abstraction.csproj" />
+        <Project Path="src/Framework.Caching.Foundatio.Memory/Framework.Caching.Foundatio.Memory.csproj" />
+        <Project Path="src/Framework.Caching.Foundatio.Redis/Framework.Caching.Foundatio.Redis.csproj" />
+    </Folder>
+    <Folder Name="/Captcha/">
+        <Project Path="demo/Framework.Recaptcha.Demo/Framework.Recaptcha.Demo.csproj" />
+        <Project Path="src/Framework.Recaptcha/Framework.Recaptcha.csproj" />
+    </Folder>
+    <Folder Name="/Database/">
+        <Project Path="src/Framework.Redis/Framework.Redis.csproj" />
+        <Project Path="src/Framework.Sql.Abstraction/Framework.Sql.Abstraction.csproj" />
+        <Project Path="src/Framework.Sql.PostgreSql/Framework.Sql.PostgreSql.csproj" />
+        <Project Path="src/Framework.Sql.Sqlite/Framework.Sql.Sqlite.csproj" />
+        <Project Path="src/Framework.Sql.SqlServer/Framework.Sql.SqlServer.csproj" />
+        <Project Path="tests/Framework.Sql.PostgreSql.Tests.Integration/Framework.Sql.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Sql.Sqlite.Tests.Integration/Framework.Sql.Sqlite.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Sql.SqlServer.Tests.Integration/Framework.Sql.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Sql.Tests.Harness/Framework.Sql.Tests.Harness.csproj" />
+    </Folder>
+    <Folder Name="/Emails/">
+        <Project Path="src/Framework.Emails.Abstraction/Framework.Emails.Abstraction.csproj" />
+        <Project Path="src/Framework.Emails.Aws/Framework.Emails.Aws.csproj" />
+        <Project Path="src/Framework.Emails.Core/Framework.Emails.Core.csproj" />
+        <Project Path="src/Framework.Emails.Dev/Framework.Emails.Dev.csproj" />
+        <Project Path="src/Framework.Emails.Mailkit/Framework.Emails.Mailkit.csproj" />
+    </Folder>
+    <Folder Name="/Features/">
+        <Project Path="src/Framework.Features.Abstractions/Framework.Features.Abstractions.csproj" />
+        <Project Path="src/Framework.Features.Core/Framework.Features.Core.csproj" />
+        <Project Path="src/Framework.Features.Storage.EntityFramework/Framework.Features.Storage.EntityFramework.csproj" />
+        <Project Path="tests/Framework.Features.Tests.Integration/Framework.Features.Tests.Integration.csproj" />
+    </Folder>
+    <Folder Name="/Generators/">
+        <Project Path="src/Framework.Generator.Primitives.Abstractions/Framework.Generator.Primitives.Abstractions.csproj" />
+        <Project Path="src/Framework.Generator.Primitives/Framework.Generator.Primitives.csproj" />
+        <Project Path="tests/Framework.Generator.Primitives.Tests.Unit/Framework.Generator.Primitives.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Identities/">
+        <Project Path="src/Framework.Identity.Storage.EntityFramework/Framework.Identity.Storage.EntityFramework.csproj" />
+    </Folder>
+    <Folder Name="/Imaging/">
+        <Project Path="src/Framework.Imaging.Abstraction/Framework.Imaging.Abstraction.csproj" />
+        <Project Path="src/Framework.Imaging.Core/Framework.Imaging.Core.csproj" />
+        <Project Path="src/Framework.Imaging.ImageSharp/Framework.Imaging.ImageSharp.csproj" />
+        <Project Path="tests/Framework.Imaging.ImageSharp.Tests.Unit/Framework.Imaging.ImageSharp.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Kernel/">
+        <Project Path="src/Framework.Base/Framework.Base.csproj" />
+        <Project Path="src/Framework.BuildingBlocks/Framework.BuildingBlocks.csproj" />
+        <Project Path="src/Framework.Checks/Framework.Checks.csproj" />
+        <Project Path="src/Framework.Domains/Framework.Domains.csproj" />
+        <Project Path="src/Framework.Hosting/Framework.Hosting.csproj" />
+        <Project Path="src/Framework.NetTopologySuite/Framework.NetTopologySuite.csproj" />
+        <Project Path="src/Framework.Specifications/Framework.Specifications.csproj" />
+        <Project Path="src/Framework.Testing.Testcontainers/Framework.Testing.Testcontainers.csproj" />
+        <Project Path="src/Framework.Testing/Framework.Testing.csproj" />
+        <Project Path="tests/Framework.Base.Tests.Unit/Framework.Base.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.BuildingBlocks.Tests.Unit/Framework.BuildingBlocks.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Checks.Tests.Unit/Framework.Checks.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Domains.Tests.Unit/Framework.Domains.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Hosting.Tests.Unit/Framework.Hosting.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Specifications.Tests.Unit/Framework.Specifications.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Locks/">
+        <Project Path="src/Framework.ResourceLocks.Abstraction/Framework.ResourceLocks.Abstraction.csproj" />
+        <Project Path="src/Framework.ResourceLocks.Cache/Framework.ResourceLocks.Cache.csproj" />
+        <Project Path="src/Framework.ResourceLocks.Core/Framework.ResourceLocks.Core.csproj" />
+        <Project Path="src/Framework.ResourceLocks.Redis/Framework.ResourceLocks.Redis.csproj" />
+        <Project Path="tests/Framework.ResourceLocks.Cache.Tests.Integration/Framework.ResourceLocks.Cache.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.ResourceLocks.Redis.Tests.Integration/Framework.ResourceLocks.Redis.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.ResourceLocks.Tests.Harness/Framework.ResourceLocks.Tests.Harness.csproj" />
+    </Folder>
+    <Folder Name="/MediaIndexing/">
+        <Project Path="src/Framework.Media.Indexing.Abstraction/Framework.Media.Indexing.Abstraction.csproj" />
+        <Project Path="src/Framework.Media.Indexing/Framework.Media.Indexing.csproj" />
+        <Project Path="tests/Framework.Media.Indexing.Tests.Unit/Framework.Media.Indexing.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Messaging/">
+        <Project Path="src/Framework.Messaging.Abstractions/Framework.Messaging.Abstractions.csproj" />
+        <Project Path="src/Framework.Messaging.Cap/Framework.Messaging.Cap.csproj" />
+        <Project Path="src/Framework.Messaging.Foundatio/Framework.Messaging.Foundatio.csproj" />
+        <Project Path="src/Framework.Messaging.LocalServiceProvider/Framework.Messaging.LocalServiceProvider.csproj" />
+        <Project Path="tests/Framework.Messaging.Foundatio.Tests.Integration/Framework.Messaging.Foundatio.Tests.Integration.csproj" />
+    </Folder>
+    <Folder Name="/Observability/">
+        <Project Path="src/Framework.Logging.Serilog/Framework.Logging.Serilog.csproj" />
+    </Folder>
+    <Folder Name="/Orms/">
+        <Project Path="demo/Framework.EntityFramework.Migrations.Startup/Framework.EntityFramework.Migrations.Startup.csproj" />
+        <Project Path="src/Framework.Orm.Couchbase/Framework.Orm.Couchbase.csproj" />
+        <Project Path="src/Framework.Orm.Dapper/Framework.Orm.Dapper.csproj" />
+        <Project Path="src/Framework.Orm.EntityFramework/Framework.Orm.EntityFramework.csproj" />
+        <Project Path="tests/Framework.Orm.EntityFramework.Tests.Integration/Framework.Orm.EntityFramework.Tests.Integration.csproj" />
+    </Folder>
+    <Folder Name="/Payments/">
+        <Project Path="src/Framework.Payments.Paymob.CashIn/Framework.Payments.Paymob.CashIn.csproj" />
+        <Project Path="src/Framework.Payments.Paymob.CashOut/Framework.Payments.Paymob.CashOut.csproj" />
+        <Project Path="src/Framework.Payments.Paymob.Services/Framework.Payments.Paymob.Services.csproj" />
+        <Project Path="tests/Framework.Payments.Paymob.CashIn.Tests.Unit/Framework.Payments.Paymob.CashIn.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Payments.Paymob.CashOut.Tests.Unit/Framework.Payments.Paymob.CashOut.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Permissions/">
+        <Project Path="src/Framework.Permissions.Abstraction/Framework.Permissions.Abstraction.csproj" />
+        <Project Path="src/Framework.Permissions.Core/Framework.Permissions.Core.csproj" />
+        <Project Path="src/Framework.Permissions.Storage.EntityFramework/Framework.Permissions.Storage.EntityFramework.csproj" />
+        <Project Path="tests/Framework.Permissions.Tests.Integration/Framework.Permissions.Tests.Integration.csproj" />
+    </Folder>
+    <Folder Name="/PushNotifications/">
+        <Project Path="src/Framework.PushNotifications.Abstraction/Framework.PushNotifications.Abstraction.csproj" />
+        <Project Path="src/Framework.PushNotifications.Dev/Framework.PushNotifications.Dev.csproj" />
+        <Project Path="src/Framework.PushNotifications.Firebase/Framework.PushNotifications.Firebase.csproj" />
+    </Folder>
+    <Folder Name="/Queueing/">
+        <Project Path="src/Framework.Queueing.Abstraction/Framework.Queueing.Abstraction.csproj" />
+        <Project Path="src/Framework.Queueing.Foundatio/Framework.Queueing.Foundatio.csproj" />
+    </Folder>
+    <Folder Name="/Seo/">
+        <Project Path="src/Framework.Sitemaps/Framework.Sitemaps.csproj" />
+        <Project Path="src/Framework.Slugs/Framework.Slugs.csproj" />
+        <Project Path="tests/Framework.Sitemaps.Tests.Unit/Framework.Sitemaps.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Slugs.Tests.Unit/Framework.Slugs.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Serializers/">
+        <Project Path="src/Framework.Serializer.Abstraction/Framework.Serializer.Abstraction.csproj" />
+        <Project Path="src/Framework.Serializer.Json/Framework.Serializer.Json.csproj" />
+        <Project Path="src/Framework.Serializer.MessagePack/Framework.Serializer.MessagePack.csproj" />
+        <Project Path="tests/Framework.Serializer.Tests.Unit/Framework.Serializer.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Settings/">
+        <Project Path="src/Framework.Settings.Abstraction/Framework.Settings.Abstraction.csproj" />
+        <Project Path="src/Framework.Settings.Core/Framework.Settings.Core.csproj" />
+        <Project Path="src/Framework.Settings.Storage.EntityFramework/Framework.Settings.Storage.EntityFramework.csproj" />
+        <Project Path="tests/Framework.Settings.Tests.Integration/Framework.Settings.Tests.Integration.csproj" />
+    </Folder>
+    <Folder Name="/Sms/">
+        <Project Path="src/Framework.Sms.Abstraction/Framework.Sms.Abstraction.csproj" />
+        <Project Path="src/Framework.Sms.Aws/Framework.Sms.Aws.csproj" />
+        <Project Path="src/Framework.Sms.Cequens/Framework.Sms.Cequens.csproj" />
+        <Project Path="src/Framework.Sms.Connekio/Framework.Sms.Connekio.csproj" />
+        <Project Path="src/Framework.Sms.Dev/Framework.Sms.Dev.csproj" />
+        <Project Path="src/Framework.Sms.Infobip/Framework.Sms.Infobip.csproj" />
+        <Project Path="src/Framework.Sms.Twilio/Framework.Sms.Twilio.csproj" />
+        <Project Path="src/Framework.Sms.VictoryLink/Framework.Sms.VictoryLink.csproj" />
+        <Project Path="src/Framework.Sms.Vodafone/Framework.Sms.Vodafone.csproj" />
+    </Folder>
+    <Folder Name="/Solution Items/">
+        <File Path=".editorconfig" />
+        <File Path=".gitattributes" />
+        <File Path=".github/workflows/ci.yml" />
+        <File Path=".gitignore" />
+        <File Path="Directory.Build.props" />
+        <File Path="Directory.Build.targets" />
+        <File Path="Directory.Packages.props" />
+        <File Path="Directory.Solution.props" />
+        <File Path="global.json" />
+        <File Path="nuget.config" />
+        <File Path="README.md" />
+    </Folder>
+    <Folder Name="/Validations/">
+        <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
+        <Project Path="tests/Framework.FluentValidation.Tests.Unit/Framework.FluentValidation.Tests.Unit.csproj" />
+    </Folder>
+    <Project Path="build/_build.csproj">
+        <Build Project="false" />
+    </Project>
 </Solution>

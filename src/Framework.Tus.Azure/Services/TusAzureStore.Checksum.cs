@@ -14,7 +14,6 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 {
     private readonly IEnumerable<string> _cachedSupportedAlgorithms = ["sha1", "sha256", "sha512", "md5"];
 
-
     private readonly Dictionary<string, Func<HashAlgorithm>> _supportedAlgorithms = new(
         StringComparer.OrdinalIgnoreCase
     )
@@ -28,7 +27,6 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         { "md5", MD5.Create },
 #pragma warning restore CA5351
     };
-
 
     public Task<IEnumerable<string>> GetSupportedAlgorithmsAsync(CancellationToken cancellationToken)
     {
@@ -45,7 +43,6 @@ public sealed partial class TusAzureStore : ITusChecksumStore
      * - if the client requests a checksum verification, don't commit in append and commit here after verification
      * - if the client doesn't request a checksum verification, commit in append and do nothing here
      */
-
 
     // This implements the TUS Checksum Extension's PATCH verification flow:
     // 1. Retrieves pre-calculated checksum from metadata (calculated during AppendDataAsync)

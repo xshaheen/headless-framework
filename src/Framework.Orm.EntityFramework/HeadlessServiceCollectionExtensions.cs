@@ -82,7 +82,7 @@ public static class HeadlessServiceCollectionExtensions
                     {
                         var generator = ActivatorUtilities.CreateInstance<HeadlessCompiledQueryCacheKeyGenerator>(
                             provider,
-                            (ICompiledQueryCacheKeyGenerator) provider.GetRequiredService(descriptor.ImplementationType)
+                            (ICompiledQueryCacheKeyGenerator)provider.GetRequiredService(descriptor.ImplementationType)
                         );
 
                         return generator;

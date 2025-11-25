@@ -1,16 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Framework.Settings</RootNamespace>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Caching.Abstraction\Framework.Caching.Abstraction.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks.Core\Framework.ResourceLocks.Core.csproj" />
     <ProjectReference Include="..\Framework.Settings.Abstraction\Framework.Settings.Abstraction.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <EmbeddedResource Update="Resources\Messages.resx">
       <Generator>ResXFileCodeGenerator</Generator>
@@ -22,5 +19,4 @@
       <DependentUpon>Messages.resx</DependentUpon>
     </Compile>
   </ItemGroup>
-
 </Project>

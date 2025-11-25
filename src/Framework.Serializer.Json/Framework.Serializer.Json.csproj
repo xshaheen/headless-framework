@@ -1,12 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Framework.Serializer</RootNamespace>
   </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Serializer.Abstraction\Framework.Serializer.Abstraction.csproj" />
   </ItemGroup>
-
 </Project>

@@ -1,16 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="AWSSDK.Extensions.NETCore.Setup" />
     <PackageReference Include="AWSSDK.SimpleEmailV2" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Emails.Core\Framework.Emails.Core.csproj" />
   </ItemGroup>
-
 </Project>

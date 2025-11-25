@@ -1,9 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Couchbase.Extensions.Compression.Snappier" />
     <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
@@ -11,10 +9,8 @@
     <PackageReference Include="Couchbase.Transactions" />
     <PackageReference Include="Linq2Couchbase" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Domains\Framework.Domains.csproj" />
   </ItemGroup>
-
 </Project>

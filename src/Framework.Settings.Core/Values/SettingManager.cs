@@ -34,47 +34,55 @@ public sealed class SettingManager(
         CancellationToken cancellationToken = default
     )
     {
-         Argument.IsNotNullOrEmpty(settingNames);
+        Argument.IsNotNullOrEmpty(settingNames);
 
-         var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken);
-         var settingDefinitions = allSettingDefinitions.Where(x => settingNames.Contains(x.Name, StringComparer.Ordinal)).ToList();
-         var result = settingDefinitions.ToDictionary(x => x.Name, x => new SettingValue(x.Name, value: null), StringComparer.Ordinal);
+        var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken);
+        var settingDefinitions = allSettingDefinitions
+            .Where(x => settingNames.Contains(x.Name, StringComparer.Ordinal))
+            .ToList();
+        var result = settingDefinitions.ToDictionary(
+            x => x.Name,
+            x => new SettingValue(x.Name, value: null),
+            StringComparer.Ordinal
+        );
 
-         foreach (var provider in valueProviderManager.Providers.Reverse())
-         {
-             var supportedDefinitions = settingDefinitions
-                 .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
-                 .ToArray();
+        foreach (var provider in valueProviderManager.Providers.Reverse())
+        {
+            var supportedDefinitions = settingDefinitions
+                .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                .ToArray();
 
-             var settingValues = await provider.GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken);
-             var notNullValues = settingValues.Where(x => x.Value != null).ToList();
+            var settingValues = await provider.GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken);
+            var notNullValues = settingValues.Where(x => x.Value != null).ToList();
 
-             foreach (var settingValue in notNullValues)
-             {
-                 var settingDefinition = settingDefinitions.First(
-                     x => string.Equals(x.Name, settingValue.Name, StringComparison.Ordinal)
+            foreach (var settingValue in notNullValues)
+            {
+                var settingDefinition = settingDefinitions.First(x =>
+                    string.Equals(x.Name, settingValue.Name, StringComparison.Ordinal)
                 );
 
-                 if (settingDefinition.IsEncrypted)
-                 {
-                     settingValue.Value = encryptionService.Decrypt(settingDefinition, settingValue.Value);
-                 }
+                if (settingDefinition.IsEncrypted)
+                {
+                    settingValue.Value = encryptionService.Decrypt(settingDefinition, settingValue.Value);
+                }
 
-                 if (result.TryGetValue(settingValue.Name, out var value) && value.Value == null)
-                 {
+                if (result.TryGetValue(settingValue.Name, out var value) && value.Value == null)
+                {
                     value.Value = settingValue.Value;
-                 }
-             }
+                }
+            }
 
-             settingDefinitions.RemoveAll(x => notNullValues.Exists(v => string.Equals(v.Name, x.Name, StringComparison.Ordinal)));
+            settingDefinitions.RemoveAll(x =>
+                notNullValues.Exists(v => string.Equals(v.Name, x.Name, StringComparison.Ordinal))
+            );
 
-             if (settingDefinitions.Count == 0)
-             {
-                 break;
-             }
-         }
+            if (settingDefinitions.Count == 0)
+            {
+                break;
+            }
+        }
 
-         return result;
+        return result;
     }
 
     public async Task<List<SettingValue>> GetAllAsync(

@@ -187,26 +187,25 @@ public static partial class RegexPatterns
     public static partial Regex XmlTag { get; }
 
     [GeneratedRegex(
-        pattern:  "<!--.*?-->",
+        pattern: "<!--.*?-->",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex HtmlComments { get; }
 
     [GeneratedRegex(
-        pattern:  "(?s)<script.*?(/>|</script>)",
+        pattern: "(?s)<script.*?(/>|</script>)",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex HtmlScripts { get; }
 
     [GeneratedRegex(
-        pattern:  "(?s)<style.*?(/>|</style>)",
+        pattern: "(?s)<style.*?(/>|</style>)",
         options: RegexOptions.Compiled | RegexOptions.ExplicitCapture,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds
     )]
     public static partial Regex HtmlStyles { get; }
-
 
     /// <summary>Represent a file with extension absolute/relative URL.</summary>
     /// <example>/api.example.com/file.jpg</example>

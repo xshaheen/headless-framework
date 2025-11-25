@@ -1,10 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Framework</RootNamespace>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.HighPerformance" />
     <PackageReference Include="Flurl" />
@@ -24,9 +22,7 @@
     <PackageReference Include="TimeZoneConverter" />
     <PackageReference Include="ZString" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
   </ItemGroup>
-
 </Project>

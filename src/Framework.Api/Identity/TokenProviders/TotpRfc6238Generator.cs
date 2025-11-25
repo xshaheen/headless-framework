@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-
 using System.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
@@ -10,7 +9,10 @@ namespace Framework.Api.Identity.TokenProviders;
 
 public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 {
-    private static readonly UTF8Encoding _Encoding = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+    private static readonly UTF8Encoding _Encoding = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
 
     public int GenerateCode(byte[] securityToken, TimeSpan timestep, string? modifier = null)
     {
@@ -22,7 +24,13 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         return _ComputeTotp(securityToken, _GetCurrentTimeStepNumber(timestep), modifierBytes);
     }
 
-    public bool ValidateCode(byte[] securityToken, int code, TimeSpan timestep, int variance = 2, string? modifier = null)
+    public bool ValidateCode(
+        byte[] securityToken,
+        int code,
+        TimeSpan timestep,
+        int variance = 2,
+        string? modifier = null
+    )
     {
         Argument.IsNotNull(securityToken);
         Argument.IsPositive(timestep);
@@ -33,7 +41,7 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 
         for (var i = -variance; i <= variance; i++)
         {
-            var computedTotp = _ComputeTotp(securityToken, (ulong) ((long) currentTimeStep + i), modifierBytes);
+            var computedTotp = _ComputeTotp(securityToken, (ulong)((long)currentTimeStep + i), modifierBytes);
 
             if (computedTotp == code)
             {
@@ -48,7 +56,7 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
     {
         var delta = timeProvider.GetUtcNow() - DateTimeOffset.UnixEpoch;
 
-        return (ulong) (delta.Ticks / timestep.Ticks);
+        return (ulong)(delta.Ticks / timestep.Ticks);
     }
 
     private static int _ComputeTotp(byte[] key, ulong timestepNumber, byte[]? modifierBytes)
@@ -56,7 +64,10 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         // See https://tools.ietf.org/html/rfc4226
         // We can add an optional modifier
         Span<byte> timestepAsBytes = stackalloc byte[sizeof(long)];
-        var bitSuccess = BitConverter.TryWriteBytes(timestepAsBytes, IPAddress.HostToNetworkOrder((long) timestepNumber));
+        var bitSuccess = BitConverter.TryWriteBytes(
+            timestepAsBytes,
+            IPAddress.HostToNetworkOrder((long)timestepNumber)
+        );
 
         Debug.Assert(bitSuccess);
 
@@ -81,7 +92,8 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         var offset = hash[^1] & 0xf;
         Debug.Assert(offset + 4 < hash.Length);
 
-        var binaryCode = ((hash[offset] & 0x7f) << 24)
+        var binaryCode =
+            ((hash[offset] & 0x7f) << 24)
             | ((hash[offset + 1] & 0xff) << 16)
             | ((hash[offset + 2] & 0xff) << 8)
             | (hash[offset + 3] & 0xff);

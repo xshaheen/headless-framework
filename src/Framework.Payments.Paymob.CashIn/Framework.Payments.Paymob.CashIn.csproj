@@ -1,25 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <InternalsVisibleTo Include="Framework.Payments.Paymob.CashIn.Tests.Units" />
   </ItemGroup>
-
   <ItemGroup>
     <Compile Update="PaymobCashInBrocker.VoidTransaction.cs">
       <DependentUpon>IPaymobCashInBroker.cs</DependentUpon>
     </Compile>
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
   </ItemGroup>
-
 </Project>

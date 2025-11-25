@@ -75,9 +75,7 @@ public static class PhoneNumberValidators
                 .WithErrorDescriptor(FluentValidatorErrorDescriber.PhoneNumbers.InvalidNumber());
         }
 
-        public IRuleBuilderOptionsConditions<T, string?> PhoneNumber(
-            Func<T, int> countryCodeFunc
-        )
+        public IRuleBuilderOptionsConditions<T, string?> PhoneNumber(Func<T, int> countryCodeFunc)
         {
             return builder.Custom(
                 (number, context) =>

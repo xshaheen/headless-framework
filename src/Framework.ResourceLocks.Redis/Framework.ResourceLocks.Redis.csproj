@@ -1,16 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Redis\Framework.Redis.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks.Core\Framework.ResourceLocks.Core.csproj" />
   </ItemGroup>
-
 </Project>

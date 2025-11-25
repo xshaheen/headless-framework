@@ -65,7 +65,20 @@ public sealed class ToObjectExtensionsTests
     public void To_ValidGuidString_ReturnsGuid()
     {
         const string guidString = "2260AFEC-BBFD-42D4-A91A-DCB11E09B17F";
-        var expected = new Guid(0x2260AFEC, 0xBBFD, 0x42D4, 0xA9, 0x1A, 0xDC, 0xB1, 0x1E, 0x9, 0xB1, 0x7F) /* 2260AFEC-BBFD-42D4-A91A-DCB11E09B17F */;
+        var expected = new Guid(
+            0x2260AFEC,
+            0xBBFD,
+            0x42D4,
+            0xA9,
+            0x1A,
+            0xDC,
+            0xB1,
+            0x1E,
+            0x9,
+            0xB1,
+            0x7F
+        ) /* 2260AFEC-BBFD-42D4-A91A-DCB11E09B17F */
+        ;
 
         guidString.To<Guid>().Should().Be(expected);
     }

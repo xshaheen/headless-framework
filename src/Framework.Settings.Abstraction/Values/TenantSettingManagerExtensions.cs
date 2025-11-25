@@ -112,13 +112,7 @@ public static class TenantSettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.FindAsync(
-            name,
-            SettingValueProviderNames.Tenant,
-            tenantId,
-            fallback,
-            cancellationToken
-        );
+        return settingManager.FindAsync(name, SettingValueProviderNames.Tenant, tenantId, fallback, cancellationToken);
     }
 
     public static Task<string?> FindForCurrentTenantAsync(

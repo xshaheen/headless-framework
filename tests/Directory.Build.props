@@ -1,25 +1,20 @@
 <Project>
-
   <Import Project="../Directory.Build.props" />
-
   <PropertyGroup>
     <!--
     xUnit1044: Avoid using TheoryData type arguments that are not serializable
     -->
     <NoWarn>$(NoWarn);xUnit1044</NoWarn>
   </PropertyGroup>
-
   <ItemGroup>
     <Content Include="../xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-
   <ItemGroup Label="Global Usings">
     <Using Include="NSubstitute" />
     <Using Include="Bogus" />
     <Using Include="AwesomeAssertions" />
     <Using Include="Xunit" />
   </ItemGroup>
-
   <ItemGroup Label="Global Packages">
     <PackageReference Include="Bogus" />
     <PackageReference Include="DeepCloner" />
@@ -27,7 +22,6 @@
     <PackageReference Include="AwesomeAssertions.Json" />
     <PackageReference Include="NSubstitute" />
   </ItemGroup>
-
   <ItemGroup Label="Global Analyzers">
     <PackageReference Include="AwesomeAssertions.Analyzers">
       <PrivateAssets>all</PrivateAssets>
@@ -38,10 +32,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-
   <ItemGroup Label="Verify">
     <None Remove="Snapshots\*.received.txt" />
     <None Remove="Snapshots\*.received.cs" />
   </ItemGroup>
-
 </Project>

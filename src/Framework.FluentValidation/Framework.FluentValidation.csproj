@@ -1,17 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
   </ItemGroup>
-
   <ItemGroup Label="Resx">
     <EmbeddedResource Update="Resources\FluentValidatorErrors.resx">
       <Generator>ResXFileCodeGenerator</Generator>
@@ -23,5 +19,4 @@
       <DependentUpon>FluentValidatorErrors.resx</DependentUpon>
     </Compile>
   </ItemGroup>
-
 </Project>

@@ -73,7 +73,6 @@ public static class AddPermissionsExtensions
         services.AddOrReplaceSingleton<IPermissionManager, AlwaysAllowPermissionManager>();
         services.AddOrReplaceSingleton<IAuthorizationService, AlwaysAllowAuthorizationService>();
 
-
         return services;
     }
 

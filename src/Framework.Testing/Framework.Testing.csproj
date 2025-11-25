@@ -1,11 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <IsTestProject>false</IsTestProject>
     <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Bogus" />
     <PackageReference Include="AwesomeAssertions" />
@@ -14,10 +12,8 @@
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit.v3.extensibility.core" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
     <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
   </ItemGroup>
-
 </Project>
