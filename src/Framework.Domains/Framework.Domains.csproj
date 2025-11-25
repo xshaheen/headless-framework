@@ -1,15 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <Folder Include="Primitives\" />
   </ItemGroup>
-
   <ItemGroup>
     <Compile Remove="Primitives\TenantId.cs" />
   </ItemGroup>
-
 </Project>

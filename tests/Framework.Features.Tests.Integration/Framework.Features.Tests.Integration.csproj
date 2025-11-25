@@ -1,11 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
@@ -18,7 +16,6 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
@@ -27,11 +24,9 @@
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Redis\Framework.ResourceLocks.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <None Update="TestSetup\postgre-init.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
 </Project>

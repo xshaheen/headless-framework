@@ -138,19 +138,18 @@ public sealed class AwsBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(container);
 
         var tasks = blobs.Select(async blob =>
+        {
+            try
             {
-                try
-                {
-                    await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                    return Result<Exception>.Success();
-                }
-                catch (Exception e)
-                {
-                    return Result<Exception>.Fail(e);
-                }
+                return Result<Exception>.Success();
             }
-        );
+            catch (Exception e)
+            {
+                return Result<Exception>.Fail(e);
+            }
+        });
 
         return await Task.WhenAll(tasks).WithAggregatedExceptions();
     }
@@ -617,7 +616,8 @@ public sealed class AwsBlobStorage : IBlobStorage
         var bucket = _BuildBucketName(container);
         var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
-        var result = new PagedFileListResult((_, token) => _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
+        var result = new PagedFileListResult(
+            (_, token) => _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
         );
 
         await result.NextPageAsync(cancellationToken).AnyContext();
@@ -703,12 +703,11 @@ public sealed class AwsBlobStorage : IBlobStorage
         }
 
         return blobs.Where(blob =>
-            {
-                var path = blob?.Key;
+        {
+            var path = blob?.Key;
 
-                return path is not null && pattern?.IsMatch(path) != false;
-            }
-        )!;
+            return path is not null && pattern?.IsMatch(path) != false;
+        })!;
     }
 
     private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)

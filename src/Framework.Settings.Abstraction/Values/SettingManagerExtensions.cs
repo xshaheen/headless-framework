@@ -16,13 +16,7 @@ public static class SettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var value = await settingManager.FindAsync(
-            settingName,
-            providerName,
-            providerKey,
-            fallback,
-            cancellationToken
-        );
+        var value = await settingManager.FindAsync(settingName, providerName, providerKey, fallback, cancellationToken);
 
         return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
     }
@@ -36,13 +30,7 @@ public static class SettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var value = await settingManager.FindAsync(
-            settingName,
-            providerName,
-            providerKey,
-            fallback,
-            cancellationToken
-        );
+        var value = await settingManager.FindAsync(settingName, providerName, providerKey, fallback, cancellationToken);
 
         return string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
     }
@@ -56,15 +44,11 @@ public static class SettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var value = await settingManager.FindAsync(
-            settingName,
-            providerName,
-            providerKey,
-            fallback,
-            cancellationToken
-        );
+        var value = await settingManager.FindAsync(settingName, providerName, providerKey, fallback, cancellationToken);
 
-        return string.IsNullOrEmpty(value) ? default : JsonSerializer.Deserialize<T>(value, JsonConstants.DefaultInternalJsonOptions);
+        return string.IsNullOrEmpty(value)
+            ? default
+            : JsonSerializer.Deserialize<T>(value, JsonConstants.DefaultInternalJsonOptions);
     }
 
     public static Task SetAsync<T>(
@@ -79,6 +63,13 @@ public static class SettingManagerExtensions
     {
         var valueJson = JsonSerializer.Serialize(value, JsonConstants.DefaultInternalJsonOptions);
 
-        return settingManager.SetAsync(settingName, valueJson, providerName, providerKey, forceToSet, cancellationToken);
+        return settingManager.SetAsync(
+            settingName,
+            valueJson,
+            providerName,
+            providerKey,
+            forceToSet,
+            cancellationToken
+        );
     }
 }

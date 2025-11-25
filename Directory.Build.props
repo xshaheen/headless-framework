@@ -1,15 +1,11 @@
 <Project>
-
   <Import Sdk="Framework.Defaults" Project="Sdk.props" Version="0.0.90" />
-
   <PropertyGroup>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
-
   <ItemGroup Label="Package References">
     <PackageReference Include="JetBrains.Annotations" />
     <Using Include="JetBrains.Annotations" />
   </ItemGroup>
-
 </Project>

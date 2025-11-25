@@ -1,17 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
     <ProjectReference Include="..\Framework.Blobs.Abstraction\Framework.Blobs.Abstraction.csproj" />
   </ItemGroup>
-
 </Project>

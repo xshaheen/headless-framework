@@ -1,25 +1,27 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Framework</RootNamespace>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Snappier" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
     <ProjectReference Include="..\Framework.Generator.Primitives.Abstractions\Framework.Generator.Primitives.Abstractions.csproj" />
-    <ProjectReference Include="..\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" ExcludeAssets="runtime" />
+    <ProjectReference
+      Include="..\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+      ExcludeAssets="runtime"
+    />
     <ProjectReference Include="..\Framework.Domains\Framework.Domains.csproj" />
     <ProjectReference Include="..\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
   </ItemGroup>
-
   <PropertyGroup Label="Primitives Generator Settings">
     <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
     <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
@@ -29,7 +31,6 @@
     <PrimitiveEntityFrameworkValueConverters>false</PrimitiveEntityFrameworkValueConverters>
     <PrimitiveDapperConverters>false</PrimitiveDapperConverters>
   </PropertyGroup>
-
   <ItemGroup Label="Primitives Generator Settings">
     <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
     <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
@@ -39,5 +40,4 @@
     <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
     <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
   </ItemGroup>
-
 </Project>

@@ -1,16 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
   </ItemGroup>
-
 </Project>

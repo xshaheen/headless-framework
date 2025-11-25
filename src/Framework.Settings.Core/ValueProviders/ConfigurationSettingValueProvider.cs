@@ -16,7 +16,7 @@ public sealed class ConfigurationSettingValueProvider(IConfiguration configurati
 
     public Task<string?> GetOrDefaultAsync(
         SettingDefinition setting,
-        string? providerKey= null,
+        string? providerKey = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -28,7 +28,7 @@ public sealed class ConfigurationSettingValueProvider(IConfiguration configurati
 
     public Task<List<SettingValue>> GetAllAsync(
         SettingDefinition[] settings,
-        string? providerKey= null,
+        string? providerKey = null,
         CancellationToken cancellationToken = default
     )
     {

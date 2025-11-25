@@ -1,18 +1,14 @@
 <Project>
-
   <Import Project="../Directory.Build.props" />
-
   <PropertyGroup Label="Packages Compiler settings">
     <GenerateSBOM>true</GenerateSBOM>
   </PropertyGroup>
-
   <PropertyGroup Label="Packages Source Link">
     <!-- Optional: Embed source files that are not tracked by the source control manager to the PDB -->
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <!-- Optional: Include PDB in the built .nupkg -->
     <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
   </PropertyGroup>
-
   <PropertyGroup Label="Packages Information">
     <Product>Framework</Product>
     <Authors>Mahmoud Shaheen</Authors>
@@ -20,15 +16,17 @@
     <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
-
   <PropertyGroup Label="Repository">
     <RepositoryUrl>https://github.com/xshaheen/framework.git</RepositoryUrl>
     <PackageProjectUrl>https://github.com/xshaheen/framework</PackageProjectUrl>
     <PackageReleaseNotes>https://github.com/xshaheen/framework/releases</PackageReleaseNotes>
   </PropertyGroup>
-
   <ItemGroup Label="Package References">
-    <PackageReference Condition="'$(Configuration)' == 'Release'" Include="Microsoft.SourceLink.GitHub" PrivateAssets="All">
+    <PackageReference
+      Condition="'$(Configuration)' == 'Release'"
+      Include="Microsoft.SourceLink.GitHub"
+      PrivateAssets="All"
+    >
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
@@ -41,9 +39,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-
   <ItemGroup Label="README Files">
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
-
 </Project>

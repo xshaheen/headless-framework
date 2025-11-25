@@ -106,13 +106,7 @@ public static class UserSettingManagerExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return settingManager.FindAsync(
-            name,
-            SettingValueProviderNames.User,
-            userId,
-            fallback,
-            cancellationToken
-        );
+        return settingManager.FindAsync(name, SettingValueProviderNames.User, userId, fallback, cancellationToken);
     }
 
     public static Task<string?> FindForCurrentUserAsync(

@@ -107,7 +107,6 @@ public sealed class DefaultPermissionErrorsDescriptor : IPermissionErrorsDescrip
 
     public ValueTask<ErrorDescriptor> PermissionProviderNotDefined(string permissionName, string providerName)
     {
-
         var description = string.Format(
             CultureInfo.InvariantCulture,
             Messages.permissions_provider_not_defined,

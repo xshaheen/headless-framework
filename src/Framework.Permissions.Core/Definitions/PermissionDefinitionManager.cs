@@ -10,10 +10,7 @@ public sealed class PermissionDefinitionManager(
     IDynamicPermissionDefinitionStore dynamicStore
 ) : IPermissionDefinitionManager
 {
-    public async Task<PermissionDefinition?> FindAsync(
-        string name,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<PermissionDefinition?> FindAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(name);
 

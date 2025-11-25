@@ -1,16 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="FirebaseAdmin" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.PushNotifications.Abstraction\Framework.PushNotifications.Abstraction.csproj" />
   </ItemGroup>
-
 </Project>

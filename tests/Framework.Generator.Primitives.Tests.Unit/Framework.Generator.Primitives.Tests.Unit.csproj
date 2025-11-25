@@ -1,11 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Dapper" />
@@ -16,22 +14,18 @@
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
   </ItemGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Base\Framework.Base.csproj" />
     <ProjectReference Include="..\..\src\Framework.Generator.Primitives.Abstractions\Framework.Generator.Primitives.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Framework.Generator.Primitives\Framework.Generator.Primitives.csproj" />
   </ItemGroup>
-
   <ItemGroup>
     <Compile Remove="Snapshots\**" />
     <EmbeddedResource Remove="Snapshots\**" />
     <None Remove="Snapshots\**" />
   </ItemGroup>
-
 </Project>
