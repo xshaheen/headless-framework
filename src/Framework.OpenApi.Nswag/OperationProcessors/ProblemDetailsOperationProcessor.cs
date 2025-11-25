@@ -156,13 +156,13 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         switch (statusCode)
         {
             case "400":
-                _SetDefaultAndExample(response, _status400ProblemDetails, _problemDetailsSchema);
+                _SetDefaultAndExample(response, _status400ProblemDetails, _badRequestSchema);
                 break;
             case "401":
-                _SetDefaultAndExample(response, _status401ProblemDetails, _problemDetailsSchema);
+                _SetDefaultAndExample(response, _status401ProblemDetails, _unauthorizedSchema);
                 break;
             case "403":
-                _SetDefaultAndExample(response, _status403ProblemDetails, _problemDetailsSchema);
+                _SetDefaultAndExample(response, _status403ProblemDetails, _forbiddenSchema);
                 break;
             case "404":
                 _SetDefaultAndExample(response, _status404ProblemDetails, _entityNotFoundSchema);
