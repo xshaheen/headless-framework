@@ -17,18 +17,11 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// </summary>
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
-    private readonly JsonSchema _baseProblemDetailsSchema;
-    private readonly JsonSchema _entityNotFoundProblemDetailsSchema;
-    private readonly JsonSchema _conflictProblemDetailsSchema;
-    private readonly JsonSchema _unprocessableEntityProblemDetailsSchema;
-
-    public ProblemDetailsOperationProcessor()
-    {
-        _baseProblemDetailsSchema = JsonSchema.FromType<HeadlessProblemDetails>();
-        _entityNotFoundProblemDetailsSchema = JsonSchema.FromType<EntityNotFoundHeadlessProblemDetails>();
-        _conflictProblemDetailsSchema = JsonSchema.FromType<ConflictHeadlessProblemDetails>();
-        _unprocessableEntityProblemDetailsSchema = JsonSchema.FromType<UnprocessableEntityHeadlessProblemDetails>();
-    }
+    private readonly JsonSchema _baseProblemDetailsSchema = JsonSchema.FromType<HeadlessProblemDetails>();
+    private readonly JsonSchema _entityNotFoundSchema = JsonSchema.FromType<EntityNotFoundHeadlessProblemDetails>();
+    private readonly JsonSchema _conflictSchema = JsonSchema.FromType<ConflictHeadlessProblemDetails>();
+    private readonly JsonSchema _unprocessableEntitySchema =
+        JsonSchema.FromType<UnprocessableEntityHeadlessProblemDetails>();
 
     private readonly HeadlessProblemDetails _status400ProblemDetails = new()
     {
@@ -126,6 +119,12 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     {
         Argument.IsNotNull(context);
 
+        // Register schemas in document definitions to enable $ref usage
+        _RegisterSchemaIfNeeded(context, _baseProblemDetailsSchema, nameof(HeadlessProblemDetails));
+        _RegisterSchemaIfNeeded(context, _entityNotFoundSchema, nameof(EntityNotFoundHeadlessProblemDetails));
+        _RegisterSchemaIfNeeded(context, _conflictSchema, nameof(ConflictHeadlessProblemDetails));
+        _RegisterSchemaIfNeeded(context, _unprocessableEntitySchema, nameof(UnprocessableEntityHeadlessProblemDetails));
+
         var operation = context.OperationDescription.Operation;
 
         foreach (var response in operation.Responses)
@@ -133,6 +132,14 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
             _SetExampleResponseForKnownStatus(response.Key, response.Value);
         }
         return true;
+    }
+
+    private static void _RegisterSchemaIfNeeded(OperationProcessorContext context, JsonSchema schema, string schemaName)
+    {
+        if (!context.Document.Definitions.ContainsKey(schemaName))
+        {
+            context.Document.Definitions[schemaName] = schema;
+        }
     }
 
     private void _SetExampleResponseForKnownStatus(string statusCode, OpenApiResponse response)
@@ -149,13 +156,13 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                 _SetDefaultAndExample(response, _status403ProblemDetails, _baseProblemDetailsSchema);
                 break;
             case "404":
-                _SetDefaultAndExample(response, _status404ProblemDetails, _entityNotFoundProblemDetailsSchema);
+                _SetDefaultAndExample(response, _status404ProblemDetails, _entityNotFoundSchema);
                 break;
             case "409":
-                _SetDefaultAndExample(response, _status409ProblemDetails, _conflictProblemDetailsSchema);
+                _SetDefaultAndExample(response, _status409ProblemDetails, _conflictSchema);
                 break;
             case "422":
-                _SetDefaultAndExample(response, _status422ProblemDetails, _unprocessableEntityProblemDetailsSchema);
+                _SetDefaultAndExample(response, _status422ProblemDetails, _unprocessableEntitySchema);
                 break;
         }
     }
@@ -164,36 +171,27 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     {
         if (response.Content == null)
         {
-            // Cannot set Content if null, so nothing to do
-            return;
+            return; // Cannot set Content if null, so nothing to do
         }
 
-        // Ensure ProblemJson content type exists with proper schema
+        // Create a schema reference instead of embedding the schema
+        var schemaReference = new JsonSchema { Reference = schema };
+
+        // Ensure ProblemJson content type exists with schema reference
         if (!response.Content.TryGetValue(ContentTypes.Applications.ProblemJson, out var problemJsonMediaType))
         {
-            problemJsonMediaType = new OpenApiMediaType { Schema = schema };
+            problemJsonMediaType = new OpenApiMediaType { Schema = schemaReference };
             response.Content[ContentTypes.Applications.ProblemJson] = problemJsonMediaType;
         }
         else
         {
-            problemJsonMediaType.Schema = schema;
+            problemJsonMediaType.Schema = schemaReference;
         }
 
         problemJsonMediaType.Example = problemDetails;
-
-        // Also add application/json content type with the same schema and example
-        if (!response.Content.TryGetValue(ContentTypes.Applications.Json, out var jsonMediaType))
-        {
-            jsonMediaType = new OpenApiMediaType { Schema = schema };
-            response.Content[ContentTypes.Applications.Json] = jsonMediaType;
-        }
-        else
-        {
-            jsonMediaType.Schema = schema;
-        }
-
-        jsonMediaType.Example = problemDetails;
     }
+
+    #region Types
 
 #pragma warning disable IDE1006
     public class HeadlessProblemDetails
@@ -230,4 +228,6 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         public required Dictionary<string, List<ErrorDescriptor>> errors { get; init; }
     }
 #pragma warning restore IDE1006
+
+    #endregion
 }

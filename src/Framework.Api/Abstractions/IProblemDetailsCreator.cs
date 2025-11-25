@@ -19,6 +19,8 @@ public interface IProblemDetailsCreator
 
     ProblemDetails MalformedSyntax();
 
+    ProblemDetails TooManyRequests(int retryAfterSeconds);
+
     ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors);
 
     ProblemDetails Conflict(params IEnumerable<ErrorDescriptor> errors);
@@ -199,5 +201,21 @@ public sealed class ProblemDetailsCreator(
                 }
             );
         }
+    }
+
+    public ProblemDetails TooManyRequests(int retryAfterSeconds)
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = ProblemDetailsConstants.Titles.TooManyRequests,
+            Detail = ProblemDetailsConstants.Details.TooManyRequests,
+        };
+
+        problemDetails.Extensions["retryAfter"] = retryAfterSeconds;
+
+        _Normalize(problemDetails);
+
+        return problemDetails;
     }
 }

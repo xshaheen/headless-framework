@@ -17,6 +17,7 @@ public static class ProblemDetailsConstants
         public const string UnprocessableEntity = "https://tools.ietf.org/html/rfc4918#section-11.2";
         public const string Conflict = "https://tools.ietf.org/html/rfc9110#section-15.5.10";
         public const string InternalError = "https://tools.ietf.org/html/rfc9110#section-15.6.1";
+        public const string TooManyRequests = "https://datatracker.ietf.org/doc/html/rfc6585#section-4";
     }
 
     public static class Titles
@@ -29,6 +30,7 @@ public static class ProblemDetailsConstants
         public const string UnprocessableEntity = "validation-problem";
         public const string Conflict = "conflict-request";
         public const string InternalError = "unhandled-exception";
+        public const string TooManyRequests = "too-many-requests";
     }
 
     public static class Details
@@ -51,5 +53,6 @@ public static class ProblemDetailsConstants
         public const string Conflict = "Conflict - one or more business rules violated.";
         public const string UnprocessableEntity = "One or more validation errors occurred.";
         public const string InternalError = "An error occurred while processing your request.";
+        public const string TooManyRequests = "Too many requests - please try again later.";
     }
 }
