@@ -2,6 +2,7 @@
 
 using Framework.Checks;
 using Framework.Constants;
+using Framework.OpenApi.Nswag.SchemaProcessors;
 using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
 using NJsonSchema;
@@ -17,15 +18,33 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// </summary>
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
-    private readonly JsonSchema _errorDescriptorSchema = JsonSchema.FromType<ErrorDescriptor>();
-    private readonly JsonSchema _problemDetailsSchema = JsonSchema.FromType<ProblemDetails>();
-    private readonly JsonSchema _entityNotFoundSchema = JsonSchema.FromType<EntityNotFoundProblemDetails>();
-    private readonly JsonSchema _entityNotFoundParamsSchema = JsonSchema.FromType<EntityNotFoundProblemDetailsParams>();
-    private readonly JsonSchema _conflictSchema = JsonSchema.FromType<ConflictProblemDetails>();
-    private readonly JsonSchema _unprocessableEntitySchema = JsonSchema.FromType<UnprocessableEntityProblemDetails>();
-    private readonly JsonSchema _badRequestSchema = JsonSchema.FromType<BadRequestProblemDetails>();
-    private readonly JsonSchema _unauthorizedSchema = JsonSchema.FromType<UnauthorizedProblemDetails>();
-    private readonly JsonSchema _forbiddenSchema = JsonSchema.FromType<ForbiddenProblemDetails>();
+    private readonly JsonSchema _errorDescriptorSchema = JsonSchema
+        .FromType<ErrorDescriptor>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _problemDetailsSchema = JsonSchema
+        .FromType<ProblemDetails>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _entityNotFoundSchema = JsonSchema
+        .FromType<EntityNotFoundProblemDetails>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _conflictSchema = JsonSchema
+        .FromType<ConflictProblemDetails>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _badRequestSchema = JsonSchema
+        .FromType<BadRequestProblemDetails>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _unauthorizedSchema = JsonSchema
+        .FromType<UnauthorizedProblemDetails>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _forbiddenSchema = JsonSchema
+        .FromType<ForbiddenProblemDetails>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _unprocessableEntitySchema = JsonSchema
+        .FromType<UnprocessableEntityProblemDetails>()
+        .NormalizeNullableAsRequired();
+    private readonly JsonSchema _entityNotFoundParamsSchema = JsonSchema
+        .FromType<EntityNotFoundProblemDetailsParams>()
+        .NormalizeNullableAsRequired();
 
     private readonly BadRequestProblemDetails _status400ProblemDetails = new()
     {
