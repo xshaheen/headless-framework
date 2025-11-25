@@ -18,10 +18,10 @@
     <PackageVersion Include="AwesomeAssertions" Version="9.3.0" />
     <PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
     <PackageVersion Include="AwesomeAssertions.Json" Version="9.0.0" />
-    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.13" />
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.13" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.6.5" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.2.6" />
+    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.14" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.13.1" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.7" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.2.7" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.1" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.26.0" />
     <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.23.0" />
@@ -46,7 +46,7 @@
     <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.4.1" />
     <PackageVersion Include="DotNetCore.CAP.InMemoryStorage" Version="8.4.1" />
     <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="8.4.1" />
-    <PackageVersion Include="EFCore.CheckConstraints" Version="10.0.0-rc.2" />
+    <PackageVersion Include="EFCore.CheckConstraints" Version="10.0.0" />
     <PackageVersion Include="FileSignatures" Version="6.1.1" />
     <PackageVersion Include="FirebaseAdmin" Version="3.4.0" />
     <PackageVersion Include="FluentValidation" Version="12.1.0" />
@@ -78,12 +78,12 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0-rc.2.25502.107" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0-rc.2.25502.107" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0-rc.2.25502.107" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.0-rc.2.25502.107" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" Version="10.0.0-rc.2.25502.107" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0-rc.2.25502.107" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
@@ -91,7 +91,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.0-rc.2.25502.107" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.OData" Version="9.4.1" />
     <PackageVersion Include="Microsoft.Extensions.Azure" Version="1.13.1" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
@@ -116,8 +116,8 @@
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Nito.Disposables" Version="2.5.0" />
     <PackageVersion Include="NJsonSchema" Version="11.5.2" />
-    <PackageVersion Include="Npgsql" Version="10.0.0-rc.1" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0-rc.2" />
+    <PackageVersion Include="Npgsql" Version="10.0.0" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
     <PackageVersion Include="NSwag.Annotations" Version="14.6.3" />
@@ -125,16 +125,16 @@
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
     <PackageVersion Include="Nuke.Common" Version="10.0.0" />
     <PackageVersion Include="PdfPig" Version="0.1.12" />
-    <PackageVersion Include="Polly.Core" Version="8.6.4" />
+    <PackageVersion Include="Polly.Core" Version="8.6.5" />
     <PackageVersion Include="Polly.Extensions" Version="8.6.4" />
     <PackageVersion Include="Polly.RateLimiting" Version="8.6.4" />
     <PackageVersion Include="PolySharp" Version="1.15.0" />
     <PackageVersion Include="Respawn" Version="6.2.1" />
     <PackageVersion Include="Savorboard.CAP.InMemoryMessageQueue" Version="8.2.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.11.0" />
-    <PackageVersion Include="Scrutor" Version="6.1.0" />
+    <PackageVersion Include="Scrutor" Version="7.0.0" />
     <PackageVersion Include="Serilog" Version="4.3.0" />
-    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.6.0" />
+    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.7.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Span" Version="3.1.0" />
@@ -154,15 +154,15 @@
     <PackageVersion Include="System.Text.Encodings.Web" Version="9.0.9" />
     <PackageVersion Include="System.Text.Json" Version="9.0.9" />
     <PackageVersion Include="System.Text.RegularExpressions" Version="4.3.1" />
-    <PackageVersion Include="Testcontainers" Version="4.8.1" />
-    <PackageVersion Include="Testcontainers.Azurite" Version="4.8.1" />
-    <PackageVersion Include="Testcontainers.LocalStack" Version="4.8.1" />
-    <PackageVersion Include="Testcontainers.MsSql" Version="4.8.1" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.8.1" />
-    <PackageVersion Include="Testcontainers.Redis" Version="4.8.1" />
-    <PackageVersion Include="Testcontainers.XunitV3" Version="4.8.1" />
+    <PackageVersion Include="Testcontainers" Version="4.9.0" />
+    <PackageVersion Include="Testcontainers.Azurite" Version="4.9.0" />
+    <PackageVersion Include="Testcontainers.LocalStack" Version="4.9.0" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.9.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.9.0" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.9.0" />
+    <PackageVersion Include="Testcontainers.XunitV3" Version="4.9.0" />
     <PackageVersion Include="TimeZoneConverter" Version="7.2.0" />
-    <PackageVersion Include="tusdotnet" Version="2.10.0" />
+    <PackageVersion Include="tusdotnet" Version="2.11.0" />
     <PackageVersion Include="Twilio" Version="7.13.1" />
     <PackageVersion Include="Twilio.AspNet.Core" Version="8.1.2" />
     <PackageVersion Include="UnitsNet" Version="5.75.0" />

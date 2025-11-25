@@ -17,6 +17,19 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// </summary>
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
+    private readonly JsonSchema _baseProblemDetailsSchema;
+    private readonly JsonSchema _entityNotFoundProblemDetailsSchema;
+    private readonly JsonSchema _conflictProblemDetailsSchema;
+    private readonly JsonSchema _unprocessableEntityProblemDetailsSchema;
+
+    public ProblemDetailsOperationProcessor()
+    {
+        _baseProblemDetailsSchema = JsonSchema.FromType<HeadlessProblemDetails>();
+        _entityNotFoundProblemDetailsSchema = JsonSchema.FromType<EntityNotFoundHeadlessProblemDetails>();
+        _conflictProblemDetailsSchema = JsonSchema.FromType<ConflictHeadlessProblemDetails>();
+        _unprocessableEntityProblemDetailsSchema = JsonSchema.FromType<UnprocessableEntityHeadlessProblemDetails>();
+    }
+
     private readonly HeadlessProblemDetails _status400ProblemDetails = new()
     {
         type = ProblemDetailsConstants.Types.BadRequest,
@@ -127,27 +140,27 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         switch (statusCode)
         {
             case "400":
-                _SetDefaultAndExample(response, _status400ProblemDetails);
+                _SetDefaultAndExample(response, _status400ProblemDetails, _baseProblemDetailsSchema);
                 break;
             case "401":
-                _SetDefaultAndExample(response, _status401ProblemDetails);
+                _SetDefaultAndExample(response, _status401ProblemDetails, _baseProblemDetailsSchema);
                 break;
             case "403":
-                _SetDefaultAndExample(response, _status403ProblemDetails);
+                _SetDefaultAndExample(response, _status403ProblemDetails, _baseProblemDetailsSchema);
                 break;
             case "404":
-                _SetDefaultAndExample(response, _status404ProblemDetails);
+                _SetDefaultAndExample(response, _status404ProblemDetails, _entityNotFoundProblemDetailsSchema);
                 break;
             case "409":
-                _SetDefaultAndExample(response, _status409ProblemDetails);
+                _SetDefaultAndExample(response, _status409ProblemDetails, _conflictProblemDetailsSchema);
                 break;
             case "422":
-                _SetDefaultAndExample(response, _status422ProblemDetails);
+                _SetDefaultAndExample(response, _status422ProblemDetails, _unprocessableEntityProblemDetailsSchema);
                 break;
         }
     }
 
-    private static void _SetDefaultAndExample(OpenApiResponse response, object problemDetails)
+    private static void _SetDefaultAndExample(OpenApiResponse response, object problemDetails, JsonSchema schema)
     {
         if (response.Content == null)
         {
@@ -155,14 +168,31 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
             return;
         }
 
-        // Ensure ProblemJson content type exists
+        // Ensure ProblemJson content type exists with proper schema
         if (!response.Content.TryGetValue(ContentTypes.Applications.ProblemJson, out var problemJsonMediaType))
         {
-            problemJsonMediaType = new OpenApiMediaType { Schema = new JsonSchema { Type = JsonObjectType.Object } };
+            problemJsonMediaType = new OpenApiMediaType { Schema = schema };
             response.Content[ContentTypes.Applications.ProblemJson] = problemJsonMediaType;
+        }
+        else
+        {
+            problemJsonMediaType.Schema = schema;
         }
 
         problemJsonMediaType.Example = problemDetails;
+
+        // Also add application/json content type with the same schema and example
+        if (!response.Content.TryGetValue(ContentTypes.Applications.Json, out var jsonMediaType))
+        {
+            jsonMediaType = new OpenApiMediaType { Schema = schema };
+            response.Content[ContentTypes.Applications.Json] = jsonMediaType;
+        }
+        else
+        {
+            jsonMediaType.Schema = schema;
+        }
+
+        jsonMediaType.Example = problemDetails;
     }
 
 #pragma warning disable IDE1006
