@@ -17,13 +17,17 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// </summary>
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
-    private readonly JsonSchema _baseProblemDetailsSchema = JsonSchema.FromType<HeadlessProblemDetails>();
-    private readonly JsonSchema _entityNotFoundSchema = JsonSchema.FromType<EntityNotFoundHeadlessProblemDetails>();
-    private readonly JsonSchema _conflictSchema = JsonSchema.FromType<ConflictHeadlessProblemDetails>();
-    private readonly JsonSchema _unprocessableEntitySchema =
-        JsonSchema.FromType<UnprocessableEntityHeadlessProblemDetails>();
+    private readonly JsonSchema _errorDescriptorSchema = JsonSchema.FromType<ErrorDescriptor>();
+    private readonly JsonSchema _problemDetailsSchema = JsonSchema.FromType<ProblemDetails>();
+    private readonly JsonSchema _entityNotFoundSchema = JsonSchema.FromType<EntityNotFoundProblemDetails>();
+    private readonly JsonSchema _entityNotFoundParamsSchema = JsonSchema.FromType<EntityNotFoundProblemDetailsParams>();
+    private readonly JsonSchema _conflictSchema = JsonSchema.FromType<ConflictProblemDetails>();
+    private readonly JsonSchema _unprocessableEntitySchema = JsonSchema.FromType<UnprocessableEntityProblemDetails>();
+    private readonly JsonSchema _badRequestSchema = JsonSchema.FromType<BadRequestProblemDetails>();
+    private readonly JsonSchema _unauthorizedSchema = JsonSchema.FromType<UnauthorizedProblemDetails>();
+    private readonly JsonSchema _forbiddenSchema = JsonSchema.FromType<ForbiddenProblemDetails>();
 
-    private readonly HeadlessProblemDetails _status400ProblemDetails = new()
+    private readonly BadRequestProblemDetails _status400ProblemDetails = new()
     {
         type = ProblemDetailsConstants.Types.BadRequest,
         title = ProblemDetailsConstants.Titles.BadRequest,
@@ -36,7 +40,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         timestamp = DateTimeOffset.UtcNow,
     };
 
-    private readonly HeadlessProblemDetails _status401ProblemDetails = new()
+    private readonly UnauthorizedProblemDetails _status401ProblemDetails = new()
     {
         type = ProblemDetailsConstants.Types.Unauthorized,
         title = ProblemDetailsConstants.Titles.Unauthorized,
@@ -49,7 +53,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         timestamp = DateTimeOffset.UtcNow,
     };
 
-    private readonly HeadlessProblemDetails _status403ProblemDetails = new()
+    private readonly ForbiddenProblemDetails _status403ProblemDetails = new()
     {
         type = ProblemDetailsConstants.Types.Forbidden,
         title = ProblemDetailsConstants.Titles.Forbidden,
@@ -62,7 +66,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         timestamp = DateTimeOffset.UtcNow,
     };
 
-    private readonly EntityNotFoundHeadlessProblemDetails _status404ProblemDetails = new()
+    private readonly EntityNotFoundProblemDetails _status404ProblemDetails = new()
     {
         type = ProblemDetailsConstants.Types.EntityNotFound,
         title = ProblemDetailsConstants.Titles.EntityNotFound,
@@ -73,10 +77,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         buildNumber = "1.0.0",
         commitNumber = "abc123def",
         timestamp = DateTimeOffset.UtcNow,
-        @params = new EntityNotFoundHeadlessProblemDetailsParams { entity = "User", key = "user-123" },
+        @params = new EntityNotFoundProblemDetailsParams { entity = "User", key = "user-123" },
     };
 
-    private readonly ConflictHeadlessProblemDetails _status409ProblemDetails = new()
+    private readonly ConflictProblemDetails _status409ProblemDetails = new()
     {
         type = ProblemDetailsConstants.Types.Conflict,
         title = ProblemDetailsConstants.Titles.Conflict,
@@ -90,7 +94,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         errors = [new("business_error", @"Some business rule failed.")],
     };
 
-    private readonly UnprocessableEntityHeadlessProblemDetails _status422ProblemDetails = new()
+    private readonly UnprocessableEntityProblemDetails _status422ProblemDetails = new()
     {
         type = ProblemDetailsConstants.Types.UnprocessableEntity,
         title = ProblemDetailsConstants.Titles.UnprocessableEntity,
@@ -120,10 +124,15 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Argument.IsNotNull(context);
 
         // Register schemas in document definitions to enable $ref usage
-        _RegisterSchemaIfNeeded(context, _baseProblemDetailsSchema, nameof(HeadlessProblemDetails));
-        _RegisterSchemaIfNeeded(context, _entityNotFoundSchema, nameof(EntityNotFoundHeadlessProblemDetails));
-        _RegisterSchemaIfNeeded(context, _conflictSchema, nameof(ConflictHeadlessProblemDetails));
-        _RegisterSchemaIfNeeded(context, _unprocessableEntitySchema, nameof(UnprocessableEntityHeadlessProblemDetails));
+        _RegisterSchemaIfNeeded(context, _errorDescriptorSchema, nameof(ErrorDescriptor));
+        _RegisterSchemaIfNeeded(context, _problemDetailsSchema, nameof(ProblemDetails));
+        _RegisterSchemaIfNeeded(context, _entityNotFoundSchema, nameof(EntityNotFoundProblemDetails));
+        _RegisterSchemaIfNeeded(context, _entityNotFoundParamsSchema, nameof(EntityNotFoundProblemDetailsParams));
+        _RegisterSchemaIfNeeded(context, _conflictSchema, nameof(ConflictProblemDetails));
+        _RegisterSchemaIfNeeded(context, _unprocessableEntitySchema, nameof(UnprocessableEntityProblemDetails));
+        _RegisterSchemaIfNeeded(context, _badRequestSchema, nameof(BadRequestProblemDetails));
+        _RegisterSchemaIfNeeded(context, _unauthorizedSchema, nameof(UnauthorizedProblemDetails));
+        _RegisterSchemaIfNeeded(context, _forbiddenSchema, nameof(ForbiddenProblemDetails));
 
         var operation = context.OperationDescription.Operation;
 
@@ -147,13 +156,13 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         switch (statusCode)
         {
             case "400":
-                _SetDefaultAndExample(response, _status400ProblemDetails, _baseProblemDetailsSchema);
+                _SetDefaultAndExample(response, _status400ProblemDetails, _problemDetailsSchema);
                 break;
             case "401":
-                _SetDefaultAndExample(response, _status401ProblemDetails, _baseProblemDetailsSchema);
+                _SetDefaultAndExample(response, _status401ProblemDetails, _problemDetailsSchema);
                 break;
             case "403":
-                _SetDefaultAndExample(response, _status403ProblemDetails, _baseProblemDetailsSchema);
+                _SetDefaultAndExample(response, _status403ProblemDetails, _problemDetailsSchema);
                 break;
             case "404":
                 _SetDefaultAndExample(response, _status404ProblemDetails, _entityNotFoundSchema);
@@ -194,7 +203,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     #region Types
 
 #pragma warning disable IDE1006
-    public class HeadlessProblemDetails
+    public class ProblemDetails
     {
         public required string type { get; init; }
         public required string title { get; init; }
@@ -207,23 +216,29 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         public required DateTimeOffset timestamp { get; init; }
     }
 
-    public sealed class EntityNotFoundHeadlessProblemDetailsParams
+    public sealed class BadRequestProblemDetails : ProblemDetails;
+
+    public sealed class UnauthorizedProblemDetails : ProblemDetails;
+
+    public sealed class ForbiddenProblemDetails : ProblemDetails;
+
+    public sealed class EntityNotFoundProblemDetailsParams
     {
         public required string entity { get; init; }
         public required string key { get; init; }
     }
 
-    public sealed class EntityNotFoundHeadlessProblemDetails : HeadlessProblemDetails
+    public sealed class EntityNotFoundProblemDetails : ProblemDetails
     {
-        public required EntityNotFoundHeadlessProblemDetailsParams @params { get; init; }
+        public required EntityNotFoundProblemDetailsParams @params { get; init; }
     }
 
-    public sealed class ConflictHeadlessProblemDetails : HeadlessProblemDetails
+    public sealed class ConflictProblemDetails : ProblemDetails
     {
         public required List<ErrorDescriptor> errors { get; init; }
     }
 
-    public sealed class UnprocessableEntityHeadlessProblemDetails : HeadlessProblemDetails
+    public sealed class UnprocessableEntityProblemDetails : ProblemDetails
     {
         public required Dictionary<string, List<ErrorDescriptor>> errors { get; init; }
     }
