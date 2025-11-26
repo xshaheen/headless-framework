@@ -45,6 +45,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     private readonly JsonSchema _entityNotFoundParamsSchema = JsonSchema
         .FromType<EntityNotFoundProblemDetailsParams>()
         .NormalizeNullableAsRequired();
+    private readonly JsonSchema _tooManyRequestsSchema = JsonSchema
+        .FromType<TooManyRequestsProblemDetails>()
+        .NormalizeNullableAsRequired();
 
     private readonly BadRequestProblemDetails _status400ProblemDetails = new()
     {
@@ -138,6 +141,19 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         },
     };
 
+    private readonly TooManyRequestsProblemDetails _status429ProblemDetails = new()
+    {
+        type = ProblemDetailsConstants.Types.TooManyRequests,
+        title = ProblemDetailsConstants.Titles.TooManyRequests,
+        status = StatusCodes.Status429TooManyRequests,
+        detail = ProblemDetailsConstants.Details.TooManyRequests,
+        instance = "/public/some-endpoint",
+        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        buildNumber = "1.0.0",
+        commitNumber = "abc123def",
+        timestamp = DateTimeOffset.UtcNow,
+    };
+
     public bool Process(OperationProcessorContext context)
     {
         Argument.IsNotNull(context);
@@ -152,6 +168,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         _RegisterSchemaIfNeeded(context, _badRequestSchema, nameof(BadRequestProblemDetails));
         _RegisterSchemaIfNeeded(context, _unauthorizedSchema, nameof(UnauthorizedProblemDetails));
         _RegisterSchemaIfNeeded(context, _forbiddenSchema, nameof(ForbiddenProblemDetails));
+        _RegisterSchemaIfNeeded(context, _tooManyRequestsSchema, nameof(TooManyRequestsProblemDetails));
 
         var operation = context.OperationDescription.Operation;
 
@@ -240,6 +257,8 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     public sealed class UnauthorizedProblemDetails : ProblemDetails;
 
     public sealed class ForbiddenProblemDetails : ProblemDetails;
+
+    public sealed class TooManyRequestsProblemDetails : ProblemDetails;
 
     public sealed class EntityNotFoundProblemDetailsParams
     {
