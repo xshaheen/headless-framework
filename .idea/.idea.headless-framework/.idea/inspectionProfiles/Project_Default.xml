@@ -1,13 +1,34 @@
 <component name="InspectionProjectProfileManager">
   <profile version="1.0">
     <option name="myName" value="Project Default" />
-    <inspection_tool class="EditorConfigDeprecatedDescriptor" enabled="true" level="INFORMATION" enabled_by_default="true" />
+    <inspection_tool
+      class="EditorConfigDeprecatedDescriptor"
+      enabled="true"
+      level="INFORMATION"
+      enabled_by_default="true"
+    />
     <inspection_tool class="EditorConfigHeaderUniqueness" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="EditorConfigKeyCorrectness" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="EditorConfigNoMatchingFiles" enabled="false" level="WARNING" enabled_by_default="false" />
-    <inspection_tool class="EditorConfigOptionRedundancy" enabled="true" level="INFORMATION" enabled_by_default="true" editorAttributes="SUGGESTION" />
-    <inspection_tool class="EditorConfigPartialOverride" enabled="false" level="WEAK WARNING" enabled_by_default="false" />
-    <inspection_tool class="EditorConfigRootDeclarationCorrectness" enabled="true" level="INFORMATION" enabled_by_default="true" />
+    <inspection_tool
+      class="EditorConfigOptionRedundancy"
+      enabled="true"
+      level="INFORMATION"
+      enabled_by_default="true"
+      editorAttributes="SUGGESTION"
+    />
+    <inspection_tool
+      class="EditorConfigPartialOverride"
+      enabled="false"
+      level="WEAK WARNING"
+      enabled_by_default="false"
+    />
+    <inspection_tool
+      class="EditorConfigRootDeclarationCorrectness"
+      enabled="true"
+      level="INFORMATION"
+      enabled_by_default="true"
+    />
     <inspection_tool class="HttpUrlsUsage" enabled="true" level="WEAK WARNING" enabled_by_default="true">
       <option name="ignoredUrls">
         <list>
