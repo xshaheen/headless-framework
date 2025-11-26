@@ -125,7 +125,6 @@ public static class AddNswagSwaggerExtensions
 
     #region Bearer
 
-    private const string _BearerHeaderName = HttpHeaderNames.Authorization;
     private const string _BearerDefinitionName = "Bearer";
 
     private static OpenApiSecurityScheme _GetBearerSecurityDefinition()
@@ -139,6 +138,23 @@ public static class AddNswagSwaggerExtensions
                 JWT Authorization header using the Bearer scheme.
                 Enter Token without any prefix.
                 """,
+        };
+    }
+
+    #endregion
+
+    #region ApiKey
+
+    private const string _ApiKeyDefinitionName = "ApiKey";
+
+    private static OpenApiSecurityScheme _GetApiKeySecurityDefinition(string headerName)
+    {
+        return new OpenApiSecurityScheme
+        {
+            Name = headerName,
+            Type = OpenApiSecuritySchemeType.ApiKey,
+            In = OpenApiSecurityApiKeyLocation.Header,
+            Description = $"API Key authentication using the {headerName} header.",
         };
     }
 
@@ -270,6 +286,16 @@ public static class AddNswagSwaggerExtensions
         {
             settings.AddSecurity(_BearerDefinitionName, [], _GetBearerSecurityDefinition());
             settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor(_BearerDefinitionName));
+        }
+
+        if (frameworkOptions.AddApiKeySecurity)
+        {
+            settings.AddSecurity(
+                _ApiKeyDefinitionName,
+                [],
+                _GetApiKeySecurityDefinition(frameworkOptions.ApiKeyHeaderName)
+            );
+            settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor(_ApiKeyDefinitionName));
         }
 
         if (frameworkOptions.AddPrimitiveMappings)
