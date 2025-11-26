@@ -18,6 +18,9 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// </summary>
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
+    private readonly JsonSchema _validationSeveritySchema = JsonSchema
+        .FromType<ValidationSeverity>()
+        .NormalizeNullableAsRequired();
     private readonly JsonSchema _errorDescriptorSchema = JsonSchema
         .FromType<ErrorDescriptor>()
         .NormalizeNullableAsRequired();
@@ -159,6 +162,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Argument.IsNotNull(context);
 
         // Register schemas in document definitions to enable $ref usage
+        _RegisterSchemaIfNeeded(context, _validationSeveritySchema, nameof(ValidationSeverity));
         _RegisterSchemaIfNeeded(context, _errorDescriptorSchema, nameof(ErrorDescriptor));
         _RegisterSchemaIfNeeded(context, _problemDetailsSchema, nameof(ProblemDetails));
         _RegisterSchemaIfNeeded(context, _entityNotFoundSchema, nameof(EntityNotFoundProblemDetails));
@@ -219,18 +223,15 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
             return; // Cannot set Content if null, so nothing to do
         }
 
-        // Create a schema reference instead of embedding the schema
-        var schemaReference = new JsonSchema { Reference = schema };
-
         // Ensure ProblemJson content type exists with schema reference
         if (!response.Content.TryGetValue(ContentTypes.Applications.ProblemJson, out var problemJsonMediaType))
         {
-            problemJsonMediaType = new OpenApiMediaType { Schema = schemaReference };
+            problemJsonMediaType = new OpenApiMediaType { Schema = schema };
             response.Content[ContentTypes.Applications.ProblemJson] = problemJsonMediaType;
         }
         else
         {
-            problemJsonMediaType.Schema = schemaReference;
+            problemJsonMediaType.Schema = schema;
         }
 
         problemJsonMediaType.Example = problemDetails;

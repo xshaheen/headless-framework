@@ -132,10 +132,8 @@ public static class AddNswagSwaggerExtensions
     {
         return new OpenApiSecurityScheme
         {
-            Name = _BearerHeaderName,
             Scheme = "bearer",
             BearerFormat = "JWT",
-            In = OpenApiSecurityApiKeyLocation.Header,
             Type = OpenApiSecuritySchemeType.Http,
             Description = """
                 JWT Authorization header using the Bearer scheme.
