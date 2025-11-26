@@ -178,7 +178,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
         foreach (var response in operation.Responses)
         {
-            _SetExampleResponseForKnownStatus(response.Key, response.Value);
+            _SetExampleResponseForKnownStatus(context, response.Key, response.Value);
         }
         return true;
     }
@@ -191,47 +191,69 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         }
     }
 
-    private void _SetExampleResponseForKnownStatus(string statusCode, OpenApiResponse response)
+    private void _SetExampleResponseForKnownStatus(
+        OperationProcessorContext context,
+        string statusCode,
+        OpenApiResponse response
+    )
     {
         switch (statusCode)
         {
             case "400":
-                _SetDefaultAndExample(response, _status400ProblemDetails, _badRequestSchema);
+                _SetDefaultAndExample(context, response, _status400ProblemDetails, nameof(BadRequestProblemDetails));
                 break;
             case "401":
-                _SetDefaultAndExample(response, _status401ProblemDetails, _unauthorizedSchema);
+                _SetDefaultAndExample(context, response, _status401ProblemDetails, nameof(UnauthorizedProblemDetails));
                 break;
             case "403":
-                _SetDefaultAndExample(response, _status403ProblemDetails, _forbiddenSchema);
+                _SetDefaultAndExample(context, response, _status403ProblemDetails, nameof(ForbiddenProblemDetails));
                 break;
             case "404":
-                _SetDefaultAndExample(response, _status404ProblemDetails, _entityNotFoundSchema);
+                _SetDefaultAndExample(
+                    context,
+                    response,
+                    _status404ProblemDetails,
+                    nameof(EntityNotFoundProblemDetails)
+                );
                 break;
             case "409":
-                _SetDefaultAndExample(response, _status409ProblemDetails, _conflictSchema);
+                _SetDefaultAndExample(context, response, _status409ProblemDetails, nameof(ConflictProblemDetails));
                 break;
             case "422":
-                _SetDefaultAndExample(response, _status422ProblemDetails, _unprocessableEntitySchema);
+                _SetDefaultAndExample(
+                    context,
+                    response,
+                    _status422ProblemDetails,
+                    nameof(UnprocessableEntityProblemDetails)
+                );
                 break;
         }
     }
 
-    private static void _SetDefaultAndExample(OpenApiResponse response, object problemDetails, JsonSchema schema)
+    private static void _SetDefaultAndExample(
+        OperationProcessorContext context,
+        OpenApiResponse response,
+        object problemDetails,
+        string schemaName
+    )
     {
         if (response.Content == null)
         {
             return; // Cannot set Content if null, so nothing to do
         }
 
+        // Create a proper reference schema pointing to the registered definition
+        var schemaReference = new JsonSchema { Reference = context.Document.Definitions[schemaName] };
+
         // Ensure ProblemJson content type exists with schema reference
         if (!response.Content.TryGetValue(ContentTypes.Applications.ProblemJson, out var problemJsonMediaType))
         {
-            problemJsonMediaType = new OpenApiMediaType { Schema = schema };
+            problemJsonMediaType = new OpenApiMediaType { Schema = schemaReference };
             response.Content[ContentTypes.Applications.ProblemJson] = problemJsonMediaType;
         }
         else
         {
-            problemJsonMediaType.Schema = schema;
+            problemJsonMediaType.Schema = schemaReference;
         }
 
         problemJsonMediaType.Example = problemDetails;
