@@ -2,15 +2,14 @@
 
 using Framework.Checks;
 using Framework.Constants;
-using Framework.OpenApi.Nswag.SchemaProcessors;
 using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
 using NJsonSchema;
+using NJsonSchema.Generation;
 using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-// ReSharper disable InconsistentNaming
 namespace Framework.OpenApi.Nswag.OperationProcessors;
 
 /// <summary>
@@ -18,184 +17,45 @@ namespace Framework.OpenApi.Nswag.OperationProcessors;
 /// </summary>
 public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 {
-    private readonly JsonSchema _validationSeveritySchema = JsonSchema
-        .FromType<ValidationSeverity>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _errorDescriptorSchema = JsonSchema
-        .FromType<ErrorDescriptor>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _problemDetailsSchema = JsonSchema
-        .FromType<ProblemDetails>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _entityNotFoundSchema = JsonSchema
-        .FromType<EntityNotFoundProblemDetails>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _conflictSchema = JsonSchema
-        .FromType<ConflictProblemDetails>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _badRequestSchema = JsonSchema
-        .FromType<BadRequestProblemDetails>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _unauthorizedSchema = JsonSchema
-        .FromType<UnauthorizedProblemDetails>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _forbiddenSchema = JsonSchema
-        .FromType<ForbiddenProblemDetails>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _unprocessableEntitySchema = JsonSchema
-        .FromType<UnprocessableEntityProblemDetails>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _entityNotFoundParamsSchema = JsonSchema
-        .FromType<EntityNotFoundProblemDetailsParams>()
-        .NormalizeNullableAsRequired();
-    private readonly JsonSchema _tooManyRequestsSchema = JsonSchema
-        .FromType<TooManyRequestsProblemDetails>()
-        .NormalizeNullableAsRequired();
-
-    private readonly BadRequestProblemDetails _status400ProblemDetails = new()
-    {
-        type = ProblemDetailsConstants.Types.BadRequest,
-        title = ProblemDetailsConstants.Titles.BadRequest,
-        status = StatusCodes.Status400BadRequest,
-        detail = ProblemDetailsConstants.Details.BadRequest,
-        instance = "/public/some-endpoint",
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        buildNumber = "1.0.0",
-        commitNumber = "abc123def",
-        timestamp = DateTimeOffset.UtcNow,
-    };
-
-    private readonly UnauthorizedProblemDetails _status401ProblemDetails = new()
-    {
-        type = ProblemDetailsConstants.Types.Unauthorized,
-        title = ProblemDetailsConstants.Titles.Unauthorized,
-        status = StatusCodes.Status401Unauthorized,
-        detail = ProblemDetailsConstants.Details.Unauthorized,
-        instance = "/public/some-endpoint",
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        buildNumber = "1.0.0",
-        commitNumber = "abc123def",
-        timestamp = DateTimeOffset.UtcNow,
-    };
-
-    private readonly ForbiddenProblemDetails _status403ProblemDetails = new()
-    {
-        type = ProblemDetailsConstants.Types.Forbidden,
-        title = ProblemDetailsConstants.Titles.Forbidden,
-        status = StatusCodes.Status403Forbidden,
-        detail = ProblemDetailsConstants.Details.Forbidden,
-        instance = "/public/some-endpoint",
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        buildNumber = "1.0.0",
-        commitNumber = "abc123def",
-        timestamp = DateTimeOffset.UtcNow,
-    };
-
-    private readonly EntityNotFoundProblemDetails _status404ProblemDetails = new()
-    {
-        type = ProblemDetailsConstants.Types.EntityNotFound,
-        title = ProblemDetailsConstants.Titles.EntityNotFound,
-        status = StatusCodes.Status404NotFound,
-        detail = ProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
-        instance = "/public/some-endpoint",
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        buildNumber = "1.0.0",
-        commitNumber = "abc123def",
-        timestamp = DateTimeOffset.UtcNow,
-        @params = new EntityNotFoundProblemDetailsParams { entity = "User", key = "user-123" },
-    };
-
-    private readonly ConflictProblemDetails _status409ProblemDetails = new()
-    {
-        type = ProblemDetailsConstants.Types.Conflict,
-        title = ProblemDetailsConstants.Titles.Conflict,
-        status = StatusCodes.Status409Conflict,
-        detail = ProblemDetailsConstants.Details.Conflict,
-        instance = "/public/some-endpoint",
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        buildNumber = "1.0.0",
-        commitNumber = "abc123def",
-        timestamp = DateTimeOffset.UtcNow,
-        errors = [new("business_error", @"Some business rule failed.")],
-    };
-
-    private readonly UnprocessableEntityProblemDetails _status422ProblemDetails = new()
-    {
-        type = ProblemDetailsConstants.Types.UnprocessableEntity,
-        title = ProblemDetailsConstants.Titles.UnprocessableEntity,
-        status = StatusCodes.Status422UnprocessableEntity,
-        detail = ProblemDetailsConstants.Details.UnprocessableEntity,
-        instance = "/public/some-endpoint",
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        buildNumber = "1.0.0",
-        commitNumber = "abc123def",
-        timestamp = DateTimeOffset.UtcNow,
-        errors = new(StringComparer.Ordinal)
-        {
-            ["email"] =
-            [
-                new ErrorDescriptor("auth:invalid_email_format", @"The email address format is invalid."),
-                new ErrorDescriptor("auth:email_already_exists", @"The specified email address is already in use."),
-            ],
-            ["username"] =
-            [
-                new ErrorDescriptor("auth:username_too_short", @"The username must be at least 6 characters long."),
-            ],
-        },
-    };
-
-    private readonly TooManyRequestsProblemDetails _status429ProblemDetails = new()
-    {
-        type = ProblemDetailsConstants.Types.TooManyRequests,
-        title = ProblemDetailsConstants.Titles.TooManyRequests,
-        status = StatusCodes.Status429TooManyRequests,
-        detail = ProblemDetailsConstants.Details.TooManyRequests,
-        instance = "/public/some-endpoint",
-        traceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        buildNumber = "1.0.0",
-        commitNumber = "abc123def",
-        timestamp = DateTimeOffset.UtcNow,
-    };
-
     public bool Process(OperationProcessorContext context)
     {
         Argument.IsNotNull(context);
 
-        // Register schemas in document definitions to enable $ref usage
-        _RegisterSchemaIfNeeded(context, _validationSeveritySchema, nameof(ValidationSeverity));
-        _RegisterSchemaIfNeeded(context, _errorDescriptorSchema, nameof(ErrorDescriptor));
-        _RegisterSchemaIfNeeded(context, _problemDetailsSchema, nameof(ProblemDetails));
-        _RegisterSchemaIfNeeded(context, _entityNotFoundSchema, nameof(EntityNotFoundProblemDetails));
-        _RegisterSchemaIfNeeded(context, _entityNotFoundParamsSchema, nameof(EntityNotFoundProblemDetailsParams));
-        _RegisterSchemaIfNeeded(context, _conflictSchema, nameof(ConflictProblemDetails));
-        _RegisterSchemaIfNeeded(context, _unprocessableEntitySchema, nameof(UnprocessableEntityProblemDetails));
-        _RegisterSchemaIfNeeded(context, _badRequestSchema, nameof(BadRequestProblemDetails));
-        _RegisterSchemaIfNeeded(context, _unauthorizedSchema, nameof(UnauthorizedProblemDetails));
-        _RegisterSchemaIfNeeded(context, _forbiddenSchema, nameof(ForbiddenProblemDetails));
-        _RegisterSchemaIfNeeded(context, _tooManyRequestsSchema, nameof(TooManyRequestsProblemDetails));
+        // Create and register all schemas in document definitions to enable $ref usage
+        var generator = new JsonSchemaGenerator(context.SchemaGenerator.Settings);
+
+        _RegisterSchema(context, generator, typeof(ValidationSeverity));
+        _RegisterSchema(context, generator, typeof(HeadlessProblemDetails));
+        _RegisterSchema(context, generator, typeof(ErrorDescriptor));
+        _RegisterSchema(context, generator, typeof(EntityNotFoundProblemDetailsParams));
+        _RegisterSchema(context, generator, typeof(EntityNotFoundProblemDetails));
+        _RegisterSchema(context, generator, typeof(ConflictProblemDetails));
+        _RegisterSchema(context, generator, typeof(UnprocessableEntityProblemDetails));
+        _RegisterSchema(context, generator, typeof(BadRequestProblemDetails));
+        _RegisterSchema(context, generator, typeof(UnauthorizedProblemDetails));
+        _RegisterSchema(context, generator, typeof(ForbiddenProblemDetails));
+        _RegisterSchema(context, generator, typeof(TooManyRequestsProblemDetails));
 
         var operation = context.OperationDescription.Operation;
 
         foreach (var response in operation.Responses)
         {
-            _SetExampleResponseForKnownStatus(context, response.Key, response.Value);
+            _SetExampleResponses(context, response.Key, response.Value);
         }
+
         return true;
     }
 
-    private static void _RegisterSchemaIfNeeded(OperationProcessorContext context, JsonSchema schema, string schemaName)
+    private static void _RegisterSchema(OperationProcessorContext context, JsonSchemaGenerator generator, Type type)
     {
-        if (!context.Document.Definitions.ContainsKey(schemaName))
+        if (!context.Document.Definitions.ContainsKey(type.Name))
         {
-            context.Document.Definitions[schemaName] = schema;
+            var schema = generator.Generate(type, context.SchemaResolver);
+            context.Document.Definitions[type.Name] = schema;
         }
     }
 
-    private void _SetExampleResponseForKnownStatus(
-        OperationProcessorContext context,
-        string statusCode,
-        OpenApiResponse response
-    )
+    private void _SetExampleResponses(OperationProcessorContext context, string statusCode, OpenApiResponse response)
     {
         switch (statusCode)
         {
@@ -225,6 +85,14 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                     response,
                     _status422ProblemDetails,
                     nameof(UnprocessableEntityProblemDetails)
+                );
+                break;
+            case "429":
+                _SetDefaultAndExample(
+                    context,
+                    response,
+                    _status429ProblemDetails,
+                    nameof(TooManyRequestsProblemDetails)
                 );
                 break;
         }
@@ -259,51 +127,158 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         problemJsonMediaType.Example = problemDetails;
     }
 
-    #region Types
+    #region Examples
 
-#pragma warning disable IDE1006
-    public class ProblemDetails
+    private readonly BadRequestProblemDetails _status400ProblemDetails = new()
     {
-        public required string type { get; init; }
-        public required string title { get; init; }
-        public required int status { get; init; }
-        public required string detail { get; init; }
-        public required string instance { get; init; }
-        public required string traceId { get; init; }
-        public required string buildNumber { get; init; }
-        public required string commitNumber { get; init; }
-        public required DateTimeOffset timestamp { get; init; }
+        Type = ProblemDetailsConstants.Types.BadRequest,
+        Title = ProblemDetailsConstants.Titles.BadRequest,
+        Status = StatusCodes.Status400BadRequest,
+        Detail = ProblemDetailsConstants.Details.BadRequest,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+    };
+
+    private readonly UnauthorizedProblemDetails _status401ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.Unauthorized,
+        Title = ProblemDetailsConstants.Titles.Unauthorized,
+        Status = StatusCodes.Status401Unauthorized,
+        Detail = ProblemDetailsConstants.Details.Unauthorized,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+    };
+
+    private readonly ForbiddenProblemDetails _status403ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.Forbidden,
+        Title = ProblemDetailsConstants.Titles.Forbidden,
+        Status = StatusCodes.Status403Forbidden,
+        Detail = ProblemDetailsConstants.Details.Forbidden,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+    };
+
+    private readonly EntityNotFoundProblemDetails _status404ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.EntityNotFound,
+        Title = ProblemDetailsConstants.Titles.EntityNotFound,
+        Status = StatusCodes.Status404NotFound,
+        Detail = ProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+        Params = new EntityNotFoundProblemDetailsParams { Entity = "User", Key = "user-123" },
+    };
+
+    private readonly ConflictProblemDetails _status409ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.Conflict,
+        Title = ProblemDetailsConstants.Titles.Conflict,
+        Status = StatusCodes.Status409Conflict,
+        Detail = ProblemDetailsConstants.Details.Conflict,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+        Errors = [new("business_error", @"Some business rule failed.")],
+    };
+
+    private readonly UnprocessableEntityProblemDetails _status422ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.UnprocessableEntity,
+        Title = ProblemDetailsConstants.Titles.UnprocessableEntity,
+        Status = StatusCodes.Status422UnprocessableEntity,
+        Detail = ProblemDetailsConstants.Details.UnprocessableEntity,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+        Errors = new(StringComparer.Ordinal)
+        {
+            ["email"] =
+            [
+                new ErrorDescriptor("auth:invalid_email_format", @"The email address format is invalid."),
+                new ErrorDescriptor("auth:email_already_exists", @"The specified email address is already in use."),
+            ],
+            ["username"] =
+            [
+                new ErrorDescriptor("auth:username_too_short", @"The username must be at least 6 characters long."),
+            ],
+        },
+    };
+
+    private readonly TooManyRequestsProblemDetails _status429ProblemDetails = new()
+    {
+        Type = ProblemDetailsConstants.Types.TooManyRequests,
+        Title = ProblemDetailsConstants.Titles.TooManyRequests,
+        Status = StatusCodes.Status429TooManyRequests,
+        Detail = ProblemDetailsConstants.Details.TooManyRequests,
+        Instance = "/public/some-endpoint",
+        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
+        BuildNumber = "1.0.0",
+        CommitNumber = "abc123def",
+        Timestamp = DateTimeOffset.UtcNow,
+    };
+
+    #endregion
+
+    #region ProblemDetails Types
+
+    public class HeadlessProblemDetails
+    {
+        public required string Type { get; init; }
+        public required string Title { get; init; }
+        public required int Status { get; init; }
+        public required string Detail { get; init; }
+        public required string Instance { get; init; }
+        public required string TraceId { get; init; }
+        public required string BuildNumber { get; init; }
+        public required string CommitNumber { get; init; }
+        public required DateTimeOffset Timestamp { get; init; }
     }
 
-    public sealed class BadRequestProblemDetails : ProblemDetails;
+    public sealed class BadRequestProblemDetails : HeadlessProblemDetails;
 
-    public sealed class UnauthorizedProblemDetails : ProblemDetails;
+    public sealed class UnauthorizedProblemDetails : HeadlessProblemDetails;
 
-    public sealed class ForbiddenProblemDetails : ProblemDetails;
+    public sealed class ForbiddenProblemDetails : HeadlessProblemDetails;
 
-    public sealed class TooManyRequestsProblemDetails : ProblemDetails;
+    public sealed class TooManyRequestsProblemDetails : HeadlessProblemDetails;
 
     public sealed class EntityNotFoundProblemDetailsParams
     {
-        public required string entity { get; init; }
-        public required string key { get; init; }
+        public required string Entity { get; init; }
+        public required string Key { get; init; }
     }
 
-    public sealed class EntityNotFoundProblemDetails : ProblemDetails
+    public sealed class EntityNotFoundProblemDetails : HeadlessProblemDetails
     {
-        public required EntityNotFoundProblemDetailsParams @params { get; init; }
+        public required EntityNotFoundProblemDetailsParams Params { get; init; }
     }
 
-    public sealed class ConflictProblemDetails : ProblemDetails
+    public sealed class ConflictProblemDetails : HeadlessProblemDetails
     {
-        public required List<ErrorDescriptor> errors { get; init; }
+        public required List<ErrorDescriptor> Errors { get; init; }
     }
 
-    public sealed class UnprocessableEntityProblemDetails : ProblemDetails
+    public sealed class UnprocessableEntityProblemDetails : HeadlessProblemDetails
     {
-        public required Dictionary<string, List<ErrorDescriptor>> errors { get; init; }
+        public required Dictionary<string, List<ErrorDescriptor>> Errors { get; init; }
     }
-#pragma warning restore IDE1006
 
     #endregion
 }
