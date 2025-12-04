@@ -167,7 +167,8 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
 
         return new PaymobCardSavedTokenCashInResponse(
-            IsSuccess: payResponse.Success.Equals("true", StringComparison.OrdinalIgnoreCase),
+            IsCreated: payResponse.IsCreatedSuccessfully(),
+            IsSuccess: payResponse.IsSuccess(),
             OrderId: orderId.ToString(CultureInfo.InvariantCulture)
         );
     }

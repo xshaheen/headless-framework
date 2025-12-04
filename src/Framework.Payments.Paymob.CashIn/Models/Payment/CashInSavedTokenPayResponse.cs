@@ -122,6 +122,8 @@ public sealed class CashInSavedTokenPayResponse
     [JsonPropertyName("bypass_step_six")]
     public bool BypassStepSix { get; init; }
 
+    public bool IsSuccess() => string.Equals(Success, "true", StringComparison.Ordinal);
+
     public bool IsCreatedSuccessfully()
     {
         return string.Equals(Success, "false", StringComparison.Ordinal)
