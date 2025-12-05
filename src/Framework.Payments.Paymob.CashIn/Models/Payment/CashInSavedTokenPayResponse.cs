@@ -11,7 +11,7 @@ public sealed class CashInSavedTokenPayResponse
     public int Id { get; init; }
 
     [JsonPropertyName("redirection_url")]
-    public required string RedirectionUrl { get; init; }
+    public string? RedirectionUrl { get; init; }
 
     [JsonPropertyName("success")]
     public required string Success { get; init; }

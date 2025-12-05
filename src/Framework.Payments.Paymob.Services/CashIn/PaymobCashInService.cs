@@ -166,11 +166,14 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
 
-        return new PaymobCardSavedTokenCashInResponse(
-            IsCreated: payResponse.IsCreatedSuccessfully(),
-            IsSuccess: payResponse.IsSuccess(),
-            OrderId: orderId.ToString(CultureInfo.InvariantCulture)
-        );
+        return new PaymobCardSavedTokenCashInResponse
+        {
+            OrderId = orderId.ToString(CultureInfo.InvariantCulture),
+            TransactionId = payResponse.Id,
+            RedirectionUrl = payResponse.RedirectionUrl,
+            Is3DSecure = payResponse.Is3dSecure.Equals("true", StringComparison.OrdinalIgnoreCase),
+            IsSuccess = payResponse.IsSuccess(),
+        };
     }
 
     public Task<CashInCreateIntentionResponse?> StartAsync(CashInCreateIntentionRequest request)
