@@ -46,7 +46,7 @@ public abstract class ApiControllerBase : ControllerBase
             ?? throw new InvalidOperationException($"{nameof(IEnumLocaleAccessor)} service not registered");
 
     [NonAction]
-    protected ActionResult<EnumLocale[]> LocaleValues<T>()
+    protected ActionResult<EnumLocale<T>[]> LocaleValues<T>()
         where T : struct, Enum
     {
         var result = LocaleAccessor.GetLocale<T>();
