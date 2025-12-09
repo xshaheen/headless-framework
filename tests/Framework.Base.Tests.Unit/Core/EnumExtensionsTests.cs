@@ -123,7 +123,7 @@ public sealed class EnumExtensionsTests
                 l.Key == "en"
                 && l.Locale.DisplayName == "Cash"
                 && l.Locale.Description == "Payment made by cash"
-                && l.Locale.Value == 1
+                && l.Locale.Value == PaymentType.Cash
             );
         locales
             .Should()
@@ -131,7 +131,7 @@ public sealed class EnumExtensionsTests
                 l.Key == "ar"
                 && l.Locale.DisplayName == "نقدا"
                 && l.Locale.Description == "الدفع نقدا"
-                && l.Locale.Value == 1
+                && l.Locale.Value == PaymentType.Cash
             );
     }
 
