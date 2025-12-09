@@ -9,22 +9,24 @@ namespace Framework.Abstractions;
 public interface IEnumLocaleAccessor
 {
     [SystemPure, JetBrainsPure, MustUseReturnValue]
-    EnumLocale[] GetLocale<T>()
+    EnumLocale<T>[] GetLocale<T>()
         where T : struct, Enum;
 
     [SystemPure, JetBrainsPure, MustUseReturnValue]
-    EnumLocale GetLocale(Enum value);
+    EnumLocale<T> GetLocale<T>(T value)
+        where T : struct, Enum;
 }
 
 public sealed class DefaultEnumLocaleAccessor(ICurrentLocale currentLocale) : IEnumLocaleAccessor
 {
-    public EnumLocale[] GetLocale<T>()
+    public EnumLocale<T>[] GetLocale<T>()
         where T : struct, Enum
     {
         return Enum.GetValues<T>().ConvertAll(x => x.GetLocale(currentLocale.Locale, currentLocale.Language));
     }
 
-    public EnumLocale GetLocale(Enum value)
+    public EnumLocale<T> GetLocale<T>(T value)
+        where T : struct, Enum
     {
         return value.GetLocale(currentLocale.Locale, currentLocale.Language);
     }
