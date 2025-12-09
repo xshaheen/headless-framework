@@ -3,6 +3,7 @@
 using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using FluentValidation.Results;
+using Framework.Abstractions;
 using Framework.Api.Abstractions;
 using Framework.Primitives;
 using Mediator;
@@ -36,7 +37,22 @@ public abstract class ApiControllerBase : ControllerBase
     private IProblemDetailsCreator ProblemDetailsCreator =>
         field ??=
             HttpContext.RequestServices.GetService<IProblemDetailsCreator>()
-            ?? throw new InvalidOperationException($"{nameof(ProblemDetailsCreator)} service not registered");
+            ?? throw new InvalidOperationException($"{nameof(IProblemDetailsCreator)} service not registered");
+
+    [field: AllowNull, MaybeNull]
+    protected IEnumLocaleAccessor LocaleAccessor =>
+        field ??=
+            HttpContext.RequestServices.GetService<IEnumLocaleAccessor>()
+            ?? throw new InvalidOperationException($"{nameof(IEnumLocaleAccessor)} service not registered");
+
+    [NonAction]
+    protected ActionResult<EnumLocale[]> LocaleValues<T>()
+        where T : struct, Enum
+    {
+        var result = LocaleAccessor.GetLocale<T>();
+
+        return Ok(result);
+    }
 
     [NonAction]
     protected async Task<ActionResult> NoContent(IRequest? req, CancellationToken token = default)
