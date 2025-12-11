@@ -7,6 +7,20 @@ namespace System;
 #pragma warning disable CA5394 // CA5394: Random is an insecure random number generator.
 public static class RandomExtensions
 {
+    public static T Pick<T>(this Random random, params ReadOnlySpan<T> array)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+
+        if (array.Length == 0)
+        {
+            throw new ArgumentException("Array is empty.", nameof(array));
+        }
+
+        var index = random.NextInt32(0, array.Length);
+
+        return array[index];
+    }
+
     public static T GetItem<T>(this Random random, T[] array)
     {
         ArgumentNullException.ThrowIfNull(random);
