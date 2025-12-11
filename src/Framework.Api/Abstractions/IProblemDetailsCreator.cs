@@ -164,6 +164,24 @@ public sealed class ProblemDetailsCreator(
             problemDetails.Type ??= clientErrorData.Link;
         }
 
+        switch (problemDetails.Status)
+        {
+            case 500:
+                problemDetails.Title = ProblemDetailsConstants.Titles.InternalError;
+                problemDetails.Detail ??= ProblemDetailsConstants.Details.InternalError;
+
+                break;
+            case 404
+                when !string.Equals(
+                    problemDetails.Title,
+                    ProblemDetailsConstants.Titles.EntityNotFound,
+                    StringComparison.Ordinal
+                ):
+                problemDetails.Title = ProblemDetailsConstants.Titles.EndpointNotFound;
+
+                break;
+        }
+
         if (!problemDetails.Extensions.ContainsKey("traceId"))
         {
             problemDetails.Extensions["traceId"] =

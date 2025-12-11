@@ -32,10 +32,14 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    [Fact]
-    public async Task endpoint_not_found()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task endpoint_not_found(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/12345678", stringContent, AbortToken);
@@ -78,19 +82,27 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    [Fact]
-    public async Task mvc_bad_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_bad_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var response = await client.GetAsync("/mvc/malformed-syntax", AbortToken);
         await _VerifyMalformedSyntax(response);
     }
 
-    [Fact]
-    public async Task minimal_api_bad_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_api_bad_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var response = await client.GetAsync("/minimal/malformed-syntax", AbortToken);
         await _VerifyMalformedSyntax(response);
@@ -136,20 +148,28 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    [Fact]
-    public async Task minimal_api_entity_not_found()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_api_entity_not_found(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/minimal/entity-not-found", stringContent, AbortToken);
         await _VerifyEntityNotFound(response);
     }
 
-    [Fact]
-    public async Task mvc_entity_not_found()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_entity_not_found(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/mvc/entity-not-found", stringContent, AbortToken);
@@ -201,20 +221,28 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    [Fact]
-    public async Task minimal_api_conflict()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_api_conflict(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/minimal/conflict", stringContent, AbortToken);
         await _VerifyConflict(response);
     }
 
-    [Fact]
-    public async Task mvc_conflict()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_conflict(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/mvc/conflict", stringContent, AbortToken);
@@ -267,20 +295,28 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    [Fact]
-    public async Task minimal_api_unprocessable()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_api_unprocessable(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/minimal/unprocessable", stringContent, AbortToken);
         await _VerifyUnprocessable(response);
     }
 
-    [Fact]
-    public async Task mvc_unprocessable()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_unprocessable(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var stringContent = new StringContent(string.Empty);
         using var response = await client.PostAsync("/mvc/unprocessable-entity", stringContent, AbortToken);
@@ -316,7 +352,7 @@ public sealed class ProblemDetailsTests : TestBase
 
     #region Internal Error (UseExceptionHandler)
 
-    // UseExceptionHandler
+    // UseExceptionHandler (Production)
 
     /*
      * {
@@ -332,12 +368,12 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    // UseDeveloperExceptionHandler
+    // UseDeveloperExceptionHandler (Development)
 
     /*
      * {
      *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.6.1",
-     *   "title" : "System.InvalidOperationException",
+     *   "title" : "unhandled-exception",
      *   "status" : 500,
      *   "detail" : "This is a test exception.",
      *   "instance" : "/minimal/internal-error",
@@ -359,57 +395,77 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    [Fact]
-    public async Task minimal_api_internal_error()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_api_internal_error(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, "/minimal/internal-error");
         request.Headers.Add("Accept", ContentTypes.Applications.Json);
         request.Content = new StringContent(string.Empty);
         using var response = await client.SendAsync(request, AbortToken);
-        await _VerifyInternalServerError(response);
+        await _VerifyInternalServerError(response, environment);
     }
 
-    [Fact]
-    public async Task mvc_internal_error()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_internal_error(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, "/mvc/internal-error");
         request.Headers.Add("Accept", ContentTypes.Applications.Json);
         request.Content = new StringContent(string.Empty);
         using var response = await client.SendAsync(request, AbortToken);
-        await _VerifyInternalServerError(response);
+        await _VerifyInternalServerError(response, environment);
     }
 
-    private static async Task _VerifyInternalServerError(HttpResponseMessage response)
+    private async Task _VerifyInternalServerError(HttpResponseMessage response, string environment)
     {
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
 
+        var details =
+            environment is EnvironmentNames.Development
+                ? "This is a test exception."
+                : ProblemDetailsConstants.Details.InternalError;
+
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
             ProblemDetailsConstants.Types.InternalError,
-            "System.InvalidOperationException",
+            ProblemDetailsConstants.Titles.InternalError,
             StatusCodes.Status500InternalServerError,
-            "This is a test exception."
+            details
         );
 
-        jsonElement.GetProperty("exception").EnumerateObject().Should().HaveCountGreaterThan(0);
-        jsonElement.EnumerateObject().Should().HaveCount(10);
+        if (environment is EnvironmentNames.Development)
+        {
+            jsonElement.GetProperty("exception").EnumerateObject().Should().HaveCountGreaterThan(0);
+        }
+        jsonElement.EnumerateObject().Should().HaveCount(environment is EnvironmentNames.Development ? 10 : 9); // dev has "exception" property
     }
 
     #endregion
 
     #region Unauthorized
 
-    [Fact]
-    public async Task mvc_unauthorized_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_unauthorized_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/minimal/authorized");
         request.Headers.Add("Accept", ContentTypes.Applications.Json);
@@ -417,10 +473,14 @@ public sealed class ProblemDetailsTests : TestBase
         await _ValidateUnauthorized(response);
     }
 
-    [Fact]
-    public async Task minimal_unauthorized_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_unauthorized_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var response = await client.GetAsync("/minimal/authorized", AbortToken);
         await _ValidateUnauthorized(response);
@@ -448,10 +508,14 @@ public sealed class ProblemDetailsTests : TestBase
 
     #region Forbidden
 
-    [Fact]
-    public async Task mvc_forbidden_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_forbidden_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/mvc/policy-authorized");
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic("test", "p@ssw0rd");
@@ -460,10 +524,14 @@ public sealed class ProblemDetailsTests : TestBase
         await _ValidateForbidden(response);
     }
 
-    [Fact]
-    public async Task minimal_forbidden_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_forbidden_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/minimal/policy-authorized");
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic("test", "p@ssw0rd");
@@ -494,10 +562,14 @@ public sealed class ProblemDetailsTests : TestBase
 
     #region Method Not Allowed
 
-    [Fact]
-    public async Task mvc_method_not_allowed_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task mvc_method_not_allowed_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var response = await client.PostAsJsonAsync("/mvc/malformed-syntax", "{}", AbortToken);
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
@@ -505,10 +577,14 @@ public sealed class ProblemDetailsTests : TestBase
         content.Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task minimal_method_not_allowed_request()
+    [Theory]
+    [InlineData(EnvironmentNames.Development)]
+    [InlineData(EnvironmentNames.Staging)]
+    [InlineData(EnvironmentNames.Test)]
+    [InlineData(EnvironmentNames.Production)]
+    public async Task minimal_method_not_allowed_request(string environment)
     {
-        await using var factory = await _CreateDefaultFactory();
+        await using var factory = _CreateDefaultFactory(environment);
         using var client = factory.CreateClient();
         using var response = await client.PostAsJsonAsync("/minimal/malformed-syntax", "{}", AbortToken);
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
@@ -549,26 +625,52 @@ public sealed class ProblemDetailsTests : TestBase
         jsonElement.GetProperty("timestamp").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow, 1.Seconds());
     }
 
-    private async Task<WebApplicationFactory<Program>> _CreateDefaultFactory(
-        Action<WebHostBuilderContext, IServiceCollection>? configureServices = null,
-        Action<IWebHostBuilder>? configureHost = null
-    )
+    private WebApplicationFactory<Program> _CreateDefaultFactory(string environment)
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        return new CustomWebApplicationFactory(LoggerProvider, environment: environment);
+    }
 
-        factory.ClientOptions.AllowAutoRedirect = false;
+    private sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
+    {
+        private readonly ILoggerProvider? _loggerProvider;
+        private readonly Action<WebHostBuilderContext, IServiceCollection>? _configureServices;
+        private readonly Action<IWebHostBuilder>? _configureHost;
+        private readonly string _environment;
 
-        return factory.WithWebHostBuilder(builder =>
+        public CustomWebApplicationFactory(
+            ILoggerProvider? loggerProvider = null,
+            Action<WebHostBuilderContext, IServiceCollection>? configureServices = null,
+            Action<IWebHostBuilder>? configureHost = null,
+            string environment = EnvironmentNames.Production
+        )
         {
-            builder.UseEnvironment(EnvironmentNames.Development);
-            builder.ConfigureLogging(loggingBuilder => loggingBuilder.ClearProviders().AddProvider(LoggerProvider));
-            configureHost?.Invoke(builder);
+            _loggerProvider = loggerProvider;
+            _configureServices = configureServices;
+            _configureHost = configureHost;
+            _environment = environment;
+            ClientOptions.AllowAutoRedirect = false;
+        }
 
-            if (configureServices is not null)
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+
+            builder.UseEnvironment(_environment);
+
+            builder.ConfigureLogging(loggingBuilder =>
             {
-                builder.ConfigureServices(configureServices);
-            }
-        });
+                loggingBuilder.ClearProviders();
+
+                if (_loggerProvider is not null)
+                {
+                    loggingBuilder.AddProvider(_loggerProvider);
+                }
+            });
+
+            builder.ConfigureServices((ctx, services) => _configureServices?.Invoke(ctx, services));
+
+            _configureHost?.Invoke(builder);
+        }
     }
 
     #endregion
