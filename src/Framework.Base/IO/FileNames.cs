@@ -72,7 +72,7 @@ public static class FileNames
         var stringBuilder = ZString.CreateStringBuilder();
         var spaceCount = 0;
 
-        foreach (var value in untrustedName[..^extension.Length])
+        foreach (var value in WebUtility.HtmlEncode(untrustedName[..^extension.Length].ToString()))
         {
             // The next part ensures that multiple consecutive spaces are reduced to a single space
             var isWhiteSpace = char.IsWhiteSpace(value);
@@ -92,7 +92,7 @@ public static class FileNames
 
             if (!InvalidFileNameChars.Contains(value))
             {
-                stringBuilder.Append(value);
+                stringBuilder.Append(char.ToLowerInvariant(value));
             }
             else
             {
