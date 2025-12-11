@@ -42,7 +42,7 @@ builder
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopmentOrTest())
+if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
