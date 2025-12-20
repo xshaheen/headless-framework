@@ -1,0 +1,98 @@
+# headless-framework
+
+> Headless .NET framework: a modular set of NuGet packages for building APIs, backend services, workers, and console apps. This repository is a *package framework* (not a runnable application). Demos exist only as wiring/examples you can copy.
+
+NuGet package IDs are defined by the projects (and shared build props) and may not always match folder paths. If in doubt, use the GitHub Packages index as the source of truth.
+
+Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add exactly one provider implementation (Redis/Azure/Aws/etc) as needed.
+
+## Start here
+
+- [README.md](README.md): High-level overview of the project.
+- [docs/overview.md](docs/overview.md): Developer-friendly overview (what to install, how to compose packages).
+- [headless-framework.slnx](headless-framework.slnx): Curated map of all packages, demos, and tests.
+- https://github.com/xshaheen/framework/packages?ecosystem=nuget: Published NuGet packages (GitHub Packages).
+- [src/](src/): Source for each NuGet package.
+- [demo/](demo/): Working demo apps you can copy wiring from.
+- [tests/](tests/): Tests demonstrating usage and edge-cases (integration tests may require Docker).
+
+## Demos (copy wiring)
+
+- [demo/Framework.Api.Demo/Program.cs](demo/Framework.Api.Demo/Program.cs): Example API wiring.
+- [demo/Framework.OpenApi.Nswag.Demo/Program.cs](demo/Framework.OpenApi.Nswag.Demo/Program.cs): OpenAPI/NSwag wiring.
+- [demo/Framework.EntityFramework.Migrations.Startup/Program.cs](demo/Framework.EntityFramework.Migrations.Startup/Program.cs): EF Core migrations startup wiring.
+- [demo/Framework.Recaptcha.Demo/Program.cs](demo/Framework.Recaptcha.Demo/Program.cs): reCAPTCHA wiring.
+- [demo/Framework.Tus.Demo/Program.cs](demo/Framework.Tus.Demo/Program.cs): tus resumable uploads wiring.
+
+## Kernel
+
+- [Framework.Base](https://github.com/users/xshaheen/packages/nuget/package/Framework.Base): Base utilities. Source: [src/Framework.Base/](src/Framework.Base/)
+- [Framework.BuildingBlocks](https://github.com/users/xshaheen/packages/nuget/package/Framework.BuildingBlocks): Common building blocks. Source: [src/Framework.BuildingBlocks/](src/Framework.BuildingBlocks/)
+- [Framework.Hosting](https://github.com/users/xshaheen/packages/nuget/package/Framework.Hosting): Hosting/DI helpers. Source: [src/Framework.Hosting/](src/Framework.Hosting/)
+- [Framework.FluentValidation](https://github.com/users/xshaheen/packages/nuget/package/Framework.FluentValidation): Validation helpers. Source: [src/Framework.FluentValidation/](src/Framework.FluentValidation/)
+
+## API
+
+- [Framework.Api](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api): Core API building blocks. Source: [src/Framework.Api/](src/Framework.Api/)
+- [Framework.Api.MinimalApi](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.MinimalApi): Minimal APIs support. Source: [src/Framework.Api.MinimalApi/](src/Framework.Api.MinimalApi/)
+- [Framework.Api.Mvc](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.Mvc): MVC APIs support. Source: [src/Framework.Api.Mvc/](src/Framework.Api.Mvc/)
+- [Framework.Api.FluentValidation](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.FluentValidation): FluentValidation integration. Source: [src/Framework.Api.FluentValidation/](src/Framework.Api.FluentValidation/)
+- [Framework.Api.Logging.Serilog](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.Logging.Serilog): Serilog integration. Source: [src/Framework.Api.Logging.Serilog/](src/Framework.Api.Logging.Serilog/)
+- [Framework.Api.DataProtection](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.DataProtection): Data protection helpers. Source: [src/Framework.Api.DataProtection/](src/Framework.Api.DataProtection/)
+
+## OpenAPI
+
+- [Framework.OpenApi.Nswag](https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Nswag): NSwag support. Source: [src/Framework.OpenApi.Nswag/](src/Framework.OpenApi.Nswag/)
+- [Framework.OpenApi.Nswag.OData](https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Nswag.OData): NSwag + OData support. Source: [src/Framework.OpenApi.Nswag.OData/](src/Framework.OpenApi.Nswag.OData/)
+- [Framework.OpenApi.Scalar](https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Scalar): Scalar support. Source: [src/Framework.OpenApi.Scalar/](src/Framework.OpenApi.Scalar/)
+
+## Caching
+
+- [Framework.Caching.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Abstraction): Caching contracts. Source: [src/Framework.Caching.Abstraction/](src/Framework.Caching.Abstraction/)
+- [Framework.Caching.Foundatio.Memory](https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Foundatio.Memory): Memory cache provider. Source: [src/Framework.Caching.Foundatio.Memory/](src/Framework.Caching.Foundatio.Memory/)
+- [Framework.Caching.Foundatio.Redis](https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Foundatio.Redis): Redis cache provider. Source: [src/Framework.Caching.Foundatio.Redis/](src/Framework.Caching.Foundatio.Redis/)
+
+## Messaging and queueing
+
+- [Framework.Messaging.Abstractions](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Abstractions): Messaging contracts. Source: [src/Framework.Messaging.Abstractions/](src/Framework.Messaging.Abstractions/)
+- [Framework.Messaging.Cap](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Cap): CAP integration. Source: [src/Framework.Messaging.Cap/](src/Framework.Messaging.Cap/)
+- [Framework.Messaging.Foundatio](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Foundatio): Foundatio integration. Source: [src/Framework.Messaging.Foundatio/](src/Framework.Messaging.Foundatio/)
+- [Framework.Messaging.LocalServiceProvider](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.LocalServiceProvider): Local in-process integration. Source: [src/Framework.Messaging.LocalServiceProvider/](src/Framework.Messaging.LocalServiceProvider/)
+- [Framework.Queueing.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Queueing.Abstraction): Queueing contracts. Source: [src/Framework.Queueing.Abstraction/](src/Framework.Queueing.Abstraction/)
+- [Framework.Queueing.Foundatio](https://github.com/users/xshaheen/packages/nuget/package/Framework.Queueing.Foundatio): Foundatio queueing. Source: [src/Framework.Queueing.Foundatio/](src/Framework.Queueing.Foundatio/)
+
+## Data access
+
+- [Framework.Orm.Dapper](https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.Dapper): Dapper integration. Source: [src/Framework.Orm.Dapper/](src/Framework.Orm.Dapper/)
+- [Framework.Orm.EntityFramework](https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.EntityFramework): EF Core integration. Source: [src/Framework.Orm.EntityFramework/](src/Framework.Orm.EntityFramework/)
+- [Framework.Orm.Couchbase](https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.Couchbase): Couchbase integration. Source: [src/Framework.Orm.Couchbase/](src/Framework.Orm.Couchbase/)
+- [Framework.Sql.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.Abstraction): SQL abstractions. Source: [src/Framework.Sql.Abstraction/](src/Framework.Sql.Abstraction/)
+- [Framework.Sql.SqlServer](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.SqlServer): SQL Server provider. Source: [src/Framework.Sql.SqlServer/](src/Framework.Sql.SqlServer/)
+- [Framework.Sql.PostgreSql](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.PostgreSql): PostgreSQL provider. Source: [src/Framework.Sql.PostgreSql/](src/Framework.Sql.PostgreSql/)
+- [Framework.Sql.Sqlite](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.Sqlite): SQLite provider. Source: [src/Framework.Sql.Sqlite/](src/Framework.Sql.Sqlite/)
+- [Framework.Redis](https://github.com/users/xshaheen/packages/nuget/package/Framework.Redis): Redis helpers. Source: [src/Framework.Redis/](src/Framework.Redis/)
+
+## Blobs and uploads
+
+- [Framework.Blobs.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Abstraction): Blob storage contracts. Source: [src/Framework.Blobs.Abstraction/](src/Framework.Blobs.Abstraction/)
+- [Framework.Blobs.Aws](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Aws): AWS blob provider. Source: [src/Framework.Blobs.Aws/](src/Framework.Blobs.Aws/)
+- [Framework.Blobs.Azure](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Azure): Azure blob provider. Source: [src/Framework.Blobs.Azure/](src/Framework.Blobs.Azure/)
+- [Framework.Blobs.FileSystem](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.FileSystem): Local filesystem blob provider. Source: [src/Framework.Blobs.FileSystem/](src/Framework.Blobs.FileSystem/)
+- [Framework.Blobs.Redis](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Redis): Redis blob provider. Source: [src/Framework.Blobs.Redis/](src/Framework.Blobs.Redis/)
+- [Framework.Blobs.SshNet](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.SshNet): SSH/SFTP blob provider. Source: [src/Framework.Blobs.SshNet/](src/Framework.Blobs.SshNet/)
+- [Framework.Tus](https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus): tus resumable uploads. Source: [src/Framework.Tus/](src/Framework.Tus/)
+- [Framework.Tus.Azure](https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus.Azure): tus Azure provider. Source: [src/Framework.Tus.Azure/](src/Framework.Tus.Azure/)
+- [Framework.Tus.ResourceLock](https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus.ResourceLock): tus locking integration. Source: [src/Framework.Tus.ResourceLock/](src/Framework.Tus.ResourceLock/)
+
+## Email, SMS, notifications
+
+- [Framework.Emails.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Abstraction): Email contracts. Source: [src/Framework.Emails.Abstraction/](src/Framework.Emails.Abstraction/)
+- [Framework.Emails.Core](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Core): Core email components. Source: [src/Framework.Emails.Core/](src/Framework.Emails.Core/)
+- [Framework.Emails.Aws](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Aws): AWS SES integration. Source: [src/Framework.Emails.Aws/](src/Framework.Emails.Aws/)
+- [Framework.Emails.Mailkit](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Mailkit): MailKit integration. Source: [src/Framework.Emails.Mailkit/](src/Framework.Emails.Mailkit/)
+- [Framework.Emails.Dev](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Dev): Dev/test email provider. Source: [src/Framework.Emails.Dev/](src/Framework.Emails.Dev/)
+- [Framework.Sms.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Abstraction): SMS contracts. Source: [src/Framework.Sms.Abstraction/](src/Framework.Sms.Abstraction/)
+- [Framework.Sms.Twilio](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Twilio): Twilio integration. Source: [src/Framework.Sms.Twilio/](src/Framework.Sms.Twilio/)
+- [Framework.Sms.Infobip](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Infobip): Infobip integration. Source: [src/Framework.Sms.Infobip/](src/Framework.Sms.Infobip/)
+- [Framework.PushNotifications.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.PushNotifications.Abstraction): Push notifications contracts. Source: [src/Framework.PushNotifications.Abstraction/](src/Framework.PushNotifications.Abstraction/)
+- [Framework.PushNotifications.Firebase](https://github.com/users/xshaheen/packages/nuget/package/Framework.PushNotifications.Firebase): Firebase integration. Source: [src/Framework.PushNotifications.Firebase/](src/Framework.PushNotifications.Firebase/)

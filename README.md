@@ -40,6 +40,12 @@
 
 👉 [GitHub Repository](https://github.com/xshaheen/headless-framework)
 
+## 📚 Docs
+
+-   [Developer Overview](docs/overview.md)
+-   [LLM Context (compact)](llms.txt)
+-   [LLM Context (full)](llms-full.txt)
+
 ---
 
 ## 📄 License
