@@ -1,0 +1,1420 @@
+# headless-framework (llms-full)
+
+> Expanded context for AI tools and humans using the **headless-framework** NuGet packages. This repository is a *package framework* (not a runnable application). Demos exist only as wiring/examples you can copy.
+
+If you only want a compact index, see: [llms.txt](llms.txt)
+
+## Start here
+
+- [README.md](README.md): High-level overview.
+- [docs/overview.md](docs/overview.md): Developer-friendly overview.
+- [headless-framework.slnx](headless-framework.slnx): Curated solution map (packages/demos/tests).
+- https://github.com/xshaheen/framework/packages?ecosystem=nuget: Published NuGet packages (GitHub Packages).
+- [src/](src/): Source for each NuGet package.
+- [demo/](demo/): Working demo apps (copy wiring).
+
+## Demos (copy wiring)
+
+- [demo/Framework.Api.Demo/Program.cs](demo/Framework.Api.Demo/Program.cs): Example API wiring.
+- [demo/Framework.OpenApi.Nswag.Demo/Program.cs](demo/Framework.OpenApi.Nswag.Demo/Program.cs): OpenAPI/NSwag wiring.
+- [demo/Framework.EntityFramework.Migrations.Startup/Program.cs](demo/Framework.EntityFramework.Migrations.Startup/Program.cs): EF Core migrations startup wiring.
+- [demo/Framework.Recaptcha.Demo/Program.cs](demo/Framework.Recaptcha.Demo/Program.cs): reCAPTCHA wiring.
+- [demo/Framework.Tus.Demo/Program.cs](demo/Framework.Tus.Demo/Program.cs): tus resumable uploads wiring.
+
+## Common DI/registration entrypoints (read these first)
+
+These are the most common “where do I call AddX?” entrypoints.
+
+- [src/Framework.Api/ApiRegistration.cs](src/Framework.Api/ApiRegistration.cs): API wiring helpers.
+- [src/Framework.Api.MinimalApi/AddMinimalApiExtensions.cs](src/Framework.Api.MinimalApi/AddMinimalApiExtensions.cs): Minimal API wiring.
+- [src/Framework.Api.Mvc/AddMvcExtensions.cs](src/Framework.Api.Mvc/AddMvcExtensions.cs): MVC wiring.
+- [src/Framework.Api.Logging.Serilog/AddSerilogExtensions.cs](src/Framework.Api.Logging.Serilog/AddSerilogExtensions.cs): Serilog enrichers.
+- [src/Framework.OpenApi.Nswag/AddNswagSwaggerExtensions.cs](src/Framework.OpenApi.Nswag/AddNswagSwaggerExtensions.cs): NSwag OpenAPI.
+
+- [src/Framework.Caching.Foundatio.Memory/AddCacheExtensions.cs](src/Framework.Caching.Foundatio.Memory/AddCacheExtensions.cs): In-memory caching.
+- [src/Framework.Caching.Foundatio.Redis/AddCacheExtensions.cs](src/Framework.Caching.Foundatio.Redis/AddCacheExtensions.cs): Redis caching.
+
+- [src/Framework.Messaging.Cap/AddCapDistributedMessagingExtensions.cs](src/Framework.Messaging.Cap/AddCapDistributedMessagingExtensions.cs): CAP messaging.
+- [src/Framework.Messaging.Foundatio/AddFoundatioExtensions.cs](src/Framework.Messaging.Foundatio/AddFoundatioExtensions.cs): Foundatio messaging.
+
+- [src/Framework.Blobs.FileSystem/AddFileSystemBlobExtensions.cs](src/Framework.Blobs.FileSystem/AddFileSystemBlobExtensions.cs): Filesystem blob storage.
+- [src/Framework.Blobs.Azure/AddAzureBlobExtensions.cs](src/Framework.Blobs.Azure/AddAzureBlobExtensions.cs): Azure blob storage.
+- [src/Framework.Blobs.Aws/AddAwsS3Extensions.cs](src/Framework.Blobs.Aws/AddAwsS3Extensions.cs): AWS S3 blob storage.
+- [src/Framework.Blobs.Redis/AddRedisBlobExtensions.cs](src/Framework.Blobs.Redis/AddRedisBlobExtensions.cs): Redis blob storage.
+- [src/Framework.Blobs.SshNet/AddSshBlobExtensions.cs](src/Framework.Blobs.SshNet/AddSshBlobExtensions.cs): SSH/SFTP blob storage.
+
+- [src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs](src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs): Resource locks.
+
+- [src/Framework.Tus.ResourceLock/AddTusLockProviderExtensions.cs](src/Framework.Tus.ResourceLock/AddTusLockProviderExtensions.cs): tus lock provider.
+- [src/Framework.Recaptcha/AddRecaptchaExtensions.cs](src/Framework.Recaptcha/AddRecaptchaExtensions.cs): reCAPTCHA.
+
+- [src/Framework.Emails.Dev/AddDevEmailExtensions.cs](src/Framework.Emails.Dev/AddDevEmailExtensions.cs): Dev email.
+- [src/Framework.Emails.Mailkit/AddMailKitExtensions.cs](src/Framework.Emails.Mailkit/AddMailKitExtensions.cs): MailKit email.
+- [src/Framework.Emails.Aws/AddAwsSesExtensions.cs](src/Framework.Emails.Aws/AddAwsSesExtensions.cs): AWS SES email.
+
+- [src/Framework.Sms.Dev/AddSmsExtensions.cs](src/Framework.Sms.Dev/AddSmsExtensions.cs): Dev SMS.
+- [src/Framework.Sms.Twilio/AddTwilioExtensions.cs](src/Framework.Sms.Twilio/AddTwilioExtensions.cs): Twilio SMS.
+- [src/Framework.Sms.Infobip/AddInfobipExtensions.cs](src/Framework.Sms.Infobip/AddInfobipExtensions.cs): Infobip SMS.
+- [src/Framework.Sms.Aws/AddAwsSnsExtensions.cs](src/Framework.Sms.Aws/AddAwsSnsExtensions.cs): AWS SNS SMS.
+
+- [src/Framework.Features.Core/AddFeaturesExtensions.cs](src/Framework.Features.Core/AddFeaturesExtensions.cs): Feature management.
+- [src/Framework.Settings.Core/AddSettingsExtensions.cs](src/Framework.Settings.Core/AddSettingsExtensions.cs): Settings management.
+- [src/Framework.Permissions.Core/AddPermissionsExtensions.cs](src/Framework.Permissions.Core/AddPermissionsExtensions.cs): Permissions.
+
+## Packages (full list)
+
+### Framework.Api
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Api
+- Source: [src/Framework.Api/](src/Framework.Api/)
+
+Main features:
+- API versioning (Asp.Versioning).
+- FluentValidation integration.
+- Entrypoint: `AddFrameworkApiConfigurations` on `IServiceCollection` ([src/Framework.Api/ApiRegistration.cs](src/Framework.Api/ApiRegistration.cs)).
+- Entrypoint: `AddFrameworkApiResponseCompression` on `IServiceCollection` ([src/Framework.Api/ApiRegistration.cs](src/Framework.Api/ApiRegistration.cs)).
+- Entrypoint: `AddFrameworkApiServices` on `WebApplicationBuilder` ([src/Framework.Api/ApiRegistration.cs](src/Framework.Api/ApiRegistration.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Api`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFrameworkApiConfigurations(/* configure as needed */);
+  ```
+
+### Framework.Api.DataProtection
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.DataProtection
+- Source: [src/Framework.Api.DataProtection/](src/Framework.Api.DataProtection/)
+
+Main features:
+- Key public types (starting points): `DataProtectionBuilderExtensions`, `BlobStorageDataProtectionXmlRepository`.
+
+Get started:
+- Install: `dotnet add package Framework.Api.DataProtection`
+- Example: open the source folder [src/Framework.Api.DataProtection/](src/Framework.Api.DataProtection/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Api.FluentValidation
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.FluentValidation
+- Source: [src/Framework.Api.FluentValidation/](src/Framework.Api.FluentValidation/)
+
+Main features:
+- Key public types (starting points): `FileValidators`, `FluentValidatorFormFileErrorDescriber`.
+
+Get started:
+- Install: `dotnet add package Framework.Api.FluentValidation`
+- Example: open the source folder [src/Framework.Api.FluentValidation/](src/Framework.Api.FluentValidation/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Api.Logging.Serilog
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.Logging.Serilog
+- Source: [src/Framework.Api.Logging.Serilog/](src/Framework.Api.Logging.Serilog/)
+
+Main features:
+- Serilog integration.
+- Entrypoint: `AddSerilogEnrichers` on `IServiceCollection` ([src/Framework.Api.Logging.Serilog/AddSerilogExtensions.cs](src/Framework.Api.Logging.Serilog/AddSerilogExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Api.Logging.Serilog`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddSerilogEnrichers(/* configure as needed */);
+  ```
+
+### Framework.Api.MinimalApi
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.MinimalApi
+- Source: [src/Framework.Api.MinimalApi/](src/Framework.Api.MinimalApi/)
+
+Main features:
+- Entity Framework Core integration.
+- API versioning (Asp.Versioning).
+- Entrypoint: `AddFrameworkMinimalApiOptions` on `IServiceCollection` ([src/Framework.Api.MinimalApi/AddMinimalApiExtensions.cs](src/Framework.Api.MinimalApi/AddMinimalApiExtensions.cs)).
+- Entrypoint: `AddExceptionFilter` on `RouteGroupBuilder` ([src/Framework.Api.MinimalApi/Filters/RouteBuilderExtensions.cs](src/Framework.Api.MinimalApi/Filters/RouteBuilderExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Api.MinimalApi`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFrameworkMinimalApiOptions(/* configure as needed */);
+  ```
+
+### Framework.Api.Mvc
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.Mvc
+- Source: [src/Framework.Api.Mvc/](src/Framework.Api.Mvc/)
+
+Main features:
+- Entity Framework Core integration.
+- API versioning (Asp.Versioning).
+- Entrypoint: `AddFrameworkMvcOptions` on `IServiceCollection` ([src/Framework.Api.Mvc/AddMvcExtensions.cs](src/Framework.Api.Mvc/AddMvcExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Api.Mvc`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFrameworkMvcOptions(/* configure as needed */);
+  ```
+
+### Framework.Base
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Base
+- Source: [src/Framework.Base/](src/Framework.Base/)
+
+Main features:
+- Key public types (starting points): `DebounceExtensions`, `EventHandlerExtensions`, `OsHelper`, `FixedTimezoneTimeProvider`, `ProcessExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.Base`
+- Example: open the source folder [src/Framework.Base/](src/Framework.Base/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Blobs.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Abstraction
+- Source: [src/Framework.Blobs.Abstraction/](src/Framework.Blobs.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IBlobNamingNormalizer`, `CrossOsNamingNormalizer`, `IBlobStorage`, `BlobStorageExtensions`, `BlobDownloadResult`.
+
+Get started:
+- Install: `dotnet add package Framework.Blobs.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Blobs.Aws
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Aws
+- Source: [src/Framework.Blobs.Aws/](src/Framework.Blobs.Aws/)
+
+Main features:
+- Entrypoint: `AddAwsS3BlobStorage` on `IServiceCollection` ([src/Framework.Blobs.Aws/AddAwsS3Extensions.cs](src/Framework.Blobs.Aws/AddAwsS3Extensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Blobs.Aws`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddAwsS3BlobStorage(/* configure as needed */);
+  ```
+
+### Framework.Blobs.Azure
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Azure
+- Source: [src/Framework.Blobs.Azure/](src/Framework.Blobs.Azure/)
+
+Main features:
+- Azure Blob Storage integration.
+- Entrypoint: `AddAzureBlobStorage` on `IServiceCollection` ([src/Framework.Blobs.Azure/AddAzureBlobExtensions.cs](src/Framework.Blobs.Azure/AddAzureBlobExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Blobs.Azure`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddAzureBlobStorage(/* configure as needed */);
+  ```
+
+### Framework.Blobs.FileSystem
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.FileSystem
+- Source: [src/Framework.Blobs.FileSystem/](src/Framework.Blobs.FileSystem/)
+
+Main features:
+- Entrypoint: `AddFileSystemBlobStorage` on `IServiceCollection` ([src/Framework.Blobs.FileSystem/AddFileSystemBlobExtensions.cs](src/Framework.Blobs.FileSystem/AddFileSystemBlobExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Blobs.FileSystem`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFileSystemBlobStorage(/* configure as needed */);
+  ```
+
+### Framework.Blobs.Redis
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Redis
+- Source: [src/Framework.Blobs.Redis/](src/Framework.Blobs.Redis/)
+
+Main features:
+- Redis integration.
+- Entrypoint: `AddRedisBlobStorage` on `IServiceCollection` ([src/Framework.Blobs.Redis/AddRedisBlobExtensions.cs](src/Framework.Blobs.Redis/AddRedisBlobExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Blobs.Redis`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddRedisBlobStorage(/* configure as needed */);
+  ```
+
+### Framework.Blobs.SshNet
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.SshNet
+- Source: [src/Framework.Blobs.SshNet/](src/Framework.Blobs.SshNet/)
+
+Main features:
+- Entrypoint: `AddSshBlobStorage` on `IServiceCollection` ([src/Framework.Blobs.SshNet/AddSshBlobExtensions.cs](src/Framework.Blobs.SshNet/AddSshBlobExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Blobs.SshNet`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddSshBlobStorage(/* configure as needed */);
+  ```
+
+### Framework.BuildingBlocks
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.BuildingBlocks
+- Source: [src/Framework.BuildingBlocks/](src/Framework.BuildingBlocks/)
+
+Main features:
+- FluentValidation integration.
+- Key public types (starting points): `ClaimsPrincipalExtensions`, `Run`, `SnappyCompressor`, `DateTimeOffsetExtensions`, `LoggerExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.BuildingBlocks`
+- Example: open the source folder [src/Framework.BuildingBlocks/](src/Framework.BuildingBlocks/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Caching.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Abstraction
+- Source: [src/Framework.Caching.Abstraction/](src/Framework.Caching.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `CacheExtensions`, `ICache`, `Cache`, `CacheValue`, `CacheOptions`.
+
+Get started:
+- Install: `dotnet add package Framework.Caching.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Caching.Foundatio.Memory
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Foundatio.Memory
+- Source: [src/Framework.Caching.Foundatio.Memory/](src/Framework.Caching.Foundatio.Memory/)
+
+Main features:
+- Foundatio integration.
+- Entrypoint: `AddInMemoryCache` on `IServiceCollection` ([src/Framework.Caching.Foundatio.Memory/AddCacheExtensions.cs](src/Framework.Caching.Foundatio.Memory/AddCacheExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Caching.Foundatio.Memory`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddInMemoryCache(/* configure as needed */);
+  ```
+
+### Framework.Caching.Foundatio.Redis
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Foundatio.Redis
+- Source: [src/Framework.Caching.Foundatio.Redis/](src/Framework.Caching.Foundatio.Redis/)
+
+Main features:
+- Foundatio integration.
+- Entrypoint: `AddRedisCache` on `IServiceCollection` ([src/Framework.Caching.Foundatio.Redis/AddCacheExtensions.cs](src/Framework.Caching.Foundatio.Redis/AddCacheExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Caching.Foundatio.Redis`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddRedisCache(/* configure as needed */);
+  ```
+
+### Framework.Checks
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Checks
+- Source: [src/Framework.Checks/](src/Framework.Checks/)
+
+Main features:
+- Key public types (starting points): `Argument`, `Ensure`.
+
+Get started:
+- Install: `dotnet add package Framework.Checks`
+- Example: open the source folder [src/Framework.Checks/](src/Framework.Checks/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Domains
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Domains
+- Source: [src/Framework.Domains/](src/Framework.Domains/)
+
+Main features:
+- Key public types (starting points): `DomainConstants`, `IMultiTenant`, `ISuspendAudit`, `ICreateAudit`, `IUpdateAudit`.
+
+Get started:
+- Install: `dotnet add package Framework.Domains`
+- Example: open the source folder [src/Framework.Domains/](src/Framework.Domains/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Emails.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Abstraction
+- Source: [src/Framework.Emails.Abstraction/](src/Framework.Emails.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IEmailSender`, `SendSingleEmailRequest`, `EmailRequestAddress`, `EmailRequestDestination`, `EmailRequestAttachment`.
+
+Get started:
+- Install: `dotnet add package Framework.Emails.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Emails.Aws
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Aws
+- Source: [src/Framework.Emails.Aws/](src/Framework.Emails.Aws/)
+
+Main features:
+- Entrypoint: `AddAwsSesEmailSender` on `IServiceCollection` ([src/Framework.Emails.Aws/AddAwsSesExtensions.cs](src/Framework.Emails.Aws/AddAwsSesExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Emails.Aws`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddAwsSesEmailSender(/* configure as needed */);
+  ```
+
+### Framework.Emails.Core
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Core
+- Source: [src/Framework.Emails.Core/](src/Framework.Emails.Core/)
+
+Main features:
+- MailKit email sending.
+- Key public types (starting points): `EmailToMimMessageConverter`.
+
+Get started:
+- Install: `dotnet add package Framework.Emails.Core`
+- Example: open the source folder [src/Framework.Emails.Core/](src/Framework.Emails.Core/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Emails.Dev
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Dev
+- Source: [src/Framework.Emails.Dev/](src/Framework.Emails.Dev/)
+
+Main features:
+- Entrypoint: `AddDevEmailSender` on `IServiceCollection` ([src/Framework.Emails.Dev/AddDevEmailExtensions.cs](src/Framework.Emails.Dev/AddDevEmailExtensions.cs)).
+- Entrypoint: `AddNoopEmailSender` on `IServiceCollection` ([src/Framework.Emails.Dev/AddDevEmailExtensions.cs](src/Framework.Emails.Dev/AddDevEmailExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Emails.Dev`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddDevEmailSender(/* configure as needed */);
+  ```
+
+### Framework.Emails.Mailkit
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Mailkit
+- Source: [src/Framework.Emails.Mailkit/](src/Framework.Emails.Mailkit/)
+
+Main features:
+- Entrypoint: `AddMailKitEmailSender` on `IServiceCollection` ([src/Framework.Emails.Mailkit/AddMailKitExtensions.cs](src/Framework.Emails.Mailkit/AddMailKitExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Emails.Mailkit`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddMailKitEmailSender(/* configure as needed */);
+  ```
+
+### Framework.Features.Abstractions
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Features.Abstractions
+- Source: [src/Framework.Features.Abstractions/](src/Framework.Features.Abstractions/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `DisableFeatureCheckAttribute`, `RequiresFeatureAttribute`, `FeatureManagerExtensions`, `IFeatureManager`, `TenantFeatureManagerExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.Features.Abstractions`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Features.Core
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Features.Core
+- Source: [src/Framework.Features.Core/](src/Framework.Features.Core/)
+
+Main features:
+- Entrypoint: `AddFeaturesManagementCore` on `IServiceCollection` ([src/Framework.Features.Core/AddFeaturesExtensions.cs](src/Framework.Features.Core/AddFeaturesExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Features.Core`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFeaturesManagementCore(/* configure as needed */);
+  ```
+
+### Framework.Features.Storage.EntityFramework
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Features.Storage.EntityFramework
+- Source: [src/Framework.Features.Storage.EntityFramework/](src/Framework.Features.Storage.EntityFramework/)
+
+Main features:
+- Entrypoint: `AddFeaturesManagementDbContextStorage` on `IServiceCollection` ([src/Framework.Features.Storage.EntityFramework/AddFeaturesManagementStorageExtensions.cs](src/Framework.Features.Storage.EntityFramework/AddFeaturesManagementStorageExtensions.cs)).
+- Entrypoint: `AddFeaturesConfiguration` on `ModelBuilder` ([src/Framework.Features.Storage.EntityFramework/FeaturesModelBuilderExtensions.cs](src/Framework.Features.Storage.EntityFramework/FeaturesModelBuilderExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Features.Storage.EntityFramework`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFeaturesManagementDbContextStorage(/* configure as needed */);
+  ```
+
+### Framework.FluentValidation
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.FluentValidation
+- Source: [src/Framework.FluentValidation/](src/Framework.FluentValidation/)
+
+Main features:
+- FluentValidation integration.
+- Key public types (starting points): `FluentValidationErrorCodeMapper`, `StringsFluentValidationExtensions`, `GeoValidators`, `CollectionValidators`, `UrlValidators`.
+
+Get started:
+- Install: `dotnet add package Framework.FluentValidation`
+- Example: open the source folder [src/Framework.FluentValidation/](src/Framework.FluentValidation/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Generator.Primitives
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Generator.Primitives
+- Source: [src/Framework.Generator.Primitives/](src/Framework.Generator.Primitives/)
+
+Main features:
+- Key public types (starting points): `PrimitiveGenerator`, `RoslynExtensions`, `CompilationExtensions`, `StaticValues`, `ParentClass`.
+
+Get started:
+- Install: `dotnet add package Framework.Generator.Primitives`
+- Example: open the source folder [src/Framework.Generator.Primitives/](src/Framework.Generator.Primitives/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Generator.Primitives.Abstractions
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Generator.Primitives.Abstractions
+- Source: [src/Framework.Generator.Primitives.Abstractions/](src/Framework.Generator.Primitives.Abstractions/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IPrimitive`, `InvalidPrimitiveValueException`, `SerializationFormatAttribute`, `StringLengthAttribute`, `PrimitiveAssemblyAttribute`.
+
+Get started:
+- Install: `dotnet add package Framework.Generator.Primitives.Abstractions`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Hosting
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Hosting
+- Source: [src/Framework.Hosting/](src/Framework.Hosting/)
+
+Main features:
+- Entrypoint: `AddIf` on `IConfigurationBuilder` ([src/Framework.Hosting/Configuration/ConfigurationBuilderExtensions.cs](src/Framework.Hosting/Configuration/ConfigurationBuilderExtensions.cs)).
+- Entrypoint: `AddIfElse` on `IConfigurationBuilder` ([src/Framework.Hosting/Configuration/ConfigurationBuilderExtensions.cs](src/Framework.Hosting/Configuration/ConfigurationBuilderExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Hosting`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Configuration.AddIf(/* configure as needed */);
+  ```
+
+### Framework.Identity.Storage.EntityFramework
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Identity.Storage.EntityFramework
+- Source: [src/Framework.Identity.Storage.EntityFramework/](src/Framework.Identity.Storage.EntityFramework/)
+
+Main features:
+- Key public types (starting points): `HeadlessIdentityServiceCollectionExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.Identity.Storage.EntityFramework`
+- Example: open the source folder [src/Framework.Identity.Storage.EntityFramework/](src/Framework.Identity.Storage.EntityFramework/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Imaging.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Imaging.Abstraction
+- Source: [src/Framework.Imaging.Abstraction/](src/Framework.Imaging.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IImageResizer`, `IImageCompressor`, `ImageResizeMode`, `ImageResizeArgs`, `ImageStreamResizeResult`.
+
+Get started:
+- Install: `dotnet add package Framework.Imaging.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Imaging.Core
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Imaging.Core
+- Source: [src/Framework.Imaging.Core/](src/Framework.Imaging.Core/)
+
+Main features:
+- Entrypoint: `AddImaging` on `IServiceCollection` ([src/Framework.Imaging.Core/AddImagingExtensions.cs](src/Framework.Imaging.Core/AddImagingExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Imaging.Core`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddImaging(/* configure as needed */);
+  ```
+
+### Framework.Imaging.ImageSharp
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Imaging.ImageSharp
+- Source: [src/Framework.Imaging.ImageSharp/](src/Framework.Imaging.ImageSharp/)
+
+Main features:
+- Entrypoint: `AddImageSharpContributors` on `AddImagingBuilder` ([src/Framework.Imaging.ImageSharp/AddImageSharpExtensions.cs](src/Framework.Imaging.ImageSharp/AddImageSharpExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Imaging.ImageSharp`
+- Example:
+  ```csharp
+  // Program.cs
+  imaging.AddImageSharpContributors(/* configure as needed */);
+  ```
+
+### Framework.Logging.Serilog
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Logging.Serilog
+- Source: [src/Framework.Logging.Serilog/](src/Framework.Logging.Serilog/)
+
+Main features:
+- Serilog integration.
+- Key public types (starting points): `SerilogFactory`.
+
+Get started:
+- Install: `dotnet add package Framework.Logging.Serilog`
+- Example: open the source folder [src/Framework.Logging.Serilog/](src/Framework.Logging.Serilog/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Media.Indexing
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Media.Indexing
+- Source: [src/Framework.Media.Indexing/](src/Framework.Media.Indexing/)
+
+Main features:
+- Key public types (starting points): `WordDocumentMediaFileTextProvider`, `PresentationDocumentMediaFileTextProvider`, `PdfMediaFileTextProvider`.
+
+Get started:
+- Install: `dotnet add package Framework.Media.Indexing`
+- Example: open the source folder [src/Framework.Media.Indexing/](src/Framework.Media.Indexing/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Media.Indexing.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Media.Indexing.Abstraction
+- Source: [src/Framework.Media.Indexing.Abstraction/](src/Framework.Media.Indexing.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IMediaFileTextProvider`.
+
+Get started:
+- Install: `dotnet add package Framework.Media.Indexing.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Messaging.Abstractions
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Abstractions
+- Source: [src/Framework.Messaging.Abstractions/](src/Framework.Messaging.Abstractions/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `MessageName`, `IDistributedMessagePublisher`, `IMessageSubscriber`, `MessageSubscriberExtensions`, `IMessageBus`.
+
+Get started:
+- Install: `dotnet add package Framework.Messaging.Abstractions`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Messaging.Cap
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Cap
+- Source: [src/Framework.Messaging.Cap/](src/Framework.Messaging.Cap/)
+
+Main features:
+- Entrypoint: `AddCapDistributedMessaging` on `IServiceCollection` ([src/Framework.Messaging.Cap/AddCapDistributedMessagingExtensions.cs](src/Framework.Messaging.Cap/AddCapDistributedMessagingExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Messaging.Cap`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddCapDistributedMessaging(/* configure as needed */);
+  ```
+
+### Framework.Messaging.Foundatio
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Foundatio
+- Source: [src/Framework.Messaging.Foundatio/](src/Framework.Messaging.Foundatio/)
+
+Main features:
+- Foundatio integration.
+- Entrypoint: `AddFoundatioInMemoryMessageBus` on `IServiceCollection` ([src/Framework.Messaging.Foundatio/AddFoundatioExtensions.cs](src/Framework.Messaging.Foundatio/AddFoundatioExtensions.cs)).
+- Entrypoint: `AddMessageBusFoundatioAdapter` on `IServiceCollection` ([src/Framework.Messaging.Foundatio/AddFoundatioExtensions.cs](src/Framework.Messaging.Foundatio/AddFoundatioExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Messaging.Foundatio`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFoundatioInMemoryMessageBus(/* configure as needed */);
+  ```
+
+### Framework.Messaging.LocalServiceProvider
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.LocalServiceProvider
+- Source: [src/Framework.Messaging.LocalServiceProvider/](src/Framework.Messaging.LocalServiceProvider/)
+
+Main features:
+- Entrypoint: `AddServiceProviderLocalMessagePublisher` on `IServiceCollection` ([src/Framework.Messaging.LocalServiceProvider/AddLocalMessagePublisherExtensions.cs](src/Framework.Messaging.LocalServiceProvider/AddLocalMessagePublisherExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Messaging.LocalServiceProvider`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddServiceProviderLocalMessagePublisher(/* configure as needed */);
+  ```
+
+### Framework.NetTopologySuite
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.NetTopologySuite
+- Source: [src/Framework.NetTopologySuite/](src/Framework.NetTopologySuite/)
+
+Main features:
+- Key public types (starting points): `GeoConstants`, `GeoExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.NetTopologySuite`
+- Example: open the source folder [src/Framework.NetTopologySuite/](src/Framework.NetTopologySuite/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.OpenApi.Nswag
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Nswag
+- Source: [src/Framework.OpenApi.Nswag/](src/Framework.OpenApi.Nswag/)
+
+Main features:
+- OpenAPI generation via NSwag.
+- API versioning (Asp.Versioning).
+- Entrypoint: `AddFrameworkNswagOpenApi` on `IServiceCollection` ([src/Framework.OpenApi.Nswag/AddNswagSwaggerExtensions.cs](src/Framework.OpenApi.Nswag/AddNswagSwaggerExtensions.cs)).
+- Entrypoint: `AddAllPrimitivesSwaggerMappings` on `JsonSchemaGeneratorSettings` ([src/Framework.OpenApi.Nswag/Extensions/NswagSwaggerGenOptionsExtensions.cs](src/Framework.OpenApi.Nswag/Extensions/NswagSwaggerGenOptionsExtensions.cs)).
+- Entrypoint: `AddBuildingBlocksPrimitiveMappings` on `JsonSchemaGeneratorSettings` ([src/Framework.OpenApi.Nswag/AddNswagSwaggerExtensions.cs](src/Framework.OpenApi.Nswag/AddNswagSwaggerExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.OpenApi.Nswag`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddFrameworkNswagOpenApi(/* configure as needed */);
+  ```
+
+### Framework.OpenApi.Nswag.OData
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Nswag.OData
+- Source: [src/Framework.OpenApi.Nswag.OData/](src/Framework.OpenApi.Nswag.OData/)
+
+Main features:
+- Key public types (starting points): `ODataOperationFilter`.
+
+Get started:
+- Install: `dotnet add package Framework.OpenApi.Nswag.OData`
+- Example: open the source folder [src/Framework.OpenApi.Nswag.OData/](src/Framework.OpenApi.Nswag.OData/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.OpenApi.Scalar
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Scalar
+- Source: [src/Framework.OpenApi.Scalar/](src/Framework.OpenApi.Scalar/)
+
+Main features:
+- Key public types (starting points): `AddScalarExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.OpenApi.Scalar`
+- Example: open the source folder [src/Framework.OpenApi.Scalar/](src/Framework.OpenApi.Scalar/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Orm.Couchbase
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.Couchbase
+- Source: [src/Framework.Orm.Couchbase/](src/Framework.Orm.Couchbase/)
+
+Main features:
+- Key public types (starting points): `DocumentSetExtensions`, `CouchbaseBucketContext`, `CouchbaseBucketContextInitializer`, `IBucketContextProvider`, `BucketContextProvider`.
+
+Get started:
+- Install: `dotnet add package Framework.Orm.Couchbase`
+- Example: open the source folder [src/Framework.Orm.Couchbase/](src/Framework.Orm.Couchbase/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Orm.Dapper
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.Dapper
+- Source: [src/Framework.Orm.Dapper/](src/Framework.Orm.Dapper/)
+
+Main features:
+- Key public types (starting points): `IDapperRepository`.
+
+Get started:
+- Install: `dotnet add package Framework.Orm.Dapper`
+- Example: open the source folder [src/Framework.Orm.Dapper/](src/Framework.Orm.Dapper/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Orm.EntityFramework
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.EntityFramework
+- Source: [src/Framework.Orm.EntityFramework/](src/Framework.Orm.EntityFramework/)
+
+Main features:
+- Entity Framework Core integration.
+- Entrypoint: `AddAllPrimitivesValueConvertersMappings` on `ModelConfigurationBuilder` ([src/Framework.Orm.EntityFramework/Extensions/ValueConvertersExtensions.cs](src/Framework.Orm.EntityFramework/Extensions/ValueConvertersExtensions.cs)).
+- Entrypoint: `AddBuildingBlocksPrimitivesConvertersMappings` on `ModelConfigurationBuilder` ([src/Framework.Orm.EntityFramework/Extensions/ModelConfigurationBuilderExtensions.cs](src/Framework.Orm.EntityFramework/Extensions/ModelConfigurationBuilderExtensions.cs)).
+- Entrypoint: `AddHeadlessExtension` on `DbContextOptionsBuilder` ([src/Framework.Orm.EntityFramework/HeadlessDbContextOptionsBuilderExtensions.cs](src/Framework.Orm.EntityFramework/HeadlessDbContextOptionsBuilderExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Orm.EntityFramework`
+- Example:
+  ```csharp
+  // Program.cs
+  modelConfigurationBuilder.AddAllPrimitivesValueConvertersMappings(/* configure as needed */);
+  ```
+
+### Framework.Payments.Paymob.CashIn
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Payments.Paymob.CashIn
+- Source: [src/Framework.Payments.Paymob.CashIn/](src/Framework.Payments.Paymob.CashIn/)
+
+Main features:
+- Entrypoint: `AddPaymobCashIn` on `IServiceCollection` ([src/Framework.Payments.Paymob.CashIn/AddPaymobCashInExtensions.cs](src/Framework.Payments.Paymob.CashIn/AddPaymobCashInExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Payments.Paymob.CashIn`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddPaymobCashIn(/* configure as needed */);
+  ```
+
+### Framework.Payments.Paymob.CashOut
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Payments.Paymob.CashOut
+- Source: [src/Framework.Payments.Paymob.CashOut/](src/Framework.Payments.Paymob.CashOut/)
+
+Main features:
+- Entrypoint: `AddPaymobCashOut` on `IServiceCollection` ([src/Framework.Payments.Paymob.CashOut/AddPaymobCashOutExtensions.cs](src/Framework.Payments.Paymob.CashOut/AddPaymobCashOutExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Payments.Paymob.CashOut`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddPaymobCashOut(/* configure as needed */);
+  ```
+
+### Framework.Payments.Paymob.Services
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Payments.Paymob.Services
+- Source: [src/Framework.Payments.Paymob.Services/](src/Framework.Payments.Paymob.Services/)
+
+Main features:
+- Key public types (starting points): `PaymobMessageDescriptor`, `General`, `CashIn`, `CashOut`, `ICashOutService`.
+
+Get started:
+- Install: `dotnet add package Framework.Payments.Paymob.Services`
+- Example: open the source folder [src/Framework.Payments.Paymob.Services/](src/Framework.Payments.Paymob.Services/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Permissions.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Permissions.Abstraction
+- Source: [src/Framework.Permissions.Abstraction/](src/Framework.Permissions.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `PermissionManagerExtensions`, `PermissionGrantProviderNames`, `IPermissionManager`, `ICanAddChildPermission`, `PermissionDefinition`.
+
+Get started:
+- Install: `dotnet add package Framework.Permissions.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Permissions.Core
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Permissions.Core
+- Source: [src/Framework.Permissions.Core/](src/Framework.Permissions.Core/)
+
+Main features:
+- Entrypoint: `AddAlwaysAllowAuthorization` on `IServiceCollection` ([src/Framework.Permissions.Core/AddPermissionsExtensions.cs](src/Framework.Permissions.Core/AddPermissionsExtensions.cs)).
+- Entrypoint: `AddPermissionsManagementCore` on `IServiceCollection` ([src/Framework.Permissions.Core/AddPermissionsExtensions.cs](src/Framework.Permissions.Core/AddPermissionsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Permissions.Core`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddAlwaysAllowAuthorization(/* configure as needed */);
+  ```
+
+### Framework.Permissions.Storage.EntityFramework
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Permissions.Storage.EntityFramework
+- Source: [src/Framework.Permissions.Storage.EntityFramework/](src/Framework.Permissions.Storage.EntityFramework/)
+
+Main features:
+- Entrypoint: `AddPermissionsManagementDbContextStorage` on `IServiceCollection` ([src/Framework.Permissions.Storage.EntityFramework/AddPermissionsManagementStorageExtensions.cs](src/Framework.Permissions.Storage.EntityFramework/AddPermissionsManagementStorageExtensions.cs)).
+- Entrypoint: `AddPermissionsConfiguration` on `ModelBuilder` ([src/Framework.Permissions.Storage.EntityFramework/PermissionsModelBuilderExtensions.cs](src/Framework.Permissions.Storage.EntityFramework/PermissionsModelBuilderExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Permissions.Storage.EntityFramework`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddPermissionsManagementDbContextStorage(/* configure as needed */);
+  ```
+
+### Framework.PushNotifications.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.PushNotifications.Abstraction
+- Source: [src/Framework.PushNotifications.Abstraction/](src/Framework.PushNotifications.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IPushNotificationService`, `BatchPushNotificationResponse`, `PushNotificationResponse`, `PushNotificationResponseStatus`.
+
+Get started:
+- Install: `dotnet add package Framework.PushNotifications.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.PushNotifications.Dev
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.PushNotifications.Dev
+- Source: [src/Framework.PushNotifications.Dev/](src/Framework.PushNotifications.Dev/)
+
+Main features:
+- Entrypoint: `AddNoopPushNotification` on `IServiceCollection` ([src/Framework.PushNotifications.Dev/AddPushNotificationsExtensions.cs](src/Framework.PushNotifications.Dev/AddPushNotificationsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.PushNotifications.Dev`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddNoopPushNotification(/* configure as needed */);
+  ```
+
+### Framework.PushNotifications.Firebase
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.PushNotifications.Firebase
+- Source: [src/Framework.PushNotifications.Firebase/](src/Framework.PushNotifications.Firebase/)
+
+Main features:
+- Entrypoint: `AddPushNotifications` on `IServiceCollection` ([src/Framework.PushNotifications.Firebase/AddPushNotificationsExtensions.cs](src/Framework.PushNotifications.Firebase/AddPushNotificationsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.PushNotifications.Firebase`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddPushNotifications(/* configure as needed */);
+  ```
+
+### Framework.Queueing.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Queueing.Abstraction
+- Source: [src/Framework.Queueing.Abstraction/](src/Framework.Queueing.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `QueueStats`, `IQueueEntry`, `IQueueBehavior`, `IQueue`, `QueueExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.Queueing.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Queueing.Foundatio
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Queueing.Foundatio
+- Source: [src/Framework.Queueing.Foundatio/](src/Framework.Queueing.Foundatio/)
+
+Main features:
+- Foundatio integration.
+- Key public types (starting points): `QueueFoundatioAdapter`, `FoundatioAsyncEventAdapter`.
+
+Get started:
+- Install: `dotnet add package Framework.Queueing.Foundatio`
+- Example: open the source folder [src/Framework.Queueing.Foundatio/](src/Framework.Queueing.Foundatio/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Recaptcha
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Recaptcha
+- Source: [src/Framework.Recaptcha/](src/Framework.Recaptcha/)
+
+Main features:
+- Entrypoint: `AddReCaptchaV2` on `IServiceCollection` ([src/Framework.Recaptcha/AddRecaptchaExtensions.cs](src/Framework.Recaptcha/AddRecaptchaExtensions.cs)).
+- Entrypoint: `AddReCaptchaV3` on `IServiceCollection` ([src/Framework.Recaptcha/AddRecaptchaExtensions.cs](src/Framework.Recaptcha/AddRecaptchaExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Recaptcha`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddReCaptchaV2(/* configure as needed */);
+  ```
+
+### Framework.Redis
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Redis
+- Source: [src/Framework.Redis/](src/Framework.Redis/)
+
+Main features:
+- Redis integration.
+- Key public types (starting points): `HeadlessRedisScriptsLoader`, `RedisScripts`, `ConnectionMultiplexerExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.Redis`
+- Example: open the source folder [src/Framework.Redis/](src/Framework.Redis/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.ResourceLocks.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.ResourceLocks.Abstraction
+- Source: [src/Framework.ResourceLocks.Abstraction/](src/Framework.ResourceLocks.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IResourceLock`, `ResourceLockProviderExtensions`, `IResourceLockProvider`, `IResourceThrottlingLock`, `IThrottlingResourceLockProvider`.
+
+Get started:
+- Install: `dotnet add package Framework.ResourceLocks.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.ResourceLocks.Cache
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.ResourceLocks.Cache
+- Source: [src/Framework.ResourceLocks.Cache/](src/Framework.ResourceLocks.Cache/)
+
+Main features:
+- Key public types (starting points): `CacheThrottlingResourceLockStorage`, `CacheResourceLockStorage`.
+
+Get started:
+- Install: `dotnet add package Framework.ResourceLocks.Cache`
+- Example: open the source folder [src/Framework.ResourceLocks.Cache/](src/Framework.ResourceLocks.Cache/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.ResourceLocks.Core
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.ResourceLocks.Core
+- Source: [src/Framework.ResourceLocks.Core/](src/Framework.ResourceLocks.Core/)
+
+Main features:
+- Entrypoint: `AddKeyedThrottlingResourceLock` on `IServiceCollection` ([src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs](src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs)).
+- Entrypoint: `AddResourceLock` on `IServiceCollection` ([src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs](src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs)).
+- Entrypoint: `AddThrottlingResourceLock` on `IServiceCollection` ([src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs](src/Framework.ResourceLocks.Core/AddResourceLockExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.ResourceLocks.Core`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddKeyedThrottlingResourceLock(/* configure as needed */);
+  ```
+
+### Framework.ResourceLocks.Redis
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.ResourceLocks.Redis
+- Source: [src/Framework.ResourceLocks.Redis/](src/Framework.ResourceLocks.Redis/)
+
+Main features:
+- Redis integration.
+- Key public types (starting points): `RedisResourceLockStorage`, `RedisThrottlingResourceLockStorage`.
+
+Get started:
+- Install: `dotnet add package Framework.ResourceLocks.Redis`
+- Example: open the source folder [src/Framework.ResourceLocks.Redis/](src/Framework.ResourceLocks.Redis/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Serializer.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Serializer.Abstraction
+- Source: [src/Framework.Serializer.Abstraction/](src/Framework.Serializer.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `SerializerExtensions`, `ISerializer`, `IBinarySerializer`, `ITextSerializer`, `IJsonSerializer`.
+
+Get started:
+- Install: `dotnet add package Framework.Serializer.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Serializer.Json
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Serializer.Json
+- Source: [src/Framework.Serializer.Json/](src/Framework.Serializer.Json/)
+
+Main features:
+- Key public types (starting points): `JsonConstants`, `SystemJsonSerializer`, `JsonSerializerModifiersOptions`, `SystemJsonTypeInfoResolver`, `JsonPropertiesModifiers`.
+
+Get started:
+- Install: `dotnet add package Framework.Serializer.Json`
+- Example: open the source folder [src/Framework.Serializer.Json/](src/Framework.Serializer.Json/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Serializer.MessagePack
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Serializer.MessagePack
+- Source: [src/Framework.Serializer.MessagePack/](src/Framework.Serializer.MessagePack/)
+
+Main features:
+- Key public types (starting points): `MessagePackSerializer`.
+
+Get started:
+- Install: `dotnet add package Framework.Serializer.MessagePack`
+- Example: open the source folder [src/Framework.Serializer.MessagePack/](src/Framework.Serializer.MessagePack/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Settings.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Settings.Abstraction
+- Source: [src/Framework.Settings.Abstraction/](src/Framework.Settings.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `GlobalSettingManagerExtensions`, `TenantSettingManagerExtensions`, `DefaultSettingManagerExtensions`, `ISettingManager`, `UserSettingManagerExtensions`.
+
+Get started:
+- Install: `dotnet add package Framework.Settings.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Settings.Core
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Settings.Core
+- Source: [src/Framework.Settings.Core/](src/Framework.Settings.Core/)
+
+Main features:
+- Entrypoint: `AddSettingsManagementCore` on `IServiceCollection` ([src/Framework.Settings.Core/AddSettingsExtensions.cs](src/Framework.Settings.Core/AddSettingsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Settings.Core`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddSettingsManagementCore(/* configure as needed */);
+  ```
+
+### Framework.Settings.Storage.EntityFramework
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Settings.Storage.EntityFramework
+- Source: [src/Framework.Settings.Storage.EntityFramework/](src/Framework.Settings.Storage.EntityFramework/)
+
+Main features:
+- Entrypoint: `AddSettingsManagementDbContextStorage` on `IServiceCollection` ([src/Framework.Settings.Storage.EntityFramework/AddSettingsManagementStorageExtensions.cs](src/Framework.Settings.Storage.EntityFramework/AddSettingsManagementStorageExtensions.cs)).
+- Entrypoint: `AddSettingsConfiguration` on `ModelBuilder` ([src/Framework.Settings.Storage.EntityFramework/SettingsModelBuilderExtensions.cs](src/Framework.Settings.Storage.EntityFramework/SettingsModelBuilderExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Settings.Storage.EntityFramework`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddSettingsManagementDbContextStorage(/* configure as needed */);
+  ```
+
+### Framework.Sitemaps
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sitemaps
+- Source: [src/Framework.Sitemaps/](src/Framework.Sitemaps/)
+
+Main features:
+- Key public types (starting points): `SitemapReference`, `SitemapUrls`, `SitemapUrl`, `SitemapImage`, `SitemapAlternateUrls`.
+
+Get started:
+- Install: `dotnet add package Framework.Sitemaps`
+- Example: open the source folder [src/Framework.Sitemaps/](src/Framework.Sitemaps/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Slugs
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Slugs
+- Source: [src/Framework.Slugs/](src/Framework.Slugs/)
+
+Main features:
+- Key public types (starting points): `CasingTransformation`, `Slug`, `SlugOptions`.
+
+Get started:
+- Install: `dotnet add package Framework.Slugs`
+- Example: open the source folder [src/Framework.Slugs/](src/Framework.Slugs/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Sms.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Abstraction
+- Source: [src/Framework.Sms.Abstraction/](src/Framework.Sms.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `ISmsSender`, `SendSingleSmsRequest`, `SmsRequestDestination`, `SendSingleSmsResponse`.
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Sms.Aws
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Aws
+- Source: [src/Framework.Sms.Aws/](src/Framework.Sms.Aws/)
+
+Main features:
+- Entrypoint: `AddAwsSnsSmsSender` on `IServiceCollection` ([src/Framework.Sms.Aws/AddAwsSnsExtensions.cs](src/Framework.Sms.Aws/AddAwsSnsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Aws`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddAwsSnsSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Sms.Cequens
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Cequens
+- Source: [src/Framework.Sms.Cequens/](src/Framework.Sms.Cequens/)
+
+Main features:
+- Entrypoint: `AddCequensSmsSender` on `IServiceCollection` ([src/Framework.Sms.Cequens/AddCequensExtensions.cs](src/Framework.Sms.Cequens/AddCequensExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Cequens`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddCequensSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Sms.Connekio
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Connekio
+- Source: [src/Framework.Sms.Connekio/](src/Framework.Sms.Connekio/)
+
+Main features:
+- Entrypoint: `AddConnekioSmsSender` on `IServiceCollection` ([src/Framework.Sms.Connekio/AddConnekioSmsExtensions.cs](src/Framework.Sms.Connekio/AddConnekioSmsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Connekio`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddConnekioSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Sms.Dev
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Dev
+- Source: [src/Framework.Sms.Dev/](src/Framework.Sms.Dev/)
+
+Main features:
+- Entrypoint: `AddDevSmsSender` on `IServiceCollection` ([src/Framework.Sms.Dev/AddSmsExtensions.cs](src/Framework.Sms.Dev/AddSmsExtensions.cs)).
+- Entrypoint: `AddNoopSmsSender` on `IServiceCollection` ([src/Framework.Sms.Dev/AddSmsExtensions.cs](src/Framework.Sms.Dev/AddSmsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Dev`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddDevSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Sms.Infobip
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Infobip
+- Source: [src/Framework.Sms.Infobip/](src/Framework.Sms.Infobip/)
+
+Main features:
+- Entrypoint: `AddInfobipSmsSender` on `IServiceCollection` ([src/Framework.Sms.Infobip/AddInfobipExtensions.cs](src/Framework.Sms.Infobip/AddInfobipExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Infobip`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddInfobipSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Sms.Twilio
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Twilio
+- Source: [src/Framework.Sms.Twilio/](src/Framework.Sms.Twilio/)
+
+Main features:
+- Twilio integration.
+- Entrypoint: `AddTwilioSmsSender` on `IServiceCollection` ([src/Framework.Sms.Twilio/AddTwilioExtensions.cs](src/Framework.Sms.Twilio/AddTwilioExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Twilio`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddTwilioSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Sms.VictoryLink
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.VictoryLink
+- Source: [src/Framework.Sms.VictoryLink/](src/Framework.Sms.VictoryLink/)
+
+Main features:
+- Entrypoint: `AddVictoryLinkSmsSender` on `IServiceCollection` ([src/Framework.Sms.VictoryLink/AddVictoryLinkExtensions.cs](src/Framework.Sms.VictoryLink/AddVictoryLinkExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.VictoryLink`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddVictoryLinkSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Sms.Vodafone
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Vodafone
+- Source: [src/Framework.Sms.Vodafone/](src/Framework.Sms.Vodafone/)
+
+Main features:
+- Entrypoint: `AddVodafoneSmsSender` on `IServiceCollection` ([src/Framework.Sms.Vodafone/AddVodafoneSmsExtensions.cs](src/Framework.Sms.Vodafone/AddVodafoneSmsExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Sms.Vodafone`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddVodafoneSmsSender(/* configure as needed */);
+  ```
+
+### Framework.Specifications
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Specifications
+- Source: [src/Framework.Specifications/](src/Framework.Specifications/)
+
+Main features:
+- Key public types (starting points): `NoneSpecification`, `OrNotSpecification`, `NotSpecification`, `AnySpecification`, `OrSpecification`.
+
+Get started:
+- Install: `dotnet add package Framework.Specifications`
+- Example: open the source folder [src/Framework.Specifications/](src/Framework.Specifications/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Sql.Abstraction
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.Abstraction
+- Source: [src/Framework.Sql.Abstraction/](src/Framework.Sql.Abstraction/)
+
+Main features:
+- Contracts/abstractions package (interfaces + shared primitives).
+- Key public types (starting points): `IConnectionStringChecker`, `ISqlConnectionFactory`.
+
+Get started:
+- Install: `dotnet add package Framework.Sql.Abstraction`
+- Example: add this abstraction package, then install one concrete provider package from this repo (e.g., Redis/Azure/Aws/etc) and follow a demo `Program.cs` wiring.
+
+### Framework.Sql.PostgreSql
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.PostgreSql
+- Source: [src/Framework.Sql.PostgreSql/](src/Framework.Sql.PostgreSql/)
+
+Main features:
+- Key public types (starting points): `NpgsqlConnectionStringChecker`, `NpgsqlConnectionFactory`.
+
+Get started:
+- Install: `dotnet add package Framework.Sql.PostgreSql`
+- Example: open the source folder [src/Framework.Sql.PostgreSql/](src/Framework.Sql.PostgreSql/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Sql.Sqlite
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.Sqlite
+- Source: [src/Framework.Sql.Sqlite/](src/Framework.Sql.Sqlite/)
+
+Main features:
+- Key public types (starting points): `SqliteConnectionFactory`, `SqliteConnectionStringChecker`.
+
+Get started:
+- Install: `dotnet add package Framework.Sql.Sqlite`
+- Example: open the source folder [src/Framework.Sql.Sqlite/](src/Framework.Sql.Sqlite/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Sql.SqlServer
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.SqlServer
+- Source: [src/Framework.Sql.SqlServer/](src/Framework.Sql.SqlServer/)
+
+Main features:
+- Key public types (starting points): `SqlServerConnectionFactory`, `SqlServerConnectionStringChecker`.
+
+Get started:
+- Install: `dotnet add package Framework.Sql.SqlServer`
+- Example: open the source folder [src/Framework.Sql.SqlServer/](src/Framework.Sql.SqlServer/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Testing
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Testing
+- Source: [src/Framework.Testing/](src/Framework.Testing/)
+
+Main features:
+- Key public types (starting points): `AlfaTestsOrderer`, `FakerExtensions`, `RetryTestCaseRunnerContext`, `RetryTestCaseRunner`, `RetryDelayEnumeratedTestCase`.
+
+Get started:
+- Install: `dotnet add package Framework.Testing`
+- Example: open the source folder [src/Framework.Testing/](src/Framework.Testing/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Testing.Testcontainers
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Testing.Testcontainers
+- Source: [src/Framework.Testing.Testcontainers/](src/Framework.Testing.Testcontainers/)
+
+Main features:
+- Key public types (starting points): `HeadlessRedisFixture`.
+
+Get started:
+- Install: `dotnet add package Framework.Testing.Testcontainers`
+- Example: open the source folder [src/Framework.Testing.Testcontainers/](src/Framework.Testing.Testcontainers/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Tus
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus
+- Source: [src/Framework.Tus/](src/Framework.Tus/)
+
+Main features:
+- See the source folder for public APIs and usage.
+
+Get started:
+- Install: `dotnet add package Framework.Tus`
+- Example: open the source folder [src/Framework.Tus/](src/Framework.Tus/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Tus.Azure
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus.Azure
+- Source: [src/Framework.Tus.Azure/](src/Framework.Tus.Azure/)
+
+Main features:
+- Azure Blob Storage integration.
+- Key public types (starting points): `TusAzureStoreOptions`, `TusAzureStoreOptionsValidator`, `AzureBlobFileLock`, `AzureBlobFileLockProvider`, `TusAzureStore`.
+
+Get started:
+- Install: `dotnet add package Framework.Tus.Azure`
+- Example: open the source folder [src/Framework.Tus.Azure/](src/Framework.Tus.Azure/) and start from the key public types listed above (or search for `Add*` extensions).
+
+### Framework.Tus.ResourceLock
+
+- NuGet (GitHub Packages): https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus.ResourceLock
+- Source: [src/Framework.Tus.ResourceLock/](src/Framework.Tus.ResourceLock/)
+
+Main features:
+- Entrypoint: `AddResourceLockTusLockProvider` on `IServiceCollection` ([src/Framework.Tus.ResourceLock/AddTusLockProviderExtensions.cs](src/Framework.Tus.ResourceLock/AddTusLockProviderExtensions.cs)).
+
+Get started:
+- Install: `dotnet add package Framework.Tus.ResourceLock`
+- Example:
+  ```csharp
+  // Program.cs
+  builder.Services.AddResourceLockTusLockProvider(/* configure as needed */);
+  ```
+
+## Optional (contributors / repo mechanics)
+
+- [tests/](tests/): Unit/integration tests (some integration tests require Docker).
+- [global.json](global.json): SDK pin.
+- [Directory.Packages.props](Directory.Packages.props): Central package versions.
+- [build.sh](build.sh): NUKE build entry (macOS/Linux).
+- [build.ps1](build.ps1): NUKE build entry (PowerShell).
+- [build/Build.cs](build/Build.cs): NUKE targets.
+- [docs/publish.md](docs/publish.md): Publishing notes.
