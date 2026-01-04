@@ -17,6 +17,7 @@
     <PackageReference Include="NetEscapades.AspNetCore.SecurityHeaders" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Framework.Api.Abstractions\Framework.Api.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Caching.Abstractions\Framework.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />

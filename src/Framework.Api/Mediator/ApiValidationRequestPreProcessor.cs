@@ -2,7 +2,7 @@
 
 using FluentValidation;
 using FluentValidation.Results;
-using Framework.Api.Abstractions;
+using Framework.Abstractions;
 using Mediator;
 using Microsoft.Extensions.Logging;
 
