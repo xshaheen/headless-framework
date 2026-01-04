@@ -7,7 +7,7 @@
     <PackageReference Include="Testcontainers" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Blobs.Abstraction\Framework.Blobs.Abstraction.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Blobs.Abstractions\Framework.Blobs.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
 </Project>

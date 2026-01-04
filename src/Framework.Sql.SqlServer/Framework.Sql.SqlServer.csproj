@@ -6,6 +6,6 @@
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Sql.Abstraction\Framework.Sql.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Sql.Abstractions\Framework.Sql.Abstractions.csproj" />
   </ItemGroup>
 </Project>

@@ -8,6 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
-    <ProjectReference Include="..\Framework.Sms.Abstraction\Framework.Sms.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Sms.Abstractions\Framework.Sms.Abstractions.csproj" />
   </ItemGroup>
 </Project>

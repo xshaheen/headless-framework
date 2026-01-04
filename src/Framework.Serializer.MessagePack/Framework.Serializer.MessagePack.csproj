@@ -7,6 +7,6 @@
     <PackageReference Include="MessagePack" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Serializer.Abstraction\Framework.Serializer.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Serializer.Abstractions\Framework.Serializer.Abstractions.csproj" />
   </ItemGroup>
 </Project>

@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation.Resources;
 using Framework.Constants;
-using Framework.FluentValidation.Resources;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 [PublicAPI]

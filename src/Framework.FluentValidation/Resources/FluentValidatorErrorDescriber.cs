@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.FluentValidation.Resources;
 using Framework.Primitives;
 
-namespace Framework.FluentValidation.Resources;
+namespace FluentValidation.Resources;
 
 public static class FluentValidatorErrorDescriber
 {

@@ -9,6 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
-    <ProjectReference Include="..\Framework.Media.Indexing.Abstraction\Framework.Media.Indexing.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Media.Indexing.Abstractions\Framework.Media.Indexing.Abstractions.csproj" />
   </ItemGroup>
 </Project>
