@@ -8,7 +8,7 @@
     <PackageReference Include="Microsoft.Extensions.Azure" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Blobs.Abstraction\Framework.Blobs.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Blobs.Abstractions\Framework.Blobs.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
 </Project>

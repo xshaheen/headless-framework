@@ -7,6 +7,6 @@
     <PackageReference Include="Foundatio" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Queueing.Abstraction\Framework.Queueing.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Queueing.Abstractions\Framework.Queueing.Abstractions.csproj" />
   </ItemGroup>
 </Project>

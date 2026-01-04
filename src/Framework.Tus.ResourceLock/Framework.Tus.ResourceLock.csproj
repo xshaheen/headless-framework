@@ -4,7 +4,7 @@
     <RootNamespace>Framework.Tus</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.ResourceLocks.Abstraction\Framework.ResourceLocks.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks.Abstractions\Framework.ResourceLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.Tus\Framework.Tus.csproj" />
   </ItemGroup>
 </Project>

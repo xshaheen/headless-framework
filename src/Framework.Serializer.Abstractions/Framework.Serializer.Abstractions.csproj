@@ -1,6 +1,6 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>Framework.Caching</RootNamespace>
+    <RootNamespace>Framework.Serializer</RootNamespace>
   </PropertyGroup>
 </Project>

@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
+using FluentValidation.Resources;
 using FluentValidation.Results;
-using Framework.FluentValidation.Resources;
 using PhoneNumbers;
 using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.PhoneAttribute;
 
-namespace Framework.FluentValidation;
+namespace FluentValidation;
 
 [PublicAPI]
 public static class PhoneNumberValidators

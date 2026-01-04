@@ -4,8 +4,6 @@ using FluentValidation.Results;
 using Framework.FluentValidation;
 using Framework.Primitives;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 [PublicAPI]
@@ -53,7 +51,7 @@ public static class FluentValidationExtensions
                     }
                     else
                     {
-                        errorCode = FluentValidationErrorCodeMapper.MapToApplicationErrorCode(failure.ErrorCode);
+                        errorCode = FluentValidationErrorCodeMapper.MapToHeadlessErrorCode(failure.ErrorCode);
 
                         // Normalize the fluent validation property path
                         if (

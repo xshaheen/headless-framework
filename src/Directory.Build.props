@@ -40,6 +40,6 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup Label="README Files">
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Condition="!Exists('README.md')" Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

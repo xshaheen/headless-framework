@@ -2,13 +2,13 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace Framework.FluentValidation;
+namespace FluentValidation;
 
 [PublicAPI]
 public static class FluentValidationErrorCodeMapper
 {
     [return: NotNullIfNotNull(nameof(errorCode))]
-    public static string? MapToApplicationErrorCode(string? errorCode)
+    public static string? MapToHeadlessErrorCode(string? errorCode)
     {
         return errorCode switch
         {

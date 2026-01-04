@@ -4,7 +4,7 @@
     <RootNamespace>Tests</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Sql.Abstraction\Framework.Sql.Abstraction.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Sql.Abstractions\Framework.Sql.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
 </Project>

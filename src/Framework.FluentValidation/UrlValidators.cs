@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
-using Framework.FluentValidation.Resources;
+using FluentValidation.Resources;
 
-namespace Framework.FluentValidation;
+namespace FluentValidation;
 
 [PublicAPI]
 public static class UrlValidators

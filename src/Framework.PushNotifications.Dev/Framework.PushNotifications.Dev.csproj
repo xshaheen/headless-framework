@@ -4,6 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
-    <ProjectReference Include="..\Framework.PushNotifications.Abstraction\Framework.PushNotifications.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.PushNotifications.Abstractions\Framework.PushNotifications.Abstractions.csproj" />
   </ItemGroup>
 </Project>

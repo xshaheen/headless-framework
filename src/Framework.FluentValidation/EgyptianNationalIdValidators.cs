@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
+using FluentValidation.Resources;
 using Framework.FluentValidation.Resources;
 using Framework.Validators;
 
-namespace Framework.FluentValidation;
+namespace FluentValidation;
 
 [PublicAPI]
 public static class EgyptianNationalIdValidators

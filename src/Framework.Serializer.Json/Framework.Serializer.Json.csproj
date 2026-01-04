@@ -4,6 +4,6 @@
     <RootNamespace>Framework.Serializer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Serializer.Abstraction\Framework.Serializer.Abstraction.csproj" />
+    <ProjectReference Include="..\Framework.Serializer.Abstractions\Framework.Serializer.Abstractions.csproj" />
   </ItemGroup>
 </Project>
