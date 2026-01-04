@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Api.Abstractions;
+using Framework.Abstractions;
 using Mediator;
 using Microsoft.Extensions.Logging;
 

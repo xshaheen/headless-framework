@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Framework.Api.Abstractions;
+using Framework.Abstractions;
 using Humanizer;
 using Mediator;
 using Microsoft.Extensions.Logging;

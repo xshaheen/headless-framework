@@ -228,9 +228,8 @@ public sealed class ProblemDetailsCreator(
             Status = StatusCodes.Status429TooManyRequests,
             Title = ProblemDetailsConstants.Titles.TooManyRequests,
             Detail = ProblemDetailsConstants.Details.TooManyRequests,
+            Extensions = { ["retryAfter"] = retryAfterSeconds },
         };
-
-        problemDetails.Extensions["retryAfter"] = retryAfterSeconds;
 
         _Normalize(problemDetails);
 
