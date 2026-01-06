@@ -5,8 +5,9 @@
 namespace Framework.Constants;
 
 [PublicAPI]
-public static class CorsConstants
+public static class HeadlessApiVersions
 {
-    public const string RestrictedCors = "_origins";
-    public const string AllowAnyCors = "_any_origins";
+    public const string V1 = "1.0";
+    public const string V2 = "2.0";
+    public const string V3 = "3.0";
 }

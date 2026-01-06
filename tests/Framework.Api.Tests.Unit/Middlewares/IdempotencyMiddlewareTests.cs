@@ -204,8 +204,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         root.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.Conflict);
-        root.GetProperty("title").GetString().Should().Be(ProblemDetailsConstants.Titles.Conflict);
-        root.GetProperty("detail").GetString().Should().Be(ProblemDetailsConstants.Details.Conflict);
+        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.Conflict);
+        root.GetProperty("detail").GetString().Should().Be(HeadlessProblemDetailsConstants.Details.Conflict);
 
         await cache
             .Received(1)

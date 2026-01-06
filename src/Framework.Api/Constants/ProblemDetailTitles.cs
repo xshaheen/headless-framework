@@ -5,7 +5,7 @@
 namespace Framework.Constants;
 
 [PublicAPI]
-public static class ProblemDetailsConstants
+public static class HeadlessProblemDetailsConstants
 {
     public static class Types
     {

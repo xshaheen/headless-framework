@@ -45,8 +45,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
-            Title = ProblemDetailsConstants.Titles.EndpointNotFound,
-            Detail = ProblemDetailsConstants.Details.EndpointNotFound(
+            Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
+            Detail = HeadlessProblemDetailsConstants.Details.EndpointNotFound(
                 httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
             ),
         };
@@ -61,8 +61,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
-            Title = ProblemDetailsConstants.Titles.EntityNotFound,
-            Detail = ProblemDetailsConstants.Details.EntityNotFound(entity, key),
+            Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
+            Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound(entity, key),
             Extensions = { ["params"] = new { entity, key } },
         };
 
@@ -76,8 +76,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status400BadRequest,
-            Title = ProblemDetailsConstants.Titles.BadRequest,
-            Detail = ProblemDetailsConstants.Details.BadRequest,
+            Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
+            Detail = HeadlessProblemDetailsConstants.Details.BadRequest,
         };
 
         _Normalize(problemDetails);
@@ -89,9 +89,9 @@ public sealed class ProblemDetailsCreator(
     {
         var problemDetails = new ProblemDetails
         {
-            Title = ProblemDetailsConstants.Titles.UnprocessableEntity,
+            Title = HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
             Status = StatusCodes.Status422UnprocessableEntity,
-            Detail = ProblemDetailsConstants.Details.UnprocessableEntity,
+            Detail = HeadlessProblemDetailsConstants.Details.UnprocessableEntity,
             Extensions = { ["errors"] = errors },
         };
 
@@ -105,8 +105,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status409Conflict,
-            Title = ProblemDetailsConstants.Titles.Conflict,
-            Detail = ProblemDetailsConstants.Details.Conflict,
+            Title = HeadlessProblemDetailsConstants.Titles.Conflict,
+            Detail = HeadlessProblemDetailsConstants.Details.Conflict,
             Extensions = { ["errors"] = errors },
         };
 
@@ -120,8 +120,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status401Unauthorized,
-            Title = ProblemDetailsConstants.Titles.Unauthorized,
-            Detail = ProblemDetailsConstants.Details.Unauthorized,
+            Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
+            Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
         };
 
         _Normalize(problemDetails);
@@ -134,8 +134,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status403Forbidden,
-            Title = ProblemDetailsConstants.Titles.Forbidden,
-            Detail = ProblemDetailsConstants.Details.Forbidden,
+            Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
+            Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
         };
 
         if (errors.Count > 0)
@@ -167,17 +167,17 @@ public sealed class ProblemDetailsCreator(
         switch (problemDetails.Status)
         {
             case 500:
-                problemDetails.Title = ProblemDetailsConstants.Titles.InternalError;
-                problemDetails.Detail ??= ProblemDetailsConstants.Details.InternalError;
+                problemDetails.Title = HeadlessProblemDetailsConstants.Titles.InternalError;
+                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.InternalError;
 
                 break;
             case 404
                 when !string.Equals(
                     problemDetails.Title,
-                    ProblemDetailsConstants.Titles.EntityNotFound,
+                    HeadlessProblemDetailsConstants.Titles.EntityNotFound,
                     StringComparison.Ordinal
                 ):
-                problemDetails.Title = ProblemDetailsConstants.Titles.EndpointNotFound;
+                problemDetails.Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound;
 
                 break;
         }
@@ -226,8 +226,8 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status429TooManyRequests,
-            Title = ProblemDetailsConstants.Titles.TooManyRequests,
-            Detail = ProblemDetailsConstants.Details.TooManyRequests,
+            Title = HeadlessProblemDetailsConstants.Titles.TooManyRequests,
+            Detail = HeadlessProblemDetailsConstants.Details.TooManyRequests,
             Extensions = { ["retryAfter"] = retryAfterSeconds },
         };
 

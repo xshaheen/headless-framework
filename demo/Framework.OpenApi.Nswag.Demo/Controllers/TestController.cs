@@ -9,7 +9,7 @@ namespace Framework.OpenApi.Nswag.Demo.Controllers;
 
 [ApiController]
 [Route("console")]
-[ApiVersion(ApiVersions.V1)]
+[ApiVersion(HeadlessApiVersions.V1)]
 [Produces("application/json", "application/problem+json")]
 public sealed class TestController : ControllerBase
 {

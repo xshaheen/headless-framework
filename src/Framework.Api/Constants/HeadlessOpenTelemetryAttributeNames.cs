@@ -9,7 +9,7 @@ namespace Framework.Constants;
 /// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/semantic_conventions/README.md"/>.
 /// </summary>
 [PublicAPI]
-public static class OpenTelemetryAttributeNames
+public static class HeadlessOpenTelemetryAttributes
 {
     /// <summary>
     /// Constants for deployment semantic attribute names outlined by the OpenTelemetry specifications.
