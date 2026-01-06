@@ -131,10 +131,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private readonly BadRequestProblemDetails _status400ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.BadRequest,
-        Title = ProblemDetailsConstants.Titles.BadRequest,
+        Type = HeadlessProblemDetailsConstants.Types.BadRequest,
+        Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
         Status = StatusCodes.Status400BadRequest,
-        Detail = ProblemDetailsConstants.Details.BadRequest,
+        Detail = HeadlessProblemDetailsConstants.Details.BadRequest,
         Instance = "/public/some-endpoint",
         TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
         BuildNumber = "1.0.0",
@@ -144,10 +144,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private readonly UnauthorizedProblemDetails _status401ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.Unauthorized,
-        Title = ProblemDetailsConstants.Titles.Unauthorized,
+        Type = HeadlessProblemDetailsConstants.Types.Unauthorized,
+        Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
         Status = StatusCodes.Status401Unauthorized,
-        Detail = ProblemDetailsConstants.Details.Unauthorized,
+        Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
         Instance = "/public/some-endpoint",
         TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
         BuildNumber = "1.0.0",
@@ -157,10 +157,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private readonly ForbiddenProblemDetails _status403ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.Forbidden,
-        Title = ProblemDetailsConstants.Titles.Forbidden,
+        Type = HeadlessProblemDetailsConstants.Types.Forbidden,
+        Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
         Status = StatusCodes.Status403Forbidden,
-        Detail = ProblemDetailsConstants.Details.Forbidden,
+        Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
         Instance = "/public/some-endpoint",
         TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
         BuildNumber = "1.0.0",
@@ -170,10 +170,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private readonly EntityNotFoundProblemDetails _status404ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.EntityNotFound,
-        Title = ProblemDetailsConstants.Titles.EntityNotFound,
+        Type = HeadlessProblemDetailsConstants.Types.EntityNotFound,
+        Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
         Status = StatusCodes.Status404NotFound,
-        Detail = ProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
+        Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
         Instance = "/public/some-endpoint",
         TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
         BuildNumber = "1.0.0",
@@ -184,10 +184,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private readonly ConflictProblemDetails _status409ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.Conflict,
-        Title = ProblemDetailsConstants.Titles.Conflict,
+        Type = HeadlessProblemDetailsConstants.Types.Conflict,
+        Title = HeadlessProblemDetailsConstants.Titles.Conflict,
         Status = StatusCodes.Status409Conflict,
-        Detail = ProblemDetailsConstants.Details.Conflict,
+        Detail = HeadlessProblemDetailsConstants.Details.Conflict,
         Instance = "/public/some-endpoint",
         TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
         BuildNumber = "1.0.0",
@@ -198,10 +198,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private readonly UnprocessableEntityProblemDetails _status422ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.UnprocessableEntity,
-        Title = ProblemDetailsConstants.Titles.UnprocessableEntity,
+        Type = HeadlessProblemDetailsConstants.Types.UnprocessableEntity,
+        Title = HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
         Status = StatusCodes.Status422UnprocessableEntity,
-        Detail = ProblemDetailsConstants.Details.UnprocessableEntity,
+        Detail = HeadlessProblemDetailsConstants.Details.UnprocessableEntity,
         Instance = "/public/some-endpoint",
         TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
         BuildNumber = "1.0.0",
@@ -223,10 +223,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private readonly TooManyRequestsProblemDetails _status429ProblemDetails = new()
     {
-        Type = ProblemDetailsConstants.Types.TooManyRequests,
-        Title = ProblemDetailsConstants.Titles.TooManyRequests,
+        Type = HeadlessProblemDetailsConstants.Types.TooManyRequests,
+        Title = HeadlessProblemDetailsConstants.Titles.TooManyRequests,
         Status = StatusCodes.Status429TooManyRequests,
-        Detail = ProblemDetailsConstants.Details.TooManyRequests,
+        Detail = HeadlessProblemDetailsConstants.Details.TooManyRequests,
         Instance = "/public/some-endpoint",
         TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
         BuildNumber = "1.0.0",

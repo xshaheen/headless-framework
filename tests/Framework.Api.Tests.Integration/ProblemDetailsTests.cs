@@ -55,10 +55,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.EndpointNotFound,
-            ProblemDetailsConstants.Titles.EndpointNotFound,
+            HeadlessProblemDetailsConstants.Types.EndpointNotFound,
+            HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
             StatusCodes.Status404NotFound,
-            ProblemDetailsConstants.Details.EndpointNotFound("/12345678")
+            HeadlessProblemDetailsConstants.Details.EndpointNotFound("/12345678")
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -117,10 +117,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.BadRequest,
-            ProblemDetailsConstants.Titles.BadRequest,
+            HeadlessProblemDetailsConstants.Types.BadRequest,
+            HeadlessProblemDetailsConstants.Titles.BadRequest,
             StatusCodes.Status400BadRequest,
-            ProblemDetailsConstants.Details.BadRequest
+            HeadlessProblemDetailsConstants.Details.BadRequest
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -185,10 +185,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.EntityNotFound,
-            ProblemDetailsConstants.Titles.EntityNotFound,
+            HeadlessProblemDetailsConstants.Types.EntityNotFound,
+            HeadlessProblemDetailsConstants.Titles.EntityNotFound,
             StatusCodes.Status404NotFound,
-            ProblemDetailsConstants.Details.EntityNotFound("Entity", "Key")
+            HeadlessProblemDetailsConstants.Details.EntityNotFound("Entity", "Key")
         );
 
         jsonElement.GetProperty("params").GetProperty("entity").GetString().Should().Be("Entity");
@@ -258,10 +258,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.Conflict,
-            ProblemDetailsConstants.Titles.Conflict,
+            HeadlessProblemDetailsConstants.Types.Conflict,
+            HeadlessProblemDetailsConstants.Titles.Conflict,
             StatusCodes.Status409Conflict,
-            ProblemDetailsConstants.Details.Conflict
+            HeadlessProblemDetailsConstants.Details.Conflict
         );
 
         var errors = jsonElement.GetProperty("errors").EnumerateArray().ToList();
@@ -332,10 +332,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.UnprocessableEntity,
-            ProblemDetailsConstants.Titles.UnprocessableEntity,
+            HeadlessProblemDetailsConstants.Types.UnprocessableEntity,
+            HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
             StatusCodes.Status422UnprocessableEntity,
-            ProblemDetailsConstants.Details.UnprocessableEntity
+            HeadlessProblemDetailsConstants.Details.UnprocessableEntity
         );
 
         var errorsObject = jsonElement.GetProperty("errors").EnumerateObject().ToList();
@@ -436,13 +436,13 @@ public sealed class ProblemDetailsTests : TestBase
         var details =
             environment is EnvironmentNames.Development
                 ? "This is a test exception."
-                : ProblemDetailsConstants.Details.InternalError;
+                : HeadlessProblemDetailsConstants.Details.InternalError;
 
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.InternalError,
-            ProblemDetailsConstants.Titles.InternalError,
+            HeadlessProblemDetailsConstants.Types.InternalError,
+            HeadlessProblemDetailsConstants.Titles.InternalError,
             StatusCodes.Status500InternalServerError,
             details
         );
@@ -495,10 +495,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.Unauthorized,
-            ProblemDetailsConstants.Titles.Unauthorized,
+            HeadlessProblemDetailsConstants.Types.Unauthorized,
+            HeadlessProblemDetailsConstants.Titles.Unauthorized,
             StatusCodes.Status401Unauthorized,
-            ProblemDetailsConstants.Details.Unauthorized
+            HeadlessProblemDetailsConstants.Details.Unauthorized
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -549,10 +549,10 @@ public sealed class ProblemDetailsTests : TestBase
         _ValidateCoreProblemDetails(
             jsonElement,
             response,
-            ProblemDetailsConstants.Types.Forbidden,
-            ProblemDetailsConstants.Titles.Forbidden,
+            HeadlessProblemDetailsConstants.Types.Forbidden,
+            HeadlessProblemDetailsConstants.Titles.Forbidden,
             StatusCodes.Status403Forbidden,
-            ProblemDetailsConstants.Details.Forbidden
+            HeadlessProblemDetailsConstants.Details.Forbidden
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
