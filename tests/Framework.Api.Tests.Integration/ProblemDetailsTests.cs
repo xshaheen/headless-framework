@@ -427,7 +427,7 @@ public sealed class ProblemDetailsTests : TestBase
         await _VerifyInternalServerError(response, environment);
     }
 
-    private async Task _VerifyInternalServerError(HttpResponseMessage response, string environment)
+    private static async Task _VerifyInternalServerError(HttpResponseMessage response, string environment)
     {
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         var json = await response.Content.ReadAsStringAsync(AbortToken);

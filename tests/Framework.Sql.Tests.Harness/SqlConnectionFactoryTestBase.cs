@@ -12,25 +12,29 @@ public abstract class SqlConnectionFactoryTestBase : TestBase
 
     public abstract ISqlConnectionFactory GetFactory();
 
-    public virtual async Task should_return_connection_string()
+    public ISqlCurrentConnection GetCurrent() => new SqliteCurrentConnection(GetFactory());
+
+    public virtual Task should_return_connection_string()
     {
         // given
-        await using var sut = GetFactory();
+        var sut = GetFactory();
 
         // when
         var result = sut.GetConnectionString();
 
         // then
         result.Should().Be(GetConnection());
+
+        return Task.CompletedTask;
     }
 
     public virtual async Task should_create_new_connection()
     {
         // given
-        await using var sut = GetFactory();
+        var sut = GetFactory();
 
         // when
-        var connection = await sut.CreateNewConnectionAsync();
+        var connection = await sut.CreateNewConnectionAsync(AbortToken);
 
         // then
         connection.Should().NotBeNull();
@@ -40,10 +44,10 @@ public abstract class SqlConnectionFactoryTestBase : TestBase
     public virtual async Task should_get_open_connection()
     {
         // given
-        await using var sut = GetFactory();
+        var sut = GetCurrent();
 
         // when
-        var connection = await sut.GetOpenConnectionAsync();
+        var connection = await sut.GetOpenConnectionAsync(AbortToken);
 
         // then
         connection.Should().NotBeNull();
@@ -53,8 +57,8 @@ public abstract class SqlConnectionFactoryTestBase : TestBase
     public virtual async Task should_dispose_connection()
     {
         // given
-        var sut = GetFactory();
-        var connection = await sut.GetOpenConnectionAsync();
+        var sut = GetCurrent();
+        var connection = await sut.GetOpenConnectionAsync(AbortToken);
 
         // when
         await sut.DisposeAsync();
@@ -66,15 +70,16 @@ public abstract class SqlConnectionFactoryTestBase : TestBase
     public virtual async Task should_get_open_connection_concurrently()
     {
         // given
-        await using var sut = GetFactory();
+        var sut = GetCurrent();
         using var connections = new BlockingCollection<DbConnection>();
 
         // when
         await Parallel.ForEachAsync(
             Enumerable.Range(1, 10),
+            AbortToken,
             async (_, token) =>
             {
-                var connection = await sut.GetOpenConnectionAsync();
+                var connection = await sut.GetOpenConnectionAsync(token);
                 connections.Add(connection, token);
             }
         );

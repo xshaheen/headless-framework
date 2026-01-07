@@ -5,11 +5,9 @@ using System.Data.Common;
 namespace Framework.Sql;
 
 [PublicAPI]
-public interface ISqlConnectionFactory : IAsyncDisposable
+public interface ISqlConnectionFactory
 {
     string GetConnectionString();
-
-    ValueTask<DbConnection> GetOpenConnectionAsync(CancellationToken cancellationToken = default);
 
     ValueTask<DbConnection> CreateNewConnectionAsync(CancellationToken cancellationToken = default);
 }

@@ -49,7 +49,7 @@ public sealed class SqliteConnectionFactoryTests : SqlConnectionFactoryTestBase
     public async Task should_execute_sql_command()
     {
         // given
-        await using var sut = GetFactory();
+        await using var sut = GetCurrent();
         var connection = await sut.GetOpenConnectionAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)";
