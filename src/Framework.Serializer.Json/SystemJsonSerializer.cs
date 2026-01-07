@@ -2,27 +2,32 @@
 
 namespace Framework.Serializer;
 
-public sealed class SystemJsonSerializer(JsonSerializerOptions? options = null) : IJsonSerializer
+public sealed class SystemJsonSerializer(IJsonOptionsProvider? optionsProvider = null) : IJsonSerializer
 {
-    private readonly JsonSerializerOptions _options = options ?? JsonConstants.DefaultWebJsonOptions;
+    private readonly IJsonOptionsProvider _optionsProvider = optionsProvider ?? new DefaultJsonOptionsProvider();
 
     public T? Deserialize<T>(Stream data)
     {
-        return JsonSerializer.Deserialize<T>(data, _options);
+        return JsonSerializer.Deserialize<T>(data, _optionsProvider.GetDeserializeOptions());
     }
 
     public object? Deserialize(Stream data, Type objectType)
     {
-        return JsonSerializer.Deserialize(data, objectType, _options);
+        return JsonSerializer.Deserialize(data, objectType, _optionsProvider.GetDeserializeOptions());
     }
 
     public void Serialize<T>(T? value, Stream output)
     {
-        JsonSerializer.Serialize(output, value, _options);
+        JsonSerializer.Serialize(output, value, _optionsProvider.GetSerializeOptions());
     }
 
     public void Serialize(object? value, Stream output)
     {
-        JsonSerializer.Serialize(output, value, value is null ? typeof(object) : value.GetType(), _options);
+        JsonSerializer.Serialize(
+            output,
+            value,
+            value is null ? typeof(object) : value.GetType(),
+            _optionsProvider.GetSerializeOptions()
+        );
     }
 }

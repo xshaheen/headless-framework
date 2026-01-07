@@ -23,11 +23,11 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
-    public RedisBlobStorage(IOptions<RedisBlobStorageOptions> optionsAccessor)
+    public RedisBlobStorage(IOptions<RedisBlobStorageOptions> optionsAccessor, IJsonSerializer defaultSerializer)
     {
         _options = optionsAccessor.Value;
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
-        _serializer = _options.Serializer ?? new SystemJsonSerializer();
+        _serializer = _options.Serializer ?? defaultSerializer;
     }
 
     #region Create Container

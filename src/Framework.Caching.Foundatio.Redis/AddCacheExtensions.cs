@@ -33,7 +33,10 @@ public static class AddCacheExtensions
 
     private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
     {
-        services.TryAddSingleton<ISerializer, SystemJsonSerializer>();
+        services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
+        services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
+            sp.GetRequiredService<IJsonOptionsProvider>()
+        ));
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
 
         services.AddSingletonOptionValue<RedisCacheOptions>();

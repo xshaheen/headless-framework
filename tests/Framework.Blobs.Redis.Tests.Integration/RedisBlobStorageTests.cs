@@ -2,6 +2,7 @@
 
 using Framework.Blobs;
 using Framework.Blobs.Redis;
+using Framework.Serializer;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
@@ -15,7 +16,7 @@ public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorag
         var options = new RedisBlobStorageOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
 
-        return new RedisBlobStorage(optionsWrapper);
+        return new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
     }
 
     [Fact]
