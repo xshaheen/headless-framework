@@ -51,7 +51,7 @@ public sealed class SqlServerConnectionFactoryTests(SqlServerTestFixture fixture
     public async Task should_execute_sql_command()
     {
         // given
-        await using var sut = GetFactory();
+        var sut = GetCurrent();
         var connection = await sut.GetOpenConnectionAsync(AbortToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "CREATE TABLE test (id INT PRIMARY KEY, Name NVARCHAR(50))";
