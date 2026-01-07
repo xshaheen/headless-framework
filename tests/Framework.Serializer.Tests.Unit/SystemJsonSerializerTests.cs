@@ -7,7 +7,7 @@ namespace Tests;
 
 public class SystemJsonSerializerTests
 {
-    private readonly SystemJsonSerializer _serializer = new(new JsonSerializerOptions());
+    private readonly SystemJsonSerializer _serializer = new();
 
     [Fact]
     public void serialize_type_should_write_to_stream()

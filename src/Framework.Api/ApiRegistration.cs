@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.IO.Compression;
+using DeviceDetectorNET.JsonSerializer;
 using FileSignatures;
 using FluentValidation;
 using Framework.Abstractions;
@@ -95,7 +96,10 @@ public static class ApiRegistration
 
     public static void AddJsonService(this IServiceCollection services)
     {
-        services.TryAddSingleton<IJsonSerializer>(new SystemJsonSerializer(JsonConstants.DefaultWebJsonOptions));
+        services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
+        services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
+            sp.GetRequiredService<IJsonOptionsProvider>()
+        ));
         services.TryAddSingleton<ITextSerializer>(x => x.GetRequiredService<IJsonSerializer>());
         services.TryAddSingleton<ISerializer>(x => x.GetRequiredService<IJsonSerializer>());
     }
