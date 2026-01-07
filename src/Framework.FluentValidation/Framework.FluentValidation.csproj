@@ -9,7 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
   </ItemGroup>
-  <ItemGroup Label="Resx">
+  <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\FluentValidatorErrors.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>FluentValidatorErrors.Designer.cs</LastGenOutput>
