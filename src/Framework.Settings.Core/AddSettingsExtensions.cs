@@ -18,90 +18,91 @@ namespace Framework.Settings;
 [PublicAPI]
 public static class AddSettingsExtensions
 {
-    /// <summary>
-    /// Adds core setting management services to the host builder and registers default setting value providers.
-    /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
-    /// and ICurrentTenant implementations to be able to use this feature.
-    /// </summary>
-    public static IServiceCollection AddSettingsManagementCore(
-        this IServiceCollection services,
-        Action<SettingManagementOptions, IServiceProvider> setupAction
-    )
+    extension(IServiceCollection services)
     {
-        services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
-
-        return _AddCore(services);
-    }
-
-    /// <summary>
-    /// Adds core setting management services to the host builder and registers default setting value providers.
-    /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
-    /// and ICurrentTenant implementations to be able to use this feature.
-    /// </summary>
-    public static IServiceCollection AddSettingsManagementCore(
-        this IServiceCollection services,
-        Action<SettingManagementOptions>? setupAction = null
-    )
-    {
-        services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
-
-        return _AddCore(services);
-    }
-
-    public static IServiceCollection AddSettingDefinitionProvider<T>(this IServiceCollection services)
-        where T : class, ISettingDefinitionProvider
-    {
-        services.AddSingleton<T>();
-
-        services.Configure<SettingManagementProvidersOptions>(options =>
+        /// <summary>
+        /// Adds core setting management services to the host builder and registers default setting value providers.
+        /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
+        /// and ICurrentTenant implementations to be able to use this feature.
+        /// </summary>
+        public IServiceCollection AddSettingsManagementCore(
+            Action<SettingManagementOptions, IServiceProvider> setupAction
+        )
         {
-            options.DefinitionProviders.Add<T>();
-        });
+            services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
-        return services;
-    }
+            return _AddCore(services);
+        }
 
-    public static IServiceCollection AddSettingValueProvider<T>(this IServiceCollection services) // Transient
-        where T : class, ISettingValueReadProvider
-    {
-        services.AddSingleton<T>();
-
-        services.Configure<SettingManagementProvidersOptions>(options =>
+        /// <summary>
+        /// Adds core setting management services to the host builder and registers default setting value providers.
+        /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
+        /// and ICurrentTenant implementations to be able to use this feature.
+        /// </summary>
+        public IServiceCollection AddSettingsManagementCore(
+            Action<SettingManagementOptions>? setupAction = null
+        )
         {
-            if (!options.ValueProviders.Contains<T>())
+            services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
+
+            return _AddCore(services);
+        }
+
+        public IServiceCollection AddSettingDefinitionProvider<T>()
+            where T : class, ISettingDefinitionProvider
+        {
+            services.AddSingleton<T>();
+
+            services.Configure<SettingManagementProvidersOptions>(options =>
             {
-                options.ValueProviders.Add<T>();
-            }
-        });
+                options.DefinitionProviders.Add<T>();
+            });
 
-        return services;
-    }
+            return services;
+        }
 
-    private static void _AddCoreValueProvider(this IServiceCollection services)
-    {
-        services.Configure<SettingManagementProvidersOptions>(options =>
+        public IServiceCollection AddSettingValueProvider<T>() // Transient
+            where T : class, ISettingValueReadProvider
         {
-            // Last added provider has the highest priority
-            options.ValueProviders.Add<DefaultValueSettingValueProvider>();
-            options.ValueProviders.Add<ConfigurationSettingValueProvider>();
-            options.ValueProviders.Add<GlobalSettingValueProvider>();
-            options.ValueProviders.Add<TenantSettingValueProvider>();
-            options.ValueProviders.Add<UserSettingValueProvider>();
-        });
+            services.AddSingleton<T>();
 
-        services.AddSingleton<DefaultValueSettingValueProvider>();
-        services.AddSingleton<ConfigurationSettingValueProvider>();
-        services.AddSingleton<GlobalSettingValueProvider>();
-        services.AddSingleton<TenantSettingValueProvider>();
-        services.AddSingleton<UserSettingValueProvider>();
-    }
+            services.Configure<SettingManagementProvidersOptions>(options =>
+            {
+                if (!options.ValueProviders.Contains<T>())
+                {
+                    options.ValueProviders.Add<T>();
+                }
+            });
 
-    private static void _AddSettingEncryption(this IServiceCollection services)
-    {
-        services.AddOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
-        services.AddSingletonOptionValue<StringEncryptionOptions>();
-        services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
-        services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
+            return services;
+        }
+
+        private void _AddCoreValueProvider()
+        {
+            services.Configure<SettingManagementProvidersOptions>(options =>
+            {
+                // Last added provider has the highest priority
+                options.ValueProviders.Add<DefaultValueSettingValueProvider>();
+                options.ValueProviders.Add<ConfigurationSettingValueProvider>();
+                options.ValueProviders.Add<GlobalSettingValueProvider>();
+                options.ValueProviders.Add<TenantSettingValueProvider>();
+                options.ValueProviders.Add<UserSettingValueProvider>();
+            });
+
+            services.AddSingleton<DefaultValueSettingValueProvider>();
+            services.AddSingleton<ConfigurationSettingValueProvider>();
+            services.AddSingleton<GlobalSettingValueProvider>();
+            services.AddSingleton<TenantSettingValueProvider>();
+            services.AddSingleton<UserSettingValueProvider>();
+        }
+
+        private void _AddSettingEncryption()
+        {
+            services.AddOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
+            services.AddSingletonOptionValue<StringEncryptionOptions>();
+            services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
+            services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
+        }
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)
