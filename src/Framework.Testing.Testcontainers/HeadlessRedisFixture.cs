@@ -7,8 +7,8 @@ namespace Framework.Testing.Testcontainers;
 
 public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContainer>(TestContextMessageSink.Instance)
 {
-    protected override RedisBuilder Configure(RedisBuilder builder)
+    protected override RedisBuilder Configure()
     {
-        return base.Configure(builder).WithImage("redis:7.4");
+        return base.Configure().WithImage("redis:7-alpine");
     }
 }

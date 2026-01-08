@@ -3,7 +3,4 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Framework.Messaging</RootNamespace>
   </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Framework.Domains\Framework.Domains.csproj" />
-  </ItemGroup>
 </Project>

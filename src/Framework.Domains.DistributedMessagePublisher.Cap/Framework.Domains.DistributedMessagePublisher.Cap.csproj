@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Framework.Domains</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="DotNetCore.CAP" />
+    <PackageReference Include="DotNetCore.CAP.Dashboard" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
+    <ProjectReference Include="..\Framework.Domains\Framework.Domains.csproj" />
+    <ProjectReference Include="..\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
+  </ItemGroup>
+</Project>

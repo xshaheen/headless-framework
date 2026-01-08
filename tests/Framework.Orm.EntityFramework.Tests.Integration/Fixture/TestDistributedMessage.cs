@@ -4,7 +4,7 @@ namespace Tests.Fixture;
 
 public sealed record TestDistributedMessage(string Text) : IDistributedMessage
 {
-    public string UniqueId { get; } = Guid.NewGuid().ToString("N");
+    public Guid UniqueId { get; } = Guid.NewGuid();
 
     public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
 

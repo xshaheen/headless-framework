@@ -12,8 +12,8 @@ public sealed class AzureBlobTestFixture(IMessageSink messageSink)
     : ContainerFixture<AzuriteBuilder, AzuriteContainer>(messageSink),
         ICollectionFixture<AzureBlobTestFixture>
 {
-    protected override AzuriteBuilder Configure(AzuriteBuilder builder)
+    protected override AzuriteBuilder Configure()
     {
-        return builder.WithImage("mcr.microsoft.com/azure-storage/azurite:latest");
+        return base.Configure().WithImage("mcr.microsoft.com/azure-storage/azurite:latest");
     }
 }

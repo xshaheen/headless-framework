@@ -13,7 +13,7 @@ namespace Tests;
 public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
 {
     private readonly RedisMessageBus _foundatioMessageBus;
-    private readonly MessageBusFoundatioAdapter _messageBus;
+    private readonly FoundatioMessageBusAdapter _bus;
     private readonly RedisCachingFoundatioAdapter _cache;
     private readonly CacheResourceLockStorage _storage;
 
@@ -23,7 +23,7 @@ public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
             o.Subscriber(fixture.ConnectionMultiplexer.GetSubscriber()).Topic("test-lock").LoggerFactory(LoggerFactory)
         );
 
-        _messageBus = new(_foundatioMessageBus, GuidGenerator);
+        _bus = new(_foundatioMessageBus, GuidGenerator);
 
         _cache = new RedisCachingFoundatioAdapter(
             new SystemJsonSerializer(),
@@ -37,7 +37,7 @@ public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
     protected override ValueTask DisposeAsyncCore()
     {
         _foundatioMessageBus?.Dispose();
-        _messageBus?.Dispose();
+        _bus?.Dispose();
         _cache?.Dispose();
         return base.DisposeAsyncCore();
     }
@@ -46,7 +46,7 @@ public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
     {
         return new ResourceLockProvider(
             _storage,
-            _messageBus,
+            _bus,
             Options,
             LongGenerator,
             TimeProvider,

@@ -12,9 +12,9 @@ public sealed class NpgsqlTestFixture(IMessageSink messageSink)
     : ContainerFixture<PostgreSqlBuilder, PostgreSqlContainer>(messageSink),
         ICollectionFixture<NpgsqlTestFixture>
 {
-    protected override PostgreSqlBuilder Configure(PostgreSqlBuilder builder)
+    protected override PostgreSqlBuilder Configure()
     {
-        return builder
+        return base.Configure()
             .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")

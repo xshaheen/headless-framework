@@ -1,6 +1,7 @@
 ﻿using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Messaging;
+using Framework.Serializer;
 using Framework.Testing.Tests;
 using Humanizer;
 using Microsoft.Extensions.Logging;
@@ -8,15 +9,18 @@ using Nito.AsyncEx;
 
 namespace Tests;
 
-public sealed class MessageBusFoundatioAdapterTests : TestBase
+public sealed class FoundatioMessageBusAdapterTests : TestBase
 {
     private static readonly SequentialAsBinaryGuidGenerator _GuidGenerator = new();
 
-    private MessageBusFoundatioAdapter _GetMessageBus()
+    private FoundatioMessageBusAdapter _GetMessageBus()
     {
 #pragma warning disable CA2000 // Dispose objects before losing scope
         var inMemoryMessageBus = new InMemoryMessageBus(builder =>
-            builder.Topic("test-lock").LoggerFactory(LoggerFactory).Serializer(FoundationHelper.JsonSerializer)
+            builder
+                .Topic("test-lock")
+                .LoggerFactory(LoggerFactory)
+                .Serializer(new FoundatioSerializerAdapter(new SystemJsonSerializer()))
         );
 #pragma warning restore CA2000
 

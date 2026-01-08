@@ -87,7 +87,7 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        return new PostgreSqlBuilder()
+        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
             .WithLabel("type", "settings")
             .WithDatabase("framework_test")
             .WithUsername("postgres")
@@ -99,6 +99,6 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder().WithLabel("type", "settings").WithImage("redis:7.4").WithReuse(true).Build();
+        return new RedisBuilder("redis:7-alpine").WithLabel("type", "settings").WithReuse(true).Build();
     }
 }

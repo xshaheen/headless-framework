@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Messaging.LocalServiceProvider;
+namespace Framework.Domains;
 
 [PublicAPI]
 public static class AddLocalMessagePublisherExtensions

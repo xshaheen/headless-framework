@@ -1,8 +1,10 @@
 ﻿using Foundatio.Messaging;
 using Framework.Abstractions;
+using Framework.Caching;
 using Framework.Messaging;
 using Framework.Redis;
 using Framework.ResourceLocks;
+using Framework.Serializer;
 using Microsoft.Extensions.Logging;
 using Tests.TestSetup;
 
@@ -13,7 +15,7 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
 {
     private readonly RedisTestFixture _fixture;
     private readonly RedisMessageBus _redisMessageBus;
-    private readonly MessageBusFoundatioAdapter _messageBusAdapter;
+    private readonly FoundatioMessageBusAdapter _bus;
     private readonly ILogger<ResourceLockProvider> _logger;
 
     public RedisResourceLockProviderTests(RedisTestFixture fixture)
@@ -25,10 +27,10 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
                 .Subscriber(fixture.ConnectionMultiplexer.GetSubscriber())
                 .Topic("test-lock")
                 .LoggerFactory(LoggerFactory)
-                .Serializer(FoundationHelper.JsonSerializer)
+                .Serializer(new FoundationSerializerAdapter(new SystemJsonSerializer()))
         );
 
-        _messageBusAdapter = new(_redisMessageBus, new SequentialAsStringGuidGenerator());
+        _bus = new(_redisMessageBus, new SequentialAsStringGuidGenerator());
         _logger = LoggerFactory.CreateLogger<ResourceLockProvider>();
     }
 
@@ -39,21 +41,14 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
 
     protected override ValueTask DisposeAsyncCore()
     {
-        _messageBusAdapter?.Dispose();
+        _bus?.Dispose();
         _redisMessageBus?.Dispose();
         return base.DisposeAsyncCore();
     }
 
     protected override IResourceLockProvider GetLockProvider()
     {
-        return new ResourceLockProvider(
-            _fixture.LockStorage,
-            _messageBusAdapter,
-            Options,
-            LongGenerator,
-            TimeProvider,
-            _logger
-        );
+        return new ResourceLockProvider(_fixture.LockStorage, _bus, Options, LongGenerator, TimeProvider, _logger);
     }
 
     [Fact]

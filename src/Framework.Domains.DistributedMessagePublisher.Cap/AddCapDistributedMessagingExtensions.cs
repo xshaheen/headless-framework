@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using DotNetCore.CAP;
-using Framework.Messaging.Filters;
+using Framework.Domains.Filters;
 using Framework.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Messaging;
+namespace Framework.Domains;
 
 [PublicAPI]
 public static class AddCapDistributedMessagingExtensions

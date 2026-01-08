@@ -24,7 +24,7 @@ public class SystemJsonSerializerTests
         var result = reader.ReadToEnd();
 
         // then
-        result.Should().Be("{\"Name\":\"Test\",\"Age\":30}");
+        result.Should().Be("{\"name\":\"Test\",\"age\":30}");
     }
 
     [Fact]
@@ -42,14 +42,14 @@ public class SystemJsonSerializerTests
         var result = reader.ReadToEnd();
 
         // then
-        result.Should().Be("{\"Name\":\"Test\",\"Age\":30}");
+        result.Should().Be("{\"name\":\"Test\",\"age\":30}");
     }
 
     [Fact]
     public void deserialize_stream_should_return_valid_object()
     {
         // given
-        const string json = "{\"Name\":\"Test\",\"Age\":30}";
+        const string json = "{\"name\":\"Test\",\"age\":30}";
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
         // when

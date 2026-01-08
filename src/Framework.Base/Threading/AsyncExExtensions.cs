@@ -64,9 +64,9 @@ public static class AsyncExExtensions
     }
 
     [DebuggerStepThrough]
-    public static Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout)
+    public static async Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout)
     {
-        return Task.WhenAny(countdownEvent.WaitAsync(), Task.Delay(timeout));
+        _ = await Task.WhenAny(countdownEvent.WaitAsync(), Task.Delay(timeout)).ConfigureAwait(false);
     }
 
     [DebuggerStepThrough]

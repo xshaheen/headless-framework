@@ -94,6 +94,8 @@
         <Project Path="src/Framework.Specifications/Framework.Specifications.csproj" />
         <Project Path="src/Framework.Testing.Testcontainers/Framework.Testing.Testcontainers.csproj" />
         <Project Path="src/Framework.Testing/Framework.Testing.csproj" />
+        <Project Path="src\Framework.Domains.DistributedMessagePublisher.Cap\Framework.Domains.DistributedMessagePublisher.Cap.csproj" />
+        <Project Path="src\Framework.Domains.LocalMessagePublisher.DI\Framework.Domains.LocalMessagePublisher.DI.csproj" />
         <Project Path="tests/Framework.Base.Tests.Unit/Framework.Base.Tests.Unit.csproj" />
         <Project Path="tests/Framework.BuildingBlocks.Tests.Unit/Framework.BuildingBlocks.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Checks.Tests.Unit/Framework.Checks.Tests.Unit.csproj" />
@@ -117,9 +119,8 @@
     </Folder>
     <Folder Name="/Messaging/">
         <Project Path="src/Framework.Messaging.Abstractions/Framework.Messaging.Abstractions.csproj" />
-        <Project Path="src/Framework.Messaging.Cap/Framework.Messaging.Cap.csproj" />
         <Project Path="src/Framework.Messaging.Foundatio/Framework.Messaging.Foundatio.csproj" />
-        <Project Path="src/Framework.Messaging.LocalServiceProvider/Framework.Messaging.LocalServiceProvider.csproj" />
+        <Project Path="src/Framework.Messaging.MassTransit/Framework.Messaging.MassTransit.csproj" />
         <Project Path="tests/Framework.Messaging.Foundatio.Tests.Integration/Framework.Messaging.Foundatio.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Observability/">

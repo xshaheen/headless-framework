@@ -10,14 +10,14 @@ namespace Tests;
 public class MemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
 {
     private readonly InMemoryMessageBus _foundatioMessageBus;
-    private readonly MessageBusFoundatioAdapter _messageBus;
+    private readonly FoundatioMessageBusAdapter _bus;
     private readonly InMemoryCachingFoundatioAdapter _cache;
     private readonly CacheResourceLockStorage _storage;
 
     public MemoryFoundationLockProviderTests()
     {
         _foundatioMessageBus = new InMemoryMessageBus(o => o.Topic("test-lock").LoggerFactory(LoggerFactory));
-        _messageBus = new(_foundatioMessageBus, GuidGenerator);
+        _bus = new(_foundatioMessageBus, GuidGenerator);
         _cache = new InMemoryCachingFoundatioAdapter(TimeProvider, new InMemoryCacheOptions());
         _storage = new CacheResourceLockStorage(_cache);
     }
@@ -25,7 +25,7 @@ public class MemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
     protected override ValueTask DisposeAsyncCore()
     {
         _foundatioMessageBus?.Dispose();
-        _messageBus?.Dispose();
+        _bus?.Dispose();
         _cache?.Dispose();
         return base.DisposeAsyncCore();
     }
@@ -34,7 +34,7 @@ public class MemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
     {
         return new ResourceLockProvider(
             _storage,
-            _messageBus,
+            _bus,
             Options,
             LongGenerator,
             TimeProvider,

@@ -76,7 +76,7 @@ public static class Async
             {
                 await body(resource).AnyContext();
 
-                return Task.CompletedTask;
+                return 0;
             }
         );
     }

@@ -11,14 +11,14 @@
     <ProjectReference Include="..\Framework.ResourceLocks.Abstractions\Framework.ResourceLocks.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
-    <EmbeddedResource Update="Resources\Messages.resx">
+    <EmbeddedResource Update="Resources\FeatureMessages.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Messages.Designer.cs</LastGenOutput>
     </EmbeddedResource>
-    <Compile Update="Resources\Messages.Designer.cs">
+    <Compile Update="Resources\FeatureMessages.Designer.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>
-      <DependentUpon>Messages.resx</DependentUpon>
+      <DependentUpon>FeaturesMessages.resx</DependentUpon>
     </Compile>
   </ItemGroup>
 </Project>

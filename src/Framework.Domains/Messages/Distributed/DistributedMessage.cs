@@ -7,7 +7,7 @@ namespace Framework.Domains;
 [PublicAPI]
 public class DistributedMessage : EqualityBase<DistributedMessage>, IDistributedMessage
 {
-    public required string UniqueId { get; init; }
+    public required Guid UniqueId { get; init; }
 
     public required DateTimeOffset Timestamp { get; init; }
 

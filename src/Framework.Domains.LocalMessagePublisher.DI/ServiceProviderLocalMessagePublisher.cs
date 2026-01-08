@@ -2,11 +2,10 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using Framework.Domains;
 using Microsoft.Extensions.DependencyInjection;
 using Nito.AsyncEx.Synchronous;
 
-namespace Framework.Messaging.LocalServiceProvider;
+namespace Framework.Domains;
 
 public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider services) : ILocalMessagePublisher
 {

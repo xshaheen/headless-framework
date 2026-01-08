@@ -12,7 +12,7 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
     public Task<string> GetTextAsync(Stream fileStream)
     {
         using var document = PresentationDocument.Open(fileStream, isEditable: false);
-        var ids = document.PresentationPart?.Presentation.SlideIdList?.ChildElements;
+        var ids = document.PresentationPart?.Presentation?.SlideIdList?.ChildElements;
 
         if (ids is null || ids.Value.Count == 0)
         {
@@ -48,7 +48,7 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
     {
         using var stringBuilder = ZString.CreateStringBuilder();
 
-        foreach (var paragraph in slidePart.Slide.Descendants<Paragraph>())
+        foreach (var paragraph in slidePart.Slide?.Descendants<Paragraph>() ?? [])
         {
             foreach (var text in paragraph.Descendants<DocumentFormat.OpenXml.Drawing.Text>())
             {

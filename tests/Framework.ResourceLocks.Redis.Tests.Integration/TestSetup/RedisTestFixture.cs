@@ -20,9 +20,9 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
 
     public RedisThrottlingResourceLockStorage ThrottlingLockStorage { get; private set; } = null!;
 
-    protected override RedisBuilder Configure(RedisBuilder builder)
+    protected override RedisBuilder Configure()
     {
-        return base.Configure(builder).WithLabel("type", "resource_locks_redis").WithImage("redis:7.4").WithReuse(true);
+        return base.Configure().WithLabel("type", "resource_locks_redis").WithImage("redis:7-alpine").WithReuse(true);
     }
 
     protected override async ValueTask InitializeAsync()

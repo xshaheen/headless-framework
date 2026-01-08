@@ -3,7 +3,7 @@
 using System.Text.Json.Serialization.Metadata;
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Messaging;
+using Framework.Domains;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Events;
 using Framework.Permissions.Models;
@@ -335,7 +335,7 @@ public sealed class DynamicPermissionDefinitionStore(
         {
             var message = new DynamicPermissionDefinitionsChanged
             {
-                UniqueId = guidGenerator.Create().ToString(),
+                UniqueId = guidGenerator.Create(),
                 Timestamp = timeProvider.GetUtcNow(),
                 Permissions = [.. newPermissions.Select(x => x.Name), .. updatedPermissions.Select(x => x.Name)],
             };

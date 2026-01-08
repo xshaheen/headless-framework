@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using DotNetCore.CAP;
-using Framework.Domains;
+using Framework.Domains.Messages;
 
-namespace Framework.Messaging;
+namespace Framework.Domains;
 
 public sealed class CapDistributedMessagePublisher(ICapPublisher publisher) : IDistributedMessagePublisher
 {

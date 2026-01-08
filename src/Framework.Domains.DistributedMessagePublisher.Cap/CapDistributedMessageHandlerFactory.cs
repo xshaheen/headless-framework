@@ -3,10 +3,10 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using DotNetCore.CAP;
-using Framework.Domains;
+using Framework.Domains.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Messaging;
+namespace Framework.Domains;
 
 using MessageHandlerMap = Dictionary<
     (string MessageName, Type MessageType),

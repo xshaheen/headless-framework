@@ -3,10 +3,10 @@
 using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
+using Framework.Domains;
 using Framework.Features;
 using Framework.Features.Seeders;
 using Framework.Messaging;
-using Framework.Messaging.LocalServiceProvider;
 using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Redis;
