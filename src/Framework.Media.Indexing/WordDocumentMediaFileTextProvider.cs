@@ -12,7 +12,7 @@ public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
     {
         using var document = WordprocessingDocument.Open(fileStream, isEditable: false);
 
-        var paragraphs = document.MainDocumentPart?.Document.Body?.Descendants<Paragraph>().ToList();
+        var paragraphs = document.MainDocumentPart?.Document?.Body?.Descendants<Paragraph>().ToList();
 
         if (paragraphs is not { Count: > 0 })
         {

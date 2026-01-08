@@ -2,11 +2,11 @@
 
 using Foundatio.Messaging;
 using Framework.Abstractions;
+using Framework.Domains.Messages;
 
 namespace Framework.Messaging;
 
-public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, IGuidGenerator guidGenerator)
-    : IMessageBus
+public sealed class FoundatioMessageBusAdapter(IFoundatioMessageBus bus, IGuidGenerator guidGenerator) : IMessageBus
 {
     public Task SubscribeAsync<T>(
         Func<IMessageSubscribeMedium<T>, CancellationToken, Task> handler,
@@ -14,11 +14,22 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, I
     )
         where T : class
     {
-        return foundatio.SubscribeAsync<IMessage<T>>(
-            (msg, token) => handler(_MapMessage(msg), token),
-            cancellationToken
-        );
+        return bus.SubscribeAsync<IMessage<T>>((msg, token) => handler(_MapMessage(msg), token), cancellationToken);
     }
+
+    public Task PublishAsync<T>(
+        T message,
+        PublishMessageOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+        where T : class
+    {
+        return bus.PublishAsync(typeof(T), message, _MapOptions(options), cancellationToken);
+    }
+
+    public void Dispose() { }
+
+    #region Helpers
 
     private static MessageSubscribeMedium<T> _MapMessage<T>(IMessage<T> msg)
         where T : class
@@ -34,16 +45,6 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, I
         };
     }
 
-    public Task PublishAsync<T>(
-        T message,
-        PublishMessageOptions? options = null,
-        CancellationToken cancellationToken = default
-    )
-        where T : class
-    {
-        return foundatio.PublishAsync(typeof(T), message, _MapOptions(options), cancellationToken);
-    }
-
     private MessageOptions _MapOptions(PublishMessageOptions? options)
     {
         return options is null
@@ -57,5 +58,5 @@ public sealed class MessageBusFoundatioAdapter(IFoundatioMessageBus foundatio, I
             };
     }
 
-    public void Dispose() { }
+    #endregion
 }

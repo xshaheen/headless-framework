@@ -1,9 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Framework.Domains;
 
-namespace Framework.Messaging;
+namespace Framework.Domains.Messages;
 
 public static class MessageName
 {

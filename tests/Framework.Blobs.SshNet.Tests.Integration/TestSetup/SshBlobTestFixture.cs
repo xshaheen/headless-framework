@@ -8,8 +8,7 @@ namespace Tests.TestSetup;
 [CollectionDefinition]
 public sealed class SshBlobTestFixture : ICollectionFixture<SshBlobTestFixture>, IAsyncLifetime
 {
-    private readonly IContainer _sftpContainer = new ContainerBuilder()
-        .WithImage("atmoz/sftp:latest")
+    private readonly IContainer _sftpContainer = new ContainerBuilder("atmoz/sftp:latest")
         .WithPortBinding(2222, 22)
         .WithCommand("framework:password:::storage")
         .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(22))

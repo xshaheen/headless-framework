@@ -10,7 +10,11 @@ public sealed class PdfMediaFileTextProviderTests
     public async Task get_text_async_should_extract_text_from_real_pdf_file()
     {
         // given
-        var pdfFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\Files\TestPdf.pdf");
+        var separator = Path.DirectorySeparatorChar;
+        var pdfFilePath = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory,
+            $"..{separator}..{separator}..{separator}Files{separator}TestPdf.pdf"
+        );
         await using var fileStream = File.OpenRead(pdfFilePath);
 
         // when

@@ -4,6 +4,7 @@ using System.Reflection;
 using Foundatio.Messaging;
 using Framework.Api;
 using Framework.Caching;
+using Framework.Domains;
 using Framework.Features;
 using Framework.Messaging;
 using Framework.Permissions;

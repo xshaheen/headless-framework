@@ -78,8 +78,6 @@ public sealed partial class TusAzureStore
         CancellationToken cancellationToken
     )
     {
-        Argument.CanSeek(stream);
-
         if (!_options.EnableChunkSplitting)
         {
             var blockId = _GenerateBlockId(nextBlockNumber);

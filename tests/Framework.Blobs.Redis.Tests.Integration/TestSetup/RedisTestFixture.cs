@@ -15,9 +15,9 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
 {
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
 
-    protected override RedisBuilder Configure(RedisBuilder builder)
+    protected override RedisBuilder Configure()
     {
-        return base.Configure(builder).WithLabel("type", "redis_blobs").WithImage("redis:7.4").WithReuse(true);
+        return base.Configure().WithLabel("type", "redis_blobs").WithImage("redis:7-alpine").WithReuse(true);
     }
 
     protected override async ValueTask InitializeAsync()

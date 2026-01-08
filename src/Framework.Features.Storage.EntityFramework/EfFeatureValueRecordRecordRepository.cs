@@ -3,7 +3,6 @@
 using Framework.Domains;
 using Framework.Features.Entities;
 using Framework.Features.Repositories;
-using Framework.Messaging;
 using Microsoft.EntityFrameworkCore;
 
 namespace Framework.Features;

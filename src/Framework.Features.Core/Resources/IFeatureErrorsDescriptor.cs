@@ -28,7 +28,7 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
     {
         var description = string.Format(
             CultureInfo.InvariantCulture,
-            Messages.features_provider_not_defined,
+            FeatureMessages.features_provider_not_defined,
             featureName,
             providerName
         );
@@ -42,7 +42,11 @@ public sealed class DefaultFeatureErrorsDescriptor : IFeatureErrorsDescriptor
 
     public ValueTask<ErrorDescriptor> ProviderIsReadonly(string providerKey)
     {
-        var description = string.Format(CultureInfo.InvariantCulture, Messages.features_provider_readonly, providerKey);
+        var description = string.Format(
+            CultureInfo.InvariantCulture,
+            FeatureMessages.features_provider_readonly,
+            providerKey
+        );
 
         var error = new ErrorDescriptor("features:provider-readonly", description).WithParam(
             "providerKey",

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Domains;
-using Framework.Messaging;
 using Framework.Settings.Entities;
 using Framework.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;

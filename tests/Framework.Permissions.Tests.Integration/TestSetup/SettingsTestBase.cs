@@ -1,8 +1,8 @@
 ﻿using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
+using Framework.Domains;
 using Framework.Messaging;
-using Framework.Messaging.LocalServiceProvider;
 using Framework.Permissions;
 using Framework.Permissions.Seeders;
 using Framework.Redis;

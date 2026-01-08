@@ -87,7 +87,7 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        return new PostgreSqlBuilder()
+        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
             .WithLabel("type", "permissions")
             .WithDatabase("framework_test")
             .WithUsername("postgres")
@@ -99,6 +99,6 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder().WithLabel("type", "permissions").WithImage("redis:7.4").WithReuse(true).Build();
+        return new RedisBuilder("redis:7-alpine").WithLabel("type", "permissions").WithReuse(true).Build();
     }
 }

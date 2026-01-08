@@ -11,9 +11,9 @@ public sealed class AwsBlobTestFixture(IMessageSink messageSink)
     : ContainerFixture<LocalStackBuilder, LocalStackContainer>(messageSink),
         ICollectionFixture<AwsBlobTestFixture>
 {
-    protected override LocalStackBuilder Configure(LocalStackBuilder builder)
+    protected override LocalStackBuilder Configure()
     {
-        return builder
+        return base.Configure()
             .WithImage("localstack/localstack:4.0.3")
             .WithEnvironment("SERVICES", "s3")
             .WithEnvironment("DEBUG", "1")

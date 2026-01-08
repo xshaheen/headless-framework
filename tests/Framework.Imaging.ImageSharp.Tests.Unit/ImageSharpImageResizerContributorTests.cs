@@ -93,8 +93,9 @@ public sealed class ImageSharpImageResizerContributorTests : TestBase
 
     private static string _GetPathImage(string imageName)
     {
+        var separator = Path.DirectorySeparatorChar;
         var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
-        return Path.Combine(baseDirectory, $@"..\..\..\Assets\{imageName}");
+        return Path.Combine(baseDirectory, $"..{separator}..{separator}..{separator}Assets{separator}{imageName}");
     }
 }

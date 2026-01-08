@@ -6,7 +6,7 @@ namespace Framework.Domains;
 
 public interface IDistributedMessage
 {
-    string UniqueId { get; }
+    Guid UniqueId { get; }
 
     DateTimeOffset Timestamp { get; }
 

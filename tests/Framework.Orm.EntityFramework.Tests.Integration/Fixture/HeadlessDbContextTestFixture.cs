@@ -47,7 +47,7 @@ public sealed class HeadlessDbContextTestFixture : ICollectionFixture<HeadlessDb
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        return new PostgreSqlBuilder()
+        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
             .WithLabel("type", "permissions")
             .WithDatabase("framework_test")
             .WithUsername("postgres")
