@@ -68,7 +68,7 @@ public abstract class HeadlessIdentityDbContext<
         // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
-            await PublishMessagesAsync(report.LocalEmitters, cancellationToken);
+            await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken);
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
@@ -90,7 +90,7 @@ public abstract class HeadlessIdentityDbContext<
                         cancellationToken
                     );
 
-                    await context.PublishMessagesAsync(report.LocalEmitters, cancellationToken);
+                    await context.PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken);
                     var result = await context._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
                     await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
 
@@ -119,7 +119,7 @@ public abstract class HeadlessIdentityDbContext<
         // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
-            PublishMessages(report.LocalEmitters);
+            PublishMessages(report.LocalEmitters, Database.CurrentTransaction);
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
@@ -140,7 +140,7 @@ public abstract class HeadlessIdentityDbContext<
 
                     using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
 
-                    context.PublishMessages(report.LocalEmitters);
+                    context.PublishMessages(report.LocalEmitters, transaction);
                     var result = context._BaseSaveChanges(acceptAllChangesOnSuccess);
                     context.PublishMessages(report.DistributedEmitters, transaction);
 
@@ -210,10 +210,14 @@ public abstract class HeadlessIdentityDbContext<
 
     protected abstract Task PublishMessagesAsync(
         List<EmitterLocalMessages> emitters,
+        IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     );
 
-    protected abstract void PublishMessages(List<EmitterLocalMessages> emitters);
+    protected abstract void PublishMessages(
+        List<EmitterLocalMessages> emitters,
+        IDbContextTransaction currentTransaction
+    );
 
     #endregion
 

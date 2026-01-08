@@ -13,7 +13,7 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 }
 
 [PublicAPI]
-public sealed class SqliteCurrentConnection(ISqlConnectionFactory factory) : ISqlCurrentConnection
+public sealed class DefaultSqlCurrentConnection(ISqlConnectionFactory factory) : ISqlCurrentConnection
 {
     private DbConnection? _connection;
     private readonly AsyncLock _lock = new();
