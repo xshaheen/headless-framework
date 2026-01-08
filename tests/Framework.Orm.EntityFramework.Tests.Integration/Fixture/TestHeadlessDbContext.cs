@@ -38,6 +38,7 @@ public sealed class TestHeadlessDbContext(IHeadlessEntityModelProcessor entityPr
 
     protected override Task PublishMessagesAsync(
         List<EmitterLocalMessages> emitters,
+        IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     )
     {
@@ -46,7 +47,10 @@ public sealed class TestHeadlessDbContext(IHeadlessEntityModelProcessor entityPr
         return Task.CompletedTask;
     }
 
-    protected override void PublishMessages(List<EmitterLocalMessages> emitters)
+    protected override void PublishMessages(
+        List<EmitterLocalMessages> emitters,
+        IDbContextTransaction currentTransaction
+    )
     {
         EmittedLocalMessages.AddRange(emitters);
     }
