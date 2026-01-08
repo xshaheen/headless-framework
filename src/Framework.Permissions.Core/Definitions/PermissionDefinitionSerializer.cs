@@ -32,11 +32,9 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
         foreach (var permissionGroup in groups)
         {
             permissionGroupRecords.Add(Serialize(permissionGroup));
-
-            foreach (var permission in permissionGroup.GetFlatPermissions())
-            {
-                permissionRecords.Add(Serialize(permission, permissionGroup));
-            }
+            permissionRecords.AddRange(
+                permissionGroup.GetFlatPermissions().Select(permission => Serialize(permission, permissionGroup))
+            );
         }
 
         return (permissionGroupRecords.ToArray(), permissionRecords.ToArray());

@@ -31,11 +31,7 @@ public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : 
         foreach (var featureGroup in groups)
         {
             featureGroupRecords.Add(Serialize(featureGroup));
-
-            foreach (var feature in featureGroup.GetFlatFeatures())
-            {
-                featureRecords.Add(Serialize(feature, featureGroup));
-            }
+            featureRecords.AddRange(featureGroup.GetFlatFeatures().Select(feature => Serialize(feature, featureGroup)));
         }
 
         return (featureGroupRecords, featureRecords);

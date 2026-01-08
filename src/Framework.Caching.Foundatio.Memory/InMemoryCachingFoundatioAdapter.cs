@@ -6,7 +6,7 @@ using Framework.Checks;
 namespace Framework.Caching;
 
 public sealed class InMemoryCachingFoundatioAdapter(TimeProvider timeProvider, InMemoryCacheOptions options)
-    : ICache,
+    : IInMemoryCache,
         IDisposable
 {
     private readonly InMemoryCacheClient _cacheClient = _CacheClient(timeProvider, options);

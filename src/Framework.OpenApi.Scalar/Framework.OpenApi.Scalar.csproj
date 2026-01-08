@@ -5,7 +5,4 @@
   <ItemGroup>
     <PackageReference Include="Scalar.AspNetCore" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
-  </ItemGroup>
 </Project>

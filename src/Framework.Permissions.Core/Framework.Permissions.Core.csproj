@@ -8,11 +8,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
-    <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\Framework.Caching.Abstractions\Framework.Caching.Abstractions.csproj" />
-    <ProjectReference Include="..\Framework.Messaging.Abstractions\Framework.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Permissions.Abstractions\Framework.Permissions.Abstractions.csproj" />
-    <ProjectReference Include="..\Framework.ResourceLocks.Core\Framework.ResourceLocks.Core.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks.Abstractions\Framework.ResourceLocks.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resources\Messages.resx">

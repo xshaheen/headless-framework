@@ -4,6 +4,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Framework.Api.Abstractions\Framework.Api.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Framework.OpenApi.Nswag\Framework.OpenApi.Nswag.csproj" />
     <ProjectReference Include="..\..\src\Framework.OpenApi.Scalar\Framework.OpenApi.Scalar.csproj" />
   </ItemGroup>

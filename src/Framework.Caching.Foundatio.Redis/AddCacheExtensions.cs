@@ -9,48 +9,51 @@ namespace Framework.Caching;
 [PublicAPI]
 public static class AddCacheExtensions
 {
-    public static IServiceCollection AddRedisCache(
-        this IServiceCollection services,
-        Action<RedisCacheOptions, IServiceProvider> setupAction,
-        bool isDefault = true
-    )
+    extension(IServiceCollection services)
     {
-        services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-
-        return _AddCacheCore(services, isDefault);
-    }
-
-    public static IServiceCollection AddRedisCache(
-        this IServiceCollection services,
-        Action<RedisCacheOptions> setupAction,
-        bool isDefault = true
-    )
-    {
-        services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
-
-        return _AddCacheCore(services, isDefault);
-    }
-
-    private static IServiceCollection _AddCacheCore(IServiceCollection services, bool isDefault)
-    {
-        services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
-        services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
-            sp.GetRequiredService<IJsonOptionsProvider>()
-        ));
-        services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-
-        services.AddSingletonOptionValue<RedisCacheOptions>();
-
-        if (!isDefault)
+        public IServiceCollection AddRedisCache(
+            Action<RedisCacheOptions, IServiceProvider> setupAction,
+            bool isDefault = true
+        )
         {
-            services.AddKeyedSingleton<ICache, RedisCachingFoundatioAdapter>(CacheConstants.DistributedCacheProvider);
-        }
-        else
-        {
-            services.AddSingleton<ICache, RedisCachingFoundatioAdapter>();
-            services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
+            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+
+            return services._AddCacheCore(isDefault);
         }
 
-        return services;
+        public IServiceCollection AddRedisCache(
+            Action<RedisCacheOptions> setupAction,
+            bool isDefault = true
+        )
+        {
+            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+
+            return services._AddCacheCore(isDefault);
+        }
+
+        private IServiceCollection _AddCacheCore(bool isDefault)
+        {
+            services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
+            services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
+                sp.GetRequiredService<IJsonOptionsProvider>()
+            ));
+
+            services.AddSingletonOptionValue<RedisCacheOptions>();
+            services.TryAddSingleton<IDistributedCache, RedisCachingFoundatioAdapter>();
+            services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
+            services.TryAddSingleton(typeof(IDistributedCache<>), typeof(DistributedCache<>));
+
+            if (!isDefault)
+            {
+                services.AddKeyedSingleton<ICache>(CacheConstants.DistributedCacheProvider, provider => provider.GetRequiredService<IDistributedCache>());
+            }
+            else
+            {
+                services.AddSingleton<ICache>(provider => provider.GetRequiredService<IDistributedCache>());
+                services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
+            }
+
+            return services;
+        }
     }
 }
