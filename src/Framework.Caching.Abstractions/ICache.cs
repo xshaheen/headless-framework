@@ -162,3 +162,7 @@ public interface ICache
 
     #endregion
 }
+
+public interface IInMemoryCache : ICache;
+
+public interface IDistributedCache : ICache;

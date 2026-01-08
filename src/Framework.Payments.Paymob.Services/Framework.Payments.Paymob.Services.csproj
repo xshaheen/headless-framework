@@ -6,7 +6,7 @@
     <ProjectReference Include="..\Framework.Payments.Paymob.CashIn\Framework.Payments.Paymob.CashIn.csproj" />
     <ProjectReference Include="..\Framework.Payments.Paymob.CashOut\Framework.Payments.Paymob.CashOut.csproj" />
   </ItemGroup>
-  <ItemGroup>
+  <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\CashInMessages.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>CashInMessages.Designer.cs</LastGenOutput>

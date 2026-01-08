@@ -17,69 +17,67 @@ public interface IMessageSubscriber
 [PublicAPI]
 public static class MessageSubscriberExtensions
 {
-    public static Task SubscribeAsync<T>(
-        this IMessageSubscriber subscriber,
-        Func<IMessageSubscribeMedium<T>, Task> handler,
-        CancellationToken cancellationToken = default
-    )
-        where T : class
+    extension(IMessageSubscriber subscriber)
     {
-        return subscriber.SubscribeAsync<T>((medium, _) => handler(medium), cancellationToken);
-    }
+        public Task SubscribeAsync<T>(
+            Func<IMessageSubscribeMedium<T>, Task> handler,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            return subscriber.SubscribeAsync<T>((medium, _) => handler(medium), cancellationToken);
+        }
 
-    public static Task SubscribeAsync<T>(
-        this IMessageSubscriber subscriber,
-        Action<IMessageSubscribeMedium<T>> handler,
-        CancellationToken cancellationToken = default
-    )
-        where T : class
-    {
-        return subscriber.SubscribeAsync<T>(
-            (msg, _) =>
-            {
-                handler(msg);
+        public Task SubscribeAsync<T>(
+            Action<IMessageSubscribeMedium<T>> handler,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            return subscriber.SubscribeAsync<T>(
+                (msg, _) =>
+                {
+                    handler(msg);
 
-                return Task.CompletedTask;
-            },
-            cancellationToken
-        );
-    }
+                    return Task.CompletedTask;
+                },
+                cancellationToken
+            );
+        }
 
-    public static Task SubscribeAsync<T>(
-        this IMessageSubscriber subscriber,
-        Func<T, Task> handler,
-        CancellationToken cancellationToken = default
-    )
-        where T : class
-    {
-        return subscriber.SubscribeAsync<T>((medium, _) => handler(medium.Payload), cancellationToken);
-    }
+        public Task SubscribeAsync<T>(
+            Func<T, Task> handler,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            return subscriber.SubscribeAsync<T>((medium, _) => handler(medium.Payload), cancellationToken);
+        }
 
-    public static Task SubscribeAsync<T>(
-        this IMessageSubscriber subscriber,
-        Func<T, CancellationToken, Task> handler,
-        CancellationToken cancellationToken = default
-    )
-        where T : class
-    {
-        return subscriber.SubscribeAsync<T>((medium, token) => handler(medium.Payload, token), cancellationToken);
-    }
+        public Task SubscribeAsync<T>(
+            Func<T, CancellationToken, Task> handler,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            return subscriber.SubscribeAsync<T>((medium, token) => handler(medium.Payload, token), cancellationToken);
+        }
 
-    public static Task SubscribeAsync<T>(
-        this IMessageSubscriber subscriber,
-        Action<T> handler,
-        CancellationToken cancellationToken = default
-    )
-        where T : class
-    {
-        return subscriber.SubscribeAsync<T>(
-            (medium, _) =>
-            {
-                handler(medium.Payload);
+        public Task SubscribeAsync<T>(
+            Action<T> handler,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            return subscriber.SubscribeAsync<T>(
+                (medium, _) =>
+                {
+                    handler(medium.Payload);
 
-                return Task.CompletedTask;
-            },
-            cancellationToken
-        );
+                    return Task.CompletedTask;
+                },
+                cancellationToken
+            );
+        }
     }
 }

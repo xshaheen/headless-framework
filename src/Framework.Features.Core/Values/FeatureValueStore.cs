@@ -38,7 +38,7 @@ public sealed class FeatureValueStore(
     IFeatureDefinitionManager featureDefinitionManager,
     IFeatureValueRecordRepository repository,
     IGuidGenerator guidGenerator,
-    ICache<FeatureValueCacheItem> cache
+    IDistributedCache<FeatureValueCacheItem> cache
 ) : IFeatureValueStore
 {
     private readonly TimeSpan _cacheExpiration = 5.Hours();

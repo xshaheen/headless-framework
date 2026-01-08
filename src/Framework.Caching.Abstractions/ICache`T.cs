@@ -86,7 +86,7 @@ public interface ICache<T>
     #endregion
 }
 
-public sealed class Cache<T>(ICache cache) : ICache<T>
+public class Cache<T>(ICache cache) : ICache<T>
 {
     public Task<bool> UpsertAsync(
         string cacheKey,
@@ -199,3 +199,11 @@ public sealed class Cache<T>(ICache cache) : ICache<T>
         return cache.SetRemoveAsync(key, value, expiration, cancellationToken);
     }
 }
+
+public interface IDistributedCache<T> : ICache<T>;
+
+public interface IInMemoryCache<T> : ICache<T>;
+
+public sealed class DistributedCache<T>(IDistributedCache cache) : Cache<T>(cache), IDistributedCache<T>;
+
+public sealed class InMemoryCache<T>(IInMemoryCache cache) : Cache<T>(cache), IInMemoryCache<T>;

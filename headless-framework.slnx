@@ -128,7 +128,6 @@
     <Folder Name="/Orms/">
         <Project Path="demo/Framework.EntityFramework.Migrations.Startup/Framework.EntityFramework.Migrations.Startup.csproj" />
         <Project Path="src/Framework.Orm.Couchbase/Framework.Orm.Couchbase.csproj" />
-        <Project Path="src/Framework.Orm.Dapper/Framework.Orm.Dapper.csproj" />
         <Project Path="src/Framework.Orm.EntityFramework/Framework.Orm.EntityFramework.csproj" />
         <Project Path="tests/Framework.Orm.EntityFramework.Tests.Integration/Framework.Orm.EntityFramework.Tests.Integration.csproj" />
     </Folder>

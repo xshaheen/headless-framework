@@ -4,6 +4,7 @@
     <RootNamespace>Framework.Blobs</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
+    <ProjectReference Include="..\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
   </ItemGroup>
 </Project>

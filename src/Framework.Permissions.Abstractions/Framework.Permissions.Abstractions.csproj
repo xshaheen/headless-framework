@@ -4,7 +4,6 @@
     <RootNamespace>Framework.Permissions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
     <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
   </ItemGroup>
   <ItemGroup>

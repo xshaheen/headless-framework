@@ -4,12 +4,13 @@
     <RootNamespace>Framework.Features</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Api\Framework.Api.csproj" />
+    <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Caching.Abstractions\Framework.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.Features.Abstractions\Framework.Features.Abstractions.csproj" />
-    <ProjectReference Include="..\Framework.ResourceLocks.Core\Framework.ResourceLocks.Core.csproj" />
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Framework.ResourceLocks.Abstractions\Framework.ResourceLocks.Abstractions.csproj" />
   </ItemGroup>
-  <ItemGroup>
+  <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\Messages.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Messages.Designer.cs</LastGenOutput>

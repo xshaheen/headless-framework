@@ -4,13 +4,13 @@
     <RootNamespace>Framework.FluentValidation</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="FileSignatures" />
   </ItemGroup>
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
   </ItemGroup>
-  <ItemGroup Label="Resx">
+  <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\FluentValidatorErrors.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>FluentValidatorErrors.Designer.cs</LastGenOutput>

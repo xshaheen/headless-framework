@@ -11,7 +11,7 @@ public sealed class RedisCachingFoundatioAdapter(
     ISerializer serializer,
     TimeProvider timeProvider,
     RedisCacheOptions options
-) : ICache, IDisposable
+) : IDistributedCache, IDisposable
 {
     private readonly RedisCacheClient _cacheClient = _CacheClient(serializer, timeProvider, options);
 
