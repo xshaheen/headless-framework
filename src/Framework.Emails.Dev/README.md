@@ -1,28 +1,36 @@
 # Framework.Emails.Dev
 
-Development-time email implementations for local testing and debugging. This package provides email senders that do not actually send network calls, making it safe and easy to develop without a real SMTP server.
+Development email implementations for local testing and debugging.
 
-## Features
+## Problem Solved
 
--   **DevEmailSender**: Writes full email content (headers, body, attachments list) to a specified local text file.
--   **NoopEmailSender**: A "No Operation" sender that simply discards the email.
+Provides safe email implementations for development/testing that don't send real emails, preventing accidental sends and enabling easy inspection of email content.
 
-## Usage
+## Key Features
 
-These implementations are typically registered conditionally for `Development` environments.
+- `DevEmailSender` - Writes full email content to a local file
+- `NoopEmailSender` - Discards emails silently
+- No network calls required
+- Easy inspection of email content
 
-### DevEmailSender
+## Installation
 
-Writes emails to a file, allowing you to inspect exactly what would have been sent.
-
-```csharp
-// Example registration (concept)
-services.AddSingleton<IEmailSender>(new DevEmailSender("path/to/emails.txt"));
+```bash
+dotnet add package Framework.Emails.Dev
 ```
 
-_(Check `AddDevEmailExtensions.cs` for the specific extension method provided by this package if available)_
+## Quick Start
 
-### Output Format
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddDevEmailSender("path/to/emails.txt");
+}
+```
+
+## Output Format
 
 The `DevEmailSender` appends to the file with a separator:
 
@@ -34,3 +42,21 @@ Message:
 Hello World!
 --------------------
 ```
+
+## Configuration
+
+### Options
+
+```csharp
+services.AddDevEmailSender("emails.txt"); // Path to output file
+```
+
+## Dependencies
+
+- `Framework.Emails.Abstractions`
+- `Framework.Hosting`
+
+## Side Effects
+
+- Registers `IEmailSender` as singleton
+- Writes emails to specified file

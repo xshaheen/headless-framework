@@ -1,22 +1,56 @@
 # Framework.Sms.Dev
 
-This package contains SMS implementations useful for development and testing environments.
+Development SMS implementations for testing.
 
-## Features
+## Problem Solved
 
--   **DevSmsSender**: A sender implementation that might log messages to the console or a file instead of sending them, or simulated behavior.
--   **NoopSmsSender**: A "No Operation" sender that does nothing, useful for environments where SMS sending should be disabled.
--   **Extensions**: Helper methods in `AddSmsExtensions` to register these providers.
+Provides development-only SMS senders that either log messages to a file or silently discard them, enabling SMS workflow testing without sending actual messages.
 
-## Usage
+## Key Features
 
-Use these providers in non-production environments to avoid incurring costs or spamming real phone numbers.
+- `DevSmsSender` - Writes SMS to a file for inspection
+- `NoopSmsSender` - Silently discards all messages
+- No external dependencies or API calls
 
-### Registration
+## Installation
+
+```bash
+dotnet add package Framework.Sms.Dev
+```
+
+## Quick Start
+
+### File-based Logging
 
 ```csharp
-if (env.IsDevelopment())
+var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
 {
-    services.AddDevSms(); // or AddNoopSms()
+    builder.Services.AddDevSmsSender("sms-log.txt");
 }
 ```
+
+### No-op (Silent)
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddNoopSmsSender();
+}
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `Framework.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- `DevSmsSender` writes to the specified file path

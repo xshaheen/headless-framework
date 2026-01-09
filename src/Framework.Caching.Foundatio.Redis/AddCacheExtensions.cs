@@ -21,10 +21,7 @@ public static class AddCacheExtensions
             return services._AddCacheCore(isDefault);
         }
 
-        public IServiceCollection AddRedisCache(
-            Action<RedisCacheOptions> setupAction,
-            bool isDefault = true
-        )
+        public IServiceCollection AddRedisCache(Action<RedisCacheOptions> setupAction, bool isDefault = true)
         {
             services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
 
@@ -46,12 +43,18 @@ public static class AddCacheExtensions
 
             if (!isDefault)
             {
-                services.AddKeyedSingleton<ICache>(CacheConstants.DistributedCacheProvider, provider => provider.GetRequiredService<IDistributedCache>());
+                services.AddKeyedSingleton<ICache>(
+                    CacheConstants.DistributedCacheProvider,
+                    provider => provider.GetRequiredService<IDistributedCache>()
+                );
             }
             else
             {
                 services.AddSingleton<ICache>(provider => provider.GetRequiredService<IDistributedCache>());
-                services.AddKeyedSingleton(CacheConstants.DistributedCacheProvider, x => x.GetRequiredService<ICache>());
+                services.AddKeyedSingleton(
+                    CacheConstants.DistributedCacheProvider,
+                    x => x.GetRequiredService<ICache>()
+                );
             }
 
             return services;

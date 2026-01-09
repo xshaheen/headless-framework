@@ -39,9 +39,7 @@ public static class AddSettingsExtensions
         /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
         /// and ICurrentTenant implementations to be able to use this feature.
         /// </summary>
-        public IServiceCollection AddSettingsManagementCore(
-            Action<SettingManagementOptions>? setupAction = null
-        )
+        public IServiceCollection AddSettingsManagementCore(Action<SettingManagementOptions>? setupAction = null)
         {
             services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 

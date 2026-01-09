@@ -1,24 +1,41 @@
 # Framework.Emails.Core
 
-Core utilities and shared logic for email implementations. This package primarily provides conversion logic to bridge the framework's abstractions with `MimeKit`.
+Core utilities and MimeKit integration for email implementations.
 
-## Features
+## Problem Solved
 
--   **MimeKit Integration**: Utilities to convert framework email contracts into `MimeKit` objects.
+Provides shared conversion logic to bridge framework email contracts with MimeKit, eliminating duplication across email provider implementations.
 
-## Key Components
+## Key Features
 
-### EmailToMimMessageConverter
+- `MimeMessage` conversion from `SendSingleEmailRequest`
+- Address mapping (To, From, Cc, Bcc)
+- Body building (Text/HTML)
+- Attachment handling
 
-Provides extension methods to convert a `SendSingleEmailRequest` to a `MimeKit.MimeMessage`. This is particularly useful for implementations that rely on MimeKit/MailKit.
+## Installation
+
+```bash
+dotnet add package Framework.Emails.Core
+```
+
+## Usage
 
 ```csharp
+// Convert framework request to MimeKit message
 MimeMessage message = await request.ConvertToMimeMessageAsync(cancellationToken);
 ```
 
-This handles:
+## Configuration
 
--   Mapping addresses (To, From, Cc, Bcc)
--   Setting Subject
--   Building the body (Text/HTML)
--   Attaching files
+No configuration required.
+
+## Dependencies
+
+- `Framework.Emails.Abstractions`
+- `Framework.Hosting`
+- `MailKit`
+
+## Side Effects
+
+None. This is a utility package.

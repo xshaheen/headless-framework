@@ -1,14 +1,54 @@
-# Framework.Sms.Abstraction
+# Framework.Sms.Abstractions
 
-This package provides the core abstractions and contracts for SMS functionality within the framework. It defines the common interface and data models that specific SMS provider implementations must adhere to.
+Defines the unified interface for SMS sending.
 
-## Key Components
+## Problem Solved
 
--   **ISmsSender.cs**: Defines the `ISmsSender` interface, which is the primary contract for sending SMS messages.
--   **Contracts/**: Contains the data transfer objects (DTOs) used for SMS operations.
-    -   `SendSingleSmsRequest.cs`: Represents the request payload for sending a single SMS.
-    -   `SendSingleSmsResponse.cs`: Represents the response received after sending a single SMS.
+Provides a provider-agnostic SMS sending API, enabling consistent SMS functionality across different providers (Twilio, AWS SNS, etc.) without changing application code.
+
+## Key Features
+
+- `ISmsSender` - Core interface for sending SMS
+- `SendSingleSmsRequest` - SMS request model
+- `SendSingleSmsResponse` - SMS response with status
+
+## Installation
+
+```bash
+dotnet add package Framework.Sms.Abstractions
+```
 
 ## Usage
 
-This package is intended to be referenced by specific SMS provider implementations (e.g., Twilio, Vodafone, AWS) and by the application layer that consumes SMS services. By programming against `ISmsSender`, the application can remain agnostic of the underlying SMS provider.
+```csharp
+public sealed class OtpService(ISmsSender smsSender)
+{
+    public async Task SendOtpAsync(string phoneNumber, string code, CancellationToken ct)
+    {
+        var request = new SendSingleSmsRequest
+        {
+            To = phoneNumber,
+            Message = $"Your verification code is: {code}"
+        };
+
+        var response = await smsSender.SendAsync(request, ct);
+
+        if (!response.IsSuccess)
+        {
+            throw new InvalidOperationException($"SMS failed: {response.ErrorMessage}");
+        }
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions-only package.
+
+## Dependencies
+
+None.
+
+## Side Effects
+
+None.

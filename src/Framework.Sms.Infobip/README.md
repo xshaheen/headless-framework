@@ -1,25 +1,57 @@
 # Framework.Sms.Infobip
 
-This package provides support for Infobip SMS services.
+Infobip SMS gateway implementation.
 
-## Features
+## Problem Solved
 
--   **InfobipSmsSender**: The implementation of `ISmsSender` for Infobip.
--   **Configuration**: Managed via `InfobipOptions`.
--   **Easy Setup**: Extension methods provided in `AddInfobipExtensions`.
+Provides SMS sending via Infobip's global messaging platform with comprehensive delivery reporting.
 
-## Usage
+## Key Features
 
-### Configuration
+- `InfobipSmsSender` - ISmsSender implementation using Infobip
+- API key authentication
+- Configurable base URL for regional endpoints
+- Comprehensive delivery status reporting
 
-Configure `InfobipOptions` with your API key and base URL.
+## Installation
 
-### Registration
-
-```csharp
-services.AddInfobipSms(configuration);
+```bash
+dotnet add package Framework.Sms.Infobip
 ```
 
-### Interaction
+## Quick Start
 
-Inject `ISmsSender` to send SMS messages through Infobip without coupling your code to the provider details.
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddInfobipSmsSender(options =>
+{
+    options.ApiKey = "your-api-key";
+    options.BaseUrl = "https://api.infobip.com";
+    options.SenderName = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Infobip": {
+      "ApiKey": "your-api-key",
+      "BaseUrl": "https://api.infobip.com",
+      "SenderName": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Framework.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton

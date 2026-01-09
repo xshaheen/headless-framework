@@ -1,20 +1,48 @@
-# Framework.Sql.Abstraction
+# Framework.Sql.Abstractions
 
-This package provides the core abstractions for SQL database interactions within the framework. It defines the interfaces necessary for implementing database-agnostic data access layers, enabling flexible dependency injection and testing.
+Defines interfaces for SQL database connection management.
 
-## Interfaces
+## Problem Solved
 
-### `ISqlConnectionFactory`
+Provides provider-agnostic interfaces for SQL connection creation and validation, enabling consistent database access patterns across different SQL providers (PostgreSQL, SQL Server, SQLite).
 
-Defines the contract for a factory that creates and manages SQL database connections.
+## Key Features
 
--   `GetConnectionString()`: Returns the configured connection string.
--   `GetOpenConnectionAsync(CancellationToken)`: Returns an open `DbConnection`. Implementations may reuse an existing connection if appropriate.
--   `CreateNewConnectionAsync(CancellationToken)`: Creates and opens a new `DbConnection`.
--   Implements `IAsyncDisposable` for proper resource cleanup.
+- `ISqlConnectionFactory` - Create and manage database connections
+- `ISqlCurrentConnection` - Access current ambient connection
+- `IConnectionStringChecker` - Validate connection strings and database existence
 
-### `IConnectionStringChecker`
+## Installation
 
-Defines a contract for checking the validity of a connection string and the existence of the target database.
+```bash
+dotnet add package Framework.Sql.Abstractions
+```
 
--   `CheckAsync(string connectionString)`: Asynchronously checks if the database server is reachable and if the specific database exists. Returns a tuple `(bool Connected, bool DatabaseExists)`.
+## Usage
+
+```csharp
+public sealed class OrderRepository(ISqlConnectionFactory connectionFactory)
+{
+    public async Task<Order?> GetByIdAsync(Guid id, CancellationToken ct)
+    {
+        await using var connection = await connectionFactory.CreateNewConnectionAsync(ct);
+
+        return await connection.QuerySingleOrDefaultAsync<Order>(
+            "SELECT * FROM orders WHERE id = @Id",
+            new { Id = id }
+        );
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions-only package.
+
+## Dependencies
+
+None.
+
+## Side Effects
+
+None.

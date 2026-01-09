@@ -45,10 +45,7 @@ public static class MessageSubscriberExtensions
             );
         }
 
-        public Task SubscribeAsync<T>(
-            Func<T, Task> handler,
-            CancellationToken cancellationToken = default
-        )
+        public Task SubscribeAsync<T>(Func<T, Task> handler, CancellationToken cancellationToken = default)
             where T : class
         {
             return subscriber.SubscribeAsync<T>((medium, _) => handler(medium.Payload), cancellationToken);
@@ -63,10 +60,7 @@ public static class MessageSubscriberExtensions
             return subscriber.SubscribeAsync<T>((medium, token) => handler(medium.Payload, token), cancellationToken);
         }
 
-        public Task SubscribeAsync<T>(
-            Action<T> handler,
-            CancellationToken cancellationToken = default
-        )
+        public Task SubscribeAsync<T>(Action<T> handler, CancellationToken cancellationToken = default)
             where T : class
         {
             return subscriber.SubscribeAsync<T>(

@@ -1,18 +1,68 @@
 # Framework.Sql.SqlServer
 
-This package provides the [Microsoft SQL Server](https://www.microsoft.com/sql-server) implementation of the `Framework.Sql.Abstraction` abstractions.
+SQL Server connection factory using Microsoft.Data.SqlClient.
 
-## Features
+## Problem Solved
 
--   **Connection Factory**: `SqlServerConnectionFactory` implements `ISqlConnectionFactory` to provide managed SQL Server connection instances.
--   **Connection String Checker**: `SqlServerConnectionStringChecker` implements `IConnectionStringChecker` to validate SQL Server connection strings and verify database existence.
+Provides SQL Server-specific implementation of the SQL connection factory, enabling efficient connection management with Microsoft.Data.SqlClient.
+
+## Key Features
+
+- `SqlServerConnectionFactory` - ISqlConnectionFactory implementation
+- `SqlServerConnectionStringChecker` - Connection string validation
+- Returns strongly-typed `SqlConnection` instances
+
+## Installation
+
+```bash
+dotnet add package Framework.Sql.SqlServer
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("Default")!;
+builder.Services.AddSingleton<ISqlConnectionFactory>(
+    new SqlServerConnectionFactory(connectionString)
+);
+```
 
 ## Usage
 
-This package is typically used by registering the implementations with your dependency injection container for applications using SQL Server.
+```csharp
+public sealed class ReportService(ISqlConnectionFactory connectionFactory)
+{
+    public async Task<IEnumerable<Report>> GetReportsAsync(CancellationToken ct)
+    {
+        await using var connection = await connectionFactory.CreateNewConnectionAsync(ct);
+
+        return await connection.QueryAsync<Report>(
+            "SELECT * FROM Reports WHERE CreatedAt > @Date",
+            new { Date = DateTime.UtcNow.AddDays(-30) }
+        );
+    }
+}
+```
+
+## Configuration
+
+Connection string via constructor:
 
 ```csharp
-// Example registration (pseudocode)
-services.AddSingleton<ISqlConnectionFactory>(new SqlServerConnectionFactory(connectionString));
-services.AddTransient<IConnectionStringChecker, SqlServerConnectionStringChecker>();
+services.AddSingleton<ISqlConnectionFactory>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new SqlServerConnectionFactory(config.GetConnectionString("SqlServer")!);
+});
 ```
+
+## Dependencies
+
+- `Framework.Sql.Abstractions`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+None (manual registration required).

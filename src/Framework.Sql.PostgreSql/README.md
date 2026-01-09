@@ -1,18 +1,68 @@
 # Framework.Sql.PostgreSql
 
-This package provides the [PostgreSQL](https://www.postgresql.org/) implementation of the `Framework.Sql.Abstraction` abstractions, built on top of [Npgsql](https://www.npgsql.org/).
+PostgreSQL connection factory using Npgsql.
 
-## Features
+## Problem Solved
 
--   **Connection Factory**: `NpgsqlConnectionFactory` implements `ISqlConnectionFactory` to provide managed `NpgsqlConnection` instances.
--   **Connection String Checker**: `NpgsqlConnectionStringChecker` implements `IConnectionStringChecker` to validate PostgreSQL connection strings and database existence.
+Provides PostgreSQL-specific implementation of the SQL connection factory, enabling efficient connection management with Npgsql.
+
+## Key Features
+
+- `NpgsqlConnectionFactory` - ISqlConnectionFactory implementation
+- `NpgsqlConnectionStringChecker` - Connection string validation
+- Returns strongly-typed `NpgsqlConnection` instances
+
+## Installation
+
+```bash
+dotnet add package Framework.Sql.PostgreSql
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var connectionString = builder.Configuration.GetConnectionString("Default")!;
+builder.Services.AddSingleton<ISqlConnectionFactory>(
+    new NpgsqlConnectionFactory(connectionString)
+);
+```
 
 ## Usage
 
-This package is typically used by registering the implementations with your dependency injection container, often matching the `ISqlConnectionFactory` interface.
+```csharp
+public sealed class ReportService(ISqlConnectionFactory connectionFactory)
+{
+    public async Task<IEnumerable<Report>> GetReportsAsync(CancellationToken ct)
+    {
+        await using var connection = await connectionFactory.CreateNewConnectionAsync(ct);
+
+        return await connection.QueryAsync<Report>(
+            "SELECT * FROM reports WHERE created_at > @Date",
+            new { Date = DateTime.UtcNow.AddDays(-30) }
+        );
+    }
+}
+```
+
+## Configuration
+
+Connection string via constructor:
 
 ```csharp
-// Example registration (pseudocode)
-services.AddSingleton<ISqlConnectionFactory>(new NpgsqlConnectionFactory(connectionString));
-services.AddTransient<IConnectionStringChecker, NpgsqlConnectionStringChecker>();
+services.AddSingleton<ISqlConnectionFactory>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    return new NpgsqlConnectionFactory(config.GetConnectionString("Postgres")!);
+});
 ```
+
+## Dependencies
+
+- `Framework.Sql.Abstractions`
+- `Npgsql`
+
+## Side Effects
+
+None (manual registration required).

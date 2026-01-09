@@ -1,35 +1,71 @@
 # Framework.Sms.Twilio
 
-This package integrates Twilio's SMS services into the framework.
+Twilio SMS implementation.
 
-## Features
+## Problem Solved
 
--   **TwilioSmsSender**: Implements `ISmsSender` using the Twilio API.
--   **Configuration**: `TwilioSmsOptions` encapsulates settings like Account SID, Auth Token, and From number.
--   **DI Support**: Includes `AddTwilioExtensions` for seamless setup.
+Provides SMS sending via Twilio's messaging API with support for sender numbers and messaging service SIDs.
 
-## Usage
+## Key Features
 
-### Configuration
+- `TwilioSmsSender` - ISmsSender implementation using Twilio
+- Account SID and Auth Token authentication
+- Configurable sender phone number
+- Messaging Service SID support
 
-Set up your Twilio credentials:
+## Installation
+
+```bash
+dotnet add package Framework.Sms.Twilio
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddTwilioSmsSender(options =>
+{
+    options.AccountSid = "your-account-sid";
+    options.AuthToken = "your-auth-token";
+    options.From = "+1234567890";
+});
+```
+
+## Configuration
+
+### appsettings.json
 
 ```json
 {
+  "Sms": {
     "Twilio": {
-        "AccountSid": "...",
-        "AuthToken": "...",
-        "FromNumber": "..."
+      "AccountSid": "your-account-sid",
+      "AuthToken": "your-auth-token",
+      "From": "+1234567890"
     }
+  }
 }
 ```
 
-### Registration
+### Code Configuration
 
 ```csharp
-services.AddTwilioSms(configuration);
+builder.Services.AddTwilioSmsSender(options =>
+{
+    options.AccountSid = config["Twilio:AccountSid"]!;
+    options.AuthToken = config["Twilio:AuthToken"]!;
+    options.From = config["Twilio:From"]!;
+    // Or use MessagingServiceSid instead of From
+    options.MessagingServiceSid = config["Twilio:MessagingServiceSid"];
+});
 ```
 
-### Sending Messages
+## Dependencies
 
-Use the standard `ISmsSender` interface to send messages.
+- `Framework.Sms.Abstractions`
+- `Twilio`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
