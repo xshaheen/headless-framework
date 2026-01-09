@@ -15,7 +15,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
     {
         // given
         var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-        var wordFilePath = Path.Combine(baseDirectory, @"..\..\..\Files\TestWORD.docx");
+        var wordFilePath = Path.GetFullPath(Path.Combine(baseDirectory, "..", "..", "..", "Files", "TestWORD.docx"));
         await using var fileStream = File.OpenRead(wordFilePath);
 
         // when
@@ -52,7 +52,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         var result = await _sut.GetTextAsync(stream);
 
         // then
-        result.Should().Be($"{expectedText}\r\n");
+        result.Should().Be($"{expectedText}{Environment.NewLine}");
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class WordDocumentMediaFileTextProviderTests
         // given
         var paragraphs = new[] { "First paragraph", "Second paragraph", "Third paragraph" };
         await using var stream = _CreateWordDocumentWithParagraphs(paragraphs);
-        var expectedText = string.Join("\r\n", paragraphs) + "\r\n";
+        var expectedText = string.Join(Environment.NewLine, paragraphs) + Environment.NewLine;
 
         Argument.CanSeek(stream);
         Argument.CanRead(stream);

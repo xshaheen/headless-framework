@@ -19,7 +19,9 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
     {
         // given
         var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
-        var powerPintFilePath = Path.Combine(baseDirectory, @"..\..\..\Files\TestPPTX.pptx");
+        var powerPintFilePath = Path.GetFullPath(
+            Path.Combine(baseDirectory, "..", "..", "..", "Files", "TestPPTX.pptx")
+        );
 
         // when
         await using var fileStream = File.OpenRead(powerPintFilePath);
@@ -43,7 +45,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         const string expectedText = "Test slide content";
         await using var stream = _CreatePresentationWithSlide(expectedText);
         var result = await _sut.GetTextAsync(stream);
-        result.Should().Be($"{expectedText}\r\n");
+        result.Should().Be($"{expectedText}{Environment.NewLine}");
     }
 
     [Fact]
@@ -52,7 +54,7 @@ public sealed class PresentationDocumentMediaFileTextProviderTests
         var slideTexts = new[] { "Slide 1", "Slide 2", "Slide 3" };
         await using var stream = _CreatePresentationWithSlides(slideTexts);
         var result = await _sut.GetTextAsync(stream);
-        result.Should().Be(string.Join("\r\n", slideTexts) + "\r\n");
+        result.Should().Be(string.Join(Environment.NewLine, slideTexts) + Environment.NewLine);
     }
 
     private static MemoryStream _CreateEmptyPresentation()
