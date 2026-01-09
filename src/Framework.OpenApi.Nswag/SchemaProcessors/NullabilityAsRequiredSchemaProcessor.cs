@@ -2,7 +2,7 @@
 
 using NJsonSchema.Generation;
 
-namespace Framework.OpenApi.Nswag.SchemaProcessors;
+namespace Framework.Api.SchemaProcessors;
 
 /// <summary>
 /// Swagger <see cref="ISchemaProcessor"/> that uses the nullability annotations to set the required properties.

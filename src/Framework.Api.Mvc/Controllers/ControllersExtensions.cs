@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Mvc;
 
-namespace Framework.Api.Mvc.Controllers;
+namespace Framework.Api.Controllers;
 
 [PublicAPI]
 public static class ControllerBaseExtensions

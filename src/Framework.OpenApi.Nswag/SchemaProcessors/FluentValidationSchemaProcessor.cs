@@ -3,15 +3,15 @@
 using FluentValidation;
 using FluentValidation.Internal;
 using FluentValidation.Validators;
-using Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation;
-using Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+using Framework.Api.SchemaProcessors.FluentValidation;
+using Framework.Api.SchemaProcessors.FluentValidation.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Namotion.Reflection;
 using NJsonSchema.Generation;
 
-namespace Framework.OpenApi.Nswag.SchemaProcessors;
+namespace Framework.Api.SchemaProcessors;
 
 /// <summary>
 /// Swagger <see cref="ISchemaProcessor"/> that uses FluentValidation validators instead System.ComponentModel based attributes.

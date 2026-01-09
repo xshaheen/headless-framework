@@ -27,8 +27,7 @@ dotnet add package Framework.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddFrameworkApiServices();
-builder.Services.AddFrameworkMvcOptions();
+builder.AddHeadlessApi().ConfigureHeadlessMvc();
 builder.Services.AddControllers();
 
 var app = builder.Build();

@@ -5,7 +5,7 @@ using Framework.Generator.Primitives;
 using Framework.Reflection;
 using NJsonSchema.Generation;
 
-namespace Framework.OpenApi.Nswag.Extensions;
+namespace Framework.Api.Extensions;
 
 /// <summary>A static class providing methods to configure Swagger mappings for Primitive types.</summary>
 [PublicAPI]

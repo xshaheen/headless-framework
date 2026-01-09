@@ -4,7 +4,7 @@ using FluentValidation.Validators;
 using Framework.Reflection;
 using NJsonSchema;
 
-namespace Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+namespace Framework.Api.SchemaProcessors.FluentValidation.Models;
 
 public sealed class FluentValidationRule
 {

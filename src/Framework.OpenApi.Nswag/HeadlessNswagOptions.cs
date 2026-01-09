@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.OpenApi.Nswag;
+namespace Framework.Api;
 
 public sealed class HeadlessNswagOptions
 {

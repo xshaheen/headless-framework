@@ -8,7 +8,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 ## Key Features
 
-- One-call service registration via `AddFrameworkApiServices()`
+- One-call service registration via `AddHeadlessApi()`
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
 - JWT token factory and claims principal handling
@@ -35,12 +35,12 @@ var builder = WebApplication.CreateBuilder(args);
 ApiRegistration.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddFrameworkApiServices();
+builder.AddHeadlessApi();
 
 var app = builder.Build();
 
 // Optional: Add diagnostic listeners for debugging
-using var _ = app.AddFrameworkApiDiagnosticListeners();
+using var _ = app.AddHeadlessApiDiagnosticListeners();
 
 app.UseResponseCompression();
 app.UseHsts();

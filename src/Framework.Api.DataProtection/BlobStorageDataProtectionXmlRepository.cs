@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Polly;
 
-namespace Framework.Api.DataProtection;
+namespace Framework.Api;
 
 /// <summary>An <see cref="IXmlRepository"/> which is backed by BlobStorage.</summary>
 /// <remarks>Instances of this type are thread-safe.</remarks>

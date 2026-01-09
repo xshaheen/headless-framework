@@ -2,6 +2,6 @@
 
 using FluentValidation;
 
-namespace Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+namespace Framework.Api.SchemaProcessors.FluentValidation.Models;
 
 public readonly record struct ValidationRuleContext(IValidationRule ValidationRule, bool IsCollectionRule);

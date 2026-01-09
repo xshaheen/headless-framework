@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace Framework.Api.Mvc.Filters;
+namespace Framework.Api.Filters;
 
 /// <summary>
 /// Ensures that a HTTP request URL can contain query string parameters with both upper-case and lower-case

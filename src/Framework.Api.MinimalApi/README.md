@@ -25,8 +25,7 @@ dotnet add package Framework.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddFrameworkApiServices();
-builder.Services.AddFrameworkMinimalApiOptions();
+builder.AddHeadlessApi().ConfigureHeadlessMinimalApi();
 
 var app = builder.Build();
 

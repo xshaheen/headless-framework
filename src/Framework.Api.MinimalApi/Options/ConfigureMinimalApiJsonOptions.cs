@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Api.MinimalApi.Options;
+namespace Framework.Api.Options;
 
 [PublicAPI]
 public sealed class ConfigureMinimalApiJsonOptions(IWebHostEnvironment environment) : IConfigureOptions<JsonOptions>

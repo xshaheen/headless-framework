@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace Framework.Api.Mvc.Extensions;
+namespace Framework.Api.Extensions;
 
 [PublicAPI]
 public static class ActionDescriptorExtensions

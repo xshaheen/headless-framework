@@ -10,7 +10,7 @@ using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Framework.OpenApi.Nswag.OperationProcessors;
+namespace Framework.Api.OperationProcessors;
 
 /// <summary>
 /// Shows an example of a ProblemDetails containing errors for known status codes in NSwag.

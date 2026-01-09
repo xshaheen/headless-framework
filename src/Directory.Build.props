@@ -17,9 +17,9 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
   <PropertyGroup Label="Repository">
-    <RepositoryUrl>https://github.com/xshaheen/framework.git</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/xshaheen/framework</PackageProjectUrl>
-    <PackageReleaseNotes>https://github.com/xshaheen/framework/releases</PackageReleaseNotes>
+    <RepositoryUrl>https://github.com/xshaheen/headless-framework.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/xshaheen/headless-framework</PackageProjectUrl>
+    <PackageReleaseNotes>https://github.com/xshaheen/headless-framework/releases</PackageReleaseNotes>
   </PropertyGroup>
   <ItemGroup Label="Package References">
     <PackageReference

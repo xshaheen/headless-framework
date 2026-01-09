@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Api.Mvc.Options;
+namespace Framework.Api.Options;
 
 [PublicAPI]
 public sealed class ConfigureMvcJsonOptions(IWebHostEnvironment environment) : IConfigureOptions<JsonOptions>

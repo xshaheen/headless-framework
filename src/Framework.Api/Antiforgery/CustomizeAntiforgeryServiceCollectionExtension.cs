@@ -15,7 +15,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 [PublicAPI]
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddCustomAntiforgery(this IServiceCollection services)
+    public static IServiceCollection AddHeadlessAntiforgery(this IServiceCollection services)
     {
         services.AddTransient<IConfigureOptions<AntiforgeryOptions>, AntiforgeryOptionsConfiguration>();
 

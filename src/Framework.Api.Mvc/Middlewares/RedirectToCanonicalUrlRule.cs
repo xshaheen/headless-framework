@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using Framework.Api.Mvc.Filters;
+using Framework.Api.Filters;
 using Framework.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Rewrite;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Api.Mvc.Middlewares;
+namespace Framework.Api.Middlewares;
 
 /// <summary>
 /// To improve Search Engine Optimization SEO, there should only be a single URL for each resource. Case

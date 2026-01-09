@@ -4,19 +4,15 @@ using Framework.Api;
 using Framework.Api.Demo;
 using Framework.Api.Demo.Endpoints;
 using Framework.Api.Middlewares;
-using Framework.Api.MinimalApi;
-using Framework.Api.Mvc;
 using Framework.Constants;
-using Framework.OpenApi.Nswag;
 using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddFrameworkApiServices();
-builder.Services.AddFrameworkNswagOpenApi();
-builder.Services.AddFrameworkMvcOptions();
-builder.Services.AddFrameworkMinimalApiOptions();
-builder.Services.AddCustomStatusCodesRewriterMiddleware();
+builder.AddHeadlessApi().ConfigureHeadlessMinimalApi();
+builder.Services.AddHeadlessNswagOpenApi();
+builder.Services.ConfigureHeadlessMvc();
+builder.Services.AddHeadlessStatusCodesRewriterMiddleware();
 builder.Services.AddControllers();
 
 // Add Basic authentication
@@ -51,7 +47,7 @@ else
     app.UseExceptionHandler();
 }
 
-app.UseCustomStatusCodesRewriter();
+app.UseHeadlessStatusCodesRewriter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapFrameworkNswagOpenApi();

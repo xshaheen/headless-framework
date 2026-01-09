@@ -15,7 +15,7 @@ public static class EmailToMimMessageConverter
 
         try
         {
-            await _BuildMimeMessageAsync(message, request, cancellationToken);
+            await message._BuildMimeMessageAsync(request, cancellationToken);
         }
         catch
         {

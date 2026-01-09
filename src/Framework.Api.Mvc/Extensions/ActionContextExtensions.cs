@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Api.Mvc.Extensions;
+namespace Framework.Api.Extensions;
 
 [PublicAPI]
 public static class ActionContextExtensions
