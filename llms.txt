@@ -1,98 +1,185 @@
-# headless-framework
+# Headless .NET Framework
 
-> Headless .NET framework: a modular set of NuGet packages for building APIs, backend services, workers, and console apps. This repository is a *package framework* (not a runnable application). Demos exist only as wiring/examples you can copy.
-
-NuGet package IDs are defined by the projects (and shared build props) and may not always match folder paths. If in doubt, use the GitHub Packages index as the source of truth.
+> A modern, modular .NET 10 framework for building APIs and backend services with ~94 NuGet packages organized by functional domains, featuring unopinionated design and zero lock-in architecture.
 
 Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add exactly one provider implementation (Redis/Azure/Aws/etc) as needed.
 
-## Start here
+## Start Here
 
-- [README.md](README.md): High-level overview of the project.
-- [docs/overview.md](docs/overview.md): Developer-friendly overview (what to install, how to compose packages).
-- [headless-framework.slnx](headless-framework.slnx): Curated map of all packages, demos, and tests.
-- https://github.com/xshaheen/framework/packages?ecosystem=nuget: Published NuGet packages (GitHub Packages).
-- [src/](src/): Source for each NuGet package.
-- [demo/](demo/): Working demo apps you can copy wiring from.
-- [tests/](tests/): Tests demonstrating usage and edge-cases (integration tests may require Docker).
+- [README.md](README.md): High-level overview
+- [CLAUDE.md](CLAUDE.md): AI/LLM guidance
 
-## Demos (copy wiring)
+## Packages
 
-- [demo/Framework.Api.Demo/Program.cs](demo/Framework.Api.Demo/Program.cs): Example API wiring.
-- [demo/Framework.OpenApi.Nswag.Demo/Program.cs](demo/Framework.OpenApi.Nswag.Demo/Program.cs): OpenAPI/NSwag wiring.
-- [demo/Framework.EntityFramework.Migrations.Startup/Program.cs](demo/Framework.EntityFramework.Migrations.Startup/Program.cs): EF Core migrations startup wiring.
-- [demo/Framework.Recaptcha.Demo/Program.cs](demo/Framework.Recaptcha.Demo/Program.cs): reCAPTCHA wiring.
-- [demo/Framework.Tus.Demo/Program.cs](demo/Framework.Tus.Demo/Program.cs): tus resumable uploads wiring.
+### API & Web
 
-## Kernel
+- [Framework.Api](./src/Framework.Api/README.md): Core ASP.NET Core API infrastructure providing service registration, middleware, security, JWT handling, and common utilities.
+- [Framework.Api.Abstractions](./src/Framework.Api.Abstractions/README.md): Defines core interfaces and contracts for HTTP request context, user identity, and web client information.
+- [Framework.Api.DataProtection](./src/Framework.Api.DataProtection/README.md): Extends ASP.NET Core Data Protection to persist encryption keys to blob storage providers.
+- [Framework.Api.FluentValidation](./src/Framework.Api.FluentValidation/README.md): FluentValidation extensions for validating ASP.NET Core IFormFile uploads including size, content type, and file signature verification.
+- [Framework.Api.Logging.Serilog](./src/Framework.Api.Logging.Serilog/README.md): Serilog integration for ASP.NET Core APIs with custom enrichers for request context.
+- [Framework.Api.MinimalApi](./src/Framework.Api.MinimalApi/README.md): Framework integration for ASP.NET Core Minimal APIs with JSON configuration, validation filters, and exception handling.
+- [Framework.Api.Mvc](./src/Framework.Api.Mvc/README.md): Framework integration for ASP.NET Core MVC/Web API with controllers, filters, and URL canonicalization.
 
-- [Framework.Base](https://github.com/users/xshaheen/packages/nuget/package/Framework.Base): Base utilities. Source: [src/Framework.Base/](src/Framework.Base/)
-- [Framework.BuildingBlocks](https://github.com/users/xshaheen/packages/nuget/package/Framework.BuildingBlocks): Common building blocks. Source: [src/Framework.BuildingBlocks/](src/Framework.BuildingBlocks/)
-- [Framework.Hosting](https://github.com/users/xshaheen/packages/nuget/package/Framework.Hosting): Hosting/DI helpers. Source: [src/Framework.Hosting/](src/Framework.Hosting/)
-- [Framework.FluentValidation](https://github.com/users/xshaheen/packages/nuget/package/Framework.FluentValidation): Validation helpers. Source: [src/Framework.FluentValidation/](src/Framework.FluentValidation/)
+### Core
 
-## API
+- [Framework.Base](./src/Framework.Base/README.md): Foundational utility library providing extension methods, primitives, helpers, and common abstractions.
+- [Framework.BuildingBlocks](./src/Framework.BuildingBlocks/README.md): Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
+- [Framework.Checks](./src/Framework.Checks/README.md): Guard clause library for argument validation and defensive programming.
+- [Framework.Domains](./src/Framework.Domains/README.md): Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
+- [Framework.Specifications](./src/Framework.Specifications/README.md): Implementation of the Specification pattern for composable business rules.
 
-- [Framework.Api](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api): Core API building blocks. Source: [src/Framework.Api/](src/Framework.Api/)
-- [Framework.Api.MinimalApi](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.MinimalApi): Minimal APIs support. Source: [src/Framework.Api.MinimalApi/](src/Framework.Api.MinimalApi/)
-- [Framework.Api.Mvc](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.Mvc): MVC APIs support. Source: [src/Framework.Api.Mvc/](src/Framework.Api.Mvc/)
-- [Framework.Api.FluentValidation](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.FluentValidation): FluentValidation integration. Source: [src/Framework.Api.FluentValidation/](src/Framework.Api.FluentValidation/)
-- [Framework.Api.Logging.Serilog](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.Logging.Serilog): Serilog integration. Source: [src/Framework.Api.Logging.Serilog/](src/Framework.Api.Logging.Serilog/)
-- [Framework.Api.DataProtection](https://github.com/users/xshaheen/packages/nuget/package/Framework.Api.DataProtection): Data protection helpers. Source: [src/Framework.Api.DataProtection/](src/Framework.Api.DataProtection/)
+### Blob Storage
 
-## OpenAPI
+- [Framework.Blobs.Abstractions](./src/Framework.Blobs.Abstractions/README.md): Defines the unified interface for blob/file storage operations across different providers.
+- [Framework.Blobs.Aws](./src/Framework.Blobs.Aws/README.md): AWS S3 implementation of the IBlobStorage interface for storing files in Amazon S3.
+- [Framework.Blobs.Azure](./src/Framework.Blobs.Azure/README.md): Azure Blob Storage implementation of the IBlobStorage interface.
+- [Framework.Blobs.FileSystem](./src/Framework.Blobs.FileSystem/README.md): Local file system implementation of the IBlobStorage interface for development and on-premises scenarios.
+- [Framework.Blobs.Redis](./src/Framework.Blobs.Redis/README.md): Redis implementation of the IBlobStorage interface for caching small blobs.
+- [Framework.Blobs.SshNet](./src/Framework.Blobs.SshNet/README.md): SFTP/SSH implementation of the IBlobStorage interface for storing files on remote servers.
 
-- [Framework.OpenApi.Nswag](https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Nswag): NSwag support. Source: [src/Framework.OpenApi.Nswag/](src/Framework.OpenApi.Nswag/)
-- [Framework.OpenApi.Nswag.OData](https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Nswag.OData): NSwag + OData support. Source: [src/Framework.OpenApi.Nswag.OData/](src/Framework.OpenApi.Nswag.OData/)
-- [Framework.OpenApi.Scalar](https://github.com/users/xshaheen/packages/nuget/package/Framework.OpenApi.Scalar): Scalar support. Source: [src/Framework.OpenApi.Scalar/](src/Framework.OpenApi.Scalar/)
+### Caching
 
-## Caching
+- [Framework.Caching.Abstractions](./src/Framework.Caching.Abstractions/README.md): Defines the unified caching interface for both in-memory and distributed cache implementations.
+- [Framework.Caching.Foundatio.Memory](./src/Framework.Caching.Foundatio.Memory/README.md): In-memory cache implementation using Foundatio for single-instance applications.
+- [Framework.Caching.Foundatio.Redis](./src/Framework.Caching.Foundatio.Redis/README.md): Redis distributed cache implementation using Foundatio for multi-instance applications.
 
-- [Framework.Caching.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Abstraction): Caching contracts. Source: [src/Framework.Caching.Abstraction/](src/Framework.Caching.Abstraction/)
-- [Framework.Caching.Foundatio.Memory](https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Foundatio.Memory): Memory cache provider. Source: [src/Framework.Caching.Foundatio.Memory/](src/Framework.Caching.Foundatio.Memory/)
-- [Framework.Caching.Foundatio.Redis](https://github.com/users/xshaheen/packages/nuget/package/Framework.Caching.Foundatio.Redis): Redis cache provider. Source: [src/Framework.Caching.Foundatio.Redis/](src/Framework.Caching.Foundatio.Redis/)
+### Email
 
-## Messaging and queueing
+- [Framework.Emails.Abstractions](./src/Framework.Emails.Abstractions/README.md): Defines the unified interface for sending emails across different providers.
+- [Framework.Emails.Core](./src/Framework.Emails.Core/README.md): Core utilities and MimeKit integration for email implementations.
+- [Framework.Emails.Aws](./src/Framework.Emails.Aws/README.md): AWS SES (Simple Email Service) v2 implementation of the email sending abstraction.
+- [Framework.Emails.Dev](./src/Framework.Emails.Dev/README.md): Development email implementations for local testing and debugging.
+- [Framework.Emails.Mailkit](./src/Framework.Emails.Mailkit/README.md): SMTP implementation of the email abstraction using MailKit.
 
-- [Framework.Messaging.Abstractions](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Abstractions): Messaging contracts. Source: [src/Framework.Messaging.Abstractions/](src/Framework.Messaging.Abstractions/)
-- [Framework.Messaging.Cap](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Cap): CAP integration. Source: [src/Framework.Messaging.Cap/](src/Framework.Messaging.Cap/)
-- [Framework.Messaging.Foundatio](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.Foundatio): Foundatio integration. Source: [src/Framework.Messaging.Foundatio/](src/Framework.Messaging.Foundatio/)
-- [Framework.Messaging.LocalServiceProvider](https://github.com/users/xshaheen/packages/nuget/package/Framework.Messaging.LocalServiceProvider): Local in-process integration. Source: [src/Framework.Messaging.LocalServiceProvider/](src/Framework.Messaging.LocalServiceProvider/)
-- [Framework.Queueing.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Queueing.Abstraction): Queueing contracts. Source: [src/Framework.Queueing.Abstraction/](src/Framework.Queueing.Abstraction/)
-- [Framework.Queueing.Foundatio](https://github.com/users/xshaheen/packages/nuget/package/Framework.Queueing.Foundatio): Foundatio queueing. Source: [src/Framework.Queueing.Foundatio/](src/Framework.Queueing.Foundatio/)
+### Feature Management
 
-## Data access
+- [Framework.Features.Abstractions](./src/Framework.Features.Abstractions/README.md): Defines the unified interface for feature management and feature flags across different storage providers.
+- [Framework.Features.Core](./src/Framework.Features.Core/README.md): Core implementation of feature management with caching, value providers, and definition management.
+- [Framework.Features.Storage.EntityFramework](./src/Framework.Features.Storage.EntityFramework/README.md): Entity Framework Core storage implementation for feature management.
 
-- [Framework.Orm.Dapper](https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.Dapper): Dapper integration. Source: [src/Framework.Orm.Dapper/](src/Framework.Orm.Dapper/)
-- [Framework.Orm.EntityFramework](https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.EntityFramework): EF Core integration. Source: [src/Framework.Orm.EntityFramework/](src/Framework.Orm.EntityFramework/)
-- [Framework.Orm.Couchbase](https://github.com/users/xshaheen/packages/nuget/package/Framework.Orm.Couchbase): Couchbase integration. Source: [src/Framework.Orm.Couchbase/](src/Framework.Orm.Couchbase/)
-- [Framework.Sql.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.Abstraction): SQL abstractions. Source: [src/Framework.Sql.Abstraction/](src/Framework.Sql.Abstraction/)
-- [Framework.Sql.SqlServer](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.SqlServer): SQL Server provider. Source: [src/Framework.Sql.SqlServer/](src/Framework.Sql.SqlServer/)
-- [Framework.Sql.PostgreSql](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.PostgreSql): PostgreSQL provider. Source: [src/Framework.Sql.PostgreSql/](src/Framework.Sql.PostgreSql/)
-- [Framework.Sql.Sqlite](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sql.Sqlite): SQLite provider. Source: [src/Framework.Sql.Sqlite/](src/Framework.Sql.Sqlite/)
-- [Framework.Redis](https://github.com/users/xshaheen/packages/nuget/package/Framework.Redis): Redis helpers. Source: [src/Framework.Redis/](src/Framework.Redis/)
+### Identity
 
-## Blobs and uploads
+- [Framework.Identity.Storage.EntityFramework](./src/Framework.Identity.Storage.EntityFramework/README.md): Entity Framework Core integration for ASP.NET Core Identity with framework extensions.
 
-- [Framework.Blobs.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Abstraction): Blob storage contracts. Source: [src/Framework.Blobs.Abstraction/](src/Framework.Blobs.Abstraction/)
-- [Framework.Blobs.Aws](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Aws): AWS blob provider. Source: [src/Framework.Blobs.Aws/](src/Framework.Blobs.Aws/)
-- [Framework.Blobs.Azure](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Azure): Azure blob provider. Source: [src/Framework.Blobs.Azure/](src/Framework.Blobs.Azure/)
-- [Framework.Blobs.FileSystem](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.FileSystem): Local filesystem blob provider. Source: [src/Framework.Blobs.FileSystem/](src/Framework.Blobs.FileSystem/)
-- [Framework.Blobs.Redis](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.Redis): Redis blob provider. Source: [src/Framework.Blobs.Redis/](src/Framework.Blobs.Redis/)
-- [Framework.Blobs.SshNet](https://github.com/users/xshaheen/packages/nuget/package/Framework.Blobs.SshNet): SSH/SFTP blob provider. Source: [src/Framework.Blobs.SshNet/](src/Framework.Blobs.SshNet/)
-- [Framework.Tus](https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus): tus resumable uploads. Source: [src/Framework.Tus/](src/Framework.Tus/)
-- [Framework.Tus.Azure](https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus.Azure): tus Azure provider. Source: [src/Framework.Tus.Azure/](src/Framework.Tus.Azure/)
-- [Framework.Tus.ResourceLock](https://github.com/users/xshaheen/packages/nuget/package/Framework.Tus.ResourceLock): tus locking integration. Source: [src/Framework.Tus.ResourceLock/](src/Framework.Tus.ResourceLock/)
+### Imaging
 
-## Email, SMS, notifications
+- [Framework.Imaging.Abstractions](./src/Framework.Imaging.Abstractions/README.md): Defines the unified interface for image processing operations.
+- [Framework.Imaging.Core](./src/Framework.Imaging.Core/README.md): Core image processing implementation with contributor-based extensibility.
+- [Framework.Imaging.ImageSharp](./src/Framework.Imaging.ImageSharp/README.md): ImageSharp-based implementation for image resizing and compression.
 
-- [Framework.Emails.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Abstraction): Email contracts. Source: [src/Framework.Emails.Abstraction/](src/Framework.Emails.Abstraction/)
-- [Framework.Emails.Core](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Core): Core email components. Source: [src/Framework.Emails.Core/](src/Framework.Emails.Core/)
-- [Framework.Emails.Aws](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Aws): AWS SES integration. Source: [src/Framework.Emails.Aws/](src/Framework.Emails.Aws/)
-- [Framework.Emails.Mailkit](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Mailkit): MailKit integration. Source: [src/Framework.Emails.Mailkit/](src/Framework.Emails.Mailkit/)
-- [Framework.Emails.Dev](https://github.com/users/xshaheen/packages/nuget/package/Framework.Emails.Dev): Dev/test email provider. Source: [src/Framework.Emails.Dev/](src/Framework.Emails.Dev/)
-- [Framework.Sms.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Abstraction): SMS contracts. Source: [src/Framework.Sms.Abstraction/](src/Framework.Sms.Abstraction/)
-- [Framework.Sms.Twilio](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Twilio): Twilio integration. Source: [src/Framework.Sms.Twilio/](src/Framework.Sms.Twilio/)
-- [Framework.Sms.Infobip](https://github.com/users/xshaheen/packages/nuget/package/Framework.Sms.Infobip): Infobip integration. Source: [src/Framework.Sms.Infobip/](src/Framework.Sms.Infobip/)
-- [Framework.PushNotifications.Abstraction](https://github.com/users/xshaheen/packages/nuget/package/Framework.PushNotifications.Abstraction): Push notifications contracts. Source: [src/Framework.PushNotifications.Abstraction/](src/Framework.PushNotifications.Abstraction/)
-- [Framework.PushNotifications.Firebase](https://github.com/users/xshaheen/packages/nuget/package/Framework.PushNotifications.Firebase): Firebase integration. Source: [src/Framework.PushNotifications.Firebase/](src/Framework.PushNotifications.Firebase/)
+### Logging
+
+- [Framework.Logging.Serilog](./src/Framework.Logging.Serilog/README.md): Serilog configuration factory with sensible defaults and structured logging setup.
+
+### Media
+
+- [Framework.Media.Indexing.Abstractions](./src/Framework.Media.Indexing.Abstractions/README.md): Defines the interface for extracting text from media files for indexing.
+- [Framework.Media.Indexing](./src/Framework.Media.Indexing/README.md): Text extraction implementations for PDF, Word, and PowerPoint documents.
+
+### Messaging
+
+- [Framework.Messaging.Abstractions](./src/Framework.Messaging.Abstractions/README.md): Defines the unified interface for message bus operations (publish/subscribe).
+- [Framework.Messaging.Foundatio](./src/Framework.Messaging.Foundatio/README.md): Foundatio-based message bus implementation with in-memory and Redis support.
+- [Framework.Messaging.MassTransit](./src/Framework.Messaging.MassTransit/README.md): MassTransit integration for enterprise messaging with RabbitMQ, Azure Service Bus, and more.
+- [Framework.Domains.DistributedMessagePublisher.Cap](./src/Framework.Domains.DistributedMessagePublisher.Cap/README.md): CAP-based implementation of IDistributedMessagePublisher for reliable distributed messaging with transactional outbox.
+- [Framework.Domains.LocalMessagePublisher.DI](./src/Framework.Domains.LocalMessagePublisher.DI/README.md): DI-based implementation of ILocalMessagePublisher for in-process domain event handling.
+
+### OpenAPI
+
+- [Framework.OpenApi.Nswag](./src/Framework.OpenApi.Nswag/README.md): NSwag OpenAPI document generation with framework-specific processors and defaults.
+- [Framework.OpenApi.Nswag.OData](./src/Framework.OpenApi.Nswag.OData/README.md): NSwag operation filter for OData query parameter documentation.
+- [Framework.OpenApi.Scalar](./src/Framework.OpenApi.Scalar/README.md): Scalar API documentation UI integration for OpenAPI.
+
+### ORM
+
+- [Framework.Orm.EntityFramework](./src/Framework.Orm.EntityFramework/README.md): Entity Framework Core integration with framework conventions, global filters, and DDD support.
+- [Framework.Orm.Couchbase](./src/Framework.Orm.Couchbase/README.md): Couchbase integration with bucket context and cluster management.
+
+### Payments
+
+- [Framework.Payments.Paymob.CashIn](./src/Framework.Payments.Paymob.CashIn/README.md): Paymob Accept integration for cash-in (payment collection) operations.
+- [Framework.Payments.Paymob.CashOut](./src/Framework.Payments.Paymob.CashOut/README.md): Paymob integration for cash-out (disbursement) operations.
+- [Framework.Payments.Paymob.Services](./src/Framework.Payments.Paymob.Services/README.md): Higher-level services for Paymob payment operations.
+
+### Permissions
+
+- [Framework.Permissions.Abstractions](./src/Framework.Permissions.Abstractions/README.md): Defines the unified interface for permission management across different providers.
+- [Framework.Permissions.Core](./src/Framework.Permissions.Core/README.md): Core implementation of permission management with caching, providers, and authorization.
+- [Framework.Permissions.Storage.EntityFramework](./src/Framework.Permissions.Storage.EntityFramework/README.md): Entity Framework Core storage implementation for permission management.
+
+### Push Notifications
+
+- [Framework.PushNotifications.Abstractions](./src/Framework.PushNotifications.Abstractions/README.md): Defines the unified interface for push notification services.
+- [Framework.PushNotifications.Dev](./src/Framework.PushNotifications.Dev/README.md): Development push notification implementation that does nothing.
+- [Framework.PushNotifications.Firebase](./src/Framework.PushNotifications.Firebase/README.md): Firebase Cloud Messaging (FCM) implementation for push notifications.
+
+### Queueing
+
+- [Framework.Queueing.Abstractions](./src/Framework.Queueing.Abstractions/README.md): Defines the unified interface for queue operations.
+- [Framework.Queueing.Foundatio](./src/Framework.Queueing.Foundatio/README.md): Foundatio-based queue implementation with in-memory and Redis support.
+
+### Resource Locking
+
+- [Framework.ResourceLocks.Abstractions](./src/Framework.ResourceLocks.Abstractions/README.md): Defines the unified interface for distributed resource locking.
+- [Framework.ResourceLocks.Core](./src/Framework.ResourceLocks.Core/README.md): Core implementation of distributed resource locking with storage abstraction.
+- [Framework.ResourceLocks.Cache](./src/Framework.ResourceLocks.Cache/README.md): Cache-based resource lock storage using ICache.
+- [Framework.ResourceLocks.Redis](./src/Framework.ResourceLocks.Redis/README.md): Redis-based resource lock storage using StackExchange.Redis.
+
+### Serialization
+
+- [Framework.Serializer.Abstractions](./src/Framework.Serializer.Abstractions/README.md): Defines unified interfaces for serialization and deserialization.
+- [Framework.Serializer.Json](./src/Framework.Serializer.Json/README.md): System.Text.Json implementation of the serializer abstractions.
+- [Framework.Serializer.MessagePack](./src/Framework.Serializer.MessagePack/README.md): MessagePack binary serialization implementation.
+
+### Settings
+
+- [Framework.Settings.Abstractions](./src/Framework.Settings.Abstractions/README.md): Defines interfaces for dynamic application settings management.
+- [Framework.Settings.Core](./src/Framework.Settings.Core/README.md): Core implementation of dynamic settings management with hierarchical value providers.
+- [Framework.Settings.Storage.EntityFramework](./src/Framework.Settings.Storage.EntityFramework/README.md): Entity Framework Core storage for settings management.
+
+### SMS
+
+- [Framework.Sms.Abstractions](./src/Framework.Sms.Abstractions/README.md): Defines the unified interface for SMS sending.
+- [Framework.Sms.Aws](./src/Framework.Sms.Aws/README.md): AWS SNS SMS implementation.
+- [Framework.Sms.Cequens](./src/Framework.Sms.Cequens/README.md): Cequens SMS gateway implementation.
+- [Framework.Sms.Connekio](./src/Framework.Sms.Connekio/README.md): Connekio SMS gateway implementation.
+- [Framework.Sms.Dev](./src/Framework.Sms.Dev/README.md): Development SMS implementations for testing.
+- [Framework.Sms.Infobip](./src/Framework.Sms.Infobip/README.md): Infobip SMS gateway implementation.
+- [Framework.Sms.Twilio](./src/Framework.Sms.Twilio/README.md): Twilio SMS implementation.
+- [Framework.Sms.VictoryLink](./src/Framework.Sms.VictoryLink/README.md): VictoryLink SMS gateway implementation.
+- [Framework.Sms.Vodafone](./src/Framework.Sms.Vodafone/README.md): Vodafone SMS gateway implementation.
+
+### SQL
+
+- [Framework.Sql.Abstractions](./src/Framework.Sql.Abstractions/README.md): Defines interfaces for SQL database connection management.
+- [Framework.Sql.PostgreSql](./src/Framework.Sql.PostgreSql/README.md): PostgreSQL connection factory using Npgsql.
+- [Framework.Sql.SqlServer](./src/Framework.Sql.SqlServer/README.md): SQL Server connection factory using Microsoft.Data.SqlClient.
+- [Framework.Sql.Sqlite](./src/Framework.Sql.Sqlite/README.md): SQLite connection factory using Microsoft.Data.Sqlite.
+
+### Testing
+
+- [Framework.Testing](./src/Framework.Testing/README.md): Core testing utilities and base classes for xUnit tests.
+- [Framework.Testing.Testcontainers](./src/Framework.Testing.Testcontainers/README.md): Testcontainers fixtures for integration testing.
+
+### TUS (Resumable Uploads)
+
+- [Framework.Tus](./src/Framework.Tus/README.md): Core TUS protocol utilities and extensions.
+- [Framework.Tus.Azure](./src/Framework.Tus.Azure/README.md): Azure Blob Storage TUS store implementation.
+- [Framework.Tus.ResourceLock](./src/Framework.Tus.ResourceLock/README.md): TUS file locking using Framework.ResourceLocks.
+
+### Utilities
+
+- [Framework.FluentValidation](./src/Framework.FluentValidation/README.md): Extension library for FluentValidation providing enterprise-grade validators and utilities.
+- [Framework.Generator.Primitives](./src/Framework.Generator.Primitives/README.md): Roslyn source generator for creating strongly-typed domain primitives.
+- [Framework.Generator.Primitives.Abstractions](./src/Framework.Generator.Primitives.Abstractions/README.md): Abstractions and attributes for the domain primitives source generator.
+- [Framework.Hosting](./src/Framework.Hosting/README.md): Core hosting utilities and extensions for ASP.NET Core applications.
+- [Framework.NetTopologySuite](./src/Framework.NetTopologySuite/README.md): NetTopologySuite extensions for geospatial operations and SQL Server geography compatibility.
+- [Framework.Recaptcha](./src/Framework.Recaptcha/README.md): Google reCAPTCHA v2 and v3 integration with verification services and tag helpers.
+- [Framework.Redis](./src/Framework.Redis/README.md): Redis utilities and Lua script management for StackExchange.Redis.
+- [Framework.Sitemaps](./src/Framework.Sitemaps/README.md): XML sitemap generation utilities for SEO.
+- [Framework.Slugs](./src/Framework.Slugs/README.md): URL-friendly slug generation from text.
+
+## Optional
+
+- [llms-full.txt](./llms-full.txt): Full documentation for all packages
