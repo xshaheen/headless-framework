@@ -19,12 +19,12 @@
     <PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
     <PackageVersion Include="AwesomeAssertions.Json" Version="9.0.0" />
     <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.3.19" />
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.16.4" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.17" />
     <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.11.2" />
     <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.2.13" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.1" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.26.0" />
-    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.23.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
+    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.24.0" />
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <PackageVersion Include="ByteSize" Version="2.1.2" />
     <PackageVersion Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
@@ -42,10 +42,10 @@
     <PackageVersion Include="DeviceDetector.NET" Version="6.4.7" />
     <PackageVersion Include="DistributedLock.Core" Version="1.0.7" />
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.4.1" />
-    <PackageVersion Include="DotNetCore.CAP" Version="10.0.0" />
-    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="10.0.0" />
-    <PackageVersion Include="DotNetCore.CAP.InMemoryStorage" Version="10.0.0" />
-    <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="10.0.0" />
+    <PackageVersion Include="DotNetCore.CAP" Version="10.0.1" />
+    <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="10.0.1" />
+    <PackageVersion Include="DotNetCore.CAP.InMemoryStorage" Version="10.0.1" />
+    <PackageVersion Include="DotNetCore.CAP.SqlServer" Version="10.0.1" />
     <PackageVersion Include="EFCore.CheckConstraints" Version="10.0.0" />
     <PackageVersion Include="FileSignatures" Version="6.1.1" />
     <PackageVersion Include="FirebaseAdmin" Version="3.4.0" />
@@ -104,7 +104,7 @@
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.15.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.3.3" />
-    <PackageVersion Include="Microsoft.Sbom.Tool" Version="4.1.4" />
+    <PackageVersion Include="Microsoft.Sbom.Tool" Version="4.1.5" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
@@ -134,7 +134,7 @@
     <PackageVersion Include="Scalar.AspNetCore" Version="2.12.4" />
     <PackageVersion Include="Scrutor" Version="7.0.0" />
     <PackageVersion Include="Serilog" Version="4.3.0" />
-    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.7.0" />
+    <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.8.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageVersion Include="Serilog.Enrichers.Process" Version="3.0.0" />
     <PackageVersion Include="Serilog.Enrichers.Span" Version="3.1.0" />
@@ -180,9 +180,9 @@
     <GlobalPackageReference Include="Asyncify" Version="0.9.7" />
     <GlobalPackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
     <GlobalPackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" />
-    <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.14.1" />
+    <GlobalPackageReference Include="Roslynator.Analyzers" Version="4.15.0" />
     <GlobalPackageReference Include="ReflectionAnalyzers" Version="0.3.1" />
-    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.257" />
+    <GlobalPackageReference Include="Meziantou.Analyzer" Version="2.0.272" />
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2" />
   </ItemGroup>
