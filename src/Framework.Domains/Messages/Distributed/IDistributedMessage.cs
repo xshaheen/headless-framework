@@ -10,7 +10,7 @@ public interface IDistributedMessage
 
     DateTimeOffset Timestamp { get; }
 
-    IDictionary<string, string> Properties { get; }
+    IDictionary<string, string> Headers { get; }
 }
 
 public interface IDistributedMessage<out T> : IDistributedMessage

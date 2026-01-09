@@ -7,10 +7,9 @@ namespace Framework.Messaging;
 [PublicAPI]
 public sealed class PublishMessageOptions
 {
-    public required string UniqueId { get; set; }
+    public required Guid UniqueId { get; set; }
 
-    public required string CorrelationId { get; set; }
+    public required Guid? CorrelationId { get; set; }
 
-    public IDictionary<string, string> Properties { get; init; } =
-        new Dictionary<string, string>(StringComparer.Ordinal);
+    public IDictionary<string, string> Headers { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
