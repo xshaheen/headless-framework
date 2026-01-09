@@ -1,6 +1,6 @@
-# Copilot Instructions
+# CLAUDE.md
 
-This is a modern headless .NET Core framework for building web/general applications.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
