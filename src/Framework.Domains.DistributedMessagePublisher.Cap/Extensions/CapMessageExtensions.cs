@@ -18,9 +18,7 @@ public static class CapMessageExtensions
         {
             var content = JsonSerializer.Deserialize<JsonElement>(message.Content!, _JsonOptions);
 
-            var payload = content
-                .GetProperty("value")
-                .Deserialize<DistributedMessage<TPayload>>(_JsonOptions);
+            var payload = content.GetProperty("value").Deserialize<DistributedMessage<TPayload>>(_JsonOptions);
 
             return payload!;
         }

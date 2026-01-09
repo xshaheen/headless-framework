@@ -1,80 +1,58 @@
 # Framework.Base
 
-`Framework.Base` is the foundational utility library for the `Headless Framework`. It provides a rich set of primitives, extension methods, and core infrastructure patterns used throughout the ecosystem. It is designed to reduce boilerplate, standardize common operations (like error handling and pagination), and provide robust implementations for widely used types.
+Foundational utility library providing extension methods, primitives, helpers, and common abstractions used throughout the framework.
 
-## Features
+## Problem Solved
 
-### Primitives & Patterns
+Eliminates repetitive utility code across projects by providing a comprehensive set of battle-tested extensions, helpers, and primitives for common operations (strings, collections, dates, IO, reflection, etc.).
 
--   **Result Pattern**: `Result<T>`, `DataResult<T>`, and `NoDataResult` types to handle operation outcomes without exceptions.
--   **Error Handling**: `ErrorDescriptor` for standardized error reporting (Code, Description, Severity).
--   **Domain Value Objects**:
-    -   `GeoCoordinate` / `FullGeoCoordinate`: Location handling with distance calculations.
-    -   `Currency`: type-safe currency handling.
-    -   `Range<T>`: Generic range support.
--   **Pagination**: Standardized `IndexPageRequest`/`ContinuationPageRequest` and response models.
+## Key Features
 
-### Core Extensions
+- **Result Pattern**: `Result<T>`, `DataResult<T>`, `NoDataResult` for exception-free control flow
+- **Error Handling**: `ErrorDescriptor` for standardized error reporting
+- **Domain Value Objects**: `GeoCoordinate`, `Currency`, `Range<T>`
+- **Pagination**: `IndexPageRequest`/`ContinuationPageRequest` and response models
+- **Collections**: `ForEachAsync`, `ParallelForEachAsync`, `Batch`, `DistinctBy`, and more
+- **Dates & Time**: Fluent date manipulation, `TimeProvider` extensions, timezone conversion
+- **Strings**: Humanize integration, manipulation helpers, high-performance toolkit
+- **Reflection**: Fast property accessors, type scanning helpers
+- **ID Generation**: `SnowflakeId`, `SequentialGuid`
+- **Validation**: `MobilePhoneNumberValidator`, `GeoCoordinateValidator`, `EmailValidator`, `EgyptianNationalIdValidator`
 
-Extensive suite of extension methods to supercharge standard .NET types:
+## Installation
 
--   **Collections**: `ForEachAsync`, `ParallelForEachAsync`, `Batch`, `DistinctBy`, and more (built on top of `morelinq` and `System.Linq`).
--   **Dates & Time**: Fluent date manipulation, `TimeProvider` extensions, and timezone conversion.
--   **Strings**: `humanize` integration, string manipulation helpers, and HighPerformance toolkit integrations.
--   **Reflection**: Fast property accessors and type scanning helpers.
+```bash
+dotnet add package Framework.Base
+```
 
-### Input Validation
-
-Standalone validation logic (independent of FluentValidation) for specific domains:
-
--   **MobilePhoneNumberValidator**: Wrapper around `libphonenumber-csharp` for robust phone parsing and validation.
--   **GeoCoordinateValidator**: Latitude and Longitude bound checks.
--   **EmailValidator**: Regex-based email format validation.
--   **EgyptianNationalIdValidator**: Validates 14-digit Egyptian National IDs with birth date and governorate extraction.
-
-### Utilities
-
--   **ID Generation**: `SnowflakeId` (Twitter Snowflake) and `SequentialGuid` generators.
--   **Async Helpers**: Integration with `Nito.AsyncEx` for robust async primitives (AsyncLock, AsyncLazy).
--   **Resilience**: `Polly` integration for retry and circuit breaker policies.
--   **Http**: `Flurl` integration for fluent HTTP requests.
-
-## Dependencies
-
--   **Framework.Checks**: Guard clauses.
--   **CommunityToolkit.HighPerformance**: High-performance helpers.
--   **morelinq**: LINQ extensions.
--   **Flurl**: Fluent HTTP client.
--   **Humanizer.Core**: String manipulation.
--   **IdGen**: ID generation.
--   **libphonenumber-csharp**: Phone number parsing.
--   **Nito.AsyncEx**: Async coordination primitives.
--   **Polly.Core**: Resilience policies.
-
-## Usage
+## Quick Start
 
 ### Result Pattern
-
-Avoid exceptions for control flow by using the Result pattern.
 
 ```csharp
 public async Task<DataResult<User>> GetUserAsync(Guid id)
 {
     var user = await _repo.GetByIdAsync(id);
-    if (user == null)
-    {
+    if (user is null)
         return DataResult<User>.Failure(new ErrorDescriptor("UserNotFound", "User does not exist"));
-    }
 
     return DataResult<User>.Success(user);
 }
 ```
 
+### Collection Extensions
+
+```csharp
+await users.ParallelForEachAsync(
+    async user => await ProcessUserAsync(user),
+    maxDegreeOfParallelism: 5
+);
+```
+
 ### Egyptian National ID Validator
 
 ```csharp
-bool isValid = EgyptianNationalIdValidator.IsValid("29901011234567");
-if (isValid)
+if (EgyptianNationalIdValidator.IsValid("29901011234567"))
 {
     var info = EgyptianNationalIdValidator.Analyze("29901011234567");
     var birthDate = info.BirthDate;
@@ -82,13 +60,26 @@ if (isValid)
 }
 ```
 
-### Collections Extensions
+## Configuration
 
-```csharp
-var users = await GetUsersAsync();
+No configuration required.
 
-// Safe concurrent processing
-await users.ParallelForEachAsync(async user => {
-    await ProcessUserAsync(user);
-}, maxDegreeOfParallelism: 5);
-```
+## Dependencies
+
+- `Framework.Checks`
+- `CommunityToolkit.HighPerformance`
+- `Flurl`
+- `Humanizer.Core`
+- `IdGen`
+- `libphonenumber-csharp`
+- `morelinq`
+- `Nito.AsyncEx`
+- `Nito.Disposables`
+- `Polly.Core`
+- `System.Reactive`
+- `TimeZoneConverter`
+- `ZString`
+
+## Side Effects
+
+None.

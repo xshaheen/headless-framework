@@ -16,7 +16,13 @@ public static class BlobStorageExtensions
             CancellationToken cancellationToken = default
         )
         {
-            return storage.UploadAsync(container, request.FileName, request.Stream, request.Metadata, cancellationToken);
+            return storage.UploadAsync(
+                container,
+                request.FileName,
+                request.Stream,
+                request.Metadata,
+                cancellationToken
+            );
         }
 
         public async Task<IReadOnlyList<BlobInfo>> GetBlobsListAsync(

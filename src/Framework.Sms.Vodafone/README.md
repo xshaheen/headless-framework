@@ -1,61 +1,59 @@
 # Framework.Sms.Vodafone
 
-This package provides an implementation of the SMS abstraction for the Vodafone SMS gateway.
+Vodafone SMS gateway implementation.
 
-## Features
+## Problem Solved
 
--   **VodafoneSmsSender**: Implements `ISmsSender` to send messages using Vodafone's API.
--   **Configuration**: Uses `VodafoneSmsOptions` for configuring API credentials and endpoints.
--   **Dependency Injection**: Provides extension methods to easily register services in the DI container.
+Provides SMS sending via Vodafone's enterprise messaging API with OAuth2 authentication.
 
-## Usage
+## Key Features
 
-### Configuration
+- `VodafoneSmsSender` - ISmsSender implementation using Vodafone
+- OAuth2 client credentials authentication
+- Configurable sender name and base URL
+- Regional endpoint support
 
-Configure the `VodafoneSmsOptions` in your `appsettings.json` or other configuration source:
+## Installation
+
+```bash
+dotnet add package Framework.Sms.Vodafone
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddVodafoneSmsSender(options =>
+{
+    options.ClientId = "your-client-id";
+    options.ClientSecret = "your-client-secret";
+    options.SenderName = "MyApp";
+    options.BaseUrl = "https://api.vodafone.com";
+});
+```
+
+## Configuration
+
+### appsettings.json
 
 ```json
 {
-    "VodafoneSms": {
-        "ClientId": "your-client-id",
-        "ClientSecret": "your-client-secret",
-        "SenderName": "YourSender",
-        "BaseUrl": "https://..."
+  "Sms": {
+    "Vodafone": {
+      "ClientId": "your-client-id",
+      "ClientSecret": "your-client-secret",
+      "SenderName": "MyApp",
+      "BaseUrl": "https://api.vodafone.com"
     }
+  }
 }
 ```
 
-### Registration
+## Dependencies
 
-Use the extension method in your startup code:
+- `Framework.Sms.Abstractions`
 
-```csharp
-services.AddVodafoneSms(configuration);
-```
+## Side Effects
 
-### Sending SMS
-
-Inject `ISmsSender` into your services:
-
-```csharp
-public class MyService
-{
-    private readonly ISmsSender _smsSender;
-
-    public MyService(ISmsSender smsSender)
-    {
-        _smsSender = smsSender;
-    }
-
-    public async Task SendAlertAsync(string phoneNumber, string message)
-    {
-        var request = new SendSingleSmsRequest
-        {
-            MobileNumber = phoneNumber,
-            Message = message
-        };
-
-        var response = await _smsSender.SendAsync(request);
-    }
-}
-```
+- Registers `ISmsSender` as singleton

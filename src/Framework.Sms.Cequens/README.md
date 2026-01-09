@@ -1,25 +1,58 @@
 # Framework.Sms.Cequens
 
-This package implements SMS sending capabilities using Cequens.
+Cequens SMS gateway implementation.
 
-## Features
+## Problem Solved
 
--   **CequensSmsSender**: The specialized sender for Cequens.
--   **Configuration**: `CequensSmsOptions` for API settings.
--   **Registration**: `AddCequensExtensions` simplifies startup configuration.
+Provides SMS sending via Cequens API, a regional SMS provider popular in the Middle East and North Africa with token-based authentication.
 
-## Usage
+## Key Features
 
-### Configuration
+- `CequensSmsSender` - ISmsSender implementation using Cequens
+- JWT token-based authentication with auto-refresh
+- Configurable sender name
+- Batch SMS support
 
-Populate `CequensSmsOptions` from your application settings.
+## Installation
 
-### Registration
-
-```csharp
-services.AddCequensSms(configuration);
+```bash
+dotnet add package Framework.Sms.Cequens
 ```
 
-### Operations
+## Quick Start
 
-Use `ISmsSender` to dispatch generic SMS requests which are then translated to Cequens specific API calls.
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCequensSmsSender(options =>
+{
+    options.ApiKey = "your-api-key";
+    options.UserName = "your-username";
+    options.SenderName = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Cequens": {
+      "ApiKey": "your-api-key",
+      "UserName": "your-username",
+      "SenderName": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Framework.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- Registers `HttpClient` for Cequens API

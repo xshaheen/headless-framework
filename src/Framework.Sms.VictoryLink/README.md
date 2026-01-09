@@ -1,25 +1,57 @@
 # Framework.Sms.VictoryLink
 
-This package provides an implementation of the SMS abstraction for the VictoryLink SMS gateway.
+VictoryLink SMS gateway implementation.
 
-## Features
+## Problem Solved
 
--   **VictoryLinkSmsSender**: Implements `ISmsSender` to send messages using VictoryLink's services.
--   **Configuration**: Uses `VictoryLinkSmsOptions` for setting up account details.
--   **Dependency Injection**: Easy registration via `AddVictoryLinkExtensions`.
+Provides SMS sending via VictoryLink API, a regional SMS provider serving the Middle East market.
 
-## Usage
+## Key Features
 
-### Configuration
+- `VictoryLinkSmsSender` - ISmsSender implementation using VictoryLink
+- Username/password authentication
+- Configurable sender name
+- Response code handling
 
-Add the configuration section for `VictoryLinkSms` (structure depends on `VictoryLinkSmsOptions` properties, typically includes username, password, sender, etc.).
+## Installation
 
-### Registration
-
-```csharp
-services.AddVictoryLinkSms(configuration);
+```bash
+dotnet add package Framework.Sms.VictoryLink
 ```
 
-### Service Injection
+## Quick Start
 
-Inject `ISmsSender` to use the VictoryLink implementation in your application logic.
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddVictoryLinkSmsSender(options =>
+{
+    options.Username = "your-username";
+    options.Password = "your-password";
+    options.SenderName = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "VictoryLink": {
+      "Username": "your-username",
+      "Password": "your-password",
+      "SenderName": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Framework.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton

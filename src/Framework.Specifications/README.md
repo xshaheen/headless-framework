@@ -1,115 +1,91 @@
 # Framework.Specifications
 
-A lightweight and flexible implementation of the **Specification Pattern** for .NET. This package allows you to encapsulate business logic and domain rules into reusable, combinable specifications. These specifications can be used for validation, in-memory filtering, or database query filtering (via LINQ expressions).
+Implementation of the Specification pattern for composable business rules.
 
-## Features
+## Problem Solved
 
--   **Generic Implementation**: Works with any type `T` via `ISpecification<T>`.
--   **Expression Support**: Built on top of `System.Linq.Expressions`, making it compatible with ORMs (like Entity Framework) for efficient database queries.
--   **Composability**: Easily combine specifications using logical operators:
-    -   `And`
-    -   `Or`
-    -   `Not`
-    -   `AndNot`
-    -   `OrNot`
--   **Implicit Conversions**: Seamlessly convert between `Specification<T>` and `Expression<Func<T, bool>>`.
+Provides a type-safe, composable specification pattern implementation enabling complex business rules to be expressed as reusable, testable objects that can be combined using logical operators and used with LINQ/EF Core.
+
+## Key Features
+
+- `ISpecification<T>` - Base specification interface
+- `Specification<T>` - Abstract base class with expression support
+- Composite specifications:
+  - `AndSpecification<T>` - Logical AND
+  - `OrSpecification<T>` - Logical OR
+  - `NotSpecification<T>` - Logical NOT
+  - `AndNotSpecification<T>` - Logical AND NOT
+  - `OrNotSpecification<T>` - Logical OR NOT
+- `AnySpecification<T>` - Always returns true
+- `NoneSpecification<T>` - Always returns false
+- `ExpressionSpecification<T>` - Wrap LINQ expressions
+- Implicit conversion to/from `Expression<Func<T, bool>>`
 
 ## Installation
 
-This package is part of the `Framework` libraries. Ensure you have the necessary references in your project.
+```bash
+dotnet add package Framework.Specifications
+```
 
 ## Usage
 
-### 1. Defining a Specification
-
-You can define a reusable specification by inheriting from `Specification<T>` and implementing the `ToExpression` method.
+### Define Specifications
 
 ```csharp
-using Framework.Specifications;
-using System.Linq.Expressions;
-
-public class CustomerIsActiveSpecification : Specification<Customer>
+public sealed class IsActiveUserSpec : Specification<User>
 {
-    public override Expression<Func<Customer, bool>> ToExpression()
+    public override Expression<Func<User, bool>> ToExpression()
     {
-        return customer => customer.IsActive;
+        return user => user.IsActive && !user.IsDeleted;
     }
 }
 
-public class CustomerHasBalanceSpecification : Specification<Customer>
+public sealed class HasPremiumPlanSpec : Specification<User>
 {
-    private readonly decimal _minBalance;
-
-    public CustomerHasBalanceSpecification(decimal minBalance)
+    public override Expression<Func<User, bool>> ToExpression()
     {
-        _minBalance = minBalance;
-    }
-
-    public override Expression<Func<Customer, bool>> ToExpression()
-    {
-        return customer => customer.Balance >= _minBalance;
+        return user => user.PlanType == PlanType.Premium;
     }
 }
 ```
 
-### 2. Using Specifications
-
-You can check if an entity satisfies a specification using `IsSatisfiedBy` or use it directly in LINQ queries.
+### Combine Specifications
 
 ```csharp
-var activeSpec = new CustomerIsActiveSpecification();
-var richSpec = new CustomerHasBalanceSpecification(1000);
+var isActiveUser = new IsActiveUserSpec();
+var hasPremiumPlan = new HasPremiumPlanSpec();
 
-var customer = new Customer { IsActive = true, Balance = 500 };
+// Combine with AND
+var activePremiumUser = isActiveUser.And(hasPremiumPlan);
 
-// Check in-memory
-bool isActive = activeSpec.IsSatisfiedBy(customer); // true
-bool isRich = richSpec.IsSatisfiedBy(customer);     // false
+// Combine with OR
+var activeOrPremium = isActiveUser.Or(hasPremiumPlan);
+
+// Negate
+var inactiveUser = isActiveUser.Not();
 ```
 
-### 3. Combining Specifications
-
-Use extension methods to chain complex rules.
+### Use with EF Core
 
 ```csharp
-// Combine specifications
-var richAndActiveSpec = activeSpec.And(richSpec);
-
-// Using implicit operators / ad-hoc expressions
-Specification<Customer> isVipSpec = richAndActiveSpec.Or(c => c.IsVip);
-
-if (isVipSpec.IsSatisfiedBy(customer))
-{
-    // ...
-}
+var spec = new IsActiveUserSpec().And(new HasPremiumPlanSpec());
+var users = await dbContext.Users.Where(spec).ToListAsync();
 ```
 
-### 4. Using with ORMs (LINQ)
-
-Since specifications return `Expression<Func<T, bool>>`, they can be passed directly to `Where` clauses in IQueryables (e.g., Entity Framework Core).
+### Ad-hoc Specifications
 
 ```csharp
-public List<Customer> GetVipCustomers()
-{
-    var spec = new CustomerIsActiveSpecification()
-               .And(new CustomerHasBalanceSpecification(10000));
-
-    // Automatically converted to an Expression tree
-    return _dbContext.Customers.Where(spec).ToList();
-}
+var spec = Specification<User>.FromExpression(u => u.Age > 18);
 ```
 
-### 5. Ad-Hoc Specifications
+## Configuration
 
-You don't always need to create a class. You can create a specification directly from an expression.
+No configuration required.
 
-```csharp
-var spec = Specification<Customer>.FromExpression(c => c.Age > 18);
-```
+## Dependencies
 
-## Core Components
+None.
 
--   **`ISpecification<T>`**: The core interface defining `IsSatisfiedBy` and `ToExpression`.
--   **`Specification<T>`**: The base abstract class.
--   **`ExpressionSpecification<T>`**: a wrapper for generic lambda expressions.
--   **`SpecificationExtensions`**: Provides the fluent API for `And`, `Or`, `Not`, etc.
+## Side Effects
+
+None.

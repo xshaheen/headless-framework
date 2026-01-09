@@ -1,64 +1,88 @@
 # Framework.Domains
 
-The `Framework.Domains` package provides the core building blocks and abstractions for implementing the Domain Layer of your application, following **Domain-Driven Design (DDD)** principles. It includes base classes and interfaces for entities, value objects, domain events, auditing, and messaging.
+Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
 
-## Table of Contents
+## Problem Solved
 
--   [Domain Primitives](#domain-primitives)
--   [Audit Logs](#audit-logs)
--   [Events](#events)
--   [Messages](#messages)
--   [Concurrency](#concurrency)
--   [Multi-Tenancy](#multi-tenancy)
+Provides building blocks for implementing DDD patterns: entities with identity, aggregate roots with domain events, value objects, auditing interfaces, and messaging contracts.
 
-## Domain Primitives
+## Key Features
 
-Located in `Domain/`, this namespace provides the fundamental contracts for DDD.
+- **Entity Abstractions**: `IEntity`, `IEntity<T>`, base `Entity` class
+- **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
+- **Value Objects**: `ValueObject` base class with equality
+- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
+- **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
+- **Multi-tenancy**: `IMultiTenant`
+- **Local Messaging**: `ILocalMessage`, `ILocalMessagePublisher`, `ILocalMessageHandler`
+- **Distributed Messaging**: `IDistributedMessage`, `IDistributedMessagePublisher`, `IDistributedMessageHandler`
+- **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
--   **`IEntity<TId>`**: Defines an entity with a unique identifier.
--   **`IAggregateRoot<TId>`**: Marker interface for Aggregate Roots.
--   **`ValueObject`**: Base class for Value Objects, providing equality implementations based on their components.
+## Installation
 
-## Audit Logs
+```bash
+dotnet add package Framework.Domains
+```
 
-Located in `AuditLogs/`, this namespace offers a rich set of base classes to automatically handle entity auditing. These classes enforce consistent audit properties (e.g., `DateCreated`, `CreatedBy`, `DateUpdated`, `UpdatedBy`, `IsDeleted`, etc.).
+## Quick Start
 
-The framework provides combinations of audit capabilities:
+```csharp
+public sealed class Order : AggregateRoot<Guid>, ICreateAudit
+{
+    public required string CustomerName { get; init; }
+    public decimal Total { get; private set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string? CreatedBy { get; set; }
 
--   **Create**: `EntityWithCreateAudit`
--   **Create + Update**: `EntityWithCreateUpdateAudit`
--   **Create + Update + Delete (Soft Delete)**: `EntityWithCreateUpdateDeleteAudit`
--   **Create + Update + Suspend**: `EntityWithCreateUpdateSuspendAudit`
+    public void Complete()
+    {
+        Status = OrderStatus.Completed;
+        AddMessage(new OrderCompletedEvent(Id));
+    }
+}
 
-Generic variants allow you to specify the type of the User identifier and the User entity itself (e.g., `EntityWithCreateAudit<TId, TUserId, TUser>`).
+public sealed record OrderCompletedEvent(Guid OrderId) : ILocalMessage;
+```
 
-## Events
+### Auditing
 
-Located in `Events/`, this namespace defines standard domain event data structures.
+Implement audit interfaces for automatic tracking:
 
--   **`EntityEventData<T>`**: Base class for entity-related events.
--   **Lifecycle Events**:
-    -   `EntityCreatedEventData<T>`
-    -   `EntityUpdatedEventData<T>`
-    -   `EntityDeletedEventData<T>`
-    -   `EntityChangedEventData<T>` (Generic change)
+```csharp
+public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
+{
+    public required string Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+}
+```
 
-## Messages
+### Value Objects
 
-Located in `Messages/`, this namespace handles both local (in-process) and distributed messaging abstractions.
+```csharp
+public sealed class Address : ValueObject
+{
+    public required string Street { get; init; }
+    public required string City { get; init; }
 
--   **Distributed**: Interfaces and base classes for messages sent over a service bus (`IDistributedMessage`, `DistributedMessage`).
--   **Local**: Interfaces for in-memory domain events (`ILocalMessage`).
+    protected override IEnumerable<object?> GetEqualityComponents()
+    {
+        yield return Street;
+        yield return City;
+    }
+}
+```
 
-## Concurrency
+## Configuration
 
-Located in `Concurrency/`, this namespace provides standard interfaces for handling optimistic concurrency.
+No configuration required. This is an abstractions package.
 
--   **`IHasConcurrencyStamp`**: For tracking entity versions/stamps.
--   **`IHasETag`**: For standard ETag support.
+## Dependencies
 
-## Multi-Tenancy
+None.
 
-Located in `Tenants/`, this namespace provides support for multi-tenant applications.
+## Side Effects
 
--   **`IMultiTenant`**: Interface to mark entities that belong to a specific tenant.
+None.

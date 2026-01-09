@@ -1,25 +1,69 @@
 # Framework.Sms.Aws
 
-This package allows sending SMS messages using AWS Simple Notification Service (SNS).
+AWS SNS SMS implementation.
 
-## Features
+## Problem Solved
 
--   **AwsSnsSmsSender**: Implements `ISmsSender` using AWS SNS.
--   **Configuration**: `AwsSnsSmsOptions` for region, credentials (if not using default chain), and default settings.
--   **Setup**: `AddAwsSnsExtensions` for quick integration.
+Provides SMS sending via Amazon Simple Notification Service (SNS), supporting transactional and promotional message types with AWS SDK integration.
 
-## Usage
+## Key Features
 
-### Configuration
+- `AwsSnsSmsSender` - ISmsSender implementation using AWS SNS
+- Configurable sender ID
+- Message type selection (transactional/promotional)
+- AWS SDK integration with flexible credentials
 
-Configure your AWS credentials and region. `AwsSnsSmsOptions` may include topic ARNs or other SNS specific settings.
+## Installation
 
-### Registration
-
-```csharp
-services.AddAwsSnsSms(configuration);
+```bash
+dotnet add package Framework.Sms.Aws
 ```
 
-### Sending
+## Quick Start
 
-The `ISmsSender.SendAsync` calls are adapted to AWS SNS Publish calls.
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var awsOptions = builder.Configuration.GetAWSOptions();
+builder.Services.AddAwsSnsSmsSender(
+    builder.Configuration.GetSection("Sms:Aws"),
+    awsOptions
+);
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Aws": {
+      "SenderId": "MyApp"
+    }
+  },
+  "AWS": {
+    "Region": "us-east-1"
+  }
+}
+```
+
+### Code Configuration
+
+```csharp
+builder.Services.AddAwsSnsSmsSender(options =>
+{
+    options.SenderId = "MyApp";
+});
+```
+
+## Dependencies
+
+- `Framework.Sms.Abstractions`
+- `AWSSDK.SimpleNotificationService`
+- `AWSSDK.Extensions.NETCore.Setup`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- Registers `IAmazonSimpleNotificationService` if not already registered

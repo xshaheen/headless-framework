@@ -83,36 +83,37 @@ public static class EnumExtensions
         {
             Argument.IsNotNull(enumValue);
 
-            return (AllLocaleValue<T>) _LocaleCache.GetOrAdd(
-                key: new(enumValue.GetType(), Value: Convert.ToInt32(enumValue, CultureInfo.InvariantCulture)),
-                valueFactory: static (_, value) =>
-                {
-                    var defaultValue = new EnumLocale<T>
+            return (AllLocaleValue<T>)
+                _LocaleCache.GetOrAdd(
+                    key: new(enumValue.GetType(), Value: Convert.ToInt32(enumValue, CultureInfo.InvariantCulture)),
+                    valueFactory: static (_, value) =>
                     {
-                        DisplayName = value.GetDisplayName(),
-                        Description = value.GetDescription(),
-                        Value = value,
-                    };
-
-                    var locales = value
-                        .GetEnumMemberInfo()
-                        .GetCustomAttributes<LocaleAttribute>(inherit: false)
-                        .Select(attr => new KeyEnumLocale<T>
+                        var defaultValue = new EnumLocale<T>
                         {
-                            Key = attr.Locale,
-                            Locale = new()
-                            {
-                                DisplayName = attr.DisplayName,
-                                Description = attr.Description,
-                                Value = value,
-                            },
-                        })
-                        .ToArray();
+                            DisplayName = value.GetDisplayName(),
+                            Description = value.GetDescription(),
+                            Value = value,
+                        };
 
-                    return new AllLocaleValue<T>(defaultValue, locales);
-                },
-                factoryArgument: enumValue
-            );
+                        var locales = value
+                            .GetEnumMemberInfo()
+                            .GetCustomAttributes<LocaleAttribute>(inherit: false)
+                            .Select(attr => new KeyEnumLocale<T>
+                            {
+                                Key = attr.Locale,
+                                Locale = new()
+                                {
+                                    DisplayName = attr.DisplayName,
+                                    Description = attr.Description,
+                                    Value = value,
+                                },
+                            })
+                            .ToArray();
+
+                        return new AllLocaleValue<T>(defaultValue, locales);
+                    },
+                    factoryArgument: enumValue
+                );
         }
 
         [SystemPure, JetBrainsPure, MustUseReturnValue]

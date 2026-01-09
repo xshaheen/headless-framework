@@ -1,25 +1,60 @@
 # Framework.Sms.Connekio
 
-This package integrates Connekio SMS services.
+Connekio SMS gateway implementation.
 
-## Features
+## Problem Solved
 
--   **ConnekioSmsSender**: Sends SMS via Connekio API.
--   **Configuration**: Uses `ConnekioSmsOptions` for credentials.
--   **Setup**: `AddConnekioSmsExtensions` for DI registration.
+Provides SMS sending via Connekio API, supporting both single and batch SMS delivery with basic authentication.
 
-## Usage
+## Key Features
 
-### Configuration
+- `ConnekioSmsSender` - ISmsSender implementation using Connekio
+- Basic authentication (username:password:accountId)
+- Single and batch SMS support
+- Configurable sender name
 
-Ensure your configuration includes the necessary Connekio credentials (username, password, account ID, etc.).
+## Installation
 
-### Registration
-
-```csharp
-services.AddConnekioSms(configuration);
+```bash
+dotnet add package Framework.Sms.Connekio
 ```
 
-### Sending
+## Quick Start
 
-Resolving `ISmsSender` will provide the Connekio implementation.
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddConnekioSmsSender(options =>
+{
+    options.UserName = "your-username";
+    options.Password = "your-password";
+    options.AccountId = "your-account-id";
+    options.Sender = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Connekio": {
+      "UserName": "your-username",
+      "Password": "your-password",
+      "AccountId": "your-account-id",
+      "Sender": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Framework.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- Registers `HttpClient` for Connekio API

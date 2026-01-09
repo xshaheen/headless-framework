@@ -12,10 +12,7 @@ public static class FeatureManagerExtensions
 {
     extension(IFeatureManager featureManager)
     {
-        public async Task<bool> IsEnabledAsync(
-            string name,
-            CancellationToken cancellationToken = default
-        )
+        public async Task<bool> IsEnabledAsync(string name, CancellationToken cancellationToken = default)
         {
             var featureValue = await featureManager.GetAsync(name, cancellationToken: cancellationToken);
 
@@ -94,17 +91,12 @@ public static class FeatureManagerExtensions
             return value.To<T>();
         }
 
-        public async Task EnsureEnabledAsync(
-            string featureName,
-            CancellationToken cancellationToken = default
-        )
+        public async Task EnsureEnabledAsync(string featureName, CancellationToken cancellationToken = default)
         {
             if (await featureManager.IsEnabledAsync(featureName, cancellationToken))
             {
                 return;
             }
-
-
 
             var error = MessageDescriber
                 .FeatureCurrentlyUnavailable()
@@ -159,20 +151,12 @@ public static class FeatureManagerExtensions
             }
         }
 
-        public Task GrantAsync(
-            string name,
-            string providerName,
-            string providerKey
-        )
+        public Task GrantAsync(string name, string providerName, string providerKey)
         {
             return featureManager.SetAsync(name, "true", providerName, providerKey, forceToSet: true);
         }
 
-        public Task RevokeAsync(
-            string name,
-            string providerName,
-            string providerKey
-        )
+        public Task RevokeAsync(string name, string providerName, string providerKey)
         {
             return featureManager.SetAsync(name, "false", providerName, providerKey, forceToSet: true);
         }

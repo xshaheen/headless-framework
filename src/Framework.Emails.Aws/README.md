@@ -1,31 +1,60 @@
 # Framework.Emails.Aws
 
-AWS SES (Simple Email Service) implementation of the generic email abstraction. This package enables sending emails via Amazon SES V2 using the standard `IEmailSender` interface.
+AWS SES (Simple Email Service) v2 implementation of the email sending abstraction.
+
+## Problem Solved
+
+Provides email sending via AWS SES using the unified `IEmailSender` abstraction, ideal for production deployments on AWS.
+
+## Key Features
+
+- Full `IEmailSender` implementation using AWS SES v2
+- High deliverability and scalability
+- AWS SDK configuration integration
+- Attachment support
 
 ## Installation
 
-Ensure you have the `AWSSDK.SimpleEmailV2` and `AWSSDK.Extensions.NETCore.Setup` packages configured.
+```bash
+dotnet add package Framework.Emails.Aws
+```
 
-## Usage
-
-### Registration
-
-Register the AWS SES email sender in your dependency injection container:
+## Quick Start
 
 ```csharp
+var builder = WebApplication.CreateBuilder(args);
+
 // Using configuration
 var awsOptions = builder.Configuration.GetAWSOptions();
-services.AddAwsSesEmailSender(awsOptions);
+builder.Services.AddAwsSesEmailSender(awsOptions);
 
 // Or using explicit options
-var awsOptions = new AWSOptions
+builder.Services.AddAwsSesEmailSender(new AWSOptions
 {
     Region = RegionEndpoint.USEast1,
     Credentials = new BasicAWSCredentials("accessKey", "secretKey")
-};
-services.AddAwsSesEmailSender(awsOptions);
+});
 ```
 
-### Configuration
+## Configuration
 
-The generic `IEmailSender` will now resolve to `AwsSesEmailSender`, allowing you to inject it into your services without binding them to AWS specifically.
+### appsettings.json
+
+```json
+{
+  "AWS": {
+    "Region": "us-east-1"
+  }
+}
+```
+
+## Dependencies
+
+- `Framework.Emails.Core`
+- `AWSSDK.SimpleEmailV2`
+- `AWSSDK.Extensions.NETCore.Setup`
+
+## Side Effects
+
+- Registers `IAmazonSimpleEmailServiceV2` if not already registered
+- Registers `IEmailSender` as singleton

@@ -1,30 +1,35 @@
 # Framework.Emails.Mailkit
 
-SMTP implementation of the email abstraction using [MailKit](https://github.com/jstedfast/MailKit). This package enables sending emails via any standard SMTP server.
+SMTP implementation of the email abstraction using MailKit.
 
-## Features
+## Problem Solved
 
--   **SMTP Support**: Send emails via any SMTP provider (Gmail, Outlook, custom servers, etc.).
--   **MimeKit Integration**: Uses `Framework.Emails.Core` for robust MIME message creation.
--   **Fluent Validation**: Includes validation for SMTP configuration options.
+Provides email sending via standard SMTP protocol using MailKit, supporting any SMTP server (Gmail, Outlook, SendGrid, on-premises, etc.).
 
-## Usage
+## Key Features
 
-### Registration
+- Full `IEmailSender` implementation using MailKit
+- SSL/TLS support (StartTls, SslOnConnect)
+- Authentication support
+- Attachment support
+- Works with any SMTP server
 
-You can register the MailKit sender using `IConfiguration` or a configuration action.
+## Installation
 
-**Using IConfiguration:**
-
-```csharp
-// Assumes configuration section matches MailkitSmtpOptions structure
-services.AddMailKitEmailSender(configuration.GetSection("Smtp"));
+```bash
+dotnet add package Framework.Emails.Mailkit
 ```
 
-**Using Action:**
+## Quick Start
 
 ```csharp
-services.AddMailKitEmailSender(options =>
+var builder = WebApplication.CreateBuilder(args);
+
+// Using IConfiguration
+builder.Services.AddMailKitEmailSender(builder.Configuration.GetSection("Smtp"));
+
+// Or using action
+builder.Services.AddMailKitEmailSender(options =>
 {
     options.Server = "smtp.example.com";
     options.Port = 587;
@@ -34,14 +39,36 @@ services.AddMailKitEmailSender(options =>
 });
 ```
 
-### Configuration Options (`MailkitSmtpOptions`)
+## Configuration
 
-| Property        | Description                                                        |
-| --------------- | ------------------------------------------------------------------ |
-| `Server`        | The hostname of the SMTP server (required).                        |
-| `Port`          | The port to connect to (default: 25).                              |
-| `User`          | Username for authentication.                                       |
-| `Password`      | Password for authentication.                                       |
-| `SocketOptions` | `SecureSocketOptions` from MailKit (e.g., StartTls, SslOnConnect). |
+### appsettings.json
 
-The `RequiresAuthentication` property is automatically derived if User and Password are set.
+```json
+{
+  "Smtp": {
+    "Server": "smtp.example.com",
+    "Port": 587,
+    "User": "user@example.com",
+    "Password": "securepassword",
+    "SocketOptions": "StartTls"
+  }
+}
+```
+
+### Options (`MailkitSmtpOptions`)
+
+| Property | Description |
+|----------|-------------|
+| `Server` | SMTP server hostname (required) |
+| `Port` | SMTP port (default: 25) |
+| `User` | Authentication username |
+| `Password` | Authentication password |
+| `SocketOptions` | `SecureSocketOptions` (StartTls, SslOnConnect) |
+
+## Dependencies
+
+- `Framework.Emails.Core`
+
+## Side Effects
+
+- Registers `IEmailSender` as singleton
