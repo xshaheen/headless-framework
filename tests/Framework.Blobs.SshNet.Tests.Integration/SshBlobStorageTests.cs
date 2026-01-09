@@ -8,11 +8,11 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection<SshBlobTestFixture>]
-public sealed class SshBlobStorageTests : BlobStorageTestsBase
+public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {
-        var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework:password@localhost:2222" };
+        var options = new SshBlobStorageOptions { ConnectionString = fixture.GetConnectionString() };
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         return new SshBlobStorage(optionsWrapper);

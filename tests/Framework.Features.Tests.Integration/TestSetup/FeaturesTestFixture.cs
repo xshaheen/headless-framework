@@ -92,7 +92,6 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
             .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithPortBinding(5432)
             .WithReuse(true)
             .Build();
     }

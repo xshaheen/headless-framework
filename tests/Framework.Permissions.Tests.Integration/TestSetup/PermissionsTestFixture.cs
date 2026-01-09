@@ -92,7 +92,6 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
             .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithPortBinding(5432)
             .WithReuse(true)
             .Build();
     }

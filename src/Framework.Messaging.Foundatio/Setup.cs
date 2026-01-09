@@ -9,6 +9,7 @@ using Framework.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using ISerializer = Framework.Serializer.ISerializer;
 
 namespace Framework.Messaging;
 
@@ -36,6 +37,7 @@ public static class FoundatioSetup
             services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
                 sp.GetRequiredService<IJsonOptionsProvider>()
             ));
+            services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
 
             services.AddSingleton<IFoundatioMessageBus>(provider => new InMemoryMessageBus(builder =>
             {
