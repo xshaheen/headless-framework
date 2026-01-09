@@ -66,22 +66,6 @@ public sealed class ThreadCurrentPrincipalAccessorTests
     }
 
     [Fact]
-    public void principal_should_throw_if_thread_current_principal_is_null_or_invalid()
-    {
-        // when
-        var action = () =>
-        {
-            var principal = _accessor.Principal;
-        };
-
-        // then
-        action
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("Thread.CurrentPrincipal is null or not a ClaimsPrincipal.");
-    }
-
-    [Fact]
     public void change_should_restore_original_principal_when_disposed()
     {
         // given

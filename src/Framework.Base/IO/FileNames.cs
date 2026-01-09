@@ -72,7 +72,8 @@ public static class FileNames
         var stringBuilder = ZString.CreateStringBuilder();
         var spaceCount = 0;
 
-        foreach (var value in WebUtility.HtmlEncode(untrustedName[..^extension.Length].ToString()))
+        // First pass: remove invalid chars and normalize spaces (without encoding)
+        foreach (var value in untrustedName[..^extension.Length])
         {
             // The next part ensures that multiple consecutive spaces are reduced to a single space
             var isWhiteSpace = char.IsWhiteSpace(value);
@@ -92,20 +93,21 @@ public static class FileNames
 
             if (!InvalidFileNameChars.Contains(value))
             {
-                stringBuilder.Append(char.ToLowerInvariant(value));
+                stringBuilder.Append(value);
             }
-            else
+            else if (value is '/' or '\\' or ':')
             {
-                // Replace invalid characters with a space
+                // Replace path separators with space (spaceCount is always 0 here since we reset it above)
                 stringBuilder.Append(' ');
-                spaceCount++;
+                spaceCount = 1;
             }
+            // else: skip other invalid characters (they're removed)
         }
 
         var validFileName = string.Concat(stringBuilder.AsSpan().Trim(), extension);
-        var encodedFileName = WebUtility.HtmlEncode(validFileName);
 
-        return encodedFileName;
+        // HTML encode the final result to prevent script injection attacks
+        return WebUtility.HtmlEncode(validFileName);
     }
 
     #endregion
