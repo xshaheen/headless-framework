@@ -252,7 +252,7 @@ public static class CapDistributedMessageHandlerFactory
             {
                 if (h.Value is not null)
                 {
-                    data.Properties[h.Key] = h.Value;
+                    data.Headers[h.Key] = h.Value;
                 }
             }
 

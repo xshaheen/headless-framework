@@ -8,11 +8,11 @@ public interface IMessageSubscribeMedium<out TPayload>
 {
     string MessageKey { get; }
 
-    string UniqueId { get; }
-
     string Type { get; }
 
-    string? CorrelationId { get; }
+    Guid UniqueId { get; }
+
+    Guid? CorrelationId { get; }
 
     IDictionary<string, string>? Properties { get; }
 
@@ -23,11 +23,11 @@ public sealed class MessageSubscribeMedium<TPayload> : IMessageSubscribeMedium<T
 {
     public required string MessageKey { get; set; }
 
-    public required string UniqueId { get; init; }
-
     public required string Type { get; init; }
 
-    public required string? CorrelationId { get; init; }
+    public required Guid UniqueId { get; init; }
+
+    public required Guid? CorrelationId { get; init; }
 
     public required IDictionary<string, string>? Properties { get; init; }
 

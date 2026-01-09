@@ -8,5 +8,5 @@ public sealed record TestDistributedMessage(string Text) : IDistributedMessage
 
     public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
 
-    public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+    public IDictionary<string, string> Headers { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
