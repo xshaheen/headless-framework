@@ -39,7 +39,7 @@ public sealed class FoundatioMessageBusAdapterTests : TestBase
             {
                 Logger.LogTrace("Got message");
                 msg.Data.Should().Be("Hello");
-                msg.Items.Should().ContainKey("Test");
+                msg.Items.Should().ContainKey("test"); // JSON serialization uses camelCase for dictionary keys
                 countdown.Signal();
                 Logger.LogTrace("Set event");
             },

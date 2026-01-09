@@ -37,6 +37,7 @@ public static class AddCacheExtensions
             services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
                 sp.GetRequiredService<IJsonOptionsProvider>()
             ));
+            services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
 
             services.AddSingletonOptionValue<RedisCacheOptions>();
             services.TryAddSingleton<IDistributedCache, RedisCachingFoundatioAdapter>();

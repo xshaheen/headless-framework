@@ -2,7 +2,13 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
+    <IsTestProject>false</IsTestProject>
+    <IsTestableProject>false</IsTestableProject>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Core\Framework.ResourceLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />

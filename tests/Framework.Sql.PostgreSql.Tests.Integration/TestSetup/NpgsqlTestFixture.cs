@@ -14,10 +14,6 @@ public sealed class NpgsqlTestFixture(IMessageSink messageSink)
 {
     protected override PostgreSqlBuilder Configure()
     {
-        return base.Configure()
-            .WithDatabase("framework_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres")
-            .WithPortBinding(5432);
+        return base.Configure().WithDatabase("framework_test").WithUsername("postgres").WithPassword("postgres");
     }
 }
