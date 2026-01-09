@@ -26,11 +26,11 @@ dotnet add package Framework.OpenApi.Scalar
 var builder = WebApplication.CreateBuilder(args);
 
 // Add OpenAPI generation (NSwag or other)
-builder.Services.AddFrameworkNswagOpenApi();
+builder.Services.AddHeadlessNswagOpenApi();
 
 var app = builder.Build();
 
-app.MapFrameworkScalarOpenApi();
+app.MapHeadlessScalarOpenApi();
 ```
 
 ## Configuration

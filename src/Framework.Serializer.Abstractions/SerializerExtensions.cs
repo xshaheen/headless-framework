@@ -4,48 +4,51 @@ namespace Framework.Serializer;
 
 public static class SerializerExtensions
 {
-    public static T? Deserialize<T>(this ISerializer serializer, byte[] data)
+    extension(ISerializer serializer)
     {
-        return serializer.Deserialize<T>(new MemoryStream(data));
-    }
-
-    public static T? Deserialize<T>(this ISerializer serializer, string? data)
-    {
-        var bytes =
-            data is null ? []
-            : serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data)
-            : Convert.FromBase64String(data);
-
-        return Deserialize<T>(serializer, bytes);
-    }
-
-    public static byte[]? SerializeToBytes<T>(this ISerializer serializer, T? value)
-    {
-        if (value is null)
+        public T? Deserialize<T>(byte[] data)
         {
-            return null;
+            return serializer.Deserialize<T>(new MemoryStream(data));
         }
 
-        var stream = new MemoryStream();
-        serializer.Serialize(value, stream);
-
-        return stream.ToArray();
-    }
-
-    public static string? SerializeToString<T>(this ISerializer serializer, T? value)
-    {
-        if (value is null)
+        public T? Deserialize<T>(string? data)
         {
-            return null;
+            var bytes =
+                data is null ? []
+                : serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data)
+                : Convert.FromBase64String(data);
+
+            return serializer.Deserialize<T>(bytes);
         }
 
-        var bytes = serializer.SerializeToBytes(value);
-
-        if (bytes is null)
+        public byte[]? SerializeToBytes<T>(T? value)
         {
-            return null;
+            if (value is null)
+            {
+                return null;
+            }
+
+            var stream = new MemoryStream();
+            serializer.Serialize(value, stream);
+
+            return stream.ToArray();
         }
 
-        return serializer is ITextSerializer ? Encoding.UTF8.GetString(bytes) : Convert.ToBase64String(bytes);
+        public string? SerializeToString<T>(T? value)
+        {
+            if (value is null)
+            {
+                return null;
+            }
+
+            var bytes = serializer.SerializeToBytes(value);
+
+            if (bytes is null)
+            {
+                return null;
+            }
+
+            return serializer is ITextSerializer ? Encoding.UTF8.GetString(bytes) : Convert.ToBase64String(bytes);
+        }
     }
 }

@@ -23,7 +23,7 @@ dotnet add package Framework.OpenApi.Nswag.OData
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddFrameworkNswagOpenApi(
+builder.Services.AddHeadlessNswagOpenApi(
     setupFrameworkAction: null,
     setupGeneratorActions: settings =>
     {

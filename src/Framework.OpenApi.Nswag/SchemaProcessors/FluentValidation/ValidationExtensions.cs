@@ -2,10 +2,10 @@
 
 using FluentValidation;
 using FluentValidation.Validators;
-using Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+using Framework.Api.SchemaProcessors.FluentValidation.Models;
 using Framework.Text;
 
-namespace Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation;
+namespace Framework.Api.SchemaProcessors.FluentValidation;
 
 /// <summary>Extensions for some swagger-specific work.</summary>
 internal static class ValidationExtensions

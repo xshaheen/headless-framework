@@ -1,6 +1,6 @@
 using FluentValidation;
 using FluentValidation.Results;
-using Framework.Api.Mvc.Controllers;
+using Framework.Api.Controllers;
 using Framework.Exceptions;
 using Framework.Primitives;
 using Microsoft.AspNetCore.Authorization;

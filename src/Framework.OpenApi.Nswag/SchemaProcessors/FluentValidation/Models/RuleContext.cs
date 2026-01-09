@@ -4,7 +4,7 @@ using FluentValidation.Validators;
 using NJsonSchema;
 using NJsonSchema.Generation;
 
-namespace Framework.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+namespace Framework.Api.SchemaProcessors.FluentValidation.Models;
 
 public sealed class RuleContext(
     SchemaProcessorContext processorContext,

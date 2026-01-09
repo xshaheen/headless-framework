@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Microsoft.AspNetCore.OData.Query;
 using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Framework.OpenApi.Nswag.OData;
+namespace Framework.Api;
 
 /// <summary>https://docs.microsoft.com/en-us/odata/concepts/queryoptions-overview</summary>
 public sealed class ODataOperationFilter : IOperationProcessor

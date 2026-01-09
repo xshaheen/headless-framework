@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Api.Mvc.Controllers;
+namespace Framework.Api.Controllers;
 
 [PublicAPI]
 [ApiController]

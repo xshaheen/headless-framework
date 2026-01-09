@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Api.Mvc.Controllers;
+namespace Framework.Api.Controllers;
 
 public sealed class MvcProblemDetailsNormalizer(
     IOptions<ApiBehaviorOptions> apiOptionsAccessor,

@@ -25,12 +25,12 @@ dotnet add package Framework.Api.Logging.Serilog
 var builder = WebApplication.CreateBuilder(args);
 
 // Register enrichers
-builder.Services.AddSerilogEnrichers();
+builder.Services.AddHeadlessSerilogEnrichers();
 
 var app = builder.Build();
 
 // Use enrichers middleware (place early in pipeline)
-app.UseCustomSerilogEnrichers();
+app.UseHeadlessSerilogEnrichers();
 
 app.Run();
 ```

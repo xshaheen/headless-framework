@@ -6,7 +6,7 @@ using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Framework.OpenApi.Nswag.OperationProcessors;
+namespace Framework.Api.OperationProcessors;
 
 public sealed class ApiExtraInformationOperationProcessor : IOperationProcessor
 {

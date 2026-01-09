@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using NJsonSchema;
-using NJsonSchema.Generation;
 
-namespace Framework.OpenApi.Nswag.SchemaProcessors;
+namespace Framework.Api.SchemaProcessors;
 
 [PublicAPI]
 public static class SchemaProcessorContextExtensions

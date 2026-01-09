@@ -36,7 +36,7 @@ builder.Host.UseDefaultServiceProvider(
     }
 );
 
-builder.AddFrameworkApiServices();
+builder.AddHeadlessApi();
 
 addInMemoryResourceLock(builder.Services);
 

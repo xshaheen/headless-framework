@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Api.Mvc.Filters;
+namespace Framework.Api.Filters;
 
 /// <summary>
 /// Requires that an HTTP request does not contain a trailing slash. If it does, return a 404 Not Found. This is

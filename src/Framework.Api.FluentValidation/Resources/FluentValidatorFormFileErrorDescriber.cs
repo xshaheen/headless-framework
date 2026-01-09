@@ -2,7 +2,7 @@
 
 using Framework.Primitives;
 
-namespace Framework.FluentValidation.Resources;
+namespace FluentValidation.Resources;
 
 public static class FluentValidatorFormFileErrorDescriber
 {

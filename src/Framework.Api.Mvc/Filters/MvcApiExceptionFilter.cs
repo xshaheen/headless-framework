@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
-using System.Text.RegularExpressions;
 using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Resources;
@@ -10,10 +8,9 @@ using Framework.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.Api.Mvc.Filters;
+namespace Framework.Api.Filters;
 
 [PublicAPI]
 public sealed partial class MvcApiExceptionFilter(

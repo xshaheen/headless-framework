@@ -1,15 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Api;
 using Framework.Constants;
 using Framework.OpenApi.Nswag;
-using Framework.OpenApi.Scalar;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddFrameworkNswagOpenApi();
+builder.Services.AddHeadlessNswagOpenApi();
 
 builder
     .Services.AddAuthentication()
