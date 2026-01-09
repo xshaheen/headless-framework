@@ -54,6 +54,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             await foreach (
                 var blobItem in _containerClient.GetBlobsAsync(
                     traits: BlobTraits.Metadata,
+                    states: BlobStates.None,
                     prefix: _options.BlobPrefix,
                     cancellationToken: cancellationToken
                 )
