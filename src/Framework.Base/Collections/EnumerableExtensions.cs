@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
+using Framework.Checks;
 
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
@@ -277,10 +278,8 @@ public static partial class EnumerableExtensions
 
     public static async Task<List<T>> ToListAsync<T>(this Task<IEnumerable<T>> task)
     {
-        ArgumentNullException.ThrowIfNull(task);
-
 #pragma warning disable VSTHRD003
-        var result = await task.AnyContext();
+        var result = await Argument.IsNotNull(task).AnyContext();
 #pragma warning restore VSTHRD003
 
         return result.ToList();
@@ -288,10 +287,8 @@ public static partial class EnumerableExtensions
 
     public static async Task<T[]> ToArrayAsync<T>(this Task<IEnumerable<T>> task)
     {
-        ArgumentNullException.ThrowIfNull(task);
-
 #pragma warning disable VSTHRD003
-        var result = await task.AnyContext();
+        var result = await Argument.IsNotNull(task).AnyContext();
 #pragma warning restore VSTHRD003
 
         return result.ToArray();

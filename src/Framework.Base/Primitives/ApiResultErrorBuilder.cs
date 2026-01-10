@@ -7,7 +7,7 @@ namespace Framework.Primitives;
 /// Useful for validation scenarios.
 /// </summary>
 [PublicAPI]
-public ref struct ResultErrorBuilder
+public ref struct ApiResultErrorBuilder
 {
     private List<ResultError>? _errors;
 
@@ -19,9 +19,13 @@ public ref struct ResultErrorBuilder
         _errors.Add(error);
     }
 
-    public readonly OpResult<T> ToResult<T>(T successValue) =>
-        HasErrors ? new AggregateError { Errors = _errors! } : successValue;
+    public readonly ApiResult<T> ToApiResult<T>(T successValue)
+    {
+        return HasErrors ? new AggregateError { Errors = _errors! } : successValue;
+    }
 
-    public readonly OpResult ToResult() =>
-        HasErrors ? OpResult.Fail(new AggregateError { Errors = _errors! }) : OpResult.Ok();
+    public readonly ApiResult ToApiResult()
+    {
+        return HasErrors ? ApiResult.Fail(new AggregateError { Errors = _errors! }) : ApiResult.Ok();
+    }
 }

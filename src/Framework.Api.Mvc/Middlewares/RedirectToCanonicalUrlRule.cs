@@ -56,7 +56,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
 
     public void ApplyRule(RewriteContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Argument.IsNotNull(context);
 
         if (HttpMethods.IsGet(context.HttpContext.Request.Method))
         {
@@ -75,7 +75,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
     /// <returns><see langword="true"/> if the URL is canonical, otherwise <see langword="false"/>.</returns>
     private bool _TryGetCanonicalUrl(RewriteContext context, [NotNullWhen(false)] out Uri? canonicalUrl)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Argument.IsNotNull(context);
 
         var isCanonical = true;
 

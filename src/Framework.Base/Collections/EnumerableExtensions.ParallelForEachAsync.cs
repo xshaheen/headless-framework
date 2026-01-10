@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
@@ -7,7 +9,7 @@ public static partial class EnumerableExtensions
 {
     public static Task ParallelForEachAsync<TSource>(this IEnumerable<TSource> source, Func<TSource, Task> action)
     {
-        return ParallelForEachAsync(source, action, CancellationToken.None);
+        return source.ParallelForEachAsync(action, CancellationToken.None);
     }
 
     public static Task ParallelForEachAsync<TSource>(
@@ -16,7 +18,7 @@ public static partial class EnumerableExtensions
         CancellationToken cancellationToken
     )
     {
-        return ParallelForEachAsync(source, Environment.ProcessorCount, action, cancellationToken);
+        return source.ParallelForEachAsync(Environment.ProcessorCount, action, cancellationToken);
     }
 
     public static Task ParallelForEachAsync<TSource>(
@@ -25,7 +27,7 @@ public static partial class EnumerableExtensions
         Func<TSource, Task> action
     )
     {
-        return ParallelForEachAsync(source, degreeOfParallelism, action, CancellationToken.None);
+        return source.ParallelForEachAsync(degreeOfParallelism, action, CancellationToken.None);
     }
 
     public static Task ParallelForEachAsync<TSource>(
@@ -35,8 +37,8 @@ public static partial class EnumerableExtensions
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(source);
+        Argument.IsNotNull(action);
 
         return Parallel.ForEachAsync(
             source,
