@@ -13,6 +13,15 @@ public interface IResourceLockStorage
     Task<TimeSpan?> GetExpirationAsync(string key);
 
     Task<bool> ExistsAsync(string key);
+
+    /// <summary>Gets the lock ID stored for the given key, or null if not found.</summary>
+    Task<string?> GetAsync(string key);
+
+    /// <summary>Gets all lock keys and their IDs matching the given prefix.</summary>
+    Task<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix);
+
+    /// <summary>Gets the count of locks matching the given prefix.</summary>
+    Task<int> GetCountAsync(string prefix = "");
 }
 
 public sealed class ScopedResourceLockStorage(IResourceLockStorage innerStorage, string prefix) : IResourceLockStorage
@@ -40,6 +49,24 @@ public sealed class ScopedResourceLockStorage(IResourceLockStorage innerStorage,
     public Task<bool> ExistsAsync(string key)
     {
         return innerStorage.ExistsAsync(_NormalizeResource(key));
+    }
+
+    public Task<string?> GetAsync(string key)
+    {
+        return innerStorage.GetAsync(_NormalizeResource(key));
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string resourcePrefix)
+    {
+        var result = await innerStorage.GetAllByPrefixAsync(_NormalizeResource(resourcePrefix));
+
+        // Strip the scope prefix from keys to return unscoped resource names
+        return result.ToDictionary(kv => kv.Key[prefix.Length..], kv => kv.Value, StringComparer.Ordinal);
+    }
+
+    public Task<int> GetCountAsync(string resourcePrefix = "")
+    {
+        return innerStorage.GetCountAsync(_NormalizeResource(resourcePrefix));
     }
 
     private string _NormalizeResource(string resource) => prefix + resource;
