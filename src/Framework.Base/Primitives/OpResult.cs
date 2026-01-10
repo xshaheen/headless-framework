@@ -133,6 +133,10 @@ public readonly struct OpResult<T> : IEquatable<OpResult<T>>
 
     public static implicit operator OpResult<T>(ResultError error) => Fail(error);
 
+    /// <summary>Convert to non-generic result (discards value, keeps success/error state).</summary>
+    public static implicit operator OpResult(OpResult<T> result) =>
+        result.IsSuccess ? OpResult.Ok() : OpResult.Fail(result._error!);
+
     // Equality
 
     public bool Equals(OpResult<T> other)
