@@ -3,7 +3,7 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Text;
 using PhoneNumbers;
 using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Features.Entities;
 
 namespace Framework.Features.Values;
@@ -9,7 +9,7 @@ namespace Framework.Features.Values;
 public sealed class FeatureValueCacheItemInvalidator(ICache<FeatureValueCacheItem> cache)
     : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
 {
-    public async Task HandleAsync(
+    public async Task ConsumeAsync(
         EntityChangedEventData<FeatureValueRecord> message,
         CancellationToken cancellationToken = default
     )

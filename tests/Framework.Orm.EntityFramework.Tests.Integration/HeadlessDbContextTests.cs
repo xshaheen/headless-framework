@@ -1,4 +1,4 @@
-﻿using Framework.Domains;
+﻿using Framework.Domain;
 using Framework.Orm.EntityFramework.Contexts;
 using Framework.Testing.Order;
 using Framework.Testing.Tests;

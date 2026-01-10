@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Settings.Entities;
 
 namespace Framework.Settings.Values;
@@ -9,7 +9,7 @@ namespace Framework.Settings.Values;
 public sealed class SettingValueCacheItemInvalidator(ICache<SettingValueCacheItem> cache)
     : ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>
 {
-    public async Task HandleAsync(
+    public async Task ConsumeAsync(
         EntityChangedEventData<SettingValueRecord> message,
         CancellationToken cancellationToken = default
     )
