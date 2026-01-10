@@ -21,6 +21,7 @@ public readonly struct OpResult<T> : IEquatable<OpResult<T>>
 
     private OpResult(T value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         _value = value;
         _error = null;
         _isSuccess = true;
