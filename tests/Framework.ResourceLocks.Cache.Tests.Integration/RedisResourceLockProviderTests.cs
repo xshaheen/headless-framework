@@ -34,12 +34,15 @@ public class RedisResourceLockProviderTests : ResourceLockProviderTestsBase
         _storage = new CacheResourceLockStorage(_cache);
     }
 
-    protected override ValueTask DisposeAsyncCore()
+    protected override async ValueTask DisposeAsyncCore()
     {
+        if (_bus is not null)
+        {
+            await _bus.DisposeAsync();
+        }
         _foundatioMessageBus?.Dispose();
-        _bus?.Dispose();
         _cache?.Dispose();
-        return base.DisposeAsyncCore();
+        await base.DisposeAsyncCore();
     }
 
     protected override IResourceLockProvider GetLockProvider()
