@@ -46,6 +46,10 @@ public sealed class ResourceLockProvider(
 
     TimeProvider IHaveTimeProvider.TimeProvider => timeProvider;
 
+    private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
+
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
     public TimeSpan DefaultAcquireTimeout { get; } = TimeSpan.FromSeconds(30);
@@ -122,8 +126,6 @@ public sealed class ResourceLockProvider(
                 // or acquire timeout cancellation has been requested
                 using var linkedCancellationTokenSource = delayAmount.ToCancellationTokenSource(cts.Token);
                 await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).AnyContext();
-
-                Thread.Yield();
             } while (!cts.IsCancellationRequested);
         }
         finally
@@ -150,7 +152,7 @@ public sealed class ResourceLockProvider(
             return null;
         }
 
-        if (timeWaitedForLock > TimeSpan.FromSeconds(5))
+        if (timeWaitedForLock > _LongLockWarningThreshold)
         {
             logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
         }
@@ -164,18 +166,16 @@ public sealed class ResourceLockProvider(
 
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
     {
-        var autoResetEvent = _autoResetEvents.AddOrUpdate(
+        return _autoResetEvents.AddOrUpdate(
             resource,
-            new ResetEventWithRefCount(),
-            (_, exist) =>
+            static _ => new ResetEventWithRefCount(),
+            static (_, exist) =>
             {
                 exist.Increment();
 
                 return exist;
             }
         );
-
-        return autoResetEvent;
     }
 
     private void _DecrementResetEvent(ResetEventWithRefCount? autoResetEvent, string resource)
@@ -195,35 +195,40 @@ public sealed class ResourceLockProvider(
     {
         var exp = await _storage.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero;
 
-        // Delay a minimum of 50ms and a maximum of 3 seconds
-        return exp.Clamp(TimeSpan.FromMilliseconds(50), TimeSpan.FromSeconds(3));
+        return exp.Clamp(_MinRetryDelay, _MaxRetryDelay);
     }
 
     #endregion
 
     #region Release
 
-    public async Task ReleaseAsync(string resource, string lockId)
+    public async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
         logger.LogReleaseStarted(resource, lockId);
 
-        await Run.WithRetriesAsync(
-            (_storage, resource, lockId),
-            static state =>
-            {
-                var (storage, resource, lockId) = state;
+        var removed = await Run.WithRetriesAsync(
+                (_storage, resource, lockId),
+                static state =>
+                {
+                    var (storage, resource, lockId) = state;
 
-                return storage.RemoveIfEqualAsync(resource, lockId);
-            },
-            maxAttempts: 15,
-            timeProvider: timeProvider
-        );
+                    return storage.RemoveIfEqualAsync(resource, lockId);
+                },
+                maxAttempts: 15,
+                timeProvider: timeProvider,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
 
-        var resourceLockReleased = new ResourceLockReleased { Resource = resource, LockId = lockId };
-        await messageBus.PublishAsync(resourceLockReleased).AnyContext();
+        // Only publish if we actually removed the lock
+        if (removed)
+        {
+            var resourceLockReleased = new ResourceLockReleased { Resource = resource, LockId = lockId };
+            await messageBus.PublishAsync(resourceLockReleased, cancellationToken: cancellationToken).AnyContext();
+        }
 
         logger.LogReleaseReleased(resource, lockId);
     }
@@ -232,7 +237,12 @@ public sealed class ResourceLockProvider(
 
     #region Renew
 
-    public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+    public Task<bool> RenewAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
@@ -249,7 +259,8 @@ public sealed class ResourceLockProvider(
 
                 return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl);
             },
-            timeProvider: timeProvider
+            timeProvider: timeProvider,
+            cancellationToken: cancellationToken
         );
     }
 

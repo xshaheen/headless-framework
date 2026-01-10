@@ -30,14 +30,14 @@ public sealed class DisposableResourceLock(
 
     public int RenewalCount { get; private set; }
 
-    public async Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null)
+    public async Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
         if (logger.IsEnabled(LogLevel.Trace))
         {
             logger.LogTrace("Renewing lock {Resource} ({LockId})", Resource, LockId);
         }
 
-        var result = await lockProvider.RenewAsync(Resource, LockId, timeUntilExpires).AnyContext();
+        var result = await lockProvider.RenewAsync(Resource, LockId, timeUntilExpires, cancellationToken).AnyContext();
 
         if (!result)
         {
@@ -56,14 +56,14 @@ public sealed class DisposableResourceLock(
         return true;
     }
 
-    public async Task ReleaseAsync()
+    public async Task ReleaseAsync(CancellationToken cancellationToken = default)
     {
         if (_isReleased)
         {
             return;
         }
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(cancellationToken).AnyContext())
         {
             if (_isReleased)
             {
@@ -75,6 +75,7 @@ public sealed class DisposableResourceLock(
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 var elapsed = timeProvider.GetElapsedTime(_timestamp);
+
                 logger.LogDebug(
                     "Releasing lock: R={Resource} Id={LockId} after {Duration:g}",
                     Resource,
@@ -83,7 +84,7 @@ public sealed class DisposableResourceLock(
                 );
             }
 
-            await lockProvider.ReleaseAsync(Resource, LockId).AnyContext();
+            await lockProvider.ReleaseAsync(Resource, LockId, cancellationToken).AnyContext();
         }
     }
 
