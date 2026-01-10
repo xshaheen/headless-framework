@@ -15,10 +15,10 @@ public sealed class ResourceLockOptions
     public int MaxResourceNameLength { get; set; } = 1024;
 
     /// <summary>Maximum concurrent waiting resources (unique keys). Default: 10,000.</summary>
-    public int MaxConcurrentWaitingResources { get; set; } = 10_000;
+    public int? MaxConcurrentWaitingResources { get; set; } = 10_000;
 
     /// <summary>Maximum concurrent waiters per resource. Default: 1,000.</summary>
-    public int MaxWaitersPerResource { get; set; } = 1_000;
+    public int? MaxWaitersPerResource { get; set; } = 1_000;
 }
 
 public sealed class ResourceLockOptionsValidator : AbstractValidator<ResourceLockOptions>

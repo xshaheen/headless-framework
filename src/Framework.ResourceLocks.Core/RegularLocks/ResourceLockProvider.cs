@@ -55,8 +55,8 @@ public sealed class ResourceLockProvider(
 
     // Configurable limits from options
     private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
-    private readonly int _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
-    private readonly int _maxWaitersPerResource = options.MaxWaitersPerResource;
+    private readonly int? _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
+    private readonly int? _maxWaitersPerResource = options.MaxWaitersPerResource;
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -180,10 +180,8 @@ public sealed class ResourceLockProvider(
     {
         if (resource.Length > _maxResourceNameLength)
         {
-            throw new ArgumentException(
-                $"Resource name exceeds maximum length of {_maxResourceNameLength} characters",
-                nameof(resource)
-            );
+            FormattableString message = $"Resource name exceeds maximum length of {_maxResourceNameLength} characters";
+            throw new ArgumentException(message.ToString(CultureInfo.InvariantCulture), nameof(resource));
         }
     }
 
@@ -191,34 +189,32 @@ public sealed class ResourceLockProvider(
     {
         lock (_resetEventLock)
         {
+            if (_autoResetEvents.TryGetValue(resource, out var existing))
+            {
+                // Prevent unbounded waiters per resource (DoS protection)
+                if (_maxWaitersPerResource is { } max && existing.RefCount >= max)
+                {
+                    FormattableString message = $"Maximum waiters per resource ({max}) exceeded";
+                    throw new InvalidOperationException(message.ToString(CultureInfo.InvariantCulture));
+                }
+
+                existing.Increment();
+
+                return existing;
+            }
+
             // Prevent unbounded unique resources (DoS protection)
-            if (_autoResetEvents.Count >= _maxConcurrentWaitingResources
-                && !_autoResetEvents.ContainsKey(resource))
+            if (_maxConcurrentWaitingResources is { } maxResources && _autoResetEvents.Count >= maxResources)
             {
                 throw new InvalidOperationException(
-                    $"Maximum concurrent waiting resources ({_maxConcurrentWaitingResources}) exceeded"
+                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
                 );
             }
 
-            return _autoResetEvents.AddOrUpdate(
-                resource,
-                static (_, maxWaiters) => new ResetEventWithRefCount(),
-                (_, exist, maxWaiters) =>
-                {
-                    // Prevent unbounded waiters per resource (DoS protection)
-                    if (exist.RefCount >= maxWaiters)
-                    {
-                        throw new InvalidOperationException(
-                            $"Maximum waiters per resource ({maxWaiters}) exceeded"
-                        );
-                    }
+            var newEvent = new ResetEventWithRefCount();
+            _autoResetEvents[resource] = newEvent;
 
-                    exist.Increment();
-
-                    return exist;
-                },
-                _maxWaitersPerResource
-            );
+            return newEvent;
         }
     }
 
@@ -250,15 +246,19 @@ public sealed class ResourceLockProvider(
     {
         // Exponential backoff: 50ms, 100ms, 200ms, 400ms, ... capped at 3s
         var delayMs = _MinRetryDelay.TotalMilliseconds * Math.Pow(2, attempt);
+        var cappedDelayMs = Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds);
 
-        return TimeSpan.FromMilliseconds(Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds));
+        // Add jitter (±25%) to prevent thundering herd
+        var jitter = cappedDelayMs * (Random.Shared.NextDouble() * 0.5 - 0.25);
+
+        return TimeSpan.FromMilliseconds(cappedDelayMs + jitter);
     }
 
     #endregion
 
     #region Release
 
-    public async Task ReleaseAsync(string resource, string lockId)
+    public async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
@@ -274,15 +274,17 @@ public sealed class ResourceLockProvider(
                     return storage.RemoveIfEqualAsync(resource, lockId);
                 },
                 maxAttempts: _MaxReleaseRetryAttempts,
-                timeProvider: timeProvider
+                timeProvider: timeProvider,
+                cancellationToken: cancellationToken
             )
             .AnyContext();
 
-        // Only publish if we actually removed the lock
+        // Only publish if we actually removed the lock.
+        // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
         if (removed)
         {
             var resourceLockReleased = new ResourceLockReleased { Resource = resource, LockId = lockId };
-            await messageBus.PublishAsync(resourceLockReleased).AnyContext();
+            await messageBus.PublishAsync(resourceLockReleased, cancellationToken).AnyContext();
         }
 
         logger.LogReleaseReleased(resource, lockId);
@@ -292,7 +294,12 @@ public sealed class ResourceLockProvider(
 
     #region Renew
 
-    public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+    public Task<bool> RenewAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
@@ -309,7 +316,8 @@ public sealed class ResourceLockProvider(
 
                 return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl);
             },
-            timeProvider: timeProvider
+            timeProvider: timeProvider,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -402,6 +410,7 @@ public sealed class ResourceLockProvider(
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
         // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
         // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
+        // ReSharper disable once InconsistentlySynchronizedField
         if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();
