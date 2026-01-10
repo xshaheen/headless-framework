@@ -27,7 +27,7 @@ public interface IResourceLock : IAsyncDisposable
     TimeSpan TimeWaitedForLock { get; }
 
     /// <summary>Releases the lock.</summary>
-    Task ReleaseAsync(CancellationToken cancellationToken = default);
+    Task ReleaseAsync();
 
     /// <summary>Attempts to renew the lock.</summary>
     Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default);

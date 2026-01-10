@@ -56,7 +56,7 @@ public sealed class DisposableResourceLock(
         return true;
     }
 
-    public async Task ReleaseAsync(CancellationToken cancellationToken = default)
+    public async Task ReleaseAsync()
     {
         if (_isReleased)
         {
@@ -84,7 +84,7 @@ public sealed class DisposableResourceLock(
                 );
             }
 
-            await lockProvider.ReleaseAsync(Resource, LockId, cancellationToken).AnyContext();
+            await lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).AnyContext();
         }
     }
 

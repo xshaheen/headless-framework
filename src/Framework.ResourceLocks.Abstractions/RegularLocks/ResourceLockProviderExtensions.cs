@@ -73,8 +73,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
-                // we pass CancellationToken.None to ensure the release is attempted
-                await resourceLock.ReleaseAsync(CancellationToken.None);
+                await resourceLock.ReleaseAsync();
             }
         }
 
@@ -105,8 +104,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
-                // we pass CancellationToken.None to ensure the release is attempted
-                await resourceLock.ReleaseAsync(CancellationToken.None);
+                await resourceLock.ReleaseAsync();
             }
         }
 
@@ -136,8 +134,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
-                // we pass CancellationToken.None to ensure the release is attempted
-                await resourceLock.ReleaseAsync(CancellationToken.None);
+                await resourceLock.ReleaseAsync();
             }
         }
 
@@ -168,8 +165,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
-                // we pass CancellationToken.None to ensure the release is attempted
-                await resourceLock.ReleaseAsync(CancellationToken.None);
+                await resourceLock.ReleaseAsync();
             }
         }
 
@@ -199,8 +195,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
-                // we pass CancellationToken.None to ensure the release is attempted
-                await resourceLock.ReleaseAsync(CancellationToken.None);
+                await resourceLock.ReleaseAsync();
             }
         }
 
@@ -231,8 +226,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
-                // we pass CancellationToken.None to ensure the release is attempted
-                await resourceLock.ReleaseAsync(CancellationToken.None);
+                await resourceLock.ReleaseAsync();
             }
         }
     }
