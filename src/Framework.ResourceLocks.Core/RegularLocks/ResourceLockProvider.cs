@@ -31,13 +31,15 @@ public sealed class ResourceLockProvider(
         StringComparer.Ordinal
     );
 
+    private readonly Lock _resetEventLock = new();
+
     private readonly Counter<int> _lockTimeoutCounter = HeadlessDiagnostics.Meter.CreateCounter<int>(
-        "framework.lock.failed",
+        "headless.lock.failed",
         description: "Number of failed attempts to acquire a lock"
     );
 
     private readonly Histogram<double> _lockWaitTimeHistogram = HeadlessDiagnostics.Meter.CreateHistogram<double>(
-        "framework.lock.wait.time",
+        "headless.lock.wait.time",
         unit: "ms",
         description: "Time waiting for locks"
     );
@@ -166,28 +168,38 @@ public sealed class ResourceLockProvider(
 
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
     {
-        return _autoResetEvents.AddOrUpdate(
-            resource,
-            static _ => new ResetEventWithRefCount(),
-            static (_, exist) =>
-            {
-                exist.Increment();
+        lock (_resetEventLock)
+        {
+            return _autoResetEvents.AddOrUpdate(
+                resource,
+                static _ => new ResetEventWithRefCount(),
+                static (_, exist) =>
+                {
+                    exist.Increment();
 
-                return exist;
-            }
-        );
+                    return exist;
+                }
+            );
+        }
     }
 
     private void _DecrementResetEvent(ResetEventWithRefCount? autoResetEvent, string resource)
     {
-        if (
-            autoResetEvent is not null
-            && _autoResetEvents.TryGetValue(resource, out var exist)
-            && exist == autoResetEvent
-            && autoResetEvent.Decrement() == 0
-        )
+        if (autoResetEvent is null)
         {
-            _autoResetEvents.TryRemove(resource, out _);
+            return;
+        }
+
+        lock (_resetEventLock)
+        {
+            if (
+                _autoResetEvents.TryGetValue(resource, out var exist)
+                && exist == autoResetEvent
+                && autoResetEvent.Decrement() == 0
+            )
+            {
+                _autoResetEvents.TryRemove(resource, out _);
+            }
         }
     }
 
@@ -339,10 +351,8 @@ public sealed class ResourceLockProvider(
             }
 
             logger.LogSubscribingToLockReleased();
-
             await messageBus.SubscribeAsync<ResourceLockReleased>(_OnLockReleasedAsync).AnyContext();
             _isSubscribed = true;
-
             logger.LogSubscribedToLockReleased();
         }
     }
@@ -351,6 +361,8 @@ public sealed class ResourceLockProvider(
     {
         logger.LogGotLockReleasedMessage(released.Resource, released.LockId);
 
+        // Signal waiters immediately when lock released instead of waiting for delay timeout.
+        // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
         if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();
