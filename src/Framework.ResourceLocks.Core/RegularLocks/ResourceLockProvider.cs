@@ -206,9 +206,7 @@ public sealed class ResourceLockProvider(
             // Prevent unbounded unique resources (DoS protection)
             if (_maxConcurrentWaitingResources is { } maxResources && _autoResetEvents.Count >= maxResources)
             {
-                throw new InvalidOperationException(
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
-                );
+                throw new InvalidOperationException($"Maximum concurrent waiting resources ({maxResources}) exceeded");
             }
 
             var newEvent = new ResetEventWithRefCount();
@@ -332,6 +330,87 @@ public sealed class ResourceLockProvider(
         return await Run.WithRetriesAsync(
             (_storage, resource),
             static x => x._storage.ExistsAsync(x.resource),
+            timeProvider: timeProvider,
+            cancellationToken: cancellationToken
+        );
+    }
+
+    #endregion
+
+    #region Observability
+
+    public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+
+        return Run.WithRetriesAsync(
+            (_storage, resource),
+            static x => x._storage.GetExpirationAsync(x.resource),
+            timeProvider: timeProvider,
+            cancellationToken: cancellationToken
+        );
+    }
+
+    public async Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+
+        var lockId = await Run.WithRetriesAsync(
+                (_storage, resource),
+                static x => x._storage.GetAsync(x.resource),
+                timeProvider: timeProvider,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
+
+        if (lockId is null)
+        {
+            return null;
+        }
+
+        var ttl = await _storage.GetExpirationAsync(resource).AnyContext();
+
+        return new LockInfo
+        {
+            Resource = resource,
+            LockId = lockId,
+            TimeToLive = ttl,
+        };
+    }
+
+    public async Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+    {
+        var locks = await Run.WithRetriesAsync(
+                _storage,
+                static storage => storage.GetAllByPrefixAsync(""),
+                timeProvider: timeProvider,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
+
+        var result = new List<LockInfo>(locks.Count);
+
+        foreach (var (resource, lockId) in locks)
+        {
+            var ttl = await _storage.GetExpirationAsync(resource).AnyContext();
+            result.Add(
+                new LockInfo
+                {
+                    Resource = resource,
+                    LockId = lockId,
+                    TimeToLive = ttl,
+                }
+            );
+        }
+
+        return result;
+    }
+
+    public Task<int> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
+    {
+        return Run.WithRetriesAsync(
+            _storage,
+            static storage => storage.GetCountAsync(""),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );

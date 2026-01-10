@@ -91,4 +91,40 @@ public sealed class InMemoryResourceLockProviderTests : ResourceLockProviderTest
     {
         return base.should_acquire_locks_in_parallel();
     }
+
+    [Fact]
+    public override Task should_get_expiration_for_locked_resource()
+    {
+        return base.should_get_expiration_for_locked_resource();
+    }
+
+    [Fact]
+    public override Task should_return_null_expiration_when_not_locked()
+    {
+        return base.should_return_null_expiration_when_not_locked();
+    }
+
+    [Fact]
+    public override Task should_get_lock_info_for_locked_resource()
+    {
+        return base.should_get_lock_info_for_locked_resource();
+    }
+
+    [Fact]
+    public override Task should_return_null_lock_info_when_not_locked()
+    {
+        return base.should_return_null_lock_info_when_not_locked();
+    }
+
+    [Fact]
+    public override Task should_list_active_locks()
+    {
+        return base.should_list_active_locks();
+    }
+
+    [Fact]
+    public override Task should_get_active_locks_count()
+    {
+        return base.should_get_active_locks_count();
+    }
 }
