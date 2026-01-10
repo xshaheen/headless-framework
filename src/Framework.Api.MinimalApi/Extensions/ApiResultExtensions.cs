@@ -1,29 +1,35 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Api.Abstractions;
-using Framework.Primitives;
 using Microsoft.AspNetCore.Http;
 
-namespace Framework.Api.MinimalApi.Extensions;
+// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130
+namespace Framework.Primitives;
 
 /// <summary>
 /// Extensions to convert OpResult to HTTP responses.
 /// Maps error types to appropriate HTTP status codes.
 /// </summary>
 [PublicAPI]
-public static class OpResultExtensions
+public static class ApiResultExtensions
 {
-    public static IResult ToHttpResult<T>(this OpResult<T> result, IProblemDetailsCreator creator) =>
-        result.Match(value => TypedResults.Ok(value), error => error.ToHttpResult(creator));
+    public static IResult ToHttpResult<T>(this ApiResult<T> result, IProblemDetailsCreator creator)
+    {
+        return result.Match(TypedResults.Ok, error => error.ToHttpResult(creator));
+    }
 
-    public static IResult ToHttpResult(this OpResult result, IProblemDetailsCreator creator) =>
-        result.Match(() => TypedResults.NoContent(), error => error.ToHttpResult(creator));
+    public static IResult ToHttpResult(this ApiResult result, IProblemDetailsCreator creator)
+    {
+        return result.Match(TypedResults.NoContent, error => error.ToHttpResult(creator));
+    }
 
     /// <summary>
     /// Maps ResultError to HTTP response using pattern matching.
     /// </summary>
-    public static IResult ToHttpResult(this ResultError error, IProblemDetailsCreator creator) =>
-        error switch
+    public static IResult ToHttpResult(this ResultError error, IProblemDetailsCreator creator)
+    {
+        return error switch
         {
             NotFoundError e => TypedResults.Problem(creator.EntityNotFound(e.Entity, e.Key)),
 
@@ -42,11 +48,14 @@ public static class OpResultExtensions
             // Default: treat as conflict
             _ => TypedResults.Problem(creator.Conflict([new ErrorDescriptor(error.Code, error.Message)])),
         };
+    }
 
-    private static Dictionary<string, List<ErrorDescriptor>> _ToErrorDescriptorDict(ValidationError e) =>
-        e.FieldErrors.ToDictionary(
+    private static Dictionary<string, List<ErrorDescriptor>> _ToErrorDescriptorDict(ValidationError e)
+    {
+        return e.FieldErrors.ToDictionary(
             kv => kv.Key,
             kv => kv.Value.Select(msg => new ErrorDescriptor($"validation:{kv.Key}", msg)).ToList(),
             StringComparer.Ordinal
         );
+    }
 }

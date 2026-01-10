@@ -97,14 +97,14 @@ public static class ReflectionHelper
 
     public static bool IsNullableOfT(this Type type)
     {
-        ArgumentNullException.ThrowIfNull(type);
+        Argument.IsNotNull(type);
 
         return Nullable.GetUnderlyingType(type) is not null;
     }
 
     public static bool IsFlagsEnum<T>()
     {
-        return IsFlagsEnum(typeof(T));
+        return typeof(T).IsFlagsEnum();
     }
 
     public static bool IsFlagsEnum(this Type type)

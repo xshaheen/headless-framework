@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
@@ -11,8 +13,8 @@ public static partial class EnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(source);
+        Argument.IsNotNull(action);
 
         foreach (var item in source)
         {
@@ -27,8 +29,8 @@ public static partial class EnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(source);
+        Argument.IsNotNull(action);
 
         foreach (var item in source)
         {
@@ -43,8 +45,8 @@ public static partial class EnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(source);
+        Argument.IsNotNull(action);
 
         var index = 0;
 
@@ -62,8 +64,8 @@ public static partial class EnumerableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(source);
+        Argument.IsNotNull(action);
 
         var index = 0;
 

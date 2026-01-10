@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -22,8 +24,8 @@ public static class HealthChecksBuilderExtensions
         Func<IHealthChecksBuilder, IHealthChecksBuilder> action
     )
     {
-        ArgumentNullException.ThrowIfNull(healthChecksBuilder);
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(healthChecksBuilder);
+        Argument.IsNotNull(action);
 
         if (condition)
         {
@@ -51,9 +53,9 @@ public static class HealthChecksBuilderExtensions
         Func<IHealthChecksBuilder, IHealthChecksBuilder> elseAction
     )
     {
-        ArgumentNullException.ThrowIfNull(healthChecksBuilder);
-        ArgumentNullException.ThrowIfNull(ifAction);
-        ArgumentNullException.ThrowIfNull(elseAction);
+        Argument.IsNotNull(healthChecksBuilder);
+        Argument.IsNotNull(ifAction);
+        Argument.IsNotNull(elseAction);
 
         return condition ? ifAction(healthChecksBuilder) : elseAction(healthChecksBuilder);
     }
