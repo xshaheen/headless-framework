@@ -20,7 +20,7 @@
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Domains.LocalMessagePublisher.DI\Framework.Domains.LocalMessagePublisher.DI.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Domain.LocalMessagePublisher.DI\Framework.Domain.LocalMessagePublisher.DI.csproj" />
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Redis\Framework.ResourceLocks.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>

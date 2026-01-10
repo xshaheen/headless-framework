@@ -3,7 +3,7 @@
 using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Features;
 using Framework.Features.Seeders;
 using Framework.Messaging;

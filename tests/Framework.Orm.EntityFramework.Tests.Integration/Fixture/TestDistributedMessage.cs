@@ -1,4 +1,4 @@
-﻿using Framework.Domains;
+﻿using Framework.Domain;
 
 namespace Tests.Fixture;
 

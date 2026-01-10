@@ -4,7 +4,7 @@ using Couchbase.Core.Exceptions.KeyValue;
 using Couchbase.KeyValue;
 using Couchbase.KeyValue.RangeScan;
 using Couchbase.Linq;
-using Framework.Domains;
+using Framework.Domain;
 
 namespace Framework.Orm.Couchbase.Context;
 

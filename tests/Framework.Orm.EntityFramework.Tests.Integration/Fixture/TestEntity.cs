@@ -1,4 +1,4 @@
-﻿using Framework.Domains;
+﻿using Framework.Domain;
 using Framework.Primitives;
 
 namespace Tests.Fixture;

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Linq;
 using Framework.Orm.EntityFramework.Configurations;
 using Framework.Primitives;

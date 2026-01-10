@@ -2,7 +2,7 @@
 
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Permissions.Entities;
 
 namespace Framework.Permissions.Grants;
@@ -12,7 +12,7 @@ public sealed class PermissionGrantCacheItemInvalidator(
     ICurrentTenant currentTenant
 ) : ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>
 {
-    public async Task HandleAsync(
+    public async Task ConsumeAsync(
         EntityChangedEventData<PermissionGrantRecord> message,
         CancellationToken cancellationToken = default
     )

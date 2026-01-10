@@ -2,7 +2,7 @@
 
 using Foundatio.Messaging;
 using Framework.Abstractions;
-using Framework.Domains.Messages;
+using Framework.Domain.Messages;
 
 namespace Framework.Messaging;
 

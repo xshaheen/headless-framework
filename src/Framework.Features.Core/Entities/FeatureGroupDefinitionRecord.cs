@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Primitives;
 
 namespace Framework.Features.Entities;
