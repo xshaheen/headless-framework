@@ -13,46 +13,43 @@ namespace Framework.Primitives;
 #pragma warning disable CA2225 // Operator overloads have named alternates
 public readonly struct OpResult : IEquatable<OpResult>
 {
-    private static readonly OpResult _Success = new(true, null);
-
-    private readonly bool _isSuccess;
-    private readonly ResultError? _error;
+    private static readonly OpResult _Success = new(isSuccess: true, error: null);
 
     private OpResult(bool isSuccess, ResultError? error)
     {
-        _isSuccess = isSuccess;
-        _error = error;
+        IsSuccess = isSuccess;
+        Error = error;
     }
 
     [MemberNotNullWhen(false, nameof(Error))]
-    public bool IsSuccess => _isSuccess;
+    public bool IsSuccess { get; }
 
     [MemberNotNullWhen(true, nameof(Error))]
-    public bool IsFailure => !_isSuccess;
+    public bool IsFailure => !IsSuccess;
 
-    public ResultError? Error => _error;
+    public ResultError? Error { get; }
 
     /// <summary>Try to get the error without throwing.</summary>
     public bool TryGetError([MaybeNullWhen(false)] out ResultError error)
     {
-        error = _error;
-        return !_isSuccess;
+        error = Error;
+        return !IsSuccess;
     }
 
     public TResult Match<TResult>(Func<TResult> success, Func<ResultError, TResult> failure) =>
-        _isSuccess ? success() : failure(_error!);
+        IsSuccess ? success() : failure(Error!);
 
     public OpResult OnSuccess(Action action)
     {
-        if (_isSuccess)
+        if (IsSuccess)
             action();
         return this;
     }
 
     public OpResult OnFailure(Action<ResultError> action)
     {
-        if (!_isSuccess)
-            action(_error!);
+        if (!IsSuccess)
+            action(Error!);
         return this;
     }
 
@@ -75,11 +72,11 @@ public readonly struct OpResult : IEquatable<OpResult>
     public static implicit operator OpResult(ResultError error) => Fail(error);
 
     // Equality
-    public bool Equals(OpResult other) => _isSuccess == other._isSuccess && Equals(_error, other._error);
+    public bool Equals(OpResult other) => IsSuccess == other.IsSuccess && Equals(Error, other.Error);
 
     public override bool Equals(object? obj) => obj is OpResult other && Equals(other);
 
-    public override int GetHashCode() => HashCode.Combine(_isSuccess, _error);
+    public override int GetHashCode() => HashCode.Combine(IsSuccess, Error);
 
     public static bool operator ==(OpResult left, OpResult right) => left.Equals(right);
 
