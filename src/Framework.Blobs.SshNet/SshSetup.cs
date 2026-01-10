@@ -11,18 +11,14 @@ public static class SshSetup
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddSshBlobStorage(
-            Action<SshBlobStorageOptions, IServiceProvider> setupAction
-        )
+        public IServiceCollection AddSshBlobStorage(Action<SshBlobStorageOptions, IServiceProvider> setupAction)
         {
             services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
 
             return services._AddCore();
         }
 
-        public IServiceCollection AddSshBlobStorage(
-            Action<SshBlobStorageOptions> setupAction
-        )
+        public IServiceCollection AddSshBlobStorage(Action<SshBlobStorageOptions> setupAction)
         {
             services.Configure<SshBlobStorageOptions, SshBlobStorageOptionsValidator>(setupAction);
 

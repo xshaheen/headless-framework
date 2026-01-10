@@ -11,18 +11,14 @@ public static class AddAzureBlobExtensions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddAzureBlobStorage(
-            Action<AzureStorageOptions, IServiceProvider> setupAction
-        )
+        public IServiceCollection AddAzureBlobStorage(Action<AzureStorageOptions, IServiceProvider> setupAction)
         {
             services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
 
             return services._AddCore();
         }
 
-        public IServiceCollection AddAzureBlobStorage(
-            Action<AzureStorageOptions> setupAction
-        )
+        public IServiceCollection AddAzureBlobStorage(Action<AzureStorageOptions> setupAction)
         {
             services.Configure<AzureStorageOptions, AzureStorageOptionsValidator>(setupAction);
 

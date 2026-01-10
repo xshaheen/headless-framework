@@ -20,18 +20,14 @@ public static class FileSystemBlobSetup
             return services._AddCore();
         }
 
-        public IServiceCollection AddFileSystemBlobStorage(
-            Action<FileSystemBlobStorageOptions> setupAction
-        )
+        public IServiceCollection AddFileSystemBlobStorage(Action<FileSystemBlobStorageOptions> setupAction)
         {
             services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(setupAction);
 
             return services._AddCore();
         }
 
-        public IServiceCollection AddFileSystemBlobStorage(
-            IConfigurationSection config
-        )
+        public IServiceCollection AddFileSystemBlobStorage(IConfigurationSection config)
         {
             services.Configure<FileSystemBlobStorageOptions, FileSystemBlobStorageOptionsValidator>(config);
 

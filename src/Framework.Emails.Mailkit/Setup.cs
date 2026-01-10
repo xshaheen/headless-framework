@@ -17,18 +17,14 @@ public static class MailkitSetup
             return _AddCore(services);
         }
 
-        public IServiceCollection AddMailKitEmailSender(
-            Action<MailkitSmtpOptions> configure
-        )
+        public IServiceCollection AddMailKitEmailSender(Action<MailkitSmtpOptions> configure)
         {
             services.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure);
 
             return _AddCore(services);
         }
 
-        public IServiceCollection AddMailKitEmailSender(
-            Action<MailkitSmtpOptions, IServiceProvider> configure
-        )
+        public IServiceCollection AddMailKitEmailSender(Action<MailkitSmtpOptions, IServiceProvider> configure)
         {
             services.Configure<MailkitSmtpOptions, MailkitSmtpOptionsValidator>(configure);
 

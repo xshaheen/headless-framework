@@ -17,18 +17,14 @@ public static class CoreSetup
             return _AddCore(services);
         }
 
-        public AddImagingBuilder AddImaging(
-            Action<ImagingOptions>? setupAction = null
-        )
+        public AddImagingBuilder AddImaging(Action<ImagingOptions>? setupAction = null)
         {
             services.Configure<ImagingOptions, ImagingOptionsValidator>(setupAction);
 
             return _AddCore(services);
         }
 
-        public AddImagingBuilder AddImaging(
-            Action<ImagingOptions, IServiceProvider> setupAction
-        )
+        public AddImagingBuilder AddImaging(Action<ImagingOptions, IServiceProvider> setupAction)
         {
             services.Configure<ImagingOptions, ImagingOptionsValidator>(setupAction);
 
