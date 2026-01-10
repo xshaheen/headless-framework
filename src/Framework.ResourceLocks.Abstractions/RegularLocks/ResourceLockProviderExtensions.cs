@@ -73,6 +73,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
+                // we pass CancellationToken.None to ensure the release is attempted
                 await resourceLock.ReleaseAsync(CancellationToken.None);
             }
         }
@@ -104,6 +105,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
+                // we pass CancellationToken.None to ensure the release is attempted
                 await resourceLock.ReleaseAsync(CancellationToken.None);
             }
         }
@@ -134,6 +136,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
+                // we pass CancellationToken.None to ensure the release is attempted
                 await resourceLock.ReleaseAsync(CancellationToken.None);
             }
         }
@@ -165,6 +168,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
+                // we pass CancellationToken.None to ensure the release is attempted
                 await resourceLock.ReleaseAsync(CancellationToken.None);
             }
         }
@@ -195,6 +199,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
+                // we pass CancellationToken.None to ensure the release is attempted
                 await resourceLock.ReleaseAsync(CancellationToken.None);
             }
         }
@@ -226,6 +231,7 @@ public static class ResourceLockProviderExtensions
             }
             finally
             {
+                // we pass CancellationToken.None to ensure the release is attempted
                 await resourceLock.ReleaseAsync(CancellationToken.None);
             }
         }
