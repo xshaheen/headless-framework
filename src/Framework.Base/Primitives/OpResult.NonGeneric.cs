@@ -59,6 +59,14 @@ public readonly struct OpResult : IEquatable<OpResult>
 
     public static OpResult Fail(ResultError error) => new(false, error);
 
+    // Generic factory methods (type inference)
+
+    /// <summary>Create success result with inferred type.</summary>
+    public static OpResult<T> Ok<T>(T value) => OpResult<T>.Ok(value);
+
+    /// <summary>Create failure result with inferred type.</summary>
+    public static OpResult<T> Fail<T>(ResultError error) => OpResult<T>.Fail(error);
+
     public static OpResult NotFound(string entity, string key) =>
         Fail(new NotFoundError { Entity = entity, Key = key });
 
