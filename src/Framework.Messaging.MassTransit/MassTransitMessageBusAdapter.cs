@@ -13,7 +13,7 @@ public sealed class MassTransitMessageBusAdapter(
     IReceiveEndpointConnector connector,
     IGuidGenerator guidGenerator,
     ILogger<MassTransitMessageBusAdapter> logger
-) : IMessageBus, IAsyncDisposable
+) : IMessageBus
 {
     private readonly ConcurrentDictionary<Type, SubscriptionState> _subscriptions = new();
     private int _disposed;
@@ -138,16 +138,14 @@ public sealed class MassTransitMessageBusAdapter(
             {
                 await kvp.Value.Handle.StopAsync().AnyContext();
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                logger.LogWarning(ex, "Error stopping {Type}", kvp.Key.Name);
+                logger.LogWarning(e, "Error stopping {Type}", kvp.Key.Name);
             }
         });
 
         await Task.WhenAll(stopTasks).AnyContext();
     }
-
-    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     private sealed class SubscriptionState(HostReceiveEndpointHandle handle)
     {
@@ -184,14 +182,14 @@ public sealed class MassTransitMessageBusAdapter(
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                logger.LogError(ex, "Error processing {MessageType}", typeof(TPayload).Name);
+                logger.LogError(e, "Error processing {MessageType}", typeof(TPayload).Name);
                 throw;
             }
         }
 
-        private static IDictionary<string, string>? _ExtractHeaders(Headers headers)
+        private static Dictionary<string, string>? _ExtractHeaders(Headers headers)
         {
             var dict = new Dictionary<string, string>(StringComparer.Ordinal);
 

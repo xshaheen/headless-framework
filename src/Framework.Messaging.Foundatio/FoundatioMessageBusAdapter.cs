@@ -67,5 +67,5 @@ public sealed class FoundatioMessageBusAdapter(IFoundatioMessageBus bus, IGuidGe
         );
     }
 
-    public void Dispose() { }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

@@ -30,7 +30,7 @@ public sealed class FoundatioMessageBusAdapterTests : TestBase
     [Fact]
     public async Task should_be_able_to_publish_subscribe()
     {
-        using var messageBus = _GetMessageBus();
+        await using var messageBus = _GetMessageBus();
 
         var countdown = new AsyncCountdownEvent(1);
 

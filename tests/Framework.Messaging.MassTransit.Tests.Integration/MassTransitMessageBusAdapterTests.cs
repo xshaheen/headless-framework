@@ -35,8 +35,8 @@ public sealed class MassTransitMessageBusAdapterTests : TestBase
             AbortToken
         );
 
-        (await harness.Published.Any<TestMessage>()).Should().BeTrue();
-        var context = (await harness.Published.SelectAsync<TestMessage>().First()).Context;
+        (await harness.Published.Any<TestMessage>(AbortToken)).Should().BeTrue();
+        var context = (await harness.Published.SelectAsync<TestMessage>(AbortToken).First()).Context;
         context.CorrelationId.Should().Be(correlationId);
 
         await harness.Stop(AbortToken);
