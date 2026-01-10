@@ -30,5 +30,5 @@ public interface IResourceLock : IAsyncDisposable
     Task ReleaseAsync();
 
     /// <summary>Attempts to renew the lock.</summary>
-    Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null);
+    Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default);
 }

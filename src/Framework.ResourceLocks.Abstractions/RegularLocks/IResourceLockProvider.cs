@@ -46,14 +46,34 @@ public interface IResourceLockProvider
     /// the expiration time of the lock if it is still held to the <paramref name="lockId"/>
     /// and return <see langword="true"/>, otherwise <see langword="false"/>.
     /// </summary>
-    Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
+    Task<bool> RenewAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Releases a resource lock for a specified <paramref name="resource"/>
     /// if it is acquired by the <paramref name="lockId"/>.
     /// </summary>
-    Task ReleaseAsync(string resource, string lockId);
+    Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default);
 
     /// <summary>Checks if a specified resource is currently locked.</summary>
     Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the remaining time until the lock expires for a specified resource.</summary>
+    /// <returns>The remaining TTL, or null if the resource is not locked or has no expiration.</returns>
+    Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets information about a specific lock.</summary>
+    /// <returns>Lock information, or null if the resource is not locked.</returns>
+    Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists all active locks.</summary>
+    /// <returns>Collection of active lock information.</returns>
+    Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the total count of active locks.</summary>
+    Task<int> GetActiveLocksCountAsync(CancellationToken cancellationToken = default);
 }
