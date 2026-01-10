@@ -30,9 +30,7 @@ public static class PermissionsSetup
             return _AddCore(services);
         }
 
-        public IServiceCollection AddPermissionsManagementCore(
-            Action<PermissionManagementOptions>? setupAction = null
-        )
+        public IServiceCollection AddPermissionsManagementCore(Action<PermissionManagementOptions>? setupAction = null)
         {
             services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
 

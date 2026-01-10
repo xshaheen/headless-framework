@@ -27,15 +27,15 @@ public static class OrmEntityFrameworkIdentitySetup
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
             where TDbContext : HeadlessIdentityDbContext<
-                TUser,
-                TRole,
-                TKey,
-                TUserClaim,
-                TUserRole,
-                TUserLogin,
-                TRoleClaim,
-                TUserToken
-            >
+                    TUser,
+                    TRole,
+                    TKey,
+                    TUserClaim,
+                    TUserRole,
+                    TUserLogin,
+                    TRoleClaim,
+                    TUserToken
+                >
             where TUser : IdentityUser<TKey>
             where TRole : IdentityRole<TKey>
             where TKey : IEquatable<TKey>
@@ -74,15 +74,15 @@ public static class OrmEntityFrameworkIdentitySetup
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
             where TDbContext : HeadlessIdentityDbContext<
-                TUser,
-                TRole,
-                TKey,
-                TUserClaim,
-                TUserRole,
-                TUserLogin,
-                TRoleClaim,
-                TUserToken
-            >
+                    TUser,
+                    TRole,
+                    TKey,
+                    TUserClaim,
+                    TUserRole,
+                    TUserLogin,
+                    TRoleClaim,
+                    TUserToken
+                >
             where TUser : IdentityUser<TKey>
             where TRole : IdentityRole<TKey>
             where TKey : IEquatable<TKey>

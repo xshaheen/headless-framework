@@ -11,9 +11,7 @@ public static class EntityFrameworkSetup
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddFeaturesManagementDbContextStorage(
-            Action<DbContextOptionsBuilder> setupAction
-        )
+        public IServiceCollection AddFeaturesManagementDbContextStorage(Action<DbContextOptionsBuilder> setupAction)
         {
             services.AddPooledDbContextFactory<FeaturesDbContext>(setupAction);
             return services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>();

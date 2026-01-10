@@ -28,7 +28,8 @@ public static class InMemoryResourceLockSetup
         /// - Resource lock provider with default options
         /// </remarks>
         public IServiceCollection AddInMemoryResourceLock(
-            Action<ResourceLockOptions, IServiceProvider>? optionSetupAction = null)
+            Action<ResourceLockOptions, IServiceProvider>? optionSetupAction = null
+        )
         {
             services.AddInMemoryCache();
             services.AddFoundatioInMemoryMessageBus();
@@ -56,7 +57,8 @@ public static class InMemoryResourceLockSetup
         /// </summary>
         public IServiceCollection AddKeyedInMemoryThrottlingResourceLock(
             string key,
-            ThrottlingResourceLockOptions options)
+            ThrottlingResourceLockOptions options
+        )
         {
             services.AddInMemoryCache();
 
