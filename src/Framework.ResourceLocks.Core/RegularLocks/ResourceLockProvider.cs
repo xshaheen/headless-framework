@@ -51,6 +51,8 @@ public sealed class ResourceLockProvider(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
+    private const int _MaxReleaseRetryAttempts = 15;
+    private const int _MaxResetEventsPerResource = 10_000;
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -89,8 +91,9 @@ public sealed class ResourceLockProvider(
                 {
                     gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires).AnyContext();
                 }
-                catch (Exception e)
+                catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
+                    // Swallow transient errors (network, timeout) and retry
                     logger.LogErrorAcquiringLock(e, resource, lockId, timeProvider.GetElapsedTime(timestamp));
                 }
 
@@ -170,6 +173,15 @@ public sealed class ResourceLockProvider(
     {
         lock (_resetEventLock)
         {
+            // Prevent unbounded growth (DoS protection)
+            if (_autoResetEvents.Count >= _MaxResetEventsPerResource
+                && !_autoResetEvents.ContainsKey(resource))
+            {
+                throw new InvalidOperationException(
+                    $"Maximum number of concurrent resource locks ({_MaxResetEventsPerResource}) exceeded"
+                );
+            }
+
             return _autoResetEvents.AddOrUpdate(
                 resource,
                 static _ => new ResetEventWithRefCount(),
@@ -233,7 +245,7 @@ public sealed class ResourceLockProvider(
 
                     return storage.RemoveIfEqualAsync(resource, lockId);
                 },
-                maxAttempts: 15,
+                maxAttempts: _MaxReleaseRetryAttempts,
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -367,13 +379,11 @@ public sealed class ResourceLockProvider(
         logger.LogGotLockReleasedMessage(released.Resource, released.LockId);
 
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
+        // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
         // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
-        lock (_resetEventLock)
+        if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
         {
-            if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
-            {
-                autoResetEvent.Target.Set();
-            }
+            autoResetEvent.Target.Set();
         }
 
         return Task.CompletedTask;
