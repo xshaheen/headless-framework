@@ -192,10 +192,14 @@ public sealed class ResourceLockProvider(
 
         lock (_resetEventLock)
         {
+            // Always decrement - we incremented when we got this reference
+            var newCount = autoResetEvent.Decrement();
+
+            // Only remove if this is still the current entry AND ref count hit zero
             if (
-                _autoResetEvents.TryGetValue(resource, out var exist)
-                && exist == autoResetEvent
-                && autoResetEvent.Decrement() == 0
+                newCount == 0
+                && _autoResetEvents.TryGetValue(resource, out var exist)
+                && ReferenceEquals(exist, autoResetEvent)
             )
             {
                 _autoResetEvents.TryRemove(resource, out _);
@@ -324,16 +328,17 @@ public sealed class ResourceLockProvider(
 
         public AsyncAutoResetEvent Target { get; } = new();
 
-        public void Increment() => Interlocked.Increment(ref _refCount);
+        // No Interlocked needed - all access protected by _resetEventLock
+        public void Increment() => _refCount++;
 
-        public int Decrement() => Interlocked.Decrement(ref _refCount);
+        public int Decrement() => --_refCount;
     }
 
     #endregion
 
     #region Ensure Lock Released Subscription
 
-    private bool _isSubscribed;
+    private volatile bool _isSubscribed;
     private readonly AsyncLock _subscribeLock = new();
 
     private async Task _EnsureTopicSubscriptionAsync()
@@ -363,9 +368,12 @@ public sealed class ResourceLockProvider(
 
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
         // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
-        if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
+        lock (_resetEventLock)
         {
-            autoResetEvent.Target.Set();
+            if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
+            {
+                autoResetEvent.Target.Set();
+            }
         }
 
         return Task.CompletedTask;
