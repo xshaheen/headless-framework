@@ -120,7 +120,7 @@ public sealed class ResourceLockProvider(
 
                 if (!_isSubscribed)
                 {
-                    await _EnsureTopicSubscriptionAsync().AnyContext();
+                    await _EnsureTopicSubscriptionAsync(cts.Token).AnyContext();
                 }
 
                 var delayAmount = await _GetWaitAmount(resource);
@@ -174,8 +174,7 @@ public sealed class ResourceLockProvider(
         lock (_resetEventLock)
         {
             // Prevent unbounded growth (DoS protection)
-            if (_autoResetEvents.Count >= _MaxResetEventsPerResource
-                && !_autoResetEvents.ContainsKey(resource))
+            if (_autoResetEvents.Count >= _MaxResetEventsPerResource && !_autoResetEvents.ContainsKey(resource))
             {
                 throw new InvalidOperationException(
                     $"Maximum number of concurrent resource locks ({_MaxResetEventsPerResource}) exceeded"
@@ -353,14 +352,14 @@ public sealed class ResourceLockProvider(
     private volatile bool _isSubscribed;
     private readonly AsyncLock _subscribeLock = new();
 
-    private async Task _EnsureTopicSubscriptionAsync()
+    private async Task _EnsureTopicSubscriptionAsync(CancellationToken cancellationToken = default)
     {
         if (_isSubscribed)
         {
             return;
         }
 
-        using (await _subscribeLock.LockAsync().AnyContext())
+        using (await _subscribeLock.LockAsync(cancellationToken).AnyContext())
         {
             if (_isSubscribed)
             {
@@ -368,7 +367,7 @@ public sealed class ResourceLockProvider(
             }
 
             logger.LogSubscribingToLockReleased();
-            await messageBus.SubscribeAsync<ResourceLockReleased>(_OnLockReleasedAsync).AnyContext();
+            await messageBus.SubscribeAsync<ResourceLockReleased>(_OnLockReleasedAsync, cancellationToken).AnyContext();
             _isSubscribed = true;
             logger.LogSubscribedToLockReleased();
         }
@@ -381,6 +380,7 @@ public sealed class ResourceLockProvider(
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
         // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
         // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
+        // ReSharper disable once InconsistentlySynchronizedField
         if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();
