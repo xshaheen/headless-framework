@@ -4,4 +4,4 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Messaging;
 
-public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable;
+public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IAsyncDisposable;

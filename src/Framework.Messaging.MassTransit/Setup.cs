@@ -8,10 +8,14 @@ namespace Framework.Messaging;
 public static class MassTransitSetup
 {
     /// <summary>
-    /// Registers both the MassTransit message bus adapter and distributed message publisher.
+    /// Registers Framework messaging adapter for MassTransit.
+    /// Call AFTER AddMassTransit().
     /// </summary>
     public static IServiceCollection AddHeadlessMassTransitAdapter(this IServiceCollection services)
     {
+        services.AddScoped<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
+        services.AddScoped<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+        services.AddScoped<IMessageBus, MassTransitMessageBusAdapter>();
         return services;
     }
 }
