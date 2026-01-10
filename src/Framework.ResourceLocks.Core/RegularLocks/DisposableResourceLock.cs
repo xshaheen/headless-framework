@@ -16,7 +16,7 @@ public sealed class DisposableResourceLock(
     ILogger logger
 ) : IResourceLock
 {
-    private bool _isReleased;
+    private volatile bool _isReleased;
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp = timeProvider.GetTimestamp();
 
@@ -63,7 +63,7 @@ public sealed class DisposableResourceLock(
             return;
         }
 
-        using (await _lock.LockAsync(cancellationToken).AnyContext())
+        using (await _lock.LockAsync(CancellationToken.None).AnyContext())
         {
             if (_isReleased)
             {
