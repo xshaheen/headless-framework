@@ -46,13 +46,18 @@ public interface IResourceLockProvider
     /// the expiration time of the lock if it is still held to the <paramref name="lockId"/>
     /// and return <see langword="true"/>, otherwise <see langword="false"/>.
     /// </summary>
-    Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
+    Task<bool> RenewAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Releases a resource lock for a specified <paramref name="resource"/>
     /// if it is acquired by the <paramref name="lockId"/>.
     /// </summary>
-    Task ReleaseAsync(string resource, string lockId);
+    Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default);
 
     /// <summary>Checks if a specified resource is currently locked.</summary>
     Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default);
