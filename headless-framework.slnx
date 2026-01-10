@@ -196,6 +196,12 @@
         <File Path="nuget.config" />
         <File Path="README.md" />
     </Folder>
+    <Folder Name="/src/">
+        <Project Path="src/Framework.ResourceLocks.InMemory/Framework.ResourceLocks.InMemory.csproj" />
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/Framework.ResourceLocks.InMemory.Tests.Unit/Framework.ResourceLocks.InMemory.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
         <Project Path="tests/Framework.FluentValidation.Tests.Unit/Framework.FluentValidation.Tests.Unit.csproj" />
