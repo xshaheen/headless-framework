@@ -52,7 +52,11 @@ public sealed class ResourceLockProvider(
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
     private const int _MaxReleaseRetryAttempts = 15;
-    private const int _MaxResetEventsPerResource = 10_000;
+
+    // Configurable limits from options
+    private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
+    private readonly int _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
+    private readonly int _maxWaitersPerResource = options.MaxWaitersPerResource;
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -68,6 +72,7 @@ public sealed class ResourceLockProvider(
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
+        _ValidateResourceName(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
@@ -81,6 +86,7 @@ public sealed class ResourceLockProvider(
         var timestamp = timeProvider.GetTimestamp();
         var gotLock = false;
         ResetEventWithRefCount? autoResetEvent = null;
+        var retryAttempt = 0;
 
         try
         {
@@ -120,10 +126,11 @@ public sealed class ResourceLockProvider(
 
                 if (!_isSubscribed)
                 {
-                    await _EnsureTopicSubscriptionAsync(cts.Token).AnyContext();
+                    await _EnsureTopicSubscriptionAsync().AnyContext();
                 }
 
-                var delayAmount = await _GetWaitAmount(resource);
+                // Use exponential backoff instead of storage call
+                var delayAmount = _GetBackoffDelay(retryAttempt++);
                 logger.LogDelayBeforeRetry(resource, lockId, delayAmount);
 
                 // Wait until we get a message saying the lock was released by (autoResetEvent.Target.Set())
@@ -169,27 +176,48 @@ public sealed class ResourceLockProvider(
         return new DisposableResourceLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
     }
 
+    private void _ValidateResourceName(string resource)
+    {
+        if (resource.Length > _maxResourceNameLength)
+        {
+            throw new ArgumentException(
+                $"Resource name exceeds maximum length of {_maxResourceNameLength} characters",
+                nameof(resource)
+            );
+        }
+    }
+
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
     {
         lock (_resetEventLock)
         {
-            // Prevent unbounded growth (DoS protection)
-            if (_autoResetEvents.Count >= _MaxResetEventsPerResource && !_autoResetEvents.ContainsKey(resource))
+            // Prevent unbounded unique resources (DoS protection)
+            if (_autoResetEvents.Count >= _maxConcurrentWaitingResources
+                && !_autoResetEvents.ContainsKey(resource))
             {
                 throw new InvalidOperationException(
-                    $"Maximum number of concurrent resource locks ({_MaxResetEventsPerResource}) exceeded"
+                    $"Maximum concurrent waiting resources ({_maxConcurrentWaitingResources}) exceeded"
                 );
             }
 
             return _autoResetEvents.AddOrUpdate(
                 resource,
-                static _ => new ResetEventWithRefCount(),
-                static (_, exist) =>
+                static (_, maxWaiters) => new ResetEventWithRefCount(),
+                (_, exist, maxWaiters) =>
                 {
+                    // Prevent unbounded waiters per resource (DoS protection)
+                    if (exist.RefCount >= maxWaiters)
+                    {
+                        throw new InvalidOperationException(
+                            $"Maximum waiters per resource ({maxWaiters}) exceeded"
+                        );
+                    }
+
                     exist.Increment();
 
                     return exist;
-                }
+                },
+                _maxWaitersPerResource
             );
         }
     }
@@ -218,18 +246,19 @@ public sealed class ResourceLockProvider(
         }
     }
 
-    private async Task<TimeSpan> _GetWaitAmount(string resource)
+    private static TimeSpan _GetBackoffDelay(int attempt)
     {
-        var exp = await _storage.GetExpirationAsync(resource).AnyContext() ?? TimeSpan.Zero;
+        // Exponential backoff: 50ms, 100ms, 200ms, 400ms, ... capped at 3s
+        var delayMs = _MinRetryDelay.TotalMilliseconds * Math.Pow(2, attempt);
 
-        return exp.Clamp(_MinRetryDelay, _MaxRetryDelay);
+        return TimeSpan.FromMilliseconds(Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds));
     }
 
     #endregion
 
     #region Release
 
-    public async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public async Task ReleaseAsync(string resource, string lockId)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
@@ -245,8 +274,7 @@ public sealed class ResourceLockProvider(
                     return storage.RemoveIfEqualAsync(resource, lockId);
                 },
                 maxAttempts: _MaxReleaseRetryAttempts,
-                timeProvider: timeProvider,
-                cancellationToken: cancellationToken
+                timeProvider: timeProvider
             )
             .AnyContext();
 
@@ -254,7 +282,7 @@ public sealed class ResourceLockProvider(
         if (removed)
         {
             var resourceLockReleased = new ResourceLockReleased { Resource = resource, LockId = lockId };
-            await messageBus.PublishAsync(resourceLockReleased, cancellationToken: cancellationToken).AnyContext();
+            await messageBus.PublishAsync(resourceLockReleased).AnyContext();
         }
 
         logger.LogReleaseReleased(resource, lockId);
@@ -264,12 +292,7 @@ public sealed class ResourceLockProvider(
 
     #region Renew
 
-    public Task<bool> RenewAsync(
-        string resource,
-        string lockId,
-        TimeSpan? timeUntilExpires = null,
-        CancellationToken cancellationToken = default
-    )
+    public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
@@ -286,8 +309,7 @@ public sealed class ResourceLockProvider(
 
                 return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl);
             },
-            timeProvider: timeProvider,
-            cancellationToken: cancellationToken
+            timeProvider: timeProvider
         );
     }
 
@@ -328,21 +350,21 @@ public sealed class ResourceLockProvider(
         }
 
         activity.AddTag("resource", resource);
-        activity.DisplayName = $"Lock: {resource}";
+        activity.DisplayName = string.Concat("Lock: ", resource);
 
         return activity;
     }
 
     private sealed class ResetEventWithRefCount
     {
-        private int _refCount = 1;
+        public int RefCount { get; private set; } = 1;
 
         public AsyncAutoResetEvent Target { get; } = new();
 
         // No Interlocked needed - all access protected by _resetEventLock
-        public void Increment() => _refCount++;
+        public void Increment() => RefCount++;
 
-        public int Decrement() => --_refCount;
+        public int Decrement() => --RefCount;
     }
 
     #endregion
@@ -352,14 +374,14 @@ public sealed class ResourceLockProvider(
     private volatile bool _isSubscribed;
     private readonly AsyncLock _subscribeLock = new();
 
-    private async Task _EnsureTopicSubscriptionAsync(CancellationToken cancellationToken = default)
+    private async Task _EnsureTopicSubscriptionAsync()
     {
         if (_isSubscribed)
         {
             return;
         }
 
-        using (await _subscribeLock.LockAsync(cancellationToken).AnyContext())
+        using (await _subscribeLock.LockAsync().AnyContext())
         {
             if (_isSubscribed)
             {
@@ -367,7 +389,7 @@ public sealed class ResourceLockProvider(
             }
 
             logger.LogSubscribingToLockReleased();
-            await messageBus.SubscribeAsync<ResourceLockReleased>(_OnLockReleasedAsync, cancellationToken).AnyContext();
+            await messageBus.SubscribeAsync<ResourceLockReleased>(_OnLockReleasedAsync).AnyContext();
             _isSubscribed = true;
             logger.LogSubscribedToLockReleased();
         }
@@ -380,7 +402,6 @@ public sealed class ResourceLockProvider(
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
         // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
         // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
-        // ReSharper disable once InconsistentlySynchronizedField
         if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();
