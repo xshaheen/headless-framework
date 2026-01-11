@@ -20,6 +20,7 @@ public sealed class SettingsInitializationBackgroundService(
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
+    private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicSettingsTask;
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -29,7 +30,9 @@ public sealed class SettingsInitializationBackgroundService(
             return Task.CompletedTask;
         }
 
-        _initializeDynamicSettingsTask = _InitializeDynamicSettingsAsync(cancellationToken);
+        _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, _cancellationTokenSource.Token);
+        _initializeDynamicSettingsTask = _InitializeDynamicSettingsAsync(_linkedCts.Token);
 
         return Task.CompletedTask;
     }
@@ -37,12 +40,21 @@ public sealed class SettingsInitializationBackgroundService(
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _cancellationTokenSource.CancelAsync().AnyContext();
+
+        if (_initializeDynamicSettingsTask is not null)
+        {
+            try
+            {
+                await _initializeDynamicSettingsTask.WaitAsync(cancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) { }
+        }
     }
 
     public void Dispose()
     {
+        _linkedCts?.Dispose();
         _cancellationTokenSource.Dispose();
-        _initializeDynamicSettingsTask?.Dispose();
     }
 
     private async Task _InitializeDynamicSettingsAsync(CancellationToken cancellationToken)
