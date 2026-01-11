@@ -10,12 +10,12 @@ internal static partial class PushNotificationsLoggerExtensions
         EventId = 1,
         EventName = "FailedToSendPushNotification",
         Level = LogLevel.Critical,
-        Message = "PushNotification: Failed to send notification to device. Client token: {ClientToken}",
+        Message = "PushNotification: Failed to send notification to device. Token prefix: {ClientTokenPrefix}",
         SkipEnabledCheck = true
     )]
     public static partial void FailedToSendPushNotification(
         this ILogger logger,
         Exception exception,
-        string clientToken
+        string clientTokenPrefix
     );
 }

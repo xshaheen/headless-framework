@@ -6,9 +6,9 @@ namespace Framework.PushNotifications;
 
 public sealed class BatchPushNotificationResponse
 {
-    public int SuccessCount { get; init; }
+    public required int SuccessCount { get; init; }
 
-    public int FailureCount { get; init; }
+    public required int FailureCount { get; init; }
 
-    public IReadOnlyList<PushNotificationResponse> Responses { get; init; } = [];
+    public required IReadOnlyList<PushNotificationResponse> Responses { get; init; }
 }

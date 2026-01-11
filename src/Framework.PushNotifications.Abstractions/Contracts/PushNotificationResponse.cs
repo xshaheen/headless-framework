@@ -56,7 +56,7 @@ public sealed record PushNotificationResponse
     {
         return new PushNotificationResponse
         {
-            Status = PushNotificationResponseStatus.Unregister,
+            Status = PushNotificationResponseStatus.Unregistered,
             Token = Argument.IsNotNullOrWhiteSpace(token),
             MessageId = null,
         };
@@ -65,7 +65,7 @@ public sealed record PushNotificationResponse
 
 public enum PushNotificationResponseStatus
 {
-    Unregister,
+    Unregistered,
     Success,
     Failure,
 }
