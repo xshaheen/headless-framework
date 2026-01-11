@@ -252,22 +252,6 @@ public static class TypeExtensions
         return type.IsAssignableTo(typeof(TTarget));
     }
 
-    /// <summary>
-    /// Determines whether an instance of this type can be assigned to
-    /// an instance of the <paramref name="targetType"></paramref>.
-    /// Internally uses <see cref="Type.IsAssignableFrom"/> (as reverse).
-    /// </summary>
-    /// <param name="type">this type</param>
-    /// <param name="targetType">Target type</param>
-    [MustUseReturnValue]
-    public static bool IsAssignableTo(this Type type, Type targetType)
-    {
-        Argument.IsNotNull(type);
-        Argument.IsNotNull(targetType);
-
-        return targetType.IsAssignableFrom(type);
-    }
-
     #endregion
 
     #region Base Classes

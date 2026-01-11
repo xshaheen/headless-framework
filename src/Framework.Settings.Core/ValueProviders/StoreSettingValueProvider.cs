@@ -17,7 +17,9 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
         CancellationToken cancellationToken = default
     )
     {
-        return await Store.GetOrDefaultAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken).AnyContext();
+        return await Store
+            .GetOrDefaultAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken)
+            .AnyContext();
     }
 
     public async Task<List<SettingValue>> GetAllAsync(
@@ -26,12 +28,14 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
         CancellationToken cancellationToken = default
     )
     {
-        return await Store.GetAllAsync(
-            settings.Select(x => x.Name).ToArray(),
-            Name,
-            NormalizeProviderKey(providerKey),
-            cancellationToken
-        ).AnyContext();
+        return await Store
+            .GetAllAsync(
+                settings.Select(x => x.Name).ToHashSet(StringComparer.Ordinal),
+                Name,
+                NormalizeProviderKey(providerKey),
+                cancellationToken
+            )
+            .AnyContext();
     }
 
     public async Task SetAsync(
@@ -41,7 +45,9 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
         CancellationToken cancellationToken = default
     )
     {
-        await Store.SetAsync(setting.Name, value, Name, NormalizeProviderKey(providerKey), cancellationToken).AnyContext();
+        await Store
+            .SetAsync(setting.Name, value, Name, NormalizeProviderKey(providerKey), cancellationToken)
+            .AnyContext();
     }
 
     public async Task ClearAsync(

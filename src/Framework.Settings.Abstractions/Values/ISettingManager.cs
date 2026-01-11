@@ -27,7 +27,7 @@ public interface ISettingManager
     );
 
     Task<Dictionary<string, SettingValue>> GetAllAsync(
-        string[] settingNames,
+        HashSet<string> settingNames,
         CancellationToken cancellationToken = default
     );
 
