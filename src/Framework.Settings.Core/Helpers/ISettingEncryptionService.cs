@@ -50,9 +50,9 @@ public sealed class SettingEncryptionService(
         }
         catch (Exception e)
         {
-            logger.LogWarning(e, "Failed to decrypt setting value: {SettingDefinition}", settingDefinition.Name);
+            logger.LogError(e, "Failed to decrypt setting value: {SettingDefinition}", settingDefinition.Name);
 
-            return null;
+            throw new SettingDecryptionException(settingDefinition.Name, e);
         }
     }
 }
