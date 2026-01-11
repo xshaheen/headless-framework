@@ -297,10 +297,9 @@ public sealed class SettingValueStore(
         }
 
         var definitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
+        var namesSet = names.ToHashSet(StringComparer.Ordinal);
 
-        return definitions.Where(definition =>
-            names.Any(name => string.Equals(name, definition.Name, StringComparison.Ordinal))
-        );
+        return definitions.Where(definition => namesSet.Contains(definition.Name));
     }
 
     private static string _GetSettingNameFromCacheKey(string key)
