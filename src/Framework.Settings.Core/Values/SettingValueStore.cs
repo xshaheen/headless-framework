@@ -7,7 +7,7 @@ using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Models;
 using Framework.Settings.Repositories;
-using Humanizer;
+using Microsoft.Extensions.Options;
 
 namespace Framework.Settings.Values;
 
@@ -57,10 +57,11 @@ public sealed class SettingValueStore(
     ISettingValueRecordRepository valueRepository,
     ISettingDefinitionManager definitionManager,
     IGuidGenerator guidGenerator,
-    ICache<SettingValueCacheItem> cache
+    ICache<SettingValueCacheItem> cache,
+    IOptions<SettingManagementOptions> options
 ) : ISettingValueStore
 {
-    private readonly TimeSpan _cacheExpiration = 5.Hours();
+    private readonly TimeSpan _cacheExpiration = options.Value.ValueCacheExpiration;
 
     public async Task<string?> GetOrDefaultAsync(
         string name,
