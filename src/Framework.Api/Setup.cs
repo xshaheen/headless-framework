@@ -42,7 +42,10 @@ public static class ApiSetup
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
-    public static WebApplicationBuilder AddHeadlessApi(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddHeadlessApi(
+        this WebApplicationBuilder builder,
+        Action<StringEncryptionOptions> configureEncryption
+    )
     {
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddHttpContextAccessor();
@@ -50,7 +53,7 @@ public static class ApiSetup
         builder.Services.AddHeadlessJsonService();
         builder.Services.AddHeadlessTimeService();
         builder.Services.AddHeadlessStringHashService();
-        builder.Services.AddHeadlessStringEncryptionService();
+        builder.Services.AddHeadlessStringEncryptionService(configureEncryption);
         builder.Services.AddHeadlessApiResponseCompression();
         builder.Services.AddHeadlessProblemDetails();
         builder.Services.AddHeadlessApiConfigurations();
@@ -122,9 +125,12 @@ public static class ApiSetup
         return services;
     }
 
-    public static IServiceCollection AddHeadlessStringEncryptionService(this IServiceCollection services)
+    public static IServiceCollection AddHeadlessStringEncryptionService(
+        this IServiceCollection services,
+        Action<StringEncryptionOptions> configure
+    )
     {
-        services.AddOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
+        services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure);
         services.AddSingletonOptionValue<StringEncryptionOptions>();
         services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
 
