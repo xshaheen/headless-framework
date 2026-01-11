@@ -9,7 +9,7 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 ## Key Features
 
 - `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
-- `SitemapUrls` - Collection builder for sitemap URLs
+- `SitemapUrls` - Extension methods to write sitemap URLs to streams
 - `SitemapIndexBuilder` - Sitemap index generation for large sites
 - `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
 - `SitemapImage` - Image sitemap support
@@ -26,55 +26,59 @@ dotnet add package Framework.Sitemaps
 ### Basic Sitemap
 
 ```csharp
-var urls = new SitemapUrls();
+var urls = new List<SitemapUrl>
+{
+    new(
+        location: new Uri("https://example.com/"),
+        lastModified: DateTime.UtcNow,
+        changeFrequency: ChangeFrequency.Daily,
+        priority: 1.0f
+    ),
+    new(
+        location: new Uri("https://example.com/about"),
+        changeFrequency: ChangeFrequency.Monthly,
+        priority: 0.8f
+    ),
+};
 
-urls.Add(new SitemapUrl(
-    location: new Uri("https://example.com/"),
-    lastModified: DateTime.UtcNow,
-    changeFrequency: ChangeFrequency.Daily,
-    priority: 1.0f
-));
+// Write to stream
+await using var stream = new MemoryStream();
+await urls.WriteToAsync(stream);
 
-urls.Add(new SitemapUrl(
-    location: new Uri("https://example.com/about"),
-    changeFrequency: ChangeFrequency.Monthly,
-    priority: 0.8f
-));
-
-var xml = urls.Build();
+// Or auto-split at 50,000 URLs per sitemap
+var streams = await urls.WriteAsync();
 ```
 
 ### Localized URLs
 
 ```csharp
-var alternates = new[]
+var urls = new List<SitemapUrl>
 {
-    new SitemapAlternateUrl("en", new Uri("https://example.com/en/page")),
-    new SitemapAlternateUrl("ar", new Uri("https://example.com/ar/page")),
+    new(
+        alternateLocations:
+        [
+            new() { Location = new Uri("https://example.com/en/page"), LanguageCode = "en" },
+            new() { Location = new Uri("https://example.com/ar/page"), LanguageCode = "ar" },
+        ],
+        lastModified: DateTime.UtcNow
+    ),
 };
 
-urls.Add(new SitemapUrl(
-    alternateLocations: alternates,
-    lastModified: DateTime.UtcNow
-));
+await using var stream = new MemoryStream();
+await urls.WriteToAsync(stream);
 ```
 
 ### Sitemap Index
 
 ```csharp
-var index = new SitemapIndexBuilder();
+var references = new List<SitemapReference>
+{
+    new() { Location = new Uri("https://example.com/sitemap-products.xml"), LastModified = DateTime.UtcNow },
+    new() { Location = new Uri("https://example.com/sitemap-blog.xml"), LastModified = DateTime.UtcNow },
+};
 
-index.Add(new SitemapReference(
-    new Uri("https://example.com/sitemap-products.xml"),
-    DateTime.UtcNow
-));
-
-index.Add(new SitemapReference(
-    new Uri("https://example.com/sitemap-blog.xml"),
-    DateTime.UtcNow
-));
-
-var indexXml = index.Build();
+await using var stream = new MemoryStream();
+await references.WriteToAsync(stream);
 ```
 
 ## Configuration
@@ -83,7 +87,7 @@ No configuration required.
 
 ## Dependencies
 
-None.
+- Framework.Base
 
 ## Side Effects
 
