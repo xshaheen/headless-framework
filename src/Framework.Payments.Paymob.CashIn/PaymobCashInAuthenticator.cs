@@ -50,7 +50,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator
         );
 
         _cachedToken = content!.Token;
-        _tokenExpiration = DateTimeOffset.UtcNow.AddMinutes(55);
+        _tokenExpiration = _timeProvider.GetUtcNow().AddMinutes(55);
 
         return content;
     }
