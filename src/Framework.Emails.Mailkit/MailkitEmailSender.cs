@@ -2,13 +2,17 @@
 
 using MailKit.Security;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
 namespace Framework.Emails.Mailkit;
 
-public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> options, ILogger<MailkitEmailSender> logger)
-    : IEmailSender
+public sealed class MailkitEmailSender(
+    ObjectPool<SmtpClient> pool,
+    IOptionsMonitor<MailkitSmtpOptions> options,
+    ILogger<MailkitEmailSender> logger
+) : IEmailSender
 {
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
@@ -21,12 +25,12 @@ public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> optio
         }
 
         var settings = options.CurrentValue;
-
         using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).AnyContext();
-        using var client = await _BuildClientAsync(settings, cancellationToken).AnyContext();
 
+        var client = pool.Get();
         try
         {
+            await _EnsureConnectedAsync(client, settings, cancellationToken).AnyContext();
             await client.SendAsync(mimeMessage, cancellationToken).AnyContext();
         }
         catch (MailKit.Net.Smtp.SmtpCommandException ex)
@@ -42,56 +46,39 @@ public sealed class MailkitEmailSender(IOptionsMonitor<MailkitSmtpOptions> optio
         catch (AuthenticationException ex)
         {
             logger.LogCritical(ex, "SMTP authentication failed");
-            throw; // Config error - should not be swallowed
+            throw;
         }
         finally
         {
-            if (client.IsConnected)
-            {
-                try
-                {
-                    await client.DisconnectAsync(quit: true, cancellationToken).AnyContext();
-                }
-                catch
-                {
-                    // Ignore disconnect errors during cleanup
-                }
-            }
+            pool.Return(client);
         }
 
         return SendSingleEmailResponse.Succeeded();
     }
 
-    private static async Task<SmtpClient> _BuildClientAsync(
+    private static async Task _EnsureConnectedAsync(
+        SmtpClient client,
         MailkitSmtpOptions options,
         CancellationToken cancellationToken
     )
     {
-        var client = new SmtpClient();
-        client.Timeout = (int)options.Timeout.TotalMilliseconds;
-
-        try
+        if (client.IsConnected)
         {
-            await client
-                .ConnectAsync(
-                    host: options.Server,
-                    port: options.Port,
-                    options: options.SocketOptions,
-                    cancellationToken: cancellationToken
-                )
-                .AnyContext();
-
-            if (options.HasCredentials)
-            {
-                await client.AuthenticateAsync(options.User, options.Password, cancellationToken).AnyContext();
-            }
-
-            return client;
+            return;
         }
-        catch
+
+        await client
+            .ConnectAsync(
+                host: options.Server,
+                port: options.Port,
+                options: options.SocketOptions,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
+
+        if (options.HasCredentials)
         {
-            client.Dispose();
-            throw;
+            await client.AuthenticateAsync(options.User, options.Password, cancellationToken).AnyContext();
         }
     }
 }
