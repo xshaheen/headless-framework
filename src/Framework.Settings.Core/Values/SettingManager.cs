@@ -36,7 +36,7 @@ public sealed class SettingManager(
     {
         Argument.IsNotNullOrEmpty(settingNames);
 
-        var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken);
+        var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
         var settingDefinitions = allSettingDefinitions
             .Where(x => settingNames.Contains(x.Name, StringComparer.Ordinal))
             .ToList();
@@ -52,7 +52,7 @@ public sealed class SettingManager(
                 .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
                 .ToArray();
 
-            var settingValues = await provider.GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken);
+            var settingValues = await provider.GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken).AnyContext();
             var notNullValues = settingValues.Where(x => x.Value != null).ToList();
 
             foreach (var settingValue in notNullValues)
@@ -94,7 +94,7 @@ public sealed class SettingManager(
     {
         Argument.IsNotNull(providerName);
 
-        var settingDefinitions = await definitionManager.GetAllAsync(cancellationToken);
+        var settingDefinitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
 
         var providers = valueProviderManager.Providers.SkipWhile(c =>
             !string.Equals(c.Name, providerName, StringComparison.Ordinal)
@@ -123,7 +123,7 @@ public sealed class SettingManager(
                 foreach (var provider in providerList)
                 {
                     var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-                    var providerValue = await provider.GetOrDefaultAsync(setting, pk, cancellationToken);
+                    var providerValue = await provider.GetOrDefaultAsync(setting, pk, cancellationToken).AnyContext();
 
                     if (providerValue is not null)
                     {
@@ -133,7 +133,7 @@ public sealed class SettingManager(
             }
             else
             {
-                value = await providerList[0].GetOrDefaultAsync(setting, providerKey, cancellationToken);
+                value = await providerList[0].GetOrDefaultAsync(setting, providerKey, cancellationToken).AnyContext();
             }
 
             if (
@@ -166,8 +166,8 @@ public sealed class SettingManager(
         Argument.IsNotNull(providerName);
 
         var setting =
-            await definitionManager.FindAsync(settingName, cancellationToken)
-            ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName));
+            await definitionManager.FindAsync(settingName, cancellationToken).AnyContext()
+            ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName).AnyContext());
 
         var providers = valueProviderManager
             .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
@@ -175,7 +175,7 @@ public sealed class SettingManager(
 
         if (providers.Count == 0)
         {
-            throw new ConflictException(await errorsDescriptor.ProviderNotFound(providerName));
+            throw new ConflictException(await errorsDescriptor.ProviderNotFound(providerName).AnyContext());
         }
 
         if (setting.IsEncrypted)
@@ -190,7 +190,7 @@ public sealed class SettingManager(
                 providers[1].Name,
                 providerKey: null,
                 cancellationToken: cancellationToken
-            );
+            ).AnyContext();
 
             if (string.Equals(fallbackValue, value, StringComparison.Ordinal))
             {
@@ -206,16 +206,16 @@ public sealed class SettingManager(
         {
             if (provider is not ISettingValueProvider p)
             {
-                throw new ConflictException(await errorsDescriptor.ProviderIsReadonly(providerName));
+                throw new ConflictException(await errorsDescriptor.ProviderIsReadonly(providerName).AnyContext());
             }
 
             if (value is null)
             {
-                await p.ClearAsync(setting, providerKey, cancellationToken);
+                await p.ClearAsync(setting, providerKey, cancellationToken).AnyContext();
             }
             else
             {
-                await p.SetAsync(setting, value, providerKey, cancellationToken);
+                await p.SetAsync(setting, value, providerKey, cancellationToken).AnyContext();
             }
         }
     }
@@ -226,11 +226,11 @@ public sealed class SettingManager(
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await valueStore.GetAllProviderValuesAsync(providerName, providerKey, cancellationToken);
+        var settings = await valueStore.GetAllProviderValuesAsync(providerName, providerKey, cancellationToken).AnyContext();
 
         foreach (var setting in settings)
         {
-            await valueStore.DeleteAsync(setting.Name, providerName, providerKey, cancellationToken);
+            await valueStore.DeleteAsync(setting.Name, providerName, providerKey, cancellationToken).AnyContext();
         }
     }
 
@@ -250,8 +250,8 @@ public sealed class SettingManager(
         }
 
         var definition =
-            await definitionManager.FindAsync(settingName, cancellationToken)
-            ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName));
+            await definitionManager.FindAsync(settingName, cancellationToken).AnyContext()
+            ?? throw new ConflictException(await errorsDescriptor.NotDefined(settingName).AnyContext());
 
         IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
 
@@ -270,7 +270,7 @@ public sealed class SettingManager(
         foreach (var provider in providers)
         {
             var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
-            value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken);
+            value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).AnyContext();
 
             if (value is not null)
             {

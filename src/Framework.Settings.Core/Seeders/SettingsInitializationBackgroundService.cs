@@ -36,7 +36,7 @@ public sealed class SettingsInitializationBackgroundService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _cancellationTokenSource.CancelAsync();
+        await _cancellationTokenSource.CancelAsync().AnyContext();
     }
 
     public void Dispose()
@@ -54,14 +54,14 @@ public sealed class SettingsInitializationBackgroundService(
 
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
-        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken);
+        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken).AnyContext();
 
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        await _PreCacheDynamicSettingsAsync(scope, cancellationToken);
+        await _PreCacheDynamicSettingsAsync(scope, cancellationToken).AnyContext();
     }
 
     private async Task _SaveStaticSettingsToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
@@ -93,7 +93,7 @@ public sealed class SettingsInitializationBackgroundService(
 
                 try
                 {
-                    await store.SaveAsync(cancellationToken);
+                    await store.SaveAsync(cancellationToken).AnyContext();
                 }
                 catch (Exception e)
                 {
@@ -118,7 +118,7 @@ public sealed class SettingsInitializationBackgroundService(
 
         try
         {
-            await store.GetAllAsync(cancellationToken); // Pre-cache settings, so the first request doesn't wait
+            await store.GetAllAsync(cancellationToken).AnyContext(); // Pre-cache settings, so the first request doesn't wait
         }
         catch (Exception e)
         {
