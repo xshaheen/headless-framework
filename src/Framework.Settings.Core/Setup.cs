@@ -123,18 +123,18 @@ public static class CoreSettingsSetup
          * 2. Implement `ISettingDefinitionProvider` to define your settings in code
          *    and use `AddSettingDefinitionProvider` to register it
          */
-        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>(); // Transient
-        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>(); // Singleton
-        services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>(); // Transient
-        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>(); // Singleton
+        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>();
+        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
+        services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
+        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
 
         // Value Services
         /*
          * You need to provide a storage implementation for `ISettingValueRecordRepository`
          */
-        services.TryAddSingleton<ISettingValueStore, SettingValueStore>(); // Transient
-        services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>(); // Singleton
-        services.TryAddSingleton<ISettingManager, SettingManager>(); // Singleton
+        services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
+        services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
+        services.TryAddSingleton<ISettingManager, SettingManager>();
 
         return services;
     }

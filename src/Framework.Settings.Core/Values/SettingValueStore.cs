@@ -190,7 +190,7 @@ public sealed class SettingValueStore(
         if (existCacheItems.TrueForAll(x => x.Value.HasValue))
         {
             return existCacheItems.ConvertAll(item => new SettingValue(
-                name: _GetSettingNameFormCacheKey(item.Key),
+                name: _GetSettingNameFromCacheKey(item.Key),
                 value: item.Value.Value?.Value
             ));
         }
@@ -198,7 +198,7 @@ public sealed class SettingValueStore(
         // Some cache items aren't found in the cache, get them from the database
         var notCacheNames = existCacheItems
             .Where(x => !x.Value.HasValue)
-            .Select(x => _GetSettingNameFormCacheKey(x.Key))
+            .Select(x => _GetSettingNameFromCacheKey(x.Key))
             .ToArray();
 
         var newCacheItemsMap = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken);
@@ -206,7 +206,7 @@ public sealed class SettingValueStore(
 
         foreach (var cacheKey in cacheKeys)
         {
-            var settingName = _GetSettingNameFormCacheKey(cacheKey);
+            var settingName = _GetSettingNameFromCacheKey(cacheKey);
 
             if (newCacheItemsMap.TryGetValue(cacheKey, out var newCachedValue))
             {
@@ -302,9 +302,9 @@ public sealed class SettingValueStore(
         );
     }
 
-    private static string _GetSettingNameFormCacheKey(string key)
+    private static string _GetSettingNameFromCacheKey(string key)
     {
-        var settingName = SettingValueCacheItem.GetSettingNameFormCacheKey(key);
+        var settingName = SettingValueCacheItem.GetSettingNameFromCacheKey(key);
         Ensure.True(settingName is not null, $"Invalid setting cache key `{key}` setting name not found");
 
         return settingName;
