@@ -11,9 +11,7 @@ internal sealed class SmtpClientPooledObjectPolicy(IOptionsMonitor<MailkitSmtpOp
 {
     public SmtpClient Create()
     {
-        var client = new SmtpClient();
-        client.Timeout = (int)options.CurrentValue.Timeout.TotalMilliseconds;
-        return client;
+        return new SmtpClient { Timeout = (int)options.CurrentValue.Timeout.TotalMilliseconds };
     }
 
     public bool Return(SmtpClient client)
