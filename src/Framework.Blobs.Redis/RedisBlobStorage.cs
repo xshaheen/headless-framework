@@ -115,7 +115,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             {
                 await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                return Result<Exception>.Success();
+                return Result<Exception>.Ok();
             }
             catch (Exception e)
             {
@@ -226,7 +226,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         });
 
         var results = await Task.WhenAll(tasks).WithAggregatedExceptions();
-        var count = results.Count(r => r.Succeeded);
+        var count = results.Count(r => r.IsSuccess);
 
         _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
 

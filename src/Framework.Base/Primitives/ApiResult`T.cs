@@ -68,6 +68,9 @@ public readonly struct ApiResult<T> : IEquatable<ApiResult<T>>
         return !IsSuccess;
     }
 
+    /// <summary>Get the value or a default if failed.</summary>
+    public T GetValueOrDefault(T defaultValue) => IsSuccess ? _value! : defaultValue;
+
     /// <summary>Pattern match on success or failure.</summary>
     public TResult Match<TResult>(Func<T, TResult> success, Func<ResultError, TResult> failure)
     {

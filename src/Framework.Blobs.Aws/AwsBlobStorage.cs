@@ -143,7 +143,7 @@ public sealed class AwsBlobStorage : IBlobStorage
             {
                 await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                return Result<Exception>.Success();
+                return Result<Exception>.Ok();
             }
             catch (Exception e)
             {
@@ -227,7 +227,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
-            return objectKeys.ConvertAll(_ => Result<bool, Exception>.Success(operand: true));
+            return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(true));
         }
         catch (DeleteObjectsException e) // This exception is thrown when some items fail to delete.
         {
@@ -249,7 +249,7 @@ public sealed class AwsBlobStorage : IBlobStorage
                 }
                 else
                 {
-                    results.Add(Result<bool, Exception>.Success(operand: true));
+                    results.Add(Result<bool, Exception>.Ok(true));
                 }
             }
 
@@ -260,7 +260,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         // No exceptions were thrown, so all items were deleted successfully.
 
-        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Success(operand: true));
+        return objectKeys.ConvertAll(_ => Result<bool, Exception>.Ok(true));
     }
 
     public async ValueTask<int> DeleteAllAsync(

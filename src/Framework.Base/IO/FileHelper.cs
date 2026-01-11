@@ -43,7 +43,7 @@ public static class FileHelper
             try
             {
                 await _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token);
-                return Result<Exception>.Success();
+                return Result<Exception>.Ok();
             }
             catch (Exception e)
             {
