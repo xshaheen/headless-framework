@@ -92,15 +92,6 @@ public sealed class SlugTests
     }
 
     [Fact]
-    public void should_throw_when_input_exceeds_10000_chars()
-    {
-        var hugeInput = new string('a', 10_001);
-        var act = () => Slug.Create(hugeInput);
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*10000*");
-    }
-
-    [Fact]
     public void should_allow_trailing_separator_when_configured()
     {
         var options = new SlugOptions { CanEndWithSeparator = true };

@@ -10,13 +10,9 @@ public sealed class SlugOptions
     public const int DefaultMaximumLength = 80;
     public const string DefaultSeparator = "-";
 
-    internal static SlugOptions Default => new();
-
     public int MaximumLength { get; init; } = DefaultMaximumLength;
 
     public CasingTransformation CasingTransformation { get; init; } = CasingTransformation.ToLowerCase;
-
-    private readonly string _separator = DefaultSeparator;
 
     /// <summary>
     /// The separator between words in the slug. Default is "-".
@@ -24,11 +20,12 @@ public sealed class SlugOptions
     /// <exception cref="ArgumentException">Thrown when value is null or empty.</exception>
     public string Separator
     {
-        get => _separator;
-        init => _separator = string.IsNullOrEmpty(value)
-            ? throw new ArgumentException("Separator cannot be null or empty", nameof(value))
-            : value;
-    }
+        get;
+        init =>
+            field = string.IsNullOrEmpty(value)
+                ? throw new ArgumentException("Separator cannot be null or empty", nameof(value))
+                : value;
+    } = DefaultSeparator;
 
     public CultureInfo? Culture { get; init; }
 
@@ -66,12 +63,16 @@ public sealed class SlugOptions
     public bool IsAllowed(Rune character)
     {
         if (AllowedRanges.Count == 0)
-            return true;
-
-        for (var i = 0; i < AllowedRanges.Count; i++)
         {
-            if (_IsInRange(AllowedRanges[i], character))
+            return true;
+        }
+
+        foreach (var t in AllowedRanges)
+        {
+            if (_IsInRange(t, character))
+            {
                 return true;
+            }
         }
 
         return false;

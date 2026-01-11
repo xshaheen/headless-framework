@@ -14,14 +14,7 @@ public static class Slug
             return null;
         }
 
-        // Prevent DoS with huge inputs
-        const int maxInputLength = 10_000;
-        if (text.Length > maxInputLength)
-        {
-            throw new ArgumentException($"Input exceeds maximum length of {maxInputLength} characters", nameof(text));
-        }
-
-        options ??= SlugOptions.Default;
+        options ??= new();
         text = text.Normalize(NormalizationForm.FormD);
 
         foreach (var (value, replacement) in options.Replacements)
@@ -64,7 +57,6 @@ public static class Slug
                     hasPreviousDash = true;
                 }
             }
-
         }
 
         text = sb.ToString();
