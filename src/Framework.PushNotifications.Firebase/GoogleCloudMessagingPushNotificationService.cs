@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using FirebaseAdmin.Messaging;
 using Framework.Checks;
 using Framework.PushNotifications.Firebase.Internals;
@@ -8,28 +7,45 @@ using Microsoft.Extensions.Logging;
 
 namespace Framework.PushNotifications.Firebase;
 
+/// <summary>
+/// Firebase Cloud Messaging (FCM) push notification service implementation.
+/// </summary>
+/// <remarks>
+/// This service does not implement retry logic for transient failures.
+/// Callers should implement their own retry policies using Polly or similar
+/// for handling rate limits and temporary network issues.
+/// </remarks>
 public sealed class GoogleCloudMessagingPushNotificationService(
     ILogger<GoogleCloudMessagingPushNotificationService> logger
 ) : IPushNotificationService
 {
+    private const int _MaxTitleLength = 100;
+    private const int _MaxBodyLength = 4000;
+    private const int _MaxTokensPerBatch = 500;
+
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
         string title,
         string body,
-        IReadOnlyDictionary<string, string>? data = null
+        IReadOnlyDictionary<string, string>? data = null,
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrWhiteSpace(clientToken);
         Argument.IsNotNullOrWhiteSpace(title);
         Argument.IsNotNullOrWhiteSpace(body);
 
-        if (
-            data is not null
-            && (data.ContainsKey("from") || data.ContainsKey("notification") || data.ContainsKey("message_type"))
-        )
+        if (title.Length > _MaxTitleLength)
         {
-            throw new InvalidOperationException("Notification data contain reserved word(s).");
+            throw new ArgumentException($"Title exceeds maximum length of {_MaxTitleLength} characters", nameof(title));
         }
+
+        if (body.Length > _MaxBodyLength)
+        {
+            throw new ArgumentException($"Body exceeds maximum length of {_MaxBodyLength} characters", nameof(body));
+        }
+
+        _EnsureDataNotContainReservedWords(data);
 
         var message = new Message
         {
@@ -42,7 +58,7 @@ public sealed class GoogleCloudMessagingPushNotificationService(
 
         try
         {
-            var messageId = await FirebaseMessaging.DefaultInstance.SendAsync(message);
+            var messageId = await FirebaseMessaging.DefaultInstance.SendAsync(message, cancellationToken).AnyContext();
 
             return PushNotificationResponse.Succeeded(clientToken, messageId);
         }
@@ -56,9 +72,9 @@ public sealed class GoogleCloudMessagingPushNotificationService(
         }
         catch (Exception e)
         {
-            logger.FailedToSendPushNotification(e, clientToken);
+            logger.FailedToSendPushNotification(e, clientToken.Length > 8 ? clientToken[..8] + "***" : "***");
 
-            return PushNotificationResponse.Failed(clientToken, e.ToString());
+            return PushNotificationResponse.Failed(clientToken, "An internal error occurred");
         }
     }
 
@@ -66,52 +82,94 @@ public sealed class GoogleCloudMessagingPushNotificationService(
         IReadOnlyList<string> clientTokens,
         string title,
         string body,
-        IReadOnlyDictionary<string, string>? data = null
+        IReadOnlyDictionary<string, string>? data = null,
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(clientTokens);
         Argument.IsNotNullOrWhiteSpace(title);
         Argument.IsNotNullOrWhiteSpace(body);
 
+        if (title.Length > _MaxTitleLength)
+        {
+            throw new ArgumentException($"Title exceeds maximum length of {_MaxTitleLength} characters", nameof(title));
+        }
+
+        if (body.Length > _MaxBodyLength)
+        {
+            throw new ArgumentException($"Body exceeds maximum length of {_MaxBodyLength} characters", nameof(body));
+        }
+
         _EnsureDataNotContainReservedWords(data);
 
-        var message = new MulticastMessage
-        {
-            Tokens = clientTokens,
-            Notification = new Notification { Title = title, Body = body },
-            Android = new AndroidConfig { Priority = Priority.High },
-            Apns = new ApnsConfig { Aps = new Aps { Badge = 1 } },
-        };
+        var allResponses = new List<PushNotificationResponse>(clientTokens.Count);
+        var successCount = 0;
+        var failureCount = 0;
 
-        var batchResponse = await FirebaseMessaging.DefaultInstance.SendEachForMulticastAsync(message);
-        Debug.Assert(batchResponse.Responses.Count == clientTokens.Count);
-
-        return new BatchPushNotificationResponse
+        try
         {
-            SuccessCount = batchResponse.SuccessCount,
-            FailureCount = batchResponse.FailureCount,
-            Responses = batchResponse
-                .Responses.Zip(clientTokens)
-                .Select(args =>
+            foreach (var batch in clientTokens.Chunk(_MaxTokensPerBatch))
+            {
+                var batchList = batch.ToList();
+                var message = new MulticastMessage
                 {
-                    var (response, token) = args;
+                    Tokens = batchList,
+                    Data = data,
+                    Notification = new Notification { Title = title, Body = body },
+                    Android = new AndroidConfig { Priority = Priority.High },
+                    Apns = new ApnsConfig { Aps = new Aps { Badge = 1 } },
+                };
+
+                var batchResponse = await FirebaseMessaging
+                    .DefaultInstance.SendEachForMulticastAsync(message, cancellationToken)
+                    .AnyContext();
+
+                if (batchResponse.Responses.Count != batchList.Count)
+                {
+                    throw new InvalidOperationException(
+                        $"Firebase response count ({batchResponse.Responses.Count}) does not match token count ({batchList.Count})"
+                    );
+                }
+
+                successCount += batchResponse.SuccessCount;
+                failureCount += batchResponse.FailureCount;
+
+                for (var i = 0; i < batchResponse.Responses.Count; i++)
+                {
+                    var response = batchResponse.Responses[i];
+                    var token = batchList[i];
 
                     if (response.IsSuccess)
                     {
-                        return PushNotificationResponse.Succeeded(token, response.MessageId);
+                        allResponses.Add(PushNotificationResponse.Succeeded(token, response.MessageId));
                     }
-
-                    if (response.Exception.MessagingErrorCode == MessagingErrorCode.Unregistered)
+                    else if (response.Exception.MessagingErrorCode == MessagingErrorCode.Unregistered)
                     {
-                        return PushNotificationResponse.Unregistered(token);
+                        allResponses.Add(PushNotificationResponse.Unregistered(token));
                     }
+                    else
+                    {
+                        allResponses.Add(
+                            PushNotificationResponse.Failed(
+                                token,
+                                _FirebaseMessagingExceptionToString(response.Exception)
+                            )
+                        );
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            logger.FailedToSendPushNotification(e, $"multicast:{clientTokens.Count}");
+            throw;
+        }
 
-                    return PushNotificationResponse.Failed(
-                        token,
-                        _FirebaseMessagingExceptionToString(response.Exception)
-                    );
-                })
-                .ToList(),
+        return new BatchPushNotificationResponse
+        {
+            SuccessCount = successCount,
+            FailureCount = failureCount,
+            Responses = allResponses,
         };
     }
 
@@ -128,8 +186,6 @@ public sealed class GoogleCloudMessagingPushNotificationService(
 
     private static string _FirebaseMessagingExceptionToString(FirebaseMessagingException exception)
     {
-        return $"MessagingErrorCode: {exception.MessagingErrorCode} (ErrorCode: {exception.ErrorCode}){Environment.NewLine}"
-            + $"Message: {exception.Message}{Environment.NewLine}"
-            + exception;
+        return $"MessagingErrorCode: {exception.MessagingErrorCode}";
     }
 }
