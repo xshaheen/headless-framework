@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.RegularExpressions;
 using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Resources;

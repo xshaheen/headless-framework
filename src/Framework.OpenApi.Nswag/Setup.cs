@@ -158,7 +158,7 @@ public static class NswagSetup
 
     #endregion
 
-    #region Primivites
+    #region Primitives
 
     /// <summary>Adds Swagger mappings for specific custom types to ensure proper OpenAPI documentation generation.</summary>
     /// <param name="settings">The JsonSchemaGeneratorSettings instance to which mappings are added.</param>

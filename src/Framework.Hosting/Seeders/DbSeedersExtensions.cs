@@ -11,18 +11,22 @@ namespace Framework.Hosting.Seeders;
 [PublicAPI]
 public static class DbSeedersExtensions
 {
-    public static void AddPreSeeder<T>(this IServiceCollection services)
+    public static IServiceCollection AddPreSeeder<T>(this IServiceCollection services)
         where T : class, IPreSeeder
     {
         services.TryAddEnumerable(ServiceDescriptor.Transient<IPreSeeder, T>());
         services.TryAddTransient<T>();
+
+        return services;
     }
 
-    public static void AddSeeder<T>(this IServiceCollection services)
+    public static IServiceCollection AddSeeder<T>(this IServiceCollection services)
         where T : class, ISeeder
     {
         services.TryAddEnumerable(ServiceDescriptor.Transient<ISeeder, T>());
         services.TryAddTransient<T>();
+
+        return services;
     }
 
     public static async Task PreSeedAsync(this IServiceProvider services, bool runInParallel = false)

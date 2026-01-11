@@ -43,26 +43,22 @@ internal static class PrimitiveUnderlyingTypeExtensions
     }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is numeric.</summary>
-    /// <param name="underlyingType">The PrimitiveUnderlyingType to check.</param>
+    /// <param name="type">The PrimitiveUnderlyingType to check.</param>
     /// <returns>True if the underlyingType is numeric, false otherwise.</returns>
-    public static bool IsNumeric(this PrimitiveUnderlyingType underlyingType)
+    public static bool IsNumeric(this PrimitiveUnderlyingType type)
     {
-        return underlyingType switch
-        {
-            PrimitiveUnderlyingType.Byte => true,
-            PrimitiveUnderlyingType.SByte => true,
-            PrimitiveUnderlyingType.Int16 => true,
-            PrimitiveUnderlyingType.Int32 => true,
-            PrimitiveUnderlyingType.Int64 => true,
-            PrimitiveUnderlyingType.UInt16 => true,
-            PrimitiveUnderlyingType.UInt32 => true,
-            PrimitiveUnderlyingType.UInt64 => true,
-            PrimitiveUnderlyingType.Decimal => true,
-            PrimitiveUnderlyingType.Double => true,
-            PrimitiveUnderlyingType.Single => true,
-
-            _ => false,
-        };
+        return type
+            is PrimitiveUnderlyingType.Byte
+                or PrimitiveUnderlyingType.SByte
+                or PrimitiveUnderlyingType.Int16
+                or PrimitiveUnderlyingType.Int32
+                or PrimitiveUnderlyingType.Int64
+                or PrimitiveUnderlyingType.UInt16
+                or PrimitiveUnderlyingType.UInt32
+                or PrimitiveUnderlyingType.UInt64
+                or PrimitiveUnderlyingType.Decimal
+                or PrimitiveUnderlyingType.Double
+                or PrimitiveUnderlyingType.Single;
     }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is a date or time type.</summary>

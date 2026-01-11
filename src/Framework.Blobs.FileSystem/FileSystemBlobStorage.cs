@@ -352,7 +352,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Downaload
+    #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
