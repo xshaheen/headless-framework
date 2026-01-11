@@ -65,7 +65,8 @@ public sealed class DynamicSettingDefinitionStore(
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).AnyContext();
 
-            return _memoryCache.GetOrDefault(name);
+            var cache = _memoryCache; // Capture local reference
+            return cache.GetOrDefault(name);
         }
     }
 
@@ -80,7 +81,8 @@ public sealed class DynamicSettingDefinitionStore(
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).AnyContext();
 
-            return _memoryCache.Values.ToImmutableList();
+            var cache = _memoryCache; // Capture local reference
+            return cache.Values.ToImmutableList();
         }
     }
 
@@ -91,7 +93,7 @@ public sealed class DynamicSettingDefinitionStore(
     private string? _cacheStamp;
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private readonly Dictionary<string, SettingDefinition> _memoryCache = new(StringComparer.Ordinal);
+    private volatile Dictionary<string, SettingDefinition> _memoryCache = new(StringComparer.Ordinal);
 
     private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
     {
@@ -156,12 +158,13 @@ public sealed class DynamicSettingDefinitionStore(
     {
         var records = await definitionRepository.GetListAsync(cancellationToken).AnyContext();
 
-        _memoryCache.Clear();
-
+        var newCache = new Dictionary<string, SettingDefinition>(StringComparer.Ordinal);
         foreach (var record in records)
         {
-            _memoryCache[record.Name] = definitionSerializer.Deserialize(record);
+            newCache[record.Name] = definitionSerializer.Deserialize(record);
         }
+
+        _memoryCache = newCache; // Atomic swap via volatile
     }
 
     private bool _IsUpdateMemoryCacheRequired()
