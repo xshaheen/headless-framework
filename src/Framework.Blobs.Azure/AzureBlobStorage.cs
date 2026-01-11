@@ -123,7 +123,7 @@ public sealed class AzureBlobStorage : IBlobStorage
             {
                 await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                return Result<Exception>.Success();
+                return Result<Exception>.Ok();
             }
             catch (Exception e)
             {
@@ -183,7 +183,7 @@ public sealed class AzureBlobStorage : IBlobStorage
                 cancellationToken
             );
 
-            return results.ConvertAll(result => Result<bool, Exception>.Success(!result.IsError));
+            return results.ConvertAll(result => Result<bool, Exception>.Ok(!result.IsError));
         }
         catch (AggregateException e)
             when (e.InnerException is RequestFailedException { Status: 404 } inner
@@ -207,7 +207,7 @@ public sealed class AzureBlobStorage : IBlobStorage
         {
             var names = files.Blobs.Select(file => file.BlobKey).ToArray();
             var results = await BulkDeleteAsync(container, names, cancellationToken);
-            count += results.Count(x => x.Succeeded);
+            count += results.Count(x => x.IsSuccess);
             await files.NextPageAsync(cancellationToken).AnyContext();
         } while (files.HasMore);
 

@@ -134,7 +134,7 @@ public sealed class SshBlobStorage : IBlobStorage
             {
                 await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
 
-                return Result<Exception>.Success();
+                return Result<Exception>.Ok();
             }
             catch (Exception e)
             {

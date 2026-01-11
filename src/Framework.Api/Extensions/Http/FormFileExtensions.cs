@@ -40,7 +40,7 @@ public static class FormFileExtensions
             {
                 await formFile.SaveAsync(directoryPath, token);
 
-                return Result<Exception>.Success();
+                return Result<Exception>.Ok();
             }
             catch (Exception ex)
             {
