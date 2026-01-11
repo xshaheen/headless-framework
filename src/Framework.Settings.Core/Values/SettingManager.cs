@@ -37,29 +37,32 @@ public sealed class SettingManager(
         Argument.IsNotNullOrEmpty(settingNames);
 
         var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
-        var settingDefinitions = allSettingDefinitions
-            .Where(x => settingNames.Contains(x.Name, StringComparer.Ordinal))
-            .ToList();
+        var namesSet = settingNames.ToHashSet(StringComparer.Ordinal);
+        var settingDefinitions = allSettingDefinitions.Where(x => namesSet.Contains(x.Name)).ToList();
         var result = settingDefinitions.ToDictionary(
             x => x.Name,
             x => new SettingValue(x.Name, value: null),
             StringComparer.Ordinal
         );
 
+        var processedNames = new HashSet<string>(StringComparer.Ordinal);
+        var definitionMap = settingDefinitions.ToDictionary(x => x.Name, StringComparer.Ordinal);
+
         foreach (var provider in valueProviderManager.Providers.Reverse())
         {
             var supportedDefinitions = settingDefinitions
+                .Where(x => !processedNames.Contains(x.Name))
                 .Where(x => x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
                 .ToArray();
 
-            var settingValues = await provider.GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken).AnyContext();
+            var settingValues = await provider
+                .GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken)
+                .AnyContext();
             var notNullValues = settingValues.Where(x => x.Value != null).ToList();
 
             foreach (var settingValue in notNullValues)
             {
-                var settingDefinition = settingDefinitions.First(x =>
-                    string.Equals(x.Name, settingValue.Name, StringComparison.Ordinal)
-                );
+                var settingDefinition = definitionMap[settingValue.Name];
 
                 if (settingDefinition.IsEncrypted)
                 {
@@ -72,11 +75,12 @@ public sealed class SettingManager(
                 }
             }
 
-            settingDefinitions.RemoveAll(x =>
-                notNullValues.Exists(v => string.Equals(v.Name, x.Name, StringComparison.Ordinal))
-            );
+            foreach (var sv in notNullValues)
+            {
+                processedNames.Add(sv.Name);
+            }
 
-            if (settingDefinitions.Count == 0)
+            if (processedNames.Count >= settingDefinitions.Count)
             {
                 break;
             }
@@ -186,11 +190,12 @@ public sealed class SettingManager(
         if (providers.Count > 1 && !forceToSet && setting.IsInherited && value is not null)
         {
             var fallbackValue = await _CoreGetOrDefaultAsync(
-                settingName,
-                providers[1].Name,
-                providerKey: null,
-                cancellationToken: cancellationToken
-            ).AnyContext();
+                    settingName,
+                    providers[1].Name,
+                    providerKey: null,
+                    cancellationToken: cancellationToken
+                )
+                .AnyContext();
 
             if (string.Equals(fallbackValue, value, StringComparison.Ordinal))
             {
@@ -226,7 +231,9 @@ public sealed class SettingManager(
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await valueStore.GetAllProviderValuesAsync(providerName, providerKey, cancellationToken).AnyContext();
+        var settings = await valueStore
+            .GetAllProviderValuesAsync(providerName, providerKey, cancellationToken)
+            .AnyContext();
 
         foreach (var setting in settings)
         {
