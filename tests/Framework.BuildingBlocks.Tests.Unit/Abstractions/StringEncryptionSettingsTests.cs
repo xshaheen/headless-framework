@@ -6,12 +6,19 @@ namespace Tests.Abstractions;
 
 public sealed class StringEncryptionOptionsTests
 {
+    private static StringEncryptionOptions _CreateTestOptions() => new()
+    {
+        DefaultPassPhrase = "TestPassPhrase123456",
+        InitVectorBytes = "TestIV0123456789"u8.ToArray(),
+        DefaultSalt = "TestSalt"u8.ToArray(),
+    };
+
     [Fact]
-    public void should_success_when_default_settings()
+    public void should_success_when_valid_settings()
     {
         // given
-        var defaultSettings = new StringEncryptionOptions();
-        var encryptionService = new StringEncryptionService(defaultSettings);
+        var settings = _CreateTestOptions();
+        var encryptionService = new StringEncryptionService(settings);
 
         // when
         var encryptedText = encryptionService.Encrypt("Hello World");

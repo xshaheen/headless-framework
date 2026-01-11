@@ -36,7 +36,12 @@ builder.Host.UseDefaultServiceProvider(
     }
 );
 
-builder.AddHeadlessApi();
+builder.AddHeadlessApi(encryption =>
+{
+    encryption.DefaultPassPhrase = "DemoPassPhrase123456";
+    encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
+    encryption.DefaultSalt = "DemoSalt"u8.ToArray();
+});
 
 addInMemoryResourceLock(builder.Services);
 
@@ -56,7 +61,14 @@ builder
     });
 
 builder
-    .Services.AddSettingsManagementCore()
+    .Services.AddSettingsManagementCore(
+        encryption =>
+        {
+            encryption.DefaultPassPhrase = "DemoPassPhrase123456";
+            encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
+            encryption.DefaultSalt = "DemoSalt"u8.ToArray();
+        }
+    )
     .AddSettingsManagementDbContextStorage(options =>
     {
         options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
