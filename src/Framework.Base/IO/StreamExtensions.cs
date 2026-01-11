@@ -100,13 +100,15 @@ public static class StreamExtensions
 
         using var ms = stream.CreateMemoryStream();
 
-        return ms.GetBuffer(); // Using GetBuffer to avoid an extra array allocation.
+        return ms.ToArray();
     }
 
     [MustUseReturnValue]
     public static async Task<byte[]> GetAllBytesAsync(this Stream stream, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(stream);
+
+        stream.ResetPosition();
 
         if (stream is MemoryStream s)
         {
@@ -115,7 +117,7 @@ public static class StreamExtensions
 
         await using var ms = await stream.CreateMemoryStreamAsync(cancellationToken);
 
-        return ms.GetBuffer(); // Using GetBuffer to avoid an extra array allocation.
+        return ms.ToArray();
     }
 
     #endregion
@@ -153,7 +155,7 @@ public static class StreamExtensions
 
         cancellationToken.ThrowIfCancellationRequested();
         await using var writer = new StreamWriter(stream, encoding, leaveOpen: true);
-        await writer.WriteAsync(text);
+        await writer.WriteAsync(text).AnyContext();
     }
 
     public static ValueTask WriteTextAsync(

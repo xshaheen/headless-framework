@@ -754,7 +754,7 @@ public sealed partial class Url
     /// URL-encodes illegal characters but not reserved characters.
     /// </summary>
     /// <param name="parts">URL parts to combine.</param>
-    public static string Combine(params string[] parts)
+    public static string Combine(params string?[] parts)
     {
         ArgumentNullException.ThrowIfNull(parts);
 

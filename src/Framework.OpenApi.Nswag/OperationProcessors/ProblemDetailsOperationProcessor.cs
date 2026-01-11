@@ -136,9 +136,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Status = StatusCodes.Status400BadRequest,
         Detail = HeadlessProblemDetailsConstants.Details.BadRequest,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
         Timestamp = DateTimeOffset.UtcNow,
     };
 
@@ -149,9 +149,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Status = StatusCodes.Status401Unauthorized,
         Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
         Timestamp = DateTimeOffset.UtcNow,
     };
 
@@ -162,9 +162,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Status = StatusCodes.Status403Forbidden,
         Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
         Timestamp = DateTimeOffset.UtcNow,
     };
 
@@ -175,9 +175,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Status = StatusCodes.Status404NotFound,
         Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
         Timestamp = DateTimeOffset.UtcNow,
         Params = new EntityNotFoundProblemDetailsParams { Entity = "User", Key = "user-123" },
     };
@@ -189,9 +189,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Status = StatusCodes.Status409Conflict,
         Detail = HeadlessProblemDetailsConstants.Details.Conflict,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
         Timestamp = DateTimeOffset.UtcNow,
         Errors = [new("business_error", @"Some business rule failed.")],
     };
@@ -203,9 +203,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Status = StatusCodes.Status422UnprocessableEntity,
         Detail = HeadlessProblemDetailsConstants.Details.UnprocessableEntity,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
         Timestamp = DateTimeOffset.UtcNow,
         Errors = new(StringComparer.Ordinal)
         {
@@ -228,9 +228,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Status = StatusCodes.Status429TooManyRequests,
         Detail = HeadlessProblemDetailsConstants.Details.TooManyRequests,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
         Timestamp = DateTimeOffset.UtcNow,
     };
 

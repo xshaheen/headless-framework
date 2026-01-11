@@ -42,14 +42,19 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response);
+            await PaymobCashInException.ThrowAsync(response).AnyContext();
         }
 
-        var content = await response.Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
-            config.DeserializationOptions
-        );
+        var content = await response
+            .Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(config.DeserializationOptions)
+            .AnyContext();
 
-        _cachedToken = content!.Token;
+        if (content is null)
+        {
+            throw new PaymobCashInException("Paymob CashIn returned null response body.", response.StatusCode, null);
+        }
+
+        _cachedToken = content.Token;
         _tokenExpiration = _timeProvider.GetUtcNow().AddMinutes(55);
 
         return content;

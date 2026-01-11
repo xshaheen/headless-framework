@@ -1,7 +1,15 @@
 # Redis Blob Storage Memory Leak from Double Allocation
 
+---
+status: complete
+priority: p1
+issue_id: "012"
+tags: [performance, memory, redis, blobs]
+dependencies: []
+---
+
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** complete
 **Priority:** P1 - Critical
 **Tags:** code-review, performance, memory, dotnet, redis, blobs
 
@@ -116,3 +124,5 @@ var bytes = memory.GetBuffer().AsMemory(0, (int)memory.Length);
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - strict-dotnet-reviewer, performance-oracle |
+| 2026-01-12 | Approved | Triage session - approved for work, status: pending → ready |
+| 2026-01-12 | Resolved | Replaced ToArray() with TryGetBuffer zero-copy approach |

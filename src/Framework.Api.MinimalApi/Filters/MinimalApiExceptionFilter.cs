@@ -68,12 +68,20 @@ public sealed partial class MinimalApiExceptionFilter(
         // Timeout
         catch (TimeoutException)
         {
-            return TypedResults.StatusCode(StatusCodes.Status408RequestTimeout);
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status408RequestTimeout,
+                title: "Request Timeout",
+                detail: "The request timed out"
+            );
         }
         // Not implemented
         catch (NotImplementedException)
         {
-            return TypedResults.StatusCode(StatusCodes.Status501NotImplemented);
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status501NotImplemented,
+                title: "Not Implemented",
+                detail: "This functionality is not implemented"
+            );
         }
         // Request canceled
         catch (OperationCanceledException)

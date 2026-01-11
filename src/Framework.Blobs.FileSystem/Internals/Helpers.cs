@@ -16,10 +16,10 @@ internal static class Helpers
 
         var memoryStream = new MemoryStream();
 
-        await stream.CopyToAsync(memoryStream, token);
+        await stream.CopyToAsync(memoryStream, token).AnyContext();
         memoryStream.Seek(0, SeekOrigin.Begin);
 
-        await stream.FlushAsync(token);
+        await stream.FlushAsync(token).AnyContext();
 
         return memoryStream;
     }

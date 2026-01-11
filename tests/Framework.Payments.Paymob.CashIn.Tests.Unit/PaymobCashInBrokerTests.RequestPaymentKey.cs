@@ -40,7 +40,7 @@ public partial class PaymobCashInBrokerTests
 
         // when
         var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
-        var result = await broker.RequestPaymentKeyAsync(request);
+        var result = await broker.RequestPaymentKeyAsync(request, AbortToken);
 
         // then
         JsonSerializer.Serialize(result).Should().Be(responseJson);

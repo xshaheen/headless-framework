@@ -3,12 +3,13 @@
 using System.Net;
 using Framework.Payments.Paymob.CashIn;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
+using Framework.Testing.Tests;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInBrokerTests
+public partial class PaymobCashInBrokerTests : TestBase
 {
     private static readonly JsonSerializerOptions _IgnoreNullOptions = new(JsonSerializerDefaults.Web)
     {
@@ -34,7 +35,7 @@ public partial class PaymobCashInBrokerTests
 
         // when
         var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
-        var result = await broker.CreateOrderAsync(request);
+        var result = await broker.CreateOrderAsync(request, AbortToken);
 
         // then
         _ = await authenticator.Received(1).GetAuthenticationTokenAsync();

@@ -1,7 +1,15 @@
 # ComparisonRule GreaterThan Missing ExclusiveMinimum
 
+---
+status: complete
+priority: p1
+issue_id: "100"
+tags: [openapi, bug]
+dependencies: []
+---
+
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** complete
 **Priority:** P1 - Critical
 **Tags:** code-review, openapi, bug, dotnet
 
@@ -70,3 +78,4 @@ case Comparison.GreaterThan:
 |------|--------|-------|
 | 2026-01-11 | Created | From code review |
 | 2026-01-11 | Approved | Triage: ready to work on |
+| 2026-01-12 | Resolved | Changed Minimum to ExclusiveMinimum for GreaterThan case |

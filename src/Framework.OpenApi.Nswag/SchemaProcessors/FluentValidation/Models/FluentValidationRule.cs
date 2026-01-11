@@ -154,7 +154,7 @@ public sealed class FluentValidationRule
 
                     break;
                 case Comparison.GreaterThan:
-                    propertySchema.Minimum = valueToCompare;
+                    propertySchema.ExclusiveMinimum = valueToCompare;
 
                     break;
                 case Comparison.LessThanOrEqual:

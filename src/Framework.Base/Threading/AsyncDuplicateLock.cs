@@ -52,20 +52,18 @@ public static class AsyncDuplicateLock
     {
         public void Dispose()
         {
-            RefCounted<SemaphoreSlim> item;
-
             lock (_SemaphoreSlims)
             {
-                item = _SemaphoreSlims[key];
+                var item = _SemaphoreSlims[key];
                 --item.RefCount;
 
                 if (item.RefCount == 0)
                 {
                     _SemaphoreSlims.Remove(key);
                 }
-            }
 
-            item.Value.Release();
+                item.Value.Release();
+            }
         }
     }
 

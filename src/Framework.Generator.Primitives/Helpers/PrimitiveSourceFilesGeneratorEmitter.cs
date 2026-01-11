@@ -293,7 +293,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         static string createInheritedInterfaces(GeneratorData data, string className)
         {
-            var sb = new StringBuilder(8096);
+            var sb = new StringBuilder(512);
 
             sb.Append(TypeNames.IEquatable).Append('<').Append(className).Append('>');
             appendInterface(sb, TypeNames.IComparable);

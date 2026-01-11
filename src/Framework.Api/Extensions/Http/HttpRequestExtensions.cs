@@ -62,13 +62,14 @@ public static class HttpRequestExtensions
             return true;
         }
 
-        var acceptHeaderText = acceptHeader.ToString();
-
-        foreach (var contentType in contentTypes)
+        foreach (var value in acceptHeader)
         {
-            if (acceptHeaderText.Contains(contentType, StringComparison.InvariantCultureIgnoreCase))
+            foreach (var contentType in contentTypes)
             {
-                return true;
+                if (value.AsSpan().Contains(contentType.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
             }
         }
 
@@ -82,8 +83,19 @@ public static class HttpRequestExtensions
 
         var acceptHeader = request.Headers[HeaderNames.Accept];
 
-        return acceptHeader.Count == 0
-            || acceptHeader.Equals("*/*")
-            || acceptHeader.ToString().Contains(contentType, StringComparison.InvariantCultureIgnoreCase);
+        if (acceptHeader.Count == 0 || acceptHeader.Equals("*/*"))
+        {
+            return true;
+        }
+
+        foreach (var value in acceptHeader)
+        {
+            if (value.AsSpan().Contains(contentType.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

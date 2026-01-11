@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http.Json;
-using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
 using Framework.Urls;
 
@@ -13,23 +11,19 @@ public partial class PaymobCashInBroker
     /// Get a payment key which is used to authenticate payment request and verifying transaction
     /// request metadata.
     /// </summary>
-    public async Task<CashInPaymentKeyResponse> RequestPaymentKeyAsync(CashInPaymentKeyRequest request)
+    public async Task<CashInPaymentKeyResponse> RequestPaymentKeyAsync(
+        CashInPaymentKeyRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
-        var authToken = await authenticator.GetAuthenticationTokenAsync();
+        var authToken = await authenticator.GetAuthenticationTokenAsync().AnyContext();
         var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/payment_keys");
         var internalRequest = new CashInPaymentKeyInternalRequest(request, authToken, _options.ExpirationPeriod);
 
-        using var response = await httpClient.PostAsJsonAsync(
+        return await _PostAsync<CashInPaymentKeyInternalRequest, CashInPaymentKeyResponse>(
             requestUrl,
             internalRequest,
-            _options.SerializationOptions
+            cancellationToken
         );
-
-        if (!response.IsSuccessStatusCode)
-        {
-            await PaymobCashInException.ThrowAsync(response);
-        }
-
-        return (await response.Content.ReadFromJsonAsync<CashInPaymentKeyResponse>(_options.DeserializationOptions))!;
     }
 }

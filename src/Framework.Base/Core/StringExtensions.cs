@@ -732,15 +732,7 @@ public static class StringExtensions
     public static string ToMd5(this string str)
     {
         var data = MD5.HashData(Encoding.UTF8.GetBytes(str));
-
-        var sb = new StringBuilder();
-
-        foreach (var d in data)
-        {
-            sb.Append(d.ToString("X2", CultureInfo.InvariantCulture));
-        }
-
-        return sb.ToString();
+        return Convert.ToHexString(data);
     }
 
     [SystemPure]
@@ -748,15 +740,7 @@ public static class StringExtensions
     public static string ToSha256(this string str)
     {
         var data = SHA256.HashData(Encoding.UTF8.GetBytes(str));
-
-        var sb = new StringBuilder();
-
-        foreach (var d in data)
-        {
-            sb.Append(d.ToString("x2", CultureInfo.InvariantCulture));
-        }
-
-        return sb.ToString();
+        return Convert.ToHexStringLower(data);
     }
 
     [SystemPure]
@@ -764,15 +748,7 @@ public static class StringExtensions
     public static string ToSha512(this string str)
     {
         var data = SHA512.HashData(Encoding.UTF8.GetBytes(str));
-
-        var sb = new StringBuilder();
-
-        foreach (var d in data)
-        {
-            sb.Append(d.ToString("x2", CultureInfo.InvariantCulture));
-        }
-
-        return sb.ToString();
+        return Convert.ToHexStringLower(data);
     }
 
     [SystemPure]
