@@ -49,7 +49,7 @@ public sealed partial class MvcApiExceptionFilter(
 
         if (task is not null)
         {
-            await task;
+            await task.AnyContext();
             context.ExceptionHandled = true;
         }
     }
