@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Flurl;
 using Framework.Blobs.FileSystem.Internals;
 using Framework.Checks;
 using Framework.IO;
 using Framework.Primitives;
+using Framework.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

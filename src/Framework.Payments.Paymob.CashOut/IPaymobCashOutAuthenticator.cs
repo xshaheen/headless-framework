@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
-using Flurl;
 using Framework.Http;
 using Framework.Payments.Paymob.CashOut.Models;
+using Framework.Urls;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Payments.Paymob.CashOut;

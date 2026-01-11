@@ -3,10 +3,10 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Cysharp.Text;
-using Flurl;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Primitives;
+using Framework.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

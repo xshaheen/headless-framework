@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
-using Flurl;
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Auth;
+using Framework.Urls;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Payments.Paymob.CashIn;
