@@ -10,7 +10,11 @@ namespace Framework.Sitemaps;
 public static class SitemapIndexBuilder
 {
     /// <summary>Write a sitemap index file into the stream.</summary>
-    public static async Task WriteToAsync(this IEnumerable<SitemapReference> sitemapReferences, Stream output)
+    public static async Task WriteToAsync(
+        this IEnumerable<SitemapReference> sitemapReferences,
+        Stream output,
+        CancellationToken cancellationToken = default
+    )
     {
         /*
          * <?xml version="1.0" encoding="UTF-8"?>
@@ -26,33 +30,34 @@ public static class SitemapIndexBuilder
          */
 
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
-        await writer.WriteStartDocumentAsync();
+        await writer.WriteStartDocumentAsync().AnyContext();
 
         await writer.WriteStartElementAsync(
             prefix: null,
             localName: "sitemapindex",
             ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
-        );
+        ).AnyContext();
 
         // Write sitemaps URL.
         foreach (var sitemapReference in sitemapReferences)
         {
-            await _WriteSitemapRefNodeAsync(writer, sitemapReference);
+            cancellationToken.ThrowIfCancellationRequested();
+            await _WriteSitemapRefNodeAsync(writer, sitemapReference).AnyContext();
         }
 
-        await writer.WriteEndElementAsync();
+        await writer.WriteEndElementAsync().AnyContext();
     }
 
     private static async Task _WriteSitemapRefNodeAsync(XmlWriter writer, SitemapReference sitemapRef)
     {
-        await writer.WriteStartElementAsync(prefix: null, localName: "sitemap", ns: null);
+        await writer.WriteStartElementAsync(prefix: null, localName: "sitemap", ns: null).AnyContext();
 
         await writer.WriteElementStringAsync(
             prefix: null,
             localName: "loc",
             ns: null,
             value: sitemapRef.Location.AbsoluteUri
-        );
+        ).AnyContext();
 
         if (sitemapRef.LastModified.HasValue)
         {
@@ -61,9 +66,9 @@ public static class SitemapIndexBuilder
                 CultureInfo.InvariantCulture
             );
 
-            await writer.WriteElementStringAsync(prefix: null, localName: "lastmod", ns: null, value);
+            await writer.WriteElementStringAsync(prefix: null, localName: "lastmod", ns: null, value).AnyContext();
         }
 
-        await writer.WriteEndElementAsync();
+        await writer.WriteEndElementAsync().AnyContext();
     }
 }
