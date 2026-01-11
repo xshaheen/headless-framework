@@ -2,4 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
+  </ItemGroup>
 </Project>
