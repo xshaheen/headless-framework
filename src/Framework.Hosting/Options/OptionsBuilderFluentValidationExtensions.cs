@@ -19,6 +19,8 @@ public static class OptionsBuilderFluentValidationExtensions
     )
         where TOptions : class
     {
+        Argument.IsNotNull(optionsBuilder);
+
         optionsBuilder.Services.AddTransient<IValidateOptions<TOptions>>(
             provider => new FluentValidationValidateOptions<TOptions>(optionsBuilder.Name, provider)
         );

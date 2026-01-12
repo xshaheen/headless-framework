@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Api.Models;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Primitives;
@@ -235,52 +236,6 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         CommitNumber = "<commit>",
         Timestamp = _ExampleTimestamp,
     };
-
-    #endregion
-
-    #region ProblemDetails Types
-
-    public class HeadlessProblemDetails
-    {
-        public required string Type { get; init; }
-        public required string Title { get; init; }
-        public required int Status { get; init; }
-        public required string Detail { get; init; }
-        public required string Instance { get; init; }
-        public required string TraceId { get; init; }
-        public required string BuildNumber { get; init; }
-        public required string CommitNumber { get; init; }
-        public required DateTimeOffset Timestamp { get; init; }
-    }
-
-    public sealed class BadRequestProblemDetails : HeadlessProblemDetails;
-
-    public sealed class UnauthorizedProblemDetails : HeadlessProblemDetails;
-
-    public sealed class ForbiddenProblemDetails : HeadlessProblemDetails;
-
-    public sealed class TooManyRequestsProblemDetails : HeadlessProblemDetails;
-
-    public sealed class EntityNotFoundProblemDetailsParams
-    {
-        public required string Entity { get; init; }
-        public required string Key { get; init; }
-    }
-
-    public sealed class EntityNotFoundProblemDetails : HeadlessProblemDetails
-    {
-        public required EntityNotFoundProblemDetailsParams Params { get; init; }
-    }
-
-    public sealed class ConflictProblemDetails : HeadlessProblemDetails
-    {
-        public required List<ErrorDescriptor> Errors { get; init; }
-    }
-
-    public sealed class UnprocessableEntityProblemDetails : HeadlessProblemDetails
-    {
-        public required Dictionary<string, List<ErrorDescriptor>> Errors { get; init; }
-    }
 
     #endregion
 }

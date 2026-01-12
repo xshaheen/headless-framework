@@ -25,6 +25,11 @@ public sealed class SourceCodeBuilder
     private readonly StringBuilder _sb;
     private readonly StringBuilder _indentations;
     private const string _IndentationString = "    ";
+
+    private static readonly string[] _CachedIndentations = Enumerable.Range(0, 11)
+        .Select(i => string.Concat(Enumerable.Repeat(_IndentationString, i)))
+        .ToArray();
+
     private bool _previousWasNewLine;
     private int? _savedPosition;
     private int _indentationLengthInSavedPosition;
@@ -52,7 +57,9 @@ public sealed class SourceCodeBuilder
     /// <param name="count">The number of indentation strings to generate. Default is 1.</param>
     public static string GetIndentation(int count = 1)
     {
-        return string.Concat(Enumerable.Repeat(_IndentationString, count));
+        return count < _CachedIndentations.Length
+            ? _CachedIndentations[count]
+            : string.Concat(Enumerable.Repeat(_IndentationString, count));
     }
 
     /// <summary>Gets or sets the length of the current <see cref="System.Text.StringBuilder" /> object.</summary>
@@ -68,7 +75,7 @@ public sealed class SourceCodeBuilder
     /// <param name="count">The number of indentation levels to append. Default is 1.</param>
     public SourceCodeBuilder AppendIndentation(int count = 1)
     {
-        return Append(count == 1 ? _IndentationString : string.Concat(Enumerable.Repeat(_IndentationString, count)));
+        return Append(GetIndentation(count));
     }
 
     /// <summary>Adds the auto-generated comment to the source code, including the generator name.</summary>

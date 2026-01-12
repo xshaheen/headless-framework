@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Framework.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -14,6 +15,8 @@ public static class DbSeedersExtensions
     public static IServiceCollection AddPreSeeder<T>(this IServiceCollection services)
         where T : class, IPreSeeder
     {
+        Argument.IsNotNull(services);
+
         services.TryAddEnumerable(ServiceDescriptor.Transient<IPreSeeder, T>());
         services.TryAddTransient<T>();
 
@@ -23,6 +26,8 @@ public static class DbSeedersExtensions
     public static IServiceCollection AddSeeder<T>(this IServiceCollection services)
         where T : class, ISeeder
     {
+        Argument.IsNotNull(services);
+
         services.TryAddEnumerable(ServiceDescriptor.Transient<ISeeder, T>());
         services.TryAddTransient<T>();
 
@@ -31,6 +36,8 @@ public static class DbSeedersExtensions
 
     public static async Task PreSeedAsync(this IServiceProvider services, bool runInParallel = false)
     {
+        Argument.IsNotNull(services);
+
         await using var scope = services.CreateAsyncScope();
 
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ISeeder>>();
@@ -67,6 +74,8 @@ public static class DbSeedersExtensions
 
     public static async Task SeedAsync(this IServiceProvider services, bool runInParallel = false)
     {
+        Argument.IsNotNull(services);
+
         await using var scope = services.CreateAsyncScope();
 
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ISeeder>>();

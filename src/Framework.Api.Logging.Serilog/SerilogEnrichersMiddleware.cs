@@ -35,7 +35,7 @@ public sealed class SerilogEnrichersMiddleware(IRequestContext requestContext) :
 
         using (LogContext.Push([.. enrichers]))
         {
-            await next(context);
+            await next(context).AnyContext();
         }
     }
 }

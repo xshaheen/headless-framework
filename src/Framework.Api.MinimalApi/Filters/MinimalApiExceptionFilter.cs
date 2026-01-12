@@ -6,7 +6,6 @@ using Framework.Api.Resources;
 using Framework.Constants;
 using Framework.Exceptions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130
@@ -55,8 +54,8 @@ public sealed partial class MinimalApiExceptionFilter(
 
             return TypedResults.Problem(details);
         }
-        // DB Concurrency
-        catch (DbUpdateConcurrencyException exception)
+        // DB Concurrency (type name match to avoid EF Core dependency)
+        catch (Exception exception) when (exception.GetType().Name == "DbUpdateConcurrencyException")
         {
             LogDbConcurrencyException(logger, exception);
 

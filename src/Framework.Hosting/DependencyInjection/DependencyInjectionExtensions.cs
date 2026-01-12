@@ -237,6 +237,8 @@ public static class DependencyInjectionExtensions
 
     public static bool Unregister<TService>(this IServiceCollection services)
     {
+        Argument.IsNotNull(services);
+
         var unregistered = false;
 
         for (var i = services.Count - 1; i >= 0; i--)
@@ -257,11 +259,16 @@ public static class DependencyInjectionExtensions
 
     public static bool IsAdded<T>(this IServiceCollection services)
     {
+        Argument.IsNotNull(services);
+
         return services.IsAdded(typeof(T));
     }
 
     public static bool IsAdded(this IServiceCollection services, Type type)
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(type);
+
         return services.Any(d => d.ServiceType == type);
     }
 
@@ -276,6 +283,9 @@ public static class DependencyInjectionExtensions
     )
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(implementationFactory);
+
         return services.AddKeyedSingleton<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
 
@@ -286,6 +296,9 @@ public static class DependencyInjectionExtensions
     )
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(implementationFactory);
+
         return services.AddKeyedScoped<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
 
@@ -296,6 +309,9 @@ public static class DependencyInjectionExtensions
     )
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(implementationFactory);
+
         return services.AddKeyedTransient<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
     #endregion
@@ -316,6 +332,8 @@ public static class DependencyInjectionExtensions
     public static IServiceCollection RemoveHostedService<T>(this IServiceCollection services)
         where T : IHostedService
     {
+        Argument.IsNotNull(services);
+
         var hostedServiceDescriptor = services.FirstOrDefault(descriptor =>
             descriptor.ServiceType == typeof(IHostedService) && descriptor.ImplementationType == typeof(T)
         );
