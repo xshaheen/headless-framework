@@ -1,7 +1,7 @@
 # Redis Blob Storage Memory Leak from Double Allocation
 
 ---
-status: complete
+status: resolved
 priority: p1
 issue_id: "012"
 tags: [performance, memory, redis, blobs]
@@ -9,7 +9,7 @@ dependencies: []
 ---
 
 **Date:** 2026-01-11
-**Status:** complete
+**Status:** resolved
 **Priority:** P1 - Critical
 **Tags:** code-review, performance, memory, dotnet, redis, blobs
 

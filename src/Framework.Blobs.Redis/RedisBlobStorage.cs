@@ -74,8 +74,19 @@ public sealed class RedisBlobStorage : IBlobStorage
 
             await using var memory = new MemoryStream();
             await _CopyWithSizeLimitAsync(stream, memory, cancellationToken).AnyContext();
-            var saveBlobTask = database.HashSetAsync(blobsContainer, blobPath, memory.ToArray());
             var fileSize = memory.Length;
+
+            // Zero-copy: TryGetBuffer avoids ToArray() allocation
+            if (!memory.TryGetBuffer(out var blobSegment))
+            {
+                throw new InvalidOperationException("Failed to get buffer from MemoryStream");
+            }
+
+            var saveBlobTask = database.HashSetAsync(
+                blobsContainer,
+                blobPath,
+                new ReadOnlyMemory<byte>(blobSegment.Array!, blobSegment.Offset, blobSegment.Count)
+            );
             memory.Seek(0, SeekOrigin.Begin);
             memory.SetLength(0);
 
@@ -90,7 +101,17 @@ public sealed class RedisBlobStorage : IBlobStorage
 
             _serializer.Serialize(blobInfo, memory);
 
-            var saveInfoTask = database.HashSetAsync(infoContainer, blobPath, memory.ToArray());
+            // Zero-copy: TryGetBuffer avoids ToArray() allocation
+            if (!memory.TryGetBuffer(out var infoSegment))
+            {
+                throw new InvalidOperationException("Failed to get buffer from MemoryStream");
+            }
+
+            var saveInfoTask = database.HashSetAsync(
+                infoContainer,
+                blobPath,
+                new ReadOnlyMemory<byte>(infoSegment.Array!, infoSegment.Offset, infoSegment.Count)
+            );
 
             await Run.WithRetriesAsync(
                     async () => await Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions().AnyContext(),
