@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using CommunityToolkit.HighPerformance;
 using Framework.Checks;
 
 #pragma warning disable IDE0130
@@ -154,14 +155,14 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return (byte)random.Next(min, max);
+            return (byte) random.Next(min, max);
         }
 
         public sbyte NextSByte(sbyte min = 0, sbyte max = sbyte.MaxValue)
         {
             Argument.IsNotNull(random);
 
-            return (sbyte)random.Next(min, max);
+            return (sbyte) random.Next(min, max);
         }
 
         public DateTime NextDateTime(DateTime min, DateTime max)
@@ -169,7 +170,7 @@ public static class RandomExtensions
             Argument.IsNotNull(random);
 
             var diff = max.Ticks - min.Ticks;
-            var range = (long)(diff * random.NextDouble());
+            var range = (long) (diff * random.NextDouble());
 
             return min + new TimeSpan(range);
         }
@@ -185,7 +186,7 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return (short)random.Next(min, max);
+            return (short) random.Next(min, max);
         }
 
         public int NextInt32(int min = 0, int max = int.MaxValue)
@@ -199,28 +200,28 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return min == max ? min : (long)((random.NextDouble() * (max - min)) + min);
+            return min == max ? min : (long) ((random.NextDouble() * (max - min)) + min);
         }
 
         public float NextSingle(float min = 0f, float max = 1f)
         {
             Argument.IsNotNull(random);
 
-            return (float)random.NextDouble(min, max);
+            return (float) random.NextDouble(min, max);
         }
 
         public ushort NextUInt16(ushort min = 0, ushort max = ushort.MaxValue)
         {
             Argument.IsNotNull(random);
 
-            return (ushort)random.Next(min, max);
+            return (ushort) random.Next(min, max);
         }
 
         public uint NextUInt32(uint min = 0u, uint max = uint.MaxValue)
         {
             Argument.IsNotNull(random);
 
-            return (uint)random.NextInt64(min, max);
+            return (uint) random.NextInt64(min, max);
         }
 
         public ulong NextUInt64(ulong min = 0ul, ulong max = ulong.MaxValue)
@@ -240,7 +241,7 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return ((decimal)random.NextDouble() * (max - min)) + min;
+            return ((decimal) random.NextDouble() * (max - min)) + min;
         }
 
         public string NextString(int length, string chars)
@@ -295,20 +296,14 @@ public static class RandomExtensions
         /// </summary>
         /// <typeparam name="T">Type of items in the list</typeparam>
         /// <param name="items">items</param>
-        public List<T> GenerateRandomizedList<T>(IList<T> items)
+        public List<T> GenerateRandomizedList<T>(IEnumerable<T> items)
         {
             Argument.IsNotNullOrEmpty(items);
 
-            List<T> randomList = [];
+            var result = items.ToList();
+            Random.Shared.Shuffle(result.AsSpan());
 
-            while (items.Count > 0)
-            {
-                var randomIndex = random.Next(0, items.Count);
-                randomList.Add(items[randomIndex]);
-                items.RemoveAt(randomIndex);
-            }
-
-            return randomList;
+            return result;
         }
     }
 }
