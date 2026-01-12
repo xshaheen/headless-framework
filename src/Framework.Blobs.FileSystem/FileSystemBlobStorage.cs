@@ -184,6 +184,8 @@ public sealed class FileSystemBlobStorage(
         blobSearchPattern = blobSearchPattern.NormalizePath();
         var path = Path.Combine(directoryPath, blobSearchPattern);
 
+        _ThrowIfPathTraversal(path, nameof(blobSearchPattern));
+
         // If the pattern is end with directory separator, delete the directory
         if (
             path[^1] == Path.DirectorySeparatorChar
@@ -600,6 +602,15 @@ public sealed class FileSystemBlobStorage(
         var filePath = Path.Combine(_basePath, Path.Combine(normalizedContainer));
 
         return filePath.EnsureEndsWith(Path.DirectorySeparatorChar);
+    }
+
+    private void _ThrowIfPathTraversal(string path, string paramName)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (!fullPath.StartsWith(_basePath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Path traversal detected", paramName);
+        }
     }
 
     #endregion

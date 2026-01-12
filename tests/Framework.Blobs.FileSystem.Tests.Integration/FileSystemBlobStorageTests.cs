@@ -221,4 +221,31 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     {
         return base.can_call_get_paged_list_with_empty_container();
     }
+
+    [Theory]
+    [InlineData("../../../important")]
+    [InlineData("..\\..\\..\\important")]
+    [InlineData("subdir/../../../etc")]
+    public async Task should_throw_when_delete_all_has_path_traversal(string pattern)
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+
+        var act = FluentActions.Awaiting(() => storage.DeleteAllAsync(Container, pattern, AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithParameterName("blobSearchPattern");
+    }
+
+    [Fact]
+    public async Task should_allow_valid_subdirectory_in_delete_all()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+        await ResetAsync(storage);
+
+        await storage.UploadContentAsync([ContainerName, "subfolder"], "file.txt", "test", AbortToken);
+
+        var count = await storage.DeleteAllAsync(Container, @"subfolder\*", AbortToken);
+
+        count.Should().Be(1);
+    }
 }
