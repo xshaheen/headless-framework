@@ -408,7 +408,7 @@ public sealed class AzureBlobStorage(
 
         var result = new PagedFileListResult(
             async (_, token) =>
-                await _GetFilesAsync(containerClient, criteria, pageSize, previousNextPageResult: null, token)
+                await _GetFilesAsync(containerClient, criteria, pageSize, previous: null, token)
                     .AnyContext()
         );
 
@@ -421,138 +421,110 @@ public sealed class AzureBlobStorage(
         BlobContainerClient client,
         SearchCriteria criteria,
         int pageSize,
-        AzureNextPageResult? previousNextPageResult = null,
+        AzureNextPageResult? previous = null,
         CancellationToken cancellationToken = default
     )
     {
-        var blobs = new List<BlobInfo>(previousNextPageResult?.ExtraLoadedBlobs ?? []);
+        var blobs = new List<BlobInfo>();
 
-        // If the previous result has more blobs than the page size, then return the result.
-        if (previousNextPageResult is not null)
+        // Start with the extra blob from the previous page if present.
+        if (previous?.ExtraBlob is not null)
         {
-            // No more blobs to load.
-            if (string.IsNullOrEmpty(previousNextPageResult.ContinuationToken))
+            blobs.Add(previous.ExtraBlob);
+        }
+
+        var pageSizeToLoad = pageSize < int.MaxValue ? pageSize + 1 : pageSize;
+        var continuationToken = previous?.ContinuationToken;
+
+        // Only fetch from Azure if we need more blobs.
+        if (blobs.Count < pageSizeToLoad && (previous is null || !string.IsNullOrEmpty(continuationToken)))
+        {
+            var pages = client
+                .GetBlobsAsync(
+                    traits: BlobTraits.Metadata,
+                    states: BlobStates.None,
+                    prefix: criteria.Prefix,
+                    cancellationToken: cancellationToken
+                )
+                .AsPages(continuationToken, pageSizeToLoad - blobs.Count);
+
+            // AsPages parameter pageSizeHint is not guaranteed to be respected.
+            // The service may return fewer results due to partition boundaries.
+
+            try
+            {
+                await foreach (var page in pages.WithCancellation(cancellationToken))
+                {
+                    continuationToken = page.ContinuationToken;
+
+                    foreach (var blobItem in page.Values)
+                    {
+                        if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
+                        {
+                            logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
+                            continue;
+                        }
+
+                        if (blobItem.Properties.ContentLength is not > 0)
+                        {
+                            continue;
+                        }
+
+                        blobs.Add(new BlobInfo
+                        {
+                            BlobKey = blobItem.Name,
+                            Size = blobItem.Properties.ContentLength.Value,
+                            Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
+                            Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
+                        });
+
+                        if (blobs.Count >= pageSizeToLoad)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (string.IsNullOrEmpty(page.ContinuationToken) || blobs.Count >= pageSizeToLoad)
+                    {
+                        break;
+                    }
+                }
+            }
+            catch (RequestFailedException e)
+                when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
             {
                 return new AzureNextPageResult
                 {
                     Success = true,
                     HasMore = false,
-                    Blobs = blobs,
-                    ExtraLoadedBlobs = [],
-                    ContinuationToken = null,
+                    Blobs = [],
                     AzureNextPageFunc = null,
                 };
             }
-
-            // has the exact number of blobs as the page size
-            var remainingBlobsCount = pageSize - blobs.Count;
-
-            if (remainingBlobsCount <= 0)
+            catch (Exception e)
             {
-                return new AzureNextPageResult
-                {
-                    Success = true,
-                    HasMore = remainingBlobsCount != 0,
-                    Blobs = blobs.GetRange(0, Math.Min(pageSize, blobs.Count)),
-                    ExtraLoadedBlobs = blobs.Count > pageSize ? blobs.GetRange(pageSize, blobs.Count - pageSize) : [],
-                    ContinuationToken = previousNextPageResult.ContinuationToken,
-                    AzureNextPageFunc = (currentResult, token) =>
-                        _GetFilesAsync(client, criteria, pageSize, currentResult, token),
-                };
+                logger.LogError(e, "Error getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad}", pageSizeToLoad);
+                throw;
             }
         }
 
-        var pageSizeToLoad = pageSize - blobs.Count + 1;
-        var continuationToken = previousNextPageResult?.ContinuationToken;
+        var hasMore = blobs.Count > pageSize;
+        BlobInfo? extraBlob = null;
 
-        var pages = client
-            .GetBlobsAsync(
-                traits: BlobTraits.Metadata,
-                states: BlobStates.None,
-                prefix: criteria.Prefix,
-                cancellationToken: cancellationToken
-            )
-            .AsPages(continuationToken, pageSizeToLoad);
-
-        // AsPages parameter pageSizeHint - It's not guaranteed that the value will be respected.
-        // Note that if the listing operation crosses a partition boundary, then the service
-        // will return a continuation token for retrieving the remainder of the results.
-        // For this reason, it is possible that the service will return fewer results than the specified.
-
-        try
+        if (hasMore)
         {
-            await foreach (var page in pages.WithCancellation(cancellationToken))
-            {
-                continuationToken = page.ContinuationToken;
-
-                foreach (var blobItem in page.Values)
-                {
-                    // Check if the blob name matches the pattern.
-                    if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
-                    {
-                        logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
-
-                        continue;
-                    }
-
-                    // Skip empty blobs.
-                    if (blobItem.Properties.ContentLength is not > 0)
-                    {
-                        continue;
-                    }
-
-                    var blobSpecification = new BlobInfo
-                    {
-                        BlobKey = blobItem.Name,
-                        Size = blobItem.Properties.ContentLength.Value,
-                        Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
-                        Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
-                    };
-
-                    blobs.Add(blobSpecification);
-                }
-
-                // If the continuation token is null or the blob count is greater than or equal to the page size hint, then break.
-                if (page.ContinuationToken is null || blobs.Count >= pageSizeToLoad)
-                {
-                    break;
-                }
-            }
+            extraBlob = blobs[^1];
+            blobs.RemoveAt(blobs.Count - 1);
         }
-        catch (RequestFailedException e)
-            when (e.Status == 404 && string.Equals(e.ErrorCode, "ContainerNotFound", StringComparison.Ordinal))
-        {
-            return new AzureNextPageResult
-            {
-                Success = true,
-                HasMore = false,
-                Blobs = [],
-                ExtraLoadedBlobs = [],
-                ContinuationToken = null,
-                AzureNextPageFunc = null,
-            };
-        }
-        catch (Exception e)
-        {
-            logger.LogError(
-                e,
-                "Error while getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad}",
-                pageSizeToLoad
-            );
-
-            throw;
-        }
-
-        var hasExtraLoadedBlobs = blobs.Count > pageSize;
 
         return new AzureNextPageResult
         {
             Success = true,
-            HasMore = hasExtraLoadedBlobs,
-            Blobs = blobs.GetRange(0, Math.Min(pageSize, blobs.Count)),
-            ExtraLoadedBlobs = hasExtraLoadedBlobs ? blobs.GetRange(pageSize, blobs.Count - pageSize) : [],
+            HasMore = hasMore,
+            Blobs = blobs,
+            ExtraBlob = extraBlob,
             ContinuationToken = continuationToken,
-            AzureNextPageFunc = hasExtraLoadedBlobs
+            AzureNextPageFunc = hasMore
                 ? (currentResult, token) => _GetFilesAsync(client, criteria, pageSize, currentResult, token)
                 : null,
         };

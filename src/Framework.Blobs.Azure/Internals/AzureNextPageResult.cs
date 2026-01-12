@@ -10,9 +10,15 @@ public sealed class AzureNextPageResult : INextPageResult
 
     public required IReadOnlyCollection<BlobInfo> Blobs { get; init; }
 
-    public required IReadOnlyCollection<BlobInfo> ExtraLoadedBlobs { get; init; }
+    /// <summary>
+    /// The extra blob fetched by the +1 approach, to be returned on the next page.
+    /// </summary>
+    internal BlobInfo? ExtraBlob { get; init; }
 
-    public required string? ContinuationToken { get; init; }
+    /// <summary>
+    /// Azure SDK continuation token for fetching more blobs from the service.
+    /// </summary>
+    internal string? ContinuationToken { get; init; }
 
     public required Func<
         AzureNextPageResult,
