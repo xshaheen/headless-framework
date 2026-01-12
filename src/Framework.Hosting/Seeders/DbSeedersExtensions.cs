@@ -50,7 +50,7 @@ public static class DbSeedersExtensions
             await Parallel.ForEachAsync(
                 preSeeders,
                 cancellationToken,
-                async (x, _) => await x.Seeder.SeedAsync(cancellationToken)
+                async (x, ct) => await x.Seeder.SeedAsync(ct).AnyContext()
             );
         }
         else
@@ -86,7 +86,7 @@ public static class DbSeedersExtensions
             await Parallel.ForEachAsync(
                 seeders,
                 cancellationToken,
-                async (x, _) => await x.Seeder.SeedAsync(cancellationToken)
+                async (x, ct) => await x.Seeder.SeedAsync(ct).AnyContext()
             );
         }
         else

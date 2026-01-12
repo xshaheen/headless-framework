@@ -29,9 +29,11 @@ public abstract class ApiControllerBase : ControllerBase
             HttpContext.RequestServices.GetService<ISender>()
             ?? throw new InvalidOperationException($"{nameof(ISender)} service not registered");
 
+    [field: AllowNull, MaybeNull]
     protected MvcProblemDetailsNormalizer ProblemDetailsNormalizer =>
-        HttpContext.RequestServices.GetService<MvcProblemDetailsNormalizer>()
-        ?? throw new InvalidOperationException($"{nameof(MvcProblemDetailsNormalizer)} service not registered");
+        field ??=
+            HttpContext.RequestServices.GetService<MvcProblemDetailsNormalizer>()
+            ?? throw new InvalidOperationException($"{nameof(MvcProblemDetailsNormalizer)} service not registered");
 
     [field: AllowNull, MaybeNull]
     private IProblemDetailsCreator ProblemDetailsCreator =>
