@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Azure;
@@ -26,7 +25,6 @@ public sealed class AzureBlobStorage(
     ILogger<AzureBlobStorage> logger
 ) : IBlobStorage
 {
-    private static readonly ConcurrentDictionary<string, bool> _CreatedContainers = new(StringComparer.Ordinal);
     private const string _UploadDateMetadataKey = "uploadDate";
     private const string _ExtensionMetadataKey = "extension";
 
@@ -39,19 +37,11 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         var blobContainer = _GetContainer(container);
-
-        if (_CreatedContainers.ContainsKey(blobContainer))
-        {
-            return;
-        }
-
         var containerClient = blobServiceClient.GetBlobContainerClient(blobContainer);
 
         await containerClient
             .CreateIfNotExistsAsync(_option.ContainerPublicAccessType, cancellationToken: cancellationToken)
             .AnyContext();
-
-        _CreatedContainers.TryAdd(blobContainer, value: true);
     }
 
     #endregion

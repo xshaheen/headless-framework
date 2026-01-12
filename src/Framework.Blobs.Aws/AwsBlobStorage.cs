@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -21,7 +20,6 @@ namespace Framework.Blobs.Aws;
 
 public sealed class AwsBlobStorage : IBlobStorage
 {
-    private static readonly ConcurrentDictionary<string, bool> _CreatedBuckets = new(StringComparer.Ordinal);
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
     private const string _UploadDateMetadataKey = "uploadDate";
@@ -60,15 +58,13 @@ public sealed class AwsBlobStorage : IBlobStorage
 
     private async Task _CreateBucketAsync(string bucketName, CancellationToken cancellationToken)
     {
-        if (_CreatedBuckets.ContainsKey(bucketName) || await AmazonS3Util.DoesS3BucketExistV2Async(_s3, bucketName))
+        if (await AmazonS3Util.DoesS3BucketExistV2Async(_s3, bucketName))
         {
             return;
         }
 
         var request = new PutBucketRequest { BucketName = bucketName };
-
         await _s3.PutBucketAsync(request, cancellationToken);
-        _CreatedBuckets.TryAdd(bucketName, value: true);
     }
 
     #endregion
