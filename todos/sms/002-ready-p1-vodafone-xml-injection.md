@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "002"
 tags: [code-review, security, vodafone, sms, xml-injection]
@@ -98,6 +98,18 @@ Implement Option 1 for quick fix, or Option 2 for cleaner long-term solution.
 - [ ] Test with SMS text containing XML special characters
 
 ## Work Log
+
+### 2026-01-12 - Fix Applied
+
+**By:** Claude Code
+
+**Actions:**
+- Added `using System.Security;`
+- Applied `SecurityElement.Escape()` to all user input in XML payload:
+  - `request.Text`
+  - Recipients (phone numbers)
+  - `_options.AccountId`, `_options.Password`, `_options.Sender`
+- Added `.AnyContext()` to await calls per project conventions
 
 ### 2026-01-12 - Security Review
 

@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "005"
 tags: [code-review, concurrency, cequens, sms, thread-safety]
@@ -90,3 +90,12 @@ var response = await httpClient.SendAsync(request, cancellationToken);
 - Identified thread-safety issue with DefaultRequestHeaders
 - Confirmed HttpClient is shared via IHttpClientFactory
 - Proposed per-request header solution
+
+### 2026-01-12 - Fix Applied
+
+**By:** Claude Code
+
+**Actions:**
+- Replaced `httpClient.DefaultRequestHeaders.Authorization` with per-request `HttpRequestMessage`
+- Used `httpClient.SendAsync(request)` instead of `PostAsJsonAsync`
+- Added `.AnyContext()` to await calls per project conventions

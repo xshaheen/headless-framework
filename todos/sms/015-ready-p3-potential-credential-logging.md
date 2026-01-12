@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p3
 issue_id: "015"
 tags: [code-review, security, logging, sms]
@@ -73,10 +73,10 @@ Review all logging statements and ensure only safe, non-sensitive fields are log
 
 ## Acceptance Criteria
 
-- [ ] No credentials or secrets in log output
-- [ ] No full API keys in logs
-- [ ] Error responses sanitized before logging
-- [ ] Still useful debugging information available
+- [x] No credentials or secrets in log output
+- [x] No full API keys in logs
+- [x] Error responses sanitized before logging
+- [x] Still useful debugging information available
 
 ## Work Log
 
@@ -87,3 +87,16 @@ Review all logging statements and ensure only safe, non-sensitive fields are log
 **Actions:**
 - Identified logging patterns across providers
 - Flagged potential sensitive data exposure
+
+### 2026-01-12 - Sanitized Logging
+
+**By:** Claude Code
+
+**Actions:**
+- AWS SNS: replaced `{@Request} {@Response}` with `{DestinationCount}, {StatusCode}`
+- Cequens: removed raw response body from logs, log only status code and destination count
+- Cequens token: removed `{Body}` and response object from token error log
+- Infobip: replaced `{@Request} {@Response}` with destination count and error code only
+- Connekio: replaced `{RawContent}` with status code and destination count
+- VictoryLink: removed raw content from logs, kept only mapped error message
+- Vodafone: replaced `{RawContent}` with status code and destination count

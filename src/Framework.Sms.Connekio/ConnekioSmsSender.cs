@@ -25,6 +25,8 @@ public sealed class ConnekioSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
 
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _GetEndpoint(request.IsBatch));
 
@@ -50,7 +52,11 @@ public sealed class ConnekioSmsSender(
             return SendSingleSmsResponse.Succeeded();
         }
 
-        _logger.LogError("Failed to send SMS using Connekio API - Response={RawContent}", rawContent);
+        _logger.LogError(
+            "Failed to send SMS using Connekio API to {DestinationCount} recipients, StatusCode={StatusCode}",
+            request.Destinations.Count,
+            response.StatusCode
+        );
 
         return SendSingleSmsResponse.Failed("Failed to send.");
     }
@@ -68,12 +74,12 @@ public sealed class ConnekioSmsSender(
 
         if (request.IsBatch)
         {
-            payload["mobile_list"] = request.Destinations.ConvertAll(recipient =>
-            {
-                var obj = new Dictionary<string, string>(StringComparer.Ordinal) { ["msisdn"] = recipient.ToString() };
-
-                return obj;
-            });
+            payload["mobile_list"] = request
+                .Destinations.Select(recipient => new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["msisdn"] = recipient.ToString(),
+                })
+                .ToList();
         }
         else
         {

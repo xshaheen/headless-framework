@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p2
 issue_id: "010"
 tags: [code-review, naming, conventions, sms]
@@ -79,3 +79,14 @@ Fix naming issues. For `InfobipOptions`, consider keeping both names with obsole
 **Actions:**
 - Cataloged all naming patterns across providers
 - Identified 4 categories of inconsistencies
+
+### 2026-01-12 - Fixed naming inconsistencies
+
+**By:** Claude Code
+
+**Actions:**
+- Renamed `Setup` to `VodafoneSetup` in `src/Framework.Sms.Vodafone/Setup.cs`
+- Renamed `InfobipOptions` to `InfobipSmsOptions` in Infobip package
+- Renamed `InfobipOptionsValidator` to `InfobipSmsOptionsValidator`
+- Updated all references in `Setup.cs` and `InfobipSmsSender.cs`
+- Renamed file `InfobipOptions.cs` to `InfobipSmsOptions.cs`

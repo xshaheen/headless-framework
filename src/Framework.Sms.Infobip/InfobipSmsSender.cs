@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Infobip.Api.Client;
 using Infobip.Api.Client.Api;
 using Infobip.Api.Client.Model;
@@ -10,19 +11,23 @@ namespace Framework.Sms.Infobip;
 
 public sealed class InfobipSmsSender(
     IHttpClientFactory httpClientFactory,
-    IOptions<InfobipOptions> optionsAccessor,
+    IOptions<InfobipSmsOptions> optionsAccessor,
     ILogger<InfobipSmsSender> logger
 ) : ISmsSender
 {
     internal const string HttpClientName = "InfobipSms";
 
-    private readonly InfobipOptions _options = optionsAccessor.Value;
+    private readonly InfobipSmsOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
+
         var destinations = request.IsBatch
             ? request
                 .Destinations.Select(
@@ -60,14 +65,26 @@ public sealed class InfobipSmsSender(
         try
         {
             var smsResponse = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).AnyContext();
-            logger.LogTrace("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
+            logger.LogTrace(
+                "Infobip SMS sent successfully to {DestinationCount} recipients",
+                request.Destinations.Count
+            );
 
             return SendSingleSmsResponse.Succeeded();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (ApiException e)
         {
-            logger.LogError(e, "Infobip SMS request {@Request} failed {@Error}", smsRequest, e.ErrorContent);
-            FormattableString error = $"ErrorCode: {e.ErrorCode} {e.ErrorContent ?? e.Message}";
+            logger.LogError(
+                e,
+                "Infobip SMS failed to {DestinationCount} recipients, ErrorCode={ErrorCode}",
+                request.Destinations.Count,
+                e.ErrorCode
+            );
+            FormattableString error = $"ErrorCode: {e.ErrorCode} {e.Message}";
 
             return SendSingleSmsResponse.Failed(error.ToInvariantString());
         }

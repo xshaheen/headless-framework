@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "006"
 tags: [code-review, twilio, sms, async]
@@ -79,3 +79,11 @@ Add the `cancellationToken` parameter to the Twilio API call.
 **Actions:**
 - Identified missing CancellationToken propagation
 - Confirmed Twilio SDK supports cancellation
+
+### 2026-01-12 - Fixed
+
+**By:** Claude Code
+
+**Actions:**
+- Added `cancellationToken: cancellationToken` parameter to `MessageResource.CreateAsync`
+- Added `.AnyContext()` per project async conventions

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Framework.Sms.Vodafone;
 
 [PublicAPI]
-public static class Setup
+public static class VodafoneSetup
 {
     public static IServiceCollection AddVodafoneSmsSender(
         this IServiceCollection services,

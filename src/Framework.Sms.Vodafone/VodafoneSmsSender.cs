@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http.Json;
+using System.Security;
 using System.Security.Cryptography;
 using Framework.Checks;
 using Microsoft.Extensions.Logging;
@@ -8,26 +8,15 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.Vodafone;
 
-public sealed class VodafoneSmsSender : ISmsSender
+public sealed class VodafoneSmsSender(
+    IHttpClientFactory httpClientFactory,
+    IOptions<VodafoneSmsOptions> optionsAccessor,
+    ILogger<VodafoneSmsSender> logger
+) : ISmsSender
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly VodafoneSmsOptions _options;
-    private readonly ILogger<VodafoneSmsSender> _logger;
-    private readonly Uri _uri;
-    private readonly byte[] _secureHash;
-
-    public VodafoneSmsSender(
-        IHttpClientFactory httpClientFactory,
-        IOptions<VodafoneSmsOptions> optionsAccessor,
-        ILogger<VodafoneSmsSender> logger
-    )
-    {
-        _httpClientFactory = httpClientFactory;
-        _logger = logger;
-        _options = optionsAccessor.Value;
-        _uri = new(_options.SendSmsEndpoint);
-        _secureHash = Encoding.UTF8.GetBytes(_options.SecureHash);
-    }
+    private readonly VodafoneSmsOptions _options = optionsAccessor.Value;
+    private readonly Uri _uri = new(optionsAccessor.Value.SendSmsEndpoint);
+    private readonly byte[] _secureHash = Encoding.UTF8.GetBytes(optionsAccessor.Value.SecureHash);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -35,17 +24,19 @@ public sealed class VodafoneSmsSender : ISmsSender
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
 
-        using var httpClient = _httpClientFactory.CreateClient("VodafoneSms");
+        using var httpClient = httpClientFactory.CreateClient("VodafoneSms");
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
 
-        var response = await httpClient.PostAsJsonAsync(_uri, requestMessage, cancellationToken);
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        var response = await httpClient.SendAsync(requestMessage, cancellationToken).AnyContext();
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
-            _logger.LogError("Empty response from Vodafone API");
+            logger.LogError("Empty response from Vodafone API");
 
             return SendSingleSmsResponse.Failed("Failed to send.");
         }
@@ -57,7 +48,11 @@ public sealed class VodafoneSmsSender : ISmsSender
             return SendSingleSmsResponse.Succeeded();
         }
 
-        _logger.LogError("Failed to send SMS using Vodafone API. Response={RawContent}", rawContent);
+        logger.LogError(
+            "Failed to send SMS using Vodafone API to {DestinationCount} recipients, StatusCode={StatusCode}",
+            request.Destinations.Count,
+            response.StatusCode
+        );
 
         return SendSingleSmsResponse.Failed("Failed to send.");
     }
@@ -66,16 +61,18 @@ public sealed class VodafoneSmsSender : ISmsSender
     {
         var hashableKey = _BuildHashableKey(request);
         var secureHash = _ComputeHash(hashableKey);
-        var recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString();
+        var recipients = request.IsBatch
+            ? string.Join(',', request.Destinations.Select(d => SecurityElement.Escape(d.ToString())))
+            : SecurityElement.Escape(request.Destinations[0].ToString());
 
         // Simulate XML payload building.
         return "<Payload>"
-            + $"<AccountId>{_options.AccountId}</AccountId>"
-            + $"<Password>{_options.Password}</Password>"
-            + $"<SenderName>{_options.Sender}</SenderName>"
+            + $"<AccountId>{SecurityElement.Escape(_options.AccountId)}</AccountId>"
+            + $"<Password>{SecurityElement.Escape(_options.Password)}</Password>"
+            + $"<SenderName>{SecurityElement.Escape(_options.Sender)}</SenderName>"
             + $"<SecureHash>{secureHash}</SecureHash>"
             + $"<Recipients>{recipients}</Recipients>"
-            + $"<Message>{request.Text}</Message>"
+            + $"<Message>{SecurityElement.Escape(request.Text)}</Message>"
             + "</Payload>";
     }
 

@@ -25,6 +25,8 @@ public sealed class VictoryLinkSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
 
         var victoryLinkRequest = new VictoryLinkRequest
         {
@@ -40,8 +42,8 @@ public sealed class VictoryLinkSmsSender(
         };
 
         using var httpClient = httpClientFactory.CreateClient(HttpClientName);
-        var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, cancellationToken);
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, cancellationToken).AnyContext();
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
@@ -58,9 +60,9 @@ public sealed class VictoryLinkSmsSender(
         var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(rawContent);
 
         logger.LogError(
-            "Failed to send SMS using VictoryLink. ResponseContent={Content} - ResponseContent={RawContent}",
-            responseMessage,
-            rawContent
+            "Failed to send SMS using VictoryLink to {DestinationCount} recipients, ErrorMessage={ErrorMessage}",
+            request.Destinations.Count,
+            responseMessage
         );
 
         return SendSingleSmsResponse.Failed(responseMessage);

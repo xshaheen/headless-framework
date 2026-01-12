@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "001"
 tags: [code-review, bug, twilio, sms]
@@ -71,3 +71,11 @@ Fix immediately - this is a critical bug preventing Twilio SMS from working.
 - Identified bug during code review
 - Confirmed via pattern comparison with other providers
 - All other providers use `Destinations[0]` correctly
+
+### 2026-01-12 - Fixed
+
+**By:** Claude Code
+
+**Actions:**
+- Changed `request.Destinations.ToString()` to `request.Destinations[0].ToString(hasPlusPrefix: true)`
+- Phone number now correctly extracted in E.164 format

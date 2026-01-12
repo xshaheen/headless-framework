@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "004"
 tags: [code-review, concurrency, cequens, sms, thread-safety]
@@ -133,3 +133,13 @@ Implement Option 1 (SemaphoreSlim) - it's the standard pattern for async-safe to
 - Identified race condition in token caching
 - Confirmed singleton registration
 - Proposed SemaphoreSlim-based solution
+
+### 2026-01-12 - Fix Applied
+
+**By:** Claude Code
+
+**Actions:**
+- Added `SemaphoreSlim _tokenLock` field
+- Implemented double-check locking pattern in `_GetTokenRequestAsync`
+- Captured `DateTime.UtcNow` once and reused for consistency
+- Added `.AnyContext()` to all await calls per project conventions

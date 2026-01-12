@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "003"
 tags: [code-review, bug, vodafone, sms]
@@ -76,6 +76,15 @@ var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
 - [ ] Response parsing still works correctly
 
 ## Work Log
+
+### 2026-01-12 - Fix Applied
+
+**By:** Claude Code
+
+**Actions:**
+- Changed `httpClient.PostAsJsonAsync(_uri, requestMessage, cancellationToken)` to `httpClient.SendAsync(requestMessage, cancellationToken).AnyContext()`
+- Removed unused `using System.Net.Http.Json;` import
+- Added `.AnyContext()` to both await calls per project conventions
 
 ### 2026-01-12 - Code Review Discovery
 

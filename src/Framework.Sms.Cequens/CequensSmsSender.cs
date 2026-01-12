@@ -2,6 +2,7 @@
 
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Framework.Checks;
 using Framework.Sms.Cequens.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -18,15 +19,20 @@ public sealed class CequensSmsSender(
 ) : ISmsSender
 {
     private readonly CequensSmsOptions _options = optionsAccessor.Value;
+    private readonly SemaphoreSlim _tokenLock = new(1, 1);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
+
         using var httpClient = httpClientFactory.CreateClient("CequensSms");
 
-        var jwtToken = await _GetTokenRequestAsync(httpClient, cancellationToken) ?? _options.Token;
+        var jwtToken = await _GetTokenRequestAsync(httpClient, cancellationToken).AnyContext() ?? _options.Token;
 
         if (string.IsNullOrEmpty(jwtToken))
         {
@@ -34,8 +40,6 @@ public sealed class CequensSmsSender(
 
             return SendSingleSmsResponse.Failed("Failed to get token from Cequens API");
         }
-
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", jwtToken);
 
         var apiRequest = new SendSmsRequest
         {
@@ -49,22 +53,31 @@ public sealed class CequensSmsSender(
             Recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString(),
         };
 
-        var response = await httpClient.PostAsJsonAsync(_options.SingleSmsEndpoint, apiRequest, cancellationToken);
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _options.SingleSmsEndpoint);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", jwtToken);
+        httpRequest.Content = JsonContent.Create(apiRequest);
+
+        var response = await httpClient.SendAsync(httpRequest, cancellationToken).AnyContext();
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
 
         if (response.IsSuccessStatusCode)
         {
             logger.LogTrace(
-                "SMS sent successfully using Cequens API: {StatusCode}, {Body}",
-                response.StatusCode,
-                rawContent
+                "SMS sent successfully using Cequens API to {DestinationCount} recipients, StatusCode={StatusCode}",
+                request.Destinations.Count,
+                response.StatusCode
             );
 
             return SendSingleSmsResponse.Succeeded();
         }
 
+        logger.LogError(
+            "Failed to send SMS using Cequens API to {DestinationCount} recipients, StatusCode={StatusCode}",
+            request.Destinations.Count,
+            response.StatusCode
+        );
+
         var error = string.IsNullOrEmpty(rawContent) ? "Failed to send SMS using Cequens API" : rawContent;
-        logger.LogError("Failed to send SMS using Cequens API: {StatusCode}, {Body}", response.StatusCode, error);
 
         return SendSingleSmsResponse.Failed(error);
     }
@@ -76,35 +89,51 @@ public sealed class CequensSmsSender(
 
     private async Task<string?> _GetTokenRequestAsync(HttpClient httpClient, CancellationToken cancellationToken)
     {
-        if (_cachedToken != null && _tokenExpiration > DateTime.UtcNow)
+        var now = DateTime.UtcNow;
+
+        // Quick check before lock
+        if (_cachedToken != null && _tokenExpiration > now)
         {
             return _cachedToken;
         }
 
-        var request = new SigningInRequest(_options.ApiKey, _options.UserName);
-        var response = await httpClient.PostAsJsonAsync(_options.TokenEndpoint, request, cancellationToken);
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        await _tokenLock.WaitAsync(cancellationToken).AnyContext();
+        try
         {
-            logger.LogError(
-                "Failed to get token from Cequens API: {StatusCode}, {Body}",
-                response.StatusCode,
-                response
-            );
+            // Double-check after acquiring lock
+            now = DateTime.UtcNow;
+            if (_cachedToken != null && _tokenExpiration > now)
+            {
+                return _cachedToken;
+            }
 
-            return null;
+            var request = new SigningInRequest(_options.ApiKey, _options.UserName);
+            var response = await httpClient
+                .PostAsJsonAsync(_options.TokenEndpoint, request, cancellationToken)
+                .AnyContext();
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError("Failed to get token from Cequens API, StatusCode={StatusCode}", response.StatusCode);
+
+                return null;
+            }
+
+            var token = JsonSerializer.Deserialize<SigningInResponse>(content)?.Data?.AccessToken;
+
+            if (token != null)
+            {
+                _cachedToken = token;
+                _tokenExpiration = now.AddMinutes(10);
+            }
+
+            return token;
         }
-
-        var token = JsonSerializer.Deserialize<SigningInResponse>(content)?.Data?.AccessToken;
-
-        if (token != null)
+        finally
         {
-            _cachedToken = token;
-            _tokenExpiration = DateTime.UtcNow.AddMinutes(10);
+            _tokenLock.Release();
         }
-
-        return token;
     }
 
     #endregion

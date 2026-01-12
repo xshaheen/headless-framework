@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p2
 issue_id: "014"
 tags: [code-review, api-design, sms]
@@ -89,3 +89,11 @@ Implement Option 1 (`IReadOnlyList<T>`) for minimal disruption.
 **Actions:**
 - Identified mutable collection in public API
 - Proposed IReadOnlyList solution
+
+### 2026-01-12 - Resolution
+
+**By:** Claude Code
+
+**Actions:**
+- Changed `List<SmsRequestDestination>` to `IReadOnlyList<SmsRequestDestination>` in `SendSingleSmsRequest.Destinations`
+- Non-breaking: callers can still pass `List<T>` since it implements `IReadOnlyList<T>`

@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p3
 issue_id: "017"
 tags: [code-review, conventions, sms]
@@ -91,8 +91,8 @@ Convert to primary constructors for consistency with project conventions.
 
 ## Acceptance Criteria
 
-- [ ] All SMS senders use primary constructors
-- [ ] Functionality unchanged
+- [x] All SMS senders use primary constructors
+- [x] Functionality unchanged
 
 ## Work Log
 
@@ -103,3 +103,12 @@ Convert to primary constructors for consistency with project conventions.
 **Actions:**
 - Cataloged constructor styles across providers
 - Found 4/8 using traditional constructors
+
+### 2026-01-12 - Converted remaining constructors
+
+**By:** Claude Code
+
+**Actions:**
+- Connekio & Infobip already converted by prior agents
+- Converted `TwilioSmsSender.cs` to primary constructor with lazy init for `TwilioClient.Init`
+- Converted `VodafoneSmsSender.cs` to primary constructor

@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p3
 issue_id: "016"
 tags: [code-review, dead-code, cequens, sms]
@@ -88,3 +88,11 @@ Remove the unused property (Option 1). If batch support is needed, it can be add
 **Actions:**
 - Found unused BatchSmsEndpoint property
 - Confirmed never referenced in sender implementation
+
+### 2026-01-12 - Fixed
+
+**By:** Claude Code
+
+**Actions:**
+- Removed BatchSmsEndpoint property from CequensSmsOptions
+- Removed validation rule for BatchSmsEndpoint from CequensSmsOptionsValidator

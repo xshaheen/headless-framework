@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p2
 issue_id: "007"
 tags: [code-review, async, conventions, sms]
@@ -74,3 +74,15 @@ Add `.AnyContext()` to all `await` expressions in SMS provider implementations.
 **Actions:**
 - Identified convention violation across all SMS providers
 - Listed all affected files and line numbers
+
+### 2026-01-12 - Fixed Missing AnyContext
+
+**By:** Claude Code
+
+**Actions:**
+- Added `.AnyContext()` to `AwsSnsSmsSender.cs:65` (PublishAsync)
+- Added `.AnyContext()` to `DevSmsSender.cs:36` (AppendAllTextAsync)
+- Added `.AnyContext()` to `VictoryLinkSmsSender.cs:43,44` (PostAsJsonAsync, ReadAsStringAsync)
+- Verified `ConnekioSmsSender.cs` already has `.AnyContext()` on lines 38-39
+- Verified `InfobipSmsSender.cs` already has `.AnyContext()` on line 62
+- Cequens, Vodafone, Twilio handled by other agents

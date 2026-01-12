@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p2
 issue_id: "009"
 tags: [code-review, aws, sms, error-handling]
@@ -85,3 +85,11 @@ Implement Option 1 - catch and rethrow `OperationCanceledException`.
 **Actions:**
 - Identified broad exception catch pattern
 - Confirmed OperationCanceledException should be rethrown
+
+### 2026-01-12 - Fixed
+
+**By:** Claude Code
+
+**Actions:**
+- Added `catch (OperationCanceledException) { throw; }` before generic catch in `AwsSnsSmsSender.cs`
+- Applied same fix to `InfobipSmsSender.cs` (similar issue)

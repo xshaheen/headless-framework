@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p2
 issue_id: "008"
 tags: [code-review, twilio, sms, architecture]
@@ -105,3 +105,11 @@ For now, document the limitation. Consider Option 1 if multi-tenant or testabili
 **Actions:**
 - Identified global state anti-pattern
 - Proposed two approaches: proper DI or documentation
+
+### 2026-01-12 - Documentation Added
+
+**By:** Claude Code
+
+**Actions:**
+- Added XML documentation to `TwilioSmsSender` class warning about global state limitation
+- Documents single-tenant restriction and suggests `ITwilioRestClient` injection for future multi-tenant needs
