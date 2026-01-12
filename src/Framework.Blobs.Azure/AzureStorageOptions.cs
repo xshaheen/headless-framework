@@ -15,6 +15,9 @@ public sealed class AzureStorageOptions
 
     /// <summary>Maximum degree of parallelism for bulk upload operations. Default is 10.</summary>
     public int MaxBulkParallelism { get; set; } = 10;
+
+    /// <summary>Cache-Control header for uploaded blobs. Default is 90 days (max-age=7776000, must-revalidate).</summary>
+    public string CacheControl { get; set; } = "max-age=7776000, must-revalidate";
 }
 
 public sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorageOptions>

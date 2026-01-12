@@ -27,7 +27,6 @@ public sealed class AzureBlobStorage(
 ) : IBlobStorage
 {
     private static readonly ConcurrentDictionary<string, bool> _CreatedContainers = new(StringComparer.Ordinal);
-    private const string _DefaultCacheControl = "max-age=7776000, must-revalidate";
     private const string _UploadDateMetadataKey = "uploadDate";
     private const string _ExtensionMetadataKey = "extension";
 
@@ -80,7 +79,7 @@ public sealed class AzureBlobStorage(
         var httpHeader = new BlobHttpHeaders
         {
             ContentType = mimeTypeProvider.GetMimeType(blobName),
-            CacheControl = _DefaultCacheControl,
+            CacheControl = _option.CacheControl,
         };
 
         metadata ??= new Dictionary<string, string?>(StringComparer.Ordinal);
