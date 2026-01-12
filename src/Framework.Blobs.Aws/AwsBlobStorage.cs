@@ -477,7 +477,22 @@ public sealed class AwsBlobStorage(
         var deleteRequest = new DeleteObjectRequest { BucketName = oldBucket, Key = oldKey };
         var deleteResponse = await _s3.DeleteObjectAsync(deleteRequest, cancellationToken).AnyContext();
 
-        return deleteResponse.HttpStatusCode.IsSuccessStatusCode();
+        if (!deleteResponse.HttpStatusCode.IsSuccessStatusCode())
+        {
+            _logger.LogError(
+                "Failed to delete original object {OldBucket}/{OldKey} after copy, rolling back",
+                oldBucket,
+                oldKey
+            );
+
+            // Compensating transaction: delete the copy to restore original state
+            var compensate = new DeleteObjectRequest { BucketName = newBucket, Key = newKey };
+            await _s3.DeleteObjectAsync(compensate, cancellationToken).AnyContext();
+
+            return false;
+        }
+
+        return true;
     }
 
     #endregion
