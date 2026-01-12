@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Payments.Paymob.CashIn.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using WireMock.Server;
 
@@ -25,6 +26,10 @@ public sealed class PaymobCashInFixture : IDisposable
         OptionsAccessor = Substitute.For<IOptionsMonitor<PaymobCashInOptions>>();
         OptionsAccessor.CurrentValue.Returns(CashInOptions);
         TimeProvider = TimeProvider.System;
+
+        // Setup IHttpClientFactory mock
+        HttpClientFactory = Substitute.For<IHttpClientFactory>();
+        HttpClientFactory.CreateClient(Arg.Any<string>()).Returns(HttpClient);
     }
 
     public Fixture AutoFixture { get; } = new();
@@ -32,6 +37,8 @@ public sealed class PaymobCashInFixture : IDisposable
     public WireMockServer Server { get; }
 
     public HttpClient HttpClient { get; }
+
+    public IHttpClientFactory HttpClientFactory { get; }
 
     public PaymobCashInOptions CashInOptions { get; }
 

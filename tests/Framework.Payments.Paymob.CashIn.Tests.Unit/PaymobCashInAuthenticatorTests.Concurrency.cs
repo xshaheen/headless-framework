@@ -40,7 +40,7 @@ public partial class PaymobCashInAuthenticatorTests : TestBase
 
         // when
         using var authenticator = new PaymobCashInAuthenticator(
-            fixture.HttpClient,
+            fixture.HttpClientFactory,
             timeProvider,
             fixture.OptionsAccessor
         );
@@ -82,7 +82,7 @@ public partial class PaymobCashInAuthenticatorTests : TestBase
 
         // when - first call to populate cache
         using var authenticator = new PaymobCashInAuthenticator(
-            fixture.HttpClient,
+            fixture.HttpClientFactory,
             timeProvider,
             fixture.OptionsAccessor
         );
@@ -127,7 +127,7 @@ public partial class PaymobCashInAuthenticatorTests : TestBase
         // when
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         using var authenticator = new PaymobCashInAuthenticator(
-            fixture.HttpClient,
+            fixture.HttpClientFactory,
             timeProvider,
             fixture.OptionsAccessor
         );
@@ -145,7 +145,7 @@ public partial class PaymobCashInAuthenticatorTests : TestBase
     {
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.OptionsAccessor);
+        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClientFactory, timeProvider, fixture.OptionsAccessor);
 
         // when
         authenticator.Dispose();

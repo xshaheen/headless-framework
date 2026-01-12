@@ -8,8 +8,8 @@ namespace Framework.Payments.Paymob.CashIn;
 public sealed partial class PaymobCashInBroker(
     HttpClient httpClient,
     IPaymobCashInAuthenticator authenticator,
-    IOptionsMonitor<PaymobCashInOptions> optionsAccessor
+    IOptionsMonitor<PaymobCashInOptions> options
 ) : IPaymobCashInBroker
 {
-    private readonly PaymobCashInOptions _options = optionsAccessor.CurrentValue;
+    private PaymobCashInOptions _options => options.CurrentValue;
 }

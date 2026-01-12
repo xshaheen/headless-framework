@@ -19,7 +19,7 @@ public partial class PaymobCashInBroker
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
         }
 
         var result = await response
@@ -50,7 +50,7 @@ public partial class PaymobCashInBroker
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
         }
 
         var result = await response
@@ -79,7 +79,7 @@ public partial class PaymobCashInBroker
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
         }
 
         return await response
@@ -101,7 +101,7 @@ public partial class PaymobCashInBroker
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
         }
 
         return await response

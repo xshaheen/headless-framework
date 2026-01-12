@@ -25,7 +25,8 @@ public static class SanitizedHeaderEnricherExtensions
         this LoggerEnrichmentConfiguration enrichmentConfiguration,
         string headerName,
         string? propertyName = null,
-        int maxLength = _DefaultMaxLength)
+        int maxLength = _DefaultMaxLength
+    )
     {
         ArgumentNullException.ThrowIfNull(enrichmentConfiguration);
         ArgumentException.ThrowIfNullOrWhiteSpace(headerName);
@@ -50,7 +51,8 @@ public static class SanitizedHeaderEnricherExtensions
         IServiceProvider serviceProvider,
         string headerName,
         string? propertyName = null,
-        int maxLength = _DefaultMaxLength)
+        int maxLength = _DefaultMaxLength
+    )
     {
         ArgumentNullException.ThrowIfNull(enrichmentConfiguration);
         ArgumentNullException.ThrowIfNull(serviceProvider);

@@ -14,9 +14,7 @@ public sealed class SerilogEnrichersMiddleware(IRequestContext requestContext) :
 
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
-        using var _ = requestContext.User.UserId is { } userId
-            ? LogContext.PushProperty(_UserId, userId)
-            : null;
+        using var _ = requestContext.User.UserId is { } userId ? LogContext.PushProperty(_UserId, userId) : null;
         using var __ = requestContext.User.AccountId is { } accountId
             ? LogContext.PushProperty(_AccountId, accountId)
             : null;

@@ -77,9 +77,7 @@ public static class AddPaymobCashInExtensions
             httpClientBuilder.AddStandardResilienceHandler();
         }
 
-        services
-            .AddSingleton<IPaymobCashInAuthenticator, PaymobCashInAuthenticator>()
-            .AddHttpClient<IPaymobCashInAuthenticator, PaymobCashInAuthenticator>(clientName);
+        services.AddSingleton<IPaymobCashInAuthenticator, PaymobCashInAuthenticator>();
 
         services
             .AddScoped<IPaymobCashInBroker, PaymobCashInBroker>()

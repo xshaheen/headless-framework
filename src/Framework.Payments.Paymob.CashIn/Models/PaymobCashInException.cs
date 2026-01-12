@@ -15,7 +15,7 @@ public sealed class PaymobCashInException(string? message, HttpStatusCode status
     /// <value>An HTTP body.</value>
     public string? Body { get; } = body;
 
-    public static async Task ThrowAsync(HttpResponseMessage response)
+    public static async Task ThrowAsync(HttpResponseMessage response, CancellationToken cancellationToken = default)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -23,20 +23,22 @@ public sealed class PaymobCashInException(string? message, HttpStatusCode status
         }
 
         string? body;
+        string? readError = null;
 
         try
         {
-            body = await response.Content.ReadAsStringAsync().AnyContext();
+            body = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
         }
-#pragma warning disable ERP022
-        catch
+        catch (Exception ex)
         {
             body = null;
+            readError = ex.GetType().Name;
         }
-#pragma warning restore ERP022
 
         var statusCode = ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
-        var message = $"Paymob Cash In - Http request failed with status code ({statusCode}).";
+        var message = readError is null
+            ? $"Paymob Cash In - Http request failed with status code ({statusCode})."
+            : $"Paymob Cash In - Http request failed with status code ({statusCode}). Body read failed: {readError}";
 
         throw new PaymobCashInException(message, response.StatusCode, body);
     }

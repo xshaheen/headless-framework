@@ -2,8 +2,6 @@
 
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
-using Serilog;
-using Serilog.Configuration;
 using Serilog.Core;
 using Serilog.Events;
 
@@ -51,14 +49,13 @@ public sealed partial class SanitizedHeaderEnricher(
     private static string _Sanitize(string value, int maxLength)
     {
         // Remove newline characters (prevents log line injection)
-        var sanitized = value.Replace("\r", "", StringComparison.Ordinal)
-            .Replace("\n", "", StringComparison.Ordinal);
+        var sanitized = value.Replace("\r", "", StringComparison.Ordinal).Replace("\n", "", StringComparison.Ordinal);
 
         // Remove ANSI escape sequences (prevents terminal manipulation)
-        sanitized = AnsiEscapeRegex().Replace(sanitized, "");
+        sanitized = _AnsiEscapeRegex().Replace(sanitized, "");
 
         // Remove other control characters (ASCII 0-31 except tab)
-        sanitized = ControlCharRegex().Replace(sanitized, "");
+        sanitized = _ControlCharRegex().Replace(sanitized, "");
 
         // Truncate to max length
         if (sanitized.Length > maxLength)
@@ -76,10 +73,10 @@ public sealed partial class SanitizedHeaderEnricher(
     }
 
     // Matches ANSI escape sequences: ESC[ followed by parameters and a letter
-    [GeneratedRegex(@"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07")]
-    private static partial Regex AnsiEscapeRegex();
+    [GeneratedRegex(@"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07", RegexOptions.Compiled, 100)]
+    private static partial Regex _AnsiEscapeRegex();
 
     // Matches control characters (0x00-0x1F) except tab (0x09)
-    [GeneratedRegex(@"[\x00-\x08\x0b\x0c\x0e-\x1f]")]
-    private static partial Regex ControlCharRegex();
+    [GeneratedRegex(@"[\x00-\x08\x0b\x0c\x0e-\x1f]", RegexOptions.Compiled, 100)]
+    private static partial Regex _ControlCharRegex();
 }
