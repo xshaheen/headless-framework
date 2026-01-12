@@ -426,50 +426,11 @@ public sealed class AwsBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNullOrEmpty(blobName);
-        Argument.IsNotNullOrEmpty(blobContainer);
-        Argument.IsNotNullOrEmpty(newBlobName);
-        Argument.IsNotNullOrEmpty(newBlobContainer);
+        if (!await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken))
+            return false;
 
         var (oldBucket, oldKey) = _BuildObjectKey(blobName, blobContainer);
         var (newBucket, newKey) = _BuildObjectKey(newBlobName, newBlobContainer);
-
-        // Ensure new bucket exists
-        await _CreateBucketAsync(newBucket, cancellationToken);
-
-        var request = new CopyObjectRequest
-        {
-            CannedACL = _options.CannedAcl,
-            SourceBucket = oldBucket,
-            SourceKey = oldKey,
-            DestinationBucket = newBucket,
-            DestinationKey = newKey,
-            MetadataDirective = S3MetadataDirective.COPY,
-        };
-
-        CopyObjectResponse? response;
-
-        try
-        {
-            response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
-        }
-        catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
-        {
-            return false;
-        }
-
-        if (!response.HttpStatusCode.IsSuccessStatusCode())
-        {
-            _logger.LogError(
-                "Failed to copy object from {OldBucket}/{OldKey} to {NewBucket}/{NewKey}",
-                oldBucket,
-                oldKey,
-                newBucket,
-                newKey
-            );
-
-            return false;
-        }
 
         var deleteRequest = new DeleteObjectRequest { BucketName = oldBucket, Key = oldKey };
         var deleteResponse = await _s3.DeleteObjectAsync(deleteRequest, cancellationToken).AnyContext();
