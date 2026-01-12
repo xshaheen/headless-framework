@@ -100,6 +100,8 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrWhiteSpace(blobName);
 
         var filePath = _BuildBlobPath(container, blobName);
         var delete = _Delete(filePath);
@@ -343,6 +345,8 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Argument.IsNotNullOrEmpty(container);
+        Argument.IsNotNullOrWhiteSpace(blobName);
 
         var filePath = _BuildBlobPath(container, blobName);
         var exists = File.Exists(filePath);
