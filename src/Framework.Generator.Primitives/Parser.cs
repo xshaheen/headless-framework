@@ -121,8 +121,28 @@ internal static class Parser
             ))
             .ToImmutableArray();
 
-        // Extract attributes
-        var attributes = typeSymbol.GetAttributes();
+        // Extract all needed attributes in single pass using cheap Name property
+        AttributeData? supportedOpsAttr = null;
+        AttributeData? serializationAttr = null;
+        AttributeData? stringLengthAttr = null;
+
+        foreach (var attr in typeSymbol.GetAttributes())
+        {
+            var name = attr.AttributeClass?.Name;
+
+            switch (name)
+            {
+                case "SupportedOperationsAttribute":
+                    supportedOpsAttr = attr;
+                    break;
+                case "SerializationFormatAttribute":
+                    serializationAttr = attr;
+                    break;
+                case "StringLengthAttribute":
+                    stringLengthAttr = attr;
+                    break;
+            }
+        }
 
         // SupportedOperationsAttribute
         SupportedOperationsAttributeData? supportedOps = null;
@@ -130,18 +150,11 @@ internal static class Parser
 
         if (isNumeric)
         {
-            supportedOps = _GetCombinedSupportedOperations(typeSymbol, underlyingType, parentSymbols);
+            supportedOps = _GetCombinedSupportedOperations(typeSymbol, underlyingType, parentSymbols, supportedOpsAttr);
         }
 
         // SerializationFormatAttribute
         string? serializationFormat = null;
-        var serializationAttr = attributes.FirstOrDefault(x =>
-            string.Equals(
-                x.AttributeClass?.ToDisplayString(),
-                AbstractionConstants.SerializationFormatAttributeFullName,
-                StringComparison.Ordinal
-            )
-        );
 
         if (serializationAttr is not null && serializationAttr.ConstructorArguments.Length != 0)
         {
@@ -150,24 +163,18 @@ internal static class Parser
 
         // StringLengthAttribute
         StringLengthInfo? stringLengthInfo = null;
-        if (underlyingType == PrimitiveUnderlyingType.String)
+
+        if (
+            underlyingType == PrimitiveUnderlyingType.String
+            && stringLengthAttr is not null
+            && stringLengthAttr.ConstructorArguments.Length >= 3
+        )
         {
-            var stringLengthAttr = attributes.FirstOrDefault(x =>
-                string.Equals(
-                    x.AttributeClass?.ToDisplayString(),
-                    AbstractionConstants.StringLengthAttributeFullName,
-                    StringComparison.Ordinal
-                )
-            );
+            var minValue = (int)stringLengthAttr.ConstructorArguments[0].Value!;
+            var maxValue = (int)stringLengthAttr.ConstructorArguments[1].Value!;
+            var validate = (bool)stringLengthAttr.ConstructorArguments[2].Value!;
 
-            if (stringLengthAttr is not null && stringLengthAttr.ConstructorArguments.Length >= 3)
-            {
-                var minValue = (int)stringLengthAttr.ConstructorArguments[0].Value!;
-                var maxValue = (int)stringLengthAttr.ConstructorArguments[1].Value!;
-                var validate = (bool)stringLengthAttr.ConstructorArguments[2].Value!;
-
-                stringLengthInfo = new StringLengthInfo(minValue, maxValue, validate);
-            }
+            stringLengthInfo = new StringLengthInfo(minValue, maxValue, validate);
         }
 
         // Check interface implementations
@@ -238,17 +245,19 @@ internal static class Parser
     private static SupportedOperationsAttributeData _GetCombinedSupportedOperations(
         INamedTypeSymbol typeSymbol,
         PrimitiveUnderlyingType underlyingType,
-        List<INamedTypeSymbol> parentSymbols
+        List<INamedTypeSymbol> parentSymbols,
+        AttributeData? preExtractedAttr
     )
     {
         var cache = new Dictionary<INamedTypeSymbol, SupportedOperationsAttributeData>(SymbolEqualityComparer.Default);
 
-        return createCombinedAttribute(typeSymbol, underlyingType, parentSymbols.Count, cache);
+        return createCombinedAttribute(typeSymbol, underlyingType, parentSymbols.Count, preExtractedAttr, cache);
 
         static SupportedOperationsAttributeData createCombinedAttribute(
             INamedTypeSymbol @class,
             PrimitiveUnderlyingType underlyingType,
             int parentCount,
+            AttributeData? attrData,
             Dictionary<INamedTypeSymbol, SupportedOperationsAttributeData> cache
         )
         {
@@ -257,17 +266,7 @@ internal static class Parser
                 return cachedAttribute;
             }
 
-            var attributeData = @class
-                .GetAttributes()
-                .FirstOrDefault(x =>
-                    string.Equals(
-                        x.AttributeClass?.ToDisplayString(),
-                        AbstractionConstants.SupportedOperationsAttributeFullName,
-                        StringComparison.Ordinal
-                    )
-                );
-
-            var attribute = attributeData is null ? null : _GetAttributeFromData(attributeData);
+            var attribute = attrData is null ? null : _GetAttributeFromData(attrData);
 
             if (parentCount == 0)
             {
@@ -278,20 +277,28 @@ internal static class Parser
             }
 
             var parentType = @class.Interfaces.First(x => x.IsImplementIPrimitive());
+            var parentSymbol = (parentType.TypeArguments[0] as INamedTypeSymbol)!;
 
-            var attr = combineAttribute(
+            // Extract SupportedOperationsAttribute from parent using cheap Name property
+            AttributeData? parentAttrData = null;
+
+            foreach (var a in parentSymbol.GetAttributes())
+            {
+                if (a.AttributeClass?.Name == "SupportedOperationsAttribute")
+                {
+                    parentAttrData = a;
+                    break;
+                }
+            }
+
+            var combined = combineAttribute(
                 attribute,
-                createCombinedAttribute(
-                    (parentType.TypeArguments[0] as INamedTypeSymbol)!,
-                    underlyingType,
-                    parentCount - 1,
-                    cache
-                )
+                createCombinedAttribute(parentSymbol, underlyingType, parentCount - 1, parentAttrData, cache)
             );
 
-            cache[@class] = attr;
+            cache[@class] = combined;
 
-            return attr;
+            return combined;
         }
 
         static SupportedOperationsAttributeData combineAttribute(
@@ -373,71 +380,32 @@ internal static class Parser
     }
 
     /// <summary>Gets the global options for the PrimitiveGenerator generator.</summary>
-    /// <param name="a">The AnalyzerConfigOptionsProvider to access analyzer options.</param>
+    /// <param name="provider">The AnalyzerConfigOptionsProvider to access analyzer options.</param>
     /// <param name="ct">CancellationToken</param>
     /// <returns>The PrimitiveGlobalOptions for the generator.</returns>
-    internal static PrimitiveGlobalOptions ParseGlobalOptions(AnalyzerConfigOptionsProvider a, CancellationToken ct)
+    internal static PrimitiveGlobalOptions ParseGlobalOptions(
+        AnalyzerConfigOptionsProvider provider,
+        CancellationToken ct
+    )
     {
         ct.ThrowIfCancellationRequested();
 
-        var result = new PrimitiveGlobalOptions();
-
-        if (
-            a.GlobalOptions.TryGetValue("build_property.PrimitiveJsonConverters", out var value)
-            && bool.TryParse(value, out var generateJsonConverters)
-        )
+        return new PrimitiveGlobalOptions
         {
-            result.GenerateJsonConverters = generateJsonConverters;
-        }
+            GenerateJsonConverters = parseBool(provider, "PrimitiveJsonConverters"),
+            GenerateTypeConverters = parseBool(provider, "PrimitiveTypeConverters"),
+            GenerateSwashbuckleSwaggerConverters = parseBool(provider, "PrimitiveSwashbuckleSwaggerConverters"),
+            GenerateNswagSwaggerConverters = parseBool(provider, "PrimitiveNswagSwaggerConverters"),
+            GenerateXmlConverters = parseBool(provider, "PrimitiveXmlConverters"),
+            GenerateEntityFrameworkValueConverters = parseBool(provider, "PrimitiveEntityFrameworkValueConverters"),
+            GenerateDapperConverters = parseBool(provider, "PrimitiveDapperConverters"),
+        };
 
-        if (
-            a.GlobalOptions.TryGetValue("build_property.PrimitiveTypeConverters", out value)
-            && bool.TryParse(value, out var generateTypeConverter)
-        )
+        static bool parseBool(AnalyzerConfigOptionsProvider p, string key)
         {
-            result.GenerateTypeConverters = generateTypeConverter;
+            return p.GlobalOptions.TryGetValue($"build_property.{key}", out var value)
+                && bool.TryParse(value, out var result)
+                && result;
         }
-
-        if (
-            a.GlobalOptions.TryGetValue("build_property.PrimitiveSwashbuckleSwaggerConverters", out value)
-            && bool.TryParse(value, out var generateSwashbuckleSwaggerConverters)
-        )
-        {
-            result.GenerateSwashbuckleSwaggerConverters = generateSwashbuckleSwaggerConverters;
-        }
-
-        if (
-            a.GlobalOptions.TryGetValue("build_property.PrimitiveNswagSwaggerConverters", out value)
-            && bool.TryParse(value, out var generateNswagSwaggerConverters)
-        )
-        {
-            result.GenerateNswagSwaggerConverters = generateNswagSwaggerConverters;
-        }
-
-        if (
-            a.GlobalOptions.TryGetValue("build_property.PrimitiveXmlConverters", out value)
-            && bool.TryParse(value, out var generateXmlSerialization)
-        )
-        {
-            result.GenerateXmlConverters = generateXmlSerialization;
-        }
-
-        if (
-            a.GlobalOptions.TryGetValue("build_property.PrimitiveEntityFrameworkValueConverters", out value)
-            && bool.TryParse(value, out var generateEntityFrameworkValueConverters)
-        )
-        {
-            result.GenerateEntityFrameworkValueConverters = generateEntityFrameworkValueConverters;
-        }
-
-        if (
-            a.GlobalOptions.TryGetValue("build_property.PrimitiveDapperConverters", out value)
-            && bool.TryParse(value, out var generateDapperConverters)
-        )
-        {
-            result.GenerateDapperConverters = generateDapperConverters;
-        }
-
-        return result;
     }
 }

@@ -1,7 +1,7 @@
 # Repeated ToDisplayString() Calls in Hot Paths
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** ready
 **Priority:** P2 - Important
 **Tags:** code-review, performance, source-generator, allocations
 
@@ -97,3 +97,4 @@ public static string GetCachedDisplayString(this INamespaceSymbol ns) =>
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From performance-oracle code review |
+| 2026-01-12 | Approved | Triage: pending → ready |

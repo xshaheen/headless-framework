@@ -109,17 +109,74 @@ public static class CompilationExtensions
             span = span.Slice(8);
         }
 
+        // Extract interface name (after last dot) and namespace parts
+        var lastDot = span.LastIndexOf('.');
+        if (lastDot < 0)
+        {
+            // No namespace, just interface name
+            foreach (var symbol in type.AllInterfaces)
+            {
+                if (symbol.ContainingNamespace.IsGlobalNamespace && span.Equals(symbol.Name.AsSpan(), StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        var interfaceName = span.Slice(lastDot + 1);
+        var namespacePart = span.Slice(0, lastDot);
+
         foreach (var symbol in type.AllInterfaces)
         {
-            var fullName = (symbol.ContainingNamespace.ToDisplayString() + "." + symbol.Name).AsSpan();
+            // Quick check: compare interface name first (cheap)
+            if (!interfaceName.Equals(symbol.Name.AsSpan(), StringComparison.Ordinal))
+            {
+                continue;
+            }
 
-            if (span.Equals(fullName, StringComparison.Ordinal))
+            // Now compare namespace by walking the namespace hierarchy
+            if (_NamespaceMatches(symbol.ContainingNamespace, namespacePart))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>Checks if namespace symbol matches the expected namespace string (e.g. "System.Collections").</summary>
+    private static bool _NamespaceMatches(INamespaceSymbol ns, ReadOnlySpan<char> expectedNamespace)
+    {
+        if (ns.IsGlobalNamespace)
+        {
+            return expectedNamespace.IsEmpty;
+        }
+
+        // Find the last segment in the expected namespace
+        var lastDot = expectedNamespace.LastIndexOf('.');
+        ReadOnlySpan<char> currentSegment;
+        ReadOnlySpan<char> remainingNamespace;
+
+        if (lastDot < 0)
+        {
+            currentSegment = expectedNamespace;
+            remainingNamespace = [];
+        }
+        else
+        {
+            currentSegment = expectedNamespace.Slice(lastDot + 1);
+            remainingNamespace = expectedNamespace.Slice(0, lastDot);
+        }
+
+        // Compare current namespace segment
+        if (!currentSegment.Equals(ns.Name.AsSpan(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Recurse to parent namespace
+        return _NamespaceMatches(ns.ContainingNamespace, remainingNamespace);
     }
 
     /// <summary>
