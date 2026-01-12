@@ -133,7 +133,7 @@ public sealed record ValidationError : ResultError
     /// <summary>
     /// Converts field errors to a dictionary of ErrorDescriptor lists.
     /// </summary>
-    public Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptorDict()
+    public Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptorDictionary()
     {
         return FieldErrors.ToDictionary(
             kv => kv.Key,

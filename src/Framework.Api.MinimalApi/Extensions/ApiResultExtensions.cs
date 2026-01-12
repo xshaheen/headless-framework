@@ -33,7 +33,7 @@ public static class ApiResultExtensions
         {
             NotFoundError e => TypedResults.Problem(creator.EntityNotFound(e.Entity, e.Key)),
 
-            ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDict())),
+            ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())),
 
             ForbiddenError e => TypedResults.Problem(creator.Forbidden([new ErrorDescriptor("forbidden", e.Reason)])),
 

@@ -41,7 +41,7 @@ internal readonly record struct PrimitiveTypeInfo(
     string LocationFilePath,
     int LocationLineStart,
     string? XmlDocumentation
-) : IEquatable<PrimitiveTypeInfo>;
+);
 
 /// <summary>Info about a parent primitive type in the inheritance chain.</summary>
 [StructLayout(LayoutKind.Auto)]
@@ -50,12 +50,8 @@ internal readonly record struct ParentPrimitiveInfo(
     string Namespace,
     string FriendlyName,
     bool IsValueType
-) : IEquatable<ParentPrimitiveInfo>;
+);
 
 /// <summary>String length validation info.</summary>
 [StructLayout(LayoutKind.Auto)]
-internal readonly record struct StringLengthInfo(
-    int MinLength,
-    int MaxLength,
-    bool ShouldValidate
-) : IEquatable<StringLengthInfo>;
+internal readonly record struct StringLengthInfo(int MinLength, int MaxLength, bool ShouldValidate);

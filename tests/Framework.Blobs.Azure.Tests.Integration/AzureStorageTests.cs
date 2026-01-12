@@ -4,6 +4,7 @@ using Azure.Storage.Blobs;
 using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Azure;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
@@ -19,12 +20,18 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
-        var azureStorageOptions = new AzureStorageOptions { LoggerFactory = LoggerFactory };
+        var azureStorageOptions = new AzureStorageOptions();
         var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
 
-        return new AzureBlobStorage(blobServiceClient, mimeTypeProvider, clock, optionsAccessor);
+        return new AzureBlobStorage(
+            blobServiceClient,
+            mimeTypeProvider,
+            clock,
+            optionsAccessor,
+            LoggerFactory.CreateLogger<AzureBlobStorage>()
+        );
     }
 
     [Fact]

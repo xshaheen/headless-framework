@@ -47,7 +47,9 @@ public static class ApiResultMvcExtensions
         {
             NotFoundError e => controller.NotFound(creator.EntityNotFound(e.Entity, e.Key)),
 
-            ValidationError e => controller.UnprocessableEntity(creator.UnprocessableEntity(e.ToErrorDescriptorDict())),
+            ValidationError e => controller.UnprocessableEntity(
+                creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())
+            ),
 
             ForbiddenError e => new ObjectResult(creator.Forbidden([new ErrorDescriptor("forbidden", e.Reason)]))
             {
