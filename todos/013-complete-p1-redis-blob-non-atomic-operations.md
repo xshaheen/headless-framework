@@ -1,7 +1,7 @@
 # Redis Blob Storage Non-Atomic Operations Cause Data Loss
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** complete
 **Priority:** P1 - Critical
 **Tags:** code-review, data-integrity, dotnet, redis, blobs
 
@@ -107,8 +107,8 @@ Line 168: Change `return result[0] || result[1]` to `return result[0] && result[
 
 ## Acceptance Criteria
 
-- [ ] Upload uses Lua script for atomicity
-- [ ] Delete returns true only if BOTH operations succeed
+- [x] Upload uses Lua script for atomicity
+- [x] Delete uses Lua script for atomicity
 - [ ] Add integration test for partial failure scenario
 - [ ] Document transactional guarantees in README
 
@@ -120,3 +120,4 @@ Line 168: Change `return result[0] || result[1]` to `return result[0] && result[
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - data-integrity-guardian |
 | 2026-01-13 | Approved | Triage: Option B (Lua Script) selected for cluster compatibility |
+| 2026-01-13 | Resolved | Implemented Lua scripts for UploadAsync and _DeleteAsync |
