@@ -38,9 +38,7 @@ public static class AsyncDuplicateLock
             }
             else
             {
-#pragma warning disable CA2000
                 item = new RefCounted<SemaphoreSlim>(new SemaphoreSlim(1, 1));
-#pragma warning restore CA2000
                 _SemaphoreSlims[key] = item;
             }
         }
@@ -60,9 +58,13 @@ public static class AsyncDuplicateLock
                 if (item.RefCount == 0)
                 {
                     _SemaphoreSlims.Remove(key);
+                    item.Value.Release();
+                    item.Value.Dispose();
                 }
-
-                item.Value.Release();
+                else
+                {
+                    item.Value.Release();
+                }
             }
         }
     }
