@@ -11,7 +11,7 @@ public sealed class AwsBlobStorageOptions
 
     public bool DisablePayloadSigning { get; set; }
 
-    public S3CannedACL? CannedAcl { get; set; }
+    public S3CannedACL? CannedAcl { get; set; } = S3CannedACL.Private;
 
     public ILoggerFactory? LoggerFactory { get; set; }
 }

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.RegularExpressions;
-using Cysharp.Text;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Primitives;
@@ -800,7 +800,7 @@ public sealed class SshBlobStorage : IBlobStorage
             return blobName;
         }
 
-        var sb = ZString.CreateStringBuilder();
+        var sb = new StringBuilder();
 
         sb.AppendJoin('/', container);
 
@@ -821,7 +821,7 @@ public sealed class SshBlobStorage : IBlobStorage
             return "";
         }
 
-        var sb = ZString.CreateStringBuilder();
+        var sb = new StringBuilder();
 
         sb.AppendJoin('/', container);
         sb.Append('/');

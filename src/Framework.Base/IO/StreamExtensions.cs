@@ -3,7 +3,6 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
-using Cysharp.Text;
 using Framework.Checks;
 using Framework.Core;
 using Framework.IO;
@@ -244,7 +243,7 @@ public static class StreamExtensions
         using var md5 = MD5.Create();
         var data = await md5.ComputeHashAsync(stream, cancellationToken);
 
-        var sb = ZString.CreateStringBuilder();
+        var sb = new StringBuilder();
 
         foreach (var d in data)
         {
