@@ -658,12 +658,32 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     private static string _BuildBlobPath(string[] container, string blobName)
     {
+        _ValidatePathTraversal(blobName, nameof(blobName));
+
+        foreach (var segment in container)
+        {
+            _ValidatePathTraversal(segment, nameof(container));
+        }
+
         if (container.Length == 1)
         {
             return blobName;
         }
 
         return _NormalizePath(string.Join('/', container.Skip(1)).EnsureEndsWith('/') + blobName);
+    }
+
+    private static void _ValidatePathTraversal(string value, string paramName)
+    {
+        if (value.Contains("..", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Path traversal sequences are not allowed.", paramName);
+        }
+
+        if (value.StartsWith('/') || value.StartsWith('\\'))
+        {
+            throw new ArgumentException("Value cannot start with path separator.", paramName);
+        }
     }
 
     [return: NotNullIfNotNull(nameof(path))]
