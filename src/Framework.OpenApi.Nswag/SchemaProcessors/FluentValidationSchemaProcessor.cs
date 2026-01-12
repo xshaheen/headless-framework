@@ -20,6 +20,7 @@ namespace Framework.Api.SchemaProcessors;
 /// </summary>
 public sealed class FluentValidationSchemaProcessor(
     IServiceProvider serviceProvider,
+    HeadlessNswagOptions? options = null,
     IEnumerable<FluentValidationRule>? rules = null
 ) : ISchemaProcessor
 {
@@ -27,6 +28,7 @@ public sealed class FluentValidationSchemaProcessor(
 
     private readonly ILogger _logger = _CreateLogger(serviceProvider);
     private readonly IReadOnlyList<FluentValidationRule> _rules = _CreateRules(rules);
+    private readonly bool _throwOnError = options?.ThrowOnSchemaProcessingError ?? false;
 
     public void Process(SchemaProcessorContext context)
     {
@@ -63,7 +65,12 @@ public sealed class FluentValidationSchemaProcessor(
         }
         catch (Exception e)
         {
-            _logger.LogWarning(0, e, "Applying IncludeRules for type '{Type}' fails", context.ContextualType.Name);
+            _logger.LogError(e, "Applying IncludeRules for type '{Type}' fails", context.ContextualType.Name);
+
+            if (_throwOnError)
+            {
+                throw;
+            }
         }
     }
 
@@ -119,14 +126,18 @@ public sealed class FluentValidationSchemaProcessor(
                 }
                 catch (Exception e)
                 {
-                    _logger.LogWarning(
-                        0,
+                    _logger.LogError(
                         e,
                         "Error on apply rule '{RuleName}' for property '{TypeName}.{Key}'",
                         rule.RuleName,
-                        propertyName,
+                        declaringType.Name,
                         propertyName
                     );
+
+                    if (_throwOnError)
+                    {
+                        throw;
+                    }
                 }
             }
         }
@@ -166,13 +177,18 @@ public sealed class FluentValidationSchemaProcessor(
                     }
                     catch (Exception e)
                     {
-                        _logger.LogWarning(
+                        _logger.LogError(
                             e,
                             "Error on apply rule '{RuleName}' for property '{TypeName}.{Key}'",
                             rule.RuleName,
                             context.ContextualType.Name,
                             propertyName
                         );
+
+                        if (_throwOnError)
+                        {
+                            throw;
+                        }
                     }
                 }
             }

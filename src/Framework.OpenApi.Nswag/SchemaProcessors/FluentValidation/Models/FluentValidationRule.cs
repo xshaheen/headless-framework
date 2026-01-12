@@ -43,26 +43,7 @@ public sealed class FluentValidationRule
     {
         RuleName = "NotNull",
         Matches = propertyValidator => propertyValidator is INotNullValidator,
-        Apply = context =>
-        {
-            var propertySchema = context.PropertySchema;
-
-            propertySchema.IsNullableRaw = false;
-
-            if (propertySchema.Type.HasFlag(JsonObjectType.Null))
-            {
-                propertySchema.Type &= ~JsonObjectType.Null; // Remove nullable
-            }
-
-            var oneOfsWithReference = propertySchema.OneOf.Where(x => x.Reference is not null).ToList();
-
-            if (oneOfsWithReference.Count == 1)
-            {
-                // Set the Reference directly instead and clear the OneOf collection
-                propertySchema.Reference = oneOfsWithReference.Single();
-                propertySchema.OneOf.Clear();
-            }
-        },
+        Apply = context => _RemoveNullability(context.PropertySchema),
     };
 
     public static readonly FluentValidationRule NotEmptyRule = new()
@@ -71,25 +52,8 @@ public sealed class FluentValidationRule
         Matches = propertyValidator => propertyValidator is INotEmptyValidator,
         Apply = context =>
         {
-            var propertySchema = context.PropertySchema;
-
-            propertySchema.IsNullableRaw = false;
-
-            if (propertySchema.Type.HasFlag(JsonObjectType.Null))
-            {
-                propertySchema.Type &= ~JsonObjectType.Null; // Remove nullable
-            }
-
-            var oneOfsWithReference = propertySchema.OneOf.Where(x => x.Reference is not null).ToList();
-
-            if (oneOfsWithReference.Count == 1)
-            {
-                // Set the Reference directly instead and clear the OneOf collection
-                propertySchema.Reference = oneOfsWithReference.Single();
-                propertySchema.OneOf.Clear();
-            }
-
-            propertySchema.MinLength = 1;
+            _RemoveNullability(context.PropertySchema);
+            context.PropertySchema.MinLength = 1;
         },
     };
 
@@ -236,4 +200,22 @@ public sealed class FluentValidationRule
     ];
 
     #endregion
+
+    private static void _RemoveNullability(JsonSchema propertySchema)
+    {
+        propertySchema.IsNullableRaw = false;
+
+        if (propertySchema.Type.HasFlag(JsonObjectType.Null))
+        {
+            propertySchema.Type &= ~JsonObjectType.Null;
+        }
+
+        var oneOfsWithReference = propertySchema.OneOf.Where(x => x.Reference is not null).ToList();
+
+        if (oneOfsWithReference.Count == 1)
+        {
+            propertySchema.Reference = oneOfsWithReference.Single();
+            propertySchema.OneOf.Clear();
+        }
+    }
 }

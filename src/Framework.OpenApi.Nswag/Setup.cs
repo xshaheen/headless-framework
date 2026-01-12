@@ -29,12 +29,14 @@ public static class NswagSetup
         Action<AspNetCoreOpenApiDocumentGeneratorSettings>? setupGeneratorActions = null
     )
     {
+        var frameworkOptions = _BuildOptions(setupFrameworkAction);
+
         services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
-                _ConfigureGeneratorSettings(settings, serviceProvider);
+                _ConfigureGeneratorSettings(settings, serviceProvider, frameworkOptions);
                 setupGeneratorActions?.Invoke(settings);
-                _ConfigureGeneratorSettingsByFramework(settings, setupFrameworkAction);
+                _ConfigureGeneratorSettingsByFramework(settings, frameworkOptions);
             }
         );
 
@@ -47,12 +49,14 @@ public static class NswagSetup
         Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider> setupGeneratorActions
     )
     {
+        var frameworkOptions = _BuildOptions(setupFrameworkAction);
+
         services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
-                _ConfigureGeneratorSettings(settings, serviceProvider);
+                _ConfigureGeneratorSettings(settings, serviceProvider, frameworkOptions);
                 setupGeneratorActions?.Invoke(settings, serviceProvider);
-                _ConfigureGeneratorSettingsByFramework(settings, setupFrameworkAction);
+                _ConfigureGeneratorSettingsByFramework(settings, frameworkOptions);
             }
         );
 
@@ -245,9 +249,17 @@ public static class NswagSetup
 
     #region Configurations
 
+    private static HeadlessNswagOptions _BuildOptions(Action<HeadlessNswagOptions>? setupFrameworkAction)
+    {
+        var options = new HeadlessNswagOptions();
+        setupFrameworkAction?.Invoke(options);
+        return options;
+    }
+
     private static void _ConfigureGeneratorSettings(
         AspNetCoreOpenApiDocumentGeneratorSettings settings,
-        IServiceProvider serviceProvider
+        IServiceProvider serviceProvider,
+        HeadlessNswagOptions frameworkOptions
     )
     {
         // General Settings
@@ -263,7 +275,7 @@ public static class NswagSetup
         settings.SchemaSettings.DefaultReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
         settings.SchemaSettings.DefaultDictionaryValueReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
         // Schema Processors
-        settings.SchemaSettings.SchemaProcessors.Add(new FluentValidationSchemaProcessor(serviceProvider));
+        settings.SchemaSettings.SchemaProcessors.Add(new FluentValidationSchemaProcessor(serviceProvider, frameworkOptions));
         settings.SchemaSettings.SchemaProcessors.Add(new NullabilityAsRequiredSchemaProcessor());
         // Operation Processors
         settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
@@ -274,12 +286,9 @@ public static class NswagSetup
 
     private static void _ConfigureGeneratorSettingsByFramework(
         AspNetCoreOpenApiDocumentGeneratorSettings settings,
-        Action<HeadlessNswagOptions>? setupFrameworkAction
+        HeadlessNswagOptions frameworkOptions
     )
     {
-        var frameworkOptions = new HeadlessNswagOptions();
-        setupFrameworkAction?.Invoke(frameworkOptions);
-
         if (frameworkOptions.AddBearerSecurity)
         {
             settings.AddSecurity(_BearerDefinitionName, [], _GetBearerSecurityDefinition());
