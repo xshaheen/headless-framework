@@ -11,4 +11,7 @@ public sealed class AwsBlobStorageOptions
     public bool DisablePayloadSigning { get; set; }
 
     public S3CannedACL? CannedAcl { get; set; } = S3CannedACL.Private;
+
+    /// <summary>Maximum degree of parallelism for bulk operations. Default is 10.</summary>
+    public int MaxBulkParallelism { get; set; } = 10;
 }
