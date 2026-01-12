@@ -2,13 +2,14 @@
 
 using Framework.Payments.Paymob.CashIn;
 using Framework.Payments.Paymob.CashIn.Models.Auth;
+using Framework.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInAuthenticatorTests
+public partial class PaymobCashInAuthenticatorTests : TestBase
 {
     [Fact]
     public async Task should_make_single_api_call_when_concurrent_requests_with_expired_token()
@@ -72,6 +73,7 @@ public partial class PaymobCashInAuthenticatorTests
                     .Create()
                     .WithBody(_ =>
                     {
+                        // ReSharper disable once AccessToModifiedClosure
                         Interlocked.Increment(ref callCount);
                         var response = new CashInAuthenticationTokenResponse { Token = token };
                         return JsonSerializer.Serialize(response);
@@ -79,11 +81,17 @@ public partial class PaymobCashInAuthenticatorTests
             );
 
         // when - first call to populate cache
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.OptionsAccessor);
-        await authenticator.GetAuthenticationTokenAsync();
+        using var authenticator = new PaymobCashInAuthenticator(
+            fixture.HttpClient,
+            timeProvider,
+            fixture.OptionsAccessor
+        );
+
+        await authenticator.GetAuthenticationTokenAsync(AbortToken);
 
         // reset counter and make concurrent requests
         callCount = 0;
+        // ReSharper disable once AccessToDisposedClosure
         var tasks = Enumerable.Range(0, 10).Select(_ => authenticator.GetAuthenticationTokenAsync().AsTask());
         var results = await Task.WhenAll(tasks);
 
@@ -124,14 +132,16 @@ public partial class PaymobCashInAuthenticatorTests
             fixture.OptionsAccessor
         );
 
+        var token = cts.Token;
+
         // then
         // ReSharper disable once AccessToDisposedClosure
-        var act = () => authenticator.GetAuthenticationTokenAsync(cts.Token).AsTask();
+        var act = () => authenticator.GetAuthenticationTokenAsync(token).AsTask();
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
-    public void should_dispose_semaphore_when_disposed()
+    public async Task should_dispose_semaphore_when_disposed()
     {
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
@@ -142,6 +152,6 @@ public partial class PaymobCashInAuthenticatorTests
 
         // then - subsequent calls should throw ObjectDisposedException
         var act = () => authenticator.GetAuthenticationTokenAsync().AsTask();
-        act.Should().ThrowAsync<ObjectDisposedException>();
+        await act.Should().ThrowAsync<ObjectDisposedException>();
     }
 }

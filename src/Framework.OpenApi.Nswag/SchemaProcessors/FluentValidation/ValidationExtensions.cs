@@ -19,7 +19,7 @@ internal static class ValidationExtensions
             .EmptyIfNull()
             .GetPropertyRules()
             .Where(ctx =>
-                HasNoCondition(ctx.ValidationRule)
+                ctx.ValidationRule.HasNoCondition()
                 && IgnoreCaseStringComparer.Instance.Equals(ctx.ValidationRule.PropertyName, name)
             );
     }
@@ -29,7 +29,8 @@ internal static class ValidationExtensions
         string name
     )
     {
-        return GetValidationRulesByPropertyNameIgnoreCase(validator, name)
+        return validator
+            .GetValidationRulesByPropertyNameIgnoreCase(name)
             .SelectMany(ctx => ctx.ValidationRule.Components.Select(c => c.Validator));
     }
 
