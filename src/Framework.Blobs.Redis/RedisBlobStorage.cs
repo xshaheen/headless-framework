@@ -21,6 +21,34 @@ public sealed class RedisBlobStorage : IBlobStorage
     private readonly ISerializer _serializer;
     private readonly RedisBlobStorageOptions _options;
 
+    // Lua script for atomic rename: copies blob+info then deletes source
+    // KEYS[1] = source blob hash, KEYS[2] = source info hash
+    // KEYS[3] = dest blob hash, KEYS[4] = dest info hash
+    // ARGV[1] = source blob name, ARGV[2] = dest blob name
+    private const string _RenameScript = """
+        local blobData = redis.call('HGET', KEYS[1], ARGV[1])
+        local infoData = redis.call('HGET', KEYS[2], ARGV[1])
+        if not blobData then return 0 end
+        redis.call('HSET', KEYS[3], ARGV[2], blobData)
+        redis.call('HSET', KEYS[4], ARGV[2], infoData)
+        redis.call('HDEL', KEYS[1], ARGV[1])
+        redis.call('HDEL', KEYS[2], ARGV[1])
+        return 1
+        """;
+
+    // Lua script for atomic copy: copies blob+info without deleting source
+    // KEYS[1] = source blob hash, KEYS[2] = source info hash
+    // KEYS[3] = dest blob hash, KEYS[4] = dest info hash
+    // ARGV[1] = source blob name, ARGV[2] = dest blob name
+    private const string _CopyScript = """
+        local blobData = redis.call('HGET', KEYS[1], ARGV[1])
+        local infoData = redis.call('HGET', KEYS[2], ARGV[1])
+        if not blobData then return 0 end
+        redis.call('HSET', KEYS[3], ARGV[2], blobData)
+        redis.call('HSET', KEYS[4], ARGV[2], infoData)
+        return 1
+        """;
+
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
     public RedisBlobStorage(IOptions<RedisBlobStorageOptions> optionsAccessor, IJsonSerializer defaultSerializer)
@@ -317,16 +345,23 @@ public sealed class RedisBlobStorage : IBlobStorage
         var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
         _logger.LogInformation("Renaming {Path} to {NewPath}", srcBlobPath, dstBlobPath);
 
+        var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
+        var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
+
         try
         {
-            var result = await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken);
+            var result = await Run.WithRetriesAsync(
+                    () => Database.ScriptEvaluateAsync(
+                        _RenameScript,
+                        [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                        [srcBlobPath, dstBlobPath]
+                    ),
+                    logger: _logger,
+                    cancellationToken: cancellationToken
+                )
+                .AnyContext();
 
-            if (!result)
-            {
-                return false;
-            }
-
-            return await DeleteAsync(blobContainer, blobName, cancellationToken).AnyContext();
+            return (int)result == 1;
         }
         catch (Exception e)
         {
@@ -353,26 +388,30 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(newBlobName);
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
+        var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
+        var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
+        _logger.LogTrace("Copying {Path} to {TargetPath}", srcBlobPath, dstBlobPath);
+
+        var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
+        var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
+
         try
         {
-            var sourceBlobInfo = await GetBlobInfoAsync(blobContainer, blobName, cancellationToken).AnyContext();
-            var result = await DownloadAsync(blobContainer, blobName, cancellationToken).AnyContext();
+            var result = await Run.WithRetriesAsync(
+                    () => Database.ScriptEvaluateAsync(
+                        _CopyScript,
+                        [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                        [srcBlobPath, dstBlobPath]
+                    ),
+                    logger: _logger,
+                    cancellationToken: cancellationToken
+                )
+                .AnyContext();
 
-            if (result is null)
-            {
-                return false;
-            }
-
-            await using var stream = result.Stream;
-            var metadata = sourceBlobInfo?.Metadata is { } m ? new Dictionary<string, string?>(m, StringComparer.Ordinal) : null;
-            await UploadAsync(newBlobContainer, newBlobName, stream, metadata, cancellationToken).AnyContext();
-
-            return true;
+            return (int)result == 1;
         }
         catch (Exception e)
         {
-            var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
-            var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
             _logger.LogError(e, "Error copying {Path} to {TargetPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
 
             throw;
