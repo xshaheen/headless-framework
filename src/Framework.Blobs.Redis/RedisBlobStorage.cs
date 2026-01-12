@@ -332,7 +332,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         {
             _logger.LogError(e, "Error renaming {Path} to {NewPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
 
-            return false;
+            throw;
         }
     }
 
@@ -375,7 +375,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
             _logger.LogError(e, "Error copying {Path} to {TargetPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
 
-            return false;
+            throw;
         }
     }
 
