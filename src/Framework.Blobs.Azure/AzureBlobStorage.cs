@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.RegularExpressions;
 using Azure;
 using Azure.Storage.Blobs;
@@ -452,8 +453,8 @@ public sealed class AzureBlobStorage(
                 {
                     Success = true,
                     HasMore = remainingBlobsCount != 0,
-                    Blobs = blobs.Take(pageSize).ToList(),
-                    ExtraLoadedBlobs = blobs.Skip(pageSize).ToList(),
+                    Blobs = blobs.GetRange(0, Math.Min(pageSize, blobs.Count)),
+                    ExtraLoadedBlobs = blobs.Count > pageSize ? blobs.GetRange(pageSize, blobs.Count - pageSize) : [],
                     ContinuationToken = previousNextPageResult.ContinuationToken,
                     AzureNextPageFunc = (currentResult, token) =>
                         _GetFilesAsync(client, criteria, pageSize, currentResult, token),
@@ -548,8 +549,8 @@ public sealed class AzureBlobStorage(
         {
             Success = true,
             HasMore = hasExtraLoadedBlobs,
-            Blobs = blobs.Take(pageSize).ToList(),
-            ExtraLoadedBlobs = hasExtraLoadedBlobs ? blobs.Skip(pageSize).ToList() : Array.Empty<BlobInfo>(),
+            Blobs = blobs.GetRange(0, Math.Min(pageSize, blobs.Count)),
+            ExtraLoadedBlobs = hasExtraLoadedBlobs ? blobs.GetRange(pageSize, blobs.Count - pageSize) : [],
             ContinuationToken = continuationToken,
             AzureNextPageFunc = hasExtraLoadedBlobs
                 ? (currentResult, token) => _GetFilesAsync(client, criteria, pageSize, currentResult, token)
@@ -602,20 +603,40 @@ public sealed class AzureBlobStorage(
 
     private List<Uri> _NormalizeBlobUrls(string[] container, IReadOnlyCollection<string> blobNames)
     {
-        var normalizedContainer = container.Select(_NormalizeContainerName).ToArray();
-        var prefix =
-            blobServiceClient.Uri.AbsoluteUri.EnsureEndsWith('/')
-            + normalizedContainer.JoinAsString('/');
+        var sb = new StringBuilder(blobServiceClient.Uri.AbsoluteUri);
+        if (sb[^1] != '/') sb.Append('/');
 
-        return blobNames.Select(blobName => new Uri($"{prefix}/{_NormalizeSlashes(_normalizer.NormalizeBlobName(blobName))}")).ToList();
+        for (var i = 0; i < container.Length; i++)
+        {
+            if (i > 0) sb.Append('/');
+            sb.Append(_NormalizeContainerName(container[i]));
+        }
+
+        var prefix = sb.ToString();
+        var result = new List<Uri>(blobNames.Count);
+
+        foreach (var blobName in blobNames)
+        {
+            result.Add(new Uri($"{prefix}/{_NormalizeSlashes(_normalizer.NormalizeBlobName(blobName))}"));
+        }
+
+        return result;
     }
 
     private (string Container, string Blob) _NormalizeBlob(string[] containers, string blobName)
     {
         var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
-        var blob = containers.Skip(1).Select(_NormalizeContainerName).Append(_NormalizeSlashes(normalizedBlobName)).JoinAsString('/');
 
-        return (_GetContainer(containers), blob);
+        var sb = new StringBuilder();
+        for (var i = 1; i < containers.Length; i++)
+        {
+            if (sb.Length > 0) sb.Append('/');
+            sb.Append(_NormalizeContainerName(containers[i]));
+        }
+        if (sb.Length > 0) sb.Append('/');
+        sb.Append(_NormalizeSlashes(normalizedBlobName));
+
+        return (_GetContainer(containers), sb.ToString());
     }
 
     private string _GetContainer(string[] containers)
