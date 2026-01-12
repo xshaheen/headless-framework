@@ -564,7 +564,7 @@ public sealed partial class Url
     /// </summary>
     /// <param name="names">Names of query parameters</param>
     /// <returns>The Url object with the query parameter added.</returns>
-    public Url AppendQueryParam(params string[] names) => SetQueryParams(names as IEnumerable<string>);
+    public Url AppendQueryParam(params string[] names) => AppendQueryParam(names as IEnumerable<string>);
 
     /// <summary>
     /// Removes a name/value pair from the query by name.
