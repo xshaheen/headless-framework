@@ -61,11 +61,11 @@ public sealed class RedisBlobStorage : IBlobStorage
     // Lua script for atomic delete: deletes blob data and metadata atomically
     // KEYS[1] = blob hash, KEYS[2] = info hash
     // ARGV[1] = blob path
-    // Returns 1 if both deleted, 0 otherwise
+    // Returns 1 if either deleted (handles orphaned data cleanup), 0 if neither existed
     private const string _DeleteScript = """
         local blobDeleted = redis.call('HDEL', KEYS[1], ARGV[1])
         local infoDeleted = redis.call('HDEL', KEYS[2], ARGV[1])
-        if blobDeleted == 1 and infoDeleted == 1 then return 1 end
+        if blobDeleted == 1 or infoDeleted == 1 then return 1 end
         return 0
         """;
 
@@ -114,8 +114,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (_options.MaxBlobSizeBytes > 0 && stream.CanSeek && stream.Length > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. " +
-                    "Redis blob storage is intended for small/ephemeral blobs only.",
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. "
+                        + "Redis blob storage is intended for small/ephemeral blobs only.",
                     nameof(stream)
                 );
             }
@@ -130,11 +130,9 @@ public sealed class RedisBlobStorage : IBlobStorage
                 throw new InvalidOperationException("Failed to get buffer from MemoryStream");
             }
 
-            var saveBlobTask = database.HashSetAsync(
-                blobsContainer,
-                blobPath,
-                new ReadOnlyMemory<byte>(blobSegment.Array!, blobSegment.Offset, blobSegment.Count)
-            );
+            var blobData = new byte[blobSegment.Count];
+            Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
+
             memory.Seek(0, SeekOrigin.Begin);
             memory.SetLength(0);
 
@@ -155,14 +153,17 @@ public sealed class RedisBlobStorage : IBlobStorage
                 throw new InvalidOperationException("Failed to get buffer from MemoryStream");
             }
 
-            var saveInfoTask = database.HashSetAsync(
-                infoContainer,
-                blobPath,
-                new ReadOnlyMemory<byte>(infoSegment.Array!, infoSegment.Offset, infoSegment.Count)
-            );
+            var infoData = new byte[infoSegment.Count];
+            Buffer.BlockCopy(infoSegment.Array!, infoSegment.Offset, infoData, 0, infoSegment.Count);
 
+            // Atomic upload using Lua script to prevent orphaned data
             await Run.WithRetriesAsync(
-                    async () => await Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions().AnyContext(),
+                    () =>
+                        database.ScriptEvaluateAsync(
+                            _UploadScript,
+                            [blobsContainer, infoContainer],
+                            [blobPath, blobData, infoData]
+                        ),
                     logger: _logger,
                     cancellationToken: cancellationToken
                 )
@@ -198,20 +199,26 @@ public sealed class RedisBlobStorage : IBlobStorage
             CancellationToken = cancellationToken,
         };
 
-        await Parallel.ForEachAsync(blobs, options, async (blob, ct) =>
-        {
-            var i = Interlocked.Increment(ref index) - 1;
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                options,
+                async (blob, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
 
-            try
-            {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
-                results[i] = Result<Exception>.Ok();
-            }
-            catch (Exception e)
-            {
-                results[i] = Result<Exception>.Fail(e);
-            }
-        }).AnyContext();
+                    try
+                    {
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        results[i] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
 
         return results;
     }
@@ -244,18 +251,15 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         _logger.LogTrace("Deleting {Path}", blobPath);
 
-        var database = Database;
-        var deleteInfoTask = database.HashDeleteAsync(infoContainer, blobPath);
-        var deleteBlobTask = database.HashDeleteAsync(blobsContainer, blobPath);
-
+        // Atomic delete using Lua script to ensure both blob and info are deleted together
         var result = await Run.WithRetriesAsync(
-                async () => await Task.WhenAll(deleteInfoTask, deleteBlobTask).WithAggregatedExceptions().AnyContext(),
+                () => Database.ScriptEvaluateAsync(_DeleteScript, [blobsContainer, infoContainer], [blobPath]),
                 logger: _logger,
                 cancellationToken: cancellationToken
             )
             .AnyContext();
 
-        return result[0] && result[1];
+        return (int)result == 1;
     }
 
     #endregion
@@ -284,19 +288,25 @@ public sealed class RedisBlobStorage : IBlobStorage
             CancellationToken = cancellationToken,
         };
 
-        await Parallel.ForEachAsync(blobNames, options, async (fileName, ct) =>
-        {
-            var i = Interlocked.Increment(ref index) - 1;
+        await Parallel
+            .ForEachAsync(
+                blobNames,
+                options,
+                async (fileName, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
 
-            try
-            {
-                results[i] = await DeleteAsync(container, fileName, ct).AnyContext();
-            }
-            catch (Exception e)
-            {
-                results[i] = Result<bool, Exception>.Fail(e);
-            }
-        }).AnyContext();
+                    try
+                    {
+                        results[i] = await DeleteAsync(container, fileName, ct).AnyContext();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<bool, Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
 
         return results;
     }
@@ -322,22 +332,28 @@ public sealed class RedisBlobStorage : IBlobStorage
             CancellationToken = cancellationToken,
         };
 
-        await Parallel.ForEachAsync(blobs, options, async (blob, ct) =>
-        {
-            try
-            {
-                var deleted = await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, ct).AnyContext();
-
-                if (deleted)
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                options,
+                async (blob, ct) =>
                 {
-                    Interlocked.Increment(ref count);
+                    try
+                    {
+                        var deleted = await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, ct).AnyContext();
+
+                        if (deleted)
+                        {
+                            Interlocked.Increment(ref count);
+                        }
+                    }
+                    catch
+                    {
+                        // Swallow exception, just don't increment count
+                    }
                 }
-            }
-            catch
-            {
-                // Swallow exception, just don't increment count
-            }
-        }).AnyContext();
+            )
+            .AnyContext();
 
         _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
 
@@ -371,11 +387,12 @@ public sealed class RedisBlobStorage : IBlobStorage
         try
         {
             var result = await Run.WithRetriesAsync(
-                    () => Database.ScriptEvaluateAsync(
-                        _RenameScript,
-                        [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
-                        [srcBlobPath, dstBlobPath]
-                    ),
+                    () =>
+                        Database.ScriptEvaluateAsync(
+                            _RenameScript,
+                            [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                            [srcBlobPath, dstBlobPath]
+                        ),
                     logger: _logger,
                     cancellationToken: cancellationToken
                 )
@@ -418,11 +435,12 @@ public sealed class RedisBlobStorage : IBlobStorage
         try
         {
             var result = await Run.WithRetriesAsync(
-                    () => Database.ScriptEvaluateAsync(
-                        _CopyScript,
-                        [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
-                        [srcBlobPath, dstBlobPath]
-                    ),
+                    () =>
+                        Database.ScriptEvaluateAsync(
+                            _CopyScript,
+                            [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                            [srcBlobPath, dstBlobPath]
+                        ),
                     logger: _logger,
                     cancellationToken: cancellationToken
                 )
@@ -771,8 +789,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             if (totalBytes > _options.MaxBlobSizeBytes)
             {
                 throw new ArgumentException(
-                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. " +
-                    "Redis blob storage is intended for small/ephemeral blobs only.",
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. "
+                        + "Redis blob storage is intended for small/ephemeral blobs only.",
                     nameof(source)
                 );
             }
