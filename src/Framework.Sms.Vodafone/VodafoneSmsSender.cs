@@ -10,19 +10,19 @@ namespace Framework.Sms.Vodafone;
 
 public sealed class VodafoneSmsSender : ISmsSender
 {
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly VodafoneSmsOptions _options;
     private readonly ILogger<VodafoneSmsSender> _logger;
     private readonly Uri _uri;
     private readonly byte[] _secureHash;
 
     public VodafoneSmsSender(
-        HttpClient httpClient,
+        IHttpClientFactory httpClientFactory,
         IOptions<VodafoneSmsOptions> optionsAccessor,
         ILogger<VodafoneSmsSender> logger
     )
     {
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
         _options = optionsAccessor.Value;
         _uri = new(_options.SendSmsEndpoint);
@@ -36,10 +36,11 @@ public sealed class VodafoneSmsSender : ISmsSender
     {
         Argument.IsNotNull(request);
 
+        using var httpClient = _httpClientFactory.CreateClient("VodafoneSms");
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
 
-        var response = await _httpClient.PostAsJsonAsync(_uri, requestMessage, cancellationToken);
+        var response = await httpClient.PostAsJsonAsync(_uri, requestMessage, cancellationToken);
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(rawContent))

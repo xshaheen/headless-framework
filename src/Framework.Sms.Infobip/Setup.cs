@@ -54,8 +54,8 @@ public static class InfobipSetup
         services.AddSingleton<ISmsSender, InfobipSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, InfobipSmsSender>(name: "infobip-client")
-            : services.AddHttpClient<ISmsSender, InfobipSmsSender>(name: "infobip-client", configureClient);
+            ? services.AddHttpClient(InfobipSmsSender.HttpClientName)
+            : services.AddHttpClient(InfobipSmsSender.HttpClientName, configureClient);
 
         if (configureResilience is not null)
         {

@@ -12,7 +12,7 @@ namespace Framework.Sms.Cequens;
  * Docs: https://developer.cequens.com/reference/sending-sms
  */
 public sealed class CequensSmsSender(
-    HttpClient httpClient,
+    IHttpClientFactory httpClientFactory,
     IOptions<CequensSmsOptions> optionsAccessor,
     ILogger<CequensSmsSender> logger
 ) : ISmsSender
@@ -24,7 +24,9 @@ public sealed class CequensSmsSender(
         CancellationToken cancellationToken = default
     )
     {
-        var jwtToken = await _GetTokenRequestAsync(cancellationToken) ?? _options.Token;
+        using var httpClient = httpClientFactory.CreateClient("CequensSms");
+
+        var jwtToken = await _GetTokenRequestAsync(httpClient, cancellationToken) ?? _options.Token;
 
         if (string.IsNullOrEmpty(jwtToken))
         {
@@ -72,7 +74,7 @@ public sealed class CequensSmsSender(
     private string? _cachedToken;
     private DateTime _tokenExpiration;
 
-    private async Task<string?> _GetTokenRequestAsync(CancellationToken cancellationToken)
+    private async Task<string?> _GetTokenRequestAsync(HttpClient httpClient, CancellationToken cancellationToken)
     {
         if (_cachedToken != null && _tokenExpiration > DateTime.UtcNow)
         {

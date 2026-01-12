@@ -7,26 +7,17 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.Connekio;
 
-public sealed class ConnekioSmsSender : ISmsSender
+public sealed class ConnekioSmsSender(
+    IHttpClientFactory httpClientFactory,
+    IOptions<ConnekioSmsOptions> optionsAccessor,
+    ILogger<ConnekioSmsSender> logger
+) : ISmsSender
 {
-    private readonly HttpClient _httpClient;
-    private readonly ConnekioSmsOptions _options;
-    private readonly ILogger<ConnekioSmsSender> _logger;
-    private readonly Uri _singleSmsEndpoint;
-    private readonly Uri _batchSmsEndpoint;
-
-    public ConnekioSmsSender(
-        HttpClient httpClient,
-        IOptions<ConnekioSmsOptions> optionsAccessor,
-        ILogger<ConnekioSmsSender> logger
-    )
-    {
-        _httpClient = httpClient;
-        _logger = logger;
-        _options = optionsAccessor.Value;
-        _singleSmsEndpoint = new(_options.SingleSmsEndpoint);
-        _batchSmsEndpoint = new(_options.BatchSmsEndpoint);
-    }
+    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
+    private readonly ConnekioSmsOptions _options = optionsAccessor.Value;
+    private readonly ILogger<ConnekioSmsSender> _logger = logger;
+    private readonly Uri _singleSmsEndpoint = new(optionsAccessor.Value.SingleSmsEndpoint);
+    private readonly Uri _batchSmsEndpoint = new(optionsAccessor.Value.BatchSmsEndpoint);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -43,8 +34,9 @@ public sealed class ConnekioSmsSender : ISmsSender
             $"{_options.UserName}:{_options.Password}:{_options.AccountId}"
         );
 
-        var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var httpClient = _httpClientFactory.CreateClient("ConnekioSms");
+        var response = await httpClient.SendAsync(requestMessage, cancellationToken).AnyContext();
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {

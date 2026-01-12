@@ -9,11 +9,13 @@ using Microsoft.Extensions.Options;
 namespace Framework.Sms.VictoryLink;
 
 public sealed class VictoryLinkSmsSender(
-    HttpClient httpClient,
+    IHttpClientFactory httpClientFactory,
     IOptions<VictoryLinkSmsOptions> optionsAccessor,
     ILogger<VictoryLinkSmsSender> logger
 ) : ISmsSender
 {
+    public const string HttpClientName = "VictoryLinkSms";
+
     private readonly VictoryLinkSmsOptions _options = optionsAccessor.Value;
     private readonly Uri _uri = new(optionsAccessor.Value.Endpoint);
 
@@ -37,6 +39,7 @@ public sealed class VictoryLinkSmsSender(
                 : request.Destinations[0].Number,
         };
 
+        using var httpClient = httpClientFactory.CreateClient(HttpClientName);
         var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, cancellationToken);
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 

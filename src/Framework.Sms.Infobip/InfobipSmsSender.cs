@@ -8,23 +8,15 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.Infobip;
 
-public sealed class InfobipSmsSender : ISmsSender, IDisposable
+public sealed class InfobipSmsSender(
+    IHttpClientFactory httpClientFactory,
+    IOptions<InfobipOptions> optionsAccessor,
+    ILogger<InfobipSmsSender> logger
+) : ISmsSender
 {
-    private readonly string _sender;
-    private readonly SmsApi _smsApi;
-    private readonly ILogger<InfobipSmsSender> _logger;
+    internal const string HttpClientName = "InfobipSms";
 
-    public InfobipSmsSender(
-        HttpClient httpClient,
-        IOptions<InfobipOptions> optionsAccessor,
-        ILogger<InfobipSmsSender> logger
-    )
-    {
-        var value = optionsAccessor.Value;
-        _sender = value.Sender;
-        _smsApi = new SmsApi(httpClient, new Configuration { BasePath = value.BasePath, ApiKey = value.ApiKey });
-        _logger = logger;
-    }
+    private readonly InfobipOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -52,27 +44,32 @@ public sealed class InfobipSmsSender : ISmsSender, IDisposable
                 ),
             ];
 
-        var smsMessage = new SmsMessage(_sender, destinations, new SmsMessageContent(new SmsTextContent(request.Text)));
+        var smsMessage = new SmsMessage(
+            _options.Sender,
+            destinations,
+            new SmsMessageContent(new SmsTextContent(request.Text))
+        );
         var smsRequest = new SmsRequest([smsMessage]);
+
+        using var httpClient = httpClientFactory.CreateClient(HttpClientName);
+        using var smsApi = new SmsApi(
+            httpClient,
+            new Configuration { BasePath = _options.BasePath, ApiKey = _options.ApiKey }
+        );
 
         try
         {
-            var smsResponse = await _smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken);
-            _logger.LogTrace("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
+            var smsResponse = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).AnyContext();
+            logger.LogTrace("Infobip SMS request {@Request} success {@Response}", smsRequest, smsResponse);
 
             return SendSingleSmsResponse.Succeeded();
         }
         catch (ApiException e)
         {
-            _logger.LogError(e, "Infobip SMS request {@Request} failed {@Error}", smsRequest, e.ErrorContent);
+            logger.LogError(e, "Infobip SMS request {@Request} failed {@Error}", smsRequest, e.ErrorContent);
             FormattableString error = $"ErrorCode: {e.ErrorCode} {e.ErrorContent ?? e.Message}";
 
             return SendSingleSmsResponse.Failed(error.ToInvariantString());
         }
-    }
-
-    public void Dispose()
-    {
-        _smsApi.Dispose();
     }
 }

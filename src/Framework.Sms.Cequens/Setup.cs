@@ -54,8 +54,8 @@ public static class CequensSetup
         services.AddSingleton<ISmsSender, CequensSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, CequensSmsSender>(name: "cequens-client")
-            : services.AddHttpClient<ISmsSender, CequensSmsSender>(name: "cequens-client", configureClient);
+            ? services.AddHttpClient("CequensSms")
+            : services.AddHttpClient("CequensSms", configureClient);
 
         if (configureResilience is not null)
         {

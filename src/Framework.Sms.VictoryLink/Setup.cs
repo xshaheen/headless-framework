@@ -54,8 +54,8 @@ public static class VictoryLinkSetup
         services.AddSingleton<ISmsSender, VictoryLinkSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, VictoryLinkSmsSender>()
-            : services.AddHttpClient<ISmsSender, VictoryLinkSmsSender>(configureClient);
+            ? services.AddHttpClient(VictoryLinkSmsSender.HttpClientName)
+            : services.AddHttpClient(VictoryLinkSmsSender.HttpClientName, configureClient);
 
         if (configureResilience is not null)
         {

@@ -54,8 +54,8 @@ public static class ConnekioSetup
         services.AddSingleton<ISmsSender, ConnekioSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, ConnekioSmsSender>()
-            : services.AddHttpClient<ISmsSender, ConnekioSmsSender>(configureClient);
+            ? services.AddHttpClient("ConnekioSms")
+            : services.AddHttpClient("ConnekioSms", configureClient);
 
         if (configureResilience is not null)
         {

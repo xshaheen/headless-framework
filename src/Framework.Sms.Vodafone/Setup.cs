@@ -54,8 +54,8 @@ public static class Setup
         services.AddSingleton<ISmsSender, VodafoneSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, VodafoneSmsSender>()
-            : services.AddHttpClient<ISmsSender, VodafoneSmsSender>(configureClient);
+            ? services.AddHttpClient("VodafoneSms")
+            : services.AddHttpClient("VodafoneSms", configureClient);
 
         if (configureResilience is not null)
         {
