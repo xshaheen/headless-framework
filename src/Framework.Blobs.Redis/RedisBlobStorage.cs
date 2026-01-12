@@ -49,6 +49,26 @@ public sealed class RedisBlobStorage : IBlobStorage
         return 1
         """;
 
+    // Lua script for atomic upload: writes blob data and metadata atomically
+    // KEYS[1] = blob hash, KEYS[2] = info hash
+    // ARGV[1] = blob path, ARGV[2] = blob data, ARGV[3] = info data
+    private const string _UploadScript = """
+        redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+        redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
+        return 1
+        """;
+
+    // Lua script for atomic delete: deletes blob data and metadata atomically
+    // KEYS[1] = blob hash, KEYS[2] = info hash
+    // ARGV[1] = blob path
+    // Returns 1 if both deleted, 0 otherwise
+    private const string _DeleteScript = """
+        local blobDeleted = redis.call('HDEL', KEYS[1], ARGV[1])
+        local infoDeleted = redis.call('HDEL', KEYS[2], ARGV[1])
+        if blobDeleted == 1 and infoDeleted == 1 then return 1 end
+        return 0
+        """;
+
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
     public RedisBlobStorage(IOptions<RedisBlobStorageOptions> optionsAccessor, IJsonSerializer defaultSerializer)
@@ -235,7 +255,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             )
             .AnyContext();
 
-        return result[0] || result[1];
+        return result[0] && result[1];
     }
 
     #endregion
