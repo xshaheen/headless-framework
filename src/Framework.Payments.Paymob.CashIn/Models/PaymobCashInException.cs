@@ -26,7 +26,7 @@ public sealed class PaymobCashInException(string? message, HttpStatusCode status
 
         try
         {
-            body = await response.Content.ReadAsStringAsync();
+            body = await response.Content.ReadAsStringAsync().AnyContext();
         }
 #pragma warning disable ERP022
         catch

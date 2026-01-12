@@ -21,6 +21,6 @@ public partial class PaymobCashInBroker
             requestUrl,
             internalRequest,
             cancellationToken
-        );
+        ).AnyContext();
     }
 }

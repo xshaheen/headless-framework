@@ -38,7 +38,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator
         var config = _options.CurrentValue;
         var requestUrl = Url.Combine(config.ApiBaseUrl, "auth/tokens");
         var request = new CashInAuthenticationTokenRequest { ApiKey = config.ApiKey };
-        using var response = await _httpClient.PostAsJsonAsync(requestUrl, request, config.SerializationOptions);
+        using var response = await _httpClient.PostAsJsonAsync(requestUrl, request, config.SerializationOptions).AnyContext();
 
         if (!response.IsSuccessStatusCode)
         {
@@ -67,7 +67,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator
             return _cachedToken;
         }
 
-        var response = await RequestAuthenticationTokenAsync();
+        var response = await RequestAuthenticationTokenAsync().AnyContext();
 
         return response.Token;
     }

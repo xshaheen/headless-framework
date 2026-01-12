@@ -19,7 +19,7 @@ public partial class PaymobCashInBroker
             requestUrl = requestUrl.SetQueryParams(request.Query);
         }
 
-        return await _GetWithBearerAuthAsync<CashInTransactionsPage>(requestUrl, cancellationToken);
+        return await _GetWithBearerAuthAsync<CashInTransactionsPage>(requestUrl, cancellationToken).AnyContext();
     }
 
     public async Task<CashInTransaction?> GetTransactionAsync(
@@ -29,6 +29,6 @@ public partial class PaymobCashInBroker
     {
         var requestUrl = Url.Combine(_options.ApiBaseUrl, $"acceptance/transactions/{transactionId}");
 
-        return await _GetWithBearerAuthAsync<CashInTransaction>(requestUrl, cancellationToken);
+        return await _GetWithBearerAuthAsync<CashInTransaction>(requestUrl, cancellationToken).AnyContext();
     }
 }

@@ -17,7 +17,7 @@ public partial class PaymobCashInBroker
             _options.CreateIntentionUrl,
             request,
             cancellationToken
-        );
+        ).AnyContext();
     }
 
     public async Task<CashInCallbackTransaction?> RefundTransactionAsync(
@@ -29,7 +29,7 @@ public partial class PaymobCashInBroker
             _options.RefundUrl,
             request,
             cancellationToken
-        );
+        ).AnyContext();
     }
 
     public async Task<CashInCallbackTransaction?> VoidTransactionAsync(
@@ -41,6 +41,6 @@ public partial class PaymobCashInBroker
             _options.VoidRefundUrl,
             request,
             cancellationToken
-        );
+        ).AnyContext();
     }
 }
