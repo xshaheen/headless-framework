@@ -1,7 +1,7 @@
 # BulkUploadAsync Has Unbounded Parallelism
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** complete
 **Priority:** P2 - Important
 **Tags:** code-review, performance, blobs-azure, concurrency, scalability
 
@@ -92,10 +92,10 @@ public int MaxBulkParallelism { get; set; } = 10;
 
 ## Acceptance Criteria
 
-- [ ] BulkUploadAsync limits concurrent uploads
-- [ ] Default parallelism is reasonable (e.g., 10)
-- [ ] Parallelism is configurable via options
-- [ ] Large bulk uploads don't exhaust connections
+- [x] BulkUploadAsync limits concurrent uploads
+- [x] Default parallelism is reasonable (e.g., 10)
+- [x] Parallelism is configurable via options
+- [x] Large bulk uploads don't exhaust connections
 
 ---
 
@@ -104,3 +104,5 @@ public int MaxBulkParallelism { get; set; } = 10;
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From performance review |
+| 2026-01-12 | Approved | Triage session - status: pending → ready |
+| 2026-01-12 | Resolved | Implemented Parallel.ForEachAsync + MaxBulkParallelism option |

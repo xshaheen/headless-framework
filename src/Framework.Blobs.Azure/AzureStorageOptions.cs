@@ -12,6 +12,9 @@ public sealed class AzureStorageOptions
 
     /// <summary>Access type when creating a new container if it does not exist.</summary>
     public PublicAccessType ContainerPublicAccessType { get; set; } = PublicAccessType.None;
+
+    /// <summary>Maximum degree of parallelism for bulk upload operations. Default is 10.</summary>
+    public int MaxBulkParallelism { get; set; } = 10;
 }
 
 public sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorageOptions>
@@ -19,5 +22,6 @@ public sealed class AzureStorageOptionsValidator : AbstractValidator<AzureStorag
     public AzureStorageOptionsValidator()
     {
         RuleFor(x => x.ContainerPublicAccessType).IsInEnum();
+        RuleFor(x => x.MaxBulkParallelism).GreaterThan(0);
     }
 }
