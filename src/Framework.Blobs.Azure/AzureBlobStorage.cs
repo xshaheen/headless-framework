@@ -79,6 +79,12 @@ public sealed class AzureBlobStorage(
         metadata[_UploadDateMetadataKey] = clock.UtcNow.ToString("O");
         metadata[_ExtensionMetadataKey] = Path.GetExtension(blobName);
 
+        if (stream.CanSeek && stream.Position != 0)
+        {
+            logger.LogWarning("Stream position was {Position}, resetting to 0 for blob {BlobName}", stream.Position, blobName);
+            stream.Seek(0, SeekOrigin.Begin);
+        }
+
         await blobClient.UploadAsync(stream, httpHeader, metadata, cancellationToken: cancellationToken).AnyContext();
     }
 
