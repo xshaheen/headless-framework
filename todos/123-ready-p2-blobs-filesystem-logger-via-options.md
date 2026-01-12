@@ -1,7 +1,7 @@
 # Logger Passed via Options Instead of DI
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** resolved
 **Priority:** P2 - Important
 **Tags:** code-review, architecture, dotnet, blobs, filesystem
 
@@ -79,9 +79,9 @@ public sealed class FileSystemBlobStorage(
 
 ## Acceptance Criteria
 
-- [ ] Logger injected via constructor
-- [ ] LoggerFactory removed from options
-- [ ] Tests updated to inject mock logger
+- [x] Logger injected via constructor
+- [x] LoggerFactory removed from options
+- [x] Tests updated to inject mock logger
 
 ---
 
@@ -90,3 +90,4 @@ public sealed class FileSystemBlobStorage(
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - architecture-strategist, pragmatic-dotnet-reviewer |
+| 2026-01-12 | Resolved | Implemented Option A - injected ILogger<T> directly, removed LoggerFactory, updated tests |

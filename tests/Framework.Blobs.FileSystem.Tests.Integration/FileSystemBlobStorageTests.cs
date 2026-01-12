@@ -2,6 +2,10 @@
 
 using Framework.Blobs;
 using Framework.Blobs.FileSystem;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -13,10 +17,10 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     protected override IBlobStorage GetStorage()
     {
         var options = new FileSystemBlobStorageOptions { BaseDirectoryPath = _baseDirectoryPath };
-
         var optionsWrapper = new OptionsWrapper<FileSystemBlobStorageOptions>(options);
+        var logger = NullLogger<FileSystemBlobStorage>.Instance;
 
-        return new FileSystemBlobStorage(optionsWrapper);
+        return new FileSystemBlobStorage(optionsWrapper, logger);
     }
 
     [Fact]

@@ -5,7 +5,6 @@ using Framework.IO;
 using Framework.Primitives;
 using Framework.Urls;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 using File = System.IO.File;
@@ -18,11 +17,11 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     private readonly string _basePath;
     private readonly ILogger _logger;
 
-    public FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> optionsAccessor)
+    public FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> optionsAccessor, ILogger<FileSystemBlobStorage> logger)
     {
         var options = optionsAccessor.Value;
         _basePath = options.BaseDirectoryPath.NormalizePath().EnsureEndsWith(Path.DirectorySeparatorChar);
-        _logger = options.LoggerFactory?.CreateLogger(typeof(FileSystemBlobStorage)) ?? NullLogger.Instance;
+        _logger = logger;
     }
 
     #region Create Container
