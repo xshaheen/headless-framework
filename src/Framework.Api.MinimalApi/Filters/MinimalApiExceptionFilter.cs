@@ -64,8 +64,10 @@ public sealed partial class MinimalApiExceptionFilter(
             return TypedResults.Problem(details);
         }
         // Timeout
-        catch (TimeoutException)
+        catch (TimeoutException exception)
         {
+            LogRequestTimeoutException(logger, exception);
+
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status408RequestTimeout,
                 title: "Request Timeout",
@@ -102,4 +104,14 @@ public sealed partial class MinimalApiExceptionFilter(
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogDbConcurrencyException(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5004,
+        EventName = "RequestTimeoutException",
+        Level = LogLevel.Debug,
+        Message = "Request was timed out",
+        SkipEnabledCheck = true
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogRequestTimeoutException(ILogger logger, Exception exception);
 }
