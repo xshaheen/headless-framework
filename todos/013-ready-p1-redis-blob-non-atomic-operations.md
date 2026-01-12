@@ -1,7 +1,7 @@
 # Redis Blob Storage Non-Atomic Operations Cause Data Loss
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** ready
 **Priority:** P1 - Critical
 **Tags:** code-review, data-integrity, dotnet, redis, blobs
 
@@ -87,7 +87,7 @@ try {
 
 ## Recommended Action
 
-**Option A** - Redis transactions are the right tool for multi-key atomicity within same database.
+**Option B** - Lua scripts provide atomic execution and work in Redis Cluster mode.
 
 ---
 
@@ -107,7 +107,7 @@ Line 168: Change `return result[0] || result[1]` to `return result[0] && result[
 
 ## Acceptance Criteria
 
-- [ ] Upload uses Redis transaction for atomicity
+- [ ] Upload uses Lua script for atomicity
 - [ ] Delete returns true only if BOTH operations succeed
 - [ ] Add integration test for partial failure scenario
 - [ ] Document transactional guarantees in README
@@ -119,3 +119,4 @@ Line 168: Change `return result[0] || result[1]` to `return result[0] && result[
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - data-integrity-guardian |
+| 2026-01-13 | Approved | Triage: Option B (Lua Script) selected for cluster compatibility |
