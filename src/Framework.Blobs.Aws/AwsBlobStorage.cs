@@ -18,33 +18,24 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Blobs.Aws;
 
-public sealed class AwsBlobStorage : IBlobStorage
+public sealed class AwsBlobStorage(
+    IAmazonS3 s3,
+    IMimeTypeProvider mimeTypeProvider,
+    IClock clock,
+    IOptions<AwsBlobStorageOptions> optionsAccessor,
+    ILogger<AwsBlobStorage>? logger = null
+) : IBlobStorage
 {
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
     private const string _UploadDateMetadataKey = "uploadDate";
     private const string _ExtensionMetadataKey = "extension";
 
-    private readonly IAmazonS3 _s3;
-    private readonly IMimeTypeProvider _mimeTypeProvider;
-    private readonly IClock _clock;
-    private readonly AwsBlobStorageOptions _options;
-    private readonly ILogger _logger;
-
-    public AwsBlobStorage(
-        IAmazonS3 s3,
-        IMimeTypeProvider mimeTypeProvider,
-        IClock clock,
-        IOptions<AwsBlobStorageOptions> optionsAccessor
-    )
-    {
-        _s3 = s3;
-        _mimeTypeProvider = mimeTypeProvider;
-        _clock = clock;
-        _options = optionsAccessor.Value;
-
-        _logger = _options.LoggerFactory?.CreateLogger<AwsBlobStorage>() ?? NullLogger<AwsBlobStorage>.Instance;
-    }
+    private readonly IAmazonS3 _s3 = s3;
+    private readonly IMimeTypeProvider _mimeTypeProvider = mimeTypeProvider;
+    private readonly IClock _clock = clock;
+    private readonly AwsBlobStorageOptions _options = optionsAccessor.Value;
+    private readonly ILogger _logger = logger ?? NullLogger<AwsBlobStorage>.Instance;
 
     #region Create Container
 
