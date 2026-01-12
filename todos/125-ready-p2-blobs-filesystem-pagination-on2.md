@@ -1,7 +1,7 @@
 # Pagination Re-Enumerates From Start Every Page (O(n²))
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** ready
 **Priority:** P2 - Important
 **Tags:** code-review, performance, dotnet, blobs, filesystem
 
@@ -85,7 +85,7 @@ Add warning about performance with large directories.
 
 ## Recommended Action
 
-**Option A** - Add `IAsyncEnumerable` overload for streaming. Keep existing `GetPagedListAsync` for backwards compatibility but document its O(n²) nature.
+**Option A** - Add `IAsyncEnumerable` overload for streaming. Keep existing `GetPagedListAsync` for backwards compatibility but document its O(n²) nature and limitation.
 
 ---
 

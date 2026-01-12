@@ -1,7 +1,7 @@
 # Race Condition (TOCTOU) in RenameAsync
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** ready
 **Priority:** P2 - Important
 **Tags:** code-review, concurrency, dotnet, blobs, filesystem
 

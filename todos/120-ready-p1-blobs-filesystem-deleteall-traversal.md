@@ -1,7 +1,7 @@
 # Directory Traversal in DeleteAllAsync via blobSearchPattern
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** ready
 **Priority:** P1 - Critical
 **Tags:** code-review, security, dotnet, blobs, filesystem
 

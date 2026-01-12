@@ -1,7 +1,7 @@
 # Path Traversal Vulnerability in FileSystem Blob Storage
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** ready
 **Priority:** P1 - Critical
 **Tags:** code-review, security, dotnet, blobs, filesystem
 

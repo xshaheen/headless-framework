@@ -1,7 +1,7 @@
 # Logger Passed via Options Instead of DI
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** ready
 **Priority:** P2 - Important
 **Tags:** code-review, architecture, dotnet, blobs, filesystem
 
