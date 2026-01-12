@@ -28,7 +28,6 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         _RegisterSchema(context, generator, typeof(ValidationSeverity));
         _RegisterSchema(context, generator, typeof(HeadlessProblemDetails));
         _RegisterSchema(context, generator, typeof(ErrorDescriptor));
-        _RegisterSchema(context, generator, typeof(EntityNotFoundProblemDetailsParams));
         _RegisterSchema(context, generator, typeof(EntityNotFoundProblemDetails));
         _RegisterSchema(context, generator, typeof(ConflictProblemDetails));
         _RegisterSchema(context, generator, typeof(UnprocessableEntityProblemDetails));
@@ -60,16 +59,16 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     {
         switch (statusCode)
         {
-            case "400":
+            case OpenApiStatusCodes.BadRequest:
                 _SetDefaultAndExample(context, response, _status400ProblemDetails, nameof(BadRequestProblemDetails));
                 break;
-            case "401":
+            case OpenApiStatusCodes.Unauthorized:
                 _SetDefaultAndExample(context, response, _status401ProblemDetails, nameof(UnauthorizedProblemDetails));
                 break;
-            case "403":
+            case OpenApiStatusCodes.Forbidden:
                 _SetDefaultAndExample(context, response, _status403ProblemDetails, nameof(ForbiddenProblemDetails));
                 break;
-            case "404":
+            case OpenApiStatusCodes.NotFound:
                 _SetDefaultAndExample(
                     context,
                     response,
@@ -77,10 +76,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                     nameof(EntityNotFoundProblemDetails)
                 );
                 break;
-            case "409":
+            case OpenApiStatusCodes.Conflict:
                 _SetDefaultAndExample(context, response, _status409ProblemDetails, nameof(ConflictProblemDetails));
                 break;
-            case "422":
+            case OpenApiStatusCodes.UnprocessableEntity:
                 _SetDefaultAndExample(
                     context,
                     response,
@@ -88,7 +87,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                     nameof(UnprocessableEntityProblemDetails)
                 );
                 break;
-            case "429":
+            case OpenApiStatusCodes.TooManyRequests:
                 _SetDefaultAndExample(
                     context,
                     response,
@@ -176,13 +175,12 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.EntityNotFound,
         Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
         Status = StatusCodes.Status404NotFound,
-        Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
+        Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound,
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",
         CommitNumber = "<commit>",
         Timestamp = _ExampleTimestamp,
-        Params = new EntityNotFoundProblemDetailsParams { Entity = "User", Key = "user-123" },
     };
 
     private static readonly ConflictProblemDetails _status409ProblemDetails = new()

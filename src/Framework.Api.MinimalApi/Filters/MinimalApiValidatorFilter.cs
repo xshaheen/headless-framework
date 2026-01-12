@@ -14,12 +14,15 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
-        var validators = context.HttpContext.RequestServices.GetService<IEnumerable<IValidator<TRequest>>>()?.ToList();
+        var validators = context.HttpContext.RequestServices.GetService<IEnumerable<IValidator<TRequest>>>();
 
-        if (validators is null || validators.Count == 0)
+        if (validators is null || !validators.Any())
         {
             return await next(context).AnyContext();
         }
+
+        // Lazy materialization - only allocate list when needed
+        var validatorList = validators as IList<IValidator<TRequest>> ?? validators.ToList();
 
         var requestType = typeof(TRequest);
         var request = context.Arguments.OfType<TRequest>().FirstOrDefault(request => request?.GetType() == requestType);
@@ -33,19 +36,25 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         ValidationResult[] validationResults;
 
-        if (validators.Count == 1)
+        if (validatorList.Count == 1)
         {
             // Fast path for single validator - avoids Task.WhenAll overhead
-            var result = await validators[0].ValidateAsync(validationContext, context.HttpContext.RequestAborted).AnyContext();
+            var result = await validatorList[0].ValidateAsync(validationContext, context.HttpContext.RequestAborted).AnyContext();
             validationResults = [result];
         }
         else
         {
             // Parallel path for multiple validators
             validationResults = await Task.WhenAll(
-                    validators.Select(v => v.ValidateAsync(validationContext, context.HttpContext.RequestAborted))
+                    validatorList.Select(v => v.ValidateAsync(validationContext, context.HttpContext.RequestAborted))
                 )
                 .AnyContext();
+        }
+
+        // Early exit if all valid - avoid LINQ chain and dictionary allocation
+        if (validationResults.All(x => x.IsValid))
+        {
+            return await next(context).AnyContext();
         }
 
         var failures = validationResults
@@ -55,6 +64,6 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             .GroupBy(x => x.PropertyName, x => x.ErrorMessage, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.Ordinal);
 
-        return failures.Count > 0 ? Results.ValidationProblem(failures) : await next(context).AnyContext();
+        return Results.ValidationProblem(failures);
     }
 }

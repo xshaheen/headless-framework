@@ -98,7 +98,7 @@ public sealed partial class MinimalApiExceptionFilter(
     [LoggerMessage(
         EventId = 5003,
         EventName = "DbConcurrencyException",
-        Level = LogLevel.Critical,
+        Level = LogLevel.Warning,
         Message = "Database concurrency exception occurred",
         SkipEnabledCheck = true
     )]

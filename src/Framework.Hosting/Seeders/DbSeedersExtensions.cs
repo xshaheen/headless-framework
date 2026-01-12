@@ -42,10 +42,12 @@ public static class DbSeedersExtensions
 
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ISeeder>>();
 
-        var preSeeders = scope
+        // Collect types first to avoid shared DI scope in parallel mode (DbContext is not thread-safe)
+        var seederTypes = scope
             .ServiceProvider.GetServices<IPreSeeder>()
-            .Select(x => (Seeder: x, Type: x.GetType()))
-            .OrderBy(x => x.Type.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0);
+            .Select(x => x.GetType())
+            .OrderBy(x => x.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0)
+            .ToList();
 
         logger.LogInformation(">>> Pre-Seeding");
 
@@ -54,17 +56,19 @@ public static class DbSeedersExtensions
 
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(
-                preSeeders,
-                cancellationToken,
-                async (x, ct) => await x.Seeder.SeedAsync(ct).AnyContext()
-            );
+            await Parallel.ForEachAsync(seederTypes, cancellationToken, async (type, ct) =>
+            {
+                await using var innerScope = services.CreateAsyncScope();
+                var seeder = (IPreSeeder)innerScope.ServiceProvider.GetRequiredService(type);
+                await seeder.SeedAsync(ct).AnyContext();
+            });
         }
         else
         {
-            foreach (var (seeder, type) in preSeeders)
+            foreach (var type in seederTypes)
             {
                 logger.LogInformation(">>> Pre-Seeding using {TypeName}", type.GetFriendlyTypeName());
+                var seeder = (IPreSeeder)scope.ServiceProvider.GetRequiredService(type);
                 await seeder.SeedAsync(cancellationToken).AnyContext();
             }
         }
@@ -80,10 +84,12 @@ public static class DbSeedersExtensions
 
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<ISeeder>>();
 
-        var seeders = scope
+        // Collect types first to avoid shared DI scope in parallel mode (DbContext is not thread-safe)
+        var seederTypes = scope
             .ServiceProvider.GetServices<ISeeder>()
-            .Select(x => (Seeder: x, Type: x.GetType()))
-            .OrderBy(x => x.Type.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0);
+            .Select(x => x.GetType())
+            .OrderBy(x => x.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0)
+            .ToList();
 
         logger.LogInformation(">>> Seeding");
 
@@ -92,17 +98,19 @@ public static class DbSeedersExtensions
 
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(
-                seeders,
-                cancellationToken,
-                async (x, ct) => await x.Seeder.SeedAsync(ct).AnyContext()
-            );
+            await Parallel.ForEachAsync(seederTypes, cancellationToken, async (type, ct) =>
+            {
+                await using var innerScope = services.CreateAsyncScope();
+                var seeder = (ISeeder)innerScope.ServiceProvider.GetRequiredService(type);
+                await seeder.SeedAsync(ct).AnyContext();
+            });
         }
         else
         {
-            foreach (var (seeder, type) in seeders)
+            foreach (var type in seederTypes)
             {
                 logger.LogInformation(">>> Seeding using {TypeName}", type.GetFriendlyTypeName());
+                var seeder = (ISeeder)scope.ServiceProvider.GetRequiredService(type);
                 await seeder.SeedAsync(cancellationToken).AnyContext();
             }
         }
