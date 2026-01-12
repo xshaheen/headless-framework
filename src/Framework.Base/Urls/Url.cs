@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Framework.Urls;
@@ -80,15 +81,32 @@ public sealed partial class Url
         get
         {
             _EnsureParsed();
-            return string.Concat(
-                _leadingSlash ? "/" : "",
-                string.Join('/', PathSegments),
-                _trailingSlash && PathSegments.Any() ? "/" : ""
-            );
+            if (_pathSegments.Count == 0)
+                return _leadingSlash ? "/" : "";
+
+            var capacity = (_leadingSlash ? 1 : 0) + (_trailingSlash ? 1 : 0);
+            foreach (var seg in _pathSegments)
+                capacity += seg.Length + 1;
+
+            var sb = new StringBuilder(capacity);
+            if (_leadingSlash)
+                sb.Append('/');
+
+            for (var i = 0; i < _pathSegments.Count; i++)
+            {
+                if (i > 0)
+                    sb.Append('/');
+                sb.Append(_pathSegments[i]);
+            }
+
+            if (_trailingSlash)
+                sb.Append('/');
+            return sb.ToString();
         }
         set
         {
-            PathSegments.Clear();
+            _EnsureParsed();
+            _pathSegments.Clear();
             _trailingSlash = false;
             if (string.IsNullOrEmpty(value))
             {
@@ -108,7 +126,7 @@ public sealed partial class Url
     /// <summary>
     /// The "/"-delimited segments of the path, not including leading or trailing "/" characters.
     /// </summary>
-    public IList<string> PathSegments => _EnsureParsed()._pathSegments;
+    public IReadOnlyList<string> PathSegments => _EnsureParsed()._pathSegments;
 
     /// <summary>
     /// i.e. "x=1&amp;y=2" in "https://www.site.com/path?x=1&amp;y=2". Does not include "?".
@@ -130,7 +148,7 @@ public sealed partial class Url
     public string Fragment
     {
         get => _EnsureParsed()._fragment;
-        set => _EnsureParsed()._fragment = value;
+        set => _EnsureParsed()._fragment = value ?? "";
     }
 
     /// <summary>
@@ -288,7 +306,7 @@ public sealed partial class Url
 
         if (fullyEncode)
         {
-            PathSegments.Add(Uri.EscapeDataString(segment.ToInvariantString()));
+            _pathSegments.Add(Uri.EscapeDataString(segment.ToInvariantString()));
             _trailingSlash = false;
         }
         else
@@ -296,7 +314,7 @@ public sealed partial class Url
             var subpath = segment.ToInvariantString()!;
             foreach (var s in ParsePathSegments(subpath))
             {
-                PathSegments.Add(s);
+                _pathSegments.Add(s);
             }
 
             _trailingSlash = subpath.OrdinalEndsWith("/");
@@ -342,9 +360,10 @@ public sealed partial class Url
     /// <returns>The Url object.</returns>
     public Url RemovePathSegment()
     {
-        if (PathSegments.Any())
+        _EnsureParsed();
+        if (_pathSegments.Count > 0)
         {
-            PathSegments.RemoveAt(PathSegments.Count - 1);
+            _pathSegments.RemoveAt(_pathSegments.Count - 1);
         }
 
         return this;
@@ -356,7 +375,8 @@ public sealed partial class Url
     /// <returns>The Url object.</returns>
     public Url RemovePath()
     {
-        PathSegments.Clear();
+        _EnsureParsed();
+        _pathSegments.Clear();
         _leadingSlash = _trailingSlash = false;
         return this;
     }
@@ -640,7 +660,8 @@ public sealed partial class Url
     /// <returns>The Url object trimmed to its root.</returns>
     public Url ResetToRoot()
     {
-        PathSegments.Clear();
+        _EnsureParsed();
+        _pathSegments.Clear();
         QueryParams.Clear();
         Fragment = "";
         _leadingSlash = false;
@@ -688,15 +709,78 @@ public sealed partial class Url
             return _originalString ?? "";
         }
 
-        return string.Concat(
-                Root,
-                encodeSpaceAsPlus ? Path.Replace("%20", "+", StringComparison.Ordinal) : Path,
-                _trailingQmark || QueryParams.Count != 0 ? "?" : "",
-                QueryParams.ToString(encodeSpaceAsPlus),
-                _trailingHash || Fragment.Length > 0 ? "#" : "",
-                Fragment
-            )
-            .Trim();
+        var sb = new StringBuilder();
+
+        // Append Root components inline: scheme + authority
+        if (_scheme.Length > 0)
+        {
+            sb.Append(_scheme);
+            sb.Append(':');
+        }
+
+        var hasUserInfo = _userInfo.Length > 0;
+        var hasAuthority = hasUserInfo || _host.Length > 0 || _port.HasValue;
+        if (hasAuthority)
+        {
+            sb.Append("//");
+            if (hasUserInfo)
+            {
+                sb.Append(_userInfo);
+                sb.Append('@');
+            }
+
+            sb.Append(_host);
+            if (_port.HasValue)
+            {
+                sb.Append(':');
+                sb.Append(_port.Value);
+            }
+        }
+
+        // Append Path inline
+        if (_leadingSlash)
+        {
+            sb.Append('/');
+        }
+
+        for (var i = 0; i < _pathSegments.Count; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append('/');
+            }
+
+            var segment = _pathSegments[i];
+            if (encodeSpaceAsPlus)
+            {
+                sb.Append(segment.Replace("%20", "+", StringComparison.Ordinal));
+            }
+            else
+            {
+                sb.Append(segment);
+            }
+        }
+
+        if (_trailingSlash && _pathSegments.Count > 0)
+        {
+            sb.Append('/');
+        }
+
+        // Append Query
+        if (_trailingQmark || _queryParams.Count != 0)
+        {
+            sb.Append('?');
+            _queryParams.AppendTo(sb, encodeSpaceAsPlus);
+        }
+
+        // Append Fragment
+        if (_trailingHash || _fragment.Length > 0)
+        {
+            sb.Append('#');
+            sb.Append(_fragment);
+        }
+
+        return sb.ToString().Trim();
     }
 
     /// <summary>
@@ -758,7 +842,22 @@ public sealed partial class Url
     {
         ArgumentNullException.ThrowIfNull(parts);
 
-        var result = "";
+        // Pre-calculate capacity to avoid reallocations
+        var capacity = 0;
+        foreach (var part in parts)
+        {
+            if (!string.IsNullOrEmpty(part))
+            {
+                capacity += part.Length + 1; // +1 for potential separator
+            }
+        }
+
+        if (capacity == 0)
+        {
+            return string.Empty;
+        }
+
+        var sb = new StringBuilder(capacity);
         var inQuery = false;
         var inFragment = false;
 
@@ -769,25 +868,25 @@ public sealed partial class Url
                 continue;
             }
 
-            if (result.OrdinalEndsWith("?") || part.OrdinalStartsWith("?"))
+            if (_EndsWithChar(sb, '?') || part.OrdinalStartsWith("?"))
             {
-                result = _CombineEnsureSingleSeparator(result, part, '?');
+                _AppendWithSingleSeparator(sb, part, '?');
             }
-            else if (result.OrdinalEndsWith("#") || part.OrdinalStartsWith("#"))
+            else if (_EndsWithChar(sb, '#') || part.OrdinalStartsWith("#"))
             {
-                result = _CombineEnsureSingleSeparator(result, part, '#');
+                _AppendWithSingleSeparator(sb, part, '#');
             }
             else if (inFragment)
             {
-                result += part;
+                sb.Append(part);
             }
             else if (inQuery)
             {
-                result = _CombineEnsureSingleSeparator(result, part, '&');
+                _AppendWithSingleSeparator(sb, part, '&');
             }
             else
             {
-                result = _CombineEnsureSingleSeparator(result, part, '/');
+                _AppendWithSingleSeparator(sb, part, '/');
             }
 
             if (part.OrdinalContains("#"))
@@ -800,22 +899,43 @@ public sealed partial class Url
                 inQuery = true;
             }
         }
-        return EncodeIllegalCharacters(result);
+
+        return EncodeIllegalCharacters(sb.ToString());
     }
 
-    private static string _CombineEnsureSingleSeparator(string a, string b, char separator)
+    private static bool _EndsWithChar(StringBuilder sb, char c) => sb.Length > 0 && sb[^1] == c;
+
+    private static void _AppendWithSingleSeparator(StringBuilder sb, string part, char separator)
     {
-        if (string.IsNullOrEmpty(a))
+        // Trim trailing separator from existing content
+        while (sb.Length > 0 && sb[^1] == separator)
         {
-            return b;
+            sb.Length--;
         }
 
-        if (string.IsNullOrEmpty(b))
+        // Skip leading separator from part
+        var startIndex = 0;
+        while (startIndex < part.Length && part[startIndex] == separator)
         {
-            return a;
+            startIndex++;
         }
 
-        return a.TrimEnd(separator) + separator + b.TrimStart(separator);
+        // Add separator if we have existing content
+        if (sb.Length > 0 && startIndex < part.Length)
+        {
+            sb.Append(separator);
+        }
+
+        // Append the rest of the part
+        if (startIndex < part.Length)
+        {
+            sb.Append(part, startIndex, part.Length - startIndex);
+        }
+        else if (sb.Length == 0)
+        {
+            // Edge case: part was only separators, append original if sb is empty
+            sb.Append(part);
+        }
     }
 
     /// <summary>

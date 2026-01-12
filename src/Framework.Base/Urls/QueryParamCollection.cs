@@ -34,14 +34,46 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     /// <summary>
     /// Returns serialized, encoded query string. Insertion order is preserved.
     /// </summary>
-    public string ToString(bool encodeSpaceAsPlus) =>
-        string.Join(
-            '&',
-            from p in _values
-            let name = Url.EncodeIllegalCharacters(p.Name, encodeSpaceAsPlus)
-            let value = p.Value.Encode(encodeSpaceAsPlus)
-            select value is null ? name : $"{name}={value}"
-        );
+    public string ToString(bool encodeSpaceAsPlus)
+    {
+        if (_values.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var sb = new System.Text.StringBuilder();
+        AppendTo(sb, encodeSpaceAsPlus);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Appends serialized, encoded query string to the provided StringBuilder.
+    /// </summary>
+    /// <param name="sb">The StringBuilder to append to.</param>
+    /// <param name="encodeSpaceAsPlus">If true, encode spaces as + instead of %20.</param>
+    public void AppendTo(System.Text.StringBuilder sb, bool encodeSpaceAsPlus)
+    {
+        var first = true;
+        foreach (var p in _values)
+        {
+            if (!first)
+            {
+                sb.Append('&');
+            }
+
+            first = false;
+
+            var name = Url.EncodeIllegalCharacters(p.Name, encodeSpaceAsPlus);
+            var value = p.Value.Encode(encodeSpaceAsPlus);
+
+            sb.Append(name);
+            if (value is not null)
+            {
+                sb.Append('=');
+                sb.Append(value);
+            }
+        }
+    }
 
     /// <summary>
     /// Appends a query parameter. If value is a collection type (array, IEnumerable, etc.), multiple parameters are added, i.e. x=1&amp;x=2.
