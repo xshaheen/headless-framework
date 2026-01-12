@@ -109,21 +109,31 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(async blob =>
+        var results = new Result<Exception>[blobs.Count];
+        var index = 0;
+
+        var options = new ParallelOptions
         {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel.ForEachAsync(blobs, options, async (blob, ct) =>
+        {
+            var i = Interlocked.Increment(ref index) - 1;
+
             try
             {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
-
-                return Result<Exception>.Ok();
+                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                results[i] = Result<Exception>.Ok();
             }
             catch (Exception e)
             {
-                return Result<Exception>.Fail(e);
+                results[i] = Result<Exception>.Fail(e);
             }
-        });
+        }).AnyContext();
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions();
+        return results;
     }
 
     #endregion
@@ -185,19 +195,30 @@ public sealed class RedisBlobStorage : IBlobStorage
             return [];
         }
 
-        var tasks = blobNames.Select(async fileName =>
+        var results = new Result<bool, Exception>[blobNames.Count];
+        var index = 0;
+
+        var options = new ParallelOptions
         {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel.ForEachAsync(blobNames, options, async (fileName, ct) =>
+        {
+            var i = Interlocked.Increment(ref index) - 1;
+
             try
             {
-                return await DeleteAsync(container, fileName, cancellationToken);
+                results[i] = await DeleteAsync(container, fileName, ct).AnyContext();
             }
             catch (Exception e)
             {
-                return Result<bool, Exception>.Fail(e);
+                results[i] = Result<bool, Exception>.Fail(e);
             }
-        });
+        }).AnyContext();
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions();
+        return results;
     }
 
     public async ValueTask<int> DeleteAllAsync(
@@ -209,24 +230,34 @@ public sealed class RedisBlobStorage : IBlobStorage
         var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken)
             .AnyContext();
 
-        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs, blobSearchPattern);
+        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs.Count, blobSearchPattern);
 
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
 
-        var tasks = blobs.Select(async blob =>
+        var count = 0;
+
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel.ForEachAsync(blobs, options, async (blob, ct) =>
         {
             try
             {
-                return await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                return Result<bool, Exception>.Fail(e);
-            }
-        });
+                var deleted = await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, ct).AnyContext();
 
-        var results = await Task.WhenAll(tasks).WithAggregatedExceptions();
-        var count = results.Count(r => r.IsSuccess);
+                if (deleted)
+                {
+                    Interlocked.Increment(ref count);
+                }
+            }
+            catch
+            {
+                // Swallow exception, just don't increment count
+            }
+        }).AnyContext();
 
         _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
 

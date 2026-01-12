@@ -14,6 +14,9 @@ public sealed class RedisBlobStorageOptions
     public ILoggerFactory? LoggerFactory { get; set; }
 
     public ISerializer? Serializer { get; set; }
+
+    /// <summary>Maximum degree of parallelism for bulk operations. Default is 10.</summary>
+    public int MaxBulkParallelism { get; set; } = 10;
 }
 
 internal sealed class RedisBlobStorageOptionsValidator : AbstractValidator<RedisBlobStorageOptions>
@@ -21,5 +24,6 @@ internal sealed class RedisBlobStorageOptionsValidator : AbstractValidator<Redis
     public RedisBlobStorageOptionsValidator()
     {
         RuleFor(x => x.ConnectionMultiplexer).NotNull();
+        RuleFor(x => x.MaxBulkParallelism).GreaterThan(0);
     }
 }
