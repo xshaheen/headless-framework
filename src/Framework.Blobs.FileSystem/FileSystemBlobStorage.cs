@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Blobs.FileSystem.Internals;
 using Framework.Checks;
 using Framework.IO;
 using Framework.Primitives;
@@ -369,9 +368,20 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         }
 
         await using var fileStream = File.OpenRead(filePath);
-        var memoryStream = await fileStream.CopyToMemoryStreamAndFlushAsync(cancellationToken).AnyContext();
+        var memoryStream = new MemoryStream();
 
-        return new BlobDownloadResult(memoryStream!, Path.GetFileName(filePath));
+        try
+        {
+            await fileStream.CopyToAsync(memoryStream, cancellationToken).AnyContext();
+            memoryStream.Seek(0, SeekOrigin.Begin);
+
+            return new BlobDownloadResult(memoryStream, Path.GetFileName(filePath));
+        }
+        catch
+        {
+            await memoryStream.DisposeAsync().AnyContext();
+            throw;
+        }
     }
 
     public ValueTask<BlobInfo?> GetBlobInfoAsync(
