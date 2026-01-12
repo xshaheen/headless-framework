@@ -31,7 +31,6 @@ public sealed class AzureBlobStorage(
     private const string _ExtensionMetadataKey = "extension";
 
     private readonly AzureStorageOptions _option = optionAccessor.Value;
-    private readonly IBlobNamingNormalizer _normalizer = normalizer;
 
     #region Create Container
 
@@ -623,7 +622,7 @@ public sealed class AzureBlobStorage(
 
         foreach (var blobName in blobNames)
         {
-            result.Add(new Uri($"{prefix}/{_NormalizeSlashes(_normalizer.NormalizeBlobName(blobName))}"));
+            result.Add(new Uri($"{prefix}/{_NormalizeSlashes(normalizer.NormalizeBlobName(blobName))}"));
         }
 
         return result;
@@ -631,7 +630,7 @@ public sealed class AzureBlobStorage(
 
     private (string Container, string Blob) _NormalizeBlob(string[] containers, string blobName)
     {
-        var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
+        var normalizedBlobName = normalizer.NormalizeBlobName(blobName);
 
         var sb = new StringBuilder();
         for (var i = 1; i < containers.Length; i++)
@@ -652,7 +651,7 @@ public sealed class AzureBlobStorage(
 
     private string _NormalizeContainerName(string containerName)
     {
-        return _NormalizeSlashes(_normalizer.NormalizeContainerName(containerName));
+        return _NormalizeSlashes(normalizer.NormalizeContainerName(containerName));
     }
 
     private static string _NormalizeSlashes(string x)
