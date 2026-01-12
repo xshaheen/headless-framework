@@ -47,7 +47,7 @@ public static class ApiResultMvcExtensions
         {
             NotFoundError e => controller.NotFound(creator.EntityNotFound(e.Entity, e.Key)),
 
-            ValidationError e => controller.UnprocessableEntity(creator.UnprocessableEntity(_ToErrorDescriptorDict(e))),
+            ValidationError e => controller.UnprocessableEntity(creator.UnprocessableEntity(e.ToErrorDescriptorDict())),
 
             ForbiddenError e => new ObjectResult(creator.Forbidden([new ErrorDescriptor("forbidden", e.Reason)]))
             {
@@ -65,14 +65,5 @@ public static class ApiResultMvcExtensions
             // Default: treat as conflict
             _ => controller.Conflict(creator.Conflict([new ErrorDescriptor(error.Code, error.Message)])),
         };
-    }
-
-    private static Dictionary<string, List<ErrorDescriptor>> _ToErrorDescriptorDict(ValidationError e)
-    {
-        return e.FieldErrors.ToDictionary(
-            kv => kv.Key,
-            kv => kv.Value.Select(msg => new ErrorDescriptor($"validation:{kv.Key}", msg)).ToList(),
-            StringComparer.Ordinal
-        );
     }
 }

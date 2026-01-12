@@ -33,7 +33,7 @@ public static class ApiResultExtensions
         {
             NotFoundError e => TypedResults.Problem(creator.EntityNotFound(e.Entity, e.Key)),
 
-            ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(_ToErrorDescriptorDict(e))),
+            ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDict())),
 
             ForbiddenError e => TypedResults.Problem(creator.Forbidden([new ErrorDescriptor("forbidden", e.Reason)])),
 
@@ -48,14 +48,5 @@ public static class ApiResultExtensions
             // Default: treat as conflict
             _ => TypedResults.Problem(creator.Conflict([new ErrorDescriptor(error.Code, error.Message)])),
         };
-    }
-
-    private static Dictionary<string, List<ErrorDescriptor>> _ToErrorDescriptorDict(ValidationError e)
-    {
-        return e.FieldErrors.ToDictionary(
-            kv => kv.Key,
-            kv => kv.Value.Select(msg => new ErrorDescriptor($"validation:{kv.Key}", msg)).ToList(),
-            StringComparer.Ordinal
-        );
     }
 }
