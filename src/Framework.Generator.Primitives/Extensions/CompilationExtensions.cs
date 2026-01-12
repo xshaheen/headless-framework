@@ -67,6 +67,16 @@ internal static class CompilationExtensions
     {
         var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
 
+        return underlyingType.GetSwashbuckleSwaggerTypeAndFormat();
+    }
+
+    /// <summary>Gets the Swagger type and format for a given PrimitiveUnderlyingType.</summary>
+    /// <param name="underlyingType">The underlying type enum.</param>
+    /// <returns>A tuple containing the Swagger type and format as strings.</returns>
+    public static (string type, string format) GetSwashbuckleSwaggerTypeAndFormat(
+        this PrimitiveUnderlyingType underlyingType
+    )
+    {
         if (underlyingType.IsNumeric())
         {
             var format = underlyingType.ToString();
@@ -101,6 +111,16 @@ internal static class CompilationExtensions
     {
         var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
 
+        return underlyingType.GetNswagSwaggerTypeAndFormatAndExample();
+    }
+
+    /// <summary>Gets the NSwag Swagger type and format for a given PrimitiveUnderlyingType.</summary>
+    /// <param name="underlyingType">The underlying type enum.</param>
+    /// <returns>A tuple containing the Swagger type and format as strings.</returns>
+    public static (string Type, string? Format) GetNswagSwaggerTypeAndFormatAndExample(
+        this PrimitiveUnderlyingType underlyingType
+    )
+    {
         const string stringType = "JsonObjectType.String";
         const string booleanPointType = "JsonObjectType.Boolean";
         const string integerType = "JsonObjectType.Integer";
@@ -136,6 +156,14 @@ internal static class CompilationExtensions
     {
         var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
 
+        return underlyingType.GetStringSyntaxAttribute();
+    }
+
+    /// <summary>Gets the StringSyntax attribute for a given PrimitiveUnderlyingType.</summary>
+    /// <param name="underlyingType">The underlying type enum.</param>
+    /// <returns>The StringSyntax attribute string or null.</returns>
+    public static string? GetStringSyntaxAttribute(this PrimitiveUnderlyingType underlyingType)
+    {
         return underlyingType switch
         {
             PrimitiveUnderlyingType.String =>

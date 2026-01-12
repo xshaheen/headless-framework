@@ -33,12 +33,9 @@ internal static class ValidationExtensions
             .SelectMany(ctx => ctx.ValidationRule.Components.Select(c => c.Validator));
     }
 
-    /// <summary>Returns all IValidationRules that are PropertyRule. If rule is CollectionPropertyRule then isCollectionRule set to true.</summary>
     public static IEnumerable<ValidationRuleContext> GetPropertyRules(this IEnumerable<IValidationRule> validationRules)
     {
-        return from validationRule in validationRules
-            let isCollectionRule = validationRule.GetType() == typeof(ICollectionRule<,>)
-            select new ValidationRuleContext(validationRule, isCollectionRule);
+        return validationRules.Select(r => new ValidationRuleContext(r));
     }
 
     public static bool HasNoCondition(this IValidationRule rule) =>

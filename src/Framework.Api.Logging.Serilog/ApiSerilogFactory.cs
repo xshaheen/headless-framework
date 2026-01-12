@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Constants;
+using Framework.Logging.Enrichers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -82,9 +83,9 @@ public static class ApiSerilogFactory
         loggerConfiguration
             .Enrich.WithClientIp()
             .Enrich.WithCorrelationId()
-            .Enrich.WithRequestHeader(HttpHeaderNames.UserAgent)
-            .Enrich.WithRequestHeader(HttpHeaderNames.ClientVersion)
-            .Enrich.WithRequestHeader(HttpHeaderNames.ApiVersion);
+            .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.UserAgent)
+            .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.ClientVersion)
+            .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.ApiVersion);
 
         return loggerConfiguration;
     }

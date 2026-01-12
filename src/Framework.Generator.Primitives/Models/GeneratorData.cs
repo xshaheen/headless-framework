@@ -1,126 +1,99 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.CodeAnalysis;
+using System.Collections.Immutable;
+using Framework.Generator.Primitives.Extensions;
 
 namespace Framework.Generator.Primitives.Models;
 
 /// <summary>Represents data used by the code generator for generating Primitive types.</summary>
 internal sealed class GeneratorData
 {
-    /// <summary>
-    /// Gets or sets the field name.
-    /// </summary>
-    public string FieldName { get; set; } = null!;
+    /// <summary>The field name for the underlying value.</summary>
+    public required string FieldName { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate GetHashCode method.
-    /// </summary>
-    public bool GenerateHashCode { get; set; }
+    /// <summary>Whether to generate GetHashCode method.</summary>
+    public required bool GenerateHashCode { get; init; }
 
-    /// <summary>
-    /// Gets or sets the friendly name of the primitive type.
-    /// </summary>
-    public string PrimitiveTypeFriendlyName { get; set; } = null!;
+    /// <summary>The friendly name of the underlying primitive type (e.g., "int", "string").</summary>
+    public required string PrimitiveTypeFriendlyName { get; init; }
 
-    /// <summary>
-    /// Gets or sets the type symbol.
-    /// </summary>
-    public INamedTypeSymbol TypeSymbol { get; set; } = null!;
+    /// <summary>The underlying primitive type enum.</summary>
+    public required PrimitiveUnderlyingType UnderlyingType { get; init; }
 
-    /// <summary>
-    /// Gets or sets the Primitive type.
-    /// </summary>
-    public PrimitiveUnderlyingType UnderlyingType { get; set; }
+    /// <summary>Whether the underlying primitive type is a value type.</summary>
+    public required bool PrimitiveTypeIsValueType { get; init; }
 
-    /// <summary>
-    /// Gets or sets the named type symbol of the primitive type.
-    /// </summary>
-    public INamedTypeSymbol PrimitiveTypeSymbol { get; set; } = null!;
+    /// <summary>The namespace of the underlying primitive type.</summary>
+    public required string PrimitiveTypeNamespace { get; init; }
 
-    /// <summary>
-    /// Gets or sets the list of parent symbols.
-    /// </summary>
-    public List<INamedTypeSymbol> ParentSymbols { get; set; } = null!;
+    /// <summary>Parent primitive info for nested primitives.</summary>
+    public required ImmutableArray<ParentPrimitiveInfo> ParentPrimitives { get; init; }
 
-    /// <summary>
-    /// Gets or sets the namespace.
-    /// </summary>
-    public string Namespace { get; set; } = null!;
+    /// <summary>The namespace containing the type.</summary>
+    public required string Namespace { get; init; }
 
-    /// <summary>
-    /// Gets the class name.
-    /// </summary>
-    public string ClassName => TypeSymbol.Name;
+    /// <summary>The class name.</summary>
+    public required string ClassName { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate subtraction operators.
-    /// </summary>
-    public bool GenerateSubtractionOperators { get; set; }
+    /// <summary>Whether the type is a value type (struct).</summary>
+    public required bool IsValueType { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate addition operators.
-    /// </summary>
-    public bool GenerateAdditionOperators { get; set; }
+    /// <summary>The modifiers of the type (e.g., "public partial").</summary>
+    public required string Modifiers { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate division operators.
-    /// </summary>
-    public bool GenerateDivisionOperators { get; set; }
+    /// <summary>Whether to generate subtraction operators.</summary>
+    public required bool GenerateSubtractionOperators { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate multiplication operators.
-    /// </summary>
-    public bool GenerateMultiplyOperators { get; set; }
+    /// <summary>Whether to generate addition operators.</summary>
+    public required bool GenerateAdditionOperators { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate modulus operator.
-    /// </summary>
-    public bool GenerateModulusOperator { get; set; }
+    /// <summary>Whether to generate division operators.</summary>
+    public required bool GenerateDivisionOperators { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate comparison methods.
-    /// </summary>
-    public bool GenerateComparison { get; set; }
+    /// <summary>Whether to generate multiplication operators.</summary>
+    public required bool GenerateMultiplyOperators { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate IParsable methods.
-    /// </summary>
-    public bool GenerateParsable { get; set; }
+    /// <summary>Whether to generate modulus operator.</summary>
+    public required bool GenerateModulusOperator { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate implicit operators.
-    /// </summary>
-    public bool GenerateImplicitOperators { get; set; }
+    /// <summary>Whether to generate comparison methods.</summary>
+    public required bool GenerateComparison { get; init; }
 
-    /// <summary>
-    /// Gets or sets the serialization format (if applicable).
-    /// </summary>
-    public string? SerializationFormat { get; set; }
+    /// <summary>Whether to generate IParsable methods.</summary>
+    public required bool GenerateParsable { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate ISpanFormattable methods.
-    /// </summary>
-    public bool GenerateSpanFormattable { get; set; }
+    /// <summary>Whether to generate implicit operators.</summary>
+    public required bool GenerateImplicitOperators { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate IConvertible methods.
-    /// </summary>
-    public bool GenerateConvertibles { get; set; }
+    /// <summary>The serialization format (if applicable).</summary>
+    public required string? SerializationFormat { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether to generate IUtf8SpanFormattable methods.
-    /// </summary>
-    public bool GenerateUtf8SpanFormattable { get; set; }
+    /// <summary>Whether to generate ISpanFormattable methods.</summary>
+    public required bool GenerateSpanFormattable { get; init; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the generate IXmlSerializable methods.
-    /// </summary>
-    public bool GenerateXmlSerializableMethods { get; set; }
+    /// <summary>Whether to generate IConvertible methods.</summary>
+    public required bool GenerateConvertibles { get; init; }
 
-    /// <summary>
-    /// if StringLengthAttribute validation is applied to a Primitive this will be used to determine the values and use them before calling validation method.
-    /// </summary>
+    /// <summary>Whether to generate IUtf8SpanFormattable methods.</summary>
+    public required bool GenerateUtf8SpanFormattable { get; init; }
+
+    /// <summary>Whether to generate IXmlSerializable methods.</summary>
+    public required bool GenerateXmlSerializableMethods { get; init; }
+
+    /// <summary>Whether there's an explicit ToString method.</summary>
+    public required bool HasExplicitToStringMethod { get; init; }
+
+    /// <summary>String length validation info.</summary>
     public (int minLength, int maxLength)? StringLengthAttributeValidation { get; set; }
+
+    /// <summary>XML documentation comment for Swagger.</summary>
+    public required string? XmlDocumentation { get; init; }
+
+    /// <summary>Location file path for diagnostics.</summary>
+    public required string LocationFilePath { get; init; }
+
+    /// <summary>Location line start for diagnostics.</summary>
+    public required int LocationLineStart { get; init; }
 
     public bool HasMathOperators()
     {
@@ -133,16 +106,107 @@ internal sealed class GeneratorData
 
     public bool IsPrimitiveUnderlyingTypString()
     {
-        return ParentSymbols.Count == 0 && UnderlyingType is PrimitiveUnderlyingType.String;
+        return ParentPrimitives.Length == 0 && UnderlyingType is PrimitiveUnderlyingType.String;
     }
 
     public bool IsPrimitiveUnderlyingTypeChar()
     {
-        return ParentSymbols.Count == 0 && UnderlyingType is PrimitiveUnderlyingType.Char;
+        return ParentPrimitives.Length == 0 && UnderlyingType is PrimitiveUnderlyingType.Char;
     }
 
     public bool IsPrimitiveUnderlyingTypeBool()
     {
-        return ParentSymbols.Count == 0 && UnderlyingType is PrimitiveUnderlyingType.Boolean;
+        return ParentPrimitives.Length == 0 && UnderlyingType is PrimitiveUnderlyingType.Boolean;
+    }
+
+    /// <summary>Creates GeneratorData from PrimitiveTypeInfo and global options.</summary>
+    public static GeneratorData FromTypeInfo(PrimitiveTypeInfo info, PrimitiveGlobalOptions globalOptions)
+    {
+        var isNumeric = info.UnderlyingType.IsNumeric();
+        var isDateOrTime = info.UnderlyingType.IsDateOrTime();
+
+        // Determine generation flags based on info and supported operations
+        var supportedOps = info.SupportedOperations;
+
+        var generateAddition = isNumeric
+            && supportedOps?.Addition == true
+            && !info.ImplementsIAdditionOperators;
+
+        var generateSubtraction = isNumeric
+            && supportedOps?.Subtraction == true
+            && !info.ImplementsISubtractionOperators;
+
+        var generateDivision = isNumeric
+            && supportedOps?.Division == true
+            && !info.ImplementsIDivisionOperators;
+
+        var generateMultiply = isNumeric
+            && supportedOps?.Multiplication == true
+            && !info.ImplementsIMultiplyOperators;
+
+        var generateModulus = isNumeric
+            && supportedOps?.Modulus == true
+            && !info.ImplementsIModulusOperators;
+
+        var generateParsable = !info.ImplementsIParsable;
+
+        var generateComparison = (isNumeric
+                || info.UnderlyingType == PrimitiveUnderlyingType.Char
+                || isDateOrTime)
+            && !info.ImplementsIComparisonOperators;
+
+        var generateSpanFormattable = (info.UnderlyingType == PrimitiveUnderlyingType.Guid || isDateOrTime)
+            && !info.ImplementsISpanFormattable;
+
+        var generateUtf8SpanFormattable = info.UnderlyingImplementsIUtf8SpanFormattable
+            && !info.ImplementsIUtf8SpanFormattable;
+
+        var generateConvertibles = info.UnderlyingType != PrimitiveUnderlyingType.Guid;
+
+        // Extract string length validation if present
+        (int, int)? stringLengthValidation = null;
+        if (info.StringLengthValidation is { } strLen && strLen.ShouldValidate)
+        {
+            var hasMinValue = strLen.MinLength >= 0;
+            var hasMaxValue = strLen.MaxLength != int.MaxValue;
+
+            if (hasMinValue || hasMaxValue)
+            {
+                stringLengthValidation = (strLen.MinLength, strLen.MaxLength);
+            }
+        }
+
+        return new GeneratorData
+        {
+            FieldName = "_valueOrThrow",
+            GenerateHashCode = !info.HasOverriddenHashCode,
+            PrimitiveTypeFriendlyName = info.UnderlyingTypeFriendlyName,
+            UnderlyingType = info.UnderlyingType,
+            PrimitiveTypeIsValueType = info.UnderlyingTypeIsValueType,
+            PrimitiveTypeNamespace = info.UnderlyingTypeNamespace,
+            ParentPrimitives = info.ParentPrimitives,
+            Namespace = info.Namespace,
+            ClassName = info.ClassName,
+            IsValueType = info.IsValueType,
+            Modifiers = info.Modifiers,
+            GenerateSubtractionOperators = generateSubtraction,
+            GenerateAdditionOperators = generateAddition,
+            GenerateDivisionOperators = generateDivision,
+            GenerateMultiplyOperators = generateMultiply,
+            GenerateModulusOperator = generateModulus,
+            GenerateComparison = generateComparison,
+            GenerateParsable = generateParsable,
+            GenerateImplicitOperators = true,
+            SerializationFormat = info.SerializationFormat,
+            GenerateSpanFormattable = generateSpanFormattable,
+            GenerateConvertibles = generateConvertibles,
+            GenerateUtf8SpanFormattable = generateUtf8SpanFormattable,
+            GenerateXmlSerializableMethods = globalOptions.GenerateXmlConverters,
+            HasExplicitToStringMethod = info.HasExplicitToStringMethod,
+            StringLengthAttributeValidation = stringLengthValidation,
+            XmlDocumentation = info.XmlDocumentation,
+            LocationFilePath = info.LocationFilePath,
+            LocationLineStart = info.LocationLineStart,
+        };
     }
 }

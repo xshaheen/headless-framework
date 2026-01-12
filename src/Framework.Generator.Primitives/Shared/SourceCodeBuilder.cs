@@ -579,7 +579,5 @@ public sealed class SourceCodeBuilder
         Default,
         OpenBracket,
         ClosingBracket,
-        OpenParenthesis,
-        CloseParenthesis,
     }
 }

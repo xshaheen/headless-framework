@@ -325,9 +325,9 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection.</returns>
     /// <remarks>
-    /// This method only removes hosted services registered with a concrete implementation type
-    /// (e.g., <c>AddHostedService&lt;T&gt;()</c>). It does NOT remove services registered with
-    /// a factory delegate (e.g., <c>AddHostedService(sp => new T(...))</c>) or an instance.
+    /// This method only removes services registered via <c>AddHostedService&lt;T&gt;()</c> with a type parameter.
+    /// Services registered with a factory delegate (e.g., <c>AddHostedService(sp => new T(...))</c>) will NOT be removed
+    /// because <see cref="ServiceDescriptor.ImplementationType"/> is null for factory-based registrations.
     /// </remarks>
     public static IServiceCollection RemoveHostedService<T>(this IServiceCollection services)
         where T : IHostedService

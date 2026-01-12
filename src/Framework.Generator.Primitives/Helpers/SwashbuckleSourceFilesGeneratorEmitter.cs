@@ -71,16 +71,14 @@ internal static class SwashbuckleSourceFilesGeneratorEmitter
 
         foreach (var data in types)
         {
-            var (typeName, format) = data.PrimitiveTypeSymbol.GetSwashbuckleSwaggerTypeAndFormat();
+            var (typeName, format) = data.UnderlyingType.GetSwashbuckleSwaggerTypeAndFormat();
 
-            // Get the XML documentation comment for the namedTypeSymbol
-            var xmlDocumentation = data.TypeSymbol.GetDocumentationCommentXml(
-                cancellationToken: context.CancellationToken
-            );
+            // Get the XML documentation comment from extracted data
+            var xmlDocumentation = data.XmlDocumentation;
 
             addMapping(isNullable: false);
 
-            if (data.TypeSymbol.IsValueType)
+            if (data.IsValueType)
             {
                 addMapping(isNullable: true);
             }

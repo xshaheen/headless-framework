@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Reflection;
 using FluentValidation;
 using FluentValidation.Internal;
 using FluentValidation.Validators;
@@ -21,6 +23,8 @@ public sealed class FluentValidationSchemaProcessor(
     IEnumerable<FluentValidationRule>? rules = null
 ) : ISchemaProcessor
 {
+    private static readonly ConcurrentDictionary<Type, MethodInfo?> _MethodCache = new();
+
     private readonly ILogger _logger = _CreateLogger(serviceProvider);
     private readonly IReadOnlyList<FluentValidationRule> _rules = _CreateRules(rules);
 
@@ -200,7 +204,10 @@ public sealed class FluentValidationSchemaProcessor(
             var adapterType = adapter.GetType();
 
 #pragma warning disable REFL017, REFL003 // Justification: Already of type ChildValidatorAdaptor<,>
-            var adapterMethod = adapterType.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator));
+            var adapterMethod = _MethodCache.GetOrAdd(
+                adapterType,
+                t => t.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator))
+            );
 #pragma warning restore REFL017, REFL003
 
             if (adapterMethod is null)

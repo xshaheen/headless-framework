@@ -118,9 +118,14 @@ public partial class PaymobCashInAuthenticatorTests
 
         // when
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.OptionsAccessor);
+        using var authenticator = new PaymobCashInAuthenticator(
+            fixture.HttpClient,
+            timeProvider,
+            fixture.OptionsAccessor
+        );
 
         // then
+        // ReSharper disable once AccessToDisposedClosure
         var act = () => authenticator.GetAuthenticationTokenAsync(cts.Token).AsTask();
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

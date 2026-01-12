@@ -22,11 +22,11 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         PrimitiveGlobalOptions options
     )
     {
-        var modifiers = data.TypeSymbol.GetModifiers() ?? "public partial";
+        var modifiers = data.Modifiers;
 
         if (!modifiers.Contains("partial"))
         {
-            context.ReportDiagnostic(DiagnosticHelper.ClassMustBePartial(data.TypeSymbol.Locations.FirstOrDefault()));
+            context.ReportDiagnostic(DiagnosticHelper.ClassMustBePartial(Location.None));
         }
 
         var builder = new SourceCodeBuilder();
@@ -40,9 +40,9 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             AbstractionConstants.Namespace,
         };
 
-        if (data.ParentSymbols.Count > 0)
+        if (data.ParentPrimitives.Length > 0)
         {
-            usings.Add(data.ParentSymbols[0].ContainingNamespace.ToDisplayString());
+            usings.Add(data.ParentPrimitives[0].Namespace);
         }
 
         if (data.GenerateImplicitOperators)
@@ -70,7 +70,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         var needsMathOperators = data.HasMathOperators();
 
-        var isByteOrShort = data.ParentSymbols.Count == 0 && data.UnderlyingType.IsByteOrShort();
+        var isByteOrShort = data.ParentPrimitives.Length == 0 && data.UnderlyingType.IsByteOrShort();
 
         builder.AppendSourceHeader("Primitives Generator");
         builder.AppendUsings(usings);
@@ -90,7 +90,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             );
         }
 
-        if (!data.TypeSymbol.IsValueType)
+        if (!data.IsValueType)
         {
             builder.AppendClass(
                 isRecord: false,
@@ -142,13 +142,13 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         builder.NewLine();
         builder.AppendRegion("IEquatable Implementation");
-        builder.GenerateEquatableOperators(data.ClassName, data.TypeSymbol.IsValueType);
+        builder.GenerateEquatableOperators(data.ClassName, data.IsValueType);
         builder.NewLine();
         builder.AppendEndRegion();
 
         builder.NewLine();
         builder.AppendRegion("IComparable Implementation");
-        builder.GenerateComparableCode(data.ClassName, data.TypeSymbol.IsValueType);
+        builder.GenerateComparableCode(data.ClassName, data.IsValueType);
         builder.NewLine();
         builder.AppendEndRegion();
 
@@ -252,15 +252,8 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             builder.AppendEndRegion();
         }
 
-        var baseType = data.ParentSymbols.Count == 0 ? data.PrimitiveTypeSymbol : data.ParentSymbols[0];
-
-        var hasExplicitToStringMethod = data
-            .TypeSymbol.GetMembersOfType<IMethodSymbol>()
-            .Any(x =>
-                string.Equals(x.Name, "ToString", StringComparison.Ordinal)
-                && x is { IsStatic: true, Parameters.Length: 1 }
-                && x.Parameters[0].Type.Equals(baseType, SymbolEqualityComparer.Default)
-            );
+        // HasExplicitToStringMethod is now pre-computed in PrimitiveTypeInfo
+        var hasExplicitToStringMethod = data.HasExplicitToStringMethod;
 
         builder.NewLine();
         builder.AppendInheritDoc();
@@ -426,7 +419,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
         );
 
         var converterName = data.UnderlyingType.ToString();
-        var primitiveTypeIsValueType = data.PrimitiveTypeSymbol.IsValueType;
+        var primitiveTypeIsValueType = data.PrimitiveTypeIsValueType;
 
         builder.AppendNamespace(data.Namespace + ".Converters");
         builder.AppendSummary($"JsonConverter for <see cref = \"{data.ClassName}\"/>");
