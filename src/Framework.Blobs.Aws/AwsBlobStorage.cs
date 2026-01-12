@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Text.RegularExpressions;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Framework.Abstractions;
+using Framework.Blobs.Internals;
 using Framework.Checks;
-using Framework.Constants;
 using Framework.IO;
 using Framework.Primitives;
 using Framework.Urls;
@@ -28,8 +27,6 @@ public sealed class AwsBlobStorage(
 {
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
-    private const string _UploadDateMetadataKey = "uploadDate";
-    private const string _ExtensionMetadataKey = "extension";
 
     private readonly IAmazonS3 _s3 = s3;
     private readonly IMimeTypeProvider _mimeTypeProvider = mimeTypeProvider;
@@ -115,8 +112,8 @@ public sealed class AwsBlobStorage(
             }
         }
 
-        request.Metadata[_UploadDateMetadataKey] = _clock.UtcNow.ToString("O");
-        request.Metadata[_ExtensionMetadataKey] = Path.GetExtension(blobName);
+        request.Metadata[BlobStorageHelpers.UploadDateMetadataKey] = _clock.UtcNow.ToString("O");
+        request.Metadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(blobName);
 
         var response = await _s3.PutObjectAsync(request, cancellationToken).AnyContext();
 
@@ -281,7 +278,7 @@ public sealed class AwsBlobStorage(
         const int pageSize = 100;
 
         var (bucket, directories) = (container[0], container.Skip(1));
-        var criteria = _GetRequestCriteria(directories, blobSearchPattern);
+        var criteria = BlobStorageHelpers.GetRequestCriteria(directories, blobSearchPattern);
 
         var listRequest = new ListObjectsV2Request
         {
@@ -641,7 +638,7 @@ public sealed class AwsBlobStorage(
         Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var bucket = _BuildBucketName(container);
-        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
+        var criteria = BlobStorageHelpers.GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
         var result = new PagedFileListResult(
             (_, token) => _GetFilesAsync(bucket, criteria, pageSize, continuationToken: null, token)
@@ -737,34 +734,6 @@ public sealed class AwsBlobStorage(
         })!;
     }
 
-    private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
-    {
-        searchPattern = Url.Combine(string.Join('/', directories), _NormalizePath(searchPattern));
-
-        if (string.IsNullOrEmpty(searchPattern))
-        {
-            return new();
-        }
-
-        var hasWildcard = searchPattern.Contains('*', StringComparison.Ordinal);
-
-        var prefix = searchPattern;
-        Regex? patternRegex = null;
-
-        if (hasWildcard)
-        {
-            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
-            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
-
-            var slashPos = searchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? searchPattern[..slashPos] : string.Empty;
-        }
-
-        return new SearchCriteria { Prefix = prefix, Pattern = patternRegex };
-    }
-
-    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
-
     #endregion
 
     #region Build Urls
@@ -783,12 +752,6 @@ public sealed class AwsBlobStorage(
     private static string _BuildBucketName(string[] container)
     {
         return container[0];
-    }
-
-    [return: NotNullIfNotNull(nameof(path))]
-    private static string? _NormalizePath(string? path)
-    {
-        return path?.Replace('\\', '/');
     }
 
     #endregion
@@ -823,7 +786,7 @@ public sealed class AwsBlobStorage(
             return DateTimeOffset.MinValue;
         }
 
-        var createdValue = metadata[_UploadDateMetadataKey];
+        var createdValue = metadata[BlobStorageHelpers.UploadDateMetadataKey];
 
         if (createdValue is null)
         {

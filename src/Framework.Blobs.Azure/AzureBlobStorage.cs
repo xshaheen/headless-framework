@@ -1,16 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Text;
-using System.Text.RegularExpressions;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Framework.Abstractions;
 using Framework.Blobs.Azure.Internals;
+using Framework.Blobs.Internals;
 using Framework.Checks;
-using Framework.Constants;
 using Framework.Primitives;
 using Framework.Urls;
 using Microsoft.Extensions.Logging;
@@ -27,9 +25,6 @@ public sealed class AzureBlobStorage(
     ILogger<AzureBlobStorage> logger
 ) : IBlobStorage
 {
-    private const string _UploadDateMetadataKey = "uploadDate";
-    private const string _ExtensionMetadataKey = "extension";
-
     private readonly AzureStorageOptions _option = optionAccessor.Value;
 
     #region Create Container
@@ -75,8 +70,8 @@ public sealed class AzureBlobStorage(
         };
 
         metadata ??= new Dictionary<string, string?>(StringComparer.Ordinal);
-        metadata[_UploadDateMetadataKey] = clock.UtcNow.ToString("O");
-        metadata[_ExtensionMetadataKey] = Path.GetExtension(blobName);
+        metadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
+        metadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(blobName);
 
         if (stream.CanSeek && stream.Position != 0)
         {
@@ -409,7 +404,7 @@ public sealed class AzureBlobStorage(
         Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
+        var criteria = BlobStorageHelpers.GetRequestCriteria(container.Skip(1), blobSearchPattern);
 
         var result = new PagedFileListResult(
             async (_, token) =>
@@ -563,34 +558,6 @@ public sealed class AzureBlobStorage(
         };
     }
 
-    private static SearchCriteria _GetRequestCriteria(IEnumerable<string> directories, string? searchPattern)
-    {
-        searchPattern = Url.Combine(string.Join('/', directories), _NormalizePath(searchPattern));
-
-        if (string.IsNullOrEmpty(searchPattern))
-        {
-            return new();
-        }
-
-        var hasWildcard = searchPattern.Contains('*', StringComparison.Ordinal);
-
-        var prefix = searchPattern;
-        Regex? patternRegex = null;
-
-        if (hasWildcard)
-        {
-            var searchRegexText = Regex.Escape(searchPattern).Replace("\\*", ".*?", StringComparison.Ordinal);
-            patternRegex = new Regex($"^{searchRegexText}$", RegexOptions.ExplicitCapture, RegexPatterns.MatchTimeout);
-
-            var slashPos = searchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? searchPattern[..(slashPos + 1)] : string.Empty;
-        }
-
-        return new(prefix, patternRegex);
-    }
-
-    private sealed record SearchCriteria(string Prefix = "", Regex? Pattern = null);
-
     #endregion
 
 
@@ -656,13 +623,7 @@ public sealed class AzureBlobStorage(
 
     private static string _NormalizeSlashes(string x)
     {
-        return _NormalizePath(x).RemovePostfix('/').RemovePrefix('/');
-    }
-
-    [return: NotNullIfNotNull(nameof(path))]
-    private static string? _NormalizePath(string? path)
-    {
-        return path?.Replace('\\', '/');
+        return BlobStorageHelpers.NormalizePath(x).RemovePostfix('/').RemovePrefix('/');
     }
 
     #endregion
