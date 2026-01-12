@@ -293,7 +293,9 @@ public sealed class AzureBlobStorage : IBlobStorage
 
         if (!deleteResult)
         {
-            _logger.LogWarning("Unable to delete {BlobName}", blobName);
+            // Rollback: delete the copy to avoid data duplication
+            await DeleteAsync(newBlobContainer, newBlobName, cancellationToken);
+            _logger.LogWarning("Rename failed for {BlobName}, rolled back copy", blobName);
 
             return false;
         }
@@ -329,21 +331,27 @@ public sealed class AzureBlobStorage : IBlobStorage
     {
         var blobClient = _GetBlobClient(container, blobName);
 
-        var memoryStream = new MemoryStream();
+        MemoryStream? memoryStream = null;
 
         try
         {
-            await blobClient.DownloadToAsync(memoryStream, cancellationToken);
+            memoryStream = new MemoryStream();
+            await blobClient.DownloadToAsync(memoryStream, cancellationToken).AnyContext();
+            memoryStream.Seek(0, SeekOrigin.Begin);
+
+            return new(memoryStream, blobName);
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.BlobNotFound || e.ErrorCode == BlobErrorCode.ContainerNotFound)
         {
+            memoryStream?.Dispose();
             return null;
         }
-
-        memoryStream.Seek(0, SeekOrigin.Begin);
-
-        return new(memoryStream, blobName);
+        catch
+        {
+            memoryStream?.Dispose();
+            throw;
+        }
     }
 
     public async ValueTask<BlobInfo?> GetBlobInfoAsync(
