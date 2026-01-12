@@ -13,7 +13,11 @@ public sealed class TwilioSmsOptions
 
     public required string PhoneNumber { get; init; }
 
-    public required decimal? MaxPrice { get; set; }
+    public decimal? MaxPrice { get; set; }
+
+    public string? Region { get; set; }
+
+    public string? Edge { get; set; }
 }
 
 internal sealed class TwilioSmsOptionsValidator : AbstractValidator<TwilioSmsOptions>

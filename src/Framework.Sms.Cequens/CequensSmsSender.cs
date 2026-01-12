@@ -14,9 +14,10 @@ namespace Framework.Sms.Cequens;
  */
 public sealed class CequensSmsSender(
     IHttpClientFactory httpClientFactory,
+    TimeProvider timeProvider,
     IOptions<CequensSmsOptions> optionsAccessor,
     ILogger<CequensSmsSender> logger
-) : ISmsSender
+) : ISmsSender, IDisposable
 {
     private readonly CequensSmsOptions _options = optionsAccessor.Value;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
@@ -89,7 +90,7 @@ public sealed class CequensSmsSender(
 
     private async Task<string?> _GetTokenRequestAsync(HttpClient httpClient, CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
 
         // Quick check before lock
         if (_cachedToken != null && _tokenExpiration > now)
@@ -101,7 +102,7 @@ public sealed class CequensSmsSender(
         try
         {
             // Double-check after acquiring lock
-            now = DateTime.UtcNow;
+            now = timeProvider.GetUtcNow().UtcDateTime;
             if (_cachedToken != null && _tokenExpiration > now)
             {
                 return _cachedToken;
@@ -134,6 +135,11 @@ public sealed class CequensSmsSender(
         {
             _tokenLock.Release();
         }
+    }
+
+    public void Dispose()
+    {
+        _tokenLock.Dispose();
     }
 
     #endregion
