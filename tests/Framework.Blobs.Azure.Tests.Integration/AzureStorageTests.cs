@@ -24,12 +24,14 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
         var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
+        var normalizer = new AzureBlobNamingNormalizer();
 
         return new AzureBlobStorage(
             blobServiceClient,
             mimeTypeProvider,
             clock,
             optionsAccessor,
+            normalizer,
             LoggerFactory.CreateLogger<AzureBlobStorage>()
         );
     }
