@@ -126,6 +126,7 @@ public abstract class ApiControllerBase : ControllerBase
     protected ConflictObjectResult ConflictProblemDetails(IEnumerable<ErrorDescriptor> errorDescriptors)
     {
         var problemDetails = ProblemDetailsCreator.Conflict(errorDescriptors);
+        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
 
         return base.Conflict(problemDetails);
     }
