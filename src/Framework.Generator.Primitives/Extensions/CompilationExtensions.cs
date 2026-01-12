@@ -20,11 +20,10 @@ internal static class CompilationExtensions
         }
 
         // Compare namespace parts directly (cheap) instead of ToDisplayString (expensive)
-        // Expecting "Framework.Generator.Primitives"
         var ns = x.ContainingNamespace;
-        return ns is { Name: "Primitives" }
-            && ns.ContainingNamespace is { Name: "Generator" }
-            && ns.ContainingNamespace.ContainingNamespace is { Name: "Framework", ContainingNamespace.IsGlobalNamespace: true };
+        return ns is { Name: AbstractionConstants.NamespacePart3 }
+            && ns.ContainingNamespace is { Name: AbstractionConstants.NamespacePart2 }
+            && ns.ContainingNamespace.ContainingNamespace is { Name: AbstractionConstants.NamespacePart1, ContainingNamespace.IsGlobalNamespace: true };
     }
 
     /// <summary>
@@ -153,7 +152,7 @@ internal static class CompilationExtensions
             PrimitiveUnderlyingType.DateOnly => (stringType, "JsonFormatStrings.Date"),
             PrimitiveUnderlyingType.TimeOnly => (stringType, "JsonFormatStrings.Time"),
             PrimitiveUnderlyingType.TimeSpan => (stringType, "JsonFormatStrings.TimeSpan"),
-            PrimitiveUnderlyingType.Other or _ => (stringType, null),
+            _ => (stringType, null),
         };
     }
 
