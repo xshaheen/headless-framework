@@ -371,7 +371,17 @@ public sealed class SourceCodeBuilder
     {
         return Append(quote(line), ensureIndentation);
 
-        static string quote(string? value) => '\"' + value?.Replace("\"", "\"\"") + '\"';
+        static string quote(string? value)
+        {
+            if (value is null) return "\"\"";
+            var escaped = value
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n")
+                .Replace("\t", "\\t");
+            return $"\"{escaped}\"";
+        }
     }
 
     /// <summary>Appends a line of text to the source code with an option to ensure proper indentation.</summary>

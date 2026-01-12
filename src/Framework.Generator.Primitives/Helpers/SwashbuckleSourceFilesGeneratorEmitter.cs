@@ -130,7 +130,7 @@ internal static class SwashbuckleSourceFilesGeneratorEmitter
 
                     if (example is not null)
                     {
-                        var exampleValue = example.InnerText.Trim().Replace("\"", "\\\"");
+                        var exampleValue = _EscapeForStringLiteral(example.InnerText.Trim());
 
                         builder
                             .Append("Example = new OpenApiString(")
@@ -149,5 +149,16 @@ internal static class SwashbuckleSourceFilesGeneratorEmitter
         builder.CloseBracket();
 
         context.AddSource($"{_SwashbuckleSwaggerExtensionsClassName}.g.cs", builder.ToString());
+    }
+
+    private static string _EscapeForStringLiteral(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t")
+            .Replace("\0", "\\0");
     }
 }

@@ -9,6 +9,14 @@ namespace Framework.Generator.Primitives.Helpers;
 /// <summary>A helper class providing methods for generating code related to Swagger, TypeConverter, JsonConverter, and other operations.</summary>
 internal static class MethodGeneratorEmitter
 {
+    private static string? _EscapeFormatString(string? format)
+    {
+        if (format is null) return null;
+        return format
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"");
+    }
+
     /// <summary>TryCreate,TryCreate with error message methods for the specified type, and ValidateOrThrow.</summary>
     /// <param name="builder">The source code builder.</param>
     /// <param name="data">The generator data containing type information.</param>
@@ -460,7 +468,7 @@ internal static class MethodGeneratorEmitter
         {
             builder
                 .Append($"{underlyingType}.")
-                .AppendLineIfElse(format is null, "Parse(s, provider);", $"ParseExact(s, \"{format}\", provider);");
+                .AppendLineIfElse(format is null, "Parse(s, provider);", $"ParseExact(s, \"{_EscapeFormatString(format)}\", provider);");
         }
 
         #endregion
@@ -506,7 +514,7 @@ internal static class MethodGeneratorEmitter
         {
             builder
                 .AppendIf(format is null, $"if (!{underlyingType}.TryParse(s, provider, out var value))")
-                .AppendIf(format is not null, $"if (!{underlyingType}.TryParseExact(s, \"{format}\", out var value))");
+                .AppendIf(format is not null, $"if (!{underlyingType}.TryParseExact(s, \"{_EscapeFormatString(format)}\", out var value))");
         }
 
         builder.OpenBracket().AppendLine("result = default;").AppendLine("return false;").CloseBracket().NewLine();
@@ -694,7 +702,7 @@ internal static class MethodGeneratorEmitter
         else
         {
             builder.AppendLine(
-                $"public void WriteXml(XmlWriter writer) => writer.WriteString({data.FieldName}.ToString(\"{data.SerializationFormat}\"));"
+                $"public void WriteXml(XmlWriter writer) => writer.WriteString({data.FieldName}.ToString(\"{_EscapeFormatString(data.SerializationFormat)}\"));"
             );
         }
     }

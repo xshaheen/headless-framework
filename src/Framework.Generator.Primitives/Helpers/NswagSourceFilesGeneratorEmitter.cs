@@ -138,7 +138,7 @@ internal static class NswagSourceFilesGeneratorEmitter
 
                     if (example is not null)
                     {
-                        var exampleValue = example.InnerText.Trim().Replace("\"", "\\\"");
+                        var exampleValue = _EscapeForStringLiteral(example.InnerText.Trim());
 
                         builder.Append("schema.Example = ").Append("\"" + exampleValue + "\"").AppendLine(";");
                     }
@@ -158,5 +158,16 @@ internal static class NswagSourceFilesGeneratorEmitter
         builder.CloseBracket();
 
         context.AddSource($"{_NswagSwaggerExtensionsClassName}.g.cs", builder.ToString());
+    }
+
+    private static string _EscapeForStringLiteral(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t")
+            .Replace("\0", "\\0");
     }
 }

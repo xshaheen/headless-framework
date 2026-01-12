@@ -10,6 +10,14 @@ namespace Framework.Generator.Primitives.Helpers;
 
 internal static class PrimitiveSourceFilesGeneratorEmitter
 {
+    private static string? _EscapeFormatString(string? format)
+    {
+        if (format is null) return null;
+        return format
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"");
+    }
+
     /// <summary>Processes the generator data and generates code for a specified class.</summary>
     /// <param name="context">The SourceProductionContext for reporting diagnostics.</param>
     /// <param name="data">The GeneratorData for the class.</param>
@@ -490,7 +498,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             )
             .AppendLineIf(
                 data.SerializationFormat is not null,
-                $"writer.WriteStringValue(value.ToString(\"{data.SerializationFormat}\", CultureInfo.InvariantCulture));"
+                $"writer.WriteStringValue(value.ToString(\"{_EscapeFormatString(data.SerializationFormat)}\", CultureInfo.InvariantCulture));"
             )
             .CloseBracket()
             .NewLine();
@@ -556,7 +564,7 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
             )
             .AppendLineIf(
                 data.SerializationFormat is not null,
-                $"writer.WritePropertyName(value.ToString(\"{data.SerializationFormat}\", CultureInfo.InvariantCulture));"
+                $"writer.WritePropertyName(value.ToString(\"{_EscapeFormatString(data.SerializationFormat)}\", CultureInfo.InvariantCulture));"
             )
             .CloseBracket();
 

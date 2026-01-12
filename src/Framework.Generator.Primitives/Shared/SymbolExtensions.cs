@@ -9,7 +9,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Framework.Generator.Primitives.Shared;
 
 /// <summary>Extension methods for working with Roslyn's Compilation and related types.</summary>
-public static class CompilationExtensions
+public static class SymbolExtensions
 {
     /// <summary>Checks if the symbol has public accessibility.</summary>
     /// <param name="symbol">The symbol to check.</param>
@@ -148,35 +148,26 @@ public static class CompilationExtensions
     /// <summary>Checks if namespace symbol matches the expected namespace string (e.g. "System.Collections").</summary>
     private static bool _NamespaceMatches(INamespaceSymbol ns, ReadOnlySpan<char> expectedNamespace)
     {
-        if (ns.IsGlobalNamespace)
+        while (true)
         {
-            return expectedNamespace.IsEmpty;
-        }
+            if (ns.IsGlobalNamespace)
+            {
+                return expectedNamespace.IsEmpty;
+            }
 
-        // Find the last segment in the expected namespace
-        var lastDot = expectedNamespace.LastIndexOf('.');
-        ReadOnlySpan<char> currentSegment;
-        ReadOnlySpan<char> remainingNamespace;
+            var lastDot = expectedNamespace.LastIndexOf('.');
+            var currentSegment = lastDot < 0
+                ? expectedNamespace
+                : expectedNamespace.Slice(lastDot + 1);
 
-        if (lastDot < 0)
-        {
-            currentSegment = expectedNamespace;
-            remainingNamespace = [];
-        }
-        else
-        {
-            currentSegment = expectedNamespace.Slice(lastDot + 1);
-            remainingNamespace = expectedNamespace.Slice(0, lastDot);
-        }
+            if (!currentSegment.Equals(ns.Name.AsSpan(), StringComparison.Ordinal))
+            {
+                return false;
+            }
 
-        // Compare current namespace segment
-        if (!currentSegment.Equals(ns.Name.AsSpan(), StringComparison.Ordinal))
-        {
-            return false;
+            expectedNamespace = lastDot < 0 ? [] : expectedNamespace.Slice(0, lastDot);
+            ns = ns.ContainingNamespace;
         }
-
-        // Recurse to parent namespace
-        return _NamespaceMatches(ns.ContainingNamespace, remainingNamespace);
     }
 
     /// <summary>
@@ -186,44 +177,55 @@ public static class CompilationExtensions
     /// <returns>The friendly name of the type, including nullable types if applicable.</returns>
     public static string GetFriendlyName(this INamedTypeSymbol type)
     {
-        var ns = type.ContainingNamespace?.ToDisplayString(
-            SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(
-                SymbolDisplayGlobalNamespaceStyle.OmittedAsContaining
-            )
-        )!;
-
-        if (_TypeAliases.TryGetValue(ns + "." + type.MetadataName, out var result))
+        // Try alias lookup using namespace hierarchy walk (avoids ToDisplayString allocation)
+        if (_TryGetTypeAlias(type, out var alias))
         {
-            return result;
+            return alias;
         }
 
-        var friendlyName = new StringBuilder(type.MetadataName);
+        var metadataName = type.MetadataName;
 
         if (!type.IsGenericType)
         {
-            return friendlyName.ToString();
+            return metadataName;
         }
 
-        var iBacktick = friendlyName.ToString().IndexOf('`');
-        if (iBacktick > 0)
-        {
-            friendlyName.Length = iBacktick;
-        }
+        // Find backtick directly in MetadataName (avoids StringBuilder.ToString allocation)
+        var backtickIndex = metadataName.IndexOf('`');
+        var baseName = backtickIndex > 0 ? metadataName.Substring(0, backtickIndex) : metadataName;
 
-        friendlyName.Append('<');
+        var builder = new StringBuilder();
+        builder.Append(baseName);
+        builder.Append('<');
+
         var typeParameters = type.TypeArguments;
         for (var i = 0; i < typeParameters.Length; ++i)
         {
             if (i > 0)
             {
-                friendlyName.Append(',');
+                builder.Append(',');
             }
 
-            friendlyName.Append(typeParameters[i]);
+            builder.Append(typeParameters[i]);
         }
-        friendlyName.Append('>');
+        builder.Append('>');
 
-        return friendlyName.ToString();
+        return builder.ToString();
+    }
+
+    /// <summary>Tries to get a type alias for System types like int, string, etc.</summary>
+    private static bool _TryGetTypeAlias(INamedTypeSymbol type, out string alias)
+    {
+        alias = null!;
+        var ns = type.ContainingNamespace;
+
+        // Only System namespace types have aliases
+        if (ns is not { Name: "System", ContainingNamespace.IsGlobalNamespace: true })
+        {
+            return false;
+        }
+
+        return _TypeAliases.TryGetValue("System." + type.MetadataName, out alias!);
     }
 
     /// <summary>

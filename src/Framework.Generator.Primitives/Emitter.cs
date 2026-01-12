@@ -48,12 +48,6 @@ internal static class Emitter
 
                 var info = typeInfo.Value;
 
-                // Skip invalid types (validation was already done in Parser)
-                if (info.UnderlyingType == PrimitiveUnderlyingType.Other)
-                {
-                    continue;
-                }
-
                 // Check for type mismatch between primitive and underlying type
                 if (info.UnderlyingTypeIsValueType && !info.IsValueType)
                 {

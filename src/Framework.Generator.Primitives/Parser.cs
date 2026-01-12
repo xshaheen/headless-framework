@@ -177,18 +177,19 @@ internal static class Parser
             stringLengthInfo = new StringLengthInfo(minValue, maxValue, validate);
         }
 
-        // Check interface implementations
-        var implementsIParsable = typeSymbol.ImplementsInterface(TypeNames.IParsable);
-        var implementsIAdditionOperators = typeSymbol.ImplementsInterface(TypeNames.IAdditionOperators);
-        var implementsISubtractionOperators = typeSymbol.ImplementsInterface(TypeNames.ISubtractionOperators);
-        var implementsIDivisionOperators = typeSymbol.ImplementsInterface(TypeNames.IDivisionOperators);
-        var implementsIMultiplyOperators = typeSymbol.ImplementsInterface(TypeNames.IMultiplyOperators);
-        var implementsIModulusOperators = typeSymbol.ImplementsInterface(TypeNames.IModulusOperators);
-        var implementsIComparisonOperators = typeSymbol.ImplementsInterface(TypeNames.IComparisonOperators);
-        var implementsISpanFormattable = typeSymbol.ImplementsInterface(TypeNames.ISpanFormattable);
-        var implementsIUtf8SpanFormattable = typeSymbol.ImplementsInterface(TypeNames.IUtf8SpanFormattable);
-        var underlyingImplementsIUtf8SpanFormattable =
-            primitiveType.ImplementsInterface(TypeNames.IUtf8SpanFormattable);
+        // Check interface implementations in single pass
+        var (
+            implementsIParsable,
+            implementsIAdditionOperators,
+            implementsISubtractionOperators,
+            implementsIDivisionOperators,
+            implementsIMultiplyOperators,
+            implementsIModulusOperators,
+            implementsIComparisonOperators,
+            implementsISpanFormattable,
+            implementsIUtf8SpanFormattable,
+            underlyingImplementsIUtf8SpanFormattable
+        ) = _ExtractInterfaceFlags(typeSymbol, primitiveType);
 
         // Get location info for diagnostics
         var location = typeSymbol.Locations.FirstOrDefault();
@@ -201,10 +202,16 @@ internal static class Parser
         {
             xmlDocumentation = typeSymbol.GetDocumentationCommentXml(cancellationToken: ct);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+#pragma warning disable ERP022
         catch
         {
-            // Ignore documentation extraction failures
+            // Documentation extraction can fail for external types - acceptable
         }
+#pragma warning restore ERP022
 
         return new PrimitiveTypeInfo(
             FullyQualifiedName: typeSymbol.ToDisplayString(),
@@ -408,4 +415,89 @@ internal static class Parser
                 && result;
         }
     }
+
+    /// <summary>Extracts interface flags in single pass over AllInterfaces.</summary>
+    private static (
+        bool IParsable,
+        bool IAdditionOperators,
+        bool ISubtractionOperators,
+        bool IDivisionOperators,
+        bool IMultiplyOperators,
+        bool IModulusOperators,
+        bool IComparisonOperators,
+        bool ISpanFormattable,
+        bool IUtf8SpanFormattable,
+        bool UnderlyingIUtf8SpanFormattable
+    ) _ExtractInterfaceFlags(INamedTypeSymbol type, INamedTypeSymbol primitiveType)
+    {
+        var flags = (false, false, false, false, false, false, false, false, false, false);
+
+        foreach (var iface in type.AllInterfaces)
+        {
+            var name = iface.Name;
+            var ns = iface.ContainingNamespace;
+
+            if (_IsSystemNamespace(ns))
+            {
+                if (name == "IParsable")
+                {
+                    flags.Item1 = true;
+                }
+                else if (name == "ISpanFormattable")
+                {
+                    flags.Item8 = true;
+                }
+                else if (name == "IUtf8SpanFormattable")
+                {
+                    flags.Item9 = true;
+                }
+            }
+            else if (_IsSystemNumericsNamespace(ns))
+            {
+                switch (name)
+                {
+                    case "IAdditionOperators":
+                        flags.Item2 = true;
+                        break;
+                    case "ISubtractionOperators":
+                        flags.Item3 = true;
+                        break;
+                    case "IDivisionOperators":
+                        flags.Item4 = true;
+                        break;
+                    case "IMultiplyOperators":
+                        flags.Item5 = true;
+                        break;
+                    case "IModulusOperators":
+                        flags.Item6 = true;
+                        break;
+                    case "IComparisonOperators":
+                        flags.Item7 = true;
+                        break;
+                }
+            }
+        }
+
+        // Check primitiveType for IUtf8SpanFormattable
+        foreach (var iface in primitiveType.AllInterfaces)
+        {
+            if (iface.Name == "IUtf8SpanFormattable" && _IsSystemNamespace(iface.ContainingNamespace))
+            {
+                flags.Item10 = true;
+                break;
+            }
+        }
+
+        return flags;
+    }
+
+    private static bool _IsSystemNamespace(INamespaceSymbol ns) =>
+        ns is { Name: "System", ContainingNamespace.IsGlobalNamespace: true };
+
+    private static bool _IsSystemNumericsNamespace(INamespaceSymbol ns) =>
+        ns
+            is {
+                Name: "Numerics",
+                ContainingNamespace: { Name: "System", ContainingNamespace.IsGlobalNamespace: true }
+            };
 }
