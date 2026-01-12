@@ -28,12 +28,12 @@ public sealed partial class MinimalApiExceptionFilter(
             )
         )
         {
-            return await next(context);
+            return await next(context).AnyContext();
         }
 
         try
         {
-            return await next(context);
+            return await next(context).AnyContext();
         }
         catch (ConflictException exception)
         {

@@ -21,5 +21,5 @@ public sealed class AzureNextPageResult : INextPageResult
     >? AzureNextPageFunc { get; init; }
 
     public Func<PagedFileListResult, CancellationToken, ValueTask<INextPageResult>>? NextPageFunc =>
-        AzureNextPageFunc is null ? null : async (_, token) => await AzureNextPageFunc.Invoke(this, token);
+        AzureNextPageFunc is null ? null : async (_, token) => await AzureNextPageFunc.Invoke(this, token).AnyContext();
 }

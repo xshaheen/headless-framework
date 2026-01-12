@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,7 +18,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         if (validators is null || validators.Count == 0)
         {
-            return await next(context);
+            return await next(context).AnyContext();
         }
 
         var requestType = typeof(TRequest);
@@ -30,10 +31,22 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         var validationContext = new ValidationContext<TRequest>(request);
 
-        var validationResults = await Task.WhenAll(
-                validators.Select(v => v.ValidateAsync(validationContext, context.HttpContext.RequestAborted))
-            )
-            .WithAggregatedExceptions();
+        ValidationResult[] validationResults;
+
+        if (validators.Count == 1)
+        {
+            // Fast path for single validator - avoids Task.WhenAll overhead
+            var result = await validators[0].ValidateAsync(validationContext, context.HttpContext.RequestAborted).AnyContext();
+            validationResults = [result];
+        }
+        else
+        {
+            // Parallel path for multiple validators
+            validationResults = await Task.WhenAll(
+                    validators.Select(v => v.ValidateAsync(validationContext, context.HttpContext.RequestAborted))
+                )
+                .AnyContext();
+        }
 
         var failures = validationResults
             .Where(x => !x.IsValid)
@@ -42,6 +55,6 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             .GroupBy(x => x.PropertyName, x => x.ErrorMessage, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.Ordinal);
 
-        return failures.Count > 0 ? Results.ValidationProblem(failures) : await next(context);
+        return failures.Count > 0 ? Results.ValidationProblem(failures) : await next(context).AnyContext();
     }
 }

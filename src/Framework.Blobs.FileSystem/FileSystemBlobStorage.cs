@@ -59,7 +59,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         try
         {
-            await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken);
+            await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken).AnyContext();
         }
         catch (Exception e)
         {
@@ -84,7 +84,8 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         var result = await blobs
             .Select(blob => (blob.Stream, blob.FileName))
-            .SaveToLocalFileAsync(directoryPath, cancellationToken);
+            .SaveToLocalFileAsync(directoryPath, cancellationToken)
+            .AnyContext();
 
         return result;
     }
@@ -264,7 +265,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         try
         {
-            using (await _lock.LockAsync(cancellationToken))
+            using (await _lock.LockAsync(cancellationToken).AnyContext())
             {
                 Directory.CreateDirectory(newDirectoryPath);
 
@@ -316,7 +317,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
         try
         {
-            using (await _lock.LockAsync(cancellationToken))
+            using (await _lock.LockAsync(cancellationToken).AnyContext())
             {
                 Directory.CreateDirectory(targetDirectory);
                 File.Copy(blobPath, targetPath, overwrite: true);
@@ -368,7 +369,7 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         }
 
         await using var fileStream = File.OpenRead(filePath);
-        var memoryStream = await fileStream.CopyToMemoryStreamAndFlushAsync(cancellationToken);
+        var memoryStream = await fileStream.CopyToMemoryStreamAndFlushAsync(cancellationToken).AnyContext();
 
         return new BlobDownloadResult(memoryStream!, Path.GetFileName(filePath));
     }

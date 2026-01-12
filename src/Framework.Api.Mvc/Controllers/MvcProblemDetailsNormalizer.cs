@@ -17,9 +17,10 @@ public sealed class MvcProblemDetailsNormalizer(
 
     public void ApplyProblemDetailsDefaults(HttpContext httpContext, ProblemDetails problemDetails)
     {
-        Debug.Assert(problemDetails.Status is not null);
-
-        if (_apiOptions.ClientErrorMapping.TryGetValue(problemDetails.Status.Value, out var clientErrorData))
+        if (
+            problemDetails.Status is { } status
+            && _apiOptions.ClientErrorMapping.TryGetValue(status, out var clientErrorData)
+        )
         {
             problemDetails.Title ??= clientErrorData.Title;
             problemDetails.Type ??= clientErrorData.Link;
