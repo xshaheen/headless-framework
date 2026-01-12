@@ -22,6 +22,7 @@ public sealed class AzureBlobStorage(
     IMimeTypeProvider mimeTypeProvider,
     IClock clock,
     IOptions<AzureStorageOptions> optionAccessor,
+    IBlobNamingNormalizer normalizer,
     ILogger<AzureBlobStorage> logger
 ) : IBlobStorage
 {
@@ -29,6 +30,7 @@ public sealed class AzureBlobStorage(
     private const string _ExtensionMetadataKey = "extension";
 
     private readonly AzureStorageOptions _option = optionAccessor.Value;
+    private readonly IBlobNamingNormalizer _normalizer = normalizer;
 
     #region Create Container
 
@@ -600,23 +602,30 @@ public sealed class AzureBlobStorage(
 
     private List<Uri> _NormalizeBlobUrls(string[] container, IReadOnlyCollection<string> blobNames)
     {
+        var normalizedContainer = container.Select(_NormalizeContainerName).ToArray();
         var prefix =
             blobServiceClient.Uri.AbsoluteUri.EnsureEndsWith('/')
-            + container.Select(_NormalizeSlashes).JoinAsString('/');
+            + normalizedContainer.JoinAsString('/');
 
-        return blobNames.Select(blobName => new Uri($"{prefix}/{blobName}")).ToList();
+        return blobNames.Select(blobName => new Uri($"{prefix}/{_NormalizeSlashes(_normalizer.NormalizeBlobName(blobName))}")).ToList();
     }
 
-    private static (string Container, string Blob) _NormalizeBlob(string[] containers, string blobName)
+    private (string Container, string Blob) _NormalizeBlob(string[] containers, string blobName)
     {
-        var blob = containers.Skip(1).Append(blobName).Select(_NormalizeSlashes).JoinAsString('/');
+        var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
+        var blob = containers.Skip(1).Select(_NormalizeContainerName).Append(_NormalizeSlashes(normalizedBlobName)).JoinAsString('/');
 
         return (_GetContainer(containers), blob);
     }
 
-    private static string _GetContainer(string[] containers)
+    private string _GetContainer(string[] containers)
     {
-        return _NormalizeSlashes(containers[0]);
+        return _NormalizeContainerName(containers[0]);
+    }
+
+    private string _NormalizeContainerName(string containerName)
+    {
+        return _NormalizeSlashes(_normalizer.NormalizeContainerName(containerName));
     }
 
     private static string _NormalizeSlashes(string x)
