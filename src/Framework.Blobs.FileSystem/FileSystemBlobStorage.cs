@@ -357,7 +357,7 @@ public sealed class FileSystemBlobStorage(
 
     #region Download
 
-    public async ValueTask<BlobDownloadResult?> DownloadAsync(
+    public ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -367,24 +367,14 @@ public sealed class FileSystemBlobStorage(
 
         if (!File.Exists(filePath))
         {
-            return null;
+            return ValueTask.FromResult<BlobDownloadResult?>(null);
         }
 
-        await using var fileStream = File.OpenRead(filePath);
-        var memoryStream = new MemoryStream();
+        var fileStream = File.OpenRead(filePath);
 
-        try
-        {
-            await fileStream.CopyToAsync(memoryStream, cancellationToken).AnyContext();
-            memoryStream.Seek(0, SeekOrigin.Begin);
-
-            return new BlobDownloadResult(memoryStream, Path.GetFileName(filePath));
-        }
-        catch
-        {
-            await memoryStream.DisposeAsync().AnyContext();
-            throw;
-        }
+        return ValueTask.FromResult<BlobDownloadResult?>(
+            new BlobDownloadResult(fileStream, Path.GetFileName(filePath))
+        );
     }
 
     public ValueTask<BlobInfo?> GetBlobInfoAsync(
