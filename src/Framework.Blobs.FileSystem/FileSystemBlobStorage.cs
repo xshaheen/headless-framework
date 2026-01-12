@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Framework.Checks;
 using Framework.IO;
 using Framework.Primitives;
@@ -11,18 +12,17 @@ using File = System.IO.File;
 
 namespace Framework.Blobs.FileSystem;
 
-public sealed class FileSystemBlobStorage : IBlobStorage
+public sealed class FileSystemBlobStorage(
+    IOptions<FileSystemBlobStorageOptions> optionsAccessor,
+    IBlobNamingNormalizer normalizer,
+    ILogger<FileSystemBlobStorage> logger
+) : IBlobStorage
 {
     private readonly AsyncLock _lock = new();
-    private readonly string _basePath;
-    private readonly ILogger _logger;
-
-    public FileSystemBlobStorage(IOptions<FileSystemBlobStorageOptions> optionsAccessor, ILogger<FileSystemBlobStorage> logger)
-    {
-        var options = optionsAccessor.Value;
-        _basePath = options.BaseDirectoryPath.NormalizePath().EnsureEndsWith(Path.DirectorySeparatorChar);
-        _logger = logger;
-    }
+    private readonly string _basePath = optionsAccessor.Value.BaseDirectoryPath.NormalizePath()
+        .EnsureEndsWith(Path.DirectorySeparatorChar);
+    private readonly IBlobNamingNormalizer _normalizer = normalizer;
+    private readonly ILogger _logger = logger;
 
     #region Create Container
 
@@ -424,6 +424,57 @@ public sealed class FileSystemBlobStorage : IBlobStorage
 
     #region List
 
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        if (string.IsNullOrEmpty(blobSearchPattern))
+        {
+            blobSearchPattern = "*";
+        }
+
+        blobSearchPattern = blobSearchPattern.NormalizePath();
+
+        var baseDirectoryPath = Path.Combine(_basePath, container[0]).EnsureEndsWith(Path.DirectorySeparatorChar);
+        var directoryPath = _GetDirectoryPath(container);
+        var completePath = Path.GetDirectoryName(Path.Combine(directoryPath, blobSearchPattern));
+
+        if (!Directory.Exists(completePath))
+        {
+            yield break;
+        }
+
+        await ValueTask.CompletedTask;
+
+        foreach (var path in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var fileInfo = new FileInfo(path);
+
+            if (!fileInfo.Exists)
+            {
+                continue;
+            }
+
+            var blobKey = fileInfo
+                .FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal)
+                .Replace('\\', '/');
+
+            yield return new BlobInfo
+            {
+                BlobKey = blobKey,
+                Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+                Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
+                Size = fileInfo.Length,
+            };
+        }
+    }
+
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
         string? blobSearchPattern = null,
@@ -554,7 +605,10 @@ public sealed class FileSystemBlobStorage : IBlobStorage
         Argument.IsNotNullOrWhiteSpace(fileName);
         Argument.IsNotNullOrEmpty(container);
 
-        var filePath = Path.Combine(_basePath, Path.Combine(container), fileName);
+        var normalizedFileName = _normalizer.NormalizeBlobName(fileName);
+        var normalizedContainer = container.Select(_normalizer.NormalizeContainerName).ToArray();
+
+        var filePath = Path.Combine(_basePath, Path.Combine(normalizedContainer), normalizedFileName);
 
         return filePath;
     }
@@ -563,7 +617,9 @@ public sealed class FileSystemBlobStorage : IBlobStorage
     {
         Argument.IsNotNullOrEmpty(container);
 
-        var filePath = Path.Combine(_basePath, Path.Combine(container));
+        var normalizedContainer = container.Select(_normalizer.NormalizeContainerName).ToArray();
+
+        var filePath = Path.Combine(_basePath, Path.Combine(normalizedContainer));
 
         return filePath.EnsureEndsWith(Path.DirectorySeparatorChar);
     }

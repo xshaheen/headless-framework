@@ -1,7 +1,7 @@
 # IBlobNamingNormalizer Registered But Never Used
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** resolved
 **Priority:** P1 - Critical
 **Tags:** code-review, security, dotnet, blobs, filesystem
 
@@ -99,9 +99,9 @@ public class FileSystemBlobStorageOptions
 
 ## Acceptance Criteria
 
-- [ ] Normalizer injected into FileSystemBlobStorage
-- [ ] Blob names normalized before path construction
-- [ ] Container segments normalized
+- [x] Normalizer injected into FileSystemBlobStorage
+- [x] Blob names normalized before path construction
+- [x] Container segments normalized
 - [ ] Tests verify normalization applied
 
 ---
@@ -111,3 +111,5 @@ public class FileSystemBlobStorageOptions
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - architecture-strategist, security-sentinel |
+| 2026-01-12 | Approved for Work | Triaged - Status: pending → ready. Inject normalizer and use it to normalize blob names before path construction for defense in depth. |
+| 2026-01-12 | Implemented | Injected IBlobNamingNormalizer via primary constructor, normalized blob names and container segments in _BuildBlobPath and _GetDirectoryPath methods. Also added GetBlobsAsync implementation to satisfy IBlobStorage interface. |
