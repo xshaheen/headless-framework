@@ -62,8 +62,18 @@ public sealed class RedisBlobStorage : IBlobStorage
         {
             var database = Database;
 
+            // Validate size limit for seekable streams
+            if (_options.MaxBlobSizeBytes > 0 && stream.CanSeek && stream.Length > _options.MaxBlobSizeBytes)
+            {
+                throw new ArgumentException(
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. " +
+                    "Redis blob storage is intended for small/ephemeral blobs only.",
+                    nameof(stream)
+                );
+            }
+
             await using var memory = new MemoryStream();
-            await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
+            await _CopyWithSizeLimitAsync(stream, memory, cancellationToken).AnyContext();
             var saveBlobTask = database.HashSetAsync(blobsContainer, blobPath, memory.ToArray());
             var fileSize = memory.Length;
             memory.Seek(0, SeekOrigin.Begin);
@@ -634,6 +644,39 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     [return: NotNullIfNotNull(nameof(path))]
     private static string? _NormalizePath(string? path) => path?.Replace('\\', '/');
+
+    #endregion
+
+    #region Size Validation
+
+    private async Task _CopyWithSizeLimitAsync(Stream source, MemoryStream destination, CancellationToken ct)
+    {
+        if (_options.MaxBlobSizeBytes <= 0)
+        {
+            await source.CopyToAsync(destination, 0x14000, ct).AnyContext();
+            return;
+        }
+
+        var buffer = new byte[0x14000];
+        long totalBytes = 0;
+        int bytesRead;
+
+        while ((bytesRead = await source.ReadAsync(buffer, ct).AnyContext()) > 0)
+        {
+            totalBytes += bytesRead;
+
+            if (totalBytes > _options.MaxBlobSizeBytes)
+            {
+                throw new ArgumentException(
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. " +
+                    "Redis blob storage is intended for small/ephemeral blobs only.",
+                    nameof(source)
+                );
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).AnyContext();
+        }
+    }
 
     #endregion
 

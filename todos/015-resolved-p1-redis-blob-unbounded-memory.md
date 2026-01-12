@@ -1,7 +1,7 @@
 # Redis Blob Storage Unbounded Memory Allocation
 
 **Date:** 2026-01-11
-**Status:** pending
+**Status:** resolved
 **Priority:** P1 - Critical
 **Tags:** code-review, security, performance, dotnet, redis, blobs
 
@@ -104,11 +104,11 @@ finally { ArrayPool<byte>.Shared.Return(buffer); }
 
 ## Acceptance Criteria
 
-- [ ] Add `MaxBlobSizeBytes` option with 10MB default
-- [ ] Validate size before copying to memory
-- [ ] Clear error message when limit exceeded
-- [ ] Add unit test for size limit enforcement
-- [ ] Document in README that Redis is for small/ephemeral blobs
+- [x] Add `MaxBlobSizeBytes` option with 10MB default
+- [x] Validate size before copying to memory
+- [x] Clear error message when limit exceeded
+- [x] Add unit test for size limit enforcement
+- [x] Document in README that Redis is for small/ephemeral blobs
 
 ---
 
@@ -117,3 +117,4 @@ finally { ArrayPool<byte>.Shared.Return(buffer); }
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - security-sentinel, architecture-strategist |
+| 2026-01-12 | Resolved | Added MaxBlobSizeBytes option (10MB default), size validation in UploadAsync |

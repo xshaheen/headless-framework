@@ -17,6 +17,9 @@ public sealed class RedisBlobStorageOptions
 
     /// <summary>Maximum degree of parallelism for bulk operations. Default is 10.</summary>
     public int MaxBulkParallelism { get; set; } = 10;
+
+    /// <summary>Maximum blob size in bytes. Default is 10 MB. Set to 0 to disable.</summary>
+    public long MaxBlobSizeBytes { get; set; } = 10 * 1024 * 1024;
 }
 
 internal sealed class RedisBlobStorageOptionsValidator : AbstractValidator<RedisBlobStorageOptions>
@@ -25,5 +28,6 @@ internal sealed class RedisBlobStorageOptionsValidator : AbstractValidator<Redis
     {
         RuleFor(x => x.ConnectionMultiplexer).NotNull();
         RuleFor(x => x.MaxBulkParallelism).GreaterThan(0);
+        RuleFor(x => x.MaxBlobSizeBytes).GreaterThanOrEqualTo(0);
     }
 }
