@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "009"
 tags: [code-review, aws, sms, error-handling]

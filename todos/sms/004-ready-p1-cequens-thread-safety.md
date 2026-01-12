@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "004"
 tags: [code-review, concurrency, cequens, sms, thread-safety]

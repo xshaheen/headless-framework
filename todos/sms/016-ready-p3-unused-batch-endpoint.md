@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "016"
 tags: [code-review, dead-code, cequens, sms]

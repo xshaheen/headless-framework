@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "007"
 tags: [code-review, async, conventions, sms]

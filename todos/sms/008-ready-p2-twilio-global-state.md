@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "008"
 tags: [code-review, twilio, sms, architecture]

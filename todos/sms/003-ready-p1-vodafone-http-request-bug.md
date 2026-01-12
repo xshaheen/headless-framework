@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "003"
 tags: [code-review, bug, vodafone, sms]

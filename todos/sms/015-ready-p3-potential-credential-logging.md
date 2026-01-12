@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "015"
 tags: [code-review, security, logging, sms]
