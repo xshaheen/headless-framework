@@ -13,7 +13,8 @@ public interface IPaymobCashInAuthenticator
     Task<CashInAuthenticationTokenResponse> RequestAuthenticationTokenAsync();
 
     /// <summary>Get an authentication token from cache if is valid or request a new one.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Authentication token, which is valid for 1 hour from the creation time.</returns>
     /// <exception cref="PaymobCashInException"></exception>
-    ValueTask<string> GetAuthenticationTokenAsync();
+    ValueTask<string> GetAuthenticationTokenAsync(CancellationToken cancellationToken = default);
 }
