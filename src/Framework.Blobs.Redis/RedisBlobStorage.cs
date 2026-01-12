@@ -85,6 +85,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                 Created = DateTimeOffset.UtcNow,
                 Modified = DateTimeOffset.UtcNow,
                 Size = fileSize,
+                Metadata = metadata,
             };
 
             _serializer.Serialize(blobInfo, memory);
@@ -156,8 +157,8 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -286,10 +287,10 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(blobContainer);
-        Argument.IsNotNull(newBlobName);
-        Argument.IsNotNull(newBlobContainer);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobName);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
 
         var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
         var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
@@ -326,13 +327,14 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(blobContainer);
-        Argument.IsNotNull(newBlobName);
-        Argument.IsNotNull(newBlobContainer);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobName);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
 
         try
         {
+            var sourceBlobInfo = await GetBlobInfoAsync(blobContainer, blobName, cancellationToken).AnyContext();
             var result = await DownloadAsync(blobContainer, blobName, cancellationToken).AnyContext();
 
             if (result is null)
@@ -341,7 +343,8 @@ public sealed class RedisBlobStorage : IBlobStorage
             }
 
             await using var stream = result.Stream;
-            await UploadAsync(newBlobContainer, newBlobName, stream, metadata: null, cancellationToken).AnyContext();
+            var metadata = sourceBlobInfo?.Metadata is { } m ? new Dictionary<string, string?>(m, StringComparer.Ordinal) : null;
+            await UploadAsync(newBlobContainer, newBlobName, stream, metadata, cancellationToken).AnyContext();
 
             return true;
         }
@@ -365,8 +368,8 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         var (_, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -390,8 +393,8 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         var (blobsContainer, _) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -407,7 +410,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         if (fileContent.IsNull)
         {
-            _logger.LogError("Unable to get file stream for {Path}: File Not Found", blobPath);
+            _logger.LogDebug("File not found: {Path}", blobPath);
 
             return null;
         }
@@ -424,7 +427,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     )
     {
         Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNull(blobName);
+        Argument.IsNotNullOrEmpty(blobName);
 
         var (_, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -438,7 +441,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         if (!blobInfo.HasValue)
         {
-            _logger.LogError("Unable to get file info for {Path}: File Not Found", blobPath);
+            _logger.LogDebug("File not found: {Path}", blobPath);
 
             return null;
         }
