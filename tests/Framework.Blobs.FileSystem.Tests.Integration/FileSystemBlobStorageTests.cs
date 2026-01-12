@@ -19,7 +19,8 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         var options = new FileSystemBlobStorageOptions { BaseDirectoryPath = _baseDirectoryPath };
         var optionsWrapper = new OptionsWrapper<FileSystemBlobStorageOptions>(options);
         var logger = NullLogger<FileSystemBlobStorage>.Instance;
-
+        var normalizer = new CrossOsNamingNormalizer();
+        
         return new FileSystemBlobStorage(optionsWrapper, logger);
     }
 
