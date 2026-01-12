@@ -2,9 +2,6 @@
 
 using Framework.Blobs;
 using Framework.Blobs.FileSystem;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -20,8 +17,8 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         var optionsWrapper = new OptionsWrapper<FileSystemBlobStorageOptions>(options);
         var logger = NullLogger<FileSystemBlobStorage>.Instance;
         var normalizer = new CrossOsNamingNormalizer();
-        
-        return new FileSystemBlobStorage(optionsWrapper, logger);
+
+        return new FileSystemBlobStorage(optionsWrapper, normalizer, logger);
     }
 
     [Fact]
