@@ -529,9 +529,8 @@ public sealed class AzureBlobStorage : IBlobStorage
         {
             _logger.LogError(
                 e,
-                "Error while getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad} ContinuationToken={ContinuationToken}",
-                pageSizeToLoad,
-                continuationToken
+                "Error while getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad}",
+                pageSizeToLoad
             );
 
             throw;
