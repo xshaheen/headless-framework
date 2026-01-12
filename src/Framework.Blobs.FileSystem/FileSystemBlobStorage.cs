@@ -7,7 +7,6 @@ using Framework.Primitives;
 using Framework.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Nito.AsyncEx;
 using File = System.IO.File;
 
 namespace Framework.Blobs.FileSystem;
@@ -18,7 +17,6 @@ public sealed class FileSystemBlobStorage(
     ILogger<FileSystemBlobStorage> logger
 ) : IBlobStorage
 {
-    private readonly AsyncLock _lock = new();
     private readonly string _basePath = optionsAccessor.Value.BaseDirectoryPath.NormalizePath()
         .EnsureEndsWith(Path.DirectorySeparatorChar);
     private readonly IBlobNamingNormalizer _normalizer = normalizer;
@@ -242,7 +240,7 @@ public sealed class FileSystemBlobStorage(
 
     #region Rename
 
-    public async ValueTask<bool> RenameAsync(
+    public ValueTask<bool> RenameAsync(
         string[] blobContainer,
         string blobName,
         string[] newBlobContainer,
@@ -265,37 +263,24 @@ public sealed class FileSystemBlobStorage(
 
         try
         {
-            using (await _lock.LockAsync(cancellationToken).AnyContext())
-            {
-                Directory.CreateDirectory(newDirectoryPath);
-
-                try
-                {
-                    File.Move(oldFullPath, newFullPath);
-                }
-                catch (IOException)
-                {
-                    File.Delete(newFullPath); // Delete the file if it already exists
-                    _logger.LogTrace("Renaming {Path} to {NewPath}", oldFullPath, newFullPath);
-                    File.Move(oldFullPath, newFullPath);
-                }
-            }
+            Directory.CreateDirectory(newDirectoryPath);
+            File.Move(oldFullPath, newFullPath, overwrite: true);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error renaming {Path} to {NewPath}", oldFullPath, newFullPath);
 
-            return false;
+            return ValueTask.FromResult(false);
         }
 
-        return true;
+        return ValueTask.FromResult(true);
     }
 
     #endregion
 
     #region Copy
 
-    public async ValueTask<bool> CopyAsync(
+    public ValueTask<bool> CopyAsync(
         string[] blobContainer,
         string blobName,
         string[] newBlobContainer,
@@ -317,19 +302,16 @@ public sealed class FileSystemBlobStorage(
 
         try
         {
-            using (await _lock.LockAsync(cancellationToken).AnyContext())
-            {
-                Directory.CreateDirectory(targetDirectory);
-                File.Copy(blobPath, targetPath, overwrite: true);
+            Directory.CreateDirectory(targetDirectory);
+            File.Copy(blobPath, targetPath, overwrite: true);
 
-                return true;
-            }
+            return ValueTask.FromResult(true);
         }
         catch (Exception e)
         {
             _logger.LogError(e, "Error copying {Path} to {TargetPath}", blobPath, targetPath);
 
-            return false;
+            return ValueTask.FromResult(false);
         }
     }
 
@@ -596,11 +578,17 @@ public sealed class FileSystemBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         var normalizedFileName = _normalizer.NormalizeBlobName(fileName);
-        var normalizedContainer = container.Select(_normalizer.NormalizeContainerName).ToArray();
 
-        var filePath = Path.Combine(_basePath, Path.Combine(normalizedContainer), normalizedFileName);
+        // Use single Path.Combine call to avoid intermediate string allocations
+        var segments = new string[container.Length + 2];
+        segments[0] = _basePath;
+        for (var i = 0; i < container.Length; i++)
+        {
+            segments[i + 1] = _normalizer.NormalizeContainerName(container[i]);
+        }
+        segments[^1] = normalizedFileName;
 
-        return filePath;
+        return Path.Combine(segments);
     }
 
     private string _GetDirectoryPath(string[] container)
