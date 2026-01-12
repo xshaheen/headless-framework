@@ -1,10 +1,11 @@
 # String Allocations in Hot Path (_BuildBlobPath)
 
-**Date:** 2026-01-11
-**Status:** pending
-**Priority:** P3 - Nice-to-Have
-**Tags:** code-review, performance, allocations, dotnet, blobs, filesystem
-
+---
+status: ready
+priority: p3
+issue_id: "134"
+tags: [performance, allocations, blobs, filesystem]
+dependencies: []
 ---
 
 ## Problem Statement
@@ -44,7 +45,7 @@ private string _BuildBlobPath(string[] container, string fileName)
 - **Effort:** Small
 - **Risk:** None
 
-### Option B: Use Span/String.Create
+### Option B: Use Span/String.Create ✅ SELECTED
 For maximum performance, use `string.Create` with stack-allocated span.
 - **Pros:** Minimal allocations
 - **Cons:** Complex code
@@ -64,7 +65,7 @@ private readonly ConcurrentDictionary<string, string> _pathCache = new();
 
 ## Recommended Action
 
-**Option A** - Single `Path.Combine` call. Simple improvement for moderate gain. Only pursue if profiling shows this is a bottleneck.
+**Option B** - Use `string.Create` with stack-allocated span for minimal allocations in hot path.
 
 ---
 
@@ -77,9 +78,10 @@ private readonly ConcurrentDictionary<string, string> _pathCache = new();
 
 ## Acceptance Criteria
 
-- [ ] Reduced allocations (if implemented)
+- [ ] Use `string.Create` with span for path building
+- [ ] Reduced allocations
 - [ ] No behavior change
-- [ ] Benchmark shows improvement (if prioritized)
+- [ ] Tests pass
 
 ---
 
@@ -88,3 +90,4 @@ private readonly ConcurrentDictionary<string, string> _pathCache = new();
 | Date | Action | Notes |
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - performance-oracle |
+| 2026-01-12 | Approved | Triage - selected Option B (Span/String.Create) |
