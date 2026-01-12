@@ -1,7 +1,7 @@
 # Code Duplication in DeleteAllAsync - 4 Similar Blocks
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** pending
 **Priority:** P3 - Nice-to-Have
 **Tags:** code-review, duplication, dotnet, blobs, filesystem
 

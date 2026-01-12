@@ -1,7 +1,7 @@
 # Inconsistent Error Handling Patterns Across Methods
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** pending
 **Priority:** P2 - Important
 **Tags:** code-review, error-handling, dotnet, blobs, filesystem
 

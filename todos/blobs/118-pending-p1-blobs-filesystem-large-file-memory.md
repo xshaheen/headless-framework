@@ -1,7 +1,7 @@
 # Large Files Loaded Entirely Into Memory in DownloadAsync
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** pending
 **Priority:** P1 - Critical
 **Tags:** code-review, performance, memory, dotnet, blobs, filesystem
 

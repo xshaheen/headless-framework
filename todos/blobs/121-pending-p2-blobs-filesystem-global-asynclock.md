@@ -1,7 +1,7 @@
 # Global AsyncLock Creates Serialization Bottleneck
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** pending
 **Priority:** P2 - Important
 **Tags:** code-review, performance, concurrency, dotnet, blobs, filesystem
 

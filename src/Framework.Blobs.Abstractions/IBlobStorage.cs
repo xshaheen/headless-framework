@@ -105,7 +105,28 @@ public interface IBlobStorage : IDisposable
 
     #region List
 
-    /// <summary>Get page</summary>
+    /// <summary>
+    /// Stream blobs from container with O(n) performance.
+    /// Recommended for iterating all blobs or large datasets.
+    /// </summary>
+    /// <param name="container">Container directory to enumerate.</param>
+    /// <param name="blobSearchPattern">
+    /// The search string to match against the names of files in a path. This parameter can contain
+    /// a combination of valid literal path and wildcard (* and ?) characters, but it doesn't support
+    /// regular expressions.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Get page of blobs.
+    /// WARNING: Has O(page * pageSize) performance per page due to re-enumeration.
+    /// Use GetBlobsAsync() for better performance when iterating all blobs.
+    /// </summary>
     /// <param name="container">Container directory to paginate.</param>
     /// <param name="blobSearchPattern">
     /// The search string to match against the names of files in a path. This parameter can contain

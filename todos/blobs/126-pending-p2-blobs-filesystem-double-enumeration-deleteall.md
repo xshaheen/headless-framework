@@ -1,7 +1,7 @@
 # Double File Enumeration in DeleteAllAsync
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** pending
 **Priority:** P2 - Important
 **Tags:** code-review, performance, dotnet, blobs, filesystem
 

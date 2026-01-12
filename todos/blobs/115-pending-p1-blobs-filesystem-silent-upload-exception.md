@@ -1,7 +1,7 @@
 # Silent Exception Swallowing in UploadAsync
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** pending
 **Priority:** P1 - Critical
 **Tags:** code-review, error-handling, dotnet, blobs, filesystem
 
@@ -84,7 +84,6 @@ public async ValueTask<bool> UploadAsync(...)
 ## Recommended Action
 
 **Option A** - Let exception propagate. This is the simplest fix and matches expected behavior. The interface contract doesn't promise silent failure handling.
-and document this behavior clearly.
 
 ---
 
