@@ -43,8 +43,7 @@ public sealed class AwsBlobStorage : IBlobStorage
         _clock = clock;
         _options = optionsAccessor.Value;
 
-        _logger =
-            _options.LoggerFactory?.CreateLogger<AwsBlobStorageOptions>() ?? NullLogger<AwsBlobStorageOptions>.Instance;
+        _logger = _options.LoggerFactory?.CreateLogger<AwsBlobStorage>() ?? NullLogger<AwsBlobStorage>.Instance;
     }
 
     #region Create Container
@@ -532,6 +531,7 @@ public sealed class AwsBlobStorage : IBlobStorage
 
         if (response.HttpStatusCode is HttpStatusCode.NotFound)
         {
+            response.Dispose();
             return null;
         }
 
