@@ -2,14 +2,11 @@
 
 using Azure.Storage.Blobs.Models;
 using FluentValidation;
-using Microsoft.Extensions.Logging;
 
 namespace Framework.Blobs.Azure;
 
 public sealed class AzureStorageOptions
 {
-    public ILoggerFactory? LoggerFactory { get; set; }
-
     /// <summary>Whether to create the container if it does not already exist.</summary>
     public bool CreateContainerIfNotExists { get; set; } = true;
 
