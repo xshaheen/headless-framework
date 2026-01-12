@@ -75,16 +75,29 @@ public sealed class AwsBlobStorage(
         await CreateContainerAsync(container, cancellationToken);
         var (bucket, objectKey) = _BuildObjectKey(blobName, container);
 
-        await using var streamCopy = new MemoryStream();
-        await stream.CopyToAsync(streamCopy, cancellationToken);
-        streamCopy.ResetPosition();
+        Stream inputStream;
+        var ownsStream = false;
+
+        if (stream.CanSeek)
+        {
+            stream.Position = 0;
+            inputStream = stream;
+        }
+        else
+        {
+            var streamCopy = new MemoryStream();
+            await stream.CopyToAsync(streamCopy, cancellationToken).AnyContext();
+            streamCopy.Position = 0;
+            inputStream = streamCopy;
+            ownsStream = true;
+        }
 
         var request = new PutObjectRequest
         {
             BucketName = bucket,
             Key = objectKey,
-            InputStream = streamCopy,
-            AutoCloseStream = true,
+            InputStream = inputStream,
+            AutoCloseStream = ownsStream,
             AutoResetStreamPosition = false,
             ContentType = _mimeTypeProvider.GetMimeType(blobName),
             UseChunkEncoding = _options.UseChunkEncoding,
@@ -387,6 +400,7 @@ public sealed class AwsBlobStorage(
             SourceKey = oldKey,
             DestinationBucket = newBucket,
             DestinationKey = newKey,
+            MetadataDirective = S3MetadataDirective.COPY,
         };
 
         CopyObjectResponse? response;
@@ -433,6 +447,7 @@ public sealed class AwsBlobStorage(
             SourceKey = oldKey,
             DestinationBucket = newBucket,
             DestinationKey = newKey,
+            MetadataDirective = S3MetadataDirective.COPY,
         };
 
         CopyObjectResponse? response;
