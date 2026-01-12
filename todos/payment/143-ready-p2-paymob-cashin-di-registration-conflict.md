@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "143"
 tags: [code-review, di, paymob, cashin]
@@ -87,7 +87,8 @@ services.AddHttpClient<IPaymobCashInAuthenticator, PaymobCashInAuthenticator>(cl
 
 ## Recommended Action
 
-**To be filled during triage.**
+Use named HttpClient registration with `IHttpClientFactory` in the Singleton authenticator to ensure proper HttpClient lifetime management while preserving token caching.
+and keep the service as Singleton.
 
 ## Technical Details
 

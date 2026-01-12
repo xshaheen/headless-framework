@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "148"
 tags: [code-review, configuration, paymob, cashin]
@@ -68,7 +68,7 @@ _tokenExpiration = _timeProvider.GetUtcNow().Add(tokenLifetime);
 
 ## Recommended Action
 
-**To be filled during triage.**
+The token expiration is always 60 minutes but make it configurable with a default of 55 minutes. This balances flexibility and simplicity.
 
 ## Technical Details
 

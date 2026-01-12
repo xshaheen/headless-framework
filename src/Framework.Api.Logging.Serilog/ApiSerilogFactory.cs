@@ -82,7 +82,6 @@ public static class ApiSerilogFactory
 
         loggerConfiguration
             .Enrich.WithClientIp()
-            .Enrich.WithCorrelationId()
             .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.UserAgent)
             .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.ClientVersion)
             .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.ApiVersion);

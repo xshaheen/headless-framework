@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "144"
 tags: [code-review, error-handling, paymob, cashin]

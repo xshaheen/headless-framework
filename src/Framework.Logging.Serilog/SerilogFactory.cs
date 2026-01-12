@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Net;
 using Framework.Reflection;
 using Microsoft.Extensions.Configuration;
@@ -20,6 +21,8 @@ public static class SerilogFactory
 {
     public const string OutputTemplate =
         "[{Timestamp:HH:mm:ss.fff zzz} {Level:u3}] {RequestPath} {SourceContext} {Message:lj}{NewLine}{Exception}";
+
+    private static readonly Func<IPAddress?, string> _IpAddressTransform = ip => ip?.ToString() ?? string.Empty;
 
     /// <inheritdoc cref="CreateBootstrapLoggerConfiguration"/>
     public static LoggerConfiguration CreateBootstrapLoggerConfiguration()
@@ -43,15 +46,16 @@ public static class SerilogFactory
     ///  <item>Asynchronous file sink for logging fatal, error, and warning levels to a file with the path "Logs/bootstrap-.log".</item>
     /// </list>
     /// </remarks>
+    /// <param name="logDirectory">Directory path for log files. Defaults to "Logs".</param>
     /// <returns>A <see cref="LoggerConfiguration"/> instance configured for bootstrap logging.</returns>
     public static LoggerConfiguration ConfigureBootstrapLoggerConfiguration(
-        this LoggerConfiguration loggerConfiguration
+        this LoggerConfiguration loggerConfiguration,
+        string logDirectory = "Logs"
     )
     {
         loggerConfiguration
-            .Destructure.ByTransforming<IPAddress?>(ip => ip?.ToString() ?? "")
+            .Destructure.ByTransforming(_IpAddressTransform)
             .Enrich.WithEnvironmentName()
-            .Enrich.WithEnvironmentUserName()
             .Enrich.WithThreadId()
             .Enrich.WithProcessId()
             .Enrich.WithProcessName()
@@ -67,12 +71,12 @@ public static class SerilogFactory
                     )
                     .WriteTo._File(
                         formatter: new MessageTemplateTextFormatter(OutputTemplate),
-                        path: "Logs/bootstrap-.log"
+                        path: $"{logDirectory}/bootstrap-.log"
                     )
             );
         });
 
-        loggerConfiguration._WriteToDebug();
+        _WriteToDebug(loggerConfiguration);
 
         return loggerConfiguration;
     }
@@ -102,12 +106,14 @@ public static class SerilogFactory
     ///   <item>In debug mode, adds a debug sink for logging to the debug output.</item>
     /// </list>
     /// </remarks>
+    /// <param name="logDirectory">Directory path for log files. Defaults to "Logs".</param>
     public static LoggerConfiguration ConfigureReloadableLoggerConfiguration(
         this LoggerConfiguration loggerConfiguration,
         IServiceProvider? services,
         IConfiguration configuration,
         IHostEnvironment environment,
-        bool writeToFiles = true
+        bool writeToFiles = true,
+        string logDirectory = "Logs"
     )
     {
         loggerConfiguration
@@ -119,11 +125,10 @@ public static class SerilogFactory
                     FormatProvider = CultureInfo.InvariantCulture,
                 }
             )
-            .Destructure.ByTransforming<IPAddress?>(ip => ip?.ToString() ?? "")
+            .Destructure.ByTransforming(_IpAddressTransform)
             .Enrich.FromLogContext()
             .Enrich.WithSpan()
             .Enrich.WithEnvironmentName()
-            .Enrich.WithEnvironmentUserName()
             .Enrich.WithThreadId()
             .Enrich.WithProcessId()
             .Enrich.WithProcessName()
@@ -139,12 +144,12 @@ public static class SerilogFactory
 
         var isDev = environment.IsDevelopment();
 
-        loggerConfiguration._WriteToDebug();
+        _WriteToDebug(loggerConfiguration);
         loggerConfiguration._WriteToConsole(isDev ? AnsiConsoleTheme.Code : ConsoleTheme.None);
 
         if (writeToFiles)
         {
-            loggerConfiguration._WriteToLogFiles(new MessageTemplateTextFormatter(OutputTemplate));
+            loggerConfiguration._WriteToLogFiles(new MessageTemplateTextFormatter(OutputTemplate), logDirectory);
         }
 
         return loggerConfiguration;
@@ -159,30 +164,33 @@ public static class SerilogFactory
         );
     }
 
-    private static void _WriteToDebug(this LoggerConfiguration loggerConfiguration)
+    [Conditional("DEBUG")]
+    private static void _WriteToDebug(LoggerConfiguration loggerConfiguration)
     {
-#if DEBUG
         loggerConfiguration.WriteTo.Debug(outputTemplate: OutputTemplate, formatProvider: CultureInfo.InvariantCulture);
-#endif
     }
 
-    private static void _WriteToLogFiles(this LoggerConfiguration loggerConfiguration, ITextFormatter textFormatter)
+    private static void _WriteToLogFiles(
+        this LoggerConfiguration loggerConfiguration,
+        ITextFormatter textFormatter,
+        string logDirectory
+    )
     {
         loggerConfiguration.WriteTo.Async(sink =>
             sink.Logger(logger =>
                     logger
                         .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Fatal)
-                        .WriteTo._File(formatter: textFormatter, path: "Logs/fatal-.log")
+                        .WriteTo._File(formatter: textFormatter, path: $"{logDirectory}/fatal-.log")
                 )
                 .WriteTo.Logger(logger =>
                     logger
                         .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Error)
-                        .WriteTo._File(formatter: textFormatter, path: "Logs/error-.log")
+                        .WriteTo._File(formatter: textFormatter, path: $"{logDirectory}/error-.log")
                 )
                 .WriteTo.Logger(logger =>
                     logger
                         .Filter.ByIncludingOnly(x => x.Level is LogEventLevel.Warning)
-                        .WriteTo._File(formatter: textFormatter, path: "Logs/warning-.log")
+                        .WriteTo._File(formatter: textFormatter, path: $"{logDirectory}/warning-.log")
                 )
         );
     }
