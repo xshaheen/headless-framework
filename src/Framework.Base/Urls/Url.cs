@@ -82,25 +82,37 @@ public sealed partial class Url
         {
             _EnsureParsed();
             if (_pathSegments.Count == 0)
+            {
                 return _leadingSlash ? "/" : "";
+            }
 
             var capacity = (_leadingSlash ? 1 : 0) + (_trailingSlash ? 1 : 0);
             foreach (var seg in _pathSegments)
+            {
                 capacity += seg.Length + 1;
+            }
 
             var sb = new StringBuilder(capacity);
             if (_leadingSlash)
+            {
                 sb.Append('/');
+            }
 
             for (var i = 0; i < _pathSegments.Count; i++)
             {
                 if (i > 0)
+                {
                     sb.Append('/');
+                }
+
                 sb.Append(_pathSegments[i]);
             }
 
             if (_trailingSlash)
+            {
                 sb.Append('/');
+            }
+
             return sb.ToString();
         }
         set
@@ -272,7 +284,10 @@ public sealed partial class Url
     /// <param name="path">The path to split.</param>
     public static IEnumerable<string> ParsePathSegments(string path)
     {
-        var segments = EncodeIllegalCharacters(path).Replace("?", "%3F").Replace("#", "%23").Split('/');
+        var segments = EncodeIllegalCharacters(path)
+            .Replace("?", "%3F")
+            .Replace("#", "%23", StringComparison.Ordinal)
+            .Split('/');
 
         if (segments.Length == 0)
         {
@@ -280,8 +295,8 @@ public sealed partial class Url
         }
 
         // skip first and/or last segment if either empty, but not any in between. "///" should return 2 empty segments for example.
-        var start = segments.First().Length > 0 ? 0 : 1;
-        var count = segments.Length - (segments.Last().Length > 0 ? 0 : 1);
+        var start = segments[0].Length > 0 ? 0 : 1;
+        var count = segments.Length - (segments[^1].Length > 0 ? 0 : 1);
 
         for (var i = start; i < count; i++)
         {
@@ -838,10 +853,16 @@ public sealed partial class Url
     /// URL-encodes illegal characters but not reserved characters.
     /// </summary>
     /// <param name="parts">URL parts to combine.</param>
-    public static string Combine(params string?[] parts)
-    {
-        ArgumentNullException.ThrowIfNull(parts);
+    public static string Combine(string?[] parts) => Combine(parts.AsSpan());
 
+    /// <summary>
+    /// Basically a Path.Combine for URLs. Ensures exactly one '/' separates each segment,
+    /// and exactly on '&amp;' separates each query parameter.
+    /// URL-encodes illegal characters but not reserved characters.
+    /// </summary>
+    /// <param name="parts">URL parts to combine.</param>
+    public static string Combine(params ReadOnlySpan<string?> parts)
+    {
         // Pre-calculate capacity to avoid reallocations
         var capacity = 0;
         foreach (var part in parts)

@@ -101,20 +101,26 @@ public sealed class AzureBlobStorage(
             CancellationToken = cancellationToken,
         };
 
-        await Parallel.ForEachAsync(blobs, options, async (blob, ct) =>
-        {
-            var i = Interlocked.Increment(ref index) - 1;
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                options,
+                async (blob, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
 
-            try
-            {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
-                results[i] = Result<Exception>.Ok();
-            }
-            catch (Exception e)
-            {
-                results[i] = Result<Exception>.Fail(e);
-            }
-        }).AnyContext();
+                    try
+                    {
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        results[i] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
 
         return results;
     }
