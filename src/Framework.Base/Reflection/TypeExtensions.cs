@@ -146,10 +146,11 @@ public static class TypeExtensions
     [MustUseReturnValue]
     [RequiresUnreferencedCode("Uses Activator.CreateInstance which may not work correctly with trimming.")]
     public static object? GetDefaultValue(
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] this Type type)
-        => TypeHelper.GetDefaultValue(type);
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] this Type type
+    ) => TypeHelper.GetDefaultValue(type);
 
     [MustUseReturnValue]
+    [RequiresUnreferencedCode("Uses GetDefaultValue which uses Activator.CreateInstance.")]
     public static bool IsDefaultValue(this object? obj)
     {
         return obj?.Equals(obj.GetType().GetDefaultValue()) is not false;

@@ -52,7 +52,8 @@ public static class TypeHelper
 
     [RequiresUnreferencedCode("Uses Activator.CreateInstance which may not work correctly with trimming.")]
     public static object? GetDefaultValue(
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type type)
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type type
+    )
     {
         return type.IsValueType ? Activator.CreateInstance(type) : null;
     }

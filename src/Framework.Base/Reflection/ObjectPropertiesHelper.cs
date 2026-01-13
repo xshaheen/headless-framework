@@ -14,6 +14,7 @@ public static class ObjectPropertiesHelper
         StringComparer.Ordinal
     );
 
+    [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
     public static bool TrySetProperty<TObject, TValue>(
         TObject obj,
         Expression<Func<TObject, TValue>> propertySelector,
