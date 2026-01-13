@@ -18,7 +18,7 @@ using Renci.SshNet.Sftp;
 
 namespace Framework.Blobs.SshNet;
 
-public sealed class SshBlobStorage : IBlobStorage
+public sealed class SshBlobStorage : IBlobStorage, IAsyncDisposable
 {
     private readonly SftpClient _client;
     private readonly IBlobNamingNormalizer _normalizer;
@@ -35,19 +35,6 @@ public sealed class SshBlobStorage : IBlobStorage
         _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
         _maxConcurrentOperations = sshOptions.MaxConcurrentOperations;
     }
-
-    #region Get Client
-
-    public async ValueTask<SftpClient> GetClientAsync(CancellationToken cancellationToken = default)
-    {
-        await _EnsureClientConnectedAsync(cancellationToken).AnyContext();
-
-        return _client;
-    }
-
-    #endregion
-
-    #region Create Container
 
     public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
@@ -72,9 +59,7 @@ public sealed class SshBlobStorage : IBlobStorage
         }
     }
 
-    #endregion
 
-    #region Upload
 
     /// <summary>
     /// Uploads a blob to SFTP storage.
@@ -125,9 +110,7 @@ public sealed class SshBlobStorage : IBlobStorage
         }
     }
 
-    #endregion
 
-    #region Bulk Upload
 
     public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         string[] container,
@@ -171,9 +154,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return results;
     }
 
-    #endregion
 
-    #region Delete
 
     public async ValueTask<bool> DeleteAsync(
         string[] container,
@@ -209,9 +190,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return true;
     }
 
-    #endregion
 
-    #region Bulk Delete
 
     public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         string[] container,
@@ -359,9 +338,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return count;
     }
 
-    #endregion
 
-    #region Rename
 
     public async ValueTask<bool> RenameAsync(
         string[] blobContainer,
@@ -427,9 +404,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return true;
     }
 
-    #endregion
 
-    #region Copy
 
     public async ValueTask<bool> CopyAsync(
         string[] blobContainer,
@@ -498,9 +473,7 @@ public sealed class SshBlobStorage : IBlobStorage
         }
     }
 
-    #endregion
 
-    #region Exists
 
     public async ValueTask<bool> ExistsAsync(
         string[] container,
@@ -522,9 +495,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return exists;
     }
 
-    #endregion
 
-    #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
@@ -594,9 +565,7 @@ public sealed class SshBlobStorage : IBlobStorage
         }
     }
 
-    #endregion
 
-    #region List
 
     public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
         string[] container,
@@ -882,9 +851,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     private sealed record SearchCriteria(string PathPrefix = "", Regex? Pattern = null);
 
-    #endregion
 
-    #region Build Paths
 
     private string _BuildBlobPath(string[] container, string blobName)
     {
@@ -928,23 +895,14 @@ public sealed class SshBlobStorage : IBlobStorage
             return "";
         }
 
-        var sb = new StringBuilder();
-
-        foreach (var segment in container)
+        var normalizedSegments = new string[container.Length];
+        for (var i = 0; i < container.Length; i++)
         {
-            PathValidation.ValidatePathSegment(segment, nameof(container));
-
-            if (sb.Length > 0)
-            {
-                sb.Append('/');
-            }
-
-            sb.Append(_normalizer.NormalizeContainerName(segment));
+            PathValidation.ValidatePathSegment(container[i], nameof(container));
+            normalizedSegments[i] = _normalizer.NormalizeContainerName(container[i]);
         }
 
-        sb.Append('/');
-
-        return sb.ToString();
+        return $"{string.Join('/', normalizedSegments)}/";
     }
 
     [return: NotNullIfNotNull(nameof(path))]
@@ -953,9 +911,7 @@ public sealed class SshBlobStorage : IBlobStorage
         return path?.Replace('\\', '/');
     }
 
-    #endregion
 
-    #region Build Clients
 
     private async ValueTask _EnsureClientConnectedAsync(CancellationToken cancellationToken)
     {
@@ -1051,9 +1007,7 @@ public sealed class SshBlobStorage : IBlobStorage
         );
     }
 
-    #endregion
 
-    #region Mappers
 
     private static BlobInfo _ToBlobInfo(ISftpFile file, string objectKey)
     {
@@ -1069,9 +1023,7 @@ public sealed class SshBlobStorage : IBlobStorage
         };
     }
 
-    #endregion
 
-    #region Dispose
 
     public void Dispose()
     {
@@ -1095,5 +1047,4 @@ public sealed class SshBlobStorage : IBlobStorage
         _client.Dispose();
     }
 
-    #endregion
 }
