@@ -368,15 +368,9 @@ public sealed class FileSystemBlobStorage(
             return ValueTask.FromResult<BlobInfo?>(null);
         }
 
-        var blobInfo = new BlobInfo
-        {
-            BlobKey = Url.Combine([.. container.Skip(1).Append(blobName)]),
-            Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
-            Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
-            Size = fileInfo.Length,
-        };
+        var blobKey = Url.Combine([.. container.Skip(1).Append(blobName)]);
 
-        return ValueTask.FromResult<BlobInfo?>(blobInfo);
+        return ValueTask.FromResult<BlobInfo?>(_CreateBlobInfo(fileInfo, blobKey));
     }
 
     #endregion
@@ -424,13 +418,7 @@ public sealed class FileSystemBlobStorage(
                 .FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal)
                 .Replace('\\', '/');
 
-            yield return new BlobInfo
-            {
-                BlobKey = blobKey,
-                Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
-                Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
-                Size = fileInfo.Length,
-            };
+            yield return _CreateBlobInfo(fileInfo, blobKey);
         }
     }
 
@@ -537,15 +525,7 @@ public sealed class FileSystemBlobStorage(
                 .FullName.Replace(baseDirectoryPath, string.Empty, StringComparison.Ordinal)
                 .Replace('\\', '/');
 
-            var blobInfo = new BlobInfo
-            {
-                BlobKey = blobKey,
-                Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
-                Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
-                Size = fileInfo.Length,
-            };
-
-            list.Add(blobInfo);
+            list.Add(_CreateBlobInfo(fileInfo, blobKey));
         }
 
         var hasMore = false;
@@ -569,6 +549,18 @@ public sealed class FileSystemBlobStorage(
                 : null,
         };
     }
+
+    #endregion
+
+    #region Helpers
+
+    private static BlobInfo _CreateBlobInfo(FileInfo fileInfo, string blobKey) => new()
+    {
+        BlobKey = blobKey,
+        Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+        Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
+        Size = fileInfo.Length,
+    };
 
     #endregion
 
