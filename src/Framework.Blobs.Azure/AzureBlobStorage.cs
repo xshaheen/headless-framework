@@ -390,7 +390,47 @@ public sealed class AzureBlobStorage(
 
     #endregion
 
-    #region Page
+    #region List
+
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
+        var criteria = BlobStorageHelpers.GetRequestCriteria(container.Skip(1), blobSearchPattern);
+
+        var azureBlobs = containerClient.GetBlobsAsync(
+            traits: BlobTraits.Metadata,
+            states: BlobStates.None,
+            prefix: criteria.Prefix,
+            cancellationToken: cancellationToken
+        );
+
+        await foreach (var blobItem in azureBlobs.WithCancellation(cancellationToken))
+        {
+            if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
+            {
+                continue;
+            }
+
+            if (blobItem.Properties.ContentLength is not > 0)
+            {
+                continue;
+            }
+
+            yield return new BlobInfo
+            {
+                BlobKey = blobItem.Name,
+                Size = blobItem.Properties.ContentLength.Value,
+                Created = blobItem.Properties.CreatedOn ?? DateTimeOffset.MinValue,
+                Modified = blobItem.Properties.LastModified ?? DateTimeOffset.MinValue,
+            };
+        }
+    }
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,

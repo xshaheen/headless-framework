@@ -549,7 +549,40 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Page
+    #region List
+
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        var (_, infoContainer) = _BuildContainerPath(container);
+        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
+
+        await foreach (
+            var hashEntry in Database
+                .HashScanAsync(infoContainer, $"{criteria.Prefix}*")
+                .WithCancellation(cancellationToken)
+        )
+        {
+            if (hashEntry.Value.IsNull)
+            {
+                continue;
+            }
+
+            var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
+
+            if (criteria.Pattern?.IsMatch(blobInfo.BlobKey) == false)
+            {
+                continue;
+            }
+
+            yield return blobInfo;
+        }
+    }
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,

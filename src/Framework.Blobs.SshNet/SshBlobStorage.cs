@@ -10,7 +10,6 @@ using Framework.Constants;
 using Framework.Primitives;
 using Framework.Urls;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Renci.SshNet;
 using Renci.SshNet.Common;
@@ -22,17 +21,20 @@ public sealed class SshBlobStorage : IBlobStorage
 {
     private readonly SftpClient _client;
     private readonly IBlobNamingNormalizer _normalizer;
-    private readonly ILogger _logger;
+    private readonly ILogger<SshBlobStorage> _logger;
     private readonly int _maxConcurrentOperations;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
-    public SshBlobStorage(IOptions<SshBlobStorageOptions> optionsAccessor, IBlobNamingNormalizer normalizer)
+    public SshBlobStorage(
+        IOptions<SshBlobStorageOptions> optionsAccessor,
+        IBlobNamingNormalizer normalizer,
+        ILogger<SshBlobStorage> logger)
     {
         var sshOptions = optionsAccessor.Value;
         var connectionInfo = _BuildConnectionInfo(sshOptions);
         _client = new SftpClient(connectionInfo);
         _normalizer = normalizer;
-        _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
+        _logger = logger;
         _maxConcurrentOperations = sshOptions.MaxConcurrentOperations;
     }
 
@@ -1103,5 +1105,6 @@ public sealed class SshBlobStorage : IBlobStorage
         }
 
         _client.Dispose();
+        _connectionLock.Dispose();
     }
 }

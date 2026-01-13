@@ -2,6 +2,7 @@
 
 using Framework.Blobs;
 using Framework.Blobs.SshNet;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
@@ -15,7 +16,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var options = new SshBlobStorageOptions { ConnectionString = fixture.GetConnectionString() };
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
-        return new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer());
+        return new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
     }
 
     [Fact]
@@ -26,7 +27,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer());
+        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer());
+        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
     }
 
     [Fact]

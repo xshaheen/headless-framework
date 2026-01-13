@@ -585,7 +585,57 @@ public sealed class AwsBlobStorage(
 
     #endregion
 
-    #region Page
+    #region List
+
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        var bucket = _BuildBucketName(container);
+        var criteria = BlobStorageHelpers.GetRequestCriteria(container.Skip(1), blobSearchPattern);
+        string? continuationToken = null;
+
+        do
+        {
+            var req = new ListObjectsV2Request
+            {
+                BucketName = bucket,
+                MaxKeys = 1000,
+                Prefix = criteria.Prefix,
+                ContinuationToken = continuationToken,
+            };
+
+            ListObjectsV2Response response;
+
+            try
+            {
+                response = await _s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
+            }
+            catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
+            {
+                yield break;
+            }
+
+            foreach (var s3Object in _MatchesPattern(response.S3Objects, criteria.Pattern))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var blobInfo = _ToBlobInfo(s3Object);
+
+                if (!_IsDirectory(blobInfo))
+                {
+                    yield return blobInfo;
+                }
+            }
+
+            continuationToken = response.IsTruncated is true ? response.NextContinuationToken : null;
+        }
+        while (continuationToken is not null);
+    }
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,

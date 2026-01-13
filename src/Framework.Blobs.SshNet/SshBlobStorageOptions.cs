@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Microsoft.Extensions.Logging;
 using Renci.SshNet;
 
 namespace Framework.Blobs.SshNet;
@@ -17,8 +16,6 @@ public sealed class SshBlobStorageOptions
     public Stream? PrivateKey { get; set; }
 
     public string? PrivateKeyPassPhrase { get; set; }
-
-    public ILoggerFactory? LoggerFactory { get; set; }
 
     /// <summary>
     /// Maximum concurrent operations for bulk upload/delete. Default is 4.
