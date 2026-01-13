@@ -2,6 +2,7 @@
 
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Encodings.Web;
 using Framework.Sms.Cequens.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -17,6 +18,12 @@ public sealed class CequensSmsSender(
     ILogger<CequensSmsSender> logger
 ) : ISmsSender
 {
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = CequensJsonSerializerContext.Default,
+    };
+
     private readonly CequensSmsOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
@@ -47,7 +54,8 @@ public sealed class CequensSmsSender(
             Recipients = request.IsBatch ? string.Join(',', request.Destinations) : request.Destinations[0].ToString(),
         };
 
-        var response = await httpClient.PostAsJsonAsync(_options.SingleSmsEndpoint, apiRequest, cancellationToken);
+        using var requestContent = JsonContent.Create(apiRequest, options: _jsonOptions);
+        var response = await httpClient.PostAsync(_options.SingleSmsEndpoint, requestContent, cancellationToken);
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (response.IsSuccessStatusCode)
@@ -79,8 +87,9 @@ public sealed class CequensSmsSender(
             return _cachedToken;
         }
 
-        var request = new SigningInRequest(_options.ApiKey, _options.UserName);
-        var response = await httpClient.PostAsJsonAsync(_options.TokenEndpoint, request, cancellationToken);
+        var signInRequest = new SigningInRequest(_options.ApiKey, _options.UserName);
+        using var signInContent = JsonContent.Create(signInRequest, options: _jsonOptions);
+        var response = await httpClient.PostAsync(_options.TokenEndpoint, signInContent, cancellationToken);
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -94,7 +103,7 @@ public sealed class CequensSmsSender(
             return null;
         }
 
-        var token = JsonSerializer.Deserialize<SigningInResponse>(content)?.Data?.AccessToken;
+        var token = JsonSerializer.Deserialize<SigningInResponse>(content, _jsonOptions)?.Data?.AccessToken;
 
         if (token != null)
         {
