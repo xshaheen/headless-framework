@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
@@ -28,8 +29,8 @@ public static class SanitizedHeaderEnricherExtensions
         int maxLength = _DefaultMaxLength
     )
     {
-        ArgumentNullException.ThrowIfNull(enrichmentConfiguration);
-        ArgumentException.ThrowIfNullOrWhiteSpace(headerName);
+        Argument.IsNotNull(enrichmentConfiguration);
+        Argument.IsNotNullOrWhiteSpace(headerName);
 
         var contextAccessor = new HttpContextAccessor();
         var enricher = new SanitizedHeaderEnricher(contextAccessor, headerName, propertyName, maxLength);
@@ -54,9 +55,9 @@ public static class SanitizedHeaderEnricherExtensions
         int maxLength = _DefaultMaxLength
     )
     {
-        ArgumentNullException.ThrowIfNull(enrichmentConfiguration);
-        ArgumentNullException.ThrowIfNull(serviceProvider);
-        ArgumentException.ThrowIfNullOrWhiteSpace(headerName);
+        Argument.IsNotNull(enrichmentConfiguration);
+        Argument.IsNotNull(serviceProvider);
+        Argument.IsNotNullOrWhiteSpace(headerName);
 
         var contextAccessor = serviceProvider.GetRequiredService<IHttpContextAccessor>();
         var enricher = new SanitizedHeaderEnricher(contextAccessor, headerName, propertyName, maxLength);

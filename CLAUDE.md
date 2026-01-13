@@ -36,8 +36,6 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Foundatio.Redis`
 - `*.Tests.Integration` — real deps via Testcontainers (requires Docker)
 - `*.Tests.Harness` — shared fixtures and builders
 
-**Naming**: `should_{action}_{expected}_when_{condition}`
-**Pattern**: Given-When-Then
 **Stack**: xUnit, AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
 
 ## Code Conventions (Strictly Enforced)
@@ -59,7 +57,8 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Foundatio.Redis`
 - Collection expressions: `[]`
 - Pattern matching over old-style checks
 
-**Async**: Use `AnyContext()` extension (replaces `ConfigureAwait(false)`). Always pass `CancellationToken`.
+- **Async**: Use `AnyContext()` extension (replaces `ConfigureAwait(false)`). Always pass `CancellationToken`.
+- **xUnit3** Use `AbortToken` instead of `TestContext.Current.CancellationToken` when inherit from `TestBase`.
 
 ## Package Management
 

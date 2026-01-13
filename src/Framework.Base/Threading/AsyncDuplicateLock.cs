@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 namespace Framework.Threading;
 
 /// <summary>
@@ -15,12 +17,12 @@ namespace Framework.Threading;
 /// <b>Cache stampede protection example:</b>
 /// </para>
 /// <code>
-/// public async Task&lt;T&gt; GetOrCreateAsync&lt;T&gt;(string key, Func&lt;Task&lt;T&gt;&gt; factory)
+/// public async Task&lt;T&gt; GetOrCreateAsync&lt;T&gt;(string key, Func&lt;Task&lt;T&gt;&gt; factory, CancellationToken ct)
 /// {
 ///     if (_cache.TryGetValue(key, out T cached))
 ///         return cached;
 ///
-///     using (await AsyncDuplicateLock.LockAsync(key))
+///     using (await AsyncDuplicateLock.LockAsync(key, ct))
 ///     {
 ///         // Double-check after acquiring lock
 ///         if (_cache.TryGetValue(key, out cached))
@@ -37,72 +39,154 @@ namespace Framework.Threading;
 [PublicAPI]
 public static class AsyncDuplicateLock
 {
-    private static readonly Dictionary<string, RefCounted<SemaphoreSlim>> _SemaphoreSlims = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, RefCountedSemaphore> _SemaphoreSlims = new(StringComparer.Ordinal);
 
     [MustDisposeResource]
     public static IDisposable Lock(string key)
     {
+        Argument.IsNotNullOrEmpty(key);
+
         _GetOrCreate(key).Wait();
 
         return new Releaser(key);
     }
 
-    public static async Task<IDisposable> LockAsync(string key)
+    [MustDisposeResource]
+    public static async Task<IDisposable> LockAsync(string key, CancellationToken cancellationToken = default)
     {
-        await _GetOrCreate(key).WaitAsync().AnyContext();
+        Argument.IsNotNullOrEmpty(key);
+
+        var semaphore = _GetOrCreate(key);
+
+        try
+        {
+            await semaphore.WaitAsync(cancellationToken).AnyContext();
+        }
+        catch
+        {
+            _DecrementRefCount(key);
+            throw;
+        }
+
+        return new Releaser(key);
+    }
+
+    /// <summary>
+    /// Tries to acquire a lock for the specified key within the given timeout.
+    /// </summary>
+    /// <param name="key">The key to lock on.</param>
+    /// <param name="timeout">The maximum time to wait for the lock.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    /// <returns>
+    /// An <see cref="IDisposable"/> that releases the lock when disposed,
+    /// or <c>null</c> if the lock could not be acquired within the timeout.
+    /// </returns>
+    [MustDisposeResource]
+    public static async Task<IDisposable?> TryLockAsync(
+        string key,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+
+        var semaphore = _GetOrCreate(key);
+
+        bool acquired;
+        try
+        {
+            acquired = await semaphore.WaitAsync(timeout, cancellationToken).AnyContext();
+        }
+        catch
+        {
+            _DecrementRefCount(key);
+            throw;
+        }
+
+        if (!acquired)
+        {
+            _DecrementRefCount(key);
+            return null;
+        }
 
         return new Releaser(key);
     }
 
     private static SemaphoreSlim _GetOrCreate(string key)
     {
-        RefCounted<SemaphoreSlim>? item;
-
         lock (_SemaphoreSlims)
         {
-            if (_SemaphoreSlims.TryGetValue(key, out item))
+            if (_SemaphoreSlims.TryGetValue(key, out var item))
             {
                 ++item.RefCount;
+                return item.Semaphore;
             }
-            else
-            {
-#pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCounted is removed from the dictionary.
-                item = new RefCounted<SemaphoreSlim>(new SemaphoreSlim(1, 1));
+
+#pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCountedSemaphore is removed from the dictionary.
+            var newItem = new RefCountedSemaphore(new SemaphoreSlim(1, 1));
 #pragma warning restore CA2000
-                _SemaphoreSlims[key] = item;
+            _SemaphoreSlims[key] = newItem;
+            return newItem.Semaphore;
+        }
+    }
+
+    private static void _DecrementRefCount(string key)
+    {
+        lock (_SemaphoreSlims)
+        {
+            if (!_SemaphoreSlims.TryGetValue(key, out var item))
+            {
+                return;
+            }
+
+            --item.RefCount;
+
+            if (item.RefCount == 0)
+            {
+                _SemaphoreSlims.Remove(key);
+                item.Semaphore.Dispose();
             }
         }
-
-        return item.Value;
     }
 
     private sealed class Releaser(string key) : IDisposable
     {
+        private int _disposed;
+
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
             lock (_SemaphoreSlims)
             {
-                var item = _SemaphoreSlims[key];
+                if (!_SemaphoreSlims.TryGetValue(key, out var item))
+                {
+                    return;
+                }
+
                 --item.RefCount;
 
                 if (item.RefCount == 0)
                 {
                     _SemaphoreSlims.Remove(key);
-                    item.Value.Release();
-                    item.Value.Dispose();
+                    item.Semaphore.Release();
+                    item.Semaphore.Dispose();
                 }
                 else
                 {
-                    item.Value.Release();
+                    item.Semaphore.Release();
                 }
             }
         }
     }
 
-    private sealed class RefCounted<T>(T value)
+    private sealed class RefCountedSemaphore(SemaphoreSlim semaphore)
     {
         public int RefCount { get; set; } = 1;
 
-        public T Value { get; private set; } = value;
+        public SemaphoreSlim Semaphore { get; } = semaphore;
     }
 }

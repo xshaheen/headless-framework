@@ -1,4 +1,5 @@
 using System.Collections;
+using Framework.Checks;
 
 namespace Framework.Urls;
 
@@ -17,7 +18,7 @@ public static class CommonExtensions
     /// <exception cref="ArgumentNullException"><paramref name="obj"/> is <see langword="null" />.</exception>
     public static IEnumerable<(string Key, object? Value)> ToKeyValuePairs(this object obj)
     {
-        ArgumentNullException.ThrowIfNull(obj);
+        Argument.IsNotNull(obj);
 
         return obj switch
         {

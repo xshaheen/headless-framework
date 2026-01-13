@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.RegularExpressions;
+using Framework.Checks;
 
 namespace Framework.Urls;
 
@@ -192,7 +193,7 @@ public sealed partial class Url
     /// <exception cref="ArgumentNullException"><paramref name="uri"/> is <see langword="null" />.</exception>
     public Url(Uri uri)
     {
-        ArgumentNullException.ThrowIfNull(uri);
+        Argument.IsNotNull(uri);
         _originalString = uri.OriginalString;
         _ParseInternal(uri); // parse eagerly, taking advantage of the fact that we already have a parsed Uri
     }
@@ -315,7 +316,7 @@ public sealed partial class Url
     /// <exception cref="ArgumentNullException"><paramref name="segment"/> is <see langword="null" />.</exception>
     public Url AppendPathSegment(object segment, bool fullyEncode = false)
     {
-        ArgumentNullException.ThrowIfNull(segment);
+        Argument.IsNotNull(segment);
 
         _EnsureParsed();
 
