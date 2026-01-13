@@ -28,7 +28,8 @@ public sealed class SshBlobStorage : IBlobStorage
     public SshBlobStorage(
         IOptions<SshBlobStorageOptions> optionsAccessor,
         IBlobNamingNormalizer normalizer,
-        ILogger<SshBlobStorage> logger)
+        ILogger<SshBlobStorage> logger
+    )
     {
         var sshOptions = optionsAccessor.Value;
         var connectionInfo = _BuildConnectionInfo(sshOptions);
@@ -409,8 +410,8 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobContainer);
 
         // Validate paths before try-catch to ensure security exceptions propagate
-        PathValidation.ValidatePathSegment(blobName, nameof(blobName));
-        PathValidation.ValidatePathSegment(newBlobName, nameof(newBlobName));
+        PathValidation.ValidatePathSegment(blobName);
+        PathValidation.ValidatePathSegment(newBlobName);
 
         foreach (var segment in blobContainer)
         {
@@ -921,7 +922,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     private string _BuildBlobPath(string[] container, string blobName)
     {
-        PathValidation.ValidatePathSegment(blobName, nameof(blobName));
+        PathValidation.ValidatePathSegment(blobName);
 
         var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
 
