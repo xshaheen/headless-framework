@@ -3,6 +3,7 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Framework.Checks;
+using Framework.Reflection;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -76,7 +77,7 @@ public static class TypeExtensions
 
         var underlyingEnumType = Enum.GetUnderlyingType(underlyingNonNullableType);
 
-        return isNullable ? MakeNullable(underlyingEnumType) : underlyingEnumType;
+        return isNullable ? underlyingEnumType.MakeNullable() : underlyingEnumType;
     }
 
     /// <summary>
@@ -141,15 +142,12 @@ public static class TypeExtensions
     }
 
     [MustUseReturnValue]
-    public static object? GetDefaultValue(this Type type)
-    {
-        return type.IsValueType ? Activator.CreateInstance(type) : null;
-    }
+    public static object? GetDefaultValue(this Type type) => TypeHelper.GetDefaultValue(type);
 
     [MustUseReturnValue]
     public static bool IsDefaultValue(this object? obj)
     {
-        return obj?.Equals(GetDefaultValue(obj.GetType())) is not false;
+        return obj?.Equals(obj.GetType().GetDefaultValue()) is not false;
     }
 
     [MustUseReturnValue]
@@ -160,7 +158,7 @@ public static class TypeExtensions
             return true;
         }
 
-        if (includeNullables && IsNullableValueType(type) && type.GenericTypeArguments.Length != 0)
+        if (includeNullables && type.IsNullableValueType() && type.GenericTypeArguments.Length != 0)
         {
             return isPrimitive(type.GenericTypeArguments[0], includeEnums);
         }
@@ -199,7 +197,7 @@ public static class TypeExtensions
     [MustUseReturnValue]
     public static bool IsTaskOrTaskOfT(this Type type)
     {
-        return type == typeof(Task) || IsTaskOfT(type);
+        return type == typeof(Task) || type.IsTaskOfT();
     }
 
     [MustUseReturnValue]
@@ -211,7 +209,7 @@ public static class TypeExtensions
     [MustUseReturnValue]
     public static bool IsValueTaskOrValueTaskOfT(this Type type)
     {
-        return type == typeof(ValueTask) || IsValueTaskOfT(type);
+        return type == typeof(ValueTask) || type.IsValueTaskOfT();
     }
 
     /// <summary>Returns void if given type is Task. Return T, if given type is Task{T}. Returns given type otherwise.</summary>
@@ -250,22 +248,6 @@ public static class TypeExtensions
         Argument.IsNotNull(type);
 
         return type.IsAssignableTo(typeof(TTarget));
-    }
-
-    /// <summary>
-    /// Determines whether an instance of this type can be assigned to
-    /// an instance of the <paramref name="targetType"></paramref>.
-    /// Internally uses <see cref="Type.IsAssignableFrom"/> (as reverse).
-    /// </summary>
-    /// <param name="type">this type</param>
-    /// <param name="targetType">Target type</param>
-    [MustUseReturnValue]
-    public static bool IsAssignableTo(this Type type, Type targetType)
-    {
-        Argument.IsNotNull(type);
-        Argument.IsNotNull(targetType);
-
-        return targetType.IsAssignableFrom(type);
     }
 
     #endregion

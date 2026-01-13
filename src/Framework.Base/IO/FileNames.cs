@@ -3,7 +3,6 @@
 using System.Buffers;
 using System.Net;
 using System.Security.Cryptography;
-using Cysharp.Text;
 using Framework.Checks;
 
 namespace Framework.IO;
@@ -69,7 +68,7 @@ public static class FileNames
     public static string SanitizeFileName(ReadOnlySpan<char> untrustedName)
     {
         var extension = Path.GetExtension(untrustedName);
-        var stringBuilder = ZString.CreateStringBuilder();
+        var stringBuilder = new StringBuilder();
         var spaceCount = 0;
 
         // First pass: remove invalid chars and normalize spaces (without encoding)
@@ -104,7 +103,7 @@ public static class FileNames
             // else: skip other invalid characters (they're removed)
         }
 
-        var validFileName = string.Concat(stringBuilder.AsSpan().Trim(), extension);
+        var validFileName = string.Concat(stringBuilder.ToString().AsSpan().Trim(), extension);
 
         // HTML encode the final result to prevent script injection attacks
         return WebUtility.HtmlEncode(validFileName);
@@ -158,7 +157,7 @@ public static class FileNames
 
         normalizedName = normalizedName[..charsWritten];
 
-        var builder = ZString.CreateStringBuilder();
+        var builder = new StringBuilder();
         var lastChar = '\0';
 
         foreach (var c in normalizedName) // Normalize accent characters
@@ -190,7 +189,7 @@ public static class FileNames
             lastChar = charToAppend;
         }
 
-        var result = builder.AsSpan();
+        var result = builder.ToString().AsSpan();
 
         // Remove leading ._- characters
         result = result.TrimStart(['.', '_', '-']);

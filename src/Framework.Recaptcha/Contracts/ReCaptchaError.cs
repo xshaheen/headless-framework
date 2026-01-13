@@ -4,6 +4,9 @@ namespace Framework.Recaptcha.Contracts;
 
 public enum ReCaptchaError
 {
+    /// <summary>An unknown or unrecognized error code was returned by the API.</summary>
+    Unknown = -1,
+
     /// <summary>The secret parameter is missing.</summary>
     MissingInputSecret = 0,
 

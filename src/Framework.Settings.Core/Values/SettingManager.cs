@@ -30,15 +30,15 @@ public sealed class SettingManager(
     }
 
     public async Task<Dictionary<string, SettingValue>> GetAllAsync(
-        string[] settingNames,
+        HashSet<string> settingNames,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(settingNames);
 
         var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
-        var namesSet = settingNames.ToHashSet(StringComparer.Ordinal);
-        var settingDefinitions = allSettingDefinitions.Where(x => namesSet.Contains(x.Name)).ToList();
+        var settingDefinitions = allSettingDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
+
         var result = settingDefinitions.ToDictionary(
             x => x.Name,
             x => new SettingValue(x.Name, value: null),

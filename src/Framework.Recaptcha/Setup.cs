@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-global using JetBrainsPure = JetBrains.Annotations.PureAttribute;
-global using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 using Framework.Recaptcha.Contracts;
 using Framework.Recaptcha.Services;
 using Framework.Recaptcha.V2;
@@ -9,12 +7,16 @@ using Framework.Recaptcha.V3;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
+using Microsoft.Extensions.Options;
 
 namespace Framework.Recaptcha;
 
 [PublicAPI]
-public static class Setup
+public static class ReCaptchaSetup
 {
+    internal const string V3Name = "Headless:ReCaptchaV3";
+    internal const string V2Name = "Headless:ReCaptchaV2";
+
     extension(IServiceCollection services)
     {
         public IServiceCollection AddReCaptchaV3(
@@ -25,7 +27,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
+                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V3Name);
             }
 
             _AddCoreV3(services, configureClient, configureResilience);
@@ -41,7 +43,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
+                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction,V3Name);
             }
 
             _AddCoreV3(services, configureClient, configureResilience);
@@ -57,7 +59,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
+                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V2Name);
             }
 
             _AddCoreV2(services, configureClient, configureResilience);
@@ -73,7 +75,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
+                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V2Name);
             }
 
             _AddCoreV2(services, configureClient, configureResilience);
@@ -88,9 +90,12 @@ public static class Setup
         Action<HttpStandardResilienceOptions>? configureResilience
     )
     {
-        var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient(ReCaptchaConstants.V3)
-            : services.AddHttpClient(ReCaptchaConstants.V3, configureClient);
+        var httpClientBuilder = services.AddHttpClient(V3Name, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V3Name);
+            client.BaseAddress = new Uri(options.VerifyBaseUrl);
+            configureClient?.Invoke(client);
+        });
 
         if (configureResilience is not null)
         {
@@ -111,9 +116,12 @@ public static class Setup
         Action<HttpStandardResilienceOptions>? configureResilience
     )
     {
-        var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient(ReCaptchaConstants.V2)
-            : services.AddHttpClient(ReCaptchaConstants.V2, configureClient);
+        var httpClientBuilder = services.AddHttpClient(V2Name, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V2Name);
+            client.BaseAddress = new Uri(options.VerifyBaseUrl);
+            configureClient?.Invoke(client);
+        });
 
         if (configureResilience is not null)
         {

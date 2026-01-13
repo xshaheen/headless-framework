@@ -29,10 +29,6 @@ public abstract class ApiControllerBase : ControllerBase
             HttpContext.RequestServices.GetService<ISender>()
             ?? throw new InvalidOperationException($"{nameof(ISender)} service not registered");
 
-    protected MvcProblemDetailsNormalizer ProblemDetailsNormalizer =>
-        HttpContext.RequestServices.GetService<MvcProblemDetailsNormalizer>()
-        ?? throw new InvalidOperationException($"{nameof(MvcProblemDetailsNormalizer)} service not registered");
-
     [field: AllowNull, MaybeNull]
     private IProblemDetailsCreator ProblemDetailsCreator =>
         field ??=
@@ -95,45 +91,30 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected BadRequestObjectResult MalformedSyntax()
     {
-        var problemDetails = ProblemDetailsCreator.MalformedSyntax();
-        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
-
-        return base.BadRequest(problemDetails);
+        return base.BadRequest(ProblemDetailsCreator.MalformedSyntax());
     }
 
     [NonAction]
     protected UnprocessableEntityObjectResult UnprocessableEntityProblemDetails(IEnumerable<ValidationFailure> failures)
     {
-        var errors = failures.ToErrorDescriptors();
-        var problemDetails = ProblemDetailsCreator.UnprocessableEntity(errors);
-        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
-
-        return base.UnprocessableEntity(problemDetails);
+        return base.UnprocessableEntity(ProblemDetailsCreator.UnprocessableEntity(failures.ToErrorDescriptors()));
     }
 
     [NonAction]
     protected NotFoundObjectResult NotFoundProblemDetails(string entity, string key)
     {
-        var problemDetails = ProblemDetailsCreator.EntityNotFound(entity, key);
-        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
-
-        return base.NotFound(problemDetails);
+        return base.NotFound(ProblemDetailsCreator.EntityNotFound(entity, key));
     }
 
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(IEnumerable<ErrorDescriptor> errorDescriptors)
     {
-        var problemDetails = ProblemDetailsCreator.Conflict(errorDescriptors);
-
-        return base.Conflict(problemDetails);
+        return base.Conflict(ProblemDetailsCreator.Conflict(errorDescriptors));
     }
 
     [NonAction]
     protected ConflictObjectResult ConflictProblemDetails(ErrorDescriptor errorDescriptor)
     {
-        var problemDetails = ProblemDetailsCreator.Conflict([errorDescriptor]);
-        ProblemDetailsNormalizer.ApplyProblemDetailsDefaults(HttpContext, problemDetails);
-
-        return base.Conflict(problemDetails);
+        return base.Conflict(ProblemDetailsCreator.Conflict([errorDescriptor]));
     }
 }

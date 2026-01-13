@@ -9,6 +9,8 @@ namespace Framework.Sms.Connekio;
 [PublicAPI]
 public static class ConnekioSetup
 {
+    internal const string HttpClientName = "Headless:ConnekioSms";
+
     public static IServiceCollection AddConnekioSmsSender(
         this IServiceCollection services,
         IConfiguration config,
@@ -54,8 +56,8 @@ public static class ConnekioSetup
         services.AddSingleton<ISmsSender, ConnekioSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, ConnekioSmsSender>()
-            : services.AddHttpClient<ISmsSender, ConnekioSmsSender>(configureClient);
+            ? services.AddHttpClient(HttpClientName)
+            : services.AddHttpClient(HttpClientName, configureClient);
 
         if (configureResilience is not null)
         {

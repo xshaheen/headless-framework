@@ -21,7 +21,7 @@ public interface ISettingValueRecordRepository
     );
 
     Task<List<SettingValueRecord>> GetListAsync(
-        string[] names,
+        HashSet<string> names,
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default

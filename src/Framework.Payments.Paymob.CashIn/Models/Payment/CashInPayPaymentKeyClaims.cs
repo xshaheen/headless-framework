@@ -33,5 +33,5 @@ public sealed class CashInPayPaymentKeyClaims
     public CashInPayPaymentKeyClaimsBillingData? BillingData { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

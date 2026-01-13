@@ -15,5 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Sitemaps\Framework.Sitemaps.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />
   </ItemGroup>
 </Project>

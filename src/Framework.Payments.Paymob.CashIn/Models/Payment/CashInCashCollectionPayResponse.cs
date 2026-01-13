@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Payments.Paymob.CashIn.Internal;
+using Framework.Payments.Paymob.CashIn.Internals;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 

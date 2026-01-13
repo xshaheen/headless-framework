@@ -4,6 +4,7 @@ using Azure.Storage.Blobs;
 using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Azure;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
@@ -19,12 +20,20 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
-        var azureStorageOptions = new AzureStorageOptions { LoggerFactory = LoggerFactory };
+        var azureStorageOptions = new AzureStorageOptions();
         var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
+        var normalizer = new AzureBlobNamingNormalizer();
 
-        return new AzureBlobStorage(blobServiceClient, mimeTypeProvider, clock, optionsAccessor);
+        return new AzureBlobStorage(
+            blobServiceClient,
+            mimeTypeProvider,
+            clock,
+            optionsAccessor,
+            normalizer,
+            LoggerFactory.CreateLogger<AzureBlobStorage>()
+        );
     }
 
     [Fact]
@@ -124,9 +133,9 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]

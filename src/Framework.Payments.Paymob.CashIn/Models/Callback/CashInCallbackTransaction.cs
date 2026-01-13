@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Payments.Paymob.CashIn.Internal;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
 using Humanizer;
 
@@ -159,7 +159,7 @@ public sealed class CashInCallbackTransaction
     public int? ParentTransaction { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 
     /// <summary>Return the concatenated string of transaction.</summary>
     public string ToConcatenatedString()

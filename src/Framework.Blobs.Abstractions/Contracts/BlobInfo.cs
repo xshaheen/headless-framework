@@ -17,4 +17,6 @@ public sealed class BlobInfo
 
     /// <summary>In Bytes</summary>
     public long Size { get; init; }
+
+    public IReadOnlyDictionary<string, string?>? Metadata { get; init; }
 }

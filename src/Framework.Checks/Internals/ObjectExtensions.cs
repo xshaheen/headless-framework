@@ -19,7 +19,7 @@ internal static class ObjectExtensions
 
     [return: NotNullIfNotNull(nameof(obj))]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static string? ToInvariantString(this object? obj)
+    internal static string? ToInvariantString(this object? obj)
     {
         return obj switch
         {

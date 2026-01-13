@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization.Metadata;
 using Framework.Serializer;
 
 namespace Framework.Blobs;
@@ -121,6 +122,28 @@ public static class BlobStorageExtensions
             await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
         }
 
+        /// <summary>
+        /// Uploads content serialized to JSON using source-generated metadata. AOT/trimming compatible.
+        /// </summary>
+        public async ValueTask UploadContentAsync<T>(
+            string[] container,
+            string blobName,
+            T? contents,
+            JsonTypeInfo<T> jsonTypeInfo,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await using var memoryStream = new MemoryStream();
+
+            if (contents is not null)
+            {
+                await JsonSerializer.SerializeAsync(memoryStream, contents, jsonTypeInfo, cancellationToken);
+                memoryStream.ResetPosition();
+            }
+
+            await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
+        }
+
         public async ValueTask<string?> GetBlobContentAsync(
             string[] container,
             string blobName,
@@ -157,6 +180,26 @@ public static class BlobStorageExtensions
             var result = JsonSerializer.Deserialize<T>(content, options);
 
             return result;
+        }
+
+        /// <summary>
+        /// Gets blob content deserialized from JSON using source-generated metadata. AOT/trimming compatible.
+        /// </summary>
+        public async ValueTask<T?> GetBlobContentAsync<T>(
+            string[] container,
+            string blobName,
+            JsonTypeInfo<T> jsonTypeInfo,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var content = await storage.GetBlobContentAsync(container, blobName, cancellationToken);
+
+            if (content is null)
+            {
+                return default;
+            }
+
+            return JsonSerializer.Deserialize(content, jsonTypeInfo);
         }
     }
 }

@@ -9,24 +9,27 @@ namespace System;
 [PublicAPI]
 public static class DateTimeOffsetExtensions
 {
-    [SystemPure]
-    [JetBrainsPure]
-    public static DateTimeOffset ToEgyptTimeZone(this DateTimeOffset dateTimeOffset)
+    extension(DateTimeOffset dateTimeOffset)
     {
-        return dateTimeOffset.ToTimezone(TimezoneConstants.EgyptTimeZone);
-    }
+        [SystemPure]
+        [JetBrainsPure]
+        public DateTimeOffset ToEgyptTimeZone()
+        {
+            return dateTimeOffset.ToTimezone(TimezoneConstants.EgyptTimeZone);
+        }
 
-    [SystemPure]
-    [JetBrainsPure]
-    public static DateTimeOffset ToPalestineTimeZone(this DateTimeOffset dateTimeOffset)
-    {
-        return dateTimeOffset.ToTimezone(TimezoneConstants.GazaTimeZone);
-    }
+        [SystemPure]
+        [JetBrainsPure]
+        public DateTimeOffset ToPalestineTimeZone()
+        {
+            return dateTimeOffset.ToTimezone(TimezoneConstants.GazaTimeZone);
+        }
 
-    [SystemPure]
-    [JetBrainsPure]
-    public static DateTimeOffset ToSaudiArabiaTimeZone(this DateTimeOffset dateTimeOffset)
-    {
-        return dateTimeOffset.ToTimezone(TimezoneConstants.SaudiArabiaTimeZone);
+        [SystemPure]
+        [JetBrainsPure]
+        public DateTimeOffset ToSaudiArabiaTimeZone()
+        {
+            return dateTimeOffset.ToTimezone(TimezoneConstants.SaudiArabiaTimeZone);
+        }
     }
 }

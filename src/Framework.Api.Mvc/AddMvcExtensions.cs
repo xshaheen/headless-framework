@@ -1,6 +1,5 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Api.Controllers;
 using Framework.Api.Options;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,7 +12,6 @@ public static class AddMvcExtensions
     {
         services.ConfigureOptions<ConfigureMvcJsonOptions>();
         services.ConfigureOptions<ConfigureMvcApiOptions>();
-        services.AddSingleton<MvcProblemDetailsNormalizer>();
 
         return services;
     }
@@ -22,7 +20,6 @@ public static class AddMvcExtensions
     {
         builder.Services.ConfigureOptions<ConfigureMvcJsonOptions>();
         builder.Services.ConfigureOptions<ConfigureMvcApiOptions>();
-        builder.Services.AddSingleton<MvcProblemDetailsNormalizer>();
 
         return builder;
     }

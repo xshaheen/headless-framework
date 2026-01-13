@@ -10,23 +10,6 @@ internal static class DiagnosticHelper
 {
     private const string _Category = AbstractionConstants.Namespace;
 
-    /// <summary>Creates a diagnostic indicating that the primitives generator has started.</summary>
-    /// <returns>The created diagnostic.</returns>
-    internal static Diagnostic GeneratorStarted()
-    {
-        return Diagnostic.Create(
-            new DiagnosticDescriptor(
-                "AL0000",
-                "Framework.Generator.Primitives started",
-                "Framework.Generator.Primitives started",
-                _Category,
-                DiagnosticSeverity.Info,
-                isEnabledByDefault: true
-            ),
-            location: null
-        );
-    }
-
     /// <summary>Creates a diagnostic for general error</summary>
     /// <param name="location">The location where the diagnostic occurs.</param>
     /// <param name="ex"></param>

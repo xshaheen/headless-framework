@@ -12,7 +12,6 @@ namespace Framework.Api.OperationProcessors;
 
 public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
 {
-    private const string _UnauthorizedStatusCode = "401";
     private static readonly OpenApiResponse _UnauthorizedResponse = _CreateUnauthorizedResponse();
 
     public bool Process(OperationProcessorContext context)
@@ -24,7 +23,7 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
 
         var responses = ctx.OperationDescription.Operation.Responses;
 
-        if (responses.ContainsKey(_UnauthorizedStatusCode))
+        if (responses.ContainsKey(OpenApiStatusCodes.Unauthorized))
         {
             return true;
         }
@@ -42,7 +41,7 @@ public sealed class UnauthorizedResponseOperationProcessor : IOperationProcessor
             || actionDescriptor.EndpointMetadata.OfType<AuthorizeAttribute>().Any()
         )
         {
-            responses.Add(_UnauthorizedStatusCode, _UnauthorizedResponse);
+            responses.Add(OpenApiStatusCodes.Unauthorized, _UnauthorizedResponse);
         }
 
         return true;

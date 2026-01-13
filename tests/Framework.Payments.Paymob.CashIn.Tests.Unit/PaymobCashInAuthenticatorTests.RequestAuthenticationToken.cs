@@ -29,7 +29,7 @@ public partial class PaymobCashInAuthenticatorTests
 
         // when
         var authenticator = new PaymobCashInAuthenticator(
-            fixture.HttpClient,
+            fixture.HttpClientFactory,
             fixture.TimeProvider,
             fixture.OptionsAccessor
         );
@@ -56,7 +56,7 @@ public partial class PaymobCashInAuthenticatorTests
 
         // when
         var authenticator = new PaymobCashInAuthenticator(
-            fixture.HttpClient,
+            fixture.HttpClientFactory,
             fixture.TimeProvider,
             fixture.OptionsAccessor
         );

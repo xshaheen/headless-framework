@@ -116,9 +116,9 @@ public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorag
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]
@@ -179,5 +179,68 @@ public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorag
     public override Task can_call_get_paged_list_with_empty_container()
     {
         return base.can_call_get_paged_list_with_empty_container();
+    }
+
+    [Fact]
+    public async Task should_throw_when_blob_exceeds_max_size()
+    {
+        // Arrange
+        var options = new RedisBlobStorageOptions
+        {
+            ConnectionMultiplexer = fixture.ConnectionMultiplexer,
+            MaxBlobSizeBytes = 100, // 100 bytes limit
+        };
+        var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
+        using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+
+        var largeData = new byte[200]; // Exceeds 100 byte limit
+        Array.Fill(largeData, (byte)'x');
+        await using var stream = new MemoryStream(largeData);
+
+        // Act & Assert
+        var act = async () => await storage.UploadAsync(["test-container"], "large-blob.bin", stream);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*exceeds maximum size*");
+    }
+
+    [Fact]
+    public async Task should_allow_blob_within_size_limit()
+    {
+        // Arrange
+        var options = new RedisBlobStorageOptions
+        {
+            ConnectionMultiplexer = fixture.ConnectionMultiplexer,
+            MaxBlobSizeBytes = 1000,
+        };
+        var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
+        using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+
+        var data = new byte[500]; // Within limit
+        Array.Fill(data, (byte)'x');
+        using var stream = new MemoryStream(data);
+
+        // Act & Assert
+        Func<Task> act = async () => await storage.UploadAsync(["test-container"], "small-blob.bin", stream);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_skip_size_validation_when_max_size_is_zero()
+    {
+        // Arrange
+        var options = new RedisBlobStorageOptions
+        {
+            ConnectionMultiplexer = fixture.ConnectionMultiplexer,
+            MaxBlobSizeBytes = 0, // Disabled
+        };
+        var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
+        using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+
+        var data = new byte[1000];
+        Array.Fill(data, (byte)'x');
+        await using var stream = new MemoryStream(data);
+
+        // Act & Assert
+        var act = async () => await storage.UploadAsync(["test-container"], "no-limit-blob.bin", stream);
+        await act.Should().NotThrowAsync();
     }
 }
