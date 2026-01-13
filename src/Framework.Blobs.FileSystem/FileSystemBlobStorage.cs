@@ -17,7 +17,8 @@ public sealed class FileSystemBlobStorage(
     ILogger<FileSystemBlobStorage> logger
 ) : IBlobStorage
 {
-    private readonly string _basePath = optionsAccessor.Value.BaseDirectoryPath.NormalizePath()
+    private readonly string _basePath = optionsAccessor
+        .Value.BaseDirectoryPath.NormalizePath()
         .EnsureEndsWith(Path.DirectorySeparatorChar);
     private readonly IBlobNamingNormalizer _normalizer = normalizer;
     private readonly ILogger _logger = logger;
@@ -159,19 +160,7 @@ public sealed class FileSystemBlobStorage(
         // No search pattern, delete the entire directory
         if (string.IsNullOrEmpty(blobSearchPattern) || string.Equals(blobSearchPattern, "*", StringComparison.Ordinal))
         {
-            if (!Directory.Exists(directoryPath))
-            {
-                return ValueTask.FromResult(0);
-            }
-
-            _logger.LogInformation("Deleting {Directory} directory", directoryPath);
-
-            var count = Directory.EnumerateFiles(directoryPath, "*.*", SearchOption.AllDirectories).Count();
-            Directory.Delete(directoryPath, recursive: true);
-
-            _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directoryPath, count);
-
-            return ValueTask.FromResult(count);
+            return ValueTask.FromResult(_DeleteDirectoryWithLogging(directoryPath));
         }
 
         blobSearchPattern = blobSearchPattern.NormalizePath();
@@ -179,40 +168,20 @@ public sealed class FileSystemBlobStorage(
 
         _ThrowIfPathTraversal(path, nameof(blobSearchPattern));
 
-        // If the pattern is end with directory separator, delete the directory
+        // If the pattern ends with directory separator, delete the directory
         if (
             path[^1] == Path.DirectorySeparatorChar
             || path.EndsWith($"{Path.DirectorySeparatorChar}*", StringComparison.Ordinal)
         )
         {
             var directory = Path.GetDirectoryName(path);
-
-            if (!Directory.Exists(directory))
-            {
-                return ValueTask.FromResult(0);
-            }
-
-            _logger.LogInformation("Deleting {Directory} directory", directory);
-
-            var count = Directory.EnumerateFiles(directory, "*.*", SearchOption.AllDirectories).Count();
-            Directory.Delete(directory, recursive: true);
-
-            _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
-
-            return ValueTask.FromResult(count);
+            return ValueTask.FromResult(_DeleteDirectoryWithLogging(directory));
         }
 
         // If the pattern is a directory, delete the directory
         if (Directory.Exists(path))
         {
-            _logger.LogInformation("Deleting {Directory} directory", path);
-
-            var count = Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories).Count();
-            Directory.Delete(path, recursive: true);
-
-            _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", path, count);
-
-            return ValueTask.FromResult(count);
+            return ValueTask.FromResult(_DeleteDirectoryWithLogging(path));
         }
 
         _logger.LogInformation("Deleting files matching {SearchPattern}", blobSearchPattern);
@@ -229,6 +198,23 @@ public sealed class FileSystemBlobStorage(
         _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", filesCount, blobSearchPattern);
 
         return ValueTask.FromResult(filesCount);
+    }
+
+    private int _DeleteDirectoryWithLogging(string? directoryPath)
+    {
+        if (directoryPath is null || !Directory.Exists(directoryPath))
+        {
+            return 0;
+        }
+
+        _logger.LogInformation("Deleting {Directory} directory", directoryPath);
+
+        var count = Directory.EnumerateFiles(directoryPath, "*.*", SearchOption.AllDirectories).Count();
+        Directory.Delete(directoryPath, recursive: true);
+
+        _logger.LogTrace("Finished deleting {Directory} with {FileCount} files", directoryPath, count);
+
+        return count;
     }
 
     #endregion
@@ -554,13 +540,14 @@ public sealed class FileSystemBlobStorage(
 
     #region Helpers
 
-    private static BlobInfo _CreateBlobInfo(FileInfo fileInfo, string blobKey) => new()
-    {
-        BlobKey = blobKey,
-        Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
-        Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
-        Size = fileInfo.Length,
-    };
+    private static BlobInfo _CreateBlobInfo(FileInfo fileInfo, string blobKey) =>
+        new()
+        {
+            BlobKey = blobKey,
+            Created = new DateTimeOffset(fileInfo.CreationTimeUtc, TimeSpan.Zero),
+            Modified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
+            Size = fileInfo.Length,
+        };
 
     #endregion
 
