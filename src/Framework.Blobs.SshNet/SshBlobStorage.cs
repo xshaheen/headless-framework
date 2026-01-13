@@ -384,7 +384,6 @@ public sealed class SshBlobStorage : IBlobStorage, IAsyncDisposable
             try
             {
                 await CreateContainerAsync(newBlobContainer, cancellationToken).AnyContext();
-                _logger.LogTrace("Renaming {Path} to {NewPath}", blobPath, targetPath);
                 await _client.RenameFileAsync(blobPath, targetPath, cancellationToken).AnyContext();
             }
             catch (Exception ex)
@@ -984,8 +983,8 @@ public sealed class SshBlobStorage : IBlobStorage, IAsyncDisposable
         }
 
         var proxyParts = proxyUri.UserInfo.Split(':', StringSplitOptions.RemoveEmptyEntries);
-        var proxyUsername = proxyParts[0];
-        var proxyPassword = proxyParts.Length > 1 ? proxyParts[1] : null;
+        var proxyUsername = Uri.UnescapeDataString(proxyParts[0]);
+        var proxyPassword = proxyParts.Length > 1 ? Uri.UnescapeDataString(proxyParts[1]) : null;
 
         var proxyType = options.ProxyType;
 
