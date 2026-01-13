@@ -401,7 +401,9 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(container);
 
         var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var criteria = BlobStorageHelpers.GetRequestCriteria(container.Skip(1), blobSearchPattern);
+        var normalizedDirs = container.Skip(1).Select(d => _NormalizeContainerName(d));
+        var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
+        var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
 
         var azureBlobs = containerClient.GetBlobsAsync(
             traits: BlobTraits.Metadata,
@@ -444,7 +446,9 @@ public sealed class AzureBlobStorage(
         Argument.IsLessThanOrEqualTo(pageSize, int.MaxValue - 1);
 
         var containerClient = blobServiceClient.GetBlobContainerClient(_GetContainer(container));
-        var criteria = BlobStorageHelpers.GetRequestCriteria(container.Skip(1), blobSearchPattern);
+        var normalizedDirs = container.Skip(1).Select(d => _NormalizeContainerName(d));
+        var normalizedPattern = _NormalizeSearchPattern(blobSearchPattern);
+        var criteria = BlobStorageHelpers.GetRequestCriteria(normalizedDirs, normalizedPattern);
 
         var result = new PagedFileListResult(
             async (_, token) =>
@@ -636,6 +640,43 @@ public sealed class AzureBlobStorage(
     private static string _NormalizeSlashes(string x)
     {
         return BlobStorageHelpers.NormalizePath(x).RemovePostfix('/').RemovePrefix('/');
+    }
+
+    /// <summary>
+    /// Normalizes the search pattern's directory segments to match how they're stored.
+    /// E.g., "x\*.txt" becomes "x00/*.txt" because "x" is normalized to "x00".
+    /// Only normalizes directory segments, not the final filename/pattern segment.
+    /// </summary>
+    private string? _NormalizeSearchPattern(string? pattern)
+    {
+        if (string.IsNullOrEmpty(pattern))
+        {
+            return pattern;
+        }
+
+        // First normalize slashes
+        pattern = BlobStorageHelpers.NormalizePath(pattern);
+
+        // Split by '/' and normalize directory segments only (not the last segment)
+        var segments = pattern.Split('/');
+        if (segments.Length <= 1)
+        {
+            // No directory segments, just a filename/pattern - don't normalize
+            return pattern;
+        }
+
+        // Normalize all segments except the last one (which is the filename/pattern)
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            var segment = segments[i];
+            // Don't normalize segments containing wildcards
+            if (!segment.Contains('*', StringComparison.Ordinal))
+            {
+                segments[i] = normalizer.NormalizeContainerName(segment);
+            }
+        }
+
+        return string.Join('/', segments);
     }
 
     #endregion
