@@ -62,10 +62,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         result.Blobs.Should().BeEmpty();
 
         const string directory = "EmptyDirectory";
-        var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync(AbortToken) : null;
-        client.Should().NotBeNull();
-
-        await client.CreateDirectoryAsync($"{containerName}/{directory}", AbortToken);
+        await storage.CreateContainerAsync([..container, directory], AbortToken);
 
         result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
         result.HasMore.Should().BeFalse();
@@ -82,7 +79,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         await storage.DeleteAllAsync(container, "*", AbortToken);
 
         // Assert folder was removed by Delete Files
-        (await client.ExistsAsync($"{containerName}/{directory}", AbortToken))
+        (await storage.ExistsAsync([..container, directory], AbortToken))
             .Should()
             .BeFalse();
         (await storage.GetBlobInfoAsync(container, directory, AbortToken)).Should().BeNull();
