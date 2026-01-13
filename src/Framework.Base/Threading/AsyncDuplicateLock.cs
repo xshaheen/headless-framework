@@ -3,9 +3,37 @@
 namespace Framework.Threading;
 
 /// <summary>
-/// Asynchronous locking based on a string key.
-/// <a href="https://stackoverflow.com/questions/31138179/asynchronous-locking-based-on-a-key">See this stackoverflow question</a>
+/// Asynchronous locking based on a string key. Useful for preventing duplicate concurrent
+/// operations on the same resource (e.g., cache stampede protection).
 /// </summary>
+/// <remarks>
+/// <para>
+/// Each key gets its own <see cref="SemaphoreSlim"/> with a reference count. The semaphore
+/// is automatically cleaned up when no longer in use.
+/// </para>
+/// <para>
+/// <b>Cache stampede protection example:</b>
+/// </para>
+/// <code>
+/// public async Task&lt;T&gt; GetOrCreateAsync&lt;T&gt;(string key, Func&lt;Task&lt;T&gt;&gt; factory)
+/// {
+///     if (_cache.TryGetValue(key, out T cached))
+///         return cached;
+///
+///     using (await AsyncDuplicateLock.LockAsync(key))
+///     {
+///         // Double-check after acquiring lock
+///         if (_cache.TryGetValue(key, out cached))
+///             return cached;
+///
+///         var value = await factory();
+///         _cache.Set(key, value);
+///         return value;
+///     }
+/// }
+/// </code>
+/// </remarks>
+/// <seealso href="https://stackoverflow.com/questions/31138179/asynchronous-locking-based-on-a-key"/>
 [PublicAPI]
 public static class AsyncDuplicateLock
 {
@@ -38,7 +66,9 @@ public static class AsyncDuplicateLock
             }
             else
             {
+#pragma warning disable CA2000 // The SemaphoreSlim will be disposed when the RefCounted is removed from the dictionary.
                 item = new RefCounted<SemaphoreSlim>(new SemaphoreSlim(1, 1));
+#pragma warning restore CA2000
                 _SemaphoreSlims[key] = item;
             }
         }
