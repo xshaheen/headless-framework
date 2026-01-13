@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.Loader;
 using MoreLinq;
@@ -20,6 +21,7 @@ public static class AssemblyHelper
 
     #region Get Assemblies From Folder
 
+    [RequiresUnreferencedCode("Loading assemblies from path might load types that cannot be statically analyzed.")]
     public static List<Assembly> LoadAssemblies(string folderPath, SearchOption searchOption)
     {
         return GetAssemblyFiles(folderPath, searchOption)
@@ -41,6 +43,7 @@ public static class AssemblyHelper
 
     #region Get Domain Assemblies
 
+    [RequiresUnreferencedCode("Assembly scanning is not compatible with trimming.")]
     public static HashSet<Assembly> GetCurrentAssemblies(
         Func<Assembly, bool> acceptPredicate,
         Func<string, bool> excludePredicate
@@ -92,6 +95,7 @@ public static class AssemblyHelper
 
     #region Invoke Static Methods
 
+    [RequiresUnreferencedCode("Invokes methods by name using reflection, which is not compatible with trimming.")]
     public static void InvokeAllStaticMethods(
         this IEnumerable<Assembly> assemblies,
         string typeName,
@@ -105,6 +109,7 @@ public static class AssemblyHelper
         }
     }
 
+    [RequiresUnreferencedCode("Invokes methods by name using reflection, which is not compatible with trimming.")]
     public static void InvokeAllStaticMethods(
         this Assembly assembly,
         string typeName,

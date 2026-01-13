@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Framework.Checks;
 using Framework.Primitives;
@@ -20,6 +21,7 @@ public static class EnumExtensions
 
     private static readonly ConcurrentDictionary<CacheKey, object> _LocaleCache = new();
 
+    [RequiresUnreferencedCode("Uses Type.GetMember which is not compatible with trimming.")]
     [SystemPure, JetBrainsPure, MustUseReturnValue]
     public static MemberInfo GetEnumMemberInfo(this Enum enumValue)
     {
@@ -28,6 +30,7 @@ public static class EnumExtensions
 
     extension(Enum? enumValue)
     {
+        [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public T? GetFirstAttribute<T>()
             where T : Attribute
@@ -35,6 +38,7 @@ public static class EnumExtensions
             return enumValue?.GetEnumMemberInfo().GetFirstAttribute<T>(inherit: false);
         }
 
+        [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public string GetDisplayName()
         {
@@ -55,6 +59,7 @@ public static class EnumExtensions
             return !string.IsNullOrWhiteSpace(displayName) ? displayName : enumValue.ToString().Humanize();
         }
 
+        [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public string? GetDescription()
         {
@@ -72,12 +77,14 @@ public static class EnumExtensions
     extension<T>(T enumValue)
         where T : struct, Enum
     {
+        [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public string GetLocaleName(string locale, string? fallbackLocale = null)
         {
             return enumValue.GetLocale(locale, fallbackLocale).DisplayName;
         }
 
+        [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public AllLocaleValue<T> GetAllLocales()
         {
@@ -116,6 +123,7 @@ public static class EnumExtensions
                 );
         }
 
+        [RequiresUnreferencedCode("Uses reflection to get attributes which is not compatible with trimming.")]
         [SystemPure, JetBrainsPure, MustUseReturnValue]
         public EnumLocale<T> GetLocale(string locale, string? fallbackLocale = null)
         {

@@ -1,7 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Framework.Serializer.Converters;
 
+[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class EmptyStringAsNullJsonConverter<T> : JsonConverter<T?>
     where T : class
 {
