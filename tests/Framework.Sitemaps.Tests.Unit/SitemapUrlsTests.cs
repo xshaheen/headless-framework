@@ -5,7 +5,7 @@ using Framework.Sitemaps;
 namespace Tests;
 
 #pragma warning disable xUnit1045 // Avoid using TheoryData type arguments that might not be serializable
-public sealed class SitemapUrlsTests : TestBase
+public sealed class SitemapUrlsTests : SitemapTestBase
 {
     public static readonly TheoryData<List<SitemapUrl>, string> TestData = new()
     {
@@ -80,7 +80,7 @@ public sealed class SitemapUrlsTests : TestBase
 
         await using (var stream = new MemoryStream())
         {
-            await urls.WriteToAsync(stream);
+            await urls.WriteToAsync(stream, AbortToken);
             result = Encoding.UTF8.GetString(stream.ToArray());
         }
 
@@ -105,7 +105,7 @@ public sealed class SitemapUrlsTests : TestBase
 
         await using (var stream = new MemoryStream())
         {
-            await urls.WriteToAsync(stream);
+            await urls.WriteToAsync(stream, AbortToken);
             result = Encoding.UTF8.GetString(stream.ToArray());
         }
 
@@ -158,7 +158,7 @@ public sealed class SitemapUrlsTests : TestBase
 
         await using (var stream = new MemoryStream())
         {
-            await urls.WriteToAsync(stream);
+            await urls.WriteToAsync(stream, AbortToken);
             result = Encoding.UTF8.GetString(stream.ToArray());
         }
 

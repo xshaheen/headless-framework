@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.RegularExpressions;
 using FluentValidation;
 using Framework.Api.Abstractions;
 using Framework.Api.Resources;
 using Framework.Constants;
 using Framework.Exceptions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130
@@ -30,12 +28,12 @@ public sealed partial class MinimalApiExceptionFilter(
             )
         )
         {
-            return await next(context);
+            return await next(context).AnyContext();
         }
 
         try
         {
-            return await next(context);
+            return await next(context).AnyContext();
         }
         catch (ConflictException exception)
         {
@@ -56,8 +54,8 @@ public sealed partial class MinimalApiExceptionFilter(
 
             return TypedResults.Problem(details);
         }
-        // DB Concurrency
-        catch (DbUpdateConcurrencyException exception)
+        // DB Concurrency (type name match to avoid EF Core dependency)
+        catch (Exception exception) when (exception.GetType().Name == "DbUpdateConcurrencyException")
         {
             LogDbConcurrencyException(logger, exception);
 
@@ -66,14 +64,24 @@ public sealed partial class MinimalApiExceptionFilter(
             return TypedResults.Problem(details);
         }
         // Timeout
-        catch (TimeoutException)
+        catch (TimeoutException exception)
         {
-            return TypedResults.StatusCode(StatusCodes.Status408RequestTimeout);
+            LogRequestTimeoutException(logger, exception);
+
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status408RequestTimeout,
+                title: "Request Timeout",
+                detail: "The request timed out"
+            );
         }
         // Not implemented
         catch (NotImplementedException)
         {
-            return TypedResults.StatusCode(StatusCodes.Status501NotImplemented);
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status501NotImplemented,
+                title: "Not Implemented",
+                detail: "This functionality is not implemented"
+            );
         }
         // Request canceled
         catch (OperationCanceledException)
@@ -90,10 +98,20 @@ public sealed partial class MinimalApiExceptionFilter(
     [LoggerMessage(
         EventId = 5003,
         EventName = "DbConcurrencyException",
-        Level = LogLevel.Critical,
+        Level = LogLevel.Warning,
         Message = "Database concurrency exception occurred",
         SkipEnabledCheck = true
     )]
     // ReSharper disable once InconsistentNaming
     private static partial void LogDbConcurrencyException(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5004,
+        EventName = "RequestTimeoutException",
+        Level = LogLevel.Debug,
+        Message = "Request was timed out",
+        SkipEnabledCheck = true
+    )]
+    // ReSharper disable once InconsistentNaming
+    private static partial void LogRequestTimeoutException(ILogger logger, Exception exception);
 }

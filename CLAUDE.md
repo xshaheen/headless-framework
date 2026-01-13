@@ -36,22 +36,12 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Foundatio.Redis`
 - `*.Tests.Integration` — real deps via Testcontainers (requires Docker)
 - `*.Tests.Harness` — shared fixtures and builders
 
-**Naming**: `should_{action}_{expected}_when_{condition}`
-**Pattern**: Given-When-Then
 **Stack**: xUnit, AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
 
 ## Code Conventions (Strictly Enforced)
 
-**Naming**:
-| Element | Convention | Example |
-|---------|------------|---------|
-| Private fields | `_camelCase` | `_service` |
-| Private const/static | `_PascalCase` | `_DefaultValue` |
-| Private methods | `_PascalCase` | `_ValidateInput()` |
-| Public methods | `PascalCase` | `ProcessAsync()` |
-| Local functions | `camelCase` | `logError()` |
-
 **Required C# features**:
+
 - File-scoped namespaces: `namespace X;`
 - Primary constructors for DI
 - `required`/`init` for properties
@@ -59,11 +49,14 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Foundatio.Redis`
 - Collection expressions: `[]`
 - Pattern matching over old-style checks
 
-**Async**: Use `AnyContext()` extension (replaces `ConfigureAwait(false)`). Always pass `CancellationToken`.
-
 ## Package Management
 
-All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
+- All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
+
+## Documentation
+
+- Make sure to sync XML docs of the public APIs.
+- Make sure to sync project README.md files for each package (exist in `src/Framework.*` folders).
 
 ## Tools
 

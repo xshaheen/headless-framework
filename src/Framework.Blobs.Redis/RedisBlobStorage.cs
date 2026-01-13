@@ -2,12 +2,12 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
-using Flurl;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Core;
 using Framework.Primitives;
 using Framework.Serializer;
+using Framework.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -20,6 +20,54 @@ public sealed class RedisBlobStorage : IBlobStorage
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
     private readonly RedisBlobStorageOptions _options;
+
+    // Lua script for atomic rename: copies blob+info then deletes source
+    // KEYS[1] = source blob hash, KEYS[2] = source info hash
+    // KEYS[3] = dest blob hash, KEYS[4] = dest info hash
+    // ARGV[1] = source blob name, ARGV[2] = dest blob name
+    private const string _RenameScript = """
+        local blobData = redis.call('HGET', KEYS[1], ARGV[1])
+        local infoData = redis.call('HGET', KEYS[2], ARGV[1])
+        if not blobData then return 0 end
+        redis.call('HSET', KEYS[3], ARGV[2], blobData)
+        redis.call('HSET', KEYS[4], ARGV[2], infoData)
+        redis.call('HDEL', KEYS[1], ARGV[1])
+        redis.call('HDEL', KEYS[2], ARGV[1])
+        return 1
+        """;
+
+    // Lua script for atomic copy: copies blob+info without deleting source
+    // KEYS[1] = source blob hash, KEYS[2] = source info hash
+    // KEYS[3] = dest blob hash, KEYS[4] = dest info hash
+    // ARGV[1] = source blob name, ARGV[2] = dest blob name
+    private const string _CopyScript = """
+        local blobData = redis.call('HGET', KEYS[1], ARGV[1])
+        local infoData = redis.call('HGET', KEYS[2], ARGV[1])
+        if not blobData then return 0 end
+        redis.call('HSET', KEYS[3], ARGV[2], blobData)
+        redis.call('HSET', KEYS[4], ARGV[2], infoData)
+        return 1
+        """;
+
+    // Lua script for atomic upload: writes blob data and metadata atomically
+    // KEYS[1] = blob hash, KEYS[2] = info hash
+    // ARGV[1] = blob path, ARGV[2] = blob data, ARGV[3] = info data
+    private const string _UploadScript = """
+        redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+        redis.call('HSET', KEYS[2], ARGV[1], ARGV[3])
+        return 1
+        """;
+
+    // Lua script for atomic delete: deletes blob data and metadata atomically
+    // KEYS[1] = blob hash, KEYS[2] = info hash
+    // ARGV[1] = blob path
+    // Returns 1 if either deleted (handles orphaned data cleanup), 0 if neither existed
+    private const string _DeleteScript = """
+        local blobDeleted = redis.call('HDEL', KEYS[1], ARGV[1])
+        local infoDeleted = redis.call('HDEL', KEYS[2], ARGV[1])
+        if blobDeleted == 1 or infoDeleted == 1 then return 1 end
+        return 0
+        """;
 
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
@@ -62,10 +110,29 @@ public sealed class RedisBlobStorage : IBlobStorage
         {
             var database = Database;
 
+            // Validate size limit for seekable streams
+            if (_options.MaxBlobSizeBytes > 0 && stream.CanSeek && stream.Length > _options.MaxBlobSizeBytes)
+            {
+                throw new ArgumentException(
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. "
+                        + "Redis blob storage is intended for small/ephemeral blobs only.",
+                    nameof(stream)
+                );
+            }
+
             await using var memory = new MemoryStream();
-            await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
-            var saveBlobTask = database.HashSetAsync(blobsContainer, blobPath, memory.ToArray());
+            await _CopyWithSizeLimitAsync(stream, memory, cancellationToken).AnyContext();
             var fileSize = memory.Length;
+
+            // Zero-copy: TryGetBuffer avoids ToArray() allocation
+            if (!memory.TryGetBuffer(out var blobSegment))
+            {
+                throw new InvalidOperationException("Failed to get buffer from MemoryStream");
+            }
+
+            var blobData = new byte[blobSegment.Count];
+            Buffer.BlockCopy(blobSegment.Array!, blobSegment.Offset, blobData, 0, blobSegment.Count);
+
             memory.Seek(0, SeekOrigin.Begin);
             memory.SetLength(0);
 
@@ -75,14 +142,28 @@ public sealed class RedisBlobStorage : IBlobStorage
                 Created = DateTimeOffset.UtcNow,
                 Modified = DateTimeOffset.UtcNow,
                 Size = fileSize,
+                Metadata = metadata,
             };
 
             _serializer.Serialize(blobInfo, memory);
 
-            var saveInfoTask = database.HashSetAsync(infoContainer, blobPath, memory.ToArray());
+            // Zero-copy: TryGetBuffer avoids ToArray() allocation
+            if (!memory.TryGetBuffer(out var infoSegment))
+            {
+                throw new InvalidOperationException("Failed to get buffer from MemoryStream");
+            }
 
+            var infoData = new byte[infoSegment.Count];
+            Buffer.BlockCopy(infoSegment.Array!, infoSegment.Offset, infoData, 0, infoSegment.Count);
+
+            // Atomic upload using Lua script to prevent orphaned data
             await Run.WithRetriesAsync(
-                    async () => await Task.WhenAll(saveBlobTask, saveInfoTask).WithAggregatedExceptions().AnyContext(),
+                    () =>
+                        database.ScriptEvaluateAsync(
+                            _UploadScript,
+                            [blobsContainer, infoContainer],
+                            [blobPath, blobData, infoData]
+                        ),
                     logger: _logger,
                     cancellationToken: cancellationToken
                 )
@@ -109,21 +190,37 @@ public sealed class RedisBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(async blob =>
+        var results = new Result<Exception>[blobs.Count];
+        var index = 0;
+
+        var options = new ParallelOptions
         {
-            try
-            {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
 
-                return Result<Exception>.Ok();
-            }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                options,
+                async (blob, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions();
+                    try
+                    {
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        results[i] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
+
+        return results;
     }
 
     #endregion
@@ -136,8 +233,8 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -154,18 +251,15 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         _logger.LogTrace("Deleting {Path}", blobPath);
 
-        var database = Database;
-        var deleteInfoTask = database.HashDeleteAsync(infoContainer, blobPath);
-        var deleteBlobTask = database.HashDeleteAsync(blobsContainer, blobPath);
-
+        // Atomic delete using Lua script to ensure both blob and info are deleted together
         var result = await Run.WithRetriesAsync(
-                async () => await Task.WhenAll(deleteInfoTask, deleteBlobTask).WithAggregatedExceptions().AnyContext(),
+                () => Database.ScriptEvaluateAsync(_DeleteScript, [blobsContainer, infoContainer], [blobPath]),
                 logger: _logger,
                 cancellationToken: cancellationToken
             )
             .AnyContext();
 
-        return result[0] || result[1];
+        return (int)result == 1;
     }
 
     #endregion
@@ -185,19 +279,36 @@ public sealed class RedisBlobStorage : IBlobStorage
             return [];
         }
 
-        var tasks = blobNames.Select(async fileName =>
-        {
-            try
-            {
-                return await DeleteAsync(container, fileName, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                return Result<bool, Exception>.Fail(e);
-            }
-        });
+        var results = new Result<bool, Exception>[blobNames.Count];
+        var index = 0;
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions();
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForEachAsync(
+                blobNames,
+                options,
+                async (fileName, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
+
+                    try
+                    {
+                        results[i] = await DeleteAsync(container, fileName, ct).AnyContext();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<bool, Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
+
+        return results;
     }
 
     public async ValueTask<int> DeleteAllAsync(
@@ -209,24 +320,40 @@ public sealed class RedisBlobStorage : IBlobStorage
         var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken)
             .AnyContext();
 
-        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs, blobSearchPattern);
+        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs.Count, blobSearchPattern);
 
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
 
-        var tasks = blobs.Select(async blob =>
-        {
-            try
-            {
-                return await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                return Result<bool, Exception>.Fail(e);
-            }
-        });
+        var count = 0;
 
-        var results = await Task.WhenAll(tasks).WithAggregatedExceptions();
-        var count = results.Count(r => r.IsSuccess);
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _options.MaxBulkParallelism,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                options,
+                async (blob, ct) =>
+                {
+                    try
+                    {
+                        var deleted = await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, ct).AnyContext();
+
+                        if (deleted)
+                        {
+                            Interlocked.Increment(ref count);
+                        }
+                    }
+                    catch
+                    {
+                        // Swallow exception, just don't increment count
+                    }
+                }
+            )
+            .AnyContext();
 
         _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
 
@@ -245,31 +372,39 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(blobContainer);
-        Argument.IsNotNull(newBlobName);
-        Argument.IsNotNull(newBlobContainer);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobName);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
 
         var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
         var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
         _logger.LogInformation("Renaming {Path} to {NewPath}", srcBlobPath, dstBlobPath);
 
+        var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
+        var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
+
         try
         {
-            var result = await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken);
+            var result = await Run.WithRetriesAsync(
+                    () =>
+                        Database.ScriptEvaluateAsync(
+                            _RenameScript,
+                            [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                            [srcBlobPath, dstBlobPath]
+                        ),
+                    logger: _logger,
+                    cancellationToken: cancellationToken
+                )
+                .AnyContext();
 
-            if (!result)
-            {
-                return false;
-            }
-
-            return await DeleteAsync(blobContainer, blobName, cancellationToken).AnyContext();
+            return (int)result == 1;
         }
         catch (Exception e)
         {
             _logger.LogError(e, "Error renaming {Path} to {NewPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
 
-            return false;
+            throw;
         }
     }
 
@@ -285,32 +420,39 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(blobContainer);
-        Argument.IsNotNull(newBlobName);
-        Argument.IsNotNull(newBlobContainer);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(blobContainer);
+        Argument.IsNotNullOrEmpty(newBlobName);
+        Argument.IsNotNullOrEmpty(newBlobContainer);
+
+        var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
+        var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
+        _logger.LogTrace("Copying {Path} to {TargetPath}", srcBlobPath, dstBlobPath);
+
+        var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
+        var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
 
         try
         {
-            var result = await DownloadAsync(blobContainer, blobName, cancellationToken).AnyContext();
+            var result = await Run.WithRetriesAsync(
+                    () =>
+                        Database.ScriptEvaluateAsync(
+                            _CopyScript,
+                            [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                            [srcBlobPath, dstBlobPath]
+                        ),
+                    logger: _logger,
+                    cancellationToken: cancellationToken
+                )
+                .AnyContext();
 
-            if (result is null)
-            {
-                return false;
-            }
-
-            await using var stream = result.Stream;
-            await UploadAsync(newBlobContainer, newBlobName, stream, metadata: null, cancellationToken).AnyContext();
-
-            return true;
+            return (int)result == 1;
         }
         catch (Exception e)
         {
-            var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
-            var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
             _logger.LogError(e, "Error copying {Path} to {TargetPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
 
-            return false;
+            throw;
         }
     }
 
@@ -324,8 +466,8 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         var (_, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -341,7 +483,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Downalod
+    #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
@@ -349,8 +491,8 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(blobName);
-        Argument.IsNotNull(container);
+        Argument.IsNotNullOrEmpty(blobName);
+        Argument.IsNotNullOrEmpty(container);
 
         var (blobsContainer, _) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -366,7 +508,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         if (fileContent.IsNull)
         {
-            _logger.LogError("Unable to get file stream for {Path}: File Not Found", blobPath);
+            _logger.LogDebug("File not found: {Path}", blobPath);
 
             return null;
         }
@@ -383,7 +525,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     )
     {
         Argument.IsNotNullOrEmpty(container);
-        Argument.IsNotNull(blobName);
+        Argument.IsNotNullOrEmpty(blobName);
 
         var (_, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
@@ -397,7 +539,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         if (!blobInfo.HasValue)
         {
-            _logger.LogError("Unable to get file info for {Path}: File Not Found", blobPath);
+            _logger.LogDebug("File not found: {Path}", blobPath);
 
             return null;
         }
@@ -407,7 +549,40 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Page
+    #region List
+
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        var (_, infoContainer) = _BuildContainerPath(container);
+        var criteria = _GetRequestCriteria(container.Skip(1), blobSearchPattern);
+
+        await foreach (
+            var hashEntry in Database
+                .HashScanAsync(infoContainer, $"{criteria.Prefix}*")
+                .WithCancellation(cancellationToken)
+        )
+        {
+            if (hashEntry.Value.IsNull)
+            {
+                continue;
+            }
+
+            var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
+
+            if (criteria.Pattern?.IsMatch(blobInfo.BlobKey) == false)
+            {
+                continue;
+            }
+
+            yield return blobInfo;
+        }
+    }
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
@@ -593,6 +768,13 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     private static string _BuildBlobPath(string[] container, string blobName)
     {
+        _ValidatePathTraversal(blobName, nameof(blobName));
+
+        foreach (var segment in container)
+        {
+            _ValidatePathTraversal(segment, nameof(container));
+        }
+
         if (container.Length == 1)
         {
             return blobName;
@@ -601,8 +783,54 @@ public sealed class RedisBlobStorage : IBlobStorage
         return _NormalizePath(string.Join('/', container.Skip(1)).EnsureEndsWith('/') + blobName);
     }
 
+    private static void _ValidatePathTraversal(string value, string paramName)
+    {
+        if (value.Contains("..", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Path traversal sequences are not allowed.", paramName);
+        }
+
+        if (value.StartsWith('/') || value.StartsWith('\\'))
+        {
+            throw new ArgumentException("Value cannot start with path separator.", paramName);
+        }
+    }
+
     [return: NotNullIfNotNull(nameof(path))]
     private static string? _NormalizePath(string? path) => path?.Replace('\\', '/');
+
+    #endregion
+
+    #region Size Validation
+
+    private async Task _CopyWithSizeLimitAsync(Stream source, MemoryStream destination, CancellationToken ct)
+    {
+        if (_options.MaxBlobSizeBytes <= 0)
+        {
+            await source.CopyToAsync(destination, 0x14000, ct).AnyContext();
+            return;
+        }
+
+        var buffer = new byte[0x14000];
+        long totalBytes = 0;
+        int bytesRead;
+
+        while ((bytesRead = await source.ReadAsync(buffer, ct).AnyContext()) > 0)
+        {
+            totalBytes += bytesRead;
+
+            if (totalBytes > _options.MaxBlobSizeBytes)
+            {
+                throw new ArgumentException(
+                    $"Blob exceeds maximum size of {_options.MaxBlobSizeBytes} bytes. "
+                        + "Redis blob storage is intended for small/ephemeral blobs only.",
+                    nameof(source)
+                );
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).AnyContext();
+        }
+    }
 
     #endregion
 

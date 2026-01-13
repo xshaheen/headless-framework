@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Encodings.Web;
+using System.Text.RegularExpressions;
 using Framework.Recaptcha.Contracts;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
@@ -8,9 +10,12 @@ namespace Framework.Recaptcha.V3.TagHelpers;
 
 [PublicAPI]
 [HtmlTargetElement("recaptcha-script-v3-js", TagStructure = TagStructure.WithoutEndTag)]
-public sealed class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCaptchaOptions> optionsAccessor) : TagHelper
+public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCaptchaOptions> optionsAccessor) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V3);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V3Name);
+
+    [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*$")]
+    private static partial Regex ValidJsIdentifierRegex();
 
     public string? Action { get; set; }
 
@@ -43,23 +48,28 @@ public sealed class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCaptchaOptio
         });
          */
 
+        // Validate Callback is a valid JS identifier to prevent XSS
+        if (!string.IsNullOrWhiteSpace(Callback) && !ValidJsIdentifierRegex().IsMatch(Callback))
+        {
+            throw new InvalidOperationException(
+                $"Callback '{Callback}' is not a valid JavaScript identifier. " +
+                "Must start with a letter or underscore and contain only letters, digits, or underscores.");
+        }
+
         output.TagName = "script";
         output.TagMode = TagMode.StartTagAndEndTag;
 
-        var script =
-            "grecaptcha.ready(function(){ "
-            + "grecaptcha.reExecute = function("
-            + (Execute ? "" : "callback")
-            + "){"
-            + "grecaptcha.execute('"
-            + _options.SiteKey
-            + "'"
-            + (string.IsNullOrWhiteSpace(Action) ? "" : ",{action:'" + Action + "'}")
-            + ")"
-            + (Execute ? ".then(function(token){" + Callback + "(token)})" : ".then(callback)")
-            + "};"
-            + (Execute ? "grecaptcha.reExecute()" : "")
-            + "});";
+        // Encode Action to prevent XSS injection
+        var encodedAction = string.IsNullOrWhiteSpace(Action)
+            ? null
+            : JavaScriptEncoder.Default.Encode(Action);
+
+        var callbackParam = Execute ? "" : "callback";
+        var actionOption = encodedAction is null ? "" : $",{{action:'{encodedAction}'}}";
+        var thenClause = Execute ? $".then(function(token){{{Callback}(token)}})" : ".then(callback)";
+        var autoExecute = Execute ? "grecaptcha.reExecute()" : "";
+
+        var script = $"grecaptcha.ready(function(){{ grecaptcha.reExecute = function({callbackParam}){{grecaptcha.execute('{_options.SiteKey}'{actionOption}){thenClause}}};{autoExecute}}});";
 
         output.Content.SetHtmlContent(script);
     }

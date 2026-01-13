@@ -1,32 +1,31 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Encodings.Web;
 using Framework.Checks;
 using Framework.Http;
+using Framework.Sms.Connekio.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Sms.Connekio;
 
-public sealed class ConnekioSmsSender : ISmsSender
+public sealed class ConnekioSmsSender(
+    IHttpClientFactory httpClientFactory,
+    IOptions<ConnekioSmsOptions> optionsAccessor,
+    ILogger<ConnekioSmsSender> logger
+) : ISmsSender
 {
-    private readonly HttpClient _httpClient;
-    private readonly ConnekioSmsOptions _options;
-    private readonly ILogger<ConnekioSmsSender> _logger;
-    private readonly Uri _singleSmsEndpoint;
-    private readonly Uri _batchSmsEndpoint;
-
-    public ConnekioSmsSender(
-        HttpClient httpClient,
-        IOptions<ConnekioSmsOptions> optionsAccessor,
-        ILogger<ConnekioSmsSender> logger
-    )
+    private static readonly JsonSerializerOptions _JsonOptions = new()
     {
-        _httpClient = httpClient;
-        _logger = logger;
-        _options = optionsAccessor.Value;
-        _singleSmsEndpoint = new(_options.SingleSmsEndpoint);
-        _batchSmsEndpoint = new(_options.BatchSmsEndpoint);
-    }
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = ConnekioJsonSerializerContext.Default,
+    };
+
+    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
+    private readonly ConnekioSmsOptions _options = optionsAccessor.Value;
+    private readonly ILogger<ConnekioSmsSender> _logger = logger;
+    private readonly Uri _singleSmsEndpoint = new(optionsAccessor.Value.SingleSmsEndpoint);
+    private readonly Uri _batchSmsEndpoint = new(optionsAccessor.Value.BatchSmsEndpoint);
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -34,6 +33,8 @@ public sealed class ConnekioSmsSender : ISmsSender
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
 
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _GetEndpoint(request.IsBatch));
 
@@ -43,8 +44,9 @@ public sealed class ConnekioSmsSender : ISmsSender
             $"{_options.UserName}:{_options.Password}:{_options.AccountId}"
         );
 
-        var response = await _httpClient.SendAsync(requestMessage, cancellationToken);
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var httpClient = _httpClientFactory.CreateClient(ConnekioSetup.HttpClientName);
+        var response = await httpClient.SendAsync(requestMessage, cancellationToken).AnyContext();
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
@@ -58,7 +60,11 @@ public sealed class ConnekioSmsSender : ISmsSender
             return SendSingleSmsResponse.Succeeded();
         }
 
-        _logger.LogError("Failed to send SMS using Connekio API - Response={RawContent}", rawContent);
+        _logger.LogError(
+            "Failed to send SMS using Connekio API to {DestinationCount} recipients, StatusCode={StatusCode}",
+            request.Destinations.Count,
+            response.StatusCode
+        );
 
         return SendSingleSmsResponse.Failed("Failed to send.");
     }
@@ -67,28 +73,28 @@ public sealed class ConnekioSmsSender : ISmsSender
 
     private string _BuildPayload(SendSingleSmsRequest request)
     {
-        var payload = new Dictionary<string, object>(StringComparer.Ordinal)
-        {
-            { "account_id", _options.AccountId },
-            { "sender", _options.Sender },
-            { "text", request.Text },
-        };
-
         if (request.IsBatch)
         {
-            payload["mobile_list"] = request.Destinations.ConvertAll(recipient =>
+            var batchRequest = new ConnekioBatchSmsRequest
             {
-                var obj = new Dictionary<string, string>(StringComparer.Ordinal) { ["msisdn"] = recipient.ToString() };
+                AccountId = _options.AccountId,
+                Sender = _options.Sender,
+                Text = request.Text,
+                MobileList = request.Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() }).ToList(),
+            };
 
-                return obj;
-            });
+            return JsonSerializer.Serialize(batchRequest, _JsonOptions);
         }
-        else
+
+        var singleRequest = new ConnekioSingleSmsRequest
         {
-            payload["msisdn"] = request.Destinations[0].ToString();
-        }
+            AccountId = _options.AccountId,
+            Sender = _options.Sender,
+            Text = request.Text,
+            Msisdn = request.Destinations[0].ToString(),
+        };
 
-        return JsonSerializer.Serialize(payload);
+        return JsonSerializer.Serialize(singleRequest, _JsonOptions);
     }
 
     private Uri _GetEndpoint(bool isBatch)

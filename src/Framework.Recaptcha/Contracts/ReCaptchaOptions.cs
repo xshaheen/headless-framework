@@ -14,9 +14,9 @@ public sealed class ReCaptchaOptions
     public required string SiteSecret { get; set; }
 }
 
-public sealed class RecaptchaOptionsValidator : AbstractValidator<ReCaptchaOptions>
+public sealed class ReCaptchaOptionsValidator : AbstractValidator<ReCaptchaOptions>
 {
-    public RecaptchaOptionsValidator()
+    public ReCaptchaOptionsValidator()
     {
         RuleFor(x => x.VerifyBaseUrl).HttpUrl();
         RuleFor(x => x.SiteSecret).NotEmpty();

@@ -71,16 +71,14 @@ internal static class SwashbuckleSourceFilesGeneratorEmitter
 
         foreach (var data in types)
         {
-            var (typeName, format) = data.PrimitiveTypeSymbol.GetSwashbuckleSwaggerTypeAndFormat();
+            var (typeName, format) = data.UnderlyingType.GetSwashbuckleSwaggerTypeAndFormat();
 
-            // Get the XML documentation comment for the namedTypeSymbol
-            var xmlDocumentation = data.TypeSymbol.GetDocumentationCommentXml(
-                cancellationToken: context.CancellationToken
-            );
+            // Get the XML documentation comment from extracted data
+            var xmlDocumentation = data.XmlDocumentation;
 
             addMapping(isNullable: false);
 
-            if (data.TypeSymbol.IsValueType)
+            if (data.IsValueType)
             {
                 addMapping(isNullable: true);
             }
@@ -132,7 +130,7 @@ internal static class SwashbuckleSourceFilesGeneratorEmitter
 
                     if (example is not null)
                     {
-                        var exampleValue = example.InnerText.Trim().Replace("\"", "\\\"");
+                        var exampleValue = _EscapeForStringLiteral(example.InnerText.Trim());
 
                         builder
                             .Append("Example = new OpenApiString(")
@@ -151,5 +149,16 @@ internal static class SwashbuckleSourceFilesGeneratorEmitter
         builder.CloseBracket();
 
         context.AddSource($"{_SwashbuckleSwaggerExtensionsClassName}.g.cs", builder.ToString());
+    }
+
+    private static string _EscapeForStringLiteral(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t")
+            .Replace("\0", "\\0");
     }
 }

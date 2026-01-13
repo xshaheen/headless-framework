@@ -5,7 +5,7 @@ using Framework.Sitemaps;
 namespace Tests;
 
 #pragma warning disable xUnit1045 // Avoid using TheoryData type arguments that might not be serializable
-public sealed class SitemapIndexBuilderTests : TestBase
+public sealed class SitemapIndexBuilderTests : SitemapTestBase
 {
     public static readonly TheoryData<List<SitemapReference>, string> TestData = new()
     {
@@ -78,7 +78,7 @@ public sealed class SitemapIndexBuilderTests : TestBase
 
         await using (var stream = new MemoryStream())
         {
-            await references.WriteToAsync(stream);
+            await references.WriteToAsync(stream, AbortToken);
             result = Encoding.UTF8.GetString(stream.ToArray());
         }
 

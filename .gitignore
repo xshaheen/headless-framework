@@ -468,3 +468,7 @@ fabric.properties
 
 # Husky
 /.husky/pre-commit
+
+# OS generated files
+.DS_Store
+Thumbs.db

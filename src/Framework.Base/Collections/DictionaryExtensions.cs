@@ -89,8 +89,6 @@ public static class DictionaryExtensions
     /// <typeparam name="TKey">Type of the key</typeparam>
     /// <typeparam name="TValue">Type of the value</typeparam>
     /// <returns>Value if found, default if it can not find.</returns>
-    [SystemPure]
-    [JetBrainsPure]
     public static TValue? GetOrAdd<TKey, TValue>(this Dictionary<TKey, TValue?> dictionary, TKey key, TValue? value)
         where TKey : notnull
     {
@@ -115,8 +113,6 @@ public static class DictionaryExtensions
     /// <typeparam name="TKey">Type of the key</typeparam>
     /// <typeparam name="TValue">Type of the value</typeparam>
     /// <returns>Value if found, default if it can not find.</returns>
-    [SystemPure]
-    [JetBrainsPure]
     public static TValue? GetOrAdd<TKey, TValue>(
         this Dictionary<TKey, TValue?> dictionary,
         TKey key,
@@ -138,8 +134,6 @@ public static class DictionaryExtensions
         return newValue;
     }
 
-    [SystemPure]
-    [JetBrainsPure]
     public static bool TryUpdate<TKey, TValue>(
         this Dictionary<TKey, TValue?> dictionary,
         TKey key,
@@ -159,8 +153,6 @@ public static class DictionaryExtensions
         return true;
     }
 
-    [SystemPure]
-    [JetBrainsPure]
     public static bool TryUpdate<TKey, TValue>(this Dictionary<TKey, TValue?> dictionary, TKey key, TValue? value)
         where TKey : notnull
     {

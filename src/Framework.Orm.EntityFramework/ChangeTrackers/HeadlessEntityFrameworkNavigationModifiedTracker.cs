@@ -121,6 +121,24 @@ public sealed class HeadlessEntityFrameworkNavigationModifiedTracker
 
     private void _DetectChanges(EntityEntry entry, bool checkEntryState = true)
     {
+        // INTERNAL EF CORE API USAGE
+        // -----------------------------------------------------------------------------
+        // Required: Access to StateManager for navigation change tracking. EF Core's
+        //   public API does not expose navigation modification tracking (see issue #24076).
+        //   We need StateManager to:
+        //   - Get InternalEntityEntry via TryGetEntry() for relationship traversal
+        //   - Find principal entities via FindPrincipal() for foreign key relationships
+        //   - Iterate tracked entries via Entries for skip navigation detection
+        // Tested with: EF Core 8.x, 9.x, 10.x
+        // On EF Core upgrade: Verify the following APIs still exist:
+        //   - DbContext.GetDependencies().StateManager
+        //   - IStateManager.TryGetEntry(object, bool)
+        //   - IStateManager.FindPrincipal(InternalEntityEntry, IForeignKey)
+        //   - IStateManager.Entries
+        //   - InternalEntityEntry.ToEntityEntry()
+        // Alternative: None available in public API as of EF Core 10.0
+        // Related: https://github.com/dotnet/efcore/issues/24076
+        // -----------------------------------------------------------------------------
 #pragma warning disable EF1001 // Internal EF Core API usage.
         var stateManager = entry.Context.GetDependencies().StateManager;
 

@@ -19,7 +19,7 @@ public partial class PaymobCashInAuthenticatorTests
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.OptionsAccessor);
+        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClientFactory, timeProvider, fixture.OptionsAccessor);
         var result1 = await authenticator.GetAuthenticationTokenAsync();
         timeProvider.Advance(61.Minutes());
         var result2 = await authenticator.GetAuthenticationTokenAsync();
@@ -36,7 +36,7 @@ public partial class PaymobCashInAuthenticatorTests
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClient, timeProvider, fixture.OptionsAccessor);
+        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClientFactory, timeProvider, fixture.OptionsAccessor);
         var result1 = await authenticator.GetAuthenticationTokenAsync();
         timeProvider.Advance(50.Minutes());
         var result2 = await authenticator.GetAuthenticationTokenAsync();

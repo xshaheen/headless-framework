@@ -45,7 +45,7 @@ internal static class DapperSourceFilesGeneratorEmitter
                 "System",
                 "System.Globalization",
                 data.Namespace,
-                data.PrimitiveTypeSymbol.ContainingNamespace.ToDisplayString(),
+                data.PrimitiveTypeNamespace,
                 AbstractionConstants.Namespace,
             ]
         );
@@ -60,7 +60,7 @@ internal static class DapperSourceFilesGeneratorEmitter
             $"{TypeNames.DapperTypeHandler}<{data.ClassName}>"
         );
 
-        var parameterTypeName = data.TypeSymbol.IsValueType ? data.ClassName : data.ClassName + '?';
+        var parameterTypeName = data.IsValueType ? data.ClassName : data.ClassName + '?';
 
         // override SetValue method
         builder
@@ -69,7 +69,7 @@ internal static class DapperSourceFilesGeneratorEmitter
             )
             .OpenBracket()
             .AppendLine(
-                data.TypeSymbol.IsValueType
+                data.IsValueType
                     ? "parameter.Value = value.GetUnderlyingPrimitiveType();"
                     : "parameter.Value = value?.GetUnderlyingPrimitiveType();"
             )
@@ -207,7 +207,7 @@ internal static class DapperSourceFilesGeneratorEmitter
     internal static void AddDapperTypeHandlersHelper(
         this SourceProductionContext context,
         string assemblyName,
-        List<INamedTypeSymbol> types,
+        List<GeneratorData> types,
         bool addAssemblyAttribute
     )
     {
@@ -217,8 +217,8 @@ internal static class DapperSourceFilesGeneratorEmitter
 
         builder.AppendUsings(
             [
-                .. types.ConvertAll(x => x.ContainingNamespace.ToDisplayString()),
-                .. types.ConvertAll(x => _CreateConverterNamespaceName(x.ContainingNamespace.ToDisplayString())),
+                .. types.ConvertAll(x => x.Namespace),
+                .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
             ]
         );
 
@@ -242,9 +242,9 @@ internal static class DapperSourceFilesGeneratorEmitter
         builder.AppendLine($"public static void {_HelperMethodName}()");
         builder.OpenBracket(); // start method
 
-        foreach (var type in types)
+        foreach (var data in types)
         {
-            builder.Append($"global::Dapper.SqlMapper.AddTypeMap(new {_CreateHandlerClassName(type.Name)}());");
+            builder.Append($"global::Dapper.SqlMapper.AddTypeMap(new {_CreateHandlerClassName(data.ClassName)}());");
         }
 
         builder.CloseBracket(); // end method

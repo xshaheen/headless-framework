@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using System.Text.Unicode;
 
 namespace Framework.Slugs;
@@ -9,21 +10,40 @@ public sealed class SlugOptions
     public const int DefaultMaximumLength = 80;
     public const string DefaultSeparator = "-";
 
-    internal static SlugOptions Default { get; } = new();
+    public int MaximumLength { get; init; } = DefaultMaximumLength;
 
-    public int MaximumLength { get; set; } = DefaultMaximumLength;
+    public CasingTransformation CasingTransformation { get; init; } = CasingTransformation.ToLowerCase;
 
-    public CasingTransformation CasingTransformation { get; set; } = CasingTransformation.ToLowerCase;
+    /// <summary>
+    /// The separator between words in the slug. Default is "-".
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown when value is null or empty.</exception>
+    public string Separator
+    {
+        get;
+        init =>
+            field = string.IsNullOrEmpty(value)
+                ? throw new ArgumentException("Separator cannot be null or empty", nameof(value))
+                : value;
+    } = DefaultSeparator;
 
-    public string Separator { get; set; } = DefaultSeparator;
+    public CultureInfo? Culture { get; init; }
 
-    public CultureInfo? Culture { get; set; }
+    public bool CanEndWithSeparator { get; init; }
 
-    public bool CanEndWithSeparator { get; set; }
-
-#pragma warning disable CA2227 // Collection properties should be initialized to avoid null reference exceptions.
-    public List<UnicodeRange> AllowedRanges { get; set; } =
-#pragma warning restore CA2227
+    /// <summary>
+    /// Unicode ranges allowed in slugs.
+    /// </summary>
+    /// <remarks>
+    /// Default ranges:
+    /// <list type="bullet">
+    /// <item>A-Z: Latin uppercase letters</item>
+    /// <item>a-z: Latin lowercase letters</item>
+    /// <item>0-9: Digits</item>
+    /// <item>U+0620-U+064A: Arabic letters</item>
+    /// </list>
+    /// </remarks>
+    public IReadOnlyList<UnicodeRange> AllowedRanges { get; init; } =
         [
             UnicodeRange.Create('A', 'Z'),
             UnicodeRange.Create('a', 'z'),
@@ -31,36 +51,31 @@ public sealed class SlugOptions
             UnicodeRange.Create('ؠ', 'ي'),
         ];
 
-    public Dictionary<string, string> Replacements { get; } =
-        new(StringComparer.Ordinal)
+    public FrozenDictionary<string, string> Replacements { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            { "&", "and" },
-            { "+", "plus" },
-            { ".", "dot" },
-            { "%", "percent" },
-        };
+            { "&", " and " },
+            { "+", " plus " },
+            { ".", " dot " },
+            { "%", " percent " },
+        }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public bool IsAllowed(Rune character)
     {
-        return AllowedRanges.Count == 0
-            || AllowedRanges.Exists(range => _IsInRange(range, character))
-            || Replacements.ContainsKey(character.ToString());
-    }
-
-    public string Replace(Rune rune)
-    {
-        rune = CasingTransformation switch
+        if (AllowedRanges.Count == 0)
         {
-            CasingTransformation.ToLowerCase => Culture is null
-                ? Rune.ToLowerInvariant(rune)
-                : Rune.ToLower(rune, Culture),
-            CasingTransformation.ToUpperCase => Culture is null
-                ? Rune.ToUpperInvariant(rune)
-                : Rune.ToUpper(rune, Culture),
-            _ => rune,
-        };
+            return true;
+        }
 
-        return rune.ToString();
+        foreach (var t in AllowedRanges)
+        {
+            if (_IsInRange(t, character))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool _IsInRange(UnicodeRange range, Rune rune)

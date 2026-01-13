@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Api.Models;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Primitives;
@@ -27,7 +28,6 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         _RegisterSchema(context, generator, typeof(ValidationSeverity));
         _RegisterSchema(context, generator, typeof(HeadlessProblemDetails));
         _RegisterSchema(context, generator, typeof(ErrorDescriptor));
-        _RegisterSchema(context, generator, typeof(EntityNotFoundProblemDetailsParams));
         _RegisterSchema(context, generator, typeof(EntityNotFoundProblemDetails));
         _RegisterSchema(context, generator, typeof(ConflictProblemDetails));
         _RegisterSchema(context, generator, typeof(UnprocessableEntityProblemDetails));
@@ -59,16 +59,16 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
     {
         switch (statusCode)
         {
-            case "400":
+            case OpenApiStatusCodes.BadRequest:
                 _SetDefaultAndExample(context, response, _status400ProblemDetails, nameof(BadRequestProblemDetails));
                 break;
-            case "401":
+            case OpenApiStatusCodes.Unauthorized:
                 _SetDefaultAndExample(context, response, _status401ProblemDetails, nameof(UnauthorizedProblemDetails));
                 break;
-            case "403":
+            case OpenApiStatusCodes.Forbidden:
                 _SetDefaultAndExample(context, response, _status403ProblemDetails, nameof(ForbiddenProblemDetails));
                 break;
-            case "404":
+            case OpenApiStatusCodes.NotFound:
                 _SetDefaultAndExample(
                     context,
                     response,
@@ -76,10 +76,10 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                     nameof(EntityNotFoundProblemDetails)
                 );
                 break;
-            case "409":
+            case OpenApiStatusCodes.Conflict:
                 _SetDefaultAndExample(context, response, _status409ProblemDetails, nameof(ConflictProblemDetails));
                 break;
-            case "422":
+            case OpenApiStatusCodes.UnprocessableEntity:
                 _SetDefaultAndExample(
                     context,
                     response,
@@ -87,7 +87,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                     nameof(UnprocessableEntityProblemDetails)
                 );
                 break;
-            case "429":
+            case OpenApiStatusCodes.TooManyRequests:
                 _SetDefaultAndExample(
                     context,
                     response,
@@ -129,84 +129,85 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     #region Examples
 
-    private readonly BadRequestProblemDetails _status400ProblemDetails = new()
+    private static readonly DateTimeOffset _ExampleTimestamp = new(2024, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+    private static readonly BadRequestProblemDetails _status400ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.BadRequest,
         Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
         Status = StatusCodes.Status400BadRequest,
         Detail = HeadlessProblemDetailsConstants.Details.BadRequest,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
     };
 
-    private readonly UnauthorizedProblemDetails _status401ProblemDetails = new()
+    private static readonly UnauthorizedProblemDetails _status401ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.Unauthorized,
         Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
         Status = StatusCodes.Status401Unauthorized,
         Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
     };
 
-    private readonly ForbiddenProblemDetails _status403ProblemDetails = new()
+    private static readonly ForbiddenProblemDetails _status403ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.Forbidden,
         Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
         Status = StatusCodes.Status403Forbidden,
         Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
     };
 
-    private readonly EntityNotFoundProblemDetails _status404ProblemDetails = new()
+    private static readonly EntityNotFoundProblemDetails _status404ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.EntityNotFound,
         Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
         Status = StatusCodes.Status404NotFound,
-        Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound("User", "user-123"),
+        Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
-        Params = new EntityNotFoundProblemDetailsParams { Entity = "User", Key = "user-123" },
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
     };
 
-    private readonly ConflictProblemDetails _status409ProblemDetails = new()
+    private static readonly ConflictProblemDetails _status409ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.Conflict,
         Title = HeadlessProblemDetailsConstants.Titles.Conflict,
         Status = StatusCodes.Status409Conflict,
         Detail = HeadlessProblemDetailsConstants.Details.Conflict,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
         Errors = [new("business_error", @"Some business rule failed.")],
     };
 
-    private readonly UnprocessableEntityProblemDetails _status422ProblemDetails = new()
+    private static readonly UnprocessableEntityProblemDetails _status422ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.UnprocessableEntity,
         Title = HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
         Status = StatusCodes.Status422UnprocessableEntity,
         Detail = HeadlessProblemDetailsConstants.Details.UnprocessableEntity,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
         Errors = new(StringComparer.Ordinal)
         {
             ["email"] =
@@ -221,64 +222,18 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         },
     };
 
-    private readonly TooManyRequestsProblemDetails _status429ProblemDetails = new()
+    private static readonly TooManyRequestsProblemDetails _status429ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.TooManyRequests,
         Title = HeadlessProblemDetailsConstants.Titles.TooManyRequests,
         Status = StatusCodes.Status429TooManyRequests,
         Detail = HeadlessProblemDetailsConstants.Details.TooManyRequests,
         Instance = "/public/some-endpoint",
-        TraceId = "00-982607166a542147b435be3a847ddd71-fc75498eb9f09d48-00",
-        BuildNumber = "1.0.0",
-        CommitNumber = "abc123def",
-        Timestamp = DateTimeOffset.UtcNow,
+        TraceId = "<trace-id>",
+        BuildNumber = "<version>",
+        CommitNumber = "<commit>",
+        Timestamp = _ExampleTimestamp,
     };
-
-    #endregion
-
-    #region ProblemDetails Types
-
-    public class HeadlessProblemDetails
-    {
-        public required string Type { get; init; }
-        public required string Title { get; init; }
-        public required int Status { get; init; }
-        public required string Detail { get; init; }
-        public required string Instance { get; init; }
-        public required string TraceId { get; init; }
-        public required string BuildNumber { get; init; }
-        public required string CommitNumber { get; init; }
-        public required DateTimeOffset Timestamp { get; init; }
-    }
-
-    public sealed class BadRequestProblemDetails : HeadlessProblemDetails;
-
-    public sealed class UnauthorizedProblemDetails : HeadlessProblemDetails;
-
-    public sealed class ForbiddenProblemDetails : HeadlessProblemDetails;
-
-    public sealed class TooManyRequestsProblemDetails : HeadlessProblemDetails;
-
-    public sealed class EntityNotFoundProblemDetailsParams
-    {
-        public required string Entity { get; init; }
-        public required string Key { get; init; }
-    }
-
-    public sealed class EntityNotFoundProblemDetails : HeadlessProblemDetails
-    {
-        public required EntityNotFoundProblemDetailsParams Params { get; init; }
-    }
-
-    public sealed class ConflictProblemDetails : HeadlessProblemDetails
-    {
-        public required List<ErrorDescriptor> Errors { get; init; }
-    }
-
-    public sealed class UnprocessableEntityProblemDetails : HeadlessProblemDetails
-    {
-        public required Dictionary<string, List<ErrorDescriptor>> Errors { get; init; }
-    }
 
     #endregion
 }

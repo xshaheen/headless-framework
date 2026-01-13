@@ -439,33 +439,32 @@ public abstract class BlobStorageTestsBase : TestBase
         actual.ToString(SaveOptions.DisableFormatting).Should().Be(element.ToString(SaveOptions.DisableFormatting));
     }
 
-    public virtual async Task will_respect_stream_offset()
+    public virtual async Task will_reset_stream_position()
     {
         using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        const string blobName = "blake.txt";
+        const string blobName = "test.txt";
+        const string content = "EricBlake";
         var container = Container;
 
         await using var memoryStream = new MemoryStream();
 
-        long offset;
-
         await using (var writer = new StreamWriter(memoryStream, StringHelper.Utf8WithoutBom, 1024, true))
         {
-            writer.AutoFlush = true;
-            await writer.WriteAsync("Eric");
-            offset = memoryStream.Position;
-            await writer.WriteAsync("Blake");
+            await writer.WriteAsync(content);
             await writer.FlushAsync();
         }
 
-        memoryStream.Seek(offset, SeekOrigin.Begin);
+        // Position stream at offset (not at start)
+        memoryStream.Seek(4, SeekOrigin.Begin);
+
         var blob = new BlobUploadRequest(memoryStream, blobName);
         await storage.UploadAsync(container, blob);
 
-        (await storage.GetBlobContentAsync(container, blobName)).Should().Be("Blake");
+        // Service should reset stream and upload full content
+        (await storage.GetBlobContentAsync(container, blobName)).Should().Be(content);
     }
 
     public virtual async Task can_concurrently_manage_files()

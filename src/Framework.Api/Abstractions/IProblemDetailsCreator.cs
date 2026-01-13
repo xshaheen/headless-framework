@@ -58,12 +58,14 @@ public sealed class ProblemDetailsCreator(
 
     public ProblemDetails EntityNotFound(string entity, string key)
     {
+        _ = entity;
+        _ = key;
+
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
             Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
-            Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound(entity, key),
-            Extensions = { ["params"] = new { entity, key } },
+            Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound,
         };
 
         _Normalize(problemDetails);

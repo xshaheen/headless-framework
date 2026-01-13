@@ -9,6 +9,14 @@ namespace Framework.Generator.Primitives.Helpers;
 /// <summary>A helper class providing methods for generating code related to Swagger, TypeConverter, JsonConverter, and other operations.</summary>
 internal static class MethodGeneratorEmitter
 {
+    private static string? _EscapeFormatString(string? format)
+    {
+        if (format is null) return null;
+        return format
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"");
+    }
+
     /// <summary>TryCreate,TryCreate with error message methods for the specified type, and ValidateOrThrow.</summary>
     /// <param name="builder">The source code builder.</param>
     /// <param name="data">The generator data containing type information.</param>
@@ -24,7 +32,7 @@ internal static class MethodGeneratorEmitter
             .AppendReturnsDescription("true if the conversion succeeded; otherwise, false.");
 
         var primitiveType =
-            data.ParentSymbols.Count != 0 ? data.ParentSymbols[0].GetFriendlyName() : data.PrimitiveTypeFriendlyName;
+            data.ParentPrimitives.Length != 0 ? data.ParentPrimitives[0].FriendlyName : data.PrimitiveTypeFriendlyName;
 
         builder
             .Append("public static bool TryCreate(")
@@ -122,12 +130,12 @@ internal static class MethodGeneratorEmitter
     internal static void GenerateImplicitOperators(this SourceCodeBuilder builder, GeneratorData data)
     {
         var primitiveName = data.ClassName;
-        var primitiveType = data.TypeSymbol;
+        var primitiveTypeIsValueType = data.IsValueType;
         var underlyingFriendlyName = data.PrimitiveTypeFriendlyName;
-        var underlyingType = data.PrimitiveTypeSymbol;
+        var underlyingTypeIsValueType = data.PrimitiveTypeIsValueType;
 
         // From Underlying to our type
-        if (underlyingType.IsValueType || primitiveType.IsValueType)
+        if (underlyingTypeIsValueType || primitiveTypeIsValueType)
         {
             builder
                 .AppendSummary(
@@ -146,11 +154,11 @@ internal static class MethodGeneratorEmitter
             .AppendMethodAggressiveInliningAttribute()
             .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
             .Append($"public static implicit operator {primitiveName}?({underlyingFriendlyName}? value)")
-            .AppendLine($" => value is null ? null : new(value{(underlyingType.IsValueType ? ".Value" : "")});")
+            .AppendLine($" => value is null ? null : new(value{(underlyingTypeIsValueType ? ".Value" : "")});")
             .NewLine();
 
         // From our type to underlying type
-        if (underlyingType.IsValueType || primitiveType.IsValueType)
+        if (underlyingTypeIsValueType || primitiveTypeIsValueType)
         {
             builder
                 .AppendSummary(
@@ -170,15 +178,15 @@ internal static class MethodGeneratorEmitter
             .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
             .Append($"public static implicit operator {underlyingFriendlyName}?({primitiveName}? value)")
             .AppendLine(
-                $" => value is null ? null : ({underlyingFriendlyName}?)value{(primitiveType.IsValueType ? ".Value" : "")}.{data.FieldName};"
+                $" => value is null ? null : ({underlyingFriendlyName}?)value{(primitiveTypeIsValueType ? ".Value" : "")}.{data.FieldName};"
             )
             .NewLine();
 
-        if (data.ParentSymbols.Count != 0)
+        if (data.ParentPrimitives.Length != 0)
         {
-            var parentClassName = data.ParentSymbols[0].Name;
+            var parentClassName = data.ParentPrimitives[0].Name;
 
-            if (primitiveType.IsValueType)
+            if (primitiveTypeIsValueType)
             {
                 builder
                     .AppendSummary(
@@ -198,7 +206,7 @@ internal static class MethodGeneratorEmitter
                 .AppendLine("[return: NotNullIfNotNull(nameof(value))]")
                 .Append($"public static implicit operator {primitiveName}?({parentClassName}? value)")
                 .AppendLine(
-                    $" => value is null ? null : ({primitiveName}?)value{(underlyingType.IsValueType ? ".Value" : "")};"
+                    $" => value is null ? null : ({primitiveName}?)value{(underlyingTypeIsValueType ? ".Value" : "")};"
                 )
                 .NewLine();
         }
@@ -375,7 +383,7 @@ internal static class MethodGeneratorEmitter
     /// <param name="data">The <see cref="GeneratorData"/> object containing information about the data type.</param>
     public static void GenerateSpanFormattable(this SourceCodeBuilder builder, GeneratorData data)
     {
-        var syntaxAttribute = data.PrimitiveTypeSymbol.GetStringSyntaxAttribute();
+        var syntaxAttribute = data.UnderlyingType.GetStringSyntaxAttribute();
 
         builder
             .AppendInheritDoc()
@@ -403,7 +411,7 @@ internal static class MethodGeneratorEmitter
     /// <param name="data">The <see cref="GeneratorData"/> object containing information about the data type.</param>
     internal static void GenerateUtf8Formattable(this SourceCodeBuilder builder, GeneratorData data)
     {
-        var syntaxAttribute = data.PrimitiveTypeSymbol.GetStringSyntaxAttribute();
+        var syntaxAttribute = data.UnderlyingType.GetStringSyntaxAttribute();
 
         builder
             .AppendPreProcessorDirective("if NET8_0_OR_GREATER")
@@ -427,7 +435,7 @@ internal static class MethodGeneratorEmitter
     public static void GenerateParsable(this SourceCodeBuilder builder, GeneratorData data)
     {
         var underlyingType =
-            data.ParentSymbols.Count == 0 ? data.PrimitiveTypeFriendlyName : data.ParentSymbols[0].Name;
+            data.ParentPrimitives.Length == 0 ? data.PrimitiveTypeFriendlyName : data.ParentPrimitives[0].Name;
 
         var dataClassName = data.ClassName;
         var format = data.SerializationFormat;
@@ -460,7 +468,7 @@ internal static class MethodGeneratorEmitter
         {
             builder
                 .Append($"{underlyingType}.")
-                .AppendLineIfElse(format is null, "Parse(s, provider);", $"ParseExact(s, \"{format}\", provider);");
+                .AppendLineIfElse(format is null, "Parse(s, provider);", $"ParseExact(s, \"{_EscapeFormatString(format)}\", provider);");
         }
 
         #endregion
@@ -506,12 +514,12 @@ internal static class MethodGeneratorEmitter
         {
             builder
                 .AppendIf(format is null, $"if (!{underlyingType}.TryParse(s, provider, out var value))")
-                .AppendIf(format is not null, $"if (!{underlyingType}.TryParseExact(s, \"{format}\", out var value))");
+                .AppendIf(format is not null, $"if (!{underlyingType}.TryParseExact(s, \"{_EscapeFormatString(format)}\", out var value))");
         }
 
         builder.OpenBracket().AppendLine("result = default;").AppendLine("return false;").CloseBracket().NewLine();
 
-        if (!data.TypeSymbol.IsValueType)
+        if (!data.IsValueType)
         {
             builder.AppendLine($"return {dataClassName}.TryCreate(value, out result);");
         }
@@ -694,7 +702,7 @@ internal static class MethodGeneratorEmitter
         else
         {
             builder.AppendLine(
-                $"public void WriteXml(XmlWriter writer) => writer.WriteString({data.FieldName}.ToString(\"{data.SerializationFormat}\"));"
+                $"public void WriteXml(XmlWriter writer) => writer.WriteString({data.FieldName}.ToString(\"{_EscapeFormatString(data.SerializationFormat)}\"));"
             );
         }
     }

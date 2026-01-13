@@ -18,5 +18,5 @@ public sealed class CashInTransactionSourceData
     public object? Tenure { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

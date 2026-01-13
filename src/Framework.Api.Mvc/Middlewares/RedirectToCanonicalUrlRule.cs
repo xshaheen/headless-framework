@@ -77,6 +77,10 @@ public sealed class RedirectToCanonicalUrlRule : IRule
     {
         Argument.IsNotNull(context);
 
+        // Cache attribute lookups to avoid O(n) metadata scans on each check
+        var hasNoTrailingSlash = _HasAttribute<NoTrailingSlashAttribute>(context);
+        var hasNoLowercaseQueryString = _HasAttribute<NoLowercaseQueryStringAttribute>(context);
+
         var isCanonical = true;
 
         var request = context.HttpContext.Request;
@@ -91,7 +95,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
             if (AppendTrailingSlash)
             {
                 // Append a trailing slash to the end of the URL.
-                if (!hasTrailingSlash && !_HasAttribute<NoTrailingSlashAttribute>(context))
+                if (!hasTrailingSlash && !hasNoTrailingSlash)
                 {
                     request.Path = new PathString(request.Path.Value + _SlashCharacter);
                     isCanonical = false;
@@ -110,7 +114,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
 
         if (hasPath || request.QueryString.HasValue)
         {
-            if (LowercaseUrls && !_HasAttribute<NoTrailingSlashAttribute>(context))
+            if (LowercaseUrls && !hasNoTrailingSlash)
             {
                 foreach (var character in request.Path.Value!)
                 {
@@ -123,7 +127,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
                     }
                 }
 
-                if (request.QueryString.HasValue && !_HasAttribute<NoLowercaseQueryStringAttribute>(context))
+                if (request.QueryString.HasValue && !hasNoLowercaseQueryString)
                 {
                     foreach (var character in request.QueryString.Value!)
                     {

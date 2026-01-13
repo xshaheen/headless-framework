@@ -3,7 +3,6 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
-using Cysharp.Text;
 using Framework.Checks;
 using Framework.Core;
 using Framework.IO;
@@ -100,13 +99,15 @@ public static class StreamExtensions
 
         using var ms = stream.CreateMemoryStream();
 
-        return ms.GetBuffer(); // Using GetBuffer to avoid an extra array allocation.
+        return ms.ToArray();
     }
 
     [MustUseReturnValue]
     public static async Task<byte[]> GetAllBytesAsync(this Stream stream, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(stream);
+
+        stream.ResetPosition();
 
         if (stream is MemoryStream s)
         {
@@ -115,7 +116,7 @@ public static class StreamExtensions
 
         await using var ms = await stream.CreateMemoryStreamAsync(cancellationToken);
 
-        return ms.GetBuffer(); // Using GetBuffer to avoid an extra array allocation.
+        return ms.ToArray();
     }
 
     #endregion
@@ -153,7 +154,7 @@ public static class StreamExtensions
 
         cancellationToken.ThrowIfCancellationRequested();
         await using var writer = new StreamWriter(stream, encoding, leaveOpen: true);
-        await writer.WriteAsync(text);
+        await writer.WriteAsync(text).AnyContext();
     }
 
     public static ValueTask WriteTextAsync(
@@ -242,7 +243,7 @@ public static class StreamExtensions
         using var md5 = MD5.Create();
         var data = await md5.ComputeHashAsync(stream, cancellationToken);
 
-        var sb = ZString.CreateStringBuilder();
+        var sb = new StringBuilder();
 
         foreach (var d in data)
         {

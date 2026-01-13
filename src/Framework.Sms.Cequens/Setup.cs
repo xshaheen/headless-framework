@@ -9,6 +9,8 @@ namespace Framework.Sms.Cequens;
 [PublicAPI]
 public static class CequensSetup
 {
+    internal const string HttpClientName = "Headless:CequensSms";
+
     public static IServiceCollection AddCequensSmsSender(
         this IServiceCollection services,
         IConfiguration config,
@@ -54,8 +56,8 @@ public static class CequensSetup
         services.AddSingleton<ISmsSender, CequensSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, CequensSmsSender>(name: "cequens-client")
-            : services.AddHttpClient<ISmsSender, CequensSmsSender>(name: "cequens-client", configureClient);
+            ? services.AddHttpClient(HttpClientName)
+            : services.AddHttpClient(HttpClientName, configureClient);
 
         if (configureResilience is not null)
         {
