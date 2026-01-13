@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Framework.Blobs.Internals;
@@ -115,8 +116,6 @@ public sealed class SshBlobStorage : IBlobStorage
         {
             _logger.LogDebug(e, "Error saving {Path}: Attempting to create directory", blobPath);
             await CreateContainerAsync(container, cancellationToken).AnyContext();
-
-            _logger.LogTrace("Saving {Path}", blobPath);
 
             await using var sftpFileStream = await _client
                 .OpenAsync(blobPath, FileMode.OpenOrCreate, FileAccess.Write, cancellationToken)
@@ -598,6 +597,34 @@ public sealed class SshBlobStorage : IBlobStorage
     #endregion
 
     #region List
+
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(container);
+
+        var directoryPath = _BuildContainerPath(container);
+        var criteria = _GetRequestCriteria(directoryPath, blobSearchPattern);
+
+        await _EnsureClientConnectedAsync(cancellationToken).AnyContext();
+
+        _logger.LogTrace(
+            "Getting blobs recursively matching {Prefix} and {Pattern}...",
+            criteria.PathPrefix,
+            criteria.Pattern
+        );
+
+        await foreach (
+            var blob in _GetBlobsRecursivelyAsync(container[0], criteria.PathPrefix, criteria.Pattern, cancellationToken)
+                .AnyContext()
+        )
+        {
+            yield return blob;
+        }
+    }
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,

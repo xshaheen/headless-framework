@@ -25,6 +25,12 @@ public sealed class SshBlobStorageOptions
     /// SSH/SFTP connections have limited channel capacity, so this should be kept low.
     /// </summary>
     public int MaxConcurrentOperations { get; set; } = 4;
+
+    /// <summary>
+    /// Allow none-authentication fallback. When false (default), throws if no password or private key is provided.
+    /// Set to true only if intentionally using passwordless authentication.
+    /// </summary>
+    public bool AllowNoneAuthentication { get; set; } = false;
 }
 
 internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlobStorageOptions>

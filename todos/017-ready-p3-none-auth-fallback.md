@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p3
 issue_id: "017"
 tags: [code-review, security, configuration]
@@ -60,14 +60,15 @@ Option B: Add explicit config option
 
 ## Acceptance Criteria
 
-- [ ] Missing credentials cause clear error
-- [ ] Intentional none-auth still possible if needed
+- [x] Missing credentials cause clear error
+- [x] Intentional none-auth still possible if needed
 
 ## Work Log
 
 | Date | Action | Learnings |
 |------|--------|-----------|
 | 2026-01-13 | Identified via security review | |
+| 2026-01-13 | Implemented Option B: Added AllowNoneAuthentication config option | Default false, throws InvalidOperationException when credentials missing |
 
 ## Resources
 
