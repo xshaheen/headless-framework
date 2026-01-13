@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace Framework.Reflection;
@@ -49,7 +50,8 @@ public static class TypeHelper
         return default!;
     }
 
-    public static object? GetDefaultValue(Type type)
+    [RequiresUnreferencedCode("Uses Activator.CreateInstance which may not work correctly with trimming.")]
+    public static object? GetDefaultValue([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type type)
     {
         return type.IsValueType ? Activator.CreateInstance(type) : null;
     }
@@ -64,6 +66,7 @@ public static class TypeHelper
         return Nullable.GetUnderlyingType(type) ?? type;
     }
 
+    [RequiresUnreferencedCode("Uses reflection to get constructible defined types from assembly.")]
     public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly> assemblies)
     {
         var types = new List<Type>();

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
 
 namespace Framework.Urls;
@@ -16,6 +17,7 @@ public static class CommonExtensions
     /// </summary>
     /// <param name="obj">The object to parse into key-value pairs</param>
     /// <exception cref="ArgumentNullException"><paramref name="obj"/> is <see langword="null" />.</exception>
+    [RequiresUnreferencedCode("Uses Type.GetProperties and Type.GetField which is not compatible with trimming.")]
     public static IEnumerable<(string Key, object? Value)> ToKeyValuePairs(this object obj)
     {
         Argument.IsNotNull(obj);

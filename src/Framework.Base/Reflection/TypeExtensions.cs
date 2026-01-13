@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Framework.Checks;
@@ -57,6 +58,7 @@ public static class TypeExtensions
     }
 
     [MustUseReturnValue]
+    [RequiresDynamicCode("Making generic types may require dynamic code generation.")]
     public static Type MakeNullable(this Type type, bool nullable = true)
     {
         return type.IsNullableType() == nullable ? type
@@ -142,9 +144,11 @@ public static class TypeExtensions
     }
 
     [MustUseReturnValue]
-    public static object? GetDefaultValue(this Type type) => TypeHelper.GetDefaultValue(type);
+    [RequiresUnreferencedCode("Uses Activator.CreateInstance which may not work correctly with trimming.")]
+    public static object? GetDefaultValue([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] this Type type) => TypeHelper.GetDefaultValue(type);
 
     [MustUseReturnValue]
+    [RequiresUnreferencedCode("Uses GetDefaultValue which uses Activator.CreateInstance.")]
     public static bool IsDefaultValue(this object? obj)
     {
         return obj?.Equals(obj.GetType().GetDefaultValue()) is not false;

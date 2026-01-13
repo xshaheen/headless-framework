@@ -447,6 +447,7 @@ public sealed partial class Url
     /// <param name="values">Typically an anonymous object, ie: new { x = 1, y = 2 }</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
     /// <returns>The Url object with the query parameters added</returns>
+    [RequiresUnreferencedCode("Uses reflection to extract properties when passing anonymous objects.")]
     public Url SetQueryParams(object? values, NullValueHandling nullValueHandling = NullValueHandling.Remove)
     {
         if (values is null)
@@ -460,15 +461,15 @@ public sealed partial class Url
         }
 
         var visited = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var kv in values.ToKeyValuePairs())
+        foreach (var (key, value) in values.ToKeyValuePairs())
         {
-            if (visited.Add(kv.Key))
+            if (visited.Add(key))
             {
-                SetQueryParam(kv.Key, kv.Value, nullValueHandling); // overwrite existing key(s)
+                SetQueryParam(key, value, nullValueHandling); // overwrite existing key(s)
             }
             else
             {
-                AppendQueryParam(kv.Key, kv.Value, nullValueHandling); // unless they're in this same collection (#370)
+                AppendQueryParam(key, value, nullValueHandling); // unless they're in this same collection (#370)
             }
         }
 
@@ -555,6 +556,7 @@ public sealed partial class Url
     /// <param name="values">Typically an anonymous object, ie: new { x = 1, y = 2 }</param>
     /// <param name="nullValueHandling">Indicates how to handle null values. Defaults to Remove (any existing)</param>
     /// <returns>The Url object with the query parameters added</returns>
+    [RequiresUnreferencedCode("Uses reflection to extract properties when passing anonymous objects.")]
     public Url AppendQueryParam(object? values, NullValueHandling nullValueHandling = NullValueHandling.Remove)
     {
         if (values is null)
