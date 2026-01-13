@@ -21,7 +21,7 @@ public sealed class PaymobCashOutAuthenticator(
 {
     public async Task<string> GetAccessTokenAsync()
     {
-        var response = await GenerateTokenAsync();
+        var response = await GenerateTokenAsync().AnyContext();
 
         return response.AccessToken;
     }
@@ -39,14 +39,14 @@ public sealed class PaymobCashOutAuthenticator(
         );
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
 
-        var response = await httpClient.SendAsync(request);
+        var response = await httpClient.SendAsync(request).AnyContext();
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response);
+            await PaymobCashOutException.ThrowAsync(response).AnyContext();
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>())!;
+        return (await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>().AnyContext())!;
     }
 
     public async Task<CashOutAuthenticationResponse> RefreshTokenAsync(string refreshToken)
@@ -63,13 +63,13 @@ public sealed class PaymobCashOutAuthenticator(
             [new("grant_type", "refresh_token"), new("refresh_token", refreshToken)]
         );
 
-        var response = await httpClient.SendAsync(request);
+        var response = await httpClient.SendAsync(request).AnyContext();
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response);
+            await PaymobCashOutException.ThrowAsync(response).AnyContext();
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>())!;
+        return (await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>().AnyContext())!;
     }
 }

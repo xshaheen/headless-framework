@@ -29,7 +29,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
     public async Task<CashOutTransaction> Disburse(CashOutDisburseRequest request)
     {
-        var accessToken = await authenticator.GetAccessTokenAsync();
+        var accessToken = await authenticator.GetAccessTokenAsync().AnyContext();
         var requestUrl = Url.Combine(httpClient.BaseAddress?.ToString()!, "disburse");
 
         using var requestMessage = new HttpRequestMessage();
@@ -39,21 +39,21 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         requestMessage.Content = JsonContent.Create(request, options: _Options);
         requestMessage.Headers.Add("Authorization", $"Bearer {accessToken}");
 
-        var response = await httpClient.SendAsync(requestMessage);
+        var response = await httpClient.SendAsync(requestMessage).AnyContext();
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response);
+            await PaymobCashOutException.ThrowAsync(response).AnyContext();
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashOutTransaction>())!;
+        return (await response.Content.ReadFromJsonAsync<CashOutTransaction>().AnyContext())!;
     }
 
     /// <summary>Get the budget of the Paymob CashOut account.</summary>
     /// <remarks>API limit is 5 requests per minute.</remarks>
     public async Task<string> GetBudgetAsync()
     {
-        var accessToken = await authenticator.GetAccessTokenAsync();
+        var accessToken = await authenticator.GetAccessTokenAsync().AnyContext();
 
         using var request = new HttpRequestMessage();
 
@@ -61,14 +61,14 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         request.RequestUri = new Uri("budget/inquire/", UriKind.Relative);
         request.Headers.Add("Authorization", $"Bearer {accessToken}");
 
-        var response = await httpClient.SendAsync(request);
+        var response = await httpClient.SendAsync(request).AnyContext();
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response);
+            await PaymobCashOutException.ThrowAsync(response).AnyContext();
         }
 
-        return await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync().AnyContext();
     }
 
     /// <summary>Get transactions by their Ids.</summary>
@@ -82,7 +82,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         Argument.IsNotNullOrEmpty(transactionsIds);
         Argument.IsPositive(page);
 
-        var accessToken = await authenticator.GetAccessTokenAsync();
+        var accessToken = await authenticator.GetAccessTokenAsync().AnyContext();
 
         using var request = new HttpRequestMessage();
 
@@ -101,13 +101,13 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
             }
         );
 
-        var response = await httpClient.SendAsync(request);
+        var response = await httpClient.SendAsync(request).AnyContext();
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response);
+            await PaymobCashOutException.ThrowAsync(response).AnyContext();
         }
 
-        return await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync().AnyContext();
     }
 }
