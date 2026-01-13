@@ -12,6 +12,8 @@ namespace Framework.Payments.Paymob.CashIn;
 [PublicAPI]
 public static class PaymobCashInSetup
 {
+    internal const string HttpClientName = "Headless:PaymobCashIn";
+
     /// <summary>Adds services required for using paymob cash in.</summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
     /// <param name="setupAction">The action used to configure <see cref="PaymobCashInOptions"/>.</param>
@@ -62,11 +64,9 @@ public static class PaymobCashInSetup
     {
         services.TryAddSingleton(TimeProvider.System);
 
-        const string clientName = "paymob_cash_in";
-
         var httpClientBuilder = configureClient is not null
-            ? services.AddHttpClient(clientName, configureClient)
-            : services.AddHttpClient(clientName);
+            ? services.AddHttpClient(HttpClientName, configureClient)
+            : services.AddHttpClient(HttpClientName);
 
         if (configureResilience is not null)
         {
@@ -81,7 +81,7 @@ public static class PaymobCashInSetup
 
         services
             .AddScoped<IPaymobCashInBroker, PaymobCashInBroker>()
-            .AddHttpClient<IPaymobCashInBroker, PaymobCashInBroker>(clientName);
+            .AddHttpClient<IPaymobCashInBroker, PaymobCashInBroker>(HttpClientName);
 
         return services;
     }

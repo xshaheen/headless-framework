@@ -14,7 +14,7 @@ public partial class PaymobCashInBroker
     )
     {
         return await _PostWithTokenAuthAsync<CashInCreateIntentionRequest, CashInCreateIntentionResponse>(
-            _options.CreateIntentionUrl,
+            Options.CreateIntentionUrl,
             request,
             cancellationToken
         ).AnyContext();
@@ -26,7 +26,7 @@ public partial class PaymobCashInBroker
     )
     {
         return await _PostWithTokenAuthAsync<CashInRefundRequest, CashInCallbackTransaction>(
-            _options.RefundUrl,
+            Options.RefundUrl,
             request,
             cancellationToken
         ).AnyContext();
@@ -38,7 +38,7 @@ public partial class PaymobCashInBroker
     )
     {
         return await _PostWithTokenAuthAsync<CashInVoidRefundRequest, CashInCallbackTransaction>(
-            _options.VoidRefundUrl,
+            Options.VoidRefundUrl,
             request,
             cancellationToken
         ).AnyContext();

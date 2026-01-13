@@ -38,8 +38,8 @@ public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
         ILogger<ReCaptchaSiteVerifyV2> logger
     )
     {
-        _options = optionsAccessor.Get(ReCaptchaConstants.V2);
-        _client = clientFactory.CreateClient(ReCaptchaConstants.V2);
+        _options = optionsAccessor.Get(RecaptchaSetup.V2Name);
+        _client = clientFactory.CreateClient(RecaptchaSetup.V2Name);
         _client.BaseAddress = new Uri(_options.VerifyBaseUrl);
         _logger = logger;
     }

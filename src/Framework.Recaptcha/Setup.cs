@@ -13,8 +13,11 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Framework.Recaptcha;
 
 [PublicAPI]
-public static class Setup
+public static class RecaptchaSetup
 {
+    internal const string V3Name = "Headless:RecaptchaV3";
+    internal const string V2Name = "Headless:RecaptchaV2";
+
     extension(IServiceCollection services)
     {
         public IServiceCollection AddReCaptchaV3(
@@ -25,7 +28,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
+                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, V3Name);
             }
 
             _AddCoreV3(services, configureClient, configureResilience);
@@ -41,7 +44,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V3);
+                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction,V3Name);
             }
 
             _AddCoreV3(services, configureClient, configureResilience);
@@ -57,7 +60,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
+                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, V2Name);
             }
 
             _AddCoreV2(services, configureClient, configureResilience);
@@ -73,7 +76,7 @@ public static class Setup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, ReCaptchaConstants.V2);
+                services.Configure<ReCaptchaOptions, RecaptchaOptionsValidator>(setupAction, V2Name);
             }
 
             _AddCoreV2(services, configureClient, configureResilience);
@@ -89,8 +92,8 @@ public static class Setup
     )
     {
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient(ReCaptchaConstants.V3)
-            : services.AddHttpClient(ReCaptchaConstants.V3, configureClient);
+            ? services.AddHttpClient(V3Name)
+            : services.AddHttpClient(V3Name, configureClient);
 
         if (configureResilience is not null)
         {
@@ -112,8 +115,8 @@ public static class Setup
     )
     {
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient(ReCaptchaConstants.V2)
-            : services.AddHttpClient(ReCaptchaConstants.V2, configureClient);
+            ? services.AddHttpClient(V2Name)
+            : services.AddHttpClient(V2Name, configureClient);
 
         if (configureResilience is not null)
         {

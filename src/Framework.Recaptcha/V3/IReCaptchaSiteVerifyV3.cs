@@ -34,8 +34,8 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
         ILogger<ReCaptchaSiteVerifyV3> logger
     )
     {
-        _options = optionsAccessor.Get(ReCaptchaConstants.V3);
-        _client = clientFactory.CreateClient(ReCaptchaConstants.V3);
+        _options = optionsAccessor.Get(RecaptchaSetup.V3Name);
+        _client = clientFactory.CreateClient(RecaptchaSetup.V3Name);
         _client.BaseAddress = new Uri(_options.VerifyBaseUrl);
         _logger = logger;
     }

@@ -14,8 +14,6 @@ public sealed class VictoryLinkSmsSender(
     ILogger<VictoryLinkSmsSender> logger
 ) : ISmsSender
 {
-    public const string HttpClientName = "VictoryLinkSms";
-
     private readonly VictoryLinkSmsOptions _options = optionsAccessor.Value;
     private readonly Uri _uri = new(optionsAccessor.Value.Endpoint);
 
@@ -41,7 +39,7 @@ public sealed class VictoryLinkSmsSender(
                 : request.Destinations[0].Number,
         };
 
-        using var httpClient = httpClientFactory.CreateClient(HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(VictoryLinkSetup.HttpClientName);
         var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, cancellationToken).AnyContext();
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
 

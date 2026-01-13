@@ -11,5 +11,5 @@ public sealed partial class PaymobCashInBroker(
     IOptionsMonitor<PaymobCashInOptions> options
 ) : IPaymobCashInBroker
 {
-    private PaymobCashInOptions _options => options.CurrentValue;
+    private PaymobCashInOptions Options => options.CurrentValue;
 }

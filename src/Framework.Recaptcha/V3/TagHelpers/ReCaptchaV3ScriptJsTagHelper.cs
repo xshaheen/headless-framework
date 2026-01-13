@@ -10,7 +10,7 @@ namespace Framework.Recaptcha.V3.TagHelpers;
 [HtmlTargetElement("recaptcha-script-v3-js", TagStructure = TagStructure.WithoutEndTag)]
 public sealed class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCaptchaOptions> optionsAccessor) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V3);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(RecaptchaSetup.V3Name);
 
     public string? Action { get; set; }
 

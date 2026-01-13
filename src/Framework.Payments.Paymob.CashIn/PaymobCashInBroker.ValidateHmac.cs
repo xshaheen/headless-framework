@@ -28,7 +28,7 @@ public partial class PaymobCashInBroker
         Argument.IsNotNullOrEmpty(concatenatedString);
         Argument.IsNotNullOrEmpty(hmac);
 
-        var keyBytes = Encoding.UTF8.GetBytes(_options.Hmac);
+        var keyBytes = Encoding.UTF8.GetBytes(Options.Hmac);
         var textBytes = Encoding.UTF8.GetBytes(concatenatedString);
         var hashBytes = HMACSHA512.HashData(keyBytes, textBytes);
         var computedHmac = Convert.ToHexStringLower(hashBytes);

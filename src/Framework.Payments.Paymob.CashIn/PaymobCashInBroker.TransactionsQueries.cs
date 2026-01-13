@@ -12,7 +12,7 @@ public partial class PaymobCashInBroker
         CancellationToken cancellationToken = default
     )
     {
-        var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/transactions");
+        var requestUrl = Url.Combine(Options.ApiBaseUrl, "acceptance/transactions");
 
         if (request is not null)
         {
@@ -27,7 +27,7 @@ public partial class PaymobCashInBroker
         CancellationToken cancellationToken = default
     )
     {
-        var requestUrl = Url.Combine(_options.ApiBaseUrl, $"acceptance/transactions/{transactionId}");
+        var requestUrl = Url.Combine(Options.ApiBaseUrl, $"acceptance/transactions/{transactionId}");
 
         return await _GetWithBearerAuthAsync<CashInTransaction>(requestUrl, cancellationToken).AnyContext();
     }

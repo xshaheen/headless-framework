@@ -10,7 +10,7 @@ public partial class PaymobCashInBroker
 {
     public string CreateIframeSrc(string iframeId, string token)
     {
-        return Url.Combine(_options.IframeBaseUrl, iframeId).SetQueryParams(new { payment_token = token });
+        return Url.Combine(Options.IframeBaseUrl, iframeId).SetQueryParams(new { payment_token = token });
     }
 
     public async Task<CashInWalletPayResponse> CreateWalletPayAsync(
@@ -67,7 +67,7 @@ public partial class PaymobCashInBroker
 
     private async Task<TResponse> _PayAsync<TResponse>(CashInPayRequest request, CancellationToken cancellationToken)
     {
-        var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/payments/pay");
+        var requestUrl = Url.Combine(Options.ApiBaseUrl, "acceptance/payments/pay");
 
         return await _PostAsync<CashInPayRequest, TResponse>(requestUrl, request, cancellationToken).AnyContext();
     }

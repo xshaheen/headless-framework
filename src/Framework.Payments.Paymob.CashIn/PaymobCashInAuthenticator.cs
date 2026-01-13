@@ -10,8 +10,6 @@ namespace Framework.Payments.Paymob.CashIn;
 
 public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDisposable
 {
-    private const string _ClientName = "paymob_cash_in";
-
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly TimeProvider _timeProvider;
     private readonly IOptionsMonitor<PaymobCashInOptions> _options;
@@ -54,14 +52,15 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
         var requestUrl = Url.Combine(config.ApiBaseUrl, "auth/tokens");
         var request = new CashInAuthenticationTokenRequest { ApiKey = config.ApiKey };
 
-        var httpClient = _httpClientFactory.CreateClient(_ClientName);
+        var httpClient = _httpClientFactory.CreateClient(PaymobCashInSetup.HttpClientName);
+
         using var response = await httpClient
             .PostAsJsonAsync(requestUrl, request, config.SerializationOptions, cancellationToken)
             .AnyContext();
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response, default).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, CancellationToken.None).AnyContext();
         }
 
         var content = await response

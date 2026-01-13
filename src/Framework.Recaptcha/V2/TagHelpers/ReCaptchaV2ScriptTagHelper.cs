@@ -25,7 +25,7 @@ public sealed class ReCaptchaV2ScriptTagHelper(
 
     public bool HideBadge { get; set; }
 
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V2);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(RecaptchaSetup.V2Name);
 
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {

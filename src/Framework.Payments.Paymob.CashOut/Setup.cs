@@ -11,6 +11,8 @@ namespace Framework.Payments.Paymob.CashOut;
 [PublicAPI]
 public static class PaymobCashOutSetup
 {
+    internal const string HttpClientName = "Headless:PaymobCashOut";
+
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
         Action<PaymobCashOutOptions> setupAction,
@@ -62,11 +64,9 @@ public static class PaymobCashOutSetup
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        const string clientName = "paymob_cash_out";
-
         var httpClientBuilder = configureClient is not null
-            ? services.AddHttpClient(clientName, configureClient)
-            : services.AddHttpClient(clientName);
+            ? services.AddHttpClient(HttpClientName, configureClient)
+            : services.AddHttpClient(HttpClientName);
 
         if (configureResilience is not null)
         {
@@ -79,11 +79,11 @@ public static class PaymobCashOutSetup
 
         services
             .AddSingleton<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>()
-            .AddHttpClient<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>(clientName);
+            .AddHttpClient<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>(HttpClientName);
 
         services
             .AddScoped<IPaymobCashOutBroker, PaymobCashOutBroker>()
-            .AddHttpClient<IPaymobCashOutBroker, PaymobCashOutBroker>(clientName);
+            .AddHttpClient<IPaymobCashOutBroker, PaymobCashOutBroker>(HttpClientName);
 
         return services;
     }

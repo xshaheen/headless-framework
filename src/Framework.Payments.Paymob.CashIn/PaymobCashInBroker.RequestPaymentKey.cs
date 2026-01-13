@@ -16,9 +16,9 @@ public partial class PaymobCashInBroker
         CancellationToken cancellationToken = default
     )
     {
-        var authToken = await authenticator.GetAuthenticationTokenAsync().AnyContext();
-        var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/payment_keys");
-        var internalRequest = new CashInPaymentKeyInternalRequest(request, authToken, _options.ExpirationPeriod);
+        var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).AnyContext();
+        var requestUrl = Url.Combine(Options.ApiBaseUrl, "acceptance/payment_keys");
+        var internalRequest = new CashInPaymentKeyInternalRequest(request, authToken, Options.ExpirationPeriod);
 
         return await _PostAsync<CashInPaymentKeyInternalRequest, CashInPaymentKeyResponse>(
             requestUrl,

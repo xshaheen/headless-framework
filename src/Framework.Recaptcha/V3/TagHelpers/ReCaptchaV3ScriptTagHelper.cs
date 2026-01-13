@@ -15,7 +15,7 @@ public sealed class ReCaptchaV3ScriptTagHelper(
     IReCaptchaLanguageCodeProvider reCaptchaLanguageCodeProvider
 ) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V3);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(RecaptchaSetup.V3Name);
 
     public bool HideBadge { get; set; }
 

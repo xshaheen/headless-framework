@@ -12,7 +12,7 @@ public partial class PaymobCashInBroker
         CancellationToken cancellationToken = default
     )
     {
-        var requestUrl = Url.Combine(_options.ApiBaseUrl, "ecommerce/orders");
+        var requestUrl = Url.Combine(Options.ApiBaseUrl, "ecommerce/orders");
 
         if (request is not null)
         {
@@ -24,7 +24,7 @@ public partial class PaymobCashInBroker
 
     public async Task<CashInOrder?> GetOrderAsync(string orderId, CancellationToken cancellationToken = default)
     {
-        var requestUrl = Url.Combine(_options.ApiBaseUrl, "ecommerce/orders", orderId);
+        var requestUrl = Url.Combine(Options.ApiBaseUrl, "ecommerce/orders", orderId);
 
         return await _GetWithBearerAuthAsync<CashInOrder>(requestUrl, cancellationToken).AnyContext();
     }

@@ -15,7 +15,7 @@ public sealed class InfobipSmsSender(
     ILogger<InfobipSmsSender> logger
 ) : ISmsSender
 {
-    internal const string HttpClientName = "InfobipSms";
+    internal const string HttpClientName = "Headless:InfobipSms";
 
     private readonly InfobipSmsOptions _options = optionsAccessor.Value;
 
