@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using System.Text.Encodings.Web;
 using Framework.Checks;
 using Framework.Sms.VictoryLink.Internals;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,12 @@ public sealed class VictoryLinkSmsSender(
     ILogger<VictoryLinkSmsSender> logger
 ) : ISmsSender
 {
+    private static readonly JsonSerializerOptions _JsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = VictoryLinkJsonSerializerContext.Default,
+    };
+
     private readonly VictoryLinkSmsOptions _options = optionsAccessor.Value;
     private readonly Uri _uri = new(optionsAccessor.Value.Endpoint);
 
@@ -37,7 +44,8 @@ public sealed class VictoryLinkSmsSender(
                 : request.Destinations[0].Number,
         };
 
-        var response = await httpClient.PostAsJsonAsync(_uri, victoryLinkRequest, cancellationToken);
+        using var content = JsonContent.Create(victoryLinkRequest, options: _JsonOptions);
+        var response = await httpClient.PostAsync(_uri, content, cancellationToken);
         var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(rawContent))
