@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization.Metadata;
 
 namespace Framework.Serializer.Modifiers;
@@ -10,6 +11,8 @@ public sealed class JsonSerializerModifiersOptions
     public List<Action<JsonTypeInfo>> Modifiers { get; } = [];
 }
 
+[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class SystemJsonTypeInfoResolver : DefaultJsonTypeInfoResolver
 {
     public SystemJsonTypeInfoResolver(JsonSerializerModifiersOptions options)

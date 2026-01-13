@@ -74,6 +74,7 @@ public static class CommonExtensions
             select (name, (object?)value);
     }
 
+    [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
     private static IEnumerable<(string Name, object? Value)> _ObjectToKV(object obj) =>
         from prop in obj.GetType().GetProperties()
         let getter = prop.GetGetMethod(false)
@@ -81,6 +82,7 @@ public static class CommonExtensions
         let val = getter.Invoke(obj, null)
         select (prop.Name, _GetDeclaredTypeValue(val, prop.PropertyType));
 
+    [RequiresUnreferencedCode("Uses Type.GetInterfaces which is not compatible with trimming.")]
     internal static object? _GetDeclaredTypeValue(object? value, Type declaredType)
     {
         if (value is null || value.GetType() == declaredType)
@@ -110,6 +112,7 @@ public static class CommonExtensions
         return value;
     }
 
+    [RequiresUnreferencedCode("Uses Type.GetProperty and Type.GetField which is not compatible with trimming.")]
     private static IEnumerable<(string Key, object? Value)> _CollectionToKV(IEnumerable col)
     {
         foreach (var item in col)
@@ -130,6 +133,7 @@ public static class CommonExtensions
         }
     }
 
+    [RequiresUnreferencedCode("Uses Type.GetProperty and Type.GetField which is not compatible with trimming.")]
     private static bool _TryGetProp(object obj, string name, out object? value)
     {
         var prop = obj.GetType().GetProperty(name);
@@ -149,6 +153,7 @@ public static class CommonExtensions
         return false;
     }
 
+    [RequiresUnreferencedCode("Uses Type.GetProperty and Type.GetField which is not compatible with trimming.")]
     private static bool _IsTuple2(object item, out object? name, out object? val)
     {
         name = null;
@@ -159,6 +164,7 @@ public static class CommonExtensions
             && !_TryGetProp(item, "Item3", out _);
     }
 
+    [RequiresUnreferencedCode("Uses Type.GetProperty and Type.GetField which is not compatible with trimming.")]
     private static bool _LooksLikeKV(object item, out object? name, out object? val)
     {
         name = null;

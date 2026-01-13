@@ -90,7 +90,11 @@ public static class ObjectPropertiesHelper
         return false;
     }
 
-    private static PropertyInfo? _GetWritablePropertyInfo(Type objType, string? propertyName, Type[]? ignoreAttr)
+    [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
+    private static PropertyInfo? _GetWritablePropertyInfo(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type objType,
+        string? propertyName,
+        Type[]? ignoreAttr)
     {
         if (propertyName is null)
         {
