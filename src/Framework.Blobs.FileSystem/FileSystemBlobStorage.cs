@@ -449,6 +449,21 @@ public sealed class FileSystemBlobStorage(
         }
     }
 
+    /// <summary>
+    /// Gets a paged list of blobs in the specified container.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Performance Warning:</strong> This method has O(n^2) complexity for full enumeration
+    /// of large directories. Each page request re-enumerates the directory from the start and skips
+    /// previous items. For example, fetching page 10 with pageSize=100 reads 1000 file entries to
+    /// return 100 results.
+    /// </para>
+    /// <para>
+    /// For directories with many files, consider using <see cref="GetBlobsAsync"/> with LINQ
+    /// operators, or implement application-level caching of the file list.
+    /// </para>
+    /// </remarks>
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
         string? blobSearchPattern = null,
