@@ -309,4 +309,26 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
+
+    [Fact]
+    public async Task should_return_false_when_rename_source_not_exists()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+        await ResetAsync(storage);
+
+        var result = await storage.RenameAsync(Container, "nonexistent.txt", Container, "new.txt", AbortToken);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_false_when_copy_source_not_exists()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+        await ResetAsync(storage);
+
+        var result = await storage.CopyAsync(Container, "nonexistent.txt", Container, "new.txt", AbortToken);
+
+        result.Should().BeFalse();
+    }
 }

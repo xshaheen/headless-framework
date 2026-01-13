@@ -53,14 +53,7 @@ public sealed class FileSystemBlobStorage(
 
         var directoryPath = _GetDirectoryPath(container);
 
-        try
-        {
-            await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken).AnyContext();
-        }
-        catch (Exception e)
-        {
-            _logger.LogError(e, "Error uploading {BlobName} to {DirectoryPath}", blobName, directoryPath);
-        }
+        await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken).AnyContext();
     }
 
     #endregion
@@ -261,19 +254,15 @@ public sealed class FileSystemBlobStorage(
         var newFullPath = _BuildBlobPath(newBlobContainer, newBlobName).NormalizePath();
         var newDirectoryPath = _GetDirectoryPath(newBlobContainer);
 
-        _logger.LogInformation("Renaming {Path} to {NewPath}", oldFullPath, newFullPath);
+        _logger.LogTrace("Renaming {Path} to {NewPath}", oldFullPath, newFullPath);
 
-        try
+        if (!File.Exists(oldFullPath))
         {
-            Directory.CreateDirectory(newDirectoryPath);
-            File.Move(oldFullPath, newFullPath, overwrite: true);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error renaming {Path} to {NewPath}", oldFullPath, newFullPath);
-
             return ValueTask.FromResult(false);
         }
+
+        Directory.CreateDirectory(newDirectoryPath);
+        File.Move(oldFullPath, newFullPath, overwrite: true);
 
         return ValueTask.FromResult(true);
     }
@@ -300,21 +289,17 @@ public sealed class FileSystemBlobStorage(
         var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
         var targetDirectory = _GetDirectoryPath(newBlobContainer);
 
-        _logger.LogInformation("Copying {Path} to {TargetPath}", blobPath, targetPath);
+        _logger.LogTrace("Copying {Path} to {TargetPath}", blobPath, targetPath);
 
-        try
+        if (!File.Exists(blobPath))
         {
-            Directory.CreateDirectory(targetDirectory);
-            File.Copy(blobPath, targetPath, overwrite: true);
-
-            return ValueTask.FromResult(true);
-        }
-        catch (Exception e)
-        {
-            _logger.LogError(e, "Error copying {Path} to {TargetPath}", blobPath, targetPath);
-
             return ValueTask.FromResult(false);
         }
+
+        Directory.CreateDirectory(targetDirectory);
+        File.Copy(blobPath, targetPath, overwrite: true);
+
+        return ValueTask.FromResult(true);
     }
 
     #endregion
