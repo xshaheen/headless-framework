@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Encodings.Web;
 using FluentValidation;
-using Framework.FluentValidation;
 
 namespace Framework.Payments.Paymob.CashIn.Models;
 
@@ -38,24 +36,6 @@ public sealed record PaymobCashInOptions
 
     /// <summary>New intention API secret key for the merchant.</summary>
     public required string SecretKey { get; set; }
-
-    /// <summary>Serialization options for JSON.</summary>
-    public JsonSerializerOptions SerializationOptions { get; set; } =
-        new(JsonSerializerDefaults.Web)
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        };
-
-    /// <summary>Deserialization options for JSON.</summary>
-    public JsonSerializerOptions DeserializationOptions { get; set; } =
-        new(JsonSerializerDefaults.Web)
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            PropertyNameCaseInsensitive = true,
-            NumberHandling = JsonNumberHandling.AllowReadingFromString,
-            AllowTrailingCommas = true,
-        };
 }
 
 public sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCashInOptions>

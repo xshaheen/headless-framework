@@ -2,6 +2,7 @@
 
 using System.Net.Http.Json;
 using Flurl;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
 
@@ -19,17 +20,18 @@ public partial class PaymobCashInBroker
         var requestUrl = Url.Combine(_options.ApiBaseUrl, "acceptance/payment_keys");
         var internalRequest = new CashInPaymentKeyInternalRequest(request, authToken, _options.ExpirationPeriod);
 
-        using var response = await httpClient.PostAsJsonAsync(
-            requestUrl,
-            internalRequest,
-            _options.SerializationOptions
-        );
+        using var content = JsonContent.Create(internalRequest, options: CashInJsonOptions.JsonOptions);
+        using var response = await httpClient.PostAsync(requestUrl, content);
 
         if (!response.IsSuccessStatusCode)
         {
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashInPaymentKeyResponse>(_options.DeserializationOptions))!;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+
+        return (
+            await JsonSerializer.DeserializeAsync<CashInPaymentKeyResponse>(stream, CashInJsonOptions.JsonOptions)
+        )!;
     }
 }

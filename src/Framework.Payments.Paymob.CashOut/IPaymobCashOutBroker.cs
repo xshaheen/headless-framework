@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using System.Text.Encodings.Web;
 using Flurl;
 using Framework.Checks;
+using Framework.Payments.Paymob.CashOut.Internals;
 using Framework.Payments.Paymob.CashOut.Models;
 
 namespace Framework.Payments.Paymob.CashOut;
@@ -22,11 +24,6 @@ public interface IPaymobCashOutBroker
 public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAuthenticator authenticator)
     : IPaymobCashOutBroker
 {
-    private static readonly JsonSerializerOptions _Options = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     public async Task<CashOutTransaction> Disburse(CashOutDisburseRequest request)
     {
         var accessToken = await authenticator.GetAccessTokenAsync();
@@ -36,7 +33,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
 
         requestMessage.Method = HttpMethod.Post;
         requestMessage.RequestUri = new Uri(requestUrl);
-        requestMessage.Content = JsonContent.Create(request, options: _Options);
+        requestMessage.Content = JsonContent.Create(request, options: CashOutJsonOptions.JsonOptions);
         requestMessage.Headers.Add("Authorization", $"Bearer {accessToken}");
 
         var response = await httpClient.SendAsync(requestMessage);
@@ -46,7 +43,8 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
             await PaymobCashOutException.ThrowAsync(response);
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashOutTransaction>())!;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        return (await JsonSerializer.DeserializeAsync<CashOutTransaction>(stream, CashOutJsonOptions.JsonOptions))!;
     }
 
     /// <summary>Get the budget of the Paymob CashOut account.</summary>
@@ -98,7 +96,8 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
             {
                 TransactionsIds = transactionsIds,
                 IsBankTransactions = isBankTransactions,
-            }
+            },
+            options: CashOutJsonOptions.JsonOptions
         );
 
         var response = await httpClient.SendAsync(request);

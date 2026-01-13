@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http.Json;
 using Flurl;
 using Framework.Http;
+using Framework.Payments.Paymob.CashOut.Internals;
 using Framework.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Options;
 
@@ -46,7 +46,14 @@ public sealed class PaymobCashOutAuthenticator(
             await PaymobCashOutException.ThrowAsync(response);
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>())!;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+
+        var cashOutAuthenticationResponse = await JsonSerializer.DeserializeAsync<CashOutAuthenticationResponse>(
+            stream,
+            CashOutJsonOptions.JsonOptions
+        );
+
+        return cashOutAuthenticationResponse!;
     }
 
     public async Task<CashOutAuthenticationResponse> RefreshTokenAsync(string refreshToken)
@@ -70,6 +77,9 @@ public sealed class PaymobCashOutAuthenticator(
             await PaymobCashOutException.ThrowAsync(response);
         }
 
-        return (await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>())!;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        return (
+            await JsonSerializer.DeserializeAsync<CashOutAuthenticationResponse>(stream, CashOutJsonOptions.JsonOptions)
+        )!;
     }
 }

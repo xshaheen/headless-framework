@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Encodings.Web;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models;
 using Microsoft.Extensions.Options;
 

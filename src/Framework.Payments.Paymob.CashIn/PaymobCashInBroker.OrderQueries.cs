@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Http.Json;
 using Flurl;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 
@@ -32,7 +32,8 @@ public partial class PaymobCashInBroker
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return await response.Content.ReadFromJsonAsync<CashInOrdersPage>(_options.DeserializationOptions);
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        return await JsonSerializer.DeserializeAsync<CashInOrdersPage>(stream, CashInJsonOptions.JsonOptions);
     }
 
     public async Task<CashInOrder?> GetOrderAsync(string orderId)
@@ -53,6 +54,7 @@ public partial class PaymobCashInBroker
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        return await response.Content.ReadFromJsonAsync<CashInOrder>(_options.DeserializationOptions);
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        return await JsonSerializer.DeserializeAsync<CashInOrder>(stream, CashInJsonOptions.JsonOptions);
     }
 }

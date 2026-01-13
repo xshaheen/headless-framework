@@ -2,6 +2,7 @@
 
 using System.Net.Http.Json;
 using Flurl;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Auth;
 using Microsoft.Extensions.Options;
@@ -38,15 +39,19 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator
         var config = _options.CurrentValue;
         var requestUrl = Url.Combine(config.ApiBaseUrl, "auth/tokens");
         var request = new CashInAuthenticationTokenRequest { ApiKey = config.ApiKey };
-        using var response = await _httpClient.PostAsJsonAsync(requestUrl, request, config.SerializationOptions);
+        using var httpContent = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
+        using var response = await _httpClient.PostAsync(requestUrl, httpContent);
 
         if (!response.IsSuccessStatusCode)
         {
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        var content = await response.Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
-            config.DeserializationOptions
+        await using var stream = await response.Content.ReadAsStreamAsync();
+
+        var content = await JsonSerializer.DeserializeAsync<CashInAuthenticationTokenResponse>(
+            stream,
+            CashInJsonOptions.JsonOptions
         );
 
         _cachedToken = content!.Token;

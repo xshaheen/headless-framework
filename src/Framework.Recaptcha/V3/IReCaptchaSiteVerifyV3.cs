@@ -72,9 +72,9 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
 
         await using var responseStream = await httpResponseMessage.Content.ReadAsStreamAsync();
 
-        var response = await JsonSerializer.DeserializeAsync(
-            utf8Json: responseStream,
-            jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV3Response
+        var response = await JsonSerializer.DeserializeAsync<ReCaptchaSiteVerifyV3Response>(
+            responseStream,
+            options: ReCaptchaJsonOptions.JsonOptions
         );
 
         if (response?.Success is not true)

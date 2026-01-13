@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Payments.Paymob.CashIn.Internal;
+namespace Framework.Payments.Paymob.CashIn.Internals;
 
 internal sealed class AddNullableAmountConverter : JsonConverter<string>
 {

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Callback;
 using Framework.Payments.Paymob.CashIn.Models.Intentions;
@@ -38,7 +39,7 @@ public partial class PaymobCashInBroker
     {
         using var httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, url);
         httpRequestMessage.Headers.Add("Authorization", $"Token {_options.SecretKey}");
-        httpRequestMessage.Content = JsonContent.Create(request, options: _options.SerializationOptions);
+        httpRequestMessage.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
         using var response = await httpClient.SendAsync(httpRequestMessage);
 
@@ -47,8 +48,7 @@ public partial class PaymobCashInBroker
             await PaymobCashInException.ThrowAsync(response);
         }
 
-        var content = await response.Content.ReadFromJsonAsync<TResponse>(_options.DeserializationOptions);
-
-        return content ?? default;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        return await JsonSerializer.DeserializeAsync<TResponse>(stream, CashInJsonOptions.JsonOptions);
     }
 }
