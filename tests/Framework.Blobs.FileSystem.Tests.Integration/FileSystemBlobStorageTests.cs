@@ -118,9 +118,9 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]
@@ -232,8 +232,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 
         var act = FluentActions.Awaiting(() => storage.DeleteAllAsync(Container, pattern, AbortToken).AsTask());
 
-        await act.Should().ThrowAsync<ArgumentException>()
-            .WithParameterName("blobSearchPattern");
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
     }
 
     [Fact]
@@ -269,7 +268,9 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 
         var maliciousContainer = new[] { "..", "..", "etc" };
 
-        var act = FluentActions.Awaiting(() => storage.UploadAsync(maliciousContainer, "passwd", stream, cancellationToken: AbortToken).AsTask());
+        var act = FluentActions.Awaiting(
+            () => storage.UploadAsync(maliciousContainer, "passwd", stream, cancellationToken: AbortToken).AsTask()
+        );
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
@@ -281,7 +282,9 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 
         var maliciousContainer = new[] { "..", "..", "etc" };
 
-        var act = FluentActions.Awaiting(() => storage.DownloadAsync(maliciousContainer, "passwd", AbortToken).AsTask());
+        var act = FluentActions.Awaiting(
+            () => storage.DownloadAsync(maliciousContainer, "passwd", AbortToken).AsTask()
+        );
 
         await act.Should().ThrowAsync<ArgumentException>();
     }

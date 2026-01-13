@@ -27,7 +27,11 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
+        using var storage = new SshBlobStorage(
+            optionsWrapper,
+            new CrossOsNamingNormalizer(),
+            NullLogger<SshBlobStorage>.Instance
+        );
     }
 
     [Fact]
@@ -42,7 +46,11 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
+        using var storage = new SshBlobStorage(
+            optionsWrapper,
+            new CrossOsNamingNormalizer(),
+            NullLogger<SshBlobStorage>.Instance
+        );
     }
 
     [Fact]
@@ -63,7 +71,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         result.Blobs.Should().BeEmpty();
 
         const string directory = "EmptyDirectory";
-        await storage.CreateContainerAsync([..container, directory], AbortToken);
+        await storage.CreateContainerAsync([.. container, directory], AbortToken);
 
         result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
         result.HasMore.Should().BeFalse();
@@ -183,9 +191,9 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]
