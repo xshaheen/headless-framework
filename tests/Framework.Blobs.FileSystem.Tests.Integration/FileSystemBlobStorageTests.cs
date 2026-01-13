@@ -248,4 +248,65 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
 
         count.Should().Be(1);
     }
+
+    [Fact]
+    public async Task should_throw_when_container_has_path_traversal()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+
+        var maliciousContainer = new[] { "uploads", "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(maliciousContainer, "passwd", AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_upload_container_has_path_traversal()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+        using var stream = new MemoryStream("test"u8.ToArray());
+
+        var maliciousContainer = new[] { "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.UploadAsync(maliciousContainer, "passwd", stream, cancellationToken: AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_download_container_has_path_traversal()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+
+        var maliciousContainer = new[] { "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.DownloadAsync(maliciousContainer, "passwd", AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_delete_container_has_path_traversal()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+
+        var maliciousContainer = new[] { "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.DeleteAsync(maliciousContainer, "passwd", AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_create_container_has_path_traversal()
+    {
+        using var storage = (FileSystemBlobStorage)GetStorage();
+
+        var maliciousContainer = new[] { "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.CreateContainerAsync(maliciousContainer, AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
 }

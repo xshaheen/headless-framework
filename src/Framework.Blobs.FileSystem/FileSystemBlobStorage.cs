@@ -590,7 +590,10 @@ public sealed class FileSystemBlobStorage(
         }
         segments[^1] = normalizedFileName;
 
-        return Path.Combine(segments);
+        var path = Path.Combine(segments);
+        _ThrowIfPathTraversal(path, nameof(fileName));
+
+        return path;
     }
 
     private string _GetDirectoryPath(string[] container)
@@ -600,6 +603,7 @@ public sealed class FileSystemBlobStorage(
         var normalizedContainer = container.Select(_normalizer.NormalizeContainerName).ToArray();
 
         var filePath = Path.Combine(_basePath, Path.Combine(normalizedContainer));
+        _ThrowIfPathTraversal(filePath, nameof(container));
 
         return filePath.EnsureEndsWith(Path.DirectorySeparatorChar);
     }
