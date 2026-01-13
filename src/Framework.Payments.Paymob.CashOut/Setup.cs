@@ -9,7 +9,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Framework.Payments.Paymob.CashOut;
 
 [PublicAPI]
-public static class AddPaymobCashOutExtensions
+public static class PaymobCashOutSetup
 {
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
