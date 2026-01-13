@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace Framework.Sms.VictoryLink;
 
 public sealed class VictoryLinkSmsSender(
-    HttpClient httpClient,
+    IHttpClientFactory httpClientFactory,
     IOptions<VictoryLinkSmsOptions> optionsAccessor,
     ILogger<VictoryLinkSmsSender> logger
 ) : ISmsSender
@@ -30,6 +30,8 @@ public sealed class VictoryLinkSmsSender(
     )
     {
         Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
 
         var victoryLinkRequest = new VictoryLinkRequest
         {
@@ -44,9 +46,11 @@ public sealed class VictoryLinkSmsSender(
                 : request.Destinations[0].Number,
         };
 
-        using var content = JsonContent.Create(victoryLinkRequest, options: _JsonOptions);
-        var response = await httpClient.PostAsync(_uri, content, cancellationToken);
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var httpClient = httpClientFactory.CreateClient(VictoryLinkSetup.HttpClientName);
+        var response = await httpClient
+            .PostAsJsonAsync(_uri, victoryLinkRequest, _JsonOptions, cancellationToken)
+            .AnyContext();
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
@@ -63,9 +67,9 @@ public sealed class VictoryLinkSmsSender(
         var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(rawContent);
 
         logger.LogError(
-            "Failed to send SMS using VictoryLink. ResponseContent={Content} - ResponseContent={RawContent}",
-            responseMessage,
-            rawContent
+            "Failed to send SMS using VictoryLink to {DestinationCount} recipients, ErrorMessage={ErrorMessage}",
+            request.Destinations.Count,
+            responseMessage
         );
 
         return SendSingleSmsResponse.Failed(responseMessage);

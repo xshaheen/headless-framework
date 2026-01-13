@@ -36,5 +36,5 @@ public sealed class CashInCallbackTransactionDataMigsOrder
     public string? Currency { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

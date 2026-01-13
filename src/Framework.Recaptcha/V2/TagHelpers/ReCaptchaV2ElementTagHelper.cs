@@ -23,7 +23,7 @@ public sealed class ReCaptchaV2ElementTagHelper(IOptionsSnapshot<ReCaptchaOption
     private const string _CallbackAttributeName = "recaptcha-v2-callback";
     private const string _ExpiredCallbackAttributeName = "recaptcha-v2-expired-callback";
     private const string _ErrorCallbackAttributeName = "recaptcha-v2-error-callback";
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V2);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V2Name);
 
     [HtmlAttributeName(_BadgeAttributeName)]
     public string? Badge { get; set; }

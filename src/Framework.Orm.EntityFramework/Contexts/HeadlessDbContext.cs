@@ -208,7 +208,8 @@ public abstract class HeadlessDbContext : DbContext
 
     public Task ExecuteTransactionAsync(
         Func<Task<bool>> operation,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
     )
     {
         var state = (Operation: operation, Isolation: isolation, Context: this);
@@ -217,9 +218,9 @@ public abstract class HeadlessDbContext : DbContext
             .CreateExecutionStrategy()
             .ExecuteAsync(
                 state,
-                static async state =>
+                static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
 
                     bool commit;
 
@@ -229,32 +230,34 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync();
+                            await state.Context.SaveChangesAsync(ct);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync();
+                        await transaction.CommitAsync(ct);
                     }
                     else
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
                     }
-                }
+                },
+                cancellationToken
             );
     }
 
     public Task ExecuteTransactionAsync<TArg>(
         Func<TArg, Task<bool>> operation,
         TArg arg,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
     )
     {
         var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: this);
@@ -263,9 +266,9 @@ public abstract class HeadlessDbContext : DbContext
             .CreateExecutionStrategy()
             .ExecuteAsync(
                 state,
-                static async state =>
+                static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
 
                     bool commit;
 
@@ -275,31 +278,33 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync();
+                            await state.Context.SaveChangesAsync(ct);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync();
+                        await transaction.CommitAsync(ct);
                     }
                     else
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
                     }
-                }
+                },
+                cancellationToken
             );
     }
 
     public Task<TResult?> ExecuteTransactionAsync<TResult>(
         Func<Task<(bool, TResult?)>> operation,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
     )
     {
         var state = (Operation: operation, Isolation: isolation, Context: this);
@@ -308,9 +313,9 @@ public abstract class HeadlessDbContext : DbContext
             .CreateExecutionStrategy()
             .ExecuteAsync(
                 state,
-                static async state =>
+                static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
 
                     TResult? result;
                     bool commit;
@@ -321,34 +326,36 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync();
+                            await state.Context.SaveChangesAsync(ct);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync();
+                        await transaction.CommitAsync(ct);
                     }
                     else
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
                     }
 
                     return result;
-                }
+                },
+                cancellationToken
             );
     }
 
     public Task<TResult?> ExecuteTransactionAsync<TResult, TArg>(
         Func<TArg, Task<(bool, TResult?)>> operation,
         TArg arg,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
     )
     {
         var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: this);
@@ -357,9 +364,9 @@ public abstract class HeadlessDbContext : DbContext
             .CreateExecutionStrategy()
             .ExecuteAsync(
                 state,
-                static async state =>
+                static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
 
                     TResult? result;
                     bool commit;
@@ -370,27 +377,28 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync();
+                            await state.Context.SaveChangesAsync(ct);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync();
+                        await transaction.CommitAsync(ct);
                     }
                     else
                     {
-                        await transaction.RollbackAsync();
+                        await transaction.RollbackAsync(ct);
                     }
 
                     return result;
-                }
+                },
+                cancellationToken
             );
     }
 

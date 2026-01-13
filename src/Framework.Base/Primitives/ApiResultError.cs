@@ -129,4 +129,16 @@ public sealed record ValidationError : ResultError
 
         return new ValidationError { FieldErrors = grouped };
     }
+
+    /// <summary>
+    /// Converts field errors to a dictionary of ErrorDescriptor lists.
+    /// </summary>
+    public Dictionary<string, List<ErrorDescriptor>> ToErrorDescriptorDictionary()
+    {
+        return FieldErrors.ToDictionary(
+            kv => kv.Key,
+            kv => kv.Value.Select(msg => new ErrorDescriptor($"validation:{kv.Key}", msg)).ToList(),
+            StringComparer.Ordinal
+        );
+    }
 }

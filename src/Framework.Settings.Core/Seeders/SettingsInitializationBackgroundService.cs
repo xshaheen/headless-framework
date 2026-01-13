@@ -30,8 +30,7 @@ public sealed class SettingsInitializationBackgroundService(
             return Task.CompletedTask;
         }
 
-        _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, _cancellationTokenSource.Token);
+        _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellationTokenSource.Token);
         _initializeDynamicSettingsTask = _InitializeDynamicSettingsAsync(_linkedCts.Token);
 
         return Task.CompletedTask;

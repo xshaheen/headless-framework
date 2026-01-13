@@ -3,6 +3,7 @@
 namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInCallbackTransactionOrderShippingDetails
 {
     [JsonPropertyName("id")]
@@ -57,5 +58,5 @@ public sealed class CashInCallbackTransactionOrderShippingDetails
     public object? ReturnType { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

@@ -2,7 +2,4 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="ZString" />
-  </ItemGroup>
 </Project>

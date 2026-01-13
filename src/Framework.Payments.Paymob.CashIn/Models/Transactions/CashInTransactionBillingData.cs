@@ -5,6 +5,7 @@ using Framework.Payments.Paymob.CashIn.Internals;
 namespace Framework.Payments.Paymob.CashIn.Models.Transactions;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInTransactionBillingData
 {
     [JsonPropertyName("id")]
@@ -60,5 +61,5 @@ public sealed class CashInTransactionBillingData
     public string? ExtraDescription { get; init; } = "NA";
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

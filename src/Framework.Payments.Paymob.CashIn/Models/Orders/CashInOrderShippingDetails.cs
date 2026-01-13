@@ -3,6 +3,7 @@
 namespace Framework.Payments.Paymob.CashIn.Models.Orders;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInOrderShippingDetails
 {
     [JsonPropertyName("notes")]
@@ -30,5 +31,5 @@ public sealed class CashInOrderShippingDetails
     public required string Contents { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

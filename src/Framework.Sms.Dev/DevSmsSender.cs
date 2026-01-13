@@ -14,6 +14,10 @@ public sealed class DevSmsSender(string filePath) : ISmsSender
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(request);
+        Argument.IsNotEmpty(request.Destinations);
+        Argument.IsNotEmpty(request.Text);
+
         cancellationToken.ThrowIfCancellationRequested();
 
         var sb = new StringBuilder();
@@ -33,7 +37,7 @@ public sealed class DevSmsSender(string filePath) : ISmsSender
 
         sb.AppendLine(_Separator);
 
-        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken);
+        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken).AnyContext();
 
         return SendSingleSmsResponse.Succeeded();
     }

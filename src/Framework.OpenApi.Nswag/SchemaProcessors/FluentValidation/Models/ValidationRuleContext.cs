@@ -4,4 +4,4 @@ using FluentValidation;
 
 namespace Framework.Api.SchemaProcessors.FluentValidation.Models;
 
-public readonly record struct ValidationRuleContext(IValidationRule ValidationRule, bool IsCollectionRule);
+public readonly record struct ValidationRuleContext(IValidationRule ValidationRule);

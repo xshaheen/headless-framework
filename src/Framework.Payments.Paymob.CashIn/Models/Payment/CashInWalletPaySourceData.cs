@@ -3,6 +3,7 @@
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInWalletPaySourceData
 {
     [JsonPropertyName("owner_name")]
@@ -21,5 +22,5 @@ public sealed class CashInWalletPaySourceData
     public required string Type { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

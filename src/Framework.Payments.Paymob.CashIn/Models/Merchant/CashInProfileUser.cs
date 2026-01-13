@@ -6,6 +6,7 @@ using Framework.Payments.Paymob.CashIn.Internals;
 namespace Framework.Payments.Paymob.CashIn.Models.Merchant;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInProfileUser
 {
     [JsonPropertyName("id")]
@@ -57,5 +58,5 @@ public sealed class CashInProfileUser
     }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

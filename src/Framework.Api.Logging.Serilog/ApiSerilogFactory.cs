@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Constants;
+using Framework.Logging.Enrichers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -33,14 +34,9 @@ public static class ApiSerilogFactory
     #region Reloadable
 
     /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
-    public static Logger CreateApiLogger(WebApplication app, bool writeToFiles = true)
+    public static Logger CreateApiLogger(WebApplication app, SerilogOptions? options = null)
     {
-        var configuration = CreateApiLoggerConfiguration(
-            app.Services,
-            app.Configuration,
-            app.Environment,
-            writeToFiles
-        );
+        var configuration = CreateApiLoggerConfiguration(app.Services, app.Configuration, app.Environment, options);
 
         return configuration.CreateLogger();
     }
@@ -50,10 +46,10 @@ public static class ApiSerilogFactory
         IServiceProvider? services,
         IConfiguration configuration,
         IHostEnvironment environment,
-        bool writeToFiles = true
+        SerilogOptions? options = null
     )
     {
-        return CreateApiLoggerConfiguration(services, configuration, environment, writeToFiles).CreateLogger();
+        return CreateApiLoggerConfiguration(services, configuration, environment, options).CreateLogger();
     }
 
     /// <inheritdoc cref="ConfigureApiLoggerConfiguration"/>
@@ -61,12 +57,12 @@ public static class ApiSerilogFactory
         IServiceProvider? services,
         IConfiguration configuration,
         IHostEnvironment environment,
-        bool writeToFiles = true
+        SerilogOptions? options = null
     )
     {
         var loggerConfiguration = new LoggerConfiguration();
 
-        return loggerConfiguration.ConfigureApiLoggerConfiguration(services, configuration, environment, writeToFiles);
+        return loggerConfiguration.ConfigureApiLoggerConfiguration(services, configuration, environment, options);
     }
 
     public static LoggerConfiguration ConfigureApiLoggerConfiguration(
@@ -74,17 +70,18 @@ public static class ApiSerilogFactory
         IServiceProvider? services,
         IConfiguration configuration,
         IHostEnvironment environment,
-        bool writeToFiles = true
+        SerilogOptions? options = null
     )
     {
-        loggerConfiguration.ConfigureReloadableLoggerConfiguration(services, configuration, environment, writeToFiles);
+        options ??= new SerilogOptions();
+
+        loggerConfiguration.ConfigureReloadableLoggerConfiguration(services, configuration, environment, options);
 
         loggerConfiguration
             .Enrich.WithClientIp()
-            .Enrich.WithCorrelationId()
-            .Enrich.WithRequestHeader(HttpHeaderNames.UserAgent)
-            .Enrich.WithRequestHeader(HttpHeaderNames.ClientVersion)
-            .Enrich.WithRequestHeader(HttpHeaderNames.ApiVersion);
+            .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.UserAgent, maxLength: options.MaxHeaderLength)
+            .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.ClientVersion, maxLength: options.MaxHeaderLength)
+            .Enrich.WithSanitizedRequestHeader(HttpHeaderNames.ApiVersion, maxLength: options.MaxHeaderLength);
 
         return loggerConfiguration;
     }

@@ -14,15 +14,12 @@ public static class Slug
             return null;
         }
 
-        options ??= SlugOptions.Default;
+        options ??= new();
         text = text.Normalize(NormalizationForm.FormD);
 
         foreach (var (value, replacement) in options.Replacements)
         {
-            var newValue = replacement.EndsWith(' ') ? replacement : replacement + " ";
-            newValue = replacement.StartsWith(' ') ? newValue : " " + newValue;
-
-            text = text.Replace(value, newValue, StringComparison.Ordinal);
+            text = text.Replace(value, replacement, StringComparison.Ordinal);
         }
 
         var textLength = options.MaximumLength > 0 ? Math.Min(text.Length, options.MaximumLength) : text.Length;
@@ -35,7 +32,17 @@ public static class Slug
 
             if (options.IsAllowed(rune))
             {
-                sb.Append(options.Replace(rune));
+                var transformed = options.CasingTransformation switch
+                {
+                    CasingTransformation.ToLowerCase => options.Culture is null
+                        ? Rune.ToLowerInvariant(rune)
+                        : Rune.ToLower(rune, options.Culture),
+                    CasingTransformation.ToUpperCase => options.Culture is null
+                        ? Rune.ToUpperInvariant(rune)
+                        : Rune.ToUpper(rune, options.Culture),
+                    _ => rune,
+                };
+                sb.Append(transformed);
                 hasPreviousDash = false;
             }
             else if (
@@ -50,16 +57,11 @@ public static class Slug
                     hasPreviousDash = true;
                 }
             }
-
-            if (options.MaximumLength > 0 && sb.Length >= options.MaximumLength)
-            {
-                break;
-            }
         }
 
         text = sb.ToString();
 
-        if (options.MaximumLength > 0 && text.Length > options.MaximumLength)
+        if (options.MaximumLength > 0 && text.Length >= options.MaximumLength)
         {
             text = text[..options.MaximumLength];
         }

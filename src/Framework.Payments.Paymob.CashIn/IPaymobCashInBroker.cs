@@ -14,71 +14,90 @@ public interface IPaymobCashInBroker
 {
     /// <summary>Create intention request.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInCreateIntentionResponse?> CreateIntentionAsync(CashInCreateIntentionRequest request);
+    Task<CashInCreateIntentionResponse?> CreateIntentionAsync(
+        CashInCreateIntentionRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Refund a transaction.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInCallbackTransaction?> RefundTransactionAsync(CashInRefundRequest request);
+    Task<CashInCallbackTransaction?> RefundTransactionAsync(
+        CashInRefundRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Void a transaction.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInCallbackTransaction?> VoidTransactionAsync(CashInVoidRefundRequest request);
+    Task<CashInCallbackTransaction?> VoidTransactionAsync(
+        CashInVoidRefundRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Create order. Order is a logical container for a transaction(s).</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInCreateOrderResponse> CreateOrderAsync(CashInCreateOrderRequest request);
+    Task<CashInCreateOrderResponse> CreateOrderAsync(
+        CashInCreateOrderRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Get a payment key which is used to authenticate payment request and verifying transaction
     /// request metadata.
     /// </summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInPaymentKeyResponse> RequestPaymentKeyAsync(CashInPaymentKeyRequest request);
+    Task<CashInPaymentKeyResponse> RequestPaymentKeyAsync(
+        CashInPaymentKeyRequest request,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Create wallet pay</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInWalletPayResponse> CreateWalletPayAsync(string paymentKey, string phoneNumber);
+    Task<CashInWalletPayResponse> CreateWalletPayAsync(
+        string paymentKey,
+        string phoneNumber,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Create kiosk pay</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInKioskPayResponse> CreateKioskPayAsync(string paymentKey);
+    Task<CashInKioskPayResponse> CreateKioskPayAsync(string paymentKey, CancellationToken cancellationToken = default);
 
     /// <summary>Create Cash collection pay.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInCashCollectionPayResponse> CreateCashCollectionPayAsync(string paymentKey);
+    Task<CashInCashCollectionPayResponse> CreateCashCollectionPayAsync(
+        string paymentKey,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Create saved token pay</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInSavedTokenPayResponse> CreateSavedTokenPayAsync(string paymentKey, string savedToken);
+    Task<CashInSavedTokenPayResponse> CreateSavedTokenPayAsync(
+        string paymentKey,
+        string savedToken,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Get transaction page.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInTransactionsPage?> GetTransactionsPageAsync(CashInTransactionsPageRequest? request = null);
+    Task<CashInTransactionsPage?> GetTransactionsPageAsync(
+        CashInTransactionsPageRequest? request = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Get transaction by id.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInTransaction?> GetTransactionAsync(string transactionId);
+    Task<CashInTransaction?> GetTransactionAsync(string transactionId, CancellationToken cancellationToken = default);
 
     /// <summary>Get order by id.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInOrder?> GetOrderAsync(string orderId);
+    Task<CashInOrder?> GetOrderAsync(string orderId, CancellationToken cancellationToken = default);
 
     /// <summary>Get order page.</summary>
     /// <exception cref="PaymobCashInException"></exception>
-    [Pure]
-    Task<CashInOrdersPage?> GetOrdersPageAsync(CashInOrdersPageRequest? request = null);
+    Task<CashInOrdersPage?> GetOrdersPageAsync(
+        CashInOrdersPageRequest? request = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Validate the identity and integrity for "Paymob Accept" callback submission.</summary>
     /// <param name="concatenatedString">Object concatenated string.</param>

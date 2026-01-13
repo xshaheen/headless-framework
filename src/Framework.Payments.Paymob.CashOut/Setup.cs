@@ -4,13 +4,22 @@ using Framework.Checks;
 using Framework.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 
 namespace Framework.Payments.Paymob.CashOut;
 
 [PublicAPI]
-public static class AddPaymobCashOutExtensions
+public static class PaymobCashOutSetup
 {
+    internal const string HttpClientName = "Headless:PaymobCashOut";
+
+    /// <summary>Adds services required for using paymob cash out.</summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
+    /// <param name="setupAction">The action used to configure <see cref="PaymobCashOutOptions"/>.</param>
+    /// <param name="configureClient"></param>
+    /// <param name="configureResilience"></param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
         Action<PaymobCashOutOptions> setupAction,
@@ -26,6 +35,12 @@ public static class AddPaymobCashOutExtensions
         return _AddCore(services, configureClient, configureResilience);
     }
 
+    /// <summary>Adds services required for using paymob cash out.</summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
+    /// <param name="setupAction">The action used to configure <see cref="PaymobCashOutOptions"/>.</param>
+    /// <param name="configureClient"></param>
+    /// <param name="configureResilience"></param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
         Action<PaymobCashOutOptions, IServiceProvider> setupAction,
@@ -41,6 +56,12 @@ public static class AddPaymobCashOutExtensions
         return _AddCore(services, configureClient, configureResilience);
     }
 
+    /// <summary>Adds services required for using paymob cash out.</summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add the services to.</param>
+    /// <param name="config">The configuration section that contains <see cref="PaymobCashOutOptions"/> settings.</param>
+    /// <param name="configureClient"></param>
+    /// <param name="configureResilience"></param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     public static IServiceCollection AddPaymobCashOut(
         this IServiceCollection services,
         IConfiguration config,
@@ -62,11 +83,11 @@ public static class AddPaymobCashOutExtensions
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        const string clientName = "paymob_cash_out";
+        services.TryAddSingleton(TimeProvider.System);
 
         var httpClientBuilder = configureClient is not null
-            ? services.AddHttpClient(clientName, configureClient)
-            : services.AddHttpClient(clientName);
+            ? services.AddHttpClient(HttpClientName, configureClient)
+            : services.AddHttpClient(HttpClientName);
 
         if (configureResilience is not null)
         {
@@ -77,13 +98,11 @@ public static class AddPaymobCashOutExtensions
             httpClientBuilder.AddStandardResilienceHandler();
         }
 
-        services
-            .AddSingleton<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>()
-            .AddHttpClient<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>(clientName);
+        services.AddSingleton<IPaymobCashOutAuthenticator, PaymobCashOutAuthenticator>();
 
         services
             .AddScoped<IPaymobCashOutBroker, PaymobCashOutBroker>()
-            .AddHttpClient<IPaymobCashOutBroker, PaymobCashOutBroker>(clientName);
+            .AddHttpClient<IPaymobCashOutBroker, PaymobCashOutBroker>(HttpClientName);
 
         return services;
     }

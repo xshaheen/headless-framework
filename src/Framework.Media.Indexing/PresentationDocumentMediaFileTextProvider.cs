@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Cysharp.Text;
+using System.Text;
 using DocumentFormat.OpenXml.Drawing;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Presentation;
@@ -19,7 +19,7 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
             return Task.FromResult(string.Empty);
         }
 
-        using var stringBuilder = ZString.CreateStringBuilder();
+        var stringBuilder = new StringBuilder();
 
         foreach (var slideId in ids)
         {
@@ -46,7 +46,7 @@ public sealed class PresentationDocumentMediaFileTextProvider : IMediaFileTextPr
 
     private static string _GetText(SlidePart slidePart)
     {
-        using var stringBuilder = ZString.CreateStringBuilder();
+        var stringBuilder = new StringBuilder();
 
         foreach (var paragraph in slidePart.Slide?.Descendants<Paragraph>() ?? [])
         {

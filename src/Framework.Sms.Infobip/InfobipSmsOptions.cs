@@ -5,7 +5,7 @@ using Framework.FluentValidation;
 
 namespace Framework.Sms.Infobip;
 
-public sealed class InfobipOptions
+public sealed class InfobipSmsOptions
 {
     public required string Sender { get; set; }
 
@@ -14,9 +14,9 @@ public sealed class InfobipOptions
     public required string BasePath { get; set; }
 }
 
-internal sealed class InfobipOptionsValidator : AbstractValidator<InfobipOptions>
+internal sealed class InfobipSmsOptionsValidator : AbstractValidator<InfobipSmsOptions>
 {
-    public InfobipOptionsValidator()
+    public InfobipSmsOptionsValidator()
     {
         RuleFor(x => x.Sender).NotEmpty();
         RuleFor(x => x.ApiKey).NotEmpty();

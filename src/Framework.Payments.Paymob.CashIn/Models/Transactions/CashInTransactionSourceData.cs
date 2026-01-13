@@ -3,6 +3,7 @@
 namespace Framework.Payments.Paymob.CashIn.Models.Transactions;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInTransactionSourceData
 {
     [JsonPropertyName("pan")]
@@ -18,5 +19,5 @@ public sealed class CashInTransactionSourceData
     public object? Tenure { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

@@ -62,22 +62,34 @@ public sealed class AwsSnsSmsSender(
 
         try
         {
-            var publishResponse = await client.PublishAsync(publishRequest, cancellationToken);
+            var publishResponse = await client.PublishAsync(publishRequest, cancellationToken).AnyContext();
 
             if (publishResponse.HttpStatusCode.IsSuccessStatusCode())
             {
                 return SendSingleSmsResponse.Succeeded();
             }
 
-            logger.LogError("Failed to send SMS {@Request} {@Response}", publishRequest, publishResponse);
+            logger.LogError(
+                "Failed to send SMS to {DestinationCount} recipients, StatusCode={StatusCode}",
+                request.Destinations.Count,
+                publishResponse.HttpStatusCode
+            );
 
             return SendSingleSmsResponse.Failed(
                 $"Failed to send SMS using AWS with status code {publishResponse.HttpStatusCode}"
             );
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to send using AWS SMS {@Request}", publishRequest);
+            logger.LogError(
+                e,
+                "Failed to send SMS using AWS to {DestinationCount} recipients",
+                request.Destinations.Count
+            );
 
             return SendSingleSmsResponse.Failed(e.Message);
         }

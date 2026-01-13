@@ -6,6 +6,7 @@ using Humanizer;
 namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInCallbackToken
 {
     [JsonPropertyName("id")]
@@ -36,7 +37,7 @@ public sealed class CashInCallbackToken
     public bool UserAdded { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 
     /// <summary>Return the concatenated string of transaction.</summary>
     public string ToConcatenatedString()

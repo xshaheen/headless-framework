@@ -78,14 +78,12 @@ internal static class NswagSourceFilesGeneratorEmitter
 
         foreach (var data in types)
         {
-            // Get the XML documentation comment for the namedTypeSymbol
-            var xmlDocumentation = data.TypeSymbol.GetDocumentationCommentXml(
-                cancellationToken: context.CancellationToken
-            );
+            // Get the XML documentation comment from extracted data
+            var xmlDocumentation = data.XmlDocumentation;
 
             addMapping(isNullable: false);
 
-            if (data.TypeSymbol.IsValueType)
+            if (data.IsValueType)
             {
                 addMapping(isNullable: true);
             }
@@ -94,7 +92,7 @@ internal static class NswagSourceFilesGeneratorEmitter
 
             void addMapping(bool isNullable)
             {
-                var primitiveSwaggerInfo = data.PrimitiveTypeSymbol.GetNswagSwaggerTypeAndFormatAndExample();
+                var primitiveSwaggerInfo = data.UnderlyingType.GetNswagSwaggerTypeAndFormatAndExample();
 
                 builder
                     .AppendLine("settings.TypeMappers.Add(")
@@ -140,7 +138,7 @@ internal static class NswagSourceFilesGeneratorEmitter
 
                     if (example is not null)
                     {
-                        var exampleValue = example.InnerText.Trim().Replace("\"", "\\\"");
+                        var exampleValue = _EscapeForStringLiteral(example.InnerText.Trim());
 
                         builder.Append("schema.Example = ").Append("\"" + exampleValue + "\"").AppendLine(";");
                     }
@@ -160,5 +158,16 @@ internal static class NswagSourceFilesGeneratorEmitter
         builder.CloseBracket();
 
         context.AddSource($"{_NswagSwaggerExtensionsClassName}.g.cs", builder.ToString());
+    }
+
+    private static string _EscapeForStringLiteral(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t")
+            .Replace("\0", "\\0");
     }
 }

@@ -3,8 +3,6 @@
 using Framework.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Serilog.Context;
-using Serilog.Core;
-using Serilog.Core.Enrichers;
 
 namespace Framework.Logging;
 
@@ -16,26 +14,14 @@ public sealed class SerilogEnrichersMiddleware(IRequestContext requestContext) :
 
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
-        var enrichers = new List<ILogEventEnricher>();
+        using var _ = requestContext.User.UserId is { } userId ? LogContext.PushProperty(_UserId, userId) : null;
+        using var __ = requestContext.User.AccountId is { } accountId
+            ? LogContext.PushProperty(_AccountId, accountId)
+            : null;
+        using var ___ = requestContext.CorrelationId is { } correlationId
+            ? LogContext.PushProperty(_CorrelationId, correlationId)
+            : null;
 
-        if (requestContext.User.UserId is not null)
-        {
-            enrichers.Add(new PropertyEnricher(_UserId, requestContext.User.UserId));
-        }
-
-        if (requestContext.User.AccountId is not null)
-        {
-            enrichers.Add(new PropertyEnricher(_AccountId, requestContext.User.AccountId));
-        }
-
-        if (requestContext.CorrelationId is not null)
-        {
-            enrichers.Add(new PropertyEnricher(_CorrelationId, requestContext.CorrelationId));
-        }
-
-        using (LogContext.Push([.. enrichers]))
-        {
-            await next(context);
-        }
+        await next(context).AnyContext();
     }
 }

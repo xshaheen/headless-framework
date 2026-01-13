@@ -3,6 +3,7 @@
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInKioskPayData
 {
     [JsonPropertyName("gateway_integration_pk")]
@@ -51,5 +52,5 @@ public sealed class CashInKioskPayData
     public object? Rrn { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

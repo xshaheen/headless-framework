@@ -69,7 +69,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
         var defaultFeatureValues = _GetDefaultFeatureValues();
-        var oneOfFeatures = RandomHelper.GetRandomOfList(defaultFeatureValues);
+        var oneOfFeatures = Random.Shared.GetRandomOfList(defaultFeatureValues);
 
         // when
         var features = await featureManager.GetAllDefaultAsync(cancellationToken: AbortToken);
@@ -97,7 +97,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
         var defaultFeatureValues = _GetDefaultFeatureValues();
-        var oneOfFeatures = RandomHelper.GetRandomOfList(defaultFeatureValues);
+        var oneOfFeatures = Random.Shared.GetRandomOfList(defaultFeatureValues);
         const string editionId = "AnyEditionId";
 
         // when

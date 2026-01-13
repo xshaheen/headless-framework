@@ -40,10 +40,7 @@ public static class HeadlessProblemDetailsConstants
             return $"The requested endpoint '{endpoint}' was not found.";
         }
 
-        public static string EntityNotFound(string entity, string key)
-        {
-            return $"The requested entity does not exist. There is no entity matches '{entity}:{key}'.";
-        }
+        public const string EntityNotFound = "The requested resource was not found.";
 
         public const string BadRequest =
             "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.";

@@ -8,7 +8,7 @@ internal static class XmlDocumentExtensions
 {
     public static XmlDocument LoadXmlDocument(this string xml)
     {
-        var xmlDoc = new XmlDocument();
+        var xmlDoc = new XmlDocument { XmlResolver = null };
         xmlDoc.LoadXml(xml);
 
         return xmlDoc;

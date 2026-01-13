@@ -21,14 +21,14 @@ public sealed class AsyncOneTimeRunner : IDisposable
             return;
         }
 
-        using (await _semaphore.LockAsync())
+        using (await _semaphore.LockAsync().AnyContext())
         {
             if (_runBefore)
             {
                 return;
             }
 
-            await action();
+            await action().AnyContext();
 
             _runBefore = true;
         }

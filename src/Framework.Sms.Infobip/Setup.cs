@@ -16,31 +16,31 @@ public static class InfobipSetup
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.Configure<InfobipOptions, InfobipOptionsValidator>(config);
+        services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(config);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddInfobipSmsSender(
         this IServiceCollection services,
-        Action<InfobipOptions> setupAction,
+        Action<InfobipSmsOptions> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.Configure<InfobipOptions, InfobipOptionsValidator>(setupAction);
+        services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
 
     public static IServiceCollection AddInfobipSmsSender(
         this IServiceCollection services,
-        Action<InfobipOptions, IServiceProvider> setupAction,
+        Action<InfobipSmsOptions, IServiceProvider> setupAction,
         Action<HttpClient>? configureClient = null,
         Action<HttpStandardResilienceOptions>? configureResilience = null
     )
     {
-        services.Configure<InfobipOptions, InfobipOptionsValidator>(setupAction);
+        services.Configure<InfobipSmsOptions, InfobipSmsOptionsValidator>(setupAction);
 
         return _AddCore(services, configureClient, configureResilience);
     }
@@ -54,8 +54,8 @@ public static class InfobipSetup
         services.AddSingleton<ISmsSender, InfobipSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, InfobipSmsSender>(name: "infobip-client")
-            : services.AddHttpClient<ISmsSender, InfobipSmsSender>(name: "infobip-client", configureClient);
+            ? services.AddHttpClient(InfobipSmsSender.HttpClientName)
+            : services.AddHttpClient(InfobipSmsSender.HttpClientName, configureClient);
 
         if (configureResilience is not null)
         {

@@ -108,5 +108,5 @@ public sealed class CashInCallbackTransactionOrder
     }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

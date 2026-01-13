@@ -10,7 +10,6 @@ Provides consistent MVC configuration, base controllers, exception filters, and 
 
 - `ApiControllerBase` - Base controller with common utilities
 - `MvcApiExceptionFilter` - Standardized exception handling
-- `MvcProblemDetailsNormalizer` - Consistent problem details formatting
 - Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`)
 - Pre-configured JSON and MVC options
@@ -66,4 +65,3 @@ No additional configuration required.
 ## Side Effects
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
-- Registers `MvcProblemDetailsNormalizer` singleton

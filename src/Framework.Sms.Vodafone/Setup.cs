@@ -7,8 +7,10 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Framework.Sms.Vodafone;
 
 [PublicAPI]
-public static class Setup
+public static class VodafoneSetup
 {
+    internal const string HttpClientName = "Headless:VodafoneSms";
+
     public static IServiceCollection AddVodafoneSmsSender(
         this IServiceCollection services,
         IConfiguration config,
@@ -54,8 +56,8 @@ public static class Setup
         services.AddSingleton<ISmsSender, VodafoneSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, VodafoneSmsSender>()
-            : services.AddHttpClient<ISmsSender, VodafoneSmsSender>(configureClient);
+            ? services.AddHttpClient(HttpClientName)
+            : services.AddHttpClient(HttpClientName, configureClient);
 
         if (configureResilience is not null)
         {

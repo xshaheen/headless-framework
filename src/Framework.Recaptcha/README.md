@@ -59,12 +59,12 @@ public class LoginController(IReCaptchaSiteVerifyV3 recaptcha)
 
 ```html
 <!-- reCAPTCHA v3 -->
-<recaptcha-v3-script site-key="@config.SiteKey" />
-<recaptcha-v3-js action="login" callback="onRecaptchaVerified" />
+<recaptcha-script-v3 hide-badge="true" />
+<recaptcha-script-v3-js action="login" callback="onRecaptchaVerified" />
 
 <!-- reCAPTCHA v2 -->
-<recaptcha-v2-script />
-<recaptcha-v2-div site-key="@config.SiteKey" />
+<recaptcha-script-v2 />
+<recaptcha-div-v2 />
 ```
 
 ## Configuration

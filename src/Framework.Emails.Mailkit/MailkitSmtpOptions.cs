@@ -11,13 +11,25 @@ public sealed class MailkitSmtpOptions
 
     public string? User { get; init; }
 
+    /// <summary>
+    /// SMTP password. Use user-secrets or key vault in production.
+    /// </summary>
     public string? Password { get; init; }
 
-    public int Port { get; init; } = 25;
+    public int Port { get; init; } = 587;
 
-    public SecureSocketOptions? SocketOptions { get; init; }
+    public SecureSocketOptions SocketOptions { get; init; } = SecureSocketOptions.StartTls;
 
-    public bool RequiresAuthentication => !string.IsNullOrEmpty(User) && !string.IsNullOrEmpty(Password);
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Max pooled SMTP connections. Set to 0 to disable pooling.
+    /// </summary>
+    public int MaxPoolSize { get; init; } = 10;
+
+    public bool HasCredentials => !string.IsNullOrEmpty(User) && !string.IsNullOrEmpty(Password);
+
+    public override string ToString() => $"SMTP: {Server}:{Port} (User: {User ?? "anonymous"})";
 }
 
 [UsedImplicitly]
@@ -28,5 +40,7 @@ internal sealed class MailkitSmtpOptionsValidator : AbstractValidator<MailkitSmt
         RuleFor(x => x.Server).NotEmpty();
         RuleFor(x => x.Port).GreaterThan(0);
         RuleFor(x => x.SocketOptions).IsInEnum();
+        RuleFor(x => x.Timeout).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.MaxPoolSize).GreaterThanOrEqualTo(0);
     }
 }

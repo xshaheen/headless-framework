@@ -7,6 +7,7 @@ using Framework.Payments.Paymob.CashIn.Models.Orders;
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
 [PublicAPI]
+[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInKioskPayResponse
 {
     [JsonPropertyName("id")]
@@ -124,7 +125,7 @@ public sealed class CashInKioskPayResponse
     }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 
     public bool IsCreatedSuccessfully()
     {

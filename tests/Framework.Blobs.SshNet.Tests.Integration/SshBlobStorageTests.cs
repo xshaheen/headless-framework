@@ -2,6 +2,7 @@
 
 using Framework.Blobs;
 using Framework.Blobs.SshNet;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.TestSetup;
 
@@ -15,7 +16,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var options = new SshBlobStorageOptions { ConnectionString = fixture.GetConnectionString() };
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
-        return new SshBlobStorage(optionsWrapper);
+        return new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
     }
 
     [Fact]
@@ -26,7 +27,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper);
+        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper);
+        using var storage = new SshBlobStorage(optionsWrapper, new CrossOsNamingNormalizer(), NullLogger<SshBlobStorage>.Instance);
     }
 
     [Fact]
@@ -62,10 +63,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         result.Blobs.Should().BeEmpty();
 
         const string directory = "EmptyDirectory";
-        var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync(AbortToken) : null;
-        client.Should().NotBeNull();
-
-        await client.CreateDirectoryAsync($"{containerName}/{directory}", AbortToken);
+        await storage.CreateContainerAsync([..container, directory], AbortToken);
 
         result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
         result.HasMore.Should().BeFalse();
@@ -82,7 +80,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         await storage.DeleteAllAsync(container, "*", AbortToken);
 
         // Assert folder was removed by Delete Files
-        (await client.ExistsAsync($"{containerName}/{directory}", AbortToken))
+        (await storage.ExistsAsync(container, directory, AbortToken))
             .Should()
             .BeFalse();
         (await storage.GetBlobInfoAsync(container, directory, AbortToken)).Should().BeNull();
@@ -249,4 +247,143 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
     {
         return base.can_call_get_paged_list_with_empty_container();
     }
+
+    #region Path Traversal Security Tests
+
+    [Theory]
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
+    public async Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    {
+        using var storage = GetStorage();
+
+        // ReSharper disable once AccessToDisposedClosure
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, blobName, AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName(nameof(blobName));
+    }
+
+    [Fact]
+    public async Task should_throw_when_container_has_path_traversal()
+    {
+        using var storage = GetStorage();
+        var maliciousContainer = new[] { "uploads", "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(maliciousContainer, "passwd", AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("container");
+    }
+
+    [Fact]
+    public async Task should_throw_when_upload_blob_has_path_traversal()
+    {
+        // given
+        using var storage = GetStorage();
+        await using var stream = new MemoryStream("test"u8.ToArray());
+
+        // when
+        var act = FluentActions.Awaiting(
+            () =>
+                storage
+                    .UploadAsync(Container, "../../.ssh/authorized_keys", stream, cancellationToken: AbortToken)
+                    .AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_download_blob_has_path_traversal()
+    {
+        // given
+        using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.DownloadAsync(Container, "../../../etc/passwd", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_delete_blob_has_path_traversal()
+    {
+        // given
+        using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.DeleteAsync(Container, "../../../../important/file.txt", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_rename_source_blob_has_path_traversal()
+    {
+        // given
+        using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.RenameAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_copy_source_blob_has_path_traversal()
+    {
+        // given
+        using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.CopyAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_blob_name_has_control_characters()
+    {
+        // given
+        using var storage = GetStorage();
+
+        // when
+        // ReSharper disable once AccessToDisposedClosure
+        // ReSharper disable once VariableLengthStringHexEscapeSequence
+        // ReSharper disable once CanSimplifyStringEscapeSequence
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, "file\x00name.txt", AbortToken).AsTask());
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public async Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    {
+        // given
+        using var storage = GetStorage();
+
+        // when
+        // ReSharper disable once AccessToDisposedClosure
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, blobName, AbortToken).AsTask());
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName(nameof(blobName));
+    }
+
+    #endregion
 }

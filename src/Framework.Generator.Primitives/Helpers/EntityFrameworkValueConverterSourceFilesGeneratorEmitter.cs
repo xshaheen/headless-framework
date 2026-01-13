@@ -43,7 +43,7 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
         builder.AppendUsings(
             [
                 data.Namespace,
-                data.PrimitiveTypeSymbol.ContainingNamespace.ToDisplayString(),
+                data.PrimitiveTypeNamespace,
                 AbstractionConstants.Namespace,
                 "Microsoft.EntityFrameworkCore",
                 "Microsoft.EntityFrameworkCore.Storage.ValueConversion",
@@ -78,7 +78,7 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
     internal static void AddEntityFrameworkValueConvertersHelper(
         this SourceProductionContext context,
         string assemblyName,
-        List<INamedTypeSymbol> types,
+        List<GeneratorData> types,
         bool addAssemblyAttribute
     )
     {
@@ -88,8 +88,8 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
         builder.AppendUsings(
             [
-                .. types.ConvertAll(x => x.ContainingNamespace.ToDisplayString()),
-                .. types.ConvertAll(x => _CreateConverterNamespaceName(x.ContainingNamespace.ToDisplayString())),
+                .. types.ConvertAll(x => x.Namespace),
+                .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
                 "Microsoft.EntityFrameworkCore",
             ]
         );
@@ -122,13 +122,13 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
             )
             .OpenBracket();
 
-        foreach (var type in types)
+        foreach (var data in types)
         {
             builder
                 .Append("configurationBuilder.Properties<")
-                .Append(type.Name)
+                .Append(data.ClassName)
                 .Append(">().HaveConversion<")
-                .Append(type.Name)
+                .Append(data.ClassName)
                 .AppendLine("ValueConverter>();");
         }
 

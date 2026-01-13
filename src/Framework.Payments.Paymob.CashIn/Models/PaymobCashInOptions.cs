@@ -34,6 +34,12 @@ public sealed record PaymobCashInOptions
     /// <summary>The default expiration time of this payment token in seconds.</summary>
     public int ExpirationPeriod { get; set; } = 3600;
 
+    /// <summary>
+    /// Token refresh buffer. Auth tokens are refreshed this much before actual expiration.
+    /// Default is 55 minutes (5 minutes before Paymob's 60-minute token lifetime).
+    /// </summary>
+    public TimeSpan TokenRefreshBuffer { get; set; } = TimeSpan.FromMinutes(55);
+
     /// <summary>New intention API secret key for the merchant.</summary>
     public required string SecretKey { get; set; }
 }
@@ -50,6 +56,10 @@ public sealed class PaymobCashInOptionsValidator : AbstractValidator<PaymobCashI
         RuleFor(x => x.ApiKey).NotEmpty();
         RuleFor(x => x.Hmac).NotEmpty();
         RuleFor(x => x.ExpirationPeriod).GreaterThan(60);
+        RuleFor(x => x.TokenRefreshBuffer)
+            .GreaterThan(TimeSpan.Zero)
+            .LessThan(TimeSpan.FromMinutes(60))
+            .WithMessage("TokenRefreshBuffer must be positive and less than 60 minutes");
         RuleFor(x => x.SecretKey).NotEmpty();
     }
 }
