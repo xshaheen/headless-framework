@@ -18,9 +18,10 @@ public partial class PaymobCashInBroker
         var internalRequest = new CashInCreateOrderInternalRequest(authToken, request);
 
         return await _PostAsync<CashInCreateOrderInternalRequest, CashInCreateOrderResponse>(
-            requestUrl,
-            internalRequest,
-            cancellationToken
-        ).AnyContext();
+                requestUrl,
+                internalRequest,
+                cancellationToken
+            )
+            .AnyContext();
     }
 }

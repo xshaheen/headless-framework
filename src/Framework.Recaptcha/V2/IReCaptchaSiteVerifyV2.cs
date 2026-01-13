@@ -78,9 +78,9 @@ public sealed class ReCaptchaSiteVerifyV2(
             .AnyContext();
 
         var response = await JsonSerializer
-            .DeserializeAsync(
+            .DeserializeAsync<ReCaptchaSiteVerifyV2Response>(
                 utf8Json: responseStream,
-                jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response,
+                options: ReCaptchaJsonOptions.JsonOptions,
                 cancellationToken: cancellationToken
             )
             .AnyContext();

@@ -58,7 +58,7 @@ public partial class PaymobCashInBrokerTests : TestBase
 
         // when
         var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
-        var invocation = FluentActions.Awaiting(() => broker.CreateOrderAsync(request));
+        var invocation = FluentActions.Awaiting(() => broker.CreateOrderAsync(request, AbortToken));
 
         // then
         await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);

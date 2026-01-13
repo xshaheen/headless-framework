@@ -2,6 +2,7 @@
 
 using System.Net.Http.Json;
 using Framework.Http;
+using Framework.Payments.Paymob.CashOut.Internals;
 using Framework.Payments.Paymob.CashOut.Models;
 using Framework.Urls;
 using Microsoft.Extensions.Options;
@@ -99,7 +100,12 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
         }
 
         var content = (
-            await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>(cancellationToken).AnyContext()
+            await response
+                .Content.ReadFromJsonAsync<CashOutAuthenticationResponse>(
+                    CashOutJsonOptions.JsonOptions,
+                    cancellationToken
+                )
+                .AnyContext()
         )!;
 
         _cachedToken = content.AccessToken;
@@ -134,7 +140,12 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
         }
 
         var content = (
-            await response.Content.ReadFromJsonAsync<CashOutAuthenticationResponse>(cancellationToken).AnyContext()
+            await response
+                .Content.ReadFromJsonAsync<CashOutAuthenticationResponse>(
+                    CashOutJsonOptions.JsonOptions,
+                    cancellationToken
+                )
+                .AnyContext()
         )!;
 
         // Update cache with refreshed token

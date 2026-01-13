@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Auth;
 using Framework.Urls;
@@ -55,7 +56,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
         var httpClient = _httpClientFactory.CreateClient(PaymobCashInSetup.HttpClientName);
 
         using var response = await httpClient
-            .PostAsJsonAsync(requestUrl, request, config.SerializationOptions, cancellationToken)
+            .PostAsJsonAsync(requestUrl, request, CashInJsonOptions.JsonOptions, cancellationToken)
             .AnyContext();
 
         if (!response.IsSuccessStatusCode)
@@ -64,7 +65,10 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
         }
 
         var content = await response
-            .Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(config.DeserializationOptions)
+            .Content.ReadFromJsonAsync<CashInAuthenticationTokenResponse>(
+                CashInJsonOptions.JsonOptions,
+                cancellationToken
+            )
             .AnyContext();
 
         if (content is null)

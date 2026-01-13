@@ -301,7 +301,7 @@ public static class RandomExtensions
             Argument.IsNotNullOrEmpty(items);
 
             var result = items.ToList();
-            Random.Shared.Shuffle(result.AsSpan());
+            random.Shuffle(result.AsSpan());
 
             return result;
         }

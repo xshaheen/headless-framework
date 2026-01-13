@@ -51,5 +51,5 @@ public sealed class CashInKioskPayData
     public object? Rrn { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

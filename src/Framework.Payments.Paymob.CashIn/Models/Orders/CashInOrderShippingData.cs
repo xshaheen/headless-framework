@@ -57,5 +57,5 @@ public sealed class CashInOrderShippingData
     public string ShippingMethod { get; init; } = "UNK";
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

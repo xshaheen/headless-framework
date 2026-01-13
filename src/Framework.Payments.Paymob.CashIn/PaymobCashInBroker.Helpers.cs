@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Framework.Payments.Paymob.CashIn.Models;
 
 namespace Framework.Payments.Paymob.CashIn;
@@ -14,7 +15,7 @@ public partial class PaymobCashInBroker
     )
     {
         using var response = await httpClient
-            .PostAsJsonAsync(url, request, Options.SerializationOptions, cancellationToken)
+            .PostAsJsonAsync(url, request, CashInJsonOptions.JsonOptions, cancellationToken)
             .AnyContext();
 
         if (!response.IsSuccessStatusCode)
@@ -23,7 +24,7 @@ public partial class PaymobCashInBroker
         }
 
         var result = await response
-            .Content.ReadFromJsonAsync<TResponse>(Options.DeserializationOptions, cancellationToken)
+            .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
             .AnyContext();
 
         if (result is null)
@@ -44,7 +45,7 @@ public partial class PaymobCashInBroker
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
         httpRequest.Headers.Add("Authorization", $"Bearer {authToken}");
-        httpRequest.Content = JsonContent.Create(request, options: Options.SerializationOptions);
+        httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken).AnyContext();
 
@@ -54,7 +55,7 @@ public partial class PaymobCashInBroker
         }
 
         var result = await response
-            .Content.ReadFromJsonAsync<TResponse>(Options.DeserializationOptions, cancellationToken)
+            .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
             .AnyContext();
 
         if (result is null)
@@ -73,7 +74,7 @@ public partial class PaymobCashInBroker
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
         httpRequest.Headers.Add("Authorization", $"Token {Options.SecretKey}");
-        httpRequest.Content = JsonContent.Create(request, options: Options.SerializationOptions);
+        httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken).AnyContext();
 
@@ -83,7 +84,7 @@ public partial class PaymobCashInBroker
         }
 
         return await response
-            .Content.ReadFromJsonAsync<TResponse>(Options.DeserializationOptions, cancellationToken)
+            .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
             .AnyContext();
     }
 
@@ -105,7 +106,7 @@ public partial class PaymobCashInBroker
         }
 
         return await response
-            .Content.ReadFromJsonAsync<TResponse>(Options.DeserializationOptions, cancellationToken)
+            .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
             .AnyContext();
     }
 }

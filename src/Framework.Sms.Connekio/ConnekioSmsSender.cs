@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Encodings.Web;
 using Framework.Checks;
 using Framework.Http;
+using Framework.Sms.Connekio.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -13,6 +15,12 @@ public sealed class ConnekioSmsSender(
     ILogger<ConnekioSmsSender> logger
 ) : ISmsSender
 {
+    private static readonly JsonSerializerOptions _JsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = ConnekioJsonSerializerContext.Default,
+    };
+
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly ConnekioSmsOptions _options = optionsAccessor.Value;
     private readonly ILogger<ConnekioSmsSender> _logger = logger;
@@ -65,28 +73,28 @@ public sealed class ConnekioSmsSender(
 
     private string _BuildPayload(SendSingleSmsRequest request)
     {
-        var payload = new Dictionary<string, object>(StringComparer.Ordinal)
-        {
-            { "account_id", _options.AccountId },
-            { "sender", _options.Sender },
-            { "text", request.Text },
-        };
-
         if (request.IsBatch)
         {
-            payload["mobile_list"] = request
-                .Destinations.Select(recipient => new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["msisdn"] = recipient.ToString(),
-                })
-                .ToList();
-        }
-        else
-        {
-            payload["msisdn"] = request.Destinations[0].ToString();
+            var batchRequest = new ConnekioBatchSmsRequest
+            {
+                AccountId = _options.AccountId,
+                Sender = _options.Sender,
+                Text = request.Text,
+                MobileList = request.Destinations.Select(r => new ConnekioRecipient { Msisdn = r.ToString() }).ToList(),
+            };
+
+            return JsonSerializer.Serialize(batchRequest, _JsonOptions);
         }
 
-        return JsonSerializer.Serialize(payload);
+        var singleRequest = new ConnekioSingleSmsRequest
+        {
+            AccountId = _options.AccountId,
+            Sender = _options.Sender,
+            Text = request.Text,
+            Msisdn = request.Destinations[0].ToString(),
+        };
+
+        return JsonSerializer.Serialize(singleRequest, _JsonOptions);
     }
 
     private Uri _GetEndpoint(bool isBatch)

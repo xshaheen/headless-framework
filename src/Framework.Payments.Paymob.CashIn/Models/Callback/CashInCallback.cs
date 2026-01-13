@@ -21,5 +21,5 @@ public sealed class CashInCallback
     public object? Obj { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

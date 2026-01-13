@@ -2,7 +2,7 @@
 
 using TimeZoneConverter;
 
-namespace Framework.Payments.Paymob.CashIn.Internal;
+namespace Framework.Payments.Paymob.CashIn.Internals;
 
 internal sealed class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter : JsonConverter<DateTimeOffset>
 {

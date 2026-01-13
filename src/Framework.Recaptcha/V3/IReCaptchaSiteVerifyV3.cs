@@ -77,22 +77,24 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
             httpResponseMessage.EnsureSuccessStatusCode();
         }
 
-        await using var responseStream = await httpResponseMessage.Content
-            .ReadAsStreamAsync(cancellationToken)
+        await using var responseStream = await httpResponseMessage
+            .Content.ReadAsStreamAsync(cancellationToken)
             .AnyContext();
 
-        var response = await JsonSerializer.DeserializeAsync(
-            utf8Json: responseStream,
-            jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV3Response,
-            cancellationToken: cancellationToken
-        ).AnyContext();
+        var response = await JsonSerializer
+            .DeserializeAsync<ReCaptchaSiteVerifyV3Response>(
+                utf8Json: responseStream,
+                options: ReCaptchaJsonOptions.JsonOptions,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
 
         if (response?.Success is not true)
         {
             _logger.LogReCaptchaFailure(response);
         }
 
-        return response ?? throw new InvalidOperationException(
-            "Failed to deserialize reCAPTCHA response. Response was null.");
+        return response
+            ?? throw new InvalidOperationException("Failed to deserialize reCAPTCHA response. Response was null.");
     }
 }
