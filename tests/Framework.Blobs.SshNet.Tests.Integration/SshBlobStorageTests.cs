@@ -80,7 +80,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         await storage.DeleteAllAsync(container, "*", AbortToken);
 
         // Assert folder was removed by Delete Files
-        (await storage.ExistsAsync([..container, directory], AbortToken))
+        (await storage.ExistsAsync(container, directory, AbortToken))
             .Should()
             .BeFalse();
         (await storage.GetBlobInfoAsync(container, directory, AbortToken)).Should().BeNull();

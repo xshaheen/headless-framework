@@ -514,19 +514,19 @@ public sealed class AsyncDuplicateLockTests : TestBase
         // given
         var lockAcquired = new TaskCompletionSource();
 
-        var holdingTask = Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             using (await AsyncDuplicateLock.LockAsync("try-lock-timeout-key"))
             {
                 lockAcquired.SetResult();
                 await Task.Delay(5000); // Hold lock
             }
-        });
+        }, AbortToken);
 
         await lockAcquired.Task;
 
         // when - try to acquire with short timeout
-        var releaser = await AsyncDuplicateLock.TryLockAsync(
+        using var releaser = await AsyncDuplicateLock.TryLockAsync(
             "try-lock-timeout-key",
             TimeSpan.FromMilliseconds(50),
             AbortToken
@@ -545,19 +545,19 @@ public sealed class AsyncDuplicateLockTests : TestBase
 
         var holdingTask = Task.Run(async () =>
         {
-            using (await AsyncDuplicateLock.LockAsync("try-lock-wait-key"))
+            using (await AsyncDuplicateLock.LockAsync("try-lock-wait-key", AbortToken))
             {
                 lockAcquired.SetResult();
                 await canRelease.Task;
             }
-        });
+        }, AbortToken);
 
         await lockAcquired.Task;
 
         // when - start trying to acquire, then release the first lock
         var tryLockTask = AsyncDuplicateLock.TryLockAsync("try-lock-wait-key", TimeSpan.FromSeconds(5), AbortToken);
 
-        await Task.Delay(50);
+        await Task.Delay(50, AbortToken);
         canRelease.SetResult();
         await holdingTask;
 
@@ -582,12 +582,12 @@ public sealed class AsyncDuplicateLockTests : TestBase
                 lockAcquired.SetResult();
                 await canRelease.Task;
             }
-        });
+        }, AbortToken);
 
         await lockAcquired.Task;
 
         // when - timeout on try lock
-        var releaser = await AsyncDuplicateLock.TryLockAsync(
+        using var releaser = await AsyncDuplicateLock.TryLockAsync(
             "try-lock-cleanup-key",
             TimeSpan.FromMilliseconds(50),
             AbortToken
@@ -611,16 +611,16 @@ public sealed class AsyncDuplicateLockTests : TestBase
     {
         // given
         var lockAcquired = new TaskCompletionSource();
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
 
         var holdingTask = Task.Run(async () =>
         {
-            using (await AsyncDuplicateLock.LockAsync("try-lock-cancel-key"))
+            using (await AsyncDuplicateLock.LockAsync("try-lock-cancel-key", AbortToken))
             {
                 lockAcquired.SetResult();
-                await Task.Delay(5000);
+                await Task.Delay(5000, AbortToken);
             }
-        });
+        }, AbortToken);
 
         await lockAcquired.Task;
         cts.CancelAfter(50);

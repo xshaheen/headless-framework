@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 // Polyfills for C# 9+ features in netstandard2.0
 
-// ReSharper disable once CheckNamespace
-namespace System.Runtime.CompilerServices;
-
 using System.ComponentModel;
+
+// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130
+namespace System.Runtime.CompilerServices;
 
 /// <summary>
 /// Reserved to be used by the compiler for tracking metadata.
@@ -25,14 +26,9 @@ internal sealed class RequiredMemberAttribute : Attribute;
 /// </summary>
 [AttributeUsage(AttributeTargets.All, AllowMultiple = true, Inherited = false)]
 [EditorBrowsable(EditorBrowsableState.Never)]
-internal sealed class CompilerFeatureRequiredAttribute : Attribute
+internal sealed class CompilerFeatureRequiredAttribute(string featureName) : Attribute
 {
-    public CompilerFeatureRequiredAttribute(string featureName)
-    {
-        FeatureName = featureName;
-    }
-
-    public string FeatureName { get; }
+    public string FeatureName { get; } = featureName;
 
     public bool IsOptional { get; init; }
 
