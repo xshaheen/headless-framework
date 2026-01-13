@@ -8,7 +8,7 @@ using Xunit.Sdk;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition]
+[CollectionDefinition(DisableParallelization = true)]
 public sealed class RedisTestFixture(IMessageSink messageSink)
     : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
         ICollectionFixture<RedisTestFixture>
