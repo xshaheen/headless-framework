@@ -20,6 +20,7 @@ public sealed class SshBlobStorage : IBlobStorage
 {
     private readonly SftpClient _client;
     private readonly ILogger _logger;
+    private readonly int _maxConcurrentOperations;
 
     public SshBlobStorage(IOptions<SshBlobStorageOptions> optionsAccessor)
     {
@@ -27,6 +28,7 @@ public sealed class SshBlobStorage : IBlobStorage
         var connectionInfo = _BuildConnectionInfo(sshOptions);
         _client = new SftpClient(connectionInfo);
         _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
+        _maxConcurrentOperations = sshOptions.MaxConcurrentOperations;
     }
 
     #region Get Client
@@ -122,21 +124,37 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(async blob =>
+        var results = new Result<Exception>[blobs.Count];
+        var index = 0;
+
+        var parallelOptions = new ParallelOptions
         {
-            try
-            {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken).AnyContext();
+            MaxDegreeOfParallelism = _maxConcurrentOperations,
+            CancellationToken = cancellationToken,
+        };
 
-                return Result<Exception>.Ok();
-            }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                parallelOptions,
+                async (blob, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions().AnyContext();
+                    try
+                    {
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        results[i] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
+
+        return results;
     }
 
     #endregion
@@ -194,19 +212,36 @@ public sealed class SshBlobStorage : IBlobStorage
             return [];
         }
 
-        var tasks = blobNames.Select(async fileName =>
-        {
-            try
-            {
-                return await DeleteAsync(container, fileName, cancellationToken).AnyContext();
-            }
-            catch (Exception e)
-            {
-                return Result<bool, Exception>.Fail(e);
-            }
-        });
+        var results = new Result<bool, Exception>[blobNames.Count];
+        var index = 0;
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions().AnyContext();
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = _maxConcurrentOperations,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForEachAsync(
+                blobNames,
+                parallelOptions,
+                async (fileName, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
+
+                    try
+                    {
+                        results[i] = await DeleteAsync(container, fileName, ct).AnyContext();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<bool, Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
+
+        return results;
     }
 
     public async ValueTask<int> DeleteAllAsync(

@@ -19,6 +19,12 @@ public sealed class SshBlobStorageOptions
     public string? PrivateKeyPassPhrase { get; set; }
 
     public ILoggerFactory? LoggerFactory { get; set; }
+
+    /// <summary>
+    /// Maximum concurrent operations for bulk upload/delete. Default is 4.
+    /// SSH/SFTP connections have limited channel capacity, so this should be kept low.
+    /// </summary>
+    public int MaxConcurrentOperations { get; set; } = 4;
 }
 
 internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlobStorageOptions>
@@ -27,5 +33,6 @@ internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlob
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
         RuleFor(x => x.ProxyType).IsInEnum();
+        RuleFor(x => x.MaxConcurrentOperations).InclusiveBetween(1, 100);
     }
 }
