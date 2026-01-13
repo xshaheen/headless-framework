@@ -1,7 +1,7 @@
 # Pagination Re-Enumerates From Start Every Page (O(n²))
 
 **Date:** 2026-01-11
-**Status:** ready
+**Status:** complete
 **Priority:** P3 - Nice-to-Have
 **Tags:** documentation, performance, dotnet, blobs, filesystem
 
@@ -38,8 +38,8 @@ foreach (var path in Directory
 
 ## Acceptance Criteria
 
-- [ ] XML doc comment added warning about O(n²) pagination behavior
-- [ ] Users informed to use streaming alternatives for large directories
+- [x] XML doc comment added warning about O(n²) pagination behavior
+- [x] Users informed to use streaming alternatives for large directories
 
 ---
 
@@ -49,3 +49,4 @@ foreach (var path in Directory
 |------|--------|-------|
 | 2026-01-11 | Created | From code review - performance-oracle |
 | 2026-01-13 | Approved | Triage: downgraded to P3, documentation-only fix |
+| 2026-01-13 | Resolved | Added XML doc remarks to GetPagedListAsync |
