@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
+using Framework.Blobs.Internals;
 using Framework.Core;
 
 namespace Framework.Blobs.Azure;
@@ -52,11 +53,7 @@ public sealed partial class AzureBlobNamingNormalizer : IBlobNamingNormalizer
     /// </summary>
     public string NormalizeBlobName(string blobName)
     {
-        if (blobName.Contains("../", StringComparison.Ordinal) || blobName.Contains("..\\", StringComparison.Ordinal))
-        {
-            throw new ArgumentException("Path traversal sequences are not allowed in blob names.", nameof(blobName));
-        }
-
+        PathValidation.ValidatePathSegment(blobName);
         return blobName;
     }
 

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "016"
 tags: [code-review, api-design, encapsulation]
@@ -44,7 +44,7 @@ Change from `public` to `internal`.
 
 ## Recommended Action
 
-<!-- Fill after triage -->
+Option A: Remove method
 
 ## Technical Details
 

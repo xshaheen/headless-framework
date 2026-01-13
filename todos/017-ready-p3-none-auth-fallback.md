@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "017"
 tags: [code-review, security, configuration]
@@ -51,7 +51,7 @@ Add `AllowNoneAuthentication` option.
 
 ## Recommended Action
 
-<!-- Fill after triage -->
+Option B: Add explicit config option
 
 ## Technical Details
 

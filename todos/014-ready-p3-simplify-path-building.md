@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "014"
 tags: [code-review, simplification, performance]
@@ -47,7 +47,7 @@ Replace StringBuilder with `string.Join` and interpolation.
 
 ## Recommended Action
 
-<!-- Fill after triage -->
+Option A: Use string interpolation
 
 ## Technical Details
 

@@ -483,7 +483,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Downalod
+    #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,

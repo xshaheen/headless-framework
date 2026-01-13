@@ -3,6 +3,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.RegularExpressions;
+using Framework.Blobs.Internals;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Primitives;
@@ -19,14 +20,17 @@ namespace Framework.Blobs.SshNet;
 public sealed class SshBlobStorage : IBlobStorage
 {
     private readonly SftpClient _client;
+    private readonly IBlobNamingNormalizer _normalizer;
     private readonly ILogger _logger;
     private readonly int _maxConcurrentOperations;
+    private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
-    public SshBlobStorage(IOptions<SshBlobStorageOptions> optionsAccessor)
+    public SshBlobStorage(IOptions<SshBlobStorageOptions> optionsAccessor, IBlobNamingNormalizer normalizer)
     {
         var sshOptions = optionsAccessor.Value;
         var connectionInfo = _BuildConnectionInfo(sshOptions);
         _client = new SftpClient(connectionInfo);
+        _normalizer = normalizer;
         _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
         _maxConcurrentOperations = sshOptions.MaxConcurrentOperations;
     }
@@ -431,17 +435,17 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobContainer);
 
         // Validate paths before try-catch to ensure security exceptions propagate
-        _ValidatePathSegment(blobName, nameof(blobName));
-        _ValidatePathSegment(newBlobName, nameof(newBlobName));
+        PathValidation.ValidatePathSegment(blobName, nameof(blobName));
+        PathValidation.ValidatePathSegment(newBlobName, nameof(newBlobName));
 
         foreach (var segment in blobContainer)
         {
-            _ValidatePathSegment(segment, nameof(blobContainer));
+            PathValidation.ValidatePathSegment(segment, nameof(blobContainer));
         }
 
         foreach (var segment in newBlobContainer)
         {
-            _ValidatePathSegment(segment, nameof(newBlobContainer));
+            PathValidation.ValidatePathSegment(segment, nameof(newBlobContainer));
         }
 
         await _EnsureClientConnectedAsync(cancellationToken).AnyContext();
@@ -510,7 +514,7 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #endregion
 
-    #region Downalod
+    #region Download
 
     public async ValueTask<BlobDownloadResult?> DownloadAsync(
         string[] container,
@@ -844,70 +848,43 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Build Paths
 
-    private static string _BuildBlobPath(string[] container, string blobName)
+    private string _BuildBlobPath(string[] container, string blobName)
     {
-        _ValidatePathSegment(blobName, nameof(blobName));
+        PathValidation.ValidatePathSegment(blobName, nameof(blobName));
 
-        foreach (var segment in container)
-        {
-            _ValidatePathSegment(segment, nameof(container));
-        }
+        var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
 
         if (container.Length == 0)
         {
-            return blobName;
+            return normalizedBlobName;
         }
 
         var sb = new StringBuilder();
 
-        sb.AppendJoin('/', container);
+        foreach (var segment in container)
+        {
+            PathValidation.ValidatePathSegment(segment, nameof(container));
 
-        if (!string.IsNullOrEmpty(blobName))
+            if (sb.Length > 0)
+            {
+                sb.Append('/');
+            }
+
+            sb.Append(_normalizer.NormalizeContainerName(segment));
+        }
+
+        if (!string.IsNullOrEmpty(normalizedBlobName))
         {
             sb.Append('/');
         }
 
-        sb.Append(blobName);
+        sb.Append(normalizedBlobName);
 
         return sb.ToString();
     }
 
-    private static void _ValidatePathSegment(string segment, string paramName)
+    private string _BuildContainerPath(string[] container)
     {
-        if (string.IsNullOrEmpty(segment))
-        {
-            return;
-        }
-
-        // Reject path traversal sequences
-        if (segment.Contains("..", StringComparison.Ordinal))
-        {
-            throw new ArgumentException("Path traversal sequences are not allowed", paramName);
-        }
-
-        // Reject absolute paths (Unix-style)
-        if (segment.StartsWith('/'))
-        {
-            throw new ArgumentException("Absolute paths are not allowed", paramName);
-        }
-
-        // Reject control characters (ASCII 0-31)
-        foreach (var c in segment)
-        {
-            if (c < 32)
-            {
-                throw new ArgumentException("Control characters are not allowed in path", paramName);
-            }
-        }
-    }
-
-    private static string _BuildContainerPath(string[] container)
-    {
-        foreach (var segment in container)
-        {
-            _ValidatePathSegment(segment, nameof(container));
-        }
-
         if (container.Length == 0)
         {
             return "";
@@ -915,7 +892,18 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var sb = new StringBuilder();
 
-        sb.AppendJoin('/', container);
+        foreach (var segment in container)
+        {
+            PathValidation.ValidatePathSegment(segment, nameof(container));
+
+            if (sb.Length > 0)
+            {
+                sb.Append('/');
+            }
+
+            sb.Append(_normalizer.NormalizeContainerName(segment));
+        }
+
         sb.Append('/');
 
         return sb.ToString();

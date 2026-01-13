@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "015"
 tags: [code-review, cleanup]
@@ -31,7 +31,7 @@ Keep only one log per operation.
 
 ## Recommended Action
 
-<!-- Fill after triage -->
+Remove duplicates
 
 ## Technical Details
 
