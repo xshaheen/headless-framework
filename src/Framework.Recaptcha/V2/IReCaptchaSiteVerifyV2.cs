@@ -19,8 +19,6 @@ public interface IReCaptchaSiteVerifyV2
 {
     /// <summary>Validate Recapture token.</summary>
     /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
-    [SystemPure]
-    [JetBrainsPure]
     Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(ReCaptchaSiteVerifyRequest request);
 }
 
@@ -58,7 +56,7 @@ public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
         }
 
         using var content = new FormUrlEncodedContent(formData);
-        using var httpResponseMessage = await _client.PostAsync(_siteVerifyUri, content);
+        using var httpResponseMessage = await _client.PostAsync(_siteVerifyUri, content).AnyContext();
 
         if (!httpResponseMessage.IsSuccessStatusCode)
         {
@@ -67,19 +65,19 @@ public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
                 _logger.LogInformation(
                     "Recaptcha verification failed with status code {StatusCode} and response {Response}",
                     httpResponseMessage.StatusCode,
-                    await httpResponseMessage.Content.ReadAsStringAsync()
+                    await httpResponseMessage.Content.ReadAsStringAsync().AnyContext()
                 );
             }
 
             httpResponseMessage.EnsureSuccessStatusCode();
         }
 
-        await using var responseStream = await httpResponseMessage.Content.ReadAsStreamAsync();
+        await using var responseStream = await httpResponseMessage.Content.ReadAsStreamAsync().AnyContext();
 
         var response = await JsonSerializer.DeserializeAsync(
             utf8Json: responseStream,
             jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response
-        );
+        ).AnyContext();
 
         if (response?.Success is not true)
         {

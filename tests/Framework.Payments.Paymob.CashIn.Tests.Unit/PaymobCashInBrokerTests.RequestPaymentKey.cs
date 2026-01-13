@@ -44,7 +44,7 @@ public partial class PaymobCashInBrokerTests
 
         // then
         JsonSerializer.Serialize(result).Should().Be(responseJson);
-        _ = await authenticator.Received(1).GetAuthenticationTokenAsync();
+        _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public partial class PaymobCashInBrokerTests
 
         // then
         await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);
-        _ = await authenticator.Received(1).GetAuthenticationTokenAsync();
+        _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
     }
 
     private static CashInPaymentKeyRequest _GetPaymentKeyRequest(int? expiration)

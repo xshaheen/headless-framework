@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-global using JetBrainsPure = JetBrains.Annotations.PureAttribute;
-global using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 using Framework.Recaptcha.Contracts;
 using Framework.Recaptcha.Services;
 using Framework.Recaptcha.V2;

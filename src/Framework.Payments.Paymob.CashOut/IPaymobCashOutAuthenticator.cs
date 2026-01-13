@@ -10,8 +10,9 @@ namespace Framework.Payments.Paymob.CashOut;
 
 public interface IPaymobCashOutAuthenticator
 {
-    [Pure]
     Task<string> GetAccessTokenAsync();
+
+    Task<CashOutAuthenticationResponse> RefreshTokenAsync(string refreshToken);
 }
 
 public sealed class PaymobCashOutAuthenticator(
