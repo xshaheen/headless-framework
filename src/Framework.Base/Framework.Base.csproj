@@ -19,7 +19,6 @@
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
-    <PackageReference Include="TimeZoneConverter" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
