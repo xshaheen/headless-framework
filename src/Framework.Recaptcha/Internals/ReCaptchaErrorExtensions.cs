@@ -16,7 +16,7 @@ internal static class ReCaptchaErrorExtensions
             "missing-input-response" => ReCaptchaError.MissingInputResponse,
             "invalid-input-secret" => ReCaptchaError.InvalidInputSecret,
             "missing-input-secret" => ReCaptchaError.MissingInputSecret,
-            _ => throw new InvalidOperationException($"Unknown {nameof(ReCaptchaError)}={error}"),
+            _ => ReCaptchaError.Unknown,
         };
     }
 }

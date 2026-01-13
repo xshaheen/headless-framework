@@ -14,8 +14,13 @@ namespace Framework.Recaptcha.V3;
 public interface IReCaptchaSiteVerifyV3
 {
     /// <summary>Validate Recapture token.</summary>
+    /// <param name="request">The verification request containing the reCAPTCHA response token.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
-    Task<ReCaptchaSiteVerifyV3Response> VerifyAsync(ReCaptchaSiteVerifyRequest request);
+    Task<ReCaptchaSiteVerifyV3Response> VerifyAsync(
+        ReCaptchaSiteVerifyRequest request,
+        CancellationToken cancellationToken = default
+    );
 }
 
 public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
@@ -32,13 +37,15 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
         ILogger<ReCaptchaSiteVerifyV3> logger
     )
     {
-        _options = optionsAccessor.Get(RecaptchaSetup.V3Name);
-        _client = clientFactory.CreateClient(RecaptchaSetup.V3Name);
-        _client.BaseAddress = new Uri(_options.VerifyBaseUrl);
+        _options = optionsAccessor.Get(ReCaptchaSetup.V3Name);
+        _client = clientFactory.CreateClient(ReCaptchaSetup.V3Name);
         _logger = logger;
     }
 
-    public async Task<ReCaptchaSiteVerifyV3Response> VerifyAsync(ReCaptchaSiteVerifyRequest request)
+    public async Task<ReCaptchaSiteVerifyV3Response> VerifyAsync(
+        ReCaptchaSiteVerifyRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
         List<KeyValuePair<string, string>> formData =
         [
@@ -52,7 +59,9 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
         }
 
         using var content = new FormUrlEncodedContent(formData);
-        using var httpResponseMessage = await _client.PostAsync(_siteVerifyUri, content).AnyContext();
+        using var httpResponseMessage = await _client
+            .PostAsync(_siteVerifyUri, content, cancellationToken)
+            .AnyContext();
 
         if (!httpResponseMessage.IsSuccessStatusCode)
         {
@@ -61,18 +70,21 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
                 _logger.LogInformation(
                     "Recaptcha verification failed with status code {StatusCode} and response {Response}",
                     httpResponseMessage.StatusCode,
-                    await httpResponseMessage.Content.ReadAsStringAsync().AnyContext()
+                    await httpResponseMessage.Content.ReadAsStringAsync(cancellationToken).AnyContext()
                 );
             }
 
             httpResponseMessage.EnsureSuccessStatusCode();
         }
 
-        await using var responseStream = await httpResponseMessage.Content.ReadAsStreamAsync().AnyContext();
+        await using var responseStream = await httpResponseMessage.Content
+            .ReadAsStreamAsync(cancellationToken)
+            .AnyContext();
 
         var response = await JsonSerializer.DeserializeAsync(
             utf8Json: responseStream,
-            jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV3Response
+            jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV3Response,
+            cancellationToken: cancellationToken
         ).AnyContext();
 
         if (response?.Success is not true)
@@ -80,6 +92,7 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
             _logger.LogReCaptchaFailure(response);
         }
 
-        return response!;
+        return response ?? throw new InvalidOperationException(
+            "Failed to deserialize reCAPTCHA response. Response was null.");
     }
 }
