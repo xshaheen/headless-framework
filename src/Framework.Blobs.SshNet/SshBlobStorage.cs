@@ -395,6 +395,20 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
+        // Validate paths before try-catch to ensure security exceptions propagate
+        _ValidatePathSegment(blobName, nameof(blobName));
+        _ValidatePathSegment(newBlobName, nameof(newBlobName));
+
+        foreach (var segment in blobContainer)
+        {
+            _ValidatePathSegment(segment, nameof(blobContainer));
+        }
+
+        foreach (var segment in newBlobContainer)
+        {
+            _ValidatePathSegment(segment, nameof(newBlobContainer));
+        }
+
         await _EnsureClientConnectedAsync(cancellationToken).AnyContext();
 
         _logger.LogInformation(
@@ -797,6 +811,13 @@ public sealed class SshBlobStorage : IBlobStorage
 
     private static string _BuildBlobPath(string[] container, string blobName)
     {
+        _ValidatePathSegment(blobName, nameof(blobName));
+
+        foreach (var segment in container)
+        {
+            _ValidatePathSegment(segment, nameof(container));
+        }
+
         if (container.Length == 0)
         {
             return blobName;
@@ -816,8 +837,42 @@ public sealed class SshBlobStorage : IBlobStorage
         return sb.ToString();
     }
 
+    private static void _ValidatePathSegment(string segment, string paramName)
+    {
+        if (string.IsNullOrEmpty(segment))
+        {
+            return;
+        }
+
+        // Reject path traversal sequences
+        if (segment.Contains("..", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Path traversal sequences are not allowed", paramName);
+        }
+
+        // Reject absolute paths (Unix-style)
+        if (segment.StartsWith('/'))
+        {
+            throw new ArgumentException("Absolute paths are not allowed", paramName);
+        }
+
+        // Reject control characters (ASCII 0-31)
+        foreach (var c in segment)
+        {
+            if (c < 32)
+            {
+                throw new ArgumentException("Control characters are not allowed in path", paramName);
+            }
+        }
+    }
+
     private static string _BuildContainerPath(string[] container)
     {
+        foreach (var segment in container)
+        {
+            _ValidatePathSegment(segment, nameof(container));
+        }
+
         if (container.Length == 0)
         {
             return "";

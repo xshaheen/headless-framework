@@ -249,4 +249,117 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
     {
         return base.can_call_get_paged_list_with_empty_container();
     }
+
+    #region Path Traversal Security Tests
+
+    [Theory]
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
+    public async Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    {
+        using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, blobName, AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_container_has_path_traversal()
+    {
+        using var storage = GetStorage();
+        var maliciousContainer = new[] { "uploads", "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(maliciousContainer, "passwd", AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("container");
+    }
+
+    [Fact]
+    public async Task should_throw_when_upload_blob_has_path_traversal()
+    {
+        using var storage = GetStorage();
+        using var stream = new MemoryStream("test"u8.ToArray());
+
+        var act = FluentActions.Awaiting(
+            () =>
+                storage
+                    .UploadAsync(Container, "../../.ssh/authorized_keys", stream, cancellationToken: AbortToken)
+                    .AsTask()
+        );
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_download_blob_has_path_traversal()
+    {
+        using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(
+            () => storage.DownloadAsync(Container, "../../../etc/passwd", AbortToken).AsTask()
+        );
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_delete_blob_has_path_traversal()
+    {
+        using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(
+            () => storage.DeleteAsync(Container, "../../../../important/file.txt", AbortToken).AsTask()
+        );
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_rename_source_blob_has_path_traversal()
+    {
+        using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(
+            () => storage.RenameAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        );
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_copy_source_blob_has_path_traversal()
+    {
+        using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(
+            () => storage.CopyAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        );
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Fact]
+    public async Task should_throw_when_blob_name_has_control_characters()
+    {
+        using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, "file\x00name.txt", AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public async Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    {
+        using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, blobName, AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    #endregion
 }
