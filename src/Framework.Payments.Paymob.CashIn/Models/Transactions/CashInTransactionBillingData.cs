@@ -5,7 +5,6 @@ using Framework.Payments.Paymob.CashIn.Internals;
 namespace Framework.Payments.Paymob.CashIn.Models.Transactions;
 
 [PublicAPI]
-[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInTransactionBillingData
 {
     [JsonPropertyName("id")]

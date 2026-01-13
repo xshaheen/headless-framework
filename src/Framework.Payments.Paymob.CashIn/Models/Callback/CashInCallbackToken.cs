@@ -6,7 +6,6 @@ using Humanizer;
 namespace Framework.Payments.Paymob.CashIn.Models.Callback;
 
 [PublicAPI]
-[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInCallbackToken
 {
     [JsonPropertyName("id")]

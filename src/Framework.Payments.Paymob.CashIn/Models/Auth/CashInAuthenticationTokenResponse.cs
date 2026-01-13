@@ -5,7 +5,6 @@ using Framework.Payments.Paymob.CashIn.Models.Merchant;
 namespace Framework.Payments.Paymob.CashIn.Models.Auth;
 
 [PublicAPI]
-[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInAuthenticationTokenResponse
 {
     [JsonPropertyName("token")]

@@ -7,7 +7,6 @@ using Framework.Payments.Paymob.CashIn.Models.Orders;
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
 [PublicAPI]
-[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInKioskPayResponse
 {
     [JsonPropertyName("id")]

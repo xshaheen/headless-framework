@@ -3,7 +3,6 @@
 namespace Framework.Payments.Paymob.CashIn.Models.Payment;
 
 [PublicAPI]
-[JsonObjectCreationHandling(JsonObjectCreationHandling.Populate)]
 public sealed class CashInKioskPaySourceData
 {
     [JsonPropertyName("sub_type")]
