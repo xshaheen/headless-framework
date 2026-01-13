@@ -75,6 +75,17 @@ public sealed class SshBlobStorage : IBlobStorage
 
     #region Upload
 
+    /// <summary>
+    /// Uploads a blob to SFTP storage.
+    /// </summary>
+    /// <param name="container">Container path segments</param>
+    /// <param name="blobName">Name of the blob to upload</param>
+    /// <param name="stream">Content stream to upload</param>
+    /// <param name="metadata">
+    /// Optional metadata dictionary. Note: SFTP does not support blob metadata.
+    /// This parameter is accepted for compatibility with the IBlobStorage interface but is ignored.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token</param>
     public async ValueTask UploadAsync(
         string[] container,
         string blobName,
