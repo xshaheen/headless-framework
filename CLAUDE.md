@@ -40,16 +40,8 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Foundatio.Redis`
 
 ## Code Conventions (Strictly Enforced)
 
-**Naming**:
-| Element | Convention | Example |
-|---------|------------|---------|
-| Private fields | `_camelCase` | `_service` |
-| Private const/static | `_PascalCase` | `_DefaultValue` |
-| Private methods | `_PascalCase` | `_ValidateInput()` |
-| Public methods | `PascalCase` | `ProcessAsync()` |
-| Local functions | `camelCase` | `logError()` |
-
 **Required C# features**:
+
 - File-scoped namespaces: `namespace X;`
 - Primary constructors for DI
 - `required`/`init` for properties
@@ -57,12 +49,14 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Foundatio.Redis`
 - Collection expressions: `[]`
 - Pattern matching over old-style checks
 
-- **Async**: Use `AnyContext()` extension (replaces `ConfigureAwait(false)`). Always pass `CancellationToken`.
-- **xUnit3** Use `AbortToken` instead of `TestContext.Current.CancellationToken` when inherit from `TestBase`.
-
 ## Package Management
 
-All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
+- All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
+
+## Documentation
+
+- Make sure to sync XML docs of the public APIs.
+- Make sure to sync project README.md files for each package (exist in `src/Framework.*` folders).
 
 ## Tools
 
