@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Framework.Urls;
 
@@ -13,6 +14,11 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     /// Returns a new instance of QueryParamCollection
     /// </summary>
     /// <param name="query">Optional query string to parse.</param>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "ToKeyValuePairs only uses string parsing path here, no reflection involved."
+    )]
     public QueryParamCollection(string? query = null)
     {
         if (query is null)

@@ -8,7 +8,7 @@ using Xunit.Sdk;
 
 namespace Tests.TestSetup;
 
-[CollectionDefinition]
+[CollectionDefinition(DisableParallelization = true)]
 public sealed class RedisTestFixture(IMessageSink messageSink)
     : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
         ICollectionFixture<RedisTestFixture>
@@ -17,7 +17,7 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
 
     protected override RedisBuilder Configure()
     {
-        return base.Configure().WithLabel("type", "redis_blobs").WithImage("redis:7-alpine").WithReuse(true);
+        return base.Configure().WithImage("redis:7-alpine");
     }
 
     protected override async ValueTask InitializeAsync()

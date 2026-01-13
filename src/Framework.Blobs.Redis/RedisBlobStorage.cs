@@ -120,6 +120,17 @@ public sealed class RedisBlobStorage : IBlobStorage
                 );
             }
 
+            // Reset stream position for seekable streams
+            if (stream.CanSeek && stream.Position != 0)
+            {
+                _logger.LogWarning(
+                    "Stream position was {Position}, resetting to 0 for blob {BlobName}",
+                    stream.Position,
+                    blobName
+                );
+                stream.Seek(0, SeekOrigin.Begin);
+            }
+
             await using var memory = new MemoryStream();
             await _CopyWithSizeLimitAsync(stream, memory, cancellationToken).AnyContext();
             var fileSize = memory.Length;
@@ -575,12 +586,23 @@ public sealed class RedisBlobStorage : IBlobStorage
 
             var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
 
-            if (criteria.Pattern?.IsMatch(blobInfo.BlobKey) == false)
+            // Use hash field name as source of truth (BlobKey may be stale after rename)
+            var actualKey = hashEntry.Name.ToString();
+
+            if (criteria.Pattern?.IsMatch(actualKey) == false)
             {
                 continue;
             }
 
-            yield return blobInfo;
+            // Update BlobKey to match actual hash field (handles rename case)
+            yield return new BlobInfo
+            {
+                BlobKey = actualKey,
+                Created = blobInfo.Created,
+                Modified = blobInfo.Modified,
+                Size = blobInfo.Size,
+                Metadata = blobInfo.Metadata,
+            };
         }
     }
 
@@ -701,7 +723,10 @@ public sealed class RedisBlobStorage : IBlobStorage
 
             var blobInfo = _serializer.Deserialize<BlobInfo>((byte[])hashEntry.Value!)!;
 
-            if (criteria.Pattern?.IsMatch(blobInfo.BlobKey) == false)
+            // Use hash field name as source of truth (BlobKey may be stale after rename)
+            var actualKey = hashEntry.Name.ToString();
+
+            if (criteria.Pattern?.IsMatch(actualKey) == false)
             {
                 continue;
             }
@@ -720,7 +745,15 @@ public sealed class RedisBlobStorage : IBlobStorage
                 break;
             }
 
-            list.Add(blobInfo);
+            // Update BlobKey to match actual hash field (handles rename case)
+            list.Add(new BlobInfo
+            {
+                BlobKey = actualKey,
+                Created = blobInfo.Created,
+                Modified = blobInfo.Modified,
+                Size = blobInfo.Size,
+                Metadata = blobInfo.Metadata,
+            });
         }
 
         return list;
