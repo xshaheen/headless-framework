@@ -4,13 +4,13 @@ using Testcontainers.Azurite;
 using Testcontainers.Xunit;
 using Xunit.Sdk;
 
-namespace Tests.TestSetup;
+namespace Tests;
 
 [UsedImplicitly]
 [CollectionDefinition]
-public sealed class AzureBlobTestFixture(IMessageSink messageSink)
+public sealed class AzureBlobStorageFixture(IMessageSink messageSink)
     : ContainerFixture<AzuriteBuilder, AzuriteContainer>(messageSink),
-        ICollectionFixture<AzureBlobTestFixture>
+        ICollectionFixture<AzureBlobStorageFixture>
 {
     protected override AzuriteBuilder Configure()
     {

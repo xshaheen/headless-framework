@@ -359,10 +359,12 @@ public sealed class RedisBlobStorage : IBlobStorage
                             Interlocked.Increment(ref count);
                         }
                     }
+#pragma warning disable ERP022
                     catch
                     {
                         // Swallow exception, just don't increment count
                     }
+#pragma warning restore ERP022
                 }
             )
             .AnyContext();

@@ -4,12 +4,12 @@ using Testcontainers.LocalStack;
 using Testcontainers.Xunit;
 using Xunit.Sdk;
 
-namespace Tests.TestSetup;
+namespace Tests;
 
 [CollectionDefinition]
-public sealed class AwsBlobTestFixture(IMessageSink messageSink)
+public sealed class AwsBlobStorageFixture(IMessageSink messageSink)
     : ContainerFixture<LocalStackBuilder, LocalStackContainer>(messageSink),
-        ICollectionFixture<AwsBlobTestFixture>
+        ICollectionFixture<AwsBlobStorageFixture>
 {
     protected override LocalStackBuilder Configure()
     {

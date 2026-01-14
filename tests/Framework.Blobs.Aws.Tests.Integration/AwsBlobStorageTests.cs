@@ -7,12 +7,11 @@ using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Aws;
 using Microsoft.Extensions.Options;
-using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection<AwsBlobTestFixture>]
-public sealed class AwsBlobStorageTests(AwsBlobTestFixture fixture) : BlobStorageTestsBase
+[Collection<AwsBlobStorageFixture>]
+public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {

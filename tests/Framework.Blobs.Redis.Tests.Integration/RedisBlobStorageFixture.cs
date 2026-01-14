@@ -6,12 +6,12 @@ using Testcontainers.Redis;
 using Testcontainers.Xunit;
 using Xunit.Sdk;
 
-namespace Tests.TestSetup;
+namespace Tests;
 
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class RedisTestFixture(IMessageSink messageSink)
+public sealed class RedisBlobStorageFixture(IMessageSink messageSink)
     : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
-        ICollectionFixture<RedisTestFixture>
+        ICollectionFixture<RedisBlobStorageFixture>
 {
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
 
