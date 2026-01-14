@@ -249,10 +249,8 @@ public sealed class SettingValueStore(
     )
     {
         var definitions = await _GetDbSettingDefinitionsAsync(names, cancellationToken).AnyContext();
-        var dbValues = await valueRepository
-            .GetListAsync(names, providerName, providerKey, cancellationToken)
+        var dbValuesMap = await _GetProviderValuesMapAsync(names, providerName, providerKey, cancellationToken)
             .AnyContext();
-        var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
 
         var cacheItems = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
 
@@ -276,8 +274,7 @@ public sealed class SettingValueStore(
     )
     {
         var definitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
-        var dbValues = await valueRepository.GetListAsync(providerName, providerKey, cancellationToken).AnyContext();
-        var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
+        var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken).AnyContext();
 
         Dictionary<string, SettingValueCacheItem> cacheItems = new(StringComparer.Ordinal);
         string? settingValueToFind = null;
@@ -321,6 +318,29 @@ public sealed class SettingValueStore(
         Ensure.True(settingName is not null, $"Invalid setting cache key `{key}` setting name not found");
 
         return settingName;
+    }
+
+    private async Task<Dictionary<string, string?>> _GetProviderValuesMapAsync(
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbValues = await valueRepository.GetListAsync(providerName, providerKey, cancellationToken).AnyContext();
+        return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
+    }
+
+    private async Task<Dictionary<string, string?>> _GetProviderValuesMapAsync(
+        HashSet<string> names,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbValues = await valueRepository
+            .GetListAsync(names, providerName, providerKey, cancellationToken)
+            .AnyContext();
+        return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 
     #endregion
