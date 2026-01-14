@@ -3,15 +3,6 @@
   <PropertyGroup Label="Packages Compiler settings">
     <GenerateSBOM>true</GenerateSBOM>
   </PropertyGroup>
-  <PropertyGroup Label="Trimming and AOT compatibility">
-    <!-- Mark libraries as trimmable so consumers can trim them -->
-    <IsTrimmable>true</IsTrimmable>
-    <!-- Enable AOT compatibility analysis -->
-    <IsAotCompatible>true</IsAotCompatible>
-    <!-- Enable trim/AOT analyzers to catch issues at build time -->
-    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
-    <EnableAotAnalyzer>true</EnableAotAnalyzer>
-  </PropertyGroup>
   <PropertyGroup Label="Packages Source Link">
     <!-- Optional: Embed source files that are not tracked by the source control manager to the PDB -->
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
