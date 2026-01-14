@@ -94,10 +94,7 @@ public static class HasExtraPropertiesExtensions
         }
 
         [RequiresUnreferencedCode("Uses TypeDescriptor which is not compatible with trimming.")]
-        public TProperty? GetProperty<TProperty>(
-            string name,
-            TProperty? defaultValue = default
-        )
+        public TProperty? GetProperty<TProperty>(string name, TProperty? defaultValue = default)
         {
             var value = source.GetProperty(name);
             if (value == null)
@@ -138,7 +135,6 @@ public static class HasExtraPropertiesExtensions
             return source.ExtraProperties.TryGetValue(name, out var value) ? value : value ?? defaultValue;
         }
 
-
         [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
         public void SetExtraPropertiesToRegularProperties()
         {
@@ -165,7 +161,8 @@ public static class HasExtraPropertiesExtensions
         }
     }
 
-    extension<TSource>(TSource source) where TSource : IHasExtraProperties
+    extension<TSource>(TSource source)
+        where TSource : IHasExtraProperties
     {
         public TSource SetProperty(string name, object? value)
         {

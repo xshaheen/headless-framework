@@ -74,7 +74,9 @@ public static class BlobStorageExtensions
             await storage.UploadAsync(container, blobName, memoryStream, metadata, cancellationToken);
         }
 
-        [RequiresUnreferencedCode("Uses JSON serialization which might require types that cannot be statically analyzed.")]
+        [RequiresUnreferencedCode(
+            "Uses JSON serialization which might require types that cannot be statically analyzed."
+        )]
         [RequiresDynamicCode("Uses JSON serialization which might require dynamic code generation.")]
         public async ValueTask UploadContentAsync<T>(
             string[] container,
@@ -100,7 +102,9 @@ public static class BlobStorageExtensions
             await storage.UploadAsync(container, blobName, memoryStream, metadata: null, cancellationToken);
         }
 
-        [RequiresUnreferencedCode("Uses JSON serialization which might require types that cannot be statically analyzed.")]
+        [RequiresUnreferencedCode(
+            "Uses JSON serialization which might require types that cannot be statically analyzed."
+        )]
         [RequiresDynamicCode("Uses JSON serialization which might require dynamic code generation.")]
         public async ValueTask UploadContentAsync<T>(
             string[] container,
@@ -165,7 +169,9 @@ public static class BlobStorageExtensions
             return await result.Stream.GetAllTextAsync(cancellationToken);
         }
 
-        [RequiresUnreferencedCode("Uses JSON serialization which might require types that cannot be statically analyzed.")]
+        [RequiresUnreferencedCode(
+            "Uses JSON serialization which might require types that cannot be statically analyzed."
+        )]
         [RequiresDynamicCode("Uses JSON serialization which might require dynamic code generation.")]
         public async ValueTask<T?> GetBlobContentAsync<T>(
             string[] container,
