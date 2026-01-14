@@ -43,7 +43,8 @@ public sealed class SftpClientPool : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         // Try to get existing connection (non-blocking)
-        if (_idle.Reader.TryRead(out var client))
+        // Pooled clients hold a semaphore slot, so if validation fails we must release it
+        while (_idle.Reader.TryRead(out var client))
         {
             if (_Validate(client))
             {
@@ -51,25 +52,30 @@ public sealed class SftpClientPool : IDisposable
                 return client;
             }
 
+            // Client invalid - dispose and release its semaphore slot
             _DisposeClient(client);
+            _maxConnections.Release();
         }
 
-        // Wait for available slot
+        // No valid pooled connection - wait for available slot and create new
         await _maxConnections.WaitAsync(ct).AnyContext();
         try
         {
-            // Double-check after acquiring semaphore
-            if (_idle.Reader.TryRead(out client))
+            // Double-check pool after acquiring semaphore (someone may have returned a client)
+            while (_idle.Reader.TryRead(out var client))
             {
-                _maxConnections.Release();
                 if (_Validate(client))
                 {
+                    // Release the slot we acquired since pooled client has its own
+                    _maxConnections.Release();
                     _logger.LogTrace("Acquired pooled SFTP client after wait");
                     return client;
                 }
 
+                // Invalid pooled client - dispose and release its slot
+                // We keep the slot we acquired for creating a new connection
                 _DisposeClient(client);
-                await _maxConnections.WaitAsync(ct).AnyContext();
+                _maxConnections.Release();
             }
 
             return await _CreateAndConnectAsync(ct).AnyContext();
