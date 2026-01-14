@@ -11,7 +11,8 @@ public static class PathValidation
 {
     public static void ThrowIfPathTraversal(
         string? path,
-        [CallerArgumentExpression(nameof(path))] string? paramName = null)
+        [CallerArgumentExpression(nameof(path))] string? paramName = null
+    )
     {
         if (string.IsNullOrEmpty(path))
         {
@@ -25,12 +26,14 @@ public static class PathValidation
         // - \..  (traversal at end)
         // - path ending with ..
         // - path starting with ..
-        if (path.Contains("../", StringComparison.Ordinal) ||
-            path.Contains("..\\", StringComparison.Ordinal) ||
-            path.Contains("/..", StringComparison.Ordinal) ||
-            path.Contains("\\..", StringComparison.Ordinal) ||
-            path.StartsWith("..", StringComparison.Ordinal) ||
-            path.EndsWith("..", StringComparison.Ordinal))
+        if (
+            path.Contains("../", StringComparison.Ordinal)
+            || path.Contains("..\\", StringComparison.Ordinal)
+            || path.Contains("/..", StringComparison.Ordinal)
+            || path.Contains("\\..", StringComparison.Ordinal)
+            || path.StartsWith("..", StringComparison.Ordinal)
+            || path.EndsWith("..", StringComparison.Ordinal)
+        )
         {
             throw new ArgumentException("Path traversal sequences are not allowed", paramName);
         }
@@ -38,7 +41,8 @@ public static class PathValidation
 
     public static void ThrowIfAbsolutePath(
         string? path,
-        [CallerArgumentExpression(nameof(path))] string? paramName = null)
+        [CallerArgumentExpression(nameof(path))] string? paramName = null
+    )
     {
         if (string.IsNullOrEmpty(path))
         {
@@ -53,7 +57,8 @@ public static class PathValidation
 
     public static void ThrowIfControlCharacters(
         string? path,
-        [CallerArgumentExpression(nameof(path))] string? paramName = null)
+        [CallerArgumentExpression(nameof(path))] string? paramName = null
+    )
     {
         if (string.IsNullOrEmpty(path))
         {
@@ -75,10 +80,25 @@ public static class PathValidation
     /// </summary>
     public static void ValidatePathSegment(
         string? segment,
-        [CallerArgumentExpression(nameof(segment))] string? paramName = null)
+        [CallerArgumentExpression(nameof(segment))] string? paramName = null
+    )
     {
         ThrowIfPathTraversal(segment, paramName);
         ThrowIfAbsolutePath(segment, paramName);
         ThrowIfControlCharacters(segment, paramName);
+    }
+
+    /// <summary>
+    /// Validates all segments of a container path for security issues.
+    /// </summary>
+    public static void ValidateContainer(
+        string[] container,
+        [CallerArgumentExpression(nameof(container))] string? paramName = null
+    )
+    {
+        foreach (var segment in container)
+        {
+            ValidatePathSegment(segment, paramName);
+        }
     }
 }

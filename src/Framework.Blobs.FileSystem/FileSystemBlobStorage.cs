@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Framework.Blobs.Internals;
 using Framework.Checks;
 using Framework.IO;
 using Framework.Primitives;
@@ -51,6 +52,9 @@ public sealed class FileSystemBlobStorage(
     {
         Argument.IsNotNullOrEmpty(blobName);
         Argument.IsNotNullOrEmpty(container);
+
+        PathValidation.ValidateContainer(container);
+        PathValidation.ValidatePathSegment(blobName);
 
         var directoryPath = _GetDirectoryPath(container);
 
@@ -553,12 +557,15 @@ public sealed class FileSystemBlobStorage(
 
     #region Build Paths
 
-    private string _BuildBlobPath(string[] container, string fileName)
+    private string _BuildBlobPath(string[] container, string blobName)
     {
-        Argument.IsNotNullOrWhiteSpace(fileName);
+        Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrEmpty(container);
 
-        var normalizedFileName = _normalizer.NormalizeBlobName(fileName);
+        PathValidation.ValidateContainer(container);
+        PathValidation.ValidatePathSegment(blobName);
+
+        var normalizedBlobName = _normalizer.NormalizeBlobName(blobName);
 
         // Use single Path.Combine call to avoid intermediate string allocations
         var segments = new string[container.Length + 2];
@@ -567,10 +574,10 @@ public sealed class FileSystemBlobStorage(
         {
             segments[i + 1] = _normalizer.NormalizeContainerName(container[i]);
         }
-        segments[^1] = normalizedFileName;
+        segments[^1] = normalizedBlobName;
 
         var path = Path.Combine(segments);
-        _ThrowIfPathTraversal(path, nameof(fileName));
+        _ThrowIfPathTraversal(path, nameof(blobName));
 
         return path;
     }
@@ -578,6 +585,7 @@ public sealed class FileSystemBlobStorage(
     private string _GetDirectoryPath(string[] container)
     {
         Argument.IsNotNullOrEmpty(container);
+        PathValidation.ValidateContainer(container);
 
         var normalizedContainer = container.Select(_normalizer.NormalizeContainerName).ToArray();
 
