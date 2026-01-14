@@ -34,7 +34,12 @@ public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFix
     {
         await _sftpContainer.StartAsync();
 
-        Options = new SshBlobStorageOptions { ConnectionString = GetConnectionString() };
+        Options = new SshBlobStorageOptions
+        {
+            ConnectionString = GetConnectionString(),
+            MaxPoolSize = 20, // Support concurrent test with 10 parallel operations
+            MaxConcurrentOperations = 10,
+        };
         OptionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(Options);
         var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(Options);
         Pool = new SftpClientPool(optionsWrapper, NullLogger<SftpClientPool>.Instance);
