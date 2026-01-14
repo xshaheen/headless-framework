@@ -18,4 +18,18 @@ internal static partial class PushNotificationsLoggerExtensions
         Exception exception,
         string clientTokenPrefix
     );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "RetryingFcmRequest",
+        Level = LogLevel.Warning,
+        Message = "FCM: Retrying request (attempt {AttemptNumber}) after {DelaySeconds}s delay. Error: {ErrorMessage}",
+        SkipEnabledCheck = true
+    )]
+    public static partial void LogRetryAttempt(
+        this ILogger logger,
+        int attemptNumber,
+        double delaySeconds,
+        string errorMessage
+    );
 }
