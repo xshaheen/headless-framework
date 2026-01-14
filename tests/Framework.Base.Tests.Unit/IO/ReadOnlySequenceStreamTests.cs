@@ -134,8 +134,8 @@ public sealed class ReadOnlySequenceStreamTests : TestBase
     {
         await Assert.ThrowsAsync<NotSupportedException>(() => _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken));
         await _defaultStream.DisposeAsync();
-        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
-            _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken)
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => _defaultStream.WriteAsync(new byte[1], 0, 1, AbortToken)
         );
     }
 
