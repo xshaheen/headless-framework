@@ -36,7 +36,7 @@ public sealed class PermissionManager(
         return result[0];
     }
 
-    public async Task<List<GrantedPermissionResult>> GetAllAsync(
+    public async Task<IReadOnlyList<GrantedPermissionResult>> GetAllAsync(
         IReadOnlyCollection<string> permissionNames,
         ICurrentUser currentUser,
         string? providerName = null,
@@ -80,7 +80,7 @@ public sealed class PermissionManager(
         return result;
     }
 
-    public async Task<List<GrantedPermissionResult>> GetAllAsync(
+    public async Task<IReadOnlyList<GrantedPermissionResult>> GetAllAsync(
         ICurrentUser currentUser,
         string? providerName = null,
         CancellationToken cancellationToken = default

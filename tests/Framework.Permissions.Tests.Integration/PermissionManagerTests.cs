@@ -50,8 +50,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
 
         // then
         permissions.Should().HaveCount(16);
-        var allNotGranted = permissions.TrueForAll(x => !x.IsGranted);
-        allNotGranted.Should().BeTrue();
+        permissions.Should().AllSatisfy(x => x.IsGranted.Should().BeFalse());
         permission.Should().NotBeNull();
         permission.IsGranted.Should().BeFalse();
         permission.Name.Should().Be(somePermission.Name);
