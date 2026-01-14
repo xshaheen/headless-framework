@@ -43,7 +43,7 @@ public static class ReCaptchaSetup
         {
             if (setupAction is not null)
             {
-                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction,V3Name);
+                services.Configure<ReCaptchaOptions, ReCaptchaOptionsValidator>(setupAction, V3Name);
             }
 
             _AddCoreV3(services, configureClient, configureResilience);
@@ -90,12 +90,15 @@ public static class ReCaptchaSetup
         Action<HttpStandardResilienceOptions>? configureResilience
     )
     {
-        var httpClientBuilder = services.AddHttpClient(V3Name, (sp, client) =>
-        {
-            var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V3Name);
-            client.BaseAddress = new Uri(options.VerifyBaseUrl);
-            configureClient?.Invoke(client);
-        });
+        var httpClientBuilder = services.AddHttpClient(
+            V3Name,
+            (sp, client) =>
+            {
+                var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V3Name);
+                client.BaseAddress = new Uri(options.VerifyBaseUrl);
+                configureClient?.Invoke(client);
+            }
+        );
 
         if (configureResilience is not null)
         {
@@ -116,12 +119,15 @@ public static class ReCaptchaSetup
         Action<HttpStandardResilienceOptions>? configureResilience
     )
     {
-        var httpClientBuilder = services.AddHttpClient(V2Name, (sp, client) =>
-        {
-            var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V2Name);
-            client.BaseAddress = new Uri(options.VerifyBaseUrl);
-            configureClient?.Invoke(client);
-        });
+        var httpClientBuilder = services.AddHttpClient(
+            V2Name,
+            (sp, client) =>
+            {
+                var options = sp.GetRequiredService<IOptionsSnapshot<ReCaptchaOptions>>().Get(V2Name);
+                client.BaseAddress = new Uri(options.VerifyBaseUrl);
+                configureClient?.Invoke(client);
+            }
+        );
 
         if (configureResilience is not null)
         {

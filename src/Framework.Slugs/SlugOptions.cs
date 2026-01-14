@@ -44,12 +44,12 @@ public sealed class SlugOptions
     /// </list>
     /// </remarks>
     public IReadOnlyList<UnicodeRange> AllowedRanges { get; init; } =
-        [
-            UnicodeRange.Create('A', 'Z'),
-            UnicodeRange.Create('a', 'z'),
-            UnicodeRange.Create('0', '9'),
-            UnicodeRange.Create('ؠ', 'ي'),
-        ];
+    [
+        UnicodeRange.Create('A', 'Z'),
+        UnicodeRange.Create('a', 'z'),
+        UnicodeRange.Create('0', '9'),
+        UnicodeRange.Create('ؠ', 'ي'),
+    ];
 
     public FrozenDictionary<string, string> Replacements { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal)

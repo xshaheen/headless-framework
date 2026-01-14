@@ -155,14 +155,14 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return (byte) random.Next(min, max);
+            return (byte)random.Next(min, max);
         }
 
         public sbyte NextSByte(sbyte min = 0, sbyte max = sbyte.MaxValue)
         {
             Argument.IsNotNull(random);
 
-            return (sbyte) random.Next(min, max);
+            return (sbyte)random.Next(min, max);
         }
 
         public DateTime NextDateTime(DateTime min, DateTime max)
@@ -170,7 +170,7 @@ public static class RandomExtensions
             Argument.IsNotNull(random);
 
             var diff = max.Ticks - min.Ticks;
-            var range = (long) (diff * random.NextDouble());
+            var range = (long)(diff * random.NextDouble());
 
             return min + new TimeSpan(range);
         }
@@ -186,7 +186,7 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return (short) random.Next(min, max);
+            return (short)random.Next(min, max);
         }
 
         public int NextInt32(int min = 0, int max = int.MaxValue)
@@ -200,28 +200,28 @@ public static class RandomExtensions
         {
             Argument.IsNotNull(random);
 
-            return min == max ? min : (long) ((random.NextDouble() * (max - min)) + min);
+            return min == max ? min : (long)((random.NextDouble() * (max - min)) + min);
         }
 
         public float NextSingle(float min = 0f, float max = 1f)
         {
             Argument.IsNotNull(random);
 
-            return (float) random.NextDouble(min, max);
+            return (float)random.NextDouble(min, max);
         }
 
         public ushort NextUInt16(ushort min = 0, ushort max = ushort.MaxValue)
         {
             Argument.IsNotNull(random);
 
-            return (ushort) random.Next(min, max);
+            return (ushort)random.Next(min, max);
         }
 
         public uint NextUInt32(uint min = 0u, uint max = uint.MaxValue)
         {
             Argument.IsNotNull(random);
 
-            return (uint) random.NextInt64(min, max);
+            return (uint)random.NextInt64(min, max);
         }
 
         public ulong NextUInt64(ulong min = 0ul, ulong max = ulong.MaxValue)
@@ -234,14 +234,11 @@ public static class RandomExtensions
             return (BitConverter.ToUInt64(buffer, 0) * (max - min) / ulong.MaxValue) + min;
         }
 
-        public decimal NextDecimal(
-            decimal min = decimal.MinValue,
-            decimal max = decimal.MaxValue
-        )
+        public decimal NextDecimal(decimal min = decimal.MinValue, decimal max = decimal.MaxValue)
         {
             Argument.IsNotNull(random);
 
-            return ((decimal) random.NextDouble() * (max - min)) + min;
+            return ((decimal)random.NextDouble() * (max - min)) + min;
         }
 
         public string NextString(int length, string chars)

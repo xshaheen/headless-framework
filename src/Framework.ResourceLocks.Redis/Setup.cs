@@ -73,10 +73,7 @@ public static class RedisResourceLockSetup
         /// Adds keyed Redis-backed throttling resource lock provider.
         /// Suitable for distributed rate limiting with multiple configurations.
         /// </summary>
-        public IServiceCollection AddKeyedRedisThrottlingResourceLock(
-            string key,
-            ThrottlingResourceLockOptions options
-        )
+        public IServiceCollection AddKeyedRedisThrottlingResourceLock(string key, ThrottlingResourceLockOptions options)
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
