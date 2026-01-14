@@ -28,9 +28,6 @@ public sealed class AwsBlobStorage(
     private const string _DefaultCacheControl = "must-revalidate, max-age=7776000";
     private const string _MetaDataHeaderPrefix = "x-amz-meta-";
 
-    private readonly IAmazonS3 _s3 = s3;
-    private readonly IMimeTypeProvider _mimeTypeProvider = mimeTypeProvider;
-    private readonly IClock _clock = clock;
     private readonly AwsBlobStorageOptions _options = optionsAccessor.Value;
     private readonly ILogger _logger = logger ?? NullLogger<AwsBlobStorage>.Instance;
 
@@ -45,13 +42,13 @@ public sealed class AwsBlobStorage(
 
     private async Task _CreateBucketAsync(string bucketName, CancellationToken cancellationToken)
     {
-        if (await AmazonS3Util.DoesS3BucketExistV2Async(_s3, bucketName).AnyContext())
+        if (await AmazonS3Util.DoesS3BucketExistV2Async(s3, bucketName).AnyContext())
         {
             return;
         }
 
         var request = new PutBucketRequest { BucketName = bucketName };
-        await _s3.PutBucketAsync(request, cancellationToken).AnyContext();
+        await s3.PutBucketAsync(request, cancellationToken).AnyContext();
     }
 
     #endregion
@@ -96,7 +93,7 @@ public sealed class AwsBlobStorage(
             InputStream = inputStream,
             AutoCloseStream = ownsStream,
             AutoResetStreamPosition = false,
-            ContentType = _mimeTypeProvider.GetMimeType(blobName),
+            ContentType = mimeTypeProvider.GetMimeType(blobName),
             UseChunkEncoding = _options.UseChunkEncoding,
             CannedACL = _options.CannedAcl,
             Headers = { CacheControl = _DefaultCacheControl },
@@ -112,10 +109,10 @@ public sealed class AwsBlobStorage(
             }
         }
 
-        request.Metadata[BlobStorageHelpers.UploadDateMetadataKey] = _clock.UtcNow.ToString("O");
+        request.Metadata[BlobStorageHelpers.UploadDateMetadataKey] = clock.UtcNow.ToString("O");
         request.Metadata[BlobStorageHelpers.ExtensionMetadataKey] = Path.GetExtension(blobName);
 
-        var response = await _s3.PutObjectAsync(request, cancellationToken).AnyContext();
+        var response = await s3.PutObjectAsync(request, cancellationToken).AnyContext();
 
         response.HttpStatusCode.EnsureSuccessStatusCode();
     }
@@ -142,20 +139,26 @@ public sealed class AwsBlobStorage(
             CancellationToken = cancellationToken,
         };
 
-        await Parallel.ForEachAsync(blobs, options, async (blob, ct) =>
-        {
-            var i = Interlocked.Increment(ref index) - 1;
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                options,
+                async (blob, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
 
-            try
-            {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
-                results[i] = Result<Exception>.Ok();
-            }
-            catch (Exception e)
-            {
-                results[i] = Result<Exception>.Fail(e);
-            }
-        }).AnyContext();
+                    try
+                    {
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        results[i] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
 
         return results;
     }
@@ -183,7 +186,7 @@ public sealed class AwsBlobStorage(
 
         try
         {
-            response = await _s3.DeleteObjectAsync(request, cancellationToken).AnyContext();
+            response = await s3.DeleteObjectAsync(request, cancellationToken).AnyContext();
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
@@ -229,7 +232,7 @@ public sealed class AwsBlobStorage(
 
         try
         {
-            response = await _s3.DeleteObjectsAsync(request, cancellationToken).AnyContext();
+            response = await s3.DeleteObjectsAsync(request, cancellationToken).AnyContext();
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
@@ -298,7 +301,7 @@ public sealed class AwsBlobStorage(
         {
             try
             {
-                listResponse = await _s3.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
+                listResponse = await s3.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
             }
             catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
             {
@@ -325,7 +328,7 @@ public sealed class AwsBlobStorage(
                 blobSearchPattern
             );
 
-            var deleteResponse = await _s3.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
+            var deleteResponse = await s3.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
 
             if (deleteResponse.DeleteErrors?.Count > 0)
             {
@@ -333,7 +336,7 @@ public sealed class AwsBlobStorage(
                 var objects = deleteResponse.DeleteErrors.ConvertAll(e => new KeyVersion { Key = e.Key });
                 var deleteRetryRequest = new DeleteObjectsRequest { BucketName = bucket, Objects = objects };
 
-                var deleteRetryResponse = await _s3.DeleteObjectsAsync(deleteRetryRequest, cancellationToken)
+                var deleteRetryResponse = await s3.DeleteObjectsAsync(deleteRetryRequest, cancellationToken)
                     .AnyContext();
 
                 if (deleteRetryResponse.DeleteErrors?.Count > 0)
@@ -404,7 +407,7 @@ public sealed class AwsBlobStorage(
 
         try
         {
-            response = await _s3.CopyObjectAsync(request, cancellationToken).AnyContext();
+            response = await s3.CopyObjectAsync(request, cancellationToken).AnyContext();
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
@@ -427,13 +430,15 @@ public sealed class AwsBlobStorage(
     )
     {
         if (!await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken))
+        {
             return false;
+        }
 
         var (oldBucket, oldKey) = _BuildObjectKey(blobName, blobContainer);
         var (newBucket, newKey) = _BuildObjectKey(newBlobName, newBlobContainer);
 
         var deleteRequest = new DeleteObjectRequest { BucketName = oldBucket, Key = oldKey };
-        var deleteResponse = await _s3.DeleteObjectAsync(deleteRequest, cancellationToken).AnyContext();
+        var deleteResponse = await s3.DeleteObjectAsync(deleteRequest, cancellationToken).AnyContext();
 
         if (!deleteResponse.HttpStatusCode.IsSuccessStatusCode())
         {
@@ -445,7 +450,7 @@ public sealed class AwsBlobStorage(
 
             // Compensating transaction: delete the copy to restore original state
             var compensate = new DeleteObjectRequest { BucketName = newBucket, Key = newKey };
-            await _s3.DeleteObjectAsync(compensate, cancellationToken).AnyContext();
+            await s3.DeleteObjectAsync(compensate, cancellationToken).AnyContext();
 
             return false;
         }
@@ -471,7 +476,7 @@ public sealed class AwsBlobStorage(
     private async ValueTask<bool> _ExistsAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         // Make sure Blob Container exists.
-        if (!await AmazonS3Util.DoesS3BucketExistV2Async(_s3, bucket).AnyContext())
+        if (!await AmazonS3Util.DoesS3BucketExistV2Async(s3, bucket).AnyContext())
         {
             return false;
         }
@@ -480,7 +485,7 @@ public sealed class AwsBlobStorage(
 
         try
         {
-            response = await _s3.GetObjectMetadataAsync(bucket, key, cancellationToken).AnyContext();
+            response = await s3.GetObjectMetadataAsync(bucket, key, cancellationToken).AnyContext();
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
@@ -516,7 +521,7 @@ public sealed class AwsBlobStorage(
 
         var request = new GetObjectRequest { BucketName = bucket, Key = key };
 
-        var response = await _s3.GetObjectAsync(request, cancellationToken).AnyContext();
+        var response = await s3.GetObjectAsync(request, cancellationToken).AnyContext();
 
         if (response.HttpStatusCode is HttpStatusCode.NotFound)
         {
@@ -557,7 +562,7 @@ public sealed class AwsBlobStorage(
 
         try
         {
-            response = await _s3.GetObjectMetadataAsync(request, cancellationToken).AnyContext();
+            response = await s3.GetObjectMetadataAsync(request, cancellationToken).AnyContext();
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {
@@ -613,7 +618,7 @@ public sealed class AwsBlobStorage(
 
             try
             {
-                response = await _s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
+                response = await s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
             }
             catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
             {
@@ -633,8 +638,7 @@ public sealed class AwsBlobStorage(
             }
 
             continuationToken = response.IsTruncated is true ? response.NextContinuationToken : null;
-        }
-        while (continuationToken is not null);
+        } while (continuationToken is not null);
     }
 
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
@@ -682,7 +686,7 @@ public sealed class AwsBlobStorage(
 
         try
         {
-            response = await _s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
+            response = await s3.ListObjectsV2Async(req, cancellationToken).AnyContext();
         }
         catch (AmazonS3Exception e) when (e.StatusCode is HttpStatusCode.NotFound)
         {

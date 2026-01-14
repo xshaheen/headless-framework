@@ -24,6 +24,12 @@ public sealed class SshBlobStorageOptions
     public int MaxConcurrentOperations { get; set; } = 4;
 
     /// <summary>
+    /// Maximum pooled SFTP connections. Must be >= MaxConcurrentOperations.
+    /// Each connection uses ~40-70KB memory. Default is 4.
+    /// </summary>
+    public int MaxPoolSize { get; set; } = 4;
+
+    /// <summary>
     /// Allow none-authentication fallback. When false (default), throws if no password or private key is provided.
     /// Set to true only if intentionally using passwordless authentication.
     /// </summary>
@@ -37,5 +43,10 @@ internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlob
         RuleFor(x => x.ConnectionString).NotEmpty();
         RuleFor(x => x.ProxyType).IsInEnum();
         RuleFor(x => x.MaxConcurrentOperations).InclusiveBetween(1, 100);
+
+        RuleFor(x => x.MaxPoolSize)
+            .InclusiveBetween(1, 100)
+            .GreaterThanOrEqualTo(x => x.MaxConcurrentOperations)
+            .WithMessage("MaxPoolSize must be >= MaxConcurrentOperations");
     }
 }

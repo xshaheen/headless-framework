@@ -35,6 +35,7 @@ public static class SshSetup
         private IServiceCollection _AddCore()
         {
             services.TryAddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
+            services.AddSingleton<SftpClientPool>();
             services.AddSingleton<IBlobStorage, SshBlobStorage>();
 
             return services;

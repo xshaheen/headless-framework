@@ -222,116 +222,65 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         return base.can_call_get_paged_list_with_empty_container();
     }
 
+    #region Path Traversal Security Tests
+
     [Theory]
-    [InlineData("../../../important")]
-    [InlineData("..\\..\\..\\important")]
-    [InlineData("subdir/../../../etc")]
-    public async Task should_throw_when_delete_all_has_path_traversal(string pattern)
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
+    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-
-        var act = FluentActions.Awaiting(() => storage.DeleteAllAsync(Container, pattern, AbortToken).AsTask());
-
-        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobSearchPattern");
+        return base.should_throw_when_blob_name_has_path_traversal(blobName);
     }
 
     [Fact]
-    public async Task should_allow_valid_subdirectory_in_delete_all()
+    public override Task should_throw_when_container_has_path_traversal()
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-        await ResetAsync(storage);
-
-        await storage.UploadContentAsync([ContainerName, "subfolder"], "file.txt", "test", AbortToken);
-
-        var count = await storage.DeleteAllAsync(Container, @"subfolder\*", AbortToken);
-
-        count.Should().Be(1);
+        return base.should_throw_when_container_has_path_traversal();
     }
 
     [Fact]
-    public async Task should_throw_when_container_has_path_traversal()
+    public override Task should_throw_when_upload_blob_has_path_traversal()
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-
-        var maliciousContainer = new[] { "uploads", "..", "..", "etc" };
-
-        var act = FluentActions.Awaiting(() => storage.ExistsAsync(maliciousContainer, "passwd", AbortToken).AsTask());
-
-        await act.Should().ThrowAsync<ArgumentException>();
+        return base.should_throw_when_upload_blob_has_path_traversal();
     }
 
     [Fact]
-    public async Task should_throw_when_upload_container_has_path_traversal()
+    public override Task should_throw_when_download_blob_has_path_traversal()
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-        using var stream = new MemoryStream("test"u8.ToArray());
-
-        var maliciousContainer = new[] { "..", "..", "etc" };
-
-        var act = FluentActions.Awaiting(
-            () => storage.UploadAsync(maliciousContainer, "passwd", stream, cancellationToken: AbortToken).AsTask()
-        );
-
-        await act.Should().ThrowAsync<ArgumentException>();
+        return base.should_throw_when_download_blob_has_path_traversal();
     }
 
     [Fact]
-    public async Task should_throw_when_download_container_has_path_traversal()
+    public override Task should_throw_when_delete_blob_has_path_traversal()
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-
-        var maliciousContainer = new[] { "..", "..", "etc" };
-
-        var act = FluentActions.Awaiting(
-            () => storage.DownloadAsync(maliciousContainer, "passwd", AbortToken).AsTask()
-        );
-
-        await act.Should().ThrowAsync<ArgumentException>();
+        return base.should_throw_when_delete_blob_has_path_traversal();
     }
 
     [Fact]
-    public async Task should_throw_when_delete_container_has_path_traversal()
+    public override Task should_throw_when_rename_source_blob_has_path_traversal()
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-
-        var maliciousContainer = new[] { "..", "..", "etc" };
-
-        var act = FluentActions.Awaiting(() => storage.DeleteAsync(maliciousContainer, "passwd", AbortToken).AsTask());
-
-        await act.Should().ThrowAsync<ArgumentException>();
+        return base.should_throw_when_rename_source_blob_has_path_traversal();
     }
 
     [Fact]
-    public async Task should_throw_when_create_container_has_path_traversal()
+    public override Task should_throw_when_copy_source_blob_has_path_traversal()
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-
-        var maliciousContainer = new[] { "..", "..", "etc" };
-
-        var act = FluentActions.Awaiting(() => storage.CreateContainerAsync(maliciousContainer, AbortToken).AsTask());
-
-        await act.Should().ThrowAsync<ArgumentException>();
+        return base.should_throw_when_copy_source_blob_has_path_traversal();
     }
 
     [Fact]
-    public async Task should_return_false_when_rename_source_not_exists()
+    public override Task should_throw_when_blob_name_has_control_characters()
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-        await ResetAsync(storage);
-
-        var result = await storage.RenameAsync(Container, "nonexistent.txt", Container, "new.txt", AbortToken);
-
-        result.Should().BeFalse();
+        return base.should_throw_when_blob_name_has_control_characters();
     }
 
-    [Fact]
-    public async Task should_return_false_when_copy_source_not_exists()
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
     {
-        using var storage = (FileSystemBlobStorage)GetStorage();
-        await ResetAsync(storage);
-
-        var result = await storage.CopyAsync(Container, "nonexistent.txt", Container, "new.txt", AbortToken);
-
-        result.Should().BeFalse();
+        return base.should_throw_when_blob_name_is_absolute_path(blobName);
     }
+
+    #endregion
 }
