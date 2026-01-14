@@ -21,9 +21,10 @@ public partial class PaymobCashInBroker
         var internalRequest = new CashInPaymentKeyInternalRequest(request, authToken, Options.ExpirationPeriod);
 
         return await _PostAsync<CashInPaymentKeyInternalRequest, CashInPaymentKeyResponse>(
-            requestUrl,
-            internalRequest,
-            cancellationToken
-        ).AnyContext();
+                requestUrl,
+                internalRequest,
+                cancellationToken
+            )
+            .AnyContext();
     }
 }

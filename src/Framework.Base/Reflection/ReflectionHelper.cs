@@ -118,7 +118,8 @@ public static class ReflectionHelper
     [RequiresUnreferencedCode("Uses Type.GetInterfaces() which is not compatible with trimming.")]
     public static bool IsSubClassOfGeneric(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type child,
-        Type parent)
+        Type parent
+    )
     {
         if (child == parent)
         {
@@ -224,7 +225,8 @@ public static class ReflectionHelper
     [RequiresUnreferencedCode("Uses Type.GetInterfaces() which is not compatible with trimming.")]
     public static bool IsAssignableToGenericType(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type,
-        Type genericType)
+        Type genericType
+    )
     {
         while (true)
         {

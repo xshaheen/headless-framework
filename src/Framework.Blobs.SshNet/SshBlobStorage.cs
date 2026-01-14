@@ -410,7 +410,7 @@ public sealed class SshBlobStorage(
         }
     }
 
-    private async Task _CollectPathsRecursively(
+    private static async Task _CollectPathsRecursively(
         SftpClient client,
         string directory,
         List<string> filesToDelete,
@@ -1164,10 +1164,8 @@ file sealed class PooledClientStream(Stream innerStream, SftpClient client, Sftp
     public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
         innerStream.WriteAsync(buffer, offset, count, cancellationToken);
 
-    public override ValueTask WriteAsync(
-        ReadOnlyMemory<byte> buffer,
-        CancellationToken cancellationToken = default
-    ) => innerStream.WriteAsync(buffer, cancellationToken);
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
+        innerStream.WriteAsync(buffer, cancellationToken);
 
     public override Task FlushAsync(CancellationToken cancellationToken) => innerStream.FlushAsync(cancellationToken);
 

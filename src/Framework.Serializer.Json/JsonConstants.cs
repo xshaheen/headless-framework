@@ -83,7 +83,8 @@ public static class JsonConstants
     [UnconditionalSuppressMessage(
         "AOT",
         "IL3050:RequiresDynamicCode",
-        Justification = "JsonStringEnumConverter is used for serialization options and consumers should use source generation for AOT scenarios.")]
+        Justification = "JsonStringEnumConverter is used for serialization options and consumers should use source generation for AOT scenarios."
+    )]
     private static void _AddDefaultConverters(JsonSerializerOptions options)
     {
         var enumConverter = options.Converters.FirstOrDefault(x => x is JsonStringEnumConverter);

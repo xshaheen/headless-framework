@@ -7,7 +7,6 @@ namespace Framework.Blobs.FileSystem;
 public sealed class FileSystemBlobStorageOptions
 {
     public required string BaseDirectoryPath { get; set; }
-
 }
 
 internal sealed class FileSystemBlobStorageOptionsValidator : AbstractValidator<FileSystemBlobStorageOptions>

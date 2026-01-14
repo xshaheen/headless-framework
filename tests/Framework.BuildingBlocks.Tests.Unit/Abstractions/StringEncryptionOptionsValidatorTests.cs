@@ -6,12 +6,13 @@ namespace Tests.Abstractions;
 
 public sealed class StringEncryptionOptionsValidatorTests
 {
-    private static StringEncryptionOptions _CreateValidOptions() => new()
-    {
-        DefaultPassPhrase = "TestPassPhrase123456",
-        InitVectorBytes = "TestIV0123456789"u8.ToArray(),
-        DefaultSalt = "TestSalt"u8.ToArray(),
-    };
+    private static StringEncryptionOptions _CreateValidOptions() =>
+        new()
+        {
+            DefaultPassPhrase = "TestPassPhrase123456",
+            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
+            DefaultSalt = "TestSalt"u8.ToArray(),
+        };
 
     [Fact]
     public void should_success_when_valid_settings()

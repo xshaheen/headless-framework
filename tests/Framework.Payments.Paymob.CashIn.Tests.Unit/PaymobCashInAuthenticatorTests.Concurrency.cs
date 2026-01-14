@@ -145,7 +145,11 @@ public partial class PaymobCashInAuthenticatorTests : TestBase
     {
         // given
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClientFactory, timeProvider, fixture.OptionsAccessor);
+        var authenticator = new PaymobCashInAuthenticator(
+            fixture.HttpClientFactory,
+            timeProvider,
+            fixture.OptionsAccessor
+        );
 
         // when
         authenticator.Dispose();

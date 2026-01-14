@@ -9,12 +9,14 @@ using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi(encryption =>
-{
-    encryption.DefaultPassPhrase = "DemoPassPhrase123456";
-    encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
-    encryption.DefaultSalt = "DemoSalt"u8.ToArray();
-}).ConfigureHeadlessMinimalApi();
+builder
+    .AddHeadlessApi(encryption =>
+    {
+        encryption.DefaultPassPhrase = "DemoPassPhrase123456";
+        encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
+        encryption.DefaultSalt = "DemoSalt"u8.ToArray();
+    })
+    .ConfigureHeadlessMinimalApi();
 builder.Services.AddHeadlessNswagOpenApi();
 builder.Services.ConfigureHeadlessMvc();
 builder.Services.AddHeadlessStatusCodesRewriterMiddleware();

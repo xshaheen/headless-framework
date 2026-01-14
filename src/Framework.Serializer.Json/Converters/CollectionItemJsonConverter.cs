@@ -7,9 +7,14 @@ namespace Framework.Serializer.Converters;
 /// <summary>Json collection converter.</summary>
 /// <typeparam name="TDatatype">Type of item to convert.</typeparam>
 /// <typeparam name="TConverterType">Converter to use for individual items.</typeparam>
-[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
-public sealed class CollectionItemJsonConverter<TDatatype, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TConverterType> : JsonConverter<IEnumerable<TDatatype>?>
+public sealed class CollectionItemJsonConverter<
+    TDatatype,
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TConverterType
+> : JsonConverter<IEnumerable<TDatatype>?>
     where TConverterType : JsonConverter
 {
     public override bool HandleNull => true;

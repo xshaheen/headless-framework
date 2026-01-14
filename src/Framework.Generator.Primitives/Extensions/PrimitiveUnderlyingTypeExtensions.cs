@@ -78,12 +78,12 @@ internal static class PrimitiveUnderlyingTypeExtensions
     /// <returns>True if the underlyingType is a date or time type, false otherwise.</returns>
     public static bool IsDateOrTime(this PrimitiveUnderlyingType underlyingType)
     {
-        return underlyingType is
-            PrimitiveUnderlyingType.DateTime or
-            PrimitiveUnderlyingType.DateOnly or
-            PrimitiveUnderlyingType.TimeOnly or
-            PrimitiveUnderlyingType.DateTimeOffset or
-            PrimitiveUnderlyingType.TimeSpan;
+        return underlyingType
+            is PrimitiveUnderlyingType.DateTime
+                or PrimitiveUnderlyingType.DateOnly
+                or PrimitiveUnderlyingType.TimeOnly
+                or PrimitiveUnderlyingType.DateTimeOffset
+                or PrimitiveUnderlyingType.TimeSpan;
     }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is a floating point type.</summary>
@@ -91,10 +91,10 @@ internal static class PrimitiveUnderlyingTypeExtensions
     /// <returns>True if the underlying type is a floating point type, false otherwise.</returns>
     public static bool IsFloatingPoint(this PrimitiveUnderlyingType underlyingType)
     {
-        return underlyingType is
-            PrimitiveUnderlyingType.Decimal or
-            PrimitiveUnderlyingType.Double or
-            PrimitiveUnderlyingType.Single;
+        return underlyingType
+            is PrimitiveUnderlyingType.Decimal
+                or PrimitiveUnderlyingType.Double
+                or PrimitiveUnderlyingType.Single;
     }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is a byte or short.</summary>
@@ -102,11 +102,11 @@ internal static class PrimitiveUnderlyingTypeExtensions
     /// <returns>True if the underlyingType is a byte or short, false otherwise.</returns>
     public static bool IsByteOrShort(this PrimitiveUnderlyingType underlyingType)
     {
-        return underlyingType is
-            PrimitiveUnderlyingType.Byte or
-            PrimitiveUnderlyingType.SByte or
-            PrimitiveUnderlyingType.Int16 or
-            PrimitiveUnderlyingType.UInt16;
+        return underlyingType
+            is PrimitiveUnderlyingType.Byte
+                or PrimitiveUnderlyingType.SByte
+                or PrimitiveUnderlyingType.Int16
+                or PrimitiveUnderlyingType.UInt16;
     }
 
     /// <summary>Gets the default value for the specified PrimitiveUnderlyingType.</summary>

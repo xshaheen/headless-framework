@@ -128,38 +128,28 @@ internal sealed class GeneratorData
         // Determine generation flags based on info and supported operations
         var supportedOps = info.SupportedOperations;
 
-        var generateAddition = isNumeric
-            && supportedOps?.Addition == true
-            && !info.ImplementsIAdditionOperators;
+        var generateAddition = isNumeric && supportedOps?.Addition == true && !info.ImplementsIAdditionOperators;
 
-        var generateSubtraction = isNumeric
-            && supportedOps?.Subtraction == true
-            && !info.ImplementsISubtractionOperators;
+        var generateSubtraction =
+            isNumeric && supportedOps?.Subtraction == true && !info.ImplementsISubtractionOperators;
 
-        var generateDivision = isNumeric
-            && supportedOps?.Division == true
-            && !info.ImplementsIDivisionOperators;
+        var generateDivision = isNumeric && supportedOps?.Division == true && !info.ImplementsIDivisionOperators;
 
-        var generateMultiply = isNumeric
-            && supportedOps?.Multiplication == true
-            && !info.ImplementsIMultiplyOperators;
+        var generateMultiply = isNumeric && supportedOps?.Multiplication == true && !info.ImplementsIMultiplyOperators;
 
-        var generateModulus = isNumeric
-            && supportedOps?.Modulus == true
-            && !info.ImplementsIModulusOperators;
+        var generateModulus = isNumeric && supportedOps?.Modulus == true && !info.ImplementsIModulusOperators;
 
         var generateParsable = !info.ImplementsIParsable;
 
-        var generateComparison = (isNumeric
-                || info.UnderlyingType == PrimitiveUnderlyingType.Char
-                || isDateOrTime)
+        var generateComparison =
+            (isNumeric || info.UnderlyingType == PrimitiveUnderlyingType.Char || isDateOrTime)
             && !info.ImplementsIComparisonOperators;
 
-        var generateSpanFormattable = (info.UnderlyingType == PrimitiveUnderlyingType.Guid || isDateOrTime)
-            && !info.ImplementsISpanFormattable;
+        var generateSpanFormattable =
+            (info.UnderlyingType == PrimitiveUnderlyingType.Guid || isDateOrTime) && !info.ImplementsISpanFormattable;
 
-        var generateUtf8SpanFormattable = info.UnderlyingImplementsIUtf8SpanFormattable
-            && !info.ImplementsIUtf8SpanFormattable;
+        var generateUtf8SpanFormattable =
+            info.UnderlyingImplementsIUtf8SpanFormattable && !info.ImplementsIUtf8SpanFormattable;
 
         var generateConvertibles = info.UnderlyingType != PrimitiveUnderlyingType.Guid;
 

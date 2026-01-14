@@ -4,7 +4,9 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Framework.Serializer.Converters;
 
-[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class EmptyStringAsNullJsonConverter<T> : JsonConverter<T?>
     where T : class

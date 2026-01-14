@@ -595,29 +595,37 @@ public sealed class HeadlessEntityModelProcessor(
 
     private static void _PublishEntityCreated(ILocalMessageEmitter entity)
     {
-        var factory = _CreatedFactories.GetOrAdd(entity.GetType(), static type =>
-            _CompileEventFactory(typeof(EntityCreatedEventData<>), type));
+        var factory = _CreatedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityCreatedEventData<>), type)
+        );
         entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityUpdated(ILocalMessageEmitter entity)
     {
-        var factory = _UpdatedFactories.GetOrAdd(entity.GetType(), static type =>
-            _CompileEventFactory(typeof(EntityUpdatedEventData<>), type));
+        var factory = _UpdatedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityUpdatedEventData<>), type)
+        );
         entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityDeleted(ILocalMessageEmitter entity)
     {
-        var factory = _DeletedFactories.GetOrAdd(entity.GetType(), static type =>
-            _CompileEventFactory(typeof(EntityDeletedEventData<>), type));
+        var factory = _DeletedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityDeletedEventData<>), type)
+        );
         entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityChanged(ILocalMessageEmitter entity)
     {
-        var factory = _ChangedFactories.GetOrAdd(entity.GetType(), static type =>
-            _CompileEventFactory(typeof(EntityChangedEventData<>), type));
+        var factory = _ChangedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityChangedEventData<>), type)
+        );
         entity.AddMessage(factory(entity));
     }
 
