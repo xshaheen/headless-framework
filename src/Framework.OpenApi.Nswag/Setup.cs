@@ -275,7 +275,9 @@ public static class NswagSetup
         settings.SchemaSettings.DefaultReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
         settings.SchemaSettings.DefaultDictionaryValueReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
         // Schema Processors
-        settings.SchemaSettings.SchemaProcessors.Add(new FluentValidationSchemaProcessor(serviceProvider, frameworkOptions));
+        settings.SchemaSettings.SchemaProcessors.Add(
+            new FluentValidationSchemaProcessor(serviceProvider, frameworkOptions)
+        );
         settings.SchemaSettings.SchemaProcessors.Add(new NullabilityAsRequiredSchemaProcessor());
         // Operation Processors
         settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());

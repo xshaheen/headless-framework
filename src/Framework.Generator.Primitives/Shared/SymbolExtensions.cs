@@ -116,7 +116,10 @@ public static class SymbolExtensions
             // No namespace, just interface name
             foreach (var symbol in type.AllInterfaces)
             {
-                if (symbol.ContainingNamespace.IsGlobalNamespace && span.Equals(symbol.Name.AsSpan(), StringComparison.Ordinal))
+                if (
+                    symbol.ContainingNamespace.IsGlobalNamespace
+                    && span.Equals(symbol.Name.AsSpan(), StringComparison.Ordinal)
+                )
                 {
                     return true;
                 }
@@ -156,9 +159,7 @@ public static class SymbolExtensions
             }
 
             var lastDot = expectedNamespace.LastIndexOf('.');
-            var currentSegment = lastDot < 0
-                ? expectedNamespace
-                : expectedNamespace.Slice(lastDot + 1);
+            var currentSegment = lastDot < 0 ? expectedNamespace : expectedNamespace.Slice(lastDot + 1);
 
             if (!currentSegment.Equals(ns.Name.AsSpan(), StringComparison.Ordinal))
             {

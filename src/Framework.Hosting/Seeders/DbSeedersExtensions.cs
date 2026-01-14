@@ -56,12 +56,16 @@ public static class DbSeedersExtensions
 
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(seederTypes, cancellationToken, async (type, ct) =>
-            {
-                await using var innerScope = services.CreateAsyncScope();
-                var seeder = (IPreSeeder)innerScope.ServiceProvider.GetRequiredService(type);
-                await seeder.SeedAsync(ct).AnyContext();
-            });
+            await Parallel.ForEachAsync(
+                seederTypes,
+                cancellationToken,
+                async (type, ct) =>
+                {
+                    await using var innerScope = services.CreateAsyncScope();
+                    var seeder = (IPreSeeder)innerScope.ServiceProvider.GetRequiredService(type);
+                    await seeder.SeedAsync(ct).AnyContext();
+                }
+            );
         }
         else
         {
@@ -98,12 +102,16 @@ public static class DbSeedersExtensions
 
         if (runInParallel)
         {
-            await Parallel.ForEachAsync(seederTypes, cancellationToken, async (type, ct) =>
-            {
-                await using var innerScope = services.CreateAsyncScope();
-                var seeder = (ISeeder)innerScope.ServiceProvider.GetRequiredService(type);
-                await seeder.SeedAsync(ct).AnyContext();
-            });
+            await Parallel.ForEachAsync(
+                seederTypes,
+                cancellationToken,
+                async (type, ct) =>
+                {
+                    await using var innerScope = services.CreateAsyncScope();
+                    var seeder = (ISeeder)innerScope.ServiceProvider.GetRequiredService(type);
+                    await seeder.SeedAsync(ct).AnyContext();
+                }
+            );
         }
         else
         {

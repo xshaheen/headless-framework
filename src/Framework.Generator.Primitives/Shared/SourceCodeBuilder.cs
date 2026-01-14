@@ -26,7 +26,8 @@ public sealed class SourceCodeBuilder
     private readonly StringBuilder _indentations;
     private const string _IndentationString = "    ";
 
-    private static readonly string[] _CachedIndentations = Enumerable.Range(0, 11)
+    private static readonly string[] _CachedIndentations = Enumerable
+        .Range(0, 11)
         .Select(i => string.Concat(Enumerable.Repeat(_IndentationString, i)))
         .ToArray();
 
@@ -373,7 +374,8 @@ public sealed class SourceCodeBuilder
 
         static string quote(string? value)
         {
-            if (value is null) return "\"\"";
+            if (value is null)
+                return "\"\"";
             var escaped = value
                 .Replace("\\", "\\\\")
                 .Replace("\"", "\\\"")

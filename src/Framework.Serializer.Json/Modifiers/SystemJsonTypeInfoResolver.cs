@@ -11,7 +11,9 @@ public sealed class JsonSerializerModifiersOptions
     public List<Action<JsonTypeInfo>> Modifiers { get; } = [];
 }
 
-[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class SystemJsonTypeInfoResolver : DefaultJsonTypeInfoResolver
 {

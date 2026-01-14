@@ -14,8 +14,8 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
 {
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V3Name);
 
-    [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*$")]
-    private static partial Regex ValidJsIdentifierRegex();
+    [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled, 100)]
+    private static partial Regex _ValidJsIdentifierRegex();
 
     public string? Action { get; set; }
 
@@ -49,27 +49,27 @@ public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCapt
          */
 
         // Validate Callback is a valid JS identifier to prevent XSS
-        if (!string.IsNullOrWhiteSpace(Callback) && !ValidJsIdentifierRegex().IsMatch(Callback))
+        if (!string.IsNullOrWhiteSpace(Callback) && !_ValidJsIdentifierRegex().IsMatch(Callback))
         {
             throw new InvalidOperationException(
-                $"Callback '{Callback}' is not a valid JavaScript identifier. " +
-                "Must start with a letter or underscore and contain only letters, digits, or underscores.");
+                $"Callback '{Callback}' is not a valid JavaScript identifier. "
+                    + "Must start with a letter or underscore and contain only letters, digits, or underscores."
+            );
         }
 
         output.TagName = "script";
         output.TagMode = TagMode.StartTagAndEndTag;
 
         // Encode Action to prevent XSS injection
-        var encodedAction = string.IsNullOrWhiteSpace(Action)
-            ? null
-            : JavaScriptEncoder.Default.Encode(Action);
+        var encodedAction = string.IsNullOrWhiteSpace(Action) ? null : JavaScriptEncoder.Default.Encode(Action);
 
         var callbackParam = Execute ? "" : "callback";
         var actionOption = encodedAction is null ? "" : $",{{action:'{encodedAction}'}}";
         var thenClause = Execute ? $".then(function(token){{{Callback}(token)}})" : ".then(callback)";
         var autoExecute = Execute ? "grecaptcha.reExecute()" : "";
 
-        var script = $"grecaptcha.ready(function(){{ grecaptcha.reExecute = function({callbackParam}){{grecaptcha.execute('{_options.SiteKey}'{actionOption}){thenClause}}};{autoExecute}}});";
+        var script =
+            $"grecaptcha.ready(function(){{ grecaptcha.reExecute = function({callbackParam}){{grecaptcha.execute('{_options.SiteKey}'{actionOption}){thenClause}}};{autoExecute}}});";
 
         output.Content.SetHtmlContent(script);
     }

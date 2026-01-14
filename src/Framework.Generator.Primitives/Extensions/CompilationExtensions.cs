@@ -14,16 +14,23 @@ internal static class CompilationExtensions
     /// <returns>True if the type implements the IPrimitive interface; otherwise, false.</returns>
     public static bool IsImplementIPrimitive(this INamedTypeSymbol x)
     {
-        if (!x.IsGenericType || x.Name != AbstractionConstants.Interface)
+        if (!x.IsGenericType || !string.Equals(x.Name, AbstractionConstants.Interface, StringComparison.Ordinal))
         {
             return false;
         }
 
         // Compare namespace parts directly (cheap) instead of ToDisplayString (expensive)
         var ns = x.ContainingNamespace;
-        return ns is { Name: AbstractionConstants.NamespacePart3 }
-            && ns.ContainingNamespace is { Name: AbstractionConstants.NamespacePart2 }
-            && ns.ContainingNamespace.ContainingNamespace is { Name: AbstractionConstants.NamespacePart1, ContainingNamespace.IsGlobalNamespace: true };
+        return ns
+            is {
+                Name: AbstractionConstants.NamespacePart3,
+                ContainingNamespace:
+                {
+                    Name: AbstractionConstants.NamespacePart2,
+                    ContainingNamespace:
+                    { Name: AbstractionConstants.NamespacePart1, ContainingNamespace.IsGlobalNamespace: true }
+                },
+            };
     }
 
     /// <summary>

@@ -12,10 +12,9 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 {
     private static string? _EscapeFormatString(string? format)
     {
-        if (format is null) return null;
-        return format
-            .Replace("\\", "\\\\")
-            .Replace("\"", "\\\"");
+        if (format is null)
+            return null;
+        return format.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 
     /// <summary>Processes the generator data and generates code for a specified class.</summary>

@@ -220,7 +220,10 @@ public abstract class HeadlessDbContext : DbContext
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
 
                     bool commit;
 
@@ -268,7 +271,10 @@ public abstract class HeadlessDbContext : DbContext
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
 
                     bool commit;
 
@@ -315,7 +321,10 @@ public abstract class HeadlessDbContext : DbContext
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
 
                     TResult? result;
                     bool commit;
@@ -366,7 +375,10 @@ public abstract class HeadlessDbContext : DbContext
                 state,
                 static async (state, ct) =>
                 {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(state.Isolation, ct);
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
 
                     TResult? result;
                     bool commit;

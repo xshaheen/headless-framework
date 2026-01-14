@@ -32,11 +32,13 @@ public static class SitemapIndexBuilder
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
         await writer.WriteStartDocumentAsync().AnyContext();
 
-        await writer.WriteStartElementAsync(
-            prefix: null,
-            localName: "sitemapindex",
-            ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
-        ).AnyContext();
+        await writer
+            .WriteStartElementAsync(
+                prefix: null,
+                localName: "sitemapindex",
+                ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
+            )
+            .AnyContext();
 
         // Write sitemaps URL.
         foreach (var sitemapReference in sitemapReferences)
@@ -52,12 +54,9 @@ public static class SitemapIndexBuilder
     {
         await writer.WriteStartElementAsync(prefix: null, localName: "sitemap", ns: null).AnyContext();
 
-        await writer.WriteElementStringAsync(
-            prefix: null,
-            localName: "loc",
-            ns: null,
-            value: sitemapRef.Location.AbsoluteUri
-        ).AnyContext();
+        await writer
+            .WriteElementStringAsync(prefix: null, localName: "loc", ns: null, value: sitemapRef.Location.AbsoluteUri)
+            .AnyContext();
 
         if (sitemapRef.LastModified.HasValue)
         {

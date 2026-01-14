@@ -7,7 +7,9 @@ namespace Framework.Serializer.Converters;
 /// <summary>
 /// See <a href="https://docs.microsoft.com/en-us/dotnet/standard/serialization/system-text-json-converters-how-to#deserialize-inferred-types-to-object-properties">Deserialize inferred types to object properties</a>
 /// </summary>
-[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class ObjectToInferredTypesJsonConverter : JsonConverter<object?>
 {

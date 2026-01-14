@@ -273,6 +273,7 @@ public sealed class SettingManager(
         }
 
         string? value = null;
+        var isFromStoreProvider = false;
 
         foreach (var provider in providers)
         {
@@ -281,11 +282,12 @@ public sealed class SettingManager(
 
             if (value is not null)
             {
+                isFromStoreProvider = provider is StoreSettingValueProvider;
                 break;
             }
         }
 
-        if (definition.IsEncrypted)
+        if (definition.IsEncrypted && isFromStoreProvider)
         {
             value = encryptionService.Decrypt(definition, value);
         }

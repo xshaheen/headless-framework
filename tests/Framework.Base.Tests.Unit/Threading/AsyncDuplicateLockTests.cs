@@ -514,14 +514,17 @@ public sealed class AsyncDuplicateLockTests : TestBase
         // given
         var lockAcquired = new TaskCompletionSource();
 
-        _ = Task.Run(async () =>
-        {
-            using (await AsyncDuplicateLock.LockAsync("try-lock-timeout-key"))
+        _ = Task.Run(
+            async () =>
             {
-                lockAcquired.SetResult();
-                await Task.Delay(5000); // Hold lock
-            }
-        }, AbortToken);
+                using (await AsyncDuplicateLock.LockAsync("try-lock-timeout-key"))
+                {
+                    lockAcquired.SetResult();
+                    await Task.Delay(5000); // Hold lock
+                }
+            },
+            AbortToken
+        );
 
         await lockAcquired.Task;
 
@@ -543,14 +546,17 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var lockAcquired = new TaskCompletionSource();
         var canRelease = new TaskCompletionSource();
 
-        var holdingTask = Task.Run(async () =>
-        {
-            using (await AsyncDuplicateLock.LockAsync("try-lock-wait-key", AbortToken))
+        var holdingTask = Task.Run(
+            async () =>
             {
-                lockAcquired.SetResult();
-                await canRelease.Task;
-            }
-        }, AbortToken);
+                using (await AsyncDuplicateLock.LockAsync("try-lock-wait-key", AbortToken))
+                {
+                    lockAcquired.SetResult();
+                    await canRelease.Task;
+                }
+            },
+            AbortToken
+        );
 
         await lockAcquired.Task;
 
@@ -575,14 +581,17 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var lockAcquired = new TaskCompletionSource();
         var canRelease = new TaskCompletionSource();
 
-        var holdingTask = Task.Run(async () =>
-        {
-            using (await AsyncDuplicateLock.LockAsync("try-lock-cleanup-key"))
+        var holdingTask = Task.Run(
+            async () =>
             {
-                lockAcquired.SetResult();
-                await canRelease.Task;
-            }
-        }, AbortToken);
+                using (await AsyncDuplicateLock.LockAsync("try-lock-cleanup-key"))
+                {
+                    lockAcquired.SetResult();
+                    await canRelease.Task;
+                }
+            },
+            AbortToken
+        );
 
         await lockAcquired.Task;
 
@@ -613,14 +622,17 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var lockAcquired = new TaskCompletionSource();
         using var cts = new CancellationTokenSource();
 
-        var holdingTask = Task.Run(async () =>
-        {
-            using (await AsyncDuplicateLock.LockAsync("try-lock-cancel-key", AbortToken))
+        var holdingTask = Task.Run(
+            async () =>
             {
-                lockAcquired.SetResult();
-                await Task.Delay(5000, AbortToken);
-            }
-        }, AbortToken);
+                using (await AsyncDuplicateLock.LockAsync("try-lock-cancel-key", AbortToken))
+                {
+                    lockAcquired.SetResult();
+                    await Task.Delay(5000, AbortToken);
+                }
+            },
+            AbortToken
+        );
 
         await lockAcquired.Task;
         cts.CancelAfter(50);

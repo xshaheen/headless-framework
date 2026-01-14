@@ -57,23 +57,27 @@ public static class SitemapUrls
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
         await writer.WriteStartDocumentAsync().AnyContext();
 
-        await writer.WriteStartElementAsync(
-            prefix: null,
-            localName: "urlset",
-            ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
-        ).AnyContext();
+        await writer
+            .WriteStartElementAsync(
+                prefix: null,
+                localName: "urlset",
+                ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
+            )
+            .AnyContext();
 
         // Add xmlns:xhtml attribute if there are alternate URLs
         var hasAlternateUrls = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null);
 
         if (hasAlternateUrls)
         {
-            await writer.WriteAttributeStringAsync(
-                prefix: "xmlns",
-                localName: "xhtml",
-                ns: null,
-                value: "http://www.w3.org/1999/xhtml"
-            ).AnyContext();
+            await writer
+                .WriteAttributeStringAsync(
+                    prefix: "xmlns",
+                    localName: "xhtml",
+                    ns: null,
+                    value: "http://www.w3.org/1999/xhtml"
+                )
+                .AnyContext();
         }
 
         // Add xmlns:image attribute if there are images
@@ -81,12 +85,14 @@ public static class SitemapUrls
 
         if (hasImages)
         {
-            await writer.WriteAttributeStringAsync(
-                prefix: "xmlns",
-                localName: "image",
-                ns: null,
-                value: "http://www.google.com/schemas/sitemap-image/1.1"
-            ).AnyContext();
+            await writer
+                .WriteAttributeStringAsync(
+                    prefix: "xmlns",
+                    localName: "image",
+                    ns: null,
+                    value: "http://www.google.com/schemas/sitemap-image/1.1"
+                )
+                .AnyContext();
         }
 
         // write URLs to the sitemap
@@ -113,12 +119,14 @@ public static class SitemapUrls
         {
             await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null).AnyContext();
 
-            await writer.WriteElementStringAsync(
-                prefix: null,
-                localName: "loc",
-                ns: null,
-                value: sitemapUrl.Location!.AbsoluteUri
-            ).AnyContext();
+            await writer
+                .WriteElementStringAsync(
+                    prefix: null,
+                    localName: "loc",
+                    ns: null,
+                    value: sitemapUrl.Location!.AbsoluteUri
+                )
+                .AnyContext();
 
             if (sitemapUrl.Images is not null)
             {
@@ -146,12 +154,9 @@ public static class SitemapUrls
 
             await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null).AnyContext();
 
-            await writer.WriteElementStringAsync(
-                prefix: null,
-                localName: "loc",
-                ns: null,
-                value: url.Location.AbsoluteUri
-            ).AnyContext();
+            await writer
+                .WriteElementStringAsync(prefix: null, localName: "loc", ns: null, value: url.Location.AbsoluteUri)
+                .AnyContext();
 
             // Write images in each alternate URL
             if (sitemapUrl.Images is not null)
@@ -160,7 +165,8 @@ public static class SitemapUrls
             }
 
             // Write alternate URLs
-            await _WriteAlternateUrlsReferenceAsync(writer, sitemapUrl.AlternateLocations, cancellationToken).AnyContext();
+            await _WriteAlternateUrlsReferenceAsync(writer, sitemapUrl.AlternateLocations, cancellationToken)
+                .AnyContext();
 
             // Write properties
             _WriteOtherNodes(writer, sitemapUrl);
@@ -180,21 +186,22 @@ public static class SitemapUrls
             cancellationToken.ThrowIfCancellationRequested();
 
             await writer.WriteStartElementAsync(prefix: "xhtml", localName: "link", ns: null).AnyContext();
-            await writer.WriteAttributeStringAsync(prefix: null, localName: "rel", ns: null, value: "alternate").AnyContext();
+            await writer
+                .WriteAttributeStringAsync(prefix: null, localName: "rel", ns: null, value: "alternate")
+                .AnyContext();
 
-            await writer.WriteAttributeStringAsync(
-                prefix: null,
-                localName: "hreflang",
-                ns: null,
-                value: alternate.LanguageCode
-            ).AnyContext();
+            await writer
+                .WriteAttributeStringAsync(prefix: null, localName: "hreflang", ns: null, value: alternate.LanguageCode)
+                .AnyContext();
 
-            await writer.WriteAttributeStringAsync(
-                prefix: null,
-                localName: "href",
-                ns: null,
-                value: alternate.Location.AbsoluteUri
-            ).AnyContext();
+            await writer
+                .WriteAttributeStringAsync(
+                    prefix: null,
+                    localName: "href",
+                    ns: null,
+                    value: alternate.Location.AbsoluteUri
+                )
+                .AnyContext();
 
             await writer.WriteEndElementAsync().AnyContext();
         }
@@ -218,12 +225,9 @@ public static class SitemapUrls
 
             await writer.WriteStartElementAsync(prefix: "image", localName: "image", ns: null).AnyContext();
 
-            await writer.WriteElementStringAsync(
-                prefix: "image",
-                localName: "loc",
-                ns: null,
-                value: image.Location.AbsoluteUri
-            ).AnyContext();
+            await writer
+                .WriteElementStringAsync(prefix: "image", localName: "loc", ns: null, value: image.Location.AbsoluteUri)
+                .AnyContext();
 
             await writer.WriteEndElementAsync().AnyContext();
         }

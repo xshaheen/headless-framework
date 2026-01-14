@@ -4,7 +4,9 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Framework.Serializer.Converters;
 
-[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public class SingleOrCollectionJsonConverter<TCollection, TItem> : JsonConverter<TCollection>
     where TCollection : class, ICollection<TItem?>, new()
@@ -61,10 +63,14 @@ public class SingleOrCollectionJsonConverter<TCollection, TItem> : JsonConverter
     }
 }
 
-[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class SingleOrListJsonConverter<TItem> : SingleOrCollectionJsonConverter<List<TItem?>, TItem>;
 
-[RequiresUnreferencedCode("JSON serialization and deserialization might require types that cannot be statically analyzed.")]
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
 [RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class SingleOrHashsetJsonConverter<TItem> : SingleOrCollectionJsonConverter<HashSet<TItem?>, TItem>;

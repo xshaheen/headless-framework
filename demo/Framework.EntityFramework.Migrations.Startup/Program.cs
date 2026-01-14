@@ -61,14 +61,12 @@ builder
     });
 
 builder
-    .Services.AddSettingsManagementCore(
-        encryption =>
-        {
-            encryption.DefaultPassPhrase = "DemoPassPhrase123456";
-            encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
-            encryption.DefaultSalt = "DemoSalt"u8.ToArray();
-        }
-    )
+    .Services.AddSettingsManagementCore(encryption =>
+    {
+        encryption.DefaultPassPhrase = "DemoPassPhrase123456";
+        encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
+        encryption.DefaultSalt = "DemoSalt"u8.ToArray();
+    })
     .AddSettingsManagementDbContextStorage(options =>
     {
         options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));

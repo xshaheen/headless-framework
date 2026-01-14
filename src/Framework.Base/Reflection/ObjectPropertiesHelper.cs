@@ -94,7 +94,8 @@ public static class ObjectPropertiesHelper
     private static PropertyInfo? _GetWritablePropertyInfo(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type objType,
         string? propertyName,
-        Type[]? ignoreAttr)
+        Type[]? ignoreAttr
+    )
     {
         if (propertyName is null)
         {

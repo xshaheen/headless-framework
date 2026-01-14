@@ -13,26 +13,126 @@ public sealed class UrlParsingTests
     [InlineData("/relative/without/authority", "", "", "", "", null, "/relative/without/authority", "", "")]
     [InlineData("relative/without/path/anchor", "", "", "", "", null, "relative/without/path/anchor", "", "")]
     // absolute
-    [InlineData("http://www.mysite.com/with/path?x=1", "http", "www.mysite.com", "", "www.mysite.com", null, "/with/path", "x=1", "")]
-    [InlineData("https://www.mysite.com/with/path?x=1#foo", "https", "www.mysite.com", "", "www.mysite.com", null, "/with/path", "x=1", "foo")]
-    [InlineData("http://user:pass@www.mysite.com:8080/with/path?x=1?y=2", "http", "user:pass@www.mysite.com:8080", "user:pass", "www.mysite.com", 8080, "/with/path", "x=1?y=2", "")]
-    [InlineData("http://www.mysite.com/#with/path?x=1?y=2", "http", "www.mysite.com", "", "www.mysite.com", null, "/", "", "with/path?x=1?y=2")]
+    [InlineData(
+        "http://www.mysite.com/with/path?x=1",
+        "http",
+        "www.mysite.com",
+        "",
+        "www.mysite.com",
+        null,
+        "/with/path",
+        "x=1",
+        ""
+    )]
+    [InlineData(
+        "https://www.mysite.com/with/path?x=1#foo",
+        "https",
+        "www.mysite.com",
+        "",
+        "www.mysite.com",
+        null,
+        "/with/path",
+        "x=1",
+        "foo"
+    )]
+    [InlineData(
+        "http://user:pass@www.mysite.com:8080/with/path?x=1?y=2",
+        "http",
+        "user:pass@www.mysite.com:8080",
+        "user:pass",
+        "www.mysite.com",
+        8080,
+        "/with/path",
+        "x=1?y=2",
+        ""
+    )]
+    [InlineData(
+        "http://www.mysite.com/#with/path?x=1?y=2",
+        "http",
+        "www.mysite.com",
+        "",
+        "www.mysite.com",
+        null,
+        "/",
+        "",
+        "with/path?x=1?y=2"
+    )]
     // from https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#Examples
-    [InlineData("https://john.doe@www.example.com:123/forum/questions/?tag=networking&order=newest#top", "https", "john.doe@www.example.com:123", "john.doe", "www.example.com", 123, "/forum/questions/", "tag=networking&order=newest", "top")]
-    [InlineData("ldap://[2001:db8::7]/c=GB?objectClass?one", "ldap", "[2001:db8::7]", "", "[2001:db8::7]", null, "/c=GB", "objectClass?one", "")]
+    [InlineData(
+        "https://john.doe@www.example.com:123/forum/questions/?tag=networking&order=newest#top",
+        "https",
+        "john.doe@www.example.com:123",
+        "john.doe",
+        "www.example.com",
+        123,
+        "/forum/questions/",
+        "tag=networking&order=newest",
+        "top"
+    )]
+    [InlineData(
+        "ldap://[2001:db8::7]/c=GB?objectClass?one",
+        "ldap",
+        "[2001:db8::7]",
+        "",
+        "[2001:db8::7]",
+        null,
+        "/c=GB",
+        "objectClass?one",
+        ""
+    )]
     [InlineData("mailto:John.Doe@example.com", "mailto", "", "", "", null, "John.Doe@example.com", "", "")]
-    [InlineData("news:comp.infosystems.www.servers.unix", "news", "", "", "", null, "comp.infosystems.www.servers.unix", "", "")]
+    [InlineData(
+        "news:comp.infosystems.www.servers.unix",
+        "news",
+        "",
+        "",
+        "",
+        null,
+        "comp.infosystems.www.servers.unix",
+        "",
+        ""
+    )]
     [InlineData("tel:+1-816-555-1212", "tel", "", "", "", null, "+1-816-555-1212", "", "")]
     [InlineData("telnet://192.0.2.16:80/", "telnet", "192.0.2.16:80", "", "192.0.2.16", 80, "/", "", "")]
-    [InlineData("urn:oasis:names:specification:docbook:dtd:xml:4.1.2", "urn", "", "", "", null, "oasis:names:specification:docbook:dtd:xml:4.1.2", "", "")]
+    [InlineData(
+        "urn:oasis:names:specification:docbook:dtd:xml:4.1.2",
+        "urn",
+        "",
+        "",
+        "",
+        null,
+        "oasis:names:specification:docbook:dtd:xml:4.1.2",
+        "",
+        ""
+    )]
     // with uppercase letters
-    [InlineData("http://www.mySite.com:8080/With/Path?x=1?Y=2", "http", "www.mysite.com:8080", "", "www.mysite.com", 8080, "/With/Path", "x=1?Y=2", "")]
+    [InlineData(
+        "http://www.mySite.com:8080/With/Path?x=1?Y=2",
+        "http",
+        "www.mysite.com:8080",
+        "",
+        "www.mysite.com",
+        8080,
+        "/With/Path",
+        "x=1?Y=2",
+        ""
+    )]
     [InlineData("HTTP://www.mysite.com:8080", "http", "www.mysite.com:8080", "", "www.mysite.com", 8080, "", "", "")]
     public void should_parse_url_parts(
-        string url, string scheme, string authority, string userInfo,
-        string host, int? port, string path, string query, string fragment)
+        string url,
+        string scheme,
+        string authority,
+        string userInfo,
+        string host,
+        int? port,
+        string path,
+        string query,
+        string fragment
+    )
     {
-        foreach (var parsed in new[] { new Url(url), Url.Parse(url), new Url(new Uri(url, UriKind.RelativeOrAbsolute)) })
+        foreach (
+            var parsed in new[] { new Url(url), Url.Parse(url), new Url(new Uri(url, UriKind.RelativeOrAbsolute)) }
+        )
         {
             parsed.Scheme.Should().Be(scheme);
             parsed.Authority.Should().Be(authority);
@@ -85,12 +185,12 @@ public sealed class UrlParsingTests
     }
 
     [Theory]
-    [InlineData("http://www.mysite.com/more?x=1&y=2", true)]
-    [InlineData("//how/about/this#hi", false)]
-    [InlineData("/how/about/this#hi", false)]
-    [InlineData("how/about/this#hi", false)]
-    [InlineData("", false)]
-    public void should_convert_to_uri(string s, bool isAbsolute)
+    [InlineData("http://www.mysite.com/more?x=1&y=2")]
+    [InlineData("//how/about/this#hi")]
+    [InlineData("/how/about/this#hi")]
+    [InlineData("how/about/this#hi")]
+    [InlineData("")]
+    public void should_convert_to_uri(string s)
     {
         var url = new Url(s);
         var uri = url.ToUri();

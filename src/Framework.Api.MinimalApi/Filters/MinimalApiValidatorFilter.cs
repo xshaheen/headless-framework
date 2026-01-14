@@ -39,7 +39,9 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
         if (validatorList.Count == 1)
         {
             // Fast path for single validator - avoids Task.WhenAll overhead
-            var result = await validatorList[0].ValidateAsync(validationContext, context.HttpContext.RequestAborted).AnyContext();
+            var result = await validatorList[0]
+                .ValidateAsync(validationContext, context.HttpContext.RequestAborted)
+                .AnyContext();
             validationResults = [result];
         }
         else

@@ -43,6 +43,8 @@ CREATE TABLE settings."SettingValues" (
                                           "Value" character varying(2000) NOT NULL,
                                           "ProviderName" character varying(64) NOT NULL,
                                           "ProviderKey" character varying(64),
+                                          "DateCreated" timestamp with time zone NOT NULL,
+                                          "DateUpdated" timestamp with time zone,
                                           CONSTRAINT "PK_SettingValues" PRIMARY KEY ("Id")
 );
 END IF;

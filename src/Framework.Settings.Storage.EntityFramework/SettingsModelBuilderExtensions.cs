@@ -17,6 +17,7 @@ public static class SettingsModelBuilderExtensions
         modelBuilder.Entity<SettingValueRecord>(b =>
         {
             b.ToTable(DefaultSettingValuesTableName, schema);
+            b.ConfigureFrameworkConvention();
             b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.NameMaxLength).IsRequired();
             b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.ValueMaxLength).IsRequired();
 

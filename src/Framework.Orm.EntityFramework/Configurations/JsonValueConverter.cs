@@ -46,4 +46,5 @@ public sealed class JsonValueConverter<TPropertyType, TContext>(JsonTypeInfo<TPr
     : ValueConverter<TPropertyType, string>(
         d => JsonSerializer.Serialize(d, typeInfo),
         s => JsonSerializer.Deserialize(s, typeInfo)!
-    ) where TContext : JsonSerializerContext;
+    )
+    where TContext : JsonSerializerContext;
