@@ -17,7 +17,7 @@ public sealed class CacheTestFixture(IMessageSink messageSink)
 
     protected override RedisBuilder Configure()
     {
-        return base.Configure().WithLabel("type", "resource_locks_cache").WithImage("redis:7-alpine").WithReuse(true);
+        return base.Configure().WithImage("redis:7-alpine");
     }
 
     protected override async ValueTask InitializeAsync()

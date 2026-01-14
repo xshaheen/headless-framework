@@ -6,7 +6,6 @@ using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.Serializer;
 using Microsoft.Extensions.Logging;
-using Tests.TestSetup;
 
 namespace Tests;
 
