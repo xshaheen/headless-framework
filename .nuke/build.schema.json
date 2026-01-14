@@ -26,6 +26,7 @@
       "enum": [
         "Clean",
         "Compile",
+        "CoverageAnalysis",
         "Pack",
         "PushPackages",
         "Restore",
@@ -112,6 +113,20 @@
             "Release"
           ]
         },
+        "CoverageBranchThreshold": {
+          "type": "integer",
+          "description": "Minimum branch coverage threshold (default: 80)",
+          "format": "int32"
+        },
+        "CoverageJsonOutput": {
+          "type": "boolean",
+          "description": "Output coverage results as JSON for agent consumption"
+        },
+        "CoverageLineThreshold": {
+          "type": "integer",
+          "description": "Minimum line coverage threshold (default: 80)",
+          "format": "int32"
+        },
         "GithubToken": {
           "type": "string",
           "description": "Configuration to build - Default is 'Debug' (local) or 'Release' (server)"
@@ -119,6 +134,10 @@
         "Solution": {
           "type": "string",
           "description": "Path to a solution file that is automatically loaded"
+        },
+        "TestProject": {
+          "type": "string",
+          "description": "Test project path (relative to tests directory) for coverage analysis"
         }
       }
     },

@@ -28,6 +28,18 @@ file sealed class Build : NukeBuild
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
+    [Parameter("Test project path (relative to tests directory) for coverage analysis")]
+    readonly string TestProject = string.Empty;
+
+    [Parameter("Minimum line coverage threshold (default: 80)")]
+    readonly int CoverageLineThreshold = 80;
+
+    [Parameter("Minimum branch coverage threshold (default: 80)")]
+    readonly int CoverageBranchThreshold = 80;
+
+    [Parameter("Output coverage results as JSON for agent consumption")]
+    readonly bool CoverageJsonOutput = false;
+
     #region Build
 
     Target Clean =>
@@ -125,6 +137,173 @@ file sealed class Build : NukeBuild
 
     static AbsolutePath GetDotCoverOutputFile(string testAssembly) =>
         OutputDirectory / $"dotCover_{Path.GetFileName(testAssembly)}.dcvr";
+
+    Target CoverageAnalysis =>
+        x =>
+            x.Description("Run code coverage analysis with Coverlet and generate HTML report")
+                .DependsOn(Compile)
+                .Executes(() =>
+                {
+                    var testProjectPath = string.IsNullOrEmpty(TestProject)
+                        ? throw new Exception("TestProject parameter required. Example: --test-project Framework.Checks.Tests.Unit")
+                        : TestsDirectory / TestProject / $"{TestProject}.csproj";
+
+                    if (!File.Exists(testProjectPath))
+                    {
+                        throw new Exception($"Test project not found: {testProjectPath}");
+                    }
+
+                    var coverageResultsDir = TestsDirectory / TestProject / "TestResults";
+                    var coverageHtmlDir = RootDirectory / "coverage" / "html";
+
+                    // Run tests with Coverlet coverage collection
+                    DotNetTest(settings => settings
+                        .SetProjectFile(testProjectPath)
+                        .SetConfiguration(Configuration)
+                        .SetDataCollector("XPlat Code Coverage")
+                        .SetResultsDirectory(coverageResultsDir)
+                        .SetProcessEnvironmentVariable("CollectCoverage", "true")
+                        .SetProcessEnvironmentVariable("CoverletOutputFormat", "cobertura")
+                        .SetProcessEnvironmentVariable("Threshold", CoverageLineThreshold.ToString())
+                        .SetProcessEnvironmentVariable("ThresholdType", "line,branch")
+                        .SetProcessEnvironmentVariable("ThresholdStat", "total")
+                        .SetProcessEnvironmentVariable("ExcludeByAttribute", "CompilerGenerated,GeneratedCode,ExcludeFromCodeCoverage")
+                    );
+
+                    // Find the coverage file
+                    var coverageFile = coverageResultsDir.GlobFiles("**/coverage.cobertura.xml").FirstOrDefault();
+                    if (coverageFile == null)
+                    {
+                        throw new Exception($"Coverage file not found in {coverageResultsDir}");
+                    }
+
+                    // Generate HTML report using reportgenerator
+                    ProcessTasks.StartProcess(
+                        "reportgenerator",
+                        $"-reports:\"{coverageFile}\" -targetdir:\"{coverageHtmlDir}\" -reporttypes:\"Html;TextSummary\"",
+                        workingDirectory: RootDirectory
+                    ).AssertWaitForExit();
+
+                    // Parse and display summary
+                    var summaryFile = coverageHtmlDir / "Summary.txt";
+                    if (!File.Exists(summaryFile))
+                    {
+                        throw new Exception($"Summary file not found: {summaryFile}");
+                    }
+
+                    var summaryText = File.ReadAllText(summaryFile);
+                    var coverageData = ParseCoverageSummary(summaryText);
+
+                    if (CoverageJsonOutput)
+                    {
+                        // Output JSON for agent consumption
+                        var jsonOutput = System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            success = true,
+                            timestamp = DateTime.UtcNow,
+                            testProject = TestProject,
+                            coverage = new
+                            {
+                                line = new
+                                {
+                                    percentage = coverageData.LinePercentage,
+                                    covered = coverageData.CoveredLines,
+                                    coverable = coverageData.CoverableLines
+                                },
+                                branch = new
+                                {
+                                    percentage = coverageData.BranchPercentage,
+                                    covered = coverageData.CoveredBranches,
+                                    total = coverageData.TotalBranches
+                                }
+                            },
+                            thresholds = new
+                            {
+                                line = CoverageLineThreshold,
+                                branch = CoverageBranchThreshold
+                            },
+                            meetsThresholds = coverageData.LinePercentage >= CoverageLineThreshold &&
+                                            coverageData.BranchPercentage >= CoverageBranchThreshold,
+                            reports = new
+                            {
+                                html = (coverageHtmlDir / "index.html").ToString(),
+                                summary = summaryFile.ToString(),
+                                cobertura = coverageFile.ToString()
+                            }
+                        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+                        Console.WriteLine(jsonOutput);
+                    }
+                    else
+                    {
+                        // Human-readable output
+                        Serilog.Log.Information("Coverage Summary:");
+                        Serilog.Log.Information(summaryText);
+                        Serilog.Log.Information($"HTML report: {coverageHtmlDir / "index.html"}");
+                        Serilog.Log.Information($"Thresholds: Line={CoverageLineThreshold}%, Branch={CoverageBranchThreshold}%");
+                        Serilog.Log.Information($"Status: {(coverageData.LinePercentage >= CoverageLineThreshold && coverageData.BranchPercentage >= CoverageBranchThreshold ? "PASS" : "FAIL")}");
+                    }
+                });
+
+    static (double LinePercentage, double BranchPercentage, int CoveredLines, int CoverableLines, int CoveredBranches, int TotalBranches) ParseCoverageSummary(string summaryText)
+    {
+        double linePercentage = 0;
+        double branchPercentage = 0;
+        int coveredLines = 0;
+        int coverableLines = 0;
+        int coveredBranches = 0;
+        int totalBranches = 0;
+
+        using var reader = new StringReader(summaryText);
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var trimmed = line.Trim();
+
+            if (trimmed.StartsWith("Line coverage:"))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+\.?\d*)%");
+                if (match.Success)
+                {
+                    linePercentage = double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                }
+            }
+            else if (trimmed.StartsWith("Branch coverage:"))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+\.?\d*)%");
+                if (match.Success)
+                {
+                    branchPercentage = double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                // Extract branch counts: "Branch coverage: 81.1% (383 of 472)"
+                var countsMatch = System.Text.RegularExpressions.Regex.Match(trimmed, @"\((\d+) of (\d+)\)");
+                if (countsMatch.Success)
+                {
+                    coveredBranches = int.Parse(countsMatch.Groups[1].Value);
+                    totalBranches = int.Parse(countsMatch.Groups[2].Value);
+                }
+            }
+            else if (trimmed.StartsWith("Covered lines:"))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)");
+                if (match.Success)
+                {
+                    coveredLines = int.Parse(match.Groups[1].Value);
+                }
+            }
+            else if (trimmed.StartsWith("Coverable lines:"))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(trimmed, @"(\d+)");
+                if (match.Success)
+                {
+                    coverableLines = int.Parse(match.Groups[1].Value);
+                }
+            }
+        }
+
+        return (linePercentage, branchPercentage, coveredLines, coverableLines, coveredBranches, totalBranches);
+    }
 
     #endregion
 
