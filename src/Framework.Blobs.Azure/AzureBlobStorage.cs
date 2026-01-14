@@ -318,7 +318,7 @@ public sealed class AzureBlobStorage(
 
     #region Download
 
-    public async ValueTask<BlobDownloadResult?> DownloadAsync(
+    public async ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default

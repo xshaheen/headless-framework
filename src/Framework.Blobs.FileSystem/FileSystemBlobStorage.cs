@@ -316,7 +316,7 @@ public sealed class FileSystemBlobStorage(
 
     #region Download
 
-    public ValueTask<BlobDownloadResult?> DownloadAsync(
+    public ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -331,9 +331,11 @@ public sealed class FileSystemBlobStorage(
 
         var fileStream = File.OpenRead(filePath);
 
+#pragma warning disable CA2000 // Dispose objects before losing scope
         return ValueTask.FromResult<BlobDownloadResult?>(
             new BlobDownloadResult(fileStream, Path.GetFileName(filePath))
         );
+#pragma warning restore CA2000 // Dispose objects before losing scope
     }
 
     public ValueTask<BlobInfo?> GetBlobInfoAsync(
@@ -608,7 +610,7 @@ public sealed class FileSystemBlobStorage(
 
     #region Dispose
 
-    public void Dispose() { }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     #endregion
 }
