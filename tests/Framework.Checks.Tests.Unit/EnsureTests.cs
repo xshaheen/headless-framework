@@ -60,4 +60,80 @@ public sealed class EnsureTests
             .ThrowExactly<InvalidOperationException>()
             .WithMessage(customMessageEnsureFalse);
     }
+
+    [Fact]
+    public void not_disposed_should_not_throw_when_not_disposed()
+    {
+        // given
+        bool disposed = false;
+        object obj = new();
+
+        // when & then
+        Ensure.NotDisposed(disposed, obj);
+    }
+
+    [Fact]
+    public void not_disposed_should_throw_when_disposed_with_null_value()
+    {
+        // given
+        bool disposed = true;
+        object? obj = null;
+
+        // when
+        Action action = () => Ensure.NotDisposed(disposed, obj);
+
+        // then
+        action.Should().ThrowExactly<ObjectDisposedException>().WithMessage("Cannot access a disposed object.*");
+    }
+
+    [Fact]
+    public void not_disposed_should_throw_when_disposed_with_object()
+    {
+        // given
+        bool disposed = true;
+        object obj = "test string";
+
+        // when
+        Action action = () => Ensure.NotDisposed(disposed, obj);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ObjectDisposedException>()
+            .WithMessage("Cannot access a disposed object.*System.String*");
+    }
+
+    [Fact]
+    public void not_disposed_should_throw_with_custom_message()
+    {
+        // given
+        bool disposed = true;
+        object obj = new();
+        string customMessage = "Custom disposal message";
+
+        // when
+        Action action = () => Ensure.NotDisposed(disposed, obj, customMessage);
+
+        // then
+        action.Should().ThrowExactly<ObjectDisposedException>().WithMessage($"*{customMessage}*");
+    }
+
+    [Fact]
+    public void not_disposed_should_include_type_name_in_exception()
+    {
+        // given
+        bool disposed = true;
+        var obj = new TestDisposableObject();
+
+        // when
+        Action action = () => Ensure.NotDisposed(disposed, obj);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ObjectDisposedException>()
+            .WithMessage("*Tests.EnsureTests+TestDisposableObject*");
+    }
+
+    private sealed class TestDisposableObject { }
 }

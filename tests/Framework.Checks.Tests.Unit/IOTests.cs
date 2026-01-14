@@ -38,4 +38,55 @@ public sealed class IoTests
                 "The stream argument \"stream\" of type <MemoryStream must be at the starting position. (Actual Position 1) (Parameter 'stream')"
             );
     }
+
+    [Fact]
+    public void can_read_should_throw_when_stream_cannot_be_read()
+    {
+        // given
+        using var stream = new NonReadableStream();
+
+        // when
+        var action = () => Argument.CanRead(stream);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
+    }
+
+    [Fact]
+    public void can_write_should_throw_when_stream_cannot_be_written()
+    {
+        // given
+        using var stream = new MemoryStream([], writable: false);
+
+        // when
+        var action = () => Argument.CanWrite(stream);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
+    }
+
+    [Fact]
+    public void can_seek_should_throw_when_stream_cannot_seek()
+    {
+        // given
+        using var stream = new NonSeekableStream();
+
+        // when
+        var action = () => Argument.CanSeek(stream);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
+    }
+
+    // Helper classes for testing
+
+    private sealed class NonReadableStream : MemoryStream
+    {
+        public override bool CanRead => false;
+    }
+
+    private sealed class NonSeekableStream : MemoryStream
+    {
+        public override bool CanSeek => false;
+    }
 }
