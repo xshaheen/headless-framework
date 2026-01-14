@@ -334,8 +334,12 @@ public sealed class PermissionGrantStore(
         );
 
         var definitions = await _GetDbPermissionsDefinitionsAsync(names, cancellationToken);
-        var dbPermissionGrants = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
-        var dbPermissionGrantNames = dbPermissionGrants.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        var dbPermissionGrantNames = await _GetGrantedPermissionNamesAsync(
+            names,
+            providerName,
+            providerKey,
+            cancellationToken
+        );
 
         logger.LogDebug("Setting the cache items. Count: {PermissionsCount}", definitions.Length);
 
@@ -369,8 +373,7 @@ public sealed class PermissionGrantStore(
             providerKey
         );
 
-        var dbRecords = await repository.GetListAsync(providerName, providerKey, cancellationToken);
-        var grantedPermissions = dbRecords.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        var grantedPermissions = await _GetGrantedPermissionNamesAsync(providerName, providerKey, cancellationToken);
 
         logger.LogDebug("Permissions - Set the cache items. Count: {DefinitionsCount}", definitions.Count);
 
@@ -420,6 +423,27 @@ public sealed class PermissionGrantStore(
         Ensure.True(permissionName is not null, $"Invalid permission cache key `{key}` permission name not found");
 
         return permissionName;
+    }
+
+    private async Task<HashSet<string>> _GetGrantedPermissionNamesAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbRecords = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        return dbRecords.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+    }
+
+    private async Task<HashSet<string>> _GetGrantedPermissionNamesAsync(
+        IReadOnlyCollection<string> names,
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbRecords = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
+        return dbRecords.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
     }
 
     #endregion
