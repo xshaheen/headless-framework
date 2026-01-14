@@ -153,7 +153,7 @@ public sealed class FeatureValueStore(
         return featureValueToFind;
     }
 
-    private async Task<Dictionary<string, string?>> _GetProviderValuesMapAsync(
+    private async Task<Dictionary<string, string>> _GetProviderValuesMapAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken

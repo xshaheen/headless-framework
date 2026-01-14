@@ -80,23 +80,29 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_set_multiple_query_params_from_anon_object()
     {
-        var url = "http://www.mysite.com".SetQueryParams(new {
-            x = 1,
-            y = 2,
-            z = new[] { 3, 4 },
-            exclude_me = (string?)null
-        });
+        var url = "http://www.mysite.com".SetQueryParams(
+            new
+            {
+                x = 1,
+                y = 2,
+                z = new[] { 3, 4 },
+                exclude_me = (string?)null,
+            }
+        );
         url.ToString().Should().Be("http://www.mysite.com?x=1&y=2&z=3&z=4");
     }
 
     [Fact]
     public void should_replace_query_params_from_anon_object()
     {
-        var url = "http://www.mysite.com?x=1&y=2&z=3".SetQueryParams(new {
-            x = 8,
-            y = new[] { "a", "b" },
-            z = (int?)null
-        });
+        var url = "http://www.mysite.com?x=1&y=2&z=3".SetQueryParams(
+            new
+            {
+                x = 8,
+                y = new[] { "a", "b" },
+                z = (int?)null,
+            }
+        );
         url.ToString().Should().Be("http://www.mysite.com?x=8&y=a&y=b");
     }
 
@@ -118,11 +124,9 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_set_query_params_from_kv_pairs()
     {
-        var url = "http://foo.com".SetQueryParams(new[] {
-            new { key = "x", value = 1 },
-            new { key = "y", value = 2 },
-            new { key = "x", value = 3 }
-        });
+        var url = "http://foo.com".SetQueryParams(
+            new[] { new { key = "x", value = 1 }, new { key = "y", value = 2 }, new { key = "x", value = 3 } }
+        );
 
         url.ToString().Should().Be("http://foo.com?x=1&y=2&x=3");
     }
@@ -255,7 +259,14 @@ public sealed class UrlBuildingTests
     public void should_do_crazy_long_fluent_expression()
     {
         var url = "http://www.mysite.com"
-            .SetQueryParams(new { a = 1, b = 2, c = 999 })
+            .SetQueryParams(
+                new
+                {
+                    a = 1,
+                    b = 2,
+                    c = 999,
+                }
+            )
             .SetFragment("fooey")
             .AppendPathSegment("category")
             .RemoveQueryParam("c")
@@ -343,9 +354,7 @@ public sealed class UrlBuildingTests
     public void should_have_fragment_after_setqueryparam()
     {
         var expected = "http://www.mysite.com/more?x=1#first";
-        var url = new Url(expected)
-            .SetQueryParam("x", 3)
-            .SetQueryParam("y", 4);
+        var url = new Url(expected).SetQueryParam("x", 3).SetQueryParam("y", 4);
         url.ToString().Should().Be("http://www.mysite.com/more?x=3&y=4#first");
     }
 
@@ -378,24 +387,24 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_write_scheme()
     {
-        var url = new Url("https://api.com/foo");
-        url.Scheme = "ftp";
+        var url = new Url("https://api.com/foo") { Scheme = "ftp" };
+
         url.ToString().Should().Be("ftp://api.com/foo");
     }
 
     [Fact]
     public void should_write_host()
     {
-        var url = new Url("https://api.com/foo");
-        url.Host = "www.othersite.net";
+        var url = new Url("https://api.com/foo") { Host = "www.othersite.net" };
+
         url.ToString().Should().Be("https://www.othersite.net/foo");
     }
 
     [Fact]
     public void should_write_port()
     {
-        var url = new Url("https://api.com/foo");
-        url.Port = 1234;
+        var url = new Url("https://api.com/foo") { Port = 1234 };
+
         url.ToString().Should().Be("https://api.com:1234/foo");
         url.Port = null;
         url.ToString().Should().Be("https://api.com/foo");
@@ -404,8 +413,8 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_write_path()
     {
-        var url = new Url("https://api.com/foo");
-        url.Path = "/a/b/c/";
+        var url = new Url("https://api.com/foo") { Path = "/a/b/c/" };
+
         url.ToString().Should().Be("https://api.com/a/b/c/");
         url.Path = "a/b/c";
         url.ToString().Should().Be("https://api.com/a/b/c");
@@ -418,8 +427,8 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_write_query()
     {
-        var url = new Url("https://api.com/foo?x=0#bar");
-        url.Query = "y=1&z=2";
+        var url = new Url("https://api.com/foo?x=0#bar") { Query = "y=1&z=2" };
+
         url.ToString().Should().Be("https://api.com/foo?y=1&z=2#bar");
         url.Query = null!;
         url.ToString().Should().Be("https://api.com/foo#bar");
@@ -428,8 +437,8 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_write_fragment()
     {
-        var url = new Url("https://api.com/");
-        url.Fragment = "hello";
+        var url = new Url("https://api.com/") { Fragment = "hello" };
+
         url.ToString().Should().Be("https://api.com/#hello");
         url.Fragment = null!;
         url.ToString().Should().Be("https://api.com/");
@@ -451,10 +460,7 @@ public sealed class UrlBuildingTests
         var url1 = new Url();
         url1.ToString().Should().Be("");
 
-        var url2 = new Url {
-            Host = "192.168.1.1",
-            Scheme = "http"
-        };
+        var url2 = new Url { Host = "192.168.1.1", Scheme = "http" };
         url2.ToString().Should().Be("http://192.168.1.1");
     }
 

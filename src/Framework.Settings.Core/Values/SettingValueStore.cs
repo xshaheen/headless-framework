@@ -320,7 +320,7 @@ public sealed class SettingValueStore(
         return settingName;
     }
 
-    private async Task<Dictionary<string, string?>> _GetProviderValuesMapAsync(
+    private async Task<Dictionary<string, string>> _GetProviderValuesMapAsync(
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken
@@ -330,7 +330,7 @@ public sealed class SettingValueStore(
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 
-    private async Task<Dictionary<string, string?>> _GetProviderValuesMapAsync(
+    private async Task<Dictionary<string, string>> _GetProviderValuesMapAsync(
         HashSet<string> names,
         string providerName,
         string? providerKey,
