@@ -17,7 +17,6 @@ public sealed class AwsBlobStorageFixture(IMessageSink messageSink)
             .WithImage("localstack/localstack:4.0.3")
             .WithEnvironment("SERVICES", "s3")
             .WithEnvironment("DEBUG", "1")
-            .WithPortBinding(8055, 8080)
-            .WithReuse(true);
+            .WithPortBinding(8055, 8080);
     }
 }
