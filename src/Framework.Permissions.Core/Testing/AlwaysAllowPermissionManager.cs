@@ -20,7 +20,7 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
         return Task.FromResult(new GrantedPermissionResult(permissionName, isGranted: true));
     }
 
-    public async Task<List<GrantedPermissionResult>> GetAllAsync(
+    public async Task<IReadOnlyList<GrantedPermissionResult>> GetAllAsync(
         ICurrentUser currentUser,
         string? providerName = null,
         CancellationToken cancellationToken = default
@@ -31,14 +31,16 @@ public sealed class AlwaysAllowPermissionManager(IPermissionDefinitionManager de
         return definitions.Select(x => new GrantedPermissionResult(x.Name, isGranted: true)).ToList();
     }
 
-    public Task<List<GrantedPermissionResult>> GetAllAsync(
+    public Task<IReadOnlyList<GrantedPermissionResult>> GetAllAsync(
         IReadOnlyCollection<string> permissionNames,
         ICurrentUser currentUser,
         string? providerName = null,
         CancellationToken cancellationToken = default
     )
     {
-        return Task.FromResult(permissionNames.Select(x => new GrantedPermissionResult(x, isGranted: true)).ToList());
+        return Task.FromResult<IReadOnlyList<GrantedPermissionResult>>(
+            permissionNames.Select(x => new GrantedPermissionResult(x, isGranted: true)).ToList()
+        );
     }
 
     public Task SetAsync(
