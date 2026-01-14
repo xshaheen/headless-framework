@@ -144,6 +144,14 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
+        if (float.IsInfinity(argument) || float.IsNaN(argument))
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
+            );
+        }
+
         return argument < 0
             ? argument
             : throw new ArgumentOutOfRangeException(
@@ -161,6 +169,14 @@ public static partial class Argument
         [CallerArgumentExpression(nameof(argument))] string? paramName = null
     )
     {
+        if (double.IsInfinity(argument) || double.IsNaN(argument))
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                message ?? $"The argument {paramName.ToAssertString()} cannot be non negative."
+            );
+        }
+
         return argument < 0
             ? argument
             : throw new ArgumentOutOfRangeException(
