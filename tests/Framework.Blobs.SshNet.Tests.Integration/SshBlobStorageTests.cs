@@ -22,14 +22,14 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
-    public void can_create_ssh_file_storage_without_Connection_string_password()
+    public async Task can_create_ssh_file_storage_without_Connection_string_password()
     {
         // given
         var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework@localhost:2222" };
         var optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(
+        await using var storage = new SshBlobStorage(
             fixture.Pool,
             fixture.CrossOsNamingNormalizer,
             optionsMonitor,
@@ -38,7 +38,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     }
 
     [Fact]
-    public void can_create_ssh_file_storage_without_proxy_password()
+    public async Task can_create_ssh_file_storage_without_proxy_password()
     {
         // given
         var options = new SshBlobStorageOptions
@@ -49,7 +49,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         var optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(
+        await using var storage = new SshBlobStorage(
             fixture.Pool,
             fixture.CrossOsNamingNormalizer,
             optionsMonitor,
@@ -60,7 +60,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     [Fact]
     public async Task will_not_return_directory_in_get_page()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 

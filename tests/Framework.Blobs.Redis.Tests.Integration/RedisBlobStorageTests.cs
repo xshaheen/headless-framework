@@ -191,7 +191,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             MaxBlobSizeBytes = 100, // 100 bytes limit
         };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
-        using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
 
         var largeData = new byte[200]; // Exceeds 100 byte limit
         Array.Fill(largeData, (byte)'x');
@@ -212,11 +212,11 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             MaxBlobSizeBytes = 1000,
         };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
-        using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
 
         var data = new byte[500]; // Within limit
         Array.Fill(data, (byte)'x');
-        using var stream = new MemoryStream(data);
+        await using var stream = new MemoryStream(data);
 
         // Act & Assert
         Func<Task> act = async () => await storage.UploadAsync(["test-container"], "small-blob.bin", stream);
@@ -233,7 +233,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
             MaxBlobSizeBytes = 0, // Disabled
         };
         var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
-        using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
 
         var data = new byte[1000];
         Array.Fill(data, (byte)'x');

@@ -28,7 +28,7 @@ public partial class PaymobCashInAuthenticatorTests
             .RespondWith(Response.Create().WithBody(expectedResponseJson));
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(
+        using var authenticator = new PaymobCashInAuthenticator(
             fixture.HttpClientFactory,
             fixture.TimeProvider,
             fixture.OptionsAccessor
@@ -55,7 +55,7 @@ public partial class PaymobCashInAuthenticatorTests
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.InternalServerError).WithBody(body));
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(
+        using var authenticator = new PaymobCashInAuthenticator(
             fixture.HttpClientFactory,
             fixture.TimeProvider,
             fixture.OptionsAccessor

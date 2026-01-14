@@ -19,10 +19,14 @@ public partial class PaymobCashInAuthenticatorTests
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClientFactory, timeProvider, fixture.OptionsAccessor);
-        var result1 = await authenticator.GetAuthenticationTokenAsync();
+        using var authenticator = new PaymobCashInAuthenticator(
+            fixture.HttpClientFactory,
+            timeProvider,
+            fixture.OptionsAccessor
+        );
+        var result1 = await authenticator.GetAuthenticationTokenAsync(AbortToken);
         timeProvider.Advance(61.Minutes());
-        var result2 = await authenticator.GetAuthenticationTokenAsync();
+        var result2 = await authenticator.GetAuthenticationTokenAsync(AbortToken);
 
         // then
         result1.Should().NotBe(result2);
@@ -36,10 +40,14 @@ public partial class PaymobCashInAuthenticatorTests
         _SetupRandomResponse();
 
         // when
-        var authenticator = new PaymobCashInAuthenticator(fixture.HttpClientFactory, timeProvider, fixture.OptionsAccessor);
-        var result1 = await authenticator.GetAuthenticationTokenAsync();
+        using var authenticator = new PaymobCashInAuthenticator(
+            fixture.HttpClientFactory,
+            timeProvider,
+            fixture.OptionsAccessor
+        );
+        var result1 = await authenticator.GetAuthenticationTokenAsync(AbortToken);
         timeProvider.Advance(50.Minutes());
-        var result2 = await authenticator.GetAuthenticationTokenAsync();
+        var result2 = await authenticator.GetAuthenticationTokenAsync(AbortToken);
 
         // then
         result1.Should().Be(result2);

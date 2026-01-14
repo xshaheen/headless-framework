@@ -134,7 +134,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     {
         var container = Container;
         var containerName = ContainerName;
-        using var storage = (FileSystemBlobStorage)GetStorage();
+        await using var storage = (FileSystemBlobStorage)GetStorage();
         await ResetAsync(storage);
 
         var result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);

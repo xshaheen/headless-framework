@@ -706,7 +706,7 @@ public sealed class AzureBlobStorage(
 
     #region Dispose
 
-    public void Dispose() { }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     #endregion
 }

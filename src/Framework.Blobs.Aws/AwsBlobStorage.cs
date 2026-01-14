@@ -827,7 +827,7 @@ public sealed class AwsBlobStorage(
 
     #region Dispose
 
-    public void Dispose() { }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     #endregion
 }
