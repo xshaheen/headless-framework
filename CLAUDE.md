@@ -22,6 +22,95 @@ dotnet test --filter "FullyQualifiedName~method_name"  # Single test
 dotnet csharpier .    # Format code
 ```
 
+## Code Coverage Analysis
+
+Run comprehensive code coverage analysis with Coverlet and generate HTML reports:
+
+```bash
+# Run coverage for a specific test project
+./build.sh CoverageAnalysis --test-project Framework.Checks.Tests.Unit
+
+# With custom thresholds (default: 80% for both)
+./build.sh CoverageAnalysis \
+  --test-project Framework.Checks.Tests.Unit \
+  --coverage-line-threshold 85 \
+  --coverage-branch-threshold 80
+
+# Agent-friendly JSON output
+./build.sh CoverageAnalysis \
+  --test-project Framework.Checks.Tests.Unit \
+  --coverage-json-output
+```
+
+**JSON Output Format** (with `--coverage-json-output`):
+
+```json
+{
+  "success": true,
+  "timestamp": "2026-01-14T21:31:14.655442Z",
+  "testProject": "Framework.Checks.Tests.Unit",
+  "coverage": {
+    "line": {
+      "percentage": 88.1,
+      "covered": 779,
+      "coverable": 884
+    },
+    "branch": {
+      "percentage": 81.1,
+      "covered": 383,
+      "total": 472
+    }
+  },
+  "thresholds": {
+    "line": 80,
+    "branch": 80
+  },
+  "meetsThresholds": true,
+  "reports": {
+    "html": "/absolute/path/coverage/html/index.html",
+    "summary": "/absolute/path/coverage/html/Summary.txt",
+    "cobertura": "/absolute/path/TestResults/coverage.cobertura.xml"
+  }
+}
+```
+
+**Output:**
+- **Coverage results**: `tests/{ProjectName}/TestResults/**/coverage.cobertura.xml`
+- **HTML report**: `coverage/html/index.html`
+- **Text summary**: `coverage/html/Summary.txt`
+
+**Configure thresholds in test project** (recommended):
+
+```xml
+<PropertyGroup>
+  <CollectCoverage>true</CollectCoverage>
+  <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+  <Threshold>80</Threshold>
+  <ThresholdType>line,branch</ThresholdType>
+  <ThresholdStat>total</ThresholdStat>
+  <ExcludeByAttribute>CompilerGenerated,GeneratedCode,ExcludeFromCodeCoverage</ExcludeByAttribute>
+</PropertyGroup>
+```
+
+**Mutation Testing** (verify test quality):
+
+```bash
+# Install Stryker.NET (one-time)
+dotnet tool install --global dotnet-stryker
+
+# Run from test project directory
+cd tests/Framework.Checks.Tests.Unit
+dotnet stryker --reporter html --reporter progress --threshold-high 85 --threshold-low 70
+
+# View report
+open StrykerOutput/*/reports/mutation-report.html
+```
+
+**Coverage targets:**
+- **Line coverage**: ≥85% (minimum: 80%)
+- **Branch coverage**: ≥80% (minimum: 70%)
+- **Mutation score**: ≥70% (goal: 85%+)
+
 ## Architecture Pattern
 
 Each feature follows **abstraction + provider pattern**:
