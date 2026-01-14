@@ -4,38 +4,21 @@ using Framework.Blobs;
 using Framework.Blobs.SshNet;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.TestSetup;
 
 // ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
-[Collection<SshBlobTestFixture>]
-public sealed class SshBlobStorageTests : BlobStorageTestsBase
+[Collection<SshBlobStorageFixture>]
+public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobStorageTestsBase
 {
-    private readonly SftpClientPool _pool;
-    private readonly OptionsMonitorWrapper<SshBlobStorageOptions> _optionsMonitor;
-    private readonly CrossOsNamingNormalizer _crossOsNamingNormalizer = new();
-    private readonly ILogger<SshBlobStorage> _logger;
-
-    public SshBlobStorageTests(SshBlobTestFixture fixture)
-    {
-        var options = new SshBlobStorageOptions { ConnectionString = fixture.GetConnectionString() };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
-        var logger = LoggerFactory.CreateLogger<SftpClientPool>();
-        _pool = new SftpClientPool(optionsWrapper, logger);
-        _optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
-        _logger = LoggerFactory.CreateLogger<SshBlobStorage>();
-    }
-
-    protected override ValueTask DisposeAsyncCore()
-    {
-        _pool.Dispose();
-        return base.DisposeAsyncCore();
-    }
-
     protected override IBlobStorage GetStorage()
     {
-        return new SshBlobStorage(_pool, _crossOsNamingNormalizer, _optionsMonitor, _logger);
+        return new SshBlobStorage(
+            fixture.Pool,
+            fixture.CrossOsNamingNormalizer,
+            fixture.OptionsMonitor,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
     }
 
     [Fact]
@@ -46,7 +29,12 @@ public sealed class SshBlobStorageTests : BlobStorageTestsBase
         var optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(_pool, _crossOsNamingNormalizer, optionsMonitor, _logger);
+        using var storage = new SshBlobStorage(
+            fixture.Pool,
+            fixture.CrossOsNamingNormalizer,
+            optionsMonitor,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
     }
 
     [Fact]
@@ -61,7 +49,12 @@ public sealed class SshBlobStorageTests : BlobStorageTestsBase
         var optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(_pool, _crossOsNamingNormalizer, optionsMonitor, _logger);
+        using var storage = new SshBlobStorage(
+            fixture.Pool,
+            fixture.CrossOsNamingNormalizer,
+            optionsMonitor,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
     }
 
     [Fact]
@@ -152,7 +145,7 @@ public sealed class SshBlobStorageTests : BlobStorageTestsBase
         return base.can_rename_files();
     }
 
-    [Fact(Skip = "Doesn't work well with SFTP")]
+    [Fact]
     public override Task can_concurrently_manage_files()
     {
         return base.can_concurrently_manage_files();

@@ -4,13 +4,12 @@ using Framework.Blobs;
 using Framework.Blobs.Redis;
 using Framework.Serializer;
 using Microsoft.Extensions.Options;
-using Tests.TestSetup;
 
 // ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
-[Collection<RedisTestFixture>]
-public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorageTestsBase
+[Collection<RedisBlobStorageFixture>]
+public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {

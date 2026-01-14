@@ -6,12 +6,11 @@ using Framework.Blobs;
 using Framework.Blobs.Azure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection<AzureBlobTestFixture>]
-public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorageTestsBase
+[Collection<AzureBlobStorageFixture>]
+public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {
