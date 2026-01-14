@@ -499,7 +499,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Download
 
-    public async ValueTask<BlobDownloadResult?> DownloadAsync(
+    public async ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -857,7 +857,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     #region Dispose
 
-    public void Dispose() { }
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     #endregion
 }

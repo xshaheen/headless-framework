@@ -5,7 +5,7 @@ using Framework.Primitives;
 namespace Framework.Blobs;
 
 [PublicAPI]
-public interface IBlobStorage : IDisposable
+public interface IBlobStorage : IAsyncDisposable
 {
     #region Create Container
 
@@ -89,7 +89,25 @@ public interface IBlobStorage : IDisposable
 
     #region Download
 
-    ValueTask<BlobDownloadResult?> DownloadAsync(
+    /// <summary>
+    /// Opens a read stream for the specified blob.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>IMPORTANT:</b> The returned stream should be disposed promptly after use.
+    /// Holding the stream open for extended periods may impact performance or exhaust
+    /// connection resources depending on the storage provider.
+    /// </para>
+    /// <para>
+    /// Always use <c>await using</c> or dispose the stream in a finally block.
+    /// </para>
+    /// </remarks>
+    /// <param name="container">Container path segments.</param>
+    /// <param name="blobName">Name of the blob to download.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Download result with stream, or null if blob not found.</returns>
+    [MustDisposeResource]
+    ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default

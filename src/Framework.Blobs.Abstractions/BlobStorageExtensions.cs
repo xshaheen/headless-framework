@@ -155,15 +155,14 @@ public static class BlobStorageExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var result = await storage.DownloadAsync(container, blobName, cancellationToken);
+            await using var result = await storage.OpenReadStreamAsync(container, blobName, cancellationToken);
 
             if (result is null)
             {
                 return null;
             }
 
-            await using var stream = result.Stream;
-            return await stream.GetAllTextAsync(cancellationToken);
+            return await result.Stream.GetAllTextAsync(cancellationToken);
         }
 
         [RequiresUnreferencedCode("Uses JSON serialization which might require types that cannot be statically analyzed.")]
