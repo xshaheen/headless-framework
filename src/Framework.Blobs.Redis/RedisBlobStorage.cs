@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
+using Framework.Blobs.Internals;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Core;
@@ -746,14 +747,16 @@ public sealed class RedisBlobStorage : IBlobStorage
             }
 
             // Update BlobKey to match actual hash field (handles rename case)
-            list.Add(new BlobInfo
-            {
-                BlobKey = actualKey,
-                Created = blobInfo.Created,
-                Modified = blobInfo.Modified,
-                Size = blobInfo.Size,
-                Metadata = blobInfo.Metadata,
-            });
+            list.Add(
+                new BlobInfo
+                {
+                    BlobKey = actualKey,
+                    Created = blobInfo.Created,
+                    Modified = blobInfo.Modified,
+                    Size = blobInfo.Size,
+                    Metadata = blobInfo.Metadata,
+                }
+            );
         }
 
         return list;
@@ -801,12 +804,8 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     private static string _BuildBlobPath(string[] container, string blobName)
     {
-        _ValidatePathTraversal(blobName, nameof(blobName));
-
-        foreach (var segment in container)
-        {
-            _ValidatePathTraversal(segment, nameof(container));
-        }
+        PathValidation.ValidatePathSegment(blobName);
+        PathValidation.ValidateContainer(container);
 
         if (container.Length == 1)
         {
@@ -814,19 +813,6 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
 
         return _NormalizePath(string.Join('/', container.Skip(1)).EnsureEndsWith('/') + blobName);
-    }
-
-    private static void _ValidatePathTraversal(string value, string paramName)
-    {
-        if (value.Contains("..", StringComparison.Ordinal))
-        {
-            throw new ArgumentException("Path traversal sequences are not allowed.", paramName);
-        }
-
-        if (value.StartsWith('/') || value.StartsWith('\\'))
-        {
-            throw new ArgumentException("Value cannot start with path separator.", paramName);
-        }
     }
 
     [return: NotNullIfNotNull(nameof(path))]

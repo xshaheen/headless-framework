@@ -600,6 +600,12 @@ public sealed class AzureBlobStorage(
 
     private List<Uri> _NormalizeBlobUrls(string[] container, IReadOnlyCollection<string> blobNames)
     {
+        PathValidation.ValidateContainer(container);
+        foreach (var blobName in blobNames)
+        {
+            PathValidation.ValidatePathSegment(blobName);
+        }
+
         var sb = new StringBuilder(blobServiceClient.Uri.AbsoluteUri);
         if (sb[^1] != '/')
             sb.Append('/');
@@ -622,27 +628,31 @@ public sealed class AzureBlobStorage(
         return result;
     }
 
-    private (string Container, string Blob) _NormalizeBlob(string[] containers, string blobName)
+    private (string Container, string Blob) _NormalizeBlob(string[] container, string blobName)
     {
+        PathValidation.ValidateContainer(container);
+        PathValidation.ValidatePathSegment(blobName);
+
         var normalizedBlobName = normalizer.NormalizeBlobName(blobName);
 
         var sb = new StringBuilder();
-        for (var i = 1; i < containers.Length; i++)
+        for (var i = 1; i < container.Length; i++)
         {
             if (sb.Length > 0)
                 sb.Append('/');
-            sb.Append(_NormalizeContainerName(containers[i]));
+            sb.Append(_NormalizeContainerName(container[i]));
         }
         if (sb.Length > 0)
             sb.Append('/');
         sb.Append(_NormalizeSlashes(normalizedBlobName));
 
-        return (_GetContainer(containers), sb.ToString());
+        return (_GetContainer(container), sb.ToString());
     }
 
-    private string _GetContainer(string[] containers)
+    private string _GetContainer(string[] container)
     {
-        return _NormalizeContainerName(containers[0]);
+        PathValidation.ValidateContainer(container);
+        return _NormalizeContainerName(container[0]);
     }
 
     private string _NormalizeContainerName(string containerName)

@@ -483,16 +483,8 @@ public sealed class SshBlobStorage(
         // Validate paths before try-catch to ensure security exceptions propagate
         PathValidation.ValidatePathSegment(blobName);
         PathValidation.ValidatePathSegment(newBlobName);
-
-        foreach (var segment in blobContainer)
-        {
-            PathValidation.ValidatePathSegment(segment, nameof(blobContainer));
-        }
-
-        foreach (var segment in newBlobContainer)
-        {
-            PathValidation.ValidatePathSegment(segment, nameof(newBlobContainer));
-        }
+        PathValidation.ValidateContainer(blobContainer);
+        PathValidation.ValidateContainer(newBlobContainer);
 
         logger.LogInformation(
             "Copying {@Container}/{Path} to {@TargetContainer}/{TargetPath}",
@@ -1049,6 +1041,7 @@ public sealed class SshBlobStorage(
     private string _BuildBlobPath(string[] container, string blobName)
     {
         PathValidation.ValidatePathSegment(blobName);
+        PathValidation.ValidateContainer(container);
 
         var normalizedBlobName = normalizer.NormalizeBlobName(blobName);
 
@@ -1061,8 +1054,6 @@ public sealed class SshBlobStorage(
 
         foreach (var segment in container)
         {
-            PathValidation.ValidatePathSegment(segment, nameof(container));
-
             if (sb.Length > 0)
             {
                 sb.Append('/');
@@ -1088,10 +1079,11 @@ public sealed class SshBlobStorage(
             return "";
         }
 
+        PathValidation.ValidateContainer(container);
+
         var normalizedSegments = new string[container.Length];
         for (var i = 0; i < container.Length; i++)
         {
-            PathValidation.ValidatePathSegment(container[i], nameof(container));
             normalizedSegments[i] = normalizer.NormalizeContainerName(container[i]);
         }
 

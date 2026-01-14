@@ -758,6 +758,9 @@ public sealed class AwsBlobStorage(
         Argument.IsNotNullOrWhiteSpace(blobName);
         Argument.IsNotNullOrEmpty(container);
 
+        PathValidation.ValidateContainer(container);
+        PathValidation.ValidatePathSegment(blobName);
+
         var bucket = container[0];
         var objectKey = Url.Combine([.. container.Skip(1).Append(blobName)]);
 
@@ -766,6 +769,7 @@ public sealed class AwsBlobStorage(
 
     private static string _BuildBucketName(string[] container)
     {
+        PathValidation.ValidateContainer(container);
         return container[0];
     }
 
