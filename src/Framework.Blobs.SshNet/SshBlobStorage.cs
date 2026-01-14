@@ -622,23 +622,30 @@ public sealed class SshBlobStorage(
         logger.LogTrace("Getting file stream for {Path}", blobPath);
 
         var client = await pool.AcquireAsync(cancellationToken).AnyContext();
+
         try
         {
-            await using var sftpStream = await client
+            var sftpStream = await client
                 .OpenAsync(blobPath, FileMode.Open, FileAccess.Read, cancellationToken)
                 .AnyContext();
 
-            return new BlobDownloadResult(sftpStream, blobName);
+            var wrappedStream = new PooledClientStream(sftpStream, client, pool);
+
+#pragma warning disable CA2000 // Dispose objects before losing scope - ownership transferred to caller
+            return new BlobDownloadResult(wrappedStream, blobName);
+#pragma warning restore CA2000
         }
         catch (SftpPathNotFoundException ex)
         {
             logger.LogError(ex, "Unable to get file stream for {Path}: File Not Found", blobPath);
+            await pool.ReleaseAsync(client).AnyContext();
 
             return null;
         }
-        finally
+        catch
         {
             await pool.ReleaseAsync(client).AnyContext();
+            throw;
         }
     }
 
@@ -871,6 +878,38 @@ public sealed class SshBlobStorage(
         return page.ToList();
     }
 
+    private static async IAsyncEnumerable<ISftpFile> _SafeListDirectoryAsync(
+        IAsyncEnumerable<ISftpFile> files,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        var enumerator = files.GetAsyncEnumerator(cancellationToken);
+        await using (enumerator)
+        {
+            while (true)
+            {
+                bool hasNext;
+
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (SftpPathNotFoundException)
+                {
+                    // Directory was deleted during iteration - stop enumeration
+                    yield break;
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+    }
+
     private async IAsyncEnumerable<BlobInfo> _GetBlobsRecursivelyAsync(
         SftpClient client,
         string baseContainer,
@@ -899,7 +938,7 @@ public sealed class SshBlobStorage(
             yield break;
         }
 
-        await foreach (var file in files.AnyContext())
+        await foreach (var file in _SafeListDirectoryAsync(files, cancellationToken).AnyContext())
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -912,7 +951,7 @@ public sealed class SshBlobStorage(
                 continue;
             }
 
-            if (!file.IsRegularFile && !file.IsDirectory)
+            if (file is { IsRegularFile: false, IsDirectory: false })
             {
                 continue;
             }
@@ -1084,5 +1123,75 @@ public sealed class SshBlobStorage(
     {
         // Pool is managed by DI container - don't dispose here
         return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Wrapper stream that releases the SFTP client back to the pool when disposed.
+/// Allows the caller to own the stream lifetime while properly managing the pooled client.
+/// </summary>
+file sealed class PooledClientStream(Stream innerStream, SftpClient client, SftpClientPool pool) : Stream
+{
+    private bool _disposed;
+
+    public override bool CanRead => innerStream.CanRead;
+    public override bool CanSeek => innerStream.CanSeek;
+    public override bool CanWrite => innerStream.CanWrite;
+    public override long Length => innerStream.Length;
+
+    public override long Position
+    {
+        get => innerStream.Position;
+        set => innerStream.Position = value;
+    }
+
+    public override void Flush() => innerStream.Flush();
+
+    public override int Read(byte[] buffer, int offset, int count) => innerStream.Read(buffer, offset, count);
+
+    public override long Seek(long offset, SeekOrigin origin) => innerStream.Seek(offset, origin);
+
+    public override void SetLength(long value) => innerStream.SetLength(value);
+
+    public override void Write(byte[] buffer, int offset, int count) => innerStream.Write(buffer, offset, count);
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        innerStream.ReadAsync(buffer, offset, count, cancellationToken);
+
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        innerStream.ReadAsync(buffer, cancellationToken);
+
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        innerStream.WriteAsync(buffer, offset, count, cancellationToken);
+
+    public override ValueTask WriteAsync(
+        ReadOnlyMemory<byte> buffer,
+        CancellationToken cancellationToken = default
+    ) => innerStream.WriteAsync(buffer, cancellationToken);
+
+    public override Task FlushAsync(CancellationToken cancellationToken) => innerStream.FlushAsync(cancellationToken);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (!_disposed && disposing)
+        {
+            innerStream.Dispose();
+            pool.ReleaseAsync(client).AsTask().GetAwaiter().GetResult();
+            _disposed = true;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (!_disposed)
+        {
+            await innerStream.DisposeAsync().ConfigureAwait(false);
+            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            _disposed = true;
+        }
+
+        await base.DisposeAsync().ConfigureAwait(false);
     }
 }
