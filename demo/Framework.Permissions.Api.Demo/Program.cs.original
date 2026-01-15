@@ -1,0 +1,238 @@
+using System.ComponentModel.DataAnnotations;
+using Framework.Abstractions;
+using Framework.Permissions;
+using Framework.Permissions.Definitions;
+using Framework.Permissions.Grants;
+using Framework.Permissions.Models;
+using Framework.Permissions.Api.Demo.Models;
+using Microsoft.AspNetCore.Mvc;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add permissions management core
+// Note: In a real application, you would also call:
+// builder.Services.AddPermissionsManagementDbContextStorage(...)
+// to configure the database storage
+builder.Services.AddPermissionsManagementCore();
+
+// Configure OpenAPI documentation
+builder.Services.AddHeadlessNswagOpenApi(c =>
+{
+    c.Title = "Permissions Management API";
+    c.Description = "Demo API for Framework.Permissions - permission definitions, grants, and checks";
+    c.Version = "v1";
+});
+
+// Configure CSRF protection for state-changing endpoints
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.Name = "X-CSRF-TOKEN";
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.HttpOnly = true;
+});
+
+// Configure authorization policies
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("PermissionsManage", policy =>
+        policy.RequireAssertion(context =>
+            context.User.Identity?.IsAuthenticated == true &&
+            (context.User.IsInRole("Admin") || context.User.IsInRole("PermissionsAdmin"))));
+});
+
+var app = builder.Build();
+
+// Input validation helper
+static IResult? ValidateInput<T>(T model)
+{
+    var context = new ValidationContext(model);
+    var results = new List<ValidationResult>();
+    if (!Validator.TryValidateObject(model, context, results, validateAllProperties: true))
+    {
+        var errors = results.ToDictionary(
+            vr => vr.MemberNames.FirstOrDefault() ?? "general",
+            vr => vr.ErrorMessage ?? "Validation failed");
+
+        return Results.ValidationProblem(
+            errors,
+            type: "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+            title: "Validation Failed",
+            statusCode: 400);
+    }
+    return null;
+}
+
+// Query parameter validation helper
+static IResult? ValidateQueryParameter(string value, string paramName, int maxLength = 256)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return Results.BadRequest(new
+        {
+            type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+            title = "Bad Request",
+            status = 400,
+            detail = $"{paramName} is required and cannot be empty"
+        });
+    }
+
+    if (value.Length > maxLength)
+    {
+        return Results.BadRequest(new
+        {
+            type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+            title = "Bad Request",
+            status = 400,
+            detail = $"{paramName} must not exceed {maxLength} characters"
+        });
+    }
+
+    return null;
+}
+
+// Configure middleware pipeline
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapFrameworkNswagOpenApi();
+
+// List all permission definitions
+app.MapGet("/api/permissions", async (
+    IPermissionDefinitionManager definitionManager,
+    CancellationToken ct) =>
+{
+    var permissions = await definitionManager.GetPermissionsAsync(ct);
+    return Results.Ok(permissions);
+})
+.RequireAuthorization()
+.WithSummary("List all permission definitions")
+.WithDescription("Retrieves all registered permission definitions in the system")
+.Produces<PermissionDefinition[]>(StatusCodes.Status200OK)
+.Produces(StatusCodes.Status401Unauthorized);
+
+// Get single permission definition
+app.MapGet("/api/permissions/{name}", async (
+    string name,
+    IPermissionDefinitionManager definitionManager,
+    CancellationToken ct) =>
+{
+    var validationError = ValidateQueryParameter(name, "name");
+    if (validationError is not null)
+    {
+        return validationError;
+    }
+
+    var permission = await definitionManager.FindAsync(name, ct);
+    return permission is null
+        ? Results.NotFound(new { type = "https://tools.ietf.org/html/rfc9110#section-15.5.5", title = "Not Found", status = 404, detail = $"Permission '{name}' not found" })
+        : Results.Ok(permission);
+}).RequireAuthorization();
+
+// Check permissions for current user
+app.MapGet("/api/permissions/check", async (
+    [FromQuery] string[] names,
+    IPermissionManager permissionManager,
+    ICurrentUser currentUser,
+    CancellationToken ct) =>
+{
+    if (names.Length == 0)
+    {
+        return Results.BadRequest(new { type = "https://tools.ietf.org/html/rfc9110#section-15.5.1", title = "Bad Request", status = 400, detail = "At least one permission name is required" });
+    }
+
+    // Validate each permission name
+    foreach (var name in names)
+    {
+        var validationError = ValidateQueryParameter(name, "name");
+        if (validationError is not null)
+        {
+            return validationError;
+        }
+    }
+
+    var results = await permissionManager.GetAllAsync(names, currentUser, cancellationToken: ct);
+    return Results.Ok(results);
+}).RequireAuthorization();
+
+// Grant permission
+app.MapPost("/api/permissions/grants", async (
+    [FromBody] GrantPermissionRequest request,
+    IPermissionManager permissionManager,
+    ICurrentUser currentUser,
+    CancellationToken ct) =>
+{
+    // Validate request model
+    var validationError = ValidateInput(request);
+    if (validationError is not null)
+    {
+        return validationError;
+    }
+
+    // Prevent self-grant to avoid privilege escalation
+    if (request.ProviderName == "User" &&
+        request.ProviderKey == currentUser.UserId?.Value)
+    {
+        return Results.Conflict(new
+        {
+            type = "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+            title = "Conflict",
+            status = 409,
+            detail = "Cannot grant permissions to yourself",
+            code = "SelfGrantProhibited"
+        });
+    }
+
+    await permissionManager.SetAsync(
+        request.Name,
+        request.ProviderName,
+        request.ProviderKey,
+        isGranted: true,
+        ct);
+
+    return Results.NoContent();
+}).RequireAuthorization("PermissionsManage")
+  .RequireAntiforgery();
+
+// Revoke permission
+app.MapDelete("/api/permissions/grants", async (
+    [FromQuery] string name,
+    [FromQuery] string providerName,
+    [FromQuery] string providerKey,
+    IPermissionManager permissionManager,
+    CancellationToken ct) =>
+{
+    var nameValidation = ValidateQueryParameter(name, "name");
+    if (nameValidation is not null) return nameValidation;
+
+    var providerNameValidation = ValidateQueryParameter(providerName, "providerName", 128);
+    if (providerNameValidation is not null) return providerNameValidation;
+
+    var providerKeyValidation = ValidateQueryParameter(providerKey, "providerKey");
+    if (providerKeyValidation is not null) return providerKeyValidation;
+
+    await permissionManager.SetAsync(name, providerName, providerKey, isGranted: false, ct);
+    return Results.NoContent();
+}).RequireAuthorization("PermissionsManage")
+  .RequireAntiforgery();
+
+// Revoke all permissions for provider
+app.MapDelete("/api/permissions/grants/{providerName}/{providerKey}", async (
+    string providerName,
+    string providerKey,
+    IPermissionManager permissionManager,
+    CancellationToken ct) =>
+{
+    var providerNameValidation = ValidateQueryParameter(providerName, "providerName", 128);
+    if (providerNameValidation is not null) return providerNameValidation;
+
+    var providerKeyValidation = ValidateQueryParameter(providerKey, "providerKey");
+    if (providerKeyValidation is not null) return providerKeyValidation;
+
+    await permissionManager.DeleteAsync(providerName, providerKey, ct);
+    return Results.NoContent();
+}).RequireAuthorization("PermissionsManage")
+  .RequireAntiforgery();
+
+await app.RunAsync();
