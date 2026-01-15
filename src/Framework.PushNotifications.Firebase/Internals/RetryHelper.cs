@@ -27,11 +27,13 @@ internal static class RetryHelper
     /// - SenderIdMismatch: Wrong credentials → Don't retry (config error)
     /// - ThirdPartyAuthError: Bad APNs cert → Don't retry (config error)
     /// </remarks>
-    public static bool IsTransientError(FirebaseMessagingException exception) =>
-        exception.MessagingErrorCode
+    public static bool IsTransientError(FirebaseMessagingException exception)
+    {
+        return exception.MessagingErrorCode
             is MessagingErrorCode.QuotaExceeded
                 or MessagingErrorCode.Unavailable
                 or MessagingErrorCode.Internal;
+    }
 
     /// <summary>
     /// Extracts Retry-After delay from HTTP response headers, if present.
@@ -48,11 +50,15 @@ internal static class RetryHelper
     public static TimeSpan GetRetryAfterDelay(FirebaseMessagingException exception, TimeSpan defaultDelay)
     {
         if (exception.HttpResponse?.Headers.RetryAfter is not { } retryAfter)
+        {
             return defaultDelay;
+        }
 
         // Retry-After can be delta-seconds or HTTP-date
         if (retryAfter.Delta.HasValue)
+        {
             return retryAfter.Delta.Value;
+        }
 
         if (retryAfter.Date.HasValue)
         {

@@ -18,8 +18,8 @@ namespace Framework.PushNotifications.Firebase;
 /// using exponential backoff with jitter. Permanent errors (invalid tokens, malformed requests) return immediately.
 /// Retry behavior configurable via <see cref="FirebaseOptions.Retry"/>.
 /// </remarks>
-public sealed class GoogleCloudMessagingPushNotificationService(
-    ILogger<GoogleCloudMessagingPushNotificationService> logger,
+public sealed class FcmPushNotificationService(
+    ILogger<FcmPushNotificationService> logger,
     ResiliencePipelineProvider<string> pipelineProvider
 ) : IPushNotificationService
 {
@@ -27,7 +27,7 @@ public sealed class GoogleCloudMessagingPushNotificationService(
     private const int _MaxBodyLength = 4000;
     private const int _MaxTokensPerBatch = 500;
 
-    private readonly ResiliencePipeline _retryPipeline = pipelineProvider.GetPipeline("fcm-retry");
+    private readonly ResiliencePipeline _retryPipeline = pipelineProvider.GetPipeline("Headless:FcmRetry");
 
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
