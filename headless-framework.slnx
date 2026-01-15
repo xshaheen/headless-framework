@@ -91,7 +91,6 @@
         <Project Path="src/Framework.Domains/Framework.Domains.csproj" />
         <Project Path="src/Framework.Hosting/Framework.Hosting.csproj" />
         <Project Path="src/Framework.NetTopologySuite/Framework.NetTopologySuite.csproj" />
-        <Project Path="src/Framework.Specifications/Framework.Specifications.csproj" />
         <Project Path="src/Framework.Testing.Testcontainers/Framework.Testing.Testcontainers.csproj" />
         <Project Path="src/Framework.Testing/Framework.Testing.csproj" />
         <Project Path="src\Framework.Domains.DistributedMessagePublisher.Cap\Framework.Domains.DistributedMessagePublisher.Cap.csproj" />
@@ -101,7 +100,6 @@
         <Project Path="tests/Framework.Checks.Tests.Unit/Framework.Checks.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Domains.Tests.Unit/Framework.Domains.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Hosting.Tests.Unit/Framework.Hosting.Tests.Unit.csproj" />
-        <Project Path="tests/Framework.Specifications.Tests.Unit/Framework.Specifications.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Locks/">
         <Project Path="src/Framework.ResourceLocks.Cache/Framework.ResourceLocks.Cache.csproj" />
