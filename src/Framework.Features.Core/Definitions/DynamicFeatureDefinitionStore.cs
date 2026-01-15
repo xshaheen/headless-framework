@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Immutable;
 using System.Text.Json.Serialization.Metadata;
 using Framework.Abstractions;
 using Framework.Caching;
@@ -60,10 +61,20 @@ public sealed class DynamicFeatureDefinitionStore(
             return null;
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            var cache = _featureMemoryCache; // Capture local reference for thread safety
+            return cache.GetValueOrDefault(name);
+        }
+
+        // Slow path: acquire lock and refresh if needed
         using (await _syncSemaphore.LockAsync(cancellationToken))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
-            return _featureMemoryCache.GetOrDefault(name);
+
+            var cache = _featureMemoryCache; // Capture local reference
+            return cache.GetValueOrDefault(name);
         }
     }
 
@@ -74,10 +85,20 @@ public sealed class DynamicFeatureDefinitionStore(
             return [];
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            var cache = _featureMemoryCache; // Capture local reference for thread safety
+            return cache.Values.ToImmutableList();
+        }
+
+        // Slow path: acquire lock and refresh if needed
         using (await _syncSemaphore.LockAsync(cancellationToken))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
-            return _featureMemoryCache.Values.ToImmutableList();
+
+            var cache = _featureMemoryCache; // Capture local reference
+            return cache.Values.ToImmutableList();
         }
     }
 
@@ -90,10 +111,20 @@ public sealed class DynamicFeatureDefinitionStore(
             return [];
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            var cache = _groupMemoryCache; // Capture local reference for thread safety
+            return cache.Values.ToImmutableList();
+        }
+
+        // Slow path: acquire lock and refresh if needed
         using (await _syncSemaphore.LockAsync(cancellationToken))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken);
-            return _groupMemoryCache.Values.ToImmutableList();
+
+            var cache = _groupMemoryCache; // Capture local reference
+            return cache.Values.ToImmutableList();
         }
     }
 
@@ -104,8 +135,14 @@ public sealed class DynamicFeatureDefinitionStore(
     private string? _cacheStamp;
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private readonly Dictionary<string, FeatureGroupDefinition> _groupMemoryCache = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, FeatureDefinition> _featureMemoryCache = new(StringComparer.Ordinal);
+    private volatile ImmutableDictionary<string, FeatureGroupDefinition> _groupMemoryCache = ImmutableDictionary<
+        string,
+        FeatureGroupDefinition
+    >.Empty.WithComparers(StringComparer.Ordinal);
+    private volatile ImmutableDictionary<string, FeatureDefinition> _featureMemoryCache = ImmutableDictionary<
+        string,
+        FeatureDefinition
+    >.Empty.WithComparers(StringComparer.Ordinal);
 
     private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
     {
@@ -166,8 +203,9 @@ public sealed class DynamicFeatureDefinitionStore(
         var featureGroupRecords = await repository.GetGroupsListAsync(cancellationToken);
         var featureRecords = await repository.GetFeaturesListAsync(cancellationToken);
 
-        _groupMemoryCache.Clear();
-        _featureMemoryCache.Clear();
+        // Build new caches instead of mutating existing ones
+        var newGroupCache = ImmutableDictionary.CreateBuilder<string, FeatureGroupDefinition>(StringComparer.Ordinal);
+        var newFeatureCache = ImmutableDictionary.CreateBuilder<string, FeatureDefinition>(StringComparer.Ordinal);
 
         var context = new FeatureDefinitionContext();
 
@@ -175,7 +213,7 @@ public sealed class DynamicFeatureDefinitionStore(
         {
             var featureGroup = context.AddGroup(featureGroupRecord.Name, featureGroupRecord.DisplayName);
 
-            _groupMemoryCache[featureGroup.Name] = featureGroup;
+            newGroupCache[featureGroup.Name] = featureGroup;
 
             foreach (var property in featureGroupRecord.ExtraProperties)
             {
@@ -188,15 +226,25 @@ public sealed class DynamicFeatureDefinitionStore(
 
             foreach (var featureRecord in featureRecordsInThisGroup.Where(x => x.ParentName is null))
             {
-                _UpdateInMemoryStoreCacheAddFeatureRecursively(featureGroup, featureRecord, featureRecords);
+                _UpdateInMemoryStoreCacheAddFeatureRecursively(
+                    featureGroup,
+                    featureRecord,
+                    featureRecords,
+                    newFeatureCache
+                );
             }
         }
+
+        // Atomic swap via volatile
+        _groupMemoryCache = newGroupCache.ToImmutable();
+        _featureMemoryCache = newFeatureCache.ToImmutable();
     }
 
     private void _UpdateInMemoryStoreCacheAddFeatureRecursively(
         ICanCreateChildFeature featureContainer,
         FeatureDefinitionRecord featureRecord,
-        List<FeatureDefinitionRecord> allFeatureRecords
+        List<FeatureDefinitionRecord> allFeatureRecords,
+        ImmutableDictionary<string, FeatureDefinition>.Builder featureCacheBuilder
     )
     {
         var feature = featureContainer.AddChild(
@@ -208,7 +256,7 @@ public sealed class DynamicFeatureDefinitionStore(
             featureRecord.IsAvailableToHost
         );
 
-        _featureMemoryCache[feature.Name] = feature;
+        featureCacheBuilder[feature.Name] = feature;
 
         if (!featureRecord.Providers.IsNullOrWhiteSpace())
         {
@@ -226,7 +274,7 @@ public sealed class DynamicFeatureDefinitionStore(
             )
         )
         {
-            _UpdateInMemoryStoreCacheAddFeatureRecursively(feature, subFeature, allFeatureRecords);
+            _UpdateInMemoryStoreCacheAddFeatureRecursively(feature, subFeature, allFeatureRecords, featureCacheBuilder);
         }
     }
 
