@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Framework.Permissions.Api.Demo</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Framework.Permissions.Abstractions\Framework.Permissions.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Permissions.Core\Framework.Permissions.Core.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Permissions.Storage.EntityFramework\Framework.Permissions.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\..\src\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\src\Framework.OpenApi.Nswag\Framework.OpenApi.Nswag.csproj" />
+  </ItemGroup>
+</Project>
