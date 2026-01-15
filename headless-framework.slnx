@@ -142,6 +142,7 @@
         <Project Path="tests/Framework.Payments.Paymob.CashOut.Tests.Unit/Framework.Payments.Paymob.CashOut.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Permissions/">
+        <Project Path="demo/Framework.Permissions.Api.Demo/Framework.Permissions.Api.Demo.csproj" />
         <Project Path="src/Framework.Permissions.Core/Framework.Permissions.Core.csproj" />
         <Project Path="src/Framework.Permissions.Storage.EntityFramework/Framework.Permissions.Storage.EntityFramework.csproj" />
         <Project Path="src\Framework.Permissions.Abstractions\Framework.Permissions.Abstractions.csproj" />
