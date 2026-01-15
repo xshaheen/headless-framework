@@ -158,12 +158,12 @@ public sealed class FcmPushNotificationService(
                                 var (msg, ct) = state;
                                 return await FirebaseMessaging
                                     .DefaultInstance.SendEachForMulticastAsync(msg, ct)
-                                    .ConfigureAwait(false);
+                                    .AnyContext();
                             },
                             context,
                             (message, cancellationToken)
                         )
-                        .ConfigureAwait(false);
+                        .AnyContext();
 
                     if (batchResponse.Responses.Count != batchList.Count)
                     {
