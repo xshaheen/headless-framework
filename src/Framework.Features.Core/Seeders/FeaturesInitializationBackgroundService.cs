@@ -34,13 +34,30 @@ public sealed class FeaturesInitializationBackgroundService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _cancellationTokenSource.CancelAsync();
+        await _cancellationTokenSource.CancelAsync().AnyContext();
+
+        if (_initializeDynamicFeaturesTask is not null)
+        {
+            try
+            {
+#pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
+                await _initializeDynamicFeaturesTask.AnyContext();
+#pragma warning restore VSTHRD003
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during shutdown
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Background initialization task faulted");
+            }
+        }
     }
 
     public void Dispose()
     {
         _cancellationTokenSource.Dispose();
-        _initializeDynamicFeaturesTask?.Dispose();
     }
 
     private async Task _InitializeDynamicFeaturesAsync(CancellationToken cancellationToken)
@@ -59,7 +76,7 @@ public sealed class FeaturesInitializationBackgroundService(
             return;
         }
 
-        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken);
+        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken).AnyContext();
     }
 
     private async Task _SaveStaticFeaturesToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
@@ -91,7 +108,7 @@ public sealed class FeaturesInitializationBackgroundService(
 
                 try
                 {
-                    await store.SaveAsync(cancellationToken);
+                    await store.SaveAsync(cancellationToken).AnyContext();
                 }
                 catch (Exception e)
                 {
@@ -117,7 +134,7 @@ public sealed class FeaturesInitializationBackgroundService(
         try
         {
             // Pre-cache features, so the first request doesn't wait
-            await store.GetGroupsAsync(cancellationToken);
+            await store.GetGroupsAsync(cancellationToken).AnyContext();
         }
         catch (Exception e)
         {
