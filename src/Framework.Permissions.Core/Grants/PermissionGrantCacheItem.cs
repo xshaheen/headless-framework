@@ -8,6 +8,9 @@ public sealed class PermissionGrantCacheItem(bool isGranted)
 {
     private static readonly CompositeFormat _Format = CompositeFormat.Parse("permissions:provider:{0}:{1},name:{2}");
 
+    /// <summary>
+    /// True = granted, False = explicit denial, null = undefined (no cached record).
+    /// </summary>
     public bool IsGranted { get; } = isGranted;
 
     public static string CalculateCacheKey(string name, string providerName, string? providerKey)
