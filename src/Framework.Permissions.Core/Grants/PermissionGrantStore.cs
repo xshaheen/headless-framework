@@ -70,6 +70,7 @@ public sealed class PermissionGrantStore(
     IPermissionGrantRepository repository,
     IGuidGenerator guidGenerator,
     ICache<PermissionGrantCacheItem> cache,
+    ICurrentTenant currentTenant,
     ILogger<PermissionGrantStore> logger
 ) : IPermissionGrantStore
 {
@@ -132,7 +133,7 @@ public sealed class PermissionGrantStore(
     {
         var result = await repository.GetListAsync(providerName, providerKey, cancellationToken);
 
-        return result.ConvertAll(x => new PermissionGrant(x.Name, isGranted: true));
+        return result.ConvertAll(x => new PermissionGrant(x.Name, x.IsGranted));
     }
 
     public async Task GrantAsync(
@@ -147,13 +148,27 @@ public sealed class PermissionGrantStore(
 
         if (permissionGrant is not null)
         {
-            return;
+            // Update existing record to granted if it was previously denied
+            if (!permissionGrant.IsGranted)
+            {
+                await repository.DeleteAsync(permissionGrant, cancellationToken);
+                await repository.InsertAsync(
+                    new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, isGranted: true, tenantId),
+                    cancellationToken
+                );
+            }
+            else
+            {
+                return;
+            }
         }
-
-        await repository.InsertAsync(
-            new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, tenantId),
-            cancellationToken
-        );
+        else
+        {
+            await repository.InsertAsync(
+                new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, isGranted: true, tenantId),
+                cancellationToken
+            );
+        }
 
         await cache.UpsertAsync(
             cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
@@ -189,6 +204,22 @@ public sealed class PermissionGrantStore(
             return;
         }
 
+        // Handle records that need to be updated from denied to granted
+        var deniedRecords = existGrantRecords.Where(x => !x.IsGranted).ToList();
+        if (deniedRecords.Count > 0)
+        {
+            await repository.DeleteManyAsync(deniedRecords, cancellationToken);
+            var updatedRecords = deniedRecords.Select(x => new PermissionGrantRecord(
+                guidGenerator.Create(),
+                x.Name,
+                providerName,
+                providerKey,
+                isGranted: true,
+                tenantId
+            ));
+            await repository.InsertManyAsync(updatedRecords, cancellationToken);
+        }
+
         var newRecords = distinctNames
             .Where(name => existGrantRecords.TrueForAll(x => !string.Equals(x.Name, name, StringComparison.Ordinal)))
             .Select(name => new PermissionGrantRecord(
@@ -196,6 +227,7 @@ public sealed class PermissionGrantStore(
                 name,
                 providerName,
                 providerKey,
+                isGranted: true,
                 tenantId
             ));
 
@@ -221,16 +253,37 @@ public sealed class PermissionGrantStore(
     {
         var permissionGrant = await repository.FindAsync(name, providerName, providerKey, cancellationToken);
 
-        if (permissionGrant is null)
+        if (permissionGrant is not null)
         {
-            return;
+            // Update existing grant to explicit denial
+            if (permissionGrant.IsGranted)
+            {
+                await repository.DeleteAsync(permissionGrant, cancellationToken);
+                await repository.InsertAsync(
+                    new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, isGranted: false, permissionGrant.TenantId),
+                    cancellationToken
+                );
+            }
+            else
+            {
+                return; // Already denied
+            }
+        }
+        else
+        {
+            // Insert explicit denial
+            var tenantId = currentTenant.Id;
+            await repository.InsertAsync(
+                new PermissionGrantRecord(guidGenerator.Create(), name, providerName, providerKey, isGranted: false, tenantId),
+                cancellationToken
+            );
         }
 
-        await repository.DeleteAsync(permissionGrant, cancellationToken);
-
-        await cache.RemoveAsync(
+        await cache.UpsertAsync(
             cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-            cancellationToken
+            cacheValue: new PermissionGrantCacheItem(isGranted: false),
+            expiration: _cacheExpiration,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -254,20 +307,50 @@ public sealed class PermissionGrantStore(
             cancellationToken
         );
 
-        if (existGrantRecords.Count == 0)
+        // Update existing grants to denials
+        var grantedRecords = existGrantRecords.Where(x => x.IsGranted).ToList();
+        if (grantedRecords.Count > 0)
         {
-            return;
+            await repository.DeleteManyAsync(grantedRecords, cancellationToken);
+            var deniedRecords = grantedRecords.Select(x => new PermissionGrantRecord(
+                guidGenerator.Create(),
+                x.Name,
+                providerName,
+                providerKey,
+                isGranted: false,
+                x.TenantId
+            ));
+            await repository.InsertManyAsync(deniedRecords, cancellationToken);
         }
 
-        await repository.DeleteManyAsync(existGrantRecords, cancellationToken);
+        // Insert explicit denials for names that don't have records
+        var tenantId = currentTenant.Id;
+        var newDenials = distinctNames
+            .Where(name => existGrantRecords.TrueForAll(x => !string.Equals(x.Name, name, StringComparison.Ordinal)))
+            .Select(name => new PermissionGrantRecord(
+                guidGenerator.Create(),
+                name,
+                providerName,
+                providerKey,
+                isGranted: false,
+                tenantId
+            ));
 
-        foreach (var name in names)
+        if (newDenials.Any())
         {
-            await cache.RemoveAsync(
-                cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
-                cancellationToken
-            );
+            await repository.InsertManyAsync(newDenials, cancellationToken);
         }
+
+        // Update cache with denials
+        var cacheValues = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
+        var cacheItem = new PermissionGrantCacheItem(isGranted: false);
+
+        foreach (var name in distinctNames)
+        {
+            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
+        }
+
+        await cache.UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken);
     }
 
     #region Helpers

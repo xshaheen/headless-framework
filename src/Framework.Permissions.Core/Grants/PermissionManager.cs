@@ -220,6 +220,29 @@ public sealed class PermissionManager(
             return result;
         }
 
+        // First pass: check for explicit denials (Prohibited)
+        // AWS IAM-style: explicit deny overrides all grants
+        var explicitDenials = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var provider in grantProviderManager.ValueProviders)
+        {
+            if (providerName is not null && !string.Equals(provider.Name, providerName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var providerGrants = await provider.CheckAsync(checkNeededPermissions, currentUser, cancellationToken);
+
+            foreach (var (permissionName, providerResult) in providerGrants)
+            {
+                if (providerResult.Status is PermissionGrantStatus.Prohibited)
+                {
+                    explicitDenials.Add(permissionName);
+                }
+            }
+        }
+
+        // Second pass: apply grants only if not explicitly denied
         foreach (var provider in grantProviderManager.ValueProviders)
         {
             if (providerName is not null && !string.Equals(provider.Name, providerName, StringComparison.Ordinal))
@@ -232,6 +255,12 @@ public sealed class PermissionManager(
             foreach (var (permissionName, providerResult) in providerGrants)
             {
                 if (providerResult.Status is not PermissionGrantStatus.Granted)
+                {
+                    continue;
+                }
+
+                // Explicit deny overrides grant
+                if (explicitDenials.Contains(permissionName))
                 {
                     continue;
                 }
