@@ -15,9 +15,11 @@ public class SpanOverloadTests
         Span<int> span = stackalloc int[] { 1, 2, 3 };
 
         // when & then
-        TestSpanNotEmpty(span);
+        testSpanNotEmpty(span);
 
-        static void TestSpanNotEmpty(Span<int> arg)
+        return;
+
+        static void testSpanNotEmpty(Span<int> arg)
         {
             Argument.IsNotEmpty(arg);
         }
@@ -26,10 +28,15 @@ public class SpanOverloadTests
     [Fact]
     public void is_not_empty_empty_span_throws()
     {
-        // given & when & then
-        Assert.Throws<ArgumentException>(() => TestSpanThrows([]));
+        // given & when
+        var testCode = () => testSpanThrows([]);
 
-        static void TestSpanThrows(Span<int> arg)
+        // then
+        testCode.Should().ThrowExactly<ArgumentException>();
+
+        return;
+
+        static void testSpanThrows(Span<int> arg)
         {
             Argument.IsNotEmpty(arg);
         }
@@ -38,14 +45,19 @@ public class SpanOverloadTests
     [Fact]
     public void is_not_empty_span_with_custom_message_throws()
     {
-        // given & when
+        // given
         const string customMessage = "Span cannot be empty";
-        var ex = Assert.Throws<ArgumentException>(() => TestSpanThrowsCustom([], customMessage));
+        var testCode = () => testSpanThrowsCustom([], customMessage);
+
+        // when
+        var ex = testCode.Should().ThrowExactly<ArgumentException>().And;
 
         // then
         ex.Message.Should().Contain(customMessage);
 
-        static void TestSpanThrowsCustom(Span<int> arg, string msg)
+        return;
+
+        static void testSpanThrowsCustom(Span<int> arg, string msg)
         {
             Argument.IsNotEmpty(arg, msg);
         }
@@ -60,9 +72,11 @@ public class SpanOverloadTests
         ReadOnlySpan<int> span = stackalloc int[] { 1, 2, 3 };
 
         // when & then
-        TestReadOnlySpanNotEmpty(span);
+        testReadOnlySpanNotEmpty(span);
 
-        static void TestReadOnlySpanNotEmpty(ReadOnlySpan<int> arg)
+        return;
+
+        static void testReadOnlySpanNotEmpty(ReadOnlySpan<int> arg)
         {
             Argument.IsNotEmpty(arg);
         }
@@ -71,10 +85,15 @@ public class SpanOverloadTests
     [Fact]
     public void is_not_empty_empty_readonly_span_throws()
     {
-        // given & when & then
-        Assert.Throws<ArgumentException>(() => TestReadOnlySpanThrows([]));
+        // given & when
+        var testCode = () => testReadOnlySpanThrows([]);
 
-        static void TestReadOnlySpanThrows(ReadOnlySpan<int> arg)
+        // then
+        testCode.Should().ThrowExactly<ArgumentException>();
+
+        return;
+
+        static void testReadOnlySpanThrows(ReadOnlySpan<int> arg)
         {
             Argument.IsNotEmpty(arg);
         }
@@ -83,14 +102,19 @@ public class SpanOverloadTests
     [Fact]
     public void is_not_empty_readonly_span_with_custom_message_throws()
     {
-        // given & when
+        // given
         const string customMessage = "ReadOnlySpan cannot be empty";
-        var ex = Assert.Throws<ArgumentException>(() => TestReadOnlySpanThrowsCustom([], customMessage));
+        var testCode = () => testReadOnlySpanThrowsCustom([], customMessage);
+
+        // when
+        var ex = testCode.Should().ThrowExactly<ArgumentException>().And;
 
         // then
         ex.Message.Should().Contain(customMessage);
 
-        static void TestReadOnlySpanThrowsCustom(ReadOnlySpan<int> arg, string msg)
+        return;
+
+        static void testReadOnlySpanThrowsCustom(ReadOnlySpan<int> arg, string msg)
         {
             Argument.IsNotEmpty(arg, msg);
         }
@@ -104,9 +128,11 @@ public class SpanOverloadTests
         Span<string> span = items;
 
         // when & then
-        TestSpanStringNotEmpty(span);
+        testSpanStringNotEmpty(span);
 
-        static void TestSpanStringNotEmpty(Span<string> arg)
+        return;
+
+        static void testSpanStringNotEmpty(Span<string> arg)
         {
             Argument.IsNotEmpty(arg);
         }
@@ -120,9 +146,11 @@ public class SpanOverloadTests
         ReadOnlySpan<string> span = items;
 
         // when & then
-        TestReadOnlySpanStringNotEmpty(span);
+        testReadOnlySpanStringNotEmpty(span);
 
-        static void TestReadOnlySpanStringNotEmpty(ReadOnlySpan<string> arg)
+        return;
+
+        static void testReadOnlySpanStringNotEmpty(ReadOnlySpan<string> arg)
         {
             Argument.IsNotEmpty(arg);
         }
@@ -138,9 +166,11 @@ public class SpanOverloadTests
         ReadOnlySpan<int> validValues = stackalloc int[] { 1, 2, 3 };
 
         // when & then
-        TestIsOneOfReadOnlySpan(value, validValues);
+        testIsOneOfReadOnlySpan(value, validValues);
 
-        static void TestIsOneOfReadOnlySpan(int arg, ReadOnlySpan<int> values)
+        return;
+
+        static void testIsOneOfReadOnlySpan(int arg, ReadOnlySpan<int> values)
         {
             Argument.IsOneOf(arg, values);
         }
@@ -150,9 +180,13 @@ public class SpanOverloadTests
     public void is_one_of_with_readonly_span_values_and_invalid_argument_throws()
     {
         // given & when & then
-        Assert.Throws<ArgumentException>(() => TestIsOneOfThrows(5, stackalloc int[] { 1, 2, 3 }));
+        var testCode = () => testIsOneOfThrows(5, stackalloc int[] { 1, 2, 3 });
 
-        static void TestIsOneOfThrows(int arg, ReadOnlySpan<int> values)
+        testCode.Should().ThrowExactly<ArgumentException>();
+
+        return;
+
+        static void testIsOneOfThrows(int arg, ReadOnlySpan<int> values)
         {
             Argument.IsOneOf(arg, values);
         }
@@ -167,9 +201,11 @@ public class SpanOverloadTests
         ReadOnlySpan<string> validValues = items;
 
         // when & then
-        TestIsOneOfReadOnlySpanString(value, validValues);
+        testIsOneOfReadOnlySpanString(value, validValues);
 
-        static void TestIsOneOfReadOnlySpanString(string arg, ReadOnlySpan<string> values)
+        return;
+
+        static void testIsOneOfReadOnlySpanString(string arg, ReadOnlySpan<string> values)
         {
             Argument.IsOneOf(arg, values);
         }
@@ -181,11 +217,14 @@ public class SpanOverloadTests
         // given
         const string value = "d";
         string[] items = ["a", "b", "c"];
+        var testCode = () => testIsOneOfStringsThrows(value, items.AsSpan());
 
         // when & then
-        Assert.Throws<ArgumentException>(() => TestIsOneOfStringsThrows(value, items.AsSpan()));
+        testCode.Should().ThrowExactly<ArgumentException>();
 
-        static void TestIsOneOfStringsThrows(string arg, ReadOnlySpan<string> values)
+        return;
+
+        static void testIsOneOfStringsThrows(string arg, ReadOnlySpan<string> values)
         {
             Argument.IsOneOf(arg, values);
         }
@@ -196,14 +235,16 @@ public class SpanOverloadTests
     {
         // given & when
         const string customMessage = "Value must be 1, 2, or 3";
-        var ex = Assert.Throws<ArgumentException>(
-            () => TestIsOneOfCustomMessage(5, stackalloc int[] { 1, 2, 3 }, customMessage)
-        );
+        var testCode = () => testIsOneOfCustomMessage(5, stackalloc int[] { 1, 2, 3 }, customMessage);
+
+        var ex = testCode.Should().ThrowExactly<ArgumentException>().And;
 
         // then
         ex.Message.Should().Contain(customMessage);
 
-        static void TestIsOneOfCustomMessage(int arg, ReadOnlySpan<int> values, string msg)
+        return;
+
+        static void testIsOneOfCustomMessage(int arg, ReadOnlySpan<int> values, string msg)
         {
             Argument.IsOneOf(arg, values, msg);
         }

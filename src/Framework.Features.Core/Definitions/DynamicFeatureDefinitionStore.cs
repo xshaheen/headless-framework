@@ -241,7 +241,7 @@ public sealed class DynamicFeatureDefinitionStore(
         _featureMemoryCache = newFeatureCache.ToImmutable();
     }
 
-    private void _UpdateInMemoryStoreCacheAddFeatureRecursively(
+    private static void _UpdateInMemoryStoreCacheAddFeatureRecursively(
         ICanCreateChildFeature featureContainer,
         FeatureDefinitionRecord featureRecord,
         List<FeatureDefinitionRecord> allFeatureRecords,

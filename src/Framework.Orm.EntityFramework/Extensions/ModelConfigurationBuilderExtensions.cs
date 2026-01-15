@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Orm.EntityFramework.Configurations;
 using Framework.Primitives;
 using File = Framework.Primitives.File;

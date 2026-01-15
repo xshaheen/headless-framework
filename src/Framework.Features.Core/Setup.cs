@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Framework.Features.Filters;
