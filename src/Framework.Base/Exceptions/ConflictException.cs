@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Cysharp.Text;
 using Framework.Primitives;
 
 namespace Framework.Exceptions;
@@ -38,7 +37,7 @@ public sealed class ConflictException : Exception
 
     private static string _BuildErrorMessage(IEnumerable<ErrorDescriptor> errors)
     {
-        var builder = ZString.CreateStringBuilder();
+        var builder = new StringBuilder();
 
         builder.Append("Conflict:");
 

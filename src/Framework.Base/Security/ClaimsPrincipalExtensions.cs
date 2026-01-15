@@ -49,7 +49,7 @@ public static class ClaimsPrincipalExtensions
     {
         Argument.IsNotNull(claimsIdentity);
 
-        foreach (var x in claimsIdentity.FindAll(claimType))
+        foreach (var x in claimsIdentity.FindAll(claimType).ToList())
         {
             claimsIdentity.RemoveClaim(x);
         }

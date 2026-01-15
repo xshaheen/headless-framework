@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq.Expressions;
 using System.Reflection;
 using Framework.Abstractions;
 using Framework.Domain;
@@ -30,6 +32,12 @@ public sealed class HeadlessEntityModelProcessor(
     IClock clock
 ) : IHeadlessEntityModelProcessor
 {
+    // Cached compiled factories for entity event publishing to avoid repeated reflection overhead
+    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _CreatedFactories = new();
+    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _UpdatedFactories = new();
+    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _DeletedFactories = new();
+    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _ChangedFactories = new();
+
     public string? TenantId => currentTenant.Id;
 
     #region Process Model Creating
@@ -550,13 +558,7 @@ public sealed class HeadlessEntityModelProcessor(
             return;
         }
 
-        var propertyEntry = entry.Property(nameof(IHasConcurrencyStamp.ConcurrencyStamp));
-
-        if (!string.Equals(propertyEntry.OriginalValue as string, entity.ConcurrencyStamp, StringComparison.Ordinal))
-        {
-            propertyEntry.OriginalValue = entity.ConcurrencyStamp;
-        }
-
+        // Only generate new stamp - don't modify OriginalValue to preserve optimistic concurrency
         ObjectPropertiesHelper.TrySetProperty(entity, x => x.ConcurrencyStamp, () => Guid.NewGuid().ToString("N"));
     }
 
@@ -593,30 +595,49 @@ public sealed class HeadlessEntityModelProcessor(
 
     private static void _PublishEntityCreated(ILocalMessageEmitter entity)
     {
-        var eventType = typeof(EntityCreatedEventData<>).MakeGenericType(entity.GetType());
-        var eventMessage = (ILocalMessage)Activator.CreateInstance(eventType, entity)!;
-        entity.AddMessage(eventMessage);
+        var factory = _CreatedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityCreatedEventData<>), type)
+        );
+        entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityUpdated(ILocalMessageEmitter entity)
     {
-        var eventType = typeof(EntityUpdatedEventData<>).MakeGenericType(entity.GetType());
-        var eventMessage = (ILocalMessage)Activator.CreateInstance(eventType, entity)!;
-        entity.AddMessage(eventMessage);
+        var factory = _UpdatedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityUpdatedEventData<>), type)
+        );
+        entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityDeleted(ILocalMessageEmitter entity)
     {
-        var eventType = typeof(EntityDeletedEventData<>).MakeGenericType(entity.GetType());
-        var eventMessage = (ILocalMessage)Activator.CreateInstance(eventType, entity)!;
-        entity.AddMessage(eventMessage);
+        var factory = _DeletedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityDeletedEventData<>), type)
+        );
+        entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityChanged(ILocalMessageEmitter entity)
     {
-        var eventType = typeof(EntityChangedEventData<>).MakeGenericType(entity.GetType());
-        var eventMessage = (ILocalMessage)Activator.CreateInstance(eventType, entity)!;
-        entity.AddMessage(eventMessage);
+        var factory = _ChangedFactories.GetOrAdd(
+            entity.GetType(),
+            static type => _CompileEventFactory(typeof(EntityChangedEventData<>), type)
+        );
+        entity.AddMessage(factory(entity));
+    }
+
+    private static Func<object, ILocalMessage> _CompileEventFactory(Type genericEventType, Type entityType)
+    {
+        var eventType = genericEventType.MakeGenericType(entityType);
+        var ctor = eventType.GetConstructor([entityType])!;
+        var param = Expression.Parameter(typeof(object));
+        var converted = Expression.Convert(param, entityType);
+        var newExpr = Expression.New(ctor, converted);
+        var cast = Expression.Convert(newExpr, typeof(ILocalMessage));
+        return Expression.Lambda<Func<object, ILocalMessage>>(cast, param).Compile();
     }
 
     #endregion

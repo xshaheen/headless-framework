@@ -33,23 +33,20 @@ public interface IStringEncryptionService
 public sealed class StringEncryptionOptions
 {
     /// <summary>This constant is used to determine the key size of the encryption algorithm. Default value: 256.</summary>
-    public int KeySize { get; init; } = 256;
+    public int KeySize { get; set; } = 256;
 
-    /// <summary>
-    /// Default password to encrypt/decrypt texts. It's recommended to init to another value for security.
-    /// Default value: "SHAHkLaXNOGZ044IM8"
-    /// </summary>
-    public string DefaultPassPhrase { get; init; } = "SHAHkLaXNOGZ044IM8";
+    /// <summary>Default password to encrypt/decrypt texts.</summary>
+    public required string DefaultPassPhrase { get; set; }
 
     /// <summary>
     /// This constant string is used as a "salt" value for the PasswordDeriveBytes function calls.
     /// This size of the IV (in bytes) must = (<see cref="KeySize"/> / 16).  Default <see cref="KeySize"/> is 256,
-    /// so the IV must be 16 bytes long. Default value: shE49230Tf093b42
+    /// so the IV must be 16 bytes long.
     /// </summary>
-    public byte[] InitVectorBytes { get; init; } = "shE49230Tf093b42"u8.ToArray();
+    public required byte[] InitVectorBytes { get; set; }
 
-    /// <summary>Default value: "hgt!16kl"</summary>
-    public byte[] DefaultSalt { get; init; } = "hgt!16kl"u8.ToArray();
+    /// <summary>Salt value for encryption.</summary>
+    public required byte[] DefaultSalt { get; set; }
 }
 
 public sealed class StringEncryptionOptionsValidator : AbstractValidator<StringEncryptionOptions>

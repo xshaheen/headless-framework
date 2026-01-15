@@ -150,45 +150,14 @@ public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
 
     public void Patch(SettingDefinitionRecord other)
     {
-        if (!string.Equals(Name, other.Name, StringComparison.Ordinal))
-        {
-            Name = other.Name;
-        }
-
-        if (!string.Equals(DisplayName, other.DisplayName, StringComparison.Ordinal))
-        {
-            DisplayName = other.DisplayName;
-        }
-
-        if (!string.Equals(Description, other.Description, StringComparison.Ordinal))
-        {
-            Description = other.Description;
-        }
-
-        if (!string.Equals(DefaultValue, other.DefaultValue, StringComparison.Ordinal))
-        {
-            DefaultValue = other.DefaultValue;
-        }
-
-        if (IsVisibleToClients != other.IsVisibleToClients)
-        {
-            IsVisibleToClients = other.IsVisibleToClients;
-        }
-
-        if (!string.Equals(Providers, other.Providers, StringComparison.Ordinal))
-        {
-            Providers = other.Providers;
-        }
-
-        if (IsInherited != other.IsInherited)
-        {
-            IsInherited = other.IsInherited;
-        }
-
-        if (IsEncrypted != other.IsEncrypted)
-        {
-            IsEncrypted = other.IsEncrypted;
-        }
+        Name = other.Name;
+        DisplayName = other.DisplayName;
+        Description = other.Description;
+        DefaultValue = other.DefaultValue;
+        IsVisibleToClients = other.IsVisibleToClients;
+        Providers = other.Providers;
+        IsInherited = other.IsInherited;
+        IsEncrypted = other.IsEncrypted;
 
         if (!this.HasSameExtraProperties(other))
         {

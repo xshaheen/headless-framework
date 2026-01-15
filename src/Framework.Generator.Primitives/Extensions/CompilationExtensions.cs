@@ -14,12 +14,23 @@ internal static class CompilationExtensions
     /// <returns>True if the type implements the IPrimitive interface; otherwise, false.</returns>
     public static bool IsImplementIPrimitive(this INamedTypeSymbol x)
     {
-        return x is { IsGenericType: true, Name: AbstractionConstants.Interface }
-            && string.Equals(
-                x.ContainingNamespace.ToDisplayString(),
-                AbstractionConstants.Namespace,
-                StringComparison.Ordinal
-            );
+        if (!x.IsGenericType || !string.Equals(x.Name, AbstractionConstants.Interface, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Compare namespace parts directly (cheap) instead of ToDisplayString (expensive)
+        var ns = x.ContainingNamespace;
+        return ns
+            is {
+                Name: AbstractionConstants.NamespacePart3,
+                ContainingNamespace:
+                {
+                    Name: AbstractionConstants.NamespacePart2,
+                    ContainingNamespace:
+                    { Name: AbstractionConstants.NamespacePart1, ContainingNamespace.IsGlobalNamespace: true }
+                },
+            };
     }
 
     /// <summary>
@@ -67,6 +78,16 @@ internal static class CompilationExtensions
     {
         var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
 
+        return underlyingType.GetSwashbuckleSwaggerTypeAndFormat();
+    }
+
+    /// <summary>Gets the Swagger type and format for a given PrimitiveUnderlyingType.</summary>
+    /// <param name="underlyingType">The underlying type enum.</param>
+    /// <returns>A tuple containing the Swagger type and format as strings.</returns>
+    public static (string type, string format) GetSwashbuckleSwaggerTypeAndFormat(
+        this PrimitiveUnderlyingType underlyingType
+    )
+    {
         if (underlyingType.IsNumeric())
         {
             var format = underlyingType.ToString();
@@ -101,6 +122,16 @@ internal static class CompilationExtensions
     {
         var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
 
+        return underlyingType.GetNswagSwaggerTypeAndFormatAndExample();
+    }
+
+    /// <summary>Gets the NSwag Swagger type and format for a given PrimitiveUnderlyingType.</summary>
+    /// <param name="underlyingType">The underlying type enum.</param>
+    /// <returns>A tuple containing the Swagger type and format as strings.</returns>
+    public static (string Type, string? Format) GetNswagSwaggerTypeAndFormatAndExample(
+        this PrimitiveUnderlyingType underlyingType
+    )
+    {
         const string stringType = "JsonObjectType.String";
         const string booleanPointType = "JsonObjectType.Boolean";
         const string integerType = "JsonObjectType.Integer";
@@ -128,7 +159,7 @@ internal static class CompilationExtensions
             PrimitiveUnderlyingType.DateOnly => (stringType, "JsonFormatStrings.Date"),
             PrimitiveUnderlyingType.TimeOnly => (stringType, "JsonFormatStrings.Time"),
             PrimitiveUnderlyingType.TimeSpan => (stringType, "JsonFormatStrings.TimeSpan"),
-            PrimitiveUnderlyingType.Other or _ => (stringType, null),
+            _ => (stringType, null),
         };
     }
 
@@ -136,6 +167,14 @@ internal static class CompilationExtensions
     {
         var underlyingType = primitiveType.GetPrimitiveUnderlyingType();
 
+        return underlyingType.GetStringSyntaxAttribute();
+    }
+
+    /// <summary>Gets the StringSyntax attribute for a given PrimitiveUnderlyingType.</summary>
+    /// <param name="underlyingType">The underlying type enum.</param>
+    /// <returns>The StringSyntax attribute string or null.</returns>
+    public static string? GetStringSyntaxAttribute(this PrimitiveUnderlyingType underlyingType)
+    {
         return underlyingType switch
         {
             PrimitiveUnderlyingType.String =>

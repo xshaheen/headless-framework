@@ -40,11 +40,11 @@ public partial class PaymobCashInBrokerTests
 
         // when
         var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
-        var result = await broker.RequestPaymentKeyAsync(request);
+        var result = await broker.RequestPaymentKeyAsync(request, AbortToken);
 
         // then
         JsonSerializer.Serialize(result).Should().Be(responseJson);
-        _ = await authenticator.Received(1).GetAuthenticationTokenAsync();
+        _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
     }
 
     [Fact]
@@ -61,27 +61,28 @@ public partial class PaymobCashInBrokerTests
 
         // when
         var broker = new PaymobCashInBroker(fixture.HttpClient, authenticator, fixture.OptionsAccessor);
-        var invocation = FluentActions.Awaiting(() => broker.RequestPaymentKeyAsync(request));
+        var invocation = FluentActions.Awaiting(() => broker.RequestPaymentKeyAsync(request, AbortToken));
 
         // then
         await _ShouldThrowPaymobRequestExceptionAsync(invocation, HttpStatusCode.InternalServerError, body);
-        _ = await authenticator.Received(1).GetAuthenticationTokenAsync();
+        _ = await authenticator.Received(1).GetAuthenticationTokenAsync(AbortToken);
     }
 
     private static CashInPaymentKeyRequest _GetPaymentKeyRequest(int? expiration)
     {
         return AutoFixture
             .Build<CashInPaymentKeyRequest>()
-            .FromFactory(() =>
-                new CashInPaymentKeyRequest(
-                    integrationId: AutoFixture.Create<int>(),
-                    orderId: AutoFixture.Create<int>(),
-                    billingData: AutoFixture.Create<CashInBillingData>(),
-                    amountCents: AutoFixture.Create<int>(),
-                    currency: AutoFixture.Create<string>(),
-                    lockOrderWhenPaid: AutoFixture.Create<bool>(),
-                    expiration: expiration
-                )
+            .FromFactory(
+                () =>
+                    new CashInPaymentKeyRequest(
+                        integrationId: AutoFixture.Create<int>(),
+                        orderId: AutoFixture.Create<int>(),
+                        billingData: AutoFixture.Create<CashInBillingData>(),
+                        amountCents: AutoFixture.Create<int>(),
+                        currency: AutoFixture.Create<string>(),
+                        lockOrderWhenPaid: AutoFixture.Create<bool>(),
+                        expiration: expiration
+                    )
             )
             .Create();
     }

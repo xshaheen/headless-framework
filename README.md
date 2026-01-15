@@ -15,7 +15,7 @@
 
 ## Ideal For .NET Developers Who:
 
-- Prefer flexibility over convention
+- Prefer flexibility to convention
 - Want to bootstrap quickly but scale cleanly
 - Care about performance, testability, and maintainability
 

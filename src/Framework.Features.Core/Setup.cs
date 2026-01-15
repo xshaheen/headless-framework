@@ -38,9 +38,7 @@ public static class CoreSetup
         /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
         /// to be able to use this feature.
         /// </summary>
-        public IServiceCollection AddFeaturesManagementCore(
-            Action<FeatureManagementOptions>? setupAction = null
-        )
+        public IServiceCollection AddFeaturesManagementCore(Action<FeatureManagementOptions>? setupAction = null)
         {
             services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
 

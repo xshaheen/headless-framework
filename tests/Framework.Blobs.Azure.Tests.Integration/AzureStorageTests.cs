@@ -4,13 +4,13 @@ using Azure.Storage.Blobs;
 using Framework.Abstractions;
 using Framework.Blobs;
 using Framework.Blobs.Azure;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.TestSetup;
 
 namespace Tests;
 
-[Collection<AzureBlobTestFixture>]
-public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorageTestsBase
+[Collection<AzureBlobStorageFixture>]
+public sealed class AzureStorageTests(AzureBlobStorageFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {
@@ -19,12 +19,20 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
             new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
         );
 
-        var azureStorageOptions = new AzureStorageOptions { LoggerFactory = LoggerFactory };
+        var azureStorageOptions = new AzureStorageOptions();
         var optionsAccessor = new OptionsWrapper<AzureStorageOptions>(azureStorageOptions);
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);
+        var normalizer = new AzureBlobNamingNormalizer();
 
-        return new AzureBlobStorage(blobServiceClient, mimeTypeProvider, clock, optionsAccessor);
+        return new AzureBlobStorage(
+            blobServiceClient,
+            mimeTypeProvider,
+            clock,
+            optionsAccessor,
+            normalizer,
+            LoggerFactory.CreateLogger<AzureBlobStorage>()
+        );
     }
 
     [Fact]
@@ -124,9 +132,9 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]
@@ -188,4 +196,66 @@ public sealed class AzureStorageTests(AzureBlobTestFixture fixture) : BlobStorag
     {
         return base.can_call_get_paged_list_with_empty_container();
     }
+
+    #region Path Traversal Security Tests
+
+    [Theory]
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
+    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    {
+        return base.should_throw_when_blob_name_has_path_traversal(blobName);
+    }
+
+    [Fact]
+    public override Task should_throw_when_container_has_path_traversal()
+    {
+        return base.should_throw_when_container_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_upload_blob_has_path_traversal()
+    {
+        return base.should_throw_when_upload_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_download_blob_has_path_traversal()
+    {
+        return base.should_throw_when_download_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_delete_blob_has_path_traversal()
+    {
+        return base.should_throw_when_delete_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_rename_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_rename_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_copy_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_copy_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_blob_name_has_control_characters()
+    {
+        return base.should_throw_when_blob_name_has_control_characters();
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    {
+        return base.should_throw_when_blob_name_is_absolute_path(blobName);
+    }
+
+    #endregion
 }

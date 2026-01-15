@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Cysharp.Text;
 using Framework.IO;
 
 namespace Framework.Blobs;
@@ -24,7 +23,7 @@ public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
         // A filename cannot contain any of the following characters: \ / : * ? " < > |
         // In order to support the directory included in the blob name, remove / and \
 
-        var sb = ZString.CreateStringBuilder();
+        var sb = new StringBuilder();
 
         foreach (var c in fileName)
         {

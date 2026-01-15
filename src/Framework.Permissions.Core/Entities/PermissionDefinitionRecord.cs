@@ -108,35 +108,12 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
 
     public void Patch(PermissionDefinitionRecord otherRecord)
     {
-        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
-        {
-            Name = otherRecord.Name;
-        }
-
-        if (!string.Equals(GroupName, otherRecord.GroupName, StringComparison.Ordinal))
-        {
-            GroupName = otherRecord.GroupName;
-        }
-
-        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
-        {
-            DisplayName = otherRecord.DisplayName;
-        }
-
-        if (!string.Equals(ParentName, otherRecord.ParentName, StringComparison.Ordinal))
-        {
-            ParentName = otherRecord.ParentName;
-        }
-
-        if (IsEnabled != otherRecord.IsEnabled)
-        {
-            IsEnabled = otherRecord.IsEnabled;
-        }
-
-        if (!string.Equals(Providers, otherRecord.Providers, StringComparison.Ordinal))
-        {
-            Providers = otherRecord.Providers;
-        }
+        Name = otherRecord.Name;
+        GroupName = otherRecord.GroupName;
+        DisplayName = otherRecord.DisplayName;
+        ParentName = otherRecord.ParentName;
+        IsEnabled = otherRecord.IsEnabled;
+        Providers = otherRecord.Providers;
 
         if (!this.HasSameExtraProperties(otherRecord))
         {

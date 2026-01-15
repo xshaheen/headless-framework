@@ -9,7 +9,7 @@ public sealed class SendSingleSmsRequest
 {
     public string? MessageId { get; init; }
 
-    public required List<SmsRequestDestination> Destinations { get; init; }
+    public required IReadOnlyList<SmsRequestDestination> Destinations { get; init; }
 
     public required string Text { get; init; }
 

@@ -60,4 +60,82 @@ public sealed class SlugTests
         var slug = Slug.Create(text, options);
         slug.Should().Be(expected);
     }
+
+    [Fact]
+    public void should_return_null_when_input_is_null()
+    {
+        Slug.Create(null).Should().BeNull();
+    }
+
+    [Fact]
+    public void should_return_empty_when_input_is_empty()
+    {
+        Slug.Create("").Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("\t\n")]
+    public void should_return_empty_when_input_is_whitespace_only(string input)
+    {
+        Slug.Create(input).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(1, "hello", "h")]
+    [InlineData(5, "hello-world", "hello")]
+    [InlineData(80, "short", "short")]
+    public void should_respect_maximum_length(int max, string input, string expected)
+    {
+        var options = new SlugOptions { MaximumLength = max };
+        Slug.Create(input, options).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_allow_trailing_separator_when_configured()
+    {
+        var options = new SlugOptions { CanEndWithSeparator = true };
+        Slug.Create("hello-", options).Should().EndWith("-");
+    }
+
+    [Fact]
+    public void should_throw_when_separator_is_null()
+    {
+        var act = () => new SlugOptions { Separator = null! };
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_separator_is_empty()
+    {
+        var act = () => new SlugOptions { Separator = "" };
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_use_custom_separator()
+    {
+        var options = new SlugOptions { Separator = "_" };
+        Slug.Create("hello world", options).Should().Be("hello_world");
+    }
+
+    [Fact]
+    public void should_apply_uppercase_transformation()
+    {
+        var options = new SlugOptions { CasingTransformation = CasingTransformation.ToUpperCase };
+        Slug.Create("hello", options).Should().Be("HELLO");
+    }
+
+    [Fact]
+    public void should_filter_out_emoji()
+    {
+        Slug.Create("test 🎉 emoji").Should().Be("test-emoji");
+    }
+
+    [Fact]
+    public void should_filter_out_surrogate_pairs()
+    {
+        // Mathematical bold A (U+1D400)
+        Slug.Create("test \U0001D400 math").Should().Be("test-math");
+    }
 }

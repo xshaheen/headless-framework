@@ -26,6 +26,17 @@ public static class EntityTypeBuilderExtensions
     )
         where TEntity : class
     {
+        // INTERNAL EF CORE API USAGE
+        // -----------------------------------------------------------------------------
+        // Required: Access to CoreAnnotationNames.QueryFilter to retrieve existing query
+        //   filter from entity metadata. EF Core's public API HasQueryFilter() replaces
+        //   filters rather than combining them. We need the annotation name constant to
+        //   retrieve the existing filter for AND-combination.
+        // Tested with: EF Core 8.x, 9.x, 10.x
+        // On EF Core upgrade: Verify CoreAnnotationNames.QueryFilter constant exists
+        //   and FindAnnotation() returns the filter expression with this key.
+        // Alternative: None available in public API as of EF Core 10.0
+        // -----------------------------------------------------------------------------
 #pragma warning disable EF1001 // Is an internal API
         var queryFilterAnnotation = builder.Metadata.FindAnnotation(CoreAnnotationNames.QueryFilter);
 #pragma warning restore EF1001
@@ -45,6 +56,14 @@ public static class EntityTypeBuilderExtensions
     )
         where TEntity : class
     {
+        // INTERNAL EF CORE API USAGE
+        // -----------------------------------------------------------------------------
+        // Required: Access to CoreAnnotationNames.QueryFilter to retrieve existing query
+        //   filter from entity metadata. See documentation in generic overload above.
+        // Tested with: EF Core 8.x, 9.x, 10.x
+        // On EF Core upgrade: Verify CoreAnnotationNames.QueryFilter constant exists
+        // Alternative: None available in public API as of EF Core 10.0
+        // -----------------------------------------------------------------------------
 #pragma warning disable EF1001 // Is an internal API
         var queryFilterAnnotation = builder.Metadata.FindAnnotation(CoreAnnotationNames.QueryFilter);
 #pragma warning restore EF1001
@@ -70,7 +89,6 @@ public static class EntityTypeBuilderExtensions
         builder.TryConfigureCreateAudit();
         builder.TryConfigureUpdateAudit();
         builder.TryConfigureSuspendAudit();
-        builder.TryConfigureDeleteAudit();
     }
 
     #region Configure ICreateAudit

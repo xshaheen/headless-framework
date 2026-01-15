@@ -68,7 +68,6 @@ No configuration required.
 
 - `Framework.Checks`
 - `CommunityToolkit.HighPerformance`
-- `Flurl`
 - `Humanizer.Core`
 - `IdGen`
 - `libphonenumber-csharp`
@@ -76,9 +75,7 @@ No configuration required.
 - `Nito.AsyncEx`
 - `Nito.Disposables`
 - `Polly.Core`
-- `System.Reactive`
 - `TimeZoneConverter`
-- `ZString`
 
 ## Side Effects
 

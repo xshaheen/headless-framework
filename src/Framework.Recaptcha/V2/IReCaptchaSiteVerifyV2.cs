@@ -18,33 +18,30 @@ namespace Framework.Recaptcha.V2;
 public interface IReCaptchaSiteVerifyV2
 {
     /// <summary>Validate Recapture token.</summary>
+    /// <param name="request">The verification request containing the reCAPTCHA response token.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="HttpRequestException">The HTTP response is unsuccessful.</exception>
-    [SystemPure]
-    [JetBrainsPure]
-    Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(ReCaptchaSiteVerifyRequest request);
+    Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(
+        ReCaptchaSiteVerifyRequest request,
+        CancellationToken cancellationToken = default
+    );
 }
 
-public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
+public sealed class ReCaptchaSiteVerifyV2(
+    IOptionsSnapshot<ReCaptchaOptions> optionsAccessor,
+    IHttpClientFactory clientFactory,
+    ILogger<ReCaptchaSiteVerifyV2> logger
+) : IReCaptchaSiteVerifyV2
 {
     private readonly Uri _siteVerifyUri = new("recaptcha/api/siteverify", UriKind.Relative);
 
-    private readonly HttpClient _client;
-    private readonly ReCaptchaOptions _options;
-    private readonly ILogger<ReCaptchaSiteVerifyV2> _logger;
+    private readonly HttpClient _client = clientFactory.CreateClient(ReCaptchaSetup.V2Name);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V2Name);
 
-    public ReCaptchaSiteVerifyV2(
-        IOptionsSnapshot<ReCaptchaOptions> optionsAccessor,
-        IHttpClientFactory clientFactory,
-        ILogger<ReCaptchaSiteVerifyV2> logger
+    public async Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(
+        ReCaptchaSiteVerifyRequest request,
+        CancellationToken cancellationToken = default
     )
-    {
-        _options = optionsAccessor.Get(ReCaptchaConstants.V2);
-        _client = clientFactory.CreateClient(ReCaptchaConstants.V2);
-        _client.BaseAddress = new Uri(_options.VerifyBaseUrl);
-        _logger = logger;
-    }
-
-    public async Task<ReCaptchaSiteVerifyV2Response> VerifyAsync(ReCaptchaSiteVerifyRequest request)
     {
         List<KeyValuePair<string, string>> formData =
         [
@@ -58,34 +55,42 @@ public sealed class ReCaptchaSiteVerifyV2 : IReCaptchaSiteVerifyV2
         }
 
         using var content = new FormUrlEncodedContent(formData);
-        using var httpResponseMessage = await _client.PostAsync(_siteVerifyUri, content);
+        using var httpResponseMessage = await _client
+            .PostAsync(_siteVerifyUri, content, cancellationToken)
+            .AnyContext();
 
         if (!httpResponseMessage.IsSuccessStatusCode)
         {
-            if (_logger.IsEnabled(LogLevel.Information))
+            if (logger.IsEnabled(LogLevel.Information))
             {
-                _logger.LogInformation(
+                logger.LogInformation(
                     "Recaptcha verification failed with status code {StatusCode} and response {Response}",
                     httpResponseMessage.StatusCode,
-                    await httpResponseMessage.Content.ReadAsStringAsync()
+                    await httpResponseMessage.Content.ReadAsStringAsync(cancellationToken).AnyContext()
                 );
             }
 
             httpResponseMessage.EnsureSuccessStatusCode();
         }
 
-        await using var responseStream = await httpResponseMessage.Content.ReadAsStreamAsync();
+        await using var responseStream = await httpResponseMessage
+            .Content.ReadAsStreamAsync(cancellationToken)
+            .AnyContext();
 
-        var response = await JsonSerializer.DeserializeAsync(
-            utf8Json: responseStream,
-            jsonTypeInfo: ReCaptchaJsonSerializerContext.Default.ReCaptchaSiteVerifyV2Response
-        );
+        var response = await JsonSerializer
+            .DeserializeAsync<ReCaptchaSiteVerifyV2Response>(
+                utf8Json: responseStream,
+                options: ReCaptchaJsonOptions.JsonOptions,
+                cancellationToken: cancellationToken
+            )
+            .AnyContext();
 
         if (response?.Success is not true)
         {
-            _logger.LogReCaptchaFailure(response);
+            logger.LogReCaptchaFailure(response);
         }
 
-        return response!;
+        return response
+            ?? throw new InvalidOperationException("Failed to deserialize reCAPTCHA response. Response was null.");
     }
 }

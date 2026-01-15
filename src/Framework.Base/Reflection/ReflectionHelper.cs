@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Framework.Checks;
 
@@ -61,7 +62,8 @@ public static class ReflectionHelper
     )
         where TAttribute : class
     {
-        return memberInfo.GetCustomAttributes(inherit).OfType<TAttribute>().FirstOrDefault() ?? memberInfo
+        return memberInfo.GetCustomAttributes(inherit).OfType<TAttribute>().FirstOrDefault()
+            ?? memberInfo
                 .DeclaringType?.GetTypeInfo()
                 .GetCustomAttributes(inherit)
                 .OfType<TAttribute>()
@@ -96,14 +98,14 @@ public static class ReflectionHelper
 
     public static bool IsNullableOfT(this Type type)
     {
-        ArgumentNullException.ThrowIfNull(type);
+        Argument.IsNotNull(type);
 
         return Nullable.GetUnderlyingType(type) is not null;
     }
 
     public static bool IsFlagsEnum<T>()
     {
-        return IsFlagsEnum(typeof(T));
+        return typeof(T).IsFlagsEnum();
     }
 
     public static bool IsFlagsEnum(this Type type)
@@ -113,7 +115,11 @@ public static class ReflectionHelper
         return type.IsEnum && type.IsDefined(typeof(FlagsAttribute), inherit: true);
     }
 
-    public static bool IsSubClassOfGeneric(this Type child, Type parent)
+    [RequiresUnreferencedCode("Uses Type.GetInterfaces() which is not compatible with trimming.")]
+    public static bool IsSubClassOfGeneric(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type child,
+        Type parent
+    )
     {
         if (child == parent)
         {
@@ -216,7 +222,11 @@ public static class ReflectionHelper
         return true;
     }
 
-    public static bool IsAssignableToGenericType(this Type type, Type genericType)
+    [RequiresUnreferencedCode("Uses Type.GetInterfaces() which is not compatible with trimming.")]
+    public static bool IsAssignableToGenericType(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] this Type type,
+        Type genericType
+    )
     {
         while (true)
         {

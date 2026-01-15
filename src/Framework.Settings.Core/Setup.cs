@@ -26,12 +26,13 @@ public static class CoreSettingsSetup
         /// and ICurrentTenant implementations to be able to use this feature.
         /// </summary>
         public IServiceCollection AddSettingsManagementCore(
+            Action<StringEncryptionOptions> configureEncryption,
             Action<SettingManagementOptions, IServiceProvider> setupAction
         )
         {
             services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
-            return _AddCore(services);
+            return _AddCore(services, configureEncryption);
         }
 
         /// <summary>
@@ -39,11 +40,14 @@ public static class CoreSettingsSetup
         /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
         /// and ICurrentTenant implementations to be able to use this feature.
         /// </summary>
-        public IServiceCollection AddSettingsManagementCore(Action<SettingManagementOptions>? setupAction = null)
+        public IServiceCollection AddSettingsManagementCore(
+            Action<StringEncryptionOptions> configureEncryption,
+            Action<SettingManagementOptions>? setupAction = null
+        )
         {
             services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
-            return _AddCore(services);
+            return _AddCore(services, configureEncryption);
         }
 
         public IServiceCollection AddSettingDefinitionProvider<T>()
@@ -94,18 +98,21 @@ public static class CoreSettingsSetup
             services.AddSingleton<UserSettingValueProvider>();
         }
 
-        private void _AddSettingEncryption()
+        private void _AddSettingEncryption(Action<StringEncryptionOptions> configureEncryption)
         {
-            services.AddOptions<StringEncryptionOptions, StringEncryptionOptionsValidator>();
+            services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configureEncryption);
             services.AddSingletonOptionValue<StringEncryptionOptions>();
             services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
             services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
         }
     }
 
-    private static IServiceCollection _AddCore(IServiceCollection services)
+    private static IServiceCollection _AddCore(
+        IServiceCollection services,
+        Action<StringEncryptionOptions> configureEncryption
+    )
     {
-        services._AddSettingEncryption();
+        services._AddSettingEncryption(configureEncryption);
         services._AddCoreValueProvider();
 
         services.AddHostedService<SettingsInitializationBackgroundService>();
@@ -123,18 +130,18 @@ public static class CoreSettingsSetup
          * 2. Implement `ISettingDefinitionProvider` to define your settings in code
          *    and use `AddSettingDefinitionProvider` to register it
          */
-        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>(); // Transient
-        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>(); // Singleton
-        services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>(); // Transient
-        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>(); // Singleton
+        services.TryAddSingleton<ISettingDefinitionSerializer, SettingDefinitionSerializer>();
+        services.TryAddSingleton<IStaticSettingDefinitionStore, StaticSettingDefinitionStore>();
+        services.TryAddSingleton<IDynamicSettingDefinitionStore, DynamicSettingDefinitionStore>();
+        services.TryAddSingleton<ISettingDefinitionManager, SettingDefinitionManager>();
 
         // Value Services
         /*
          * You need to provide a storage implementation for `ISettingValueRecordRepository`
          */
-        services.TryAddSingleton<ISettingValueStore, SettingValueStore>(); // Transient
-        services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>(); // Singleton
-        services.TryAddSingleton<ISettingManager, SettingManager>(); // Singleton
+        services.TryAddSingleton<ISettingValueStore, SettingValueStore>();
+        services.TryAddSingleton<ISettingValueProviderManager, SettingValueProviderManager>();
+        services.TryAddSingleton<ISettingManager, SettingManager>();
 
         return services;
     }

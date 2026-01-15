@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Framework.Payments.Paymob.CashOut.Tests.Units" />
+    <InternalsVisibleTo Include="Framework.Payments.Paymob.Services" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />

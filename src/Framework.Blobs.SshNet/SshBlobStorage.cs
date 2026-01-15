@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-using Cysharp.Text;
-using Flurl;
+using Framework.Blobs.Internals;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Primitives;
+using Framework.Urls;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Renci.SshNet;
 using Renci.SshNet.Common;
@@ -16,59 +16,54 @@ using Renci.SshNet.Sftp;
 
 namespace Framework.Blobs.SshNet;
 
-public sealed class SshBlobStorage : IBlobStorage
+public sealed class SshBlobStorage(
+    SftpClientPool pool,
+    IBlobNamingNormalizer normalizer,
+    IOptionsMonitor<SshBlobStorageOptions> options,
+    ILogger<SshBlobStorage> logger
+) : IBlobStorage
 {
-    private readonly SftpClient _client;
-    private readonly ILogger _logger;
-
-    public SshBlobStorage(IOptions<SshBlobStorageOptions> optionsAccessor)
-    {
-        var sshOptions = optionsAccessor.Value;
-        var connectionInfo = _BuildConnectionInfo(sshOptions);
-        _client = new SftpClient(connectionInfo);
-        _logger = sshOptions.LoggerFactory?.CreateLogger(typeof(SshBlobStorage)) ?? NullLogger.Instance;
-    }
-
-    #region Get Client
-
-    public async ValueTask<SftpClient> GetClientAsync(CancellationToken cancellationToken = default)
-    {
-        await _EnsureClientConnectedAsync(cancellationToken);
-
-        return _client;
-    }
-
-    #endregion
-
-    #region Create Container
-
     public async ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(container);
         cancellationToken.ThrowIfCancellationRequested();
-        _logger.LogTrace("Ensuring {Directory} directory exists", (object)container);
+        logger.LogTrace("Ensuring {Directory} directory exists", (object)container);
 
-        var currentDirectory = string.Empty;
-
-        foreach (var segment in container)
+        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            // If the current directory is empty, use the current working directory instead of a rooted path.
-            currentDirectory = string.IsNullOrEmpty(currentDirectory) ? segment : $"{currentDirectory}/{segment}";
+            var currentDirectory = string.Empty;
 
-            if (await _client.ExistsAsync(currentDirectory, cancellationToken))
+            foreach (var segment in container)
             {
-                continue;
-            }
+                currentDirectory = string.IsNullOrEmpty(currentDirectory) ? segment : $"{currentDirectory}/{segment}";
 
-            _logger.LogInformation("Creating Container segment {Segment}", segment);
-            await _client.CreateDirectoryAsync(currentDirectory, cancellationToken);
+                if (await client.ExistsAsync(currentDirectory, cancellationToken).AnyContext())
+                {
+                    continue;
+                }
+
+                logger.LogInformation("Creating Container segment {Segment}", segment);
+                await client.CreateDirectoryAsync(currentDirectory, cancellationToken).AnyContext();
+            }
+        }
+        finally
+        {
+            await pool.ReleaseAsync(client).ConfigureAwait(false);
         }
     }
 
-    #endregion
-
-    #region Upload
-
+    /// <summary>
+    /// Uploads a blob to SFTP storage.
+    /// </summary>
+    /// <param name="container">Container path segments</param>
+    /// <param name="blobName">Name of the blob to upload</param>
+    /// <param name="stream">Content stream to upload</param>
+    /// <param name="metadata">
+    /// Optional metadata dictionary. Note: SFTP does not support blob metadata.
+    /// This parameter is accepted for compatibility with the IBlobStorage interface but is ignored.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token</param>
     public async ValueTask UploadAsync(
         string[] container,
         string blobName,
@@ -82,42 +77,42 @@ public sealed class SshBlobStorage : IBlobStorage
 
         var blobPath = _BuildBlobPath(container, blobName);
 
-        _logger.LogTrace("Saving {Path}", blobPath);
+        logger.LogTrace("Saving {Path}", blobPath);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
+        // Reset stream position for seekable streams
+        if (stream.CanSeek && stream.Position != 0)
+        {
+            stream.Seek(0, SeekOrigin.Begin);
+        }
 
+        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await using var sftpFileStream = await _client.OpenAsync(
-                blobPath,
-                FileMode.Create,
-                FileAccess.Write,
-                cancellationToken
-            );
+            try
+            {
+                await using var sftpFileStream = await client
+                    .OpenAsync(blobPath, FileMode.Create, FileAccess.Write, cancellationToken)
+                    .AnyContext();
 
-            await stream.CopyToAsync(sftpFileStream, cancellationToken);
+                await stream.CopyToAsync(sftpFileStream, cancellationToken).AnyContext();
+            }
+            catch (SftpPathNotFoundException e)
+            {
+                logger.LogDebug(e, "Error saving {Path}: Attempting to create directory", blobPath);
+                await _CreateContainerWithClientAsync(client, container, cancellationToken).AnyContext();
+
+                await using var sftpFileStream = await client
+                    .OpenAsync(blobPath, FileMode.OpenOrCreate, FileAccess.Write, cancellationToken)
+                    .AnyContext();
+
+                await stream.CopyToAsync(sftpFileStream, cancellationToken).AnyContext();
+            }
         }
-        catch (SftpPathNotFoundException e)
+        finally
         {
-            _logger.LogDebug(e, "Error saving {Path}: Attempting to create directory", blobPath);
-            await CreateContainerAsync(container, cancellationToken);
-
-            _logger.LogTrace("Saving {Path}", blobPath);
-
-            await using var sftpFileStream = await _client.OpenAsync(
-                blobPath,
-                FileMode.OpenOrCreate,
-                FileAccess.Write,
-                cancellationToken
-            );
-
-            await stream.CopyToAsync(sftpFileStream, cancellationToken);
+            await pool.ReleaseAsync(client).ConfigureAwait(false);
         }
     }
-
-    #endregion
-
-    #region Bulk Upload
 
     public async ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         string[] container,
@@ -128,26 +123,38 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(blobs);
         Argument.IsNotNullOrEmpty(container);
 
-        var tasks = blobs.Select(async blob =>
+        var results = new Result<Exception>[blobs.Count];
+        var index = 0;
+
+        var parallelOptions = new ParallelOptions
         {
-            try
-            {
-                await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, cancellationToken);
+            MaxDegreeOfParallelism = options.CurrentValue.MaxConcurrentOperations,
+            CancellationToken = cancellationToken,
+        };
 
-                return Result<Exception>.Success();
-            }
-            catch (Exception e)
-            {
-                return Result<Exception>.Fail(e);
-            }
-        });
+        await Parallel
+            .ForEachAsync(
+                blobs,
+                parallelOptions,
+                async (blob, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions();
+                    try
+                    {
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        results[i] = Result<Exception>.Ok();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
+
+        return results;
     }
-
-    #endregion
-
-    #region Delete
 
     public async ValueTask<bool> DeleteAsync(
         string[] container,
@@ -158,34 +165,40 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
-
         var blobPath = _BuildBlobPath(container, blobName);
 
-        _logger.LogTrace("Deleting {Path}", blobPath);
+        logger.LogTrace("Deleting {Path}", blobPath);
 
-        return await _DeleteAsync(blobPath, cancellationToken);
+        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await _DeleteWithClientAsync(client, blobPath, cancellationToken).AnyContext();
+        }
+        finally
+        {
+            await pool.ReleaseAsync(client).ConfigureAwait(false);
+        }
     }
 
-    private async Task<bool> _DeleteAsync(string blobPath, CancellationToken cancellationToken)
+    private async Task<bool> _DeleteWithClientAsync(
+        SftpClient client,
+        string blobPath,
+        CancellationToken cancellationToken
+    )
     {
         try
         {
-            await _client.DeleteFileAsync(blobPath, cancellationToken);
+            await client.DeleteFileAsync(blobPath, cancellationToken).AnyContext();
         }
         catch (SftpPathNotFoundException ex)
         {
-            _logger.LogError(ex, "Unable to delete {Path}: File not found", blobPath);
+            logger.LogError(ex, "Unable to delete {Path}: File not found", blobPath);
 
             return false;
         }
 
         return true;
     }
-
-    #endregion
-
-    #region Bulk Delete
 
     public async ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         string[] container,
@@ -200,19 +213,36 @@ public sealed class SshBlobStorage : IBlobStorage
             return [];
         }
 
-        var tasks = blobNames.Select(async fileName =>
-        {
-            try
-            {
-                return await DeleteAsync(container, fileName, cancellationToken);
-            }
-            catch (Exception e)
-            {
-                return Result<bool, Exception>.Fail(e);
-            }
-        });
+        var results = new Result<bool, Exception>[blobNames.Count];
+        var index = 0;
 
-        return await Task.WhenAll(tasks).WithAggregatedExceptions();
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = options.CurrentValue.MaxConcurrentOperations,
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel
+            .ForEachAsync(
+                blobNames,
+                parallelOptions,
+                async (fileName, ct) =>
+                {
+                    var i = Interlocked.Increment(ref index) - 1;
+
+                    try
+                    {
+                        results[i] = await DeleteAsync(container, fileName, ct).AnyContext();
+                    }
+                    catch (Exception e)
+                    {
+                        results[i] = Result<bool, Exception>.Fail(e);
+                    }
+                }
+            )
+            .AnyContext();
+
+        return results;
     }
 
     public async ValueTask<int> DeleteAllAsync(
@@ -221,50 +251,80 @@ public sealed class SshBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        await _EnsureClientConnectedAsync(cancellationToken);
-
         var containerPath = _BuildContainerPath(container);
         blobSearchPattern = _NormalizePath(blobSearchPattern);
 
-        if (blobSearchPattern is null or "*")
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
+        try
         {
-            return await DeleteDirectoryAsync(containerPath, includeSelf: false, cancellationToken);
-        }
-
-        if (blobSearchPattern.EndsWith("/*", StringComparison.Ordinal))
-        {
-            blobSearchPattern = containerPath + blobSearchPattern[..^2].RemovePrefix('/');
-
-            return await DeleteDirectoryAsync(blobSearchPattern, includeSelf: false, cancellationToken);
-        }
-
-        var files = await _GetFileListAsync(
-            container[0],
-            containerPath,
-            blobSearchPattern,
-            cancellationToken: cancellationToken
-        );
-        var count = 0;
-
-        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, blobSearchPattern);
-
-        foreach (var file in files)
-        {
-            var result = await _DeleteAsync(Url.Combine(container[0], file.BlobKey), cancellationToken);
-
-            if (result)
+            if (blobSearchPattern is null or "*")
             {
-                count++;
+                return await _DeleteDirectoryWithClientAsync(
+                        client,
+                        containerPath,
+                        includeSelf: false,
+                        cancellationToken
+                    )
+                    .AnyContext();
             }
-            else
+
+            if (blobSearchPattern.EndsWith("/*", StringComparison.Ordinal))
             {
-                _logger.LogWarning("Failed to delete {Path}", file.BlobKey);
+                blobSearchPattern = containerPath + blobSearchPattern[..^2].RemovePrefix('/');
+
+                return await _DeleteDirectoryWithClientAsync(
+                        client,
+                        blobSearchPattern,
+                        includeSelf: false,
+                        cancellationToken
+                    )
+                    .AnyContext();
             }
+
+            var files = await _GetFileListWithClientAsync(
+                    client,
+                    container[0],
+                    containerPath,
+                    blobSearchPattern,
+                    cancellationToken: cancellationToken
+                )
+                .AnyContext();
+
+            var count = 0;
+
+            logger.LogInformation(
+                "Deleting {FileCount} files matching {SearchPattern}",
+                files.Count,
+                blobSearchPattern
+            );
+
+            foreach (var file in files)
+            {
+                var result = await _DeleteWithClientAsync(
+                        client,
+                        Url.Combine(container[0], file.BlobKey),
+                        cancellationToken
+                    )
+                    .AnyContext();
+
+                if (result)
+                {
+                    count++;
+                }
+                else
+                {
+                    logger.LogWarning("Failed to delete {Path}", file.BlobKey);
+                }
+            }
+
+            logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
+
+            return count;
         }
-
-        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
-
-        return count;
+        finally
+        {
+            await pool.ReleaseAsync(client).AnyContext();
+        }
     }
 
     public async Task<int> DeleteDirectoryAsync(
@@ -273,49 +333,110 @@ public sealed class SshBlobStorage : IBlobStorage
         CancellationToken cancellationToken = default
     )
     {
-        _logger.LogInformation("Deleting {Directory} directory", directory);
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
+        try
+        {
+            return await _DeleteDirectoryWithClientAsync(client, directory, includeSelf, cancellationToken)
+                .AnyContext();
+        }
+        finally
+        {
+            await pool.ReleaseAsync(client).AnyContext();
+        }
+    }
 
-        var count = 0;
+    private async Task<int> _DeleteDirectoryWithClientAsync(
+        SftpClient client,
+        string directory,
+        bool includeSelf,
+        CancellationToken cancellationToken
+    )
+    {
+        logger.LogInformation("Deleting {Directory} directory", directory);
+
+        var filesToDelete = new List<string>();
+        var dirsToDelete = new List<string>();
 
         try
         {
-            await foreach (var file in _client.ListDirectoryAsync(directory, cancellationToken))
-            {
-                if (file.Name is "." or "..")
-                {
-                    continue;
-                }
+            // Collect all paths recursively
+            await _CollectPathsRecursively(client, directory, filesToDelete, dirsToDelete, cancellationToken)
+                .AnyContext();
 
-                if (file.IsDirectory)
+            var count = 0;
+
+            // Parallel file deletion
+            if (filesToDelete.Count > 0)
+            {
+                var parallelOptions = new ParallelOptions
                 {
-                    count += await DeleteDirectoryAsync(file.FullName, includeSelf: true, cancellationToken);
-                }
-                else
-                {
-                    _logger.LogTrace("Deleting file {Path}", file.FullName);
-                    await _client.DeleteFileAsync(file.FullName, cancellationToken);
-                    count++;
-                }
+                    MaxDegreeOfParallelism = options.CurrentValue.MaxConcurrentOperations,
+                    CancellationToken = cancellationToken,
+                };
+
+                await Parallel
+                    .ForEachAsync(
+                        filesToDelete,
+                        parallelOptions,
+                        async (path, ct) =>
+                        {
+                            logger.LogTrace("Deleting file {Path}", path);
+                            await client.DeleteFileAsync(path, ct).AnyContext();
+                            Interlocked.Increment(ref count);
+                        }
+                    )
+                    .AnyContext();
+            }
+
+            // Sequential directory deletion (must be bottom-up)
+            foreach (var dir in dirsToDelete.OrderByDescending(d => d.Length))
+            {
+                await client.DeleteDirectoryAsync(dir, cancellationToken).AnyContext();
             }
 
             if (includeSelf)
             {
-                await _client.DeleteDirectoryAsync(directory, cancellationToken);
+                await client.DeleteDirectoryAsync(directory, cancellationToken).AnyContext();
             }
+
+            logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
+
+            return count;
         }
         catch (SftpPathNotFoundException)
         {
-            _logger.LogTrace("Delete directory not found with {Directory}", directory);
+            logger.LogTrace("Delete directory not found with {Directory}", directory);
+            return 0;
         }
-
-        _logger.LogTrace("Finished deleting {Directory} directory with {FileCount} files", directory, count);
-
-        return count;
     }
 
-    #endregion
+    private static async Task _CollectPathsRecursively(
+        SftpClient client,
+        string directory,
+        List<string> filesToDelete,
+        List<string> dirsToDelete,
+        CancellationToken cancellationToken
+    )
+    {
+        await foreach (var file in client.ListDirectoryAsync(directory, cancellationToken).AnyContext())
+        {
+            if (file.Name is "." or "..")
+            {
+                continue;
+            }
 
-    #region Rename
+            if (file.IsDirectory)
+            {
+                dirsToDelete.Add(file.FullName);
+                await _CollectPathsRecursively(client, file.FullName, filesToDelete, dirsToDelete, cancellationToken)
+                    .AnyContext();
+            }
+            else
+            {
+                filesToDelete.Add(file.FullName);
+            }
+        }
+    }
 
     public async ValueTask<bool> RenameAsync(
         string[] blobContainer,
@@ -330,60 +451,61 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
-
         var blobPath = _BuildBlobPath(blobContainer, blobName);
         var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
 
-        _logger.LogInformation("Renaming {Path} to {TargetPath}", blobPath, targetPath);
+        logger.LogInformation("Renaming {Path} to {TargetPath}", blobPath, targetPath);
 
-        // If the target path already exists, delete it.
-        if (await ExistsAsync(newBlobContainer, newBlobName, cancellationToken))
-        {
-            _logger.LogDebug("Removing existing {TargetPath} path for rename operation", targetPath);
-            _ = await DeleteAsync(newBlobContainer, newBlobName, cancellationToken);
-            _logger.LogDebug("Removed existing {TargetPath} path for rename operation", targetPath);
-        }
-
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
         try
         {
-            await _client.RenameFileAsync(blobPath, targetPath, cancellationToken);
-        }
-        catch (SftpPathNotFoundException e)
-        {
-            _logger.LogDebug(
-                e,
-                "Error renaming {Path} to {NewPath}: Attempting to create directory",
-                blobPath,
-                targetPath
-            );
+            // If the target path already exists, delete it.
+            if (await client.ExistsAsync(targetPath, cancellationToken).AnyContext())
+            {
+                logger.LogDebug("Removing existing {TargetPath} path for rename operation", targetPath);
+                await _DeleteWithClientAsync(client, targetPath, cancellationToken).AnyContext();
+                logger.LogDebug("Removed existing {TargetPath} path for rename operation", targetPath);
+            }
 
             try
             {
-                await CreateContainerAsync(newBlobContainer, cancellationToken);
-                _logger.LogTrace("Renaming {Path} to {NewPath}", blobPath, targetPath);
-                await _client.RenameFileAsync(blobPath, targetPath, cancellationToken);
+                await client.RenameFileAsync(blobPath, targetPath, cancellationToken).AnyContext();
             }
-            catch (Exception ex)
+            catch (SftpPathNotFoundException e)
             {
-                _logger.LogError(ex, "Error renaming {Path} to {NewPath}", blobPath, targetPath);
+                logger.LogDebug(
+                    e,
+                    "Error renaming {Path} to {NewPath}: Attempting to create directory",
+                    blobPath,
+                    targetPath
+                );
+
+                try
+                {
+                    await _CreateContainerWithClientAsync(client, newBlobContainer, cancellationToken).AnyContext();
+                    await client.RenameFileAsync(blobPath, targetPath, cancellationToken).AnyContext();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error renaming {Path} to {NewPath}", blobPath, targetPath);
+
+                    return false;
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, "Error renaming {Path} to {NewPath}", blobPath, targetPath);
 
                 return false;
             }
+
+            return true;
         }
-        catch (Exception e)
+        finally
         {
-            _logger.LogError(e, "Error renaming {Path} to {NewPath}", blobPath, targetPath);
-
-            return false;
+            await pool.ReleaseAsync(client).AnyContext();
         }
-
-        return true;
     }
-
-    #endregion
-
-    #region Copy
 
     public async ValueTask<bool> CopyAsync(
         string[] blobContainer,
@@ -398,9 +520,16 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(newBlobName);
         Argument.IsNotNull(newBlobContainer);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
+        // Validate paths before try-catch to ensure security exceptions propagate
+        PathValidation.ValidatePathSegment(blobName);
+        PathValidation.ValidatePathSegment(newBlobName);
+        PathValidation.ValidateContainer(blobContainer);
+        PathValidation.ValidateContainer(newBlobContainer);
 
-        _logger.LogInformation(
+        var sourcePath = _BuildBlobPath(blobContainer, blobName);
+        var destPath = _BuildBlobPath(newBlobContainer, newBlobName);
+
+        logger.LogInformation(
             "Copying {@Container}/{Path} to {@TargetContainer}/{TargetPath}",
             blobContainer,
             blobName,
@@ -408,24 +537,36 @@ public sealed class SshBlobStorage : IBlobStorage
             newBlobName
         );
 
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
         try
         {
-            var blob = await DownloadAsync(blobContainer, blobName, cancellationToken);
+            // Open source stream for reading
+            await using var sourceStream = await client
+                .OpenAsync(sourcePath, FileMode.Open, FileAccess.Read, cancellationToken)
+                .AnyContext();
 
-            if (blob is null)
-            {
-                return false;
-            }
+            // Ensure destination container exists
+            await _CreateContainerWithClientAsync(client, newBlobContainer, cancellationToken).AnyContext();
 
-            await using var stream = blob.Stream;
+            // Open destination stream for writing
+            await using var destStream = await client
+                .OpenAsync(destPath, FileMode.Create, FileAccess.Write, cancellationToken)
+                .AnyContext();
 
-            await UploadAsync(newBlobContainer, newBlobName, stream, blob.Metadata, cancellationToken);
+            // Stream copy with 80KB buffer - constant memory usage regardless of file size
+            await sourceStream.CopyToAsync(destStream, 81920, cancellationToken).AnyContext();
 
             return true;
         }
+        catch (SftpPathNotFoundException ex)
+        {
+            logger.LogError(ex, "Source file not found: {@Container}/{Path}", blobContainer, blobName);
+
+            return false;
+        }
         catch (Exception e)
         {
-            _logger.LogError(
+            logger.LogError(
                 e,
                 "Error copying {@Container}/{Path} to {@TargetContainer}/{TargetPath}",
                 blobContainer,
@@ -436,11 +577,11 @@ public sealed class SshBlobStorage : IBlobStorage
 
             return false;
         }
+        finally
+        {
+            await pool.ReleaseAsync(client).AnyContext();
+        }
     }
-
-    #endregion
-
-    #region Exists
 
     public async ValueTask<bool> ExistsAsync(
         string[] container,
@@ -451,22 +592,23 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
-
         var blobPath = _BuildBlobPath(container, blobName);
 
-        _logger.LogTrace("Checking if {Path} exists", blobPath);
+        logger.LogTrace("Checking if {Path} exists", blobPath);
 
-        var exists = await _client.ExistsAsync(blobPath, cancellationToken);
-
-        return exists;
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
+        try
+        {
+            return await client.ExistsAsync(blobPath, cancellationToken).AnyContext();
+        }
+        finally
+        {
+            await pool.ReleaseAsync(client).AnyContext();
+        }
     }
 
-    #endregion
-
-    #region Downalod
-
-    public async ValueTask<BlobDownloadResult?> DownloadAsync(
+    /// <inheritdoc />
+    public async ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -475,23 +617,35 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNull(blobName);
         Argument.IsNotNull(container);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
-
         var blobPath = _BuildBlobPath(container, blobName);
 
-        _logger.LogTrace("Getting file stream for {Path}", blobPath);
+        logger.LogTrace("Getting file stream for {Path}", blobPath);
+
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
 
         try
         {
-            var stream = await _client.OpenAsync(blobPath, FileMode.Open, FileAccess.Read, cancellationToken);
+            var sftpStream = await client
+                .OpenAsync(blobPath, FileMode.Open, FileAccess.Read, cancellationToken)
+                .AnyContext();
 
-            return new(stream, blobName);
+            var wrappedStream = new PooledClientStream(sftpStream, client, pool);
+
+#pragma warning disable CA2000 // Dispose objects before losing scope - ownership transferred to caller
+            return new BlobDownloadResult(wrappedStream, blobName);
+#pragma warning restore CA2000
         }
         catch (SftpPathNotFoundException ex)
         {
-            _logger.LogError(ex, "Unable to get file stream for {Path}: File Not Found", blobPath);
+            logger.LogError(ex, "Unable to get file stream for {Path}: File Not Found", blobPath);
+            await pool.ReleaseAsync(client).AnyContext();
 
             return null;
+        }
+        catch
+        {
+            await pool.ReleaseAsync(client).AnyContext();
+            throw;
         }
     }
 
@@ -504,18 +658,18 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsNotNullOrEmpty(container);
         Argument.IsNotNull(blobName);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
         var directoryPath = _BuildContainerPath(container);
         var blobPath = directoryPath + blobName;
-        _logger.LogTrace("Getting blob info for {Path}", blobPath);
+        logger.LogTrace("Getting blob info for {Path}", blobPath);
 
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
         try
         {
-            var file = await _client.GetAsync(blobPath, cancellationToken);
+            var file = await client.GetAsync(blobPath, cancellationToken).AnyContext();
 
             if (file.IsDirectory)
             {
-                _logger.LogWarning("Unable to get blob info for {Path}: Is a directory", blobPath);
+                logger.LogWarning("Unable to get blob info for {Path}: Is a directory", blobPath);
 
                 return null;
             }
@@ -526,16 +680,62 @@ public sealed class SshBlobStorage : IBlobStorage
         }
         catch (SftpPathNotFoundException ex)
         {
-            _logger.LogError(ex, "Unable to get file info for {Path}: File Not Found", blobPath);
+            logger.LogError(ex, "Unable to get file info for {Path}: File Not Found", blobPath);
 
             return null;
         }
+        finally
+        {
+            await pool.ReleaseAsync(client).AnyContext();
+        }
     }
 
-    #endregion
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(container);
 
-    #region List
+        var directoryPath = _BuildContainerPath(container);
+        var criteria = _GetRequestCriteria(directoryPath, blobSearchPattern);
 
+        logger.LogTrace(
+            "Getting blobs recursively matching {Prefix} and {Pattern}...",
+            criteria.PathPrefix,
+            criteria.Pattern
+        );
+
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
+        try
+        {
+            await foreach (
+                var blob in _GetBlobsRecursivelyAsync(
+                        client,
+                        container[0],
+                        criteria.PathPrefix,
+                        criteria.Pattern,
+                        cancellationToken
+                    )
+                    .AnyContext()
+            )
+            {
+                yield return blob;
+            }
+        }
+        finally
+        {
+            await pool.ReleaseAsync(client).AnyContext();
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// WARNING: SFTP does not support server-side pagination. Each page request
+    /// enumerates from the beginning. For large directories, use GetBlobsAsync()
+    /// with client-side pagination instead.
+    /// </remarks>
     public async ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
         string? blobSearchPattern = null,
@@ -575,34 +775,46 @@ public sealed class SshBlobStorage : IBlobStorage
             pagingLimit++;
         }
 
-        var list = await _GetFileListAsync(
-            baseContainer,
-            directoryPath,
-            searchPattern,
-            pagingLimit,
-            skip,
-            cancellationToken
-        );
-        var hasMore = false;
-
-        if (list.Count == pagingLimit)
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
+        try
         {
-            hasMore = true;
-            list.RemoveAt(pagingLimit - 1);
+            var list = await _GetFileListWithClientAsync(
+                    client,
+                    baseContainer,
+                    directoryPath,
+                    searchPattern,
+                    pagingLimit,
+                    skip,
+                    cancellationToken
+                )
+                .AnyContext();
+            var hasMore = false;
+
+            if (list.Count == pagingLimit)
+            {
+                hasMore = true;
+                list.RemoveAt(pagingLimit - 1);
+            }
+
+            return new NextPageResult
+            {
+                Success = true,
+                HasMore = hasMore,
+                Blobs = list,
+                NextPageFunc = hasMore
+                    ? (_, token) =>
+                        _GetFilesAsync(baseContainer, directoryPath, searchPattern, page + 1, pageSize, token)
+                    : null,
+            };
         }
-
-        return new NextPageResult
+        finally
         {
-            Success = true,
-            HasMore = hasMore,
-            Blobs = list,
-            NextPageFunc = hasMore
-                ? (_, token) => _GetFilesAsync(baseContainer, directoryPath, searchPattern, page + 1, pageSize, token)
-                : null,
-        };
+            await pool.ReleaseAsync(client).AnyContext();
+        }
     }
 
-    private async Task<List<BlobInfo>> _GetFileListAsync(
+    private async Task<List<BlobInfo>> _GetFileListWithClientAsync(
+        SftpClient client,
         string baseContainer,
         string directoryPath,
         string? searchPattern = null,
@@ -614,30 +826,37 @@ public sealed class SshBlobStorage : IBlobStorage
         Argument.IsPositive(limit);
         Argument.IsPositiveOrZero(skip);
 
-        await _EnsureClientConnectedAsync(cancellationToken);
-
         var criteria = _GetRequestCriteria(directoryPath, searchPattern);
 
-        // ALERT: This could be expensive the larger the directory structure you have
-        // as we aren't efficiently doing paging.
-        var recordsToReturn = limit.HasValue ? (skip.GetValueOrDefault() * limit) + limit : null;
-
-        _logger.LogTrace(
+        logger.LogTrace(
             "Getting file list recursively matching {Prefix} and {Pattern}...",
             criteria.PathPrefix,
             criteria.Pattern
         );
 
         var items = new List<BlobInfo>();
+        var count = 0;
+        var recordsToReturn = limit.HasValue ? (skip.GetValueOrDefault() + limit.Value) : (int?)null;
 
-        await _GetFileListRecursivelyAsync(
-            baseContainer,
-            criteria.PathPrefix,
-            criteria.Pattern,
-            items,
-            recordsToReturn,
-            cancellationToken
-        );
+        await foreach (
+            var blob in _GetBlobsRecursivelyAsync(
+                    client,
+                    baseContainer,
+                    criteria.PathPrefix,
+                    criteria.Pattern,
+                    cancellationToken
+                )
+                .AnyContext()
+        )
+        {
+            if (recordsToReturn.HasValue && count >= recordsToReturn)
+            {
+                break;
+            }
+
+            items.Add(blob);
+            count++;
+        }
 
         if (skip is null && limit is null)
         {
@@ -659,57 +878,72 @@ public sealed class SshBlobStorage : IBlobStorage
         return page.ToList();
     }
 
-    private async Task _GetFileListRecursivelyAsync(
+    private static async IAsyncEnumerable<ISftpFile> _SafeListDirectoryAsync(
+        IAsyncEnumerable<ISftpFile> files,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
+    {
+        var enumerator = files.GetAsyncEnumerator(cancellationToken);
+        await using (enumerator)
+        {
+            while (true)
+            {
+                bool hasNext;
+
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (SftpPathNotFoundException)
+                {
+                    // Directory was deleted during iteration - stop enumeration
+                    yield break;
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<BlobInfo> _GetBlobsRecursivelyAsync(
+        SftpClient client,
         string baseContainer,
         string currentPathPrefix,
         Regex? pattern,
-        ICollection<BlobInfo> list,
-        int? recordsToReturn = null,
-        CancellationToken cancellationToken = default
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(currentPathPrefix);
 
         if (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogDebug("Cancellation requested");
-
-            return;
+            logger.LogDebug("Cancellation requested");
+            yield break;
         }
 
-        var files = new List<ISftpFile>();
+        IAsyncEnumerable<ISftpFile> files;
 
         try
         {
-            await foreach (var file in _client.ListDirectoryAsync(currentPathPrefix, cancellationToken))
-            {
-                files.Add(file);
-            }
+            files = client.ListDirectoryAsync(currentPathPrefix, cancellationToken);
         }
         catch (SftpPathNotFoundException)
         {
-            _logger.LogDebug("Directory not found with {PathPrefix}", currentPathPrefix);
-
-            return;
+            logger.LogDebug("Directory not found with {PathPrefix}", currentPathPrefix);
+            yield break;
         }
 
-        foreach (
-            var file in files
-                .Where(f => f.IsRegularFile || f.IsDirectory)
-                .OrderByDescending(f => f.IsRegularFile)
-                .ThenBy(f => f.Name, StringComparer.Ordinal)
-        )
+        await foreach (var file in _SafeListDirectoryAsync(files, cancellationToken).AnyContext())
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                _logger.LogDebug("Cancellation requested");
-
-                return;
-            }
-
-            if (recordsToReturn.HasValue && list.Count >= recordsToReturn)
-            {
-                break;
+                logger.LogDebug("Cancellation requested");
+                yield break;
             }
 
             if (file is { IsDirectory: true, Name: "." or ".." })
@@ -717,21 +951,24 @@ public sealed class SshBlobStorage : IBlobStorage
                 continue;
             }
 
-            // If the prefix (current directory) is empty, use the current working directory instead of a rooted path.
+            if (file is { IsRegularFile: false, IsDirectory: false })
+            {
+                continue;
+            }
+
             var path = string.IsNullOrEmpty(currentPathPrefix) ? file.Name : $"{currentPathPrefix}{file.Name}";
 
             if (file.IsDirectory)
             {
                 path += "/";
 
-                await _GetFileListRecursivelyAsync(
-                    baseContainer,
-                    path,
-                    pattern,
-                    list,
-                    recordsToReturn,
-                    cancellationToken
-                );
+                await foreach (
+                    var blob in _GetBlobsRecursivelyAsync(client, baseContainer, path, pattern, cancellationToken)
+                        .AnyContext()
+                )
+                {
+                    yield return blob;
+                }
 
                 continue;
             }
@@ -743,13 +980,34 @@ public sealed class SshBlobStorage : IBlobStorage
 
             if (pattern?.IsMatch(path) == false)
             {
-                _logger.LogTrace("Skipping {Path}: Doesn't match pattern", path);
-
+                logger.LogTrace("Skipping {Path}: Doesn't match pattern", path);
                 continue;
             }
 
             var objectKey = path.Replace(baseContainer, string.Empty, StringComparison.Ordinal).TrimStart('/');
-            list.Add(_ToBlobInfo(file, objectKey));
+            yield return _ToBlobInfo(file, objectKey);
+        }
+    }
+
+    private async Task _CreateContainerWithClientAsync(
+        SftpClient client,
+        string[] container,
+        CancellationToken cancellationToken
+    )
+    {
+        var currentDirectory = string.Empty;
+
+        foreach (var segment in container)
+        {
+            currentDirectory = string.IsNullOrEmpty(currentDirectory) ? segment : $"{currentDirectory}/{segment}";
+
+            if (await client.ExistsAsync(currentDirectory, cancellationToken).AnyContext())
+            {
+                continue;
+            }
+
+            logger.LogInformation("Creating Container segment {Segment}", segment);
+            await client.CreateDirectoryAsync(currentDirectory, cancellationToken).AnyContext();
         }
     }
 
@@ -789,44 +1047,56 @@ public sealed class SshBlobStorage : IBlobStorage
 
     private sealed record SearchCriteria(string PathPrefix = "", Regex? Pattern = null);
 
-    #endregion
-
-    #region Build Paths
-
-    private static string _BuildBlobPath(string[] container, string blobName)
+    private string _BuildBlobPath(string[] container, string blobName)
     {
+        PathValidation.ValidatePathSegment(blobName);
+        PathValidation.ValidateContainer(container);
+
+        var normalizedBlobName = normalizer.NormalizeBlobName(blobName);
+
         if (container.Length == 0)
         {
-            return blobName;
+            return normalizedBlobName;
         }
 
-        var sb = ZString.CreateStringBuilder();
+        var sb = new StringBuilder();
 
-        sb.AppendJoin('/', container);
+        foreach (var segment in container)
+        {
+            if (sb.Length > 0)
+            {
+                sb.Append('/');
+            }
 
-        if (!string.IsNullOrEmpty(blobName))
+            sb.Append(normalizer.NormalizeContainerName(segment));
+        }
+
+        if (!string.IsNullOrEmpty(normalizedBlobName))
         {
             sb.Append('/');
         }
 
-        sb.Append(blobName);
+        sb.Append(normalizedBlobName);
 
         return sb.ToString();
     }
 
-    private static string _BuildContainerPath(string[] container)
+    private string _BuildContainerPath(string[] container)
     {
         if (container.Length == 0)
         {
             return "";
         }
 
-        var sb = ZString.CreateStringBuilder();
+        PathValidation.ValidateContainer(container);
 
-        sb.AppendJoin('/', container);
-        sb.Append('/');
+        var normalizedSegments = new string[container.Length];
+        for (var i = 0; i < container.Length; i++)
+        {
+            normalizedSegments[i] = normalizer.NormalizeContainerName(container[i]);
+        }
 
-        return sb.ToString();
+        return $"{string.Join('/', normalizedSegments)}/";
     }
 
     [return: NotNullIfNotNull(nameof(path))]
@@ -834,108 +1104,6 @@ public sealed class SshBlobStorage : IBlobStorage
     {
         return path?.Replace('\\', '/');
     }
-
-    #endregion
-
-    #region Build Clients
-
-    private async ValueTask _EnsureClientConnectedAsync(CancellationToken cancellationToken)
-    {
-        if (_client.IsConnected)
-        {
-            return;
-        }
-
-        _logger.LogTrace("Connecting to {Host}:{Port}", _client.ConnectionInfo.Host, _client.ConnectionInfo.Port);
-
-        await _client.ConnectAsync(cancellationToken);
-
-        _logger.LogTrace(
-            "Connected to {Host}:{Port} in {WorkingDirectory}",
-            _client.ConnectionInfo.Host,
-            _client.ConnectionInfo.Port,
-            _client.WorkingDirectory
-        );
-    }
-
-    private static ConnectionInfo _BuildConnectionInfo(SshBlobStorageOptions options)
-    {
-        Argument.IsNotNull(options);
-
-        if (
-            !Uri.TryCreate(options.ConnectionString, UriKind.Absolute, out var uri)
-            || string.IsNullOrEmpty(uri.UserInfo)
-        )
-        {
-            throw new InvalidOperationException("Unable to parse connection string uri");
-        }
-
-        var userParts = uri.UserInfo.Split(':', StringSplitOptions.RemoveEmptyEntries);
-        var username = Uri.UnescapeDataString(userParts[0]);
-        var password = Uri.UnescapeDataString(userParts.Length > 1 ? userParts[1] : string.Empty);
-        var port = uri.Port > 0 ? uri.Port : 22;
-
-        var authenticationMethods = new List<AuthenticationMethod>();
-
-        if (!string.IsNullOrEmpty(password))
-        {
-            authenticationMethods.Add(new PasswordAuthenticationMethod(username, password));
-        }
-
-        if (options.PrivateKey is not null)
-        {
-            authenticationMethods.Add(
-                new PrivateKeyAuthenticationMethod(
-                    username,
-                    new PrivateKeyFile(options.PrivateKey, options.PrivateKeyPassPhrase)
-                )
-            );
-        }
-
-        if (authenticationMethods.Count == 0)
-        {
-            authenticationMethods.Add(new NoneAuthenticationMethod(username));
-        }
-
-        if (string.IsNullOrEmpty(options.Proxy))
-        {
-            return new ConnectionInfo(uri.Host, port, username, [.. authenticationMethods]);
-        }
-
-        if (
-            !Uri.TryCreate(options.Proxy, UriKind.Absolute, out var proxyUri) || string.IsNullOrEmpty(proxyUri.UserInfo)
-        )
-        {
-            throw new InvalidOperationException("Unable to parse proxy uri");
-        }
-
-        var proxyParts = proxyUri.UserInfo.Split(':', StringSplitOptions.RemoveEmptyEntries);
-        var proxyUsername = proxyParts[0];
-        var proxyPassword = proxyParts.Length > 1 ? proxyParts[1] : null;
-
-        var proxyType = options.ProxyType;
-
-        if (proxyType is ProxyTypes.None && proxyUri.Scheme.StartsWith("http", StringComparison.Ordinal))
-        {
-            proxyType = ProxyTypes.Http;
-        }
-
-        return new ConnectionInfo(
-            uri.Host,
-            port,
-            username,
-            proxyType,
-            proxyUri.Host,
-            proxyUri.Port,
-            proxyUsername,
-            proxyPassword,
-            [.. authenticationMethods]
-        );
-    }
-
-    #endregion
-
-    #region Mappers
 
     private static BlobInfo _ToBlobInfo(ISftpFile file, string objectKey)
     {
@@ -951,31 +1119,77 @@ public sealed class SshBlobStorage : IBlobStorage
         };
     }
 
-    #endregion
-
-    #region Dispose
-
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
-        if (_client.IsConnected)
-        {
-            _logger.LogTrace(
-                "Disconnecting from {Host}:{Port}",
-                _client.ConnectionInfo.Host,
-                _client.ConnectionInfo.Port
-            );
+        // Pool is managed by DI container - don't dispose here
+        return ValueTask.CompletedTask;
+    }
+}
 
-            _client.Disconnect();
+/// <summary>
+/// Wrapper stream that releases the SFTP client back to the pool when disposed.
+/// Allows the caller to own the stream lifetime while properly managing the pooled client.
+/// </summary>
+file sealed class PooledClientStream(Stream innerStream, SftpClient client, SftpClientPool pool) : Stream
+{
+    private bool _disposed;
 
-            _logger.LogTrace(
-                "Disconnected from {Host}:{Port}",
-                _client.ConnectionInfo.Host,
-                _client.ConnectionInfo.Port
-            );
-        }
+    public override bool CanRead => innerStream.CanRead;
+    public override bool CanSeek => innerStream.CanSeek;
+    public override bool CanWrite => innerStream.CanWrite;
+    public override long Length => innerStream.Length;
 
-        _client.Dispose();
+    public override long Position
+    {
+        get => innerStream.Position;
+        set => innerStream.Position = value;
     }
 
-    #endregion
+    public override void Flush() => innerStream.Flush();
+
+    public override int Read(byte[] buffer, int offset, int count) => innerStream.Read(buffer, offset, count);
+
+    public override long Seek(long offset, SeekOrigin origin) => innerStream.Seek(offset, origin);
+
+    public override void SetLength(long value) => innerStream.SetLength(value);
+
+    public override void Write(byte[] buffer, int offset, int count) => innerStream.Write(buffer, offset, count);
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        innerStream.ReadAsync(buffer, offset, count, cancellationToken);
+
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+        innerStream.ReadAsync(buffer, cancellationToken);
+
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        innerStream.WriteAsync(buffer, offset, count, cancellationToken);
+
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
+        innerStream.WriteAsync(buffer, cancellationToken);
+
+    public override Task FlushAsync(CancellationToken cancellationToken) => innerStream.FlushAsync(cancellationToken);
+
+    protected override void Dispose(bool disposing)
+    {
+        if (!_disposed && disposing)
+        {
+            innerStream.Dispose();
+            pool.ReleaseAsync(client).AsTask().GetAwaiter().GetResult();
+            _disposed = true;
+        }
+
+        base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        if (!_disposed)
+        {
+            await innerStream.DisposeAsync().ConfigureAwait(false);
+            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            _disposed = true;
+        }
+
+        await base.DisposeAsync().ConfigureAwait(false);
+    }
 }

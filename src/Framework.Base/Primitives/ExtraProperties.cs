@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 using Framework.Checks;
@@ -21,55 +22,58 @@ public sealed class ExtraProperties : Dictionary<string, object?>
 [PublicAPI]
 public static class ExtraPropertyExtensions
 {
-    public static T? ToEnum<T>(this ExtraProperties extraProperties, string key)
-        where T : Enum
+    extension(ExtraProperties extraProperties)
     {
-        var value = extraProperties[key];
-
-        if (value is null)
+        public T? ToEnum<T>(string key)
+            where T : Enum
         {
-            return default;
-        }
+            var value = extraProperties[key];
 
-        if (value.GetType() == typeof(T))
-        {
+            if (value is null)
+            {
+                return default;
+            }
+
+            if (value.GetType() == typeof(T))
+            {
+                return (T)value;
+            }
+
+            var text = value.ToString();
+
+            if (text is null)
+            {
+                return default;
+            }
+
+            extraProperties[key] = Enum.Parse(typeof(T), text, ignoreCase: true);
+
             return (T)value;
         }
 
-        var text = value.ToString();
-
-        if (text is null)
+        public bool HasSameItems(ExtraProperties otherDictionary)
         {
-            return default;
-        }
+            Argument.IsNotNull(extraProperties);
+            Argument.IsNotNull(otherDictionary);
 
-        extraProperties[key] = Enum.Parse(typeof(T), text, ignoreCase: true);
-
-        return (T)value;
-    }
-
-    public static bool HasSameItems(this ExtraProperties dictionary, ExtraProperties otherDictionary)
-    {
-        Argument.IsNotNull(dictionary);
-        Argument.IsNotNull(otherDictionary);
-
-        if (dictionary.Count != otherDictionary.Count)
-        {
-            return false;
-        }
-
-        foreach (var key in dictionary.Keys)
-        {
-            if (
-                !otherDictionary.TryGetValue(key, out var value)
-                || !string.Equals(dictionary[key]?.ToString(), value?.ToString(), StringComparison.Ordinal)
-            )
+            if (extraProperties.Count != otherDictionary.Count)
             {
                 return false;
             }
-        }
 
-        return true;
+            foreach (var key in extraProperties.Keys)
+            {
+                if (
+                    !otherDictionary.TryGetValue(key, out var value)
+                    || !string.Equals(extraProperties[key]?.ToString(), value?.ToString(), StringComparison.Ordinal)
+                )
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 }
 
@@ -82,94 +86,97 @@ public interface IHasExtraProperties
 [PublicAPI]
 public static class HasExtraPropertiesExtensions
 {
-    public static bool HasProperty(this IHasExtraProperties source, string name)
+    extension(IHasExtraProperties source)
     {
-        return source.ExtraProperties.ContainsKey(name);
-    }
-
-    public static TProperty? GetProperty<TProperty>(
-        this IHasExtraProperties source,
-        string name,
-        TProperty? defaultValue = default
-    )
-    {
-        var value = source.GetProperty(name);
-        if (value == null)
+        public bool HasProperty(string name)
         {
-            return defaultValue;
+            return source.ExtraProperties.ContainsKey(name);
         }
 
-        if (typeof(TProperty).IsPrimitiveExtended(includeEnums: true))
+        [RequiresUnreferencedCode("Uses TypeDescriptor which is not compatible with trimming.")]
+        public TProperty? GetProperty<TProperty>(string name, TProperty? defaultValue = default)
         {
-            var conversionType = typeof(TProperty);
-
-            if (conversionType.IsNullableValueType())
+            var value = source.GetProperty(name);
+            if (value == null)
             {
-                conversionType = conversionType.GetGenericArguments()[0];
+                return defaultValue;
             }
 
-            if (conversionType == typeof(Guid))
+            if (typeof(TProperty).IsPrimitiveExtended(includeEnums: true))
             {
-                return (TProperty)
-                    TypeDescriptor.GetConverter(conversionType).ConvertFromInvariantString(value.ToString()!)!;
+                var conversionType = typeof(TProperty);
+
+                if (conversionType.IsNullableValueType())
+                {
+                    conversionType = conversionType.GetGenericArguments()[0];
+                }
+
+                if (conversionType == typeof(Guid))
+                {
+                    return (TProperty)
+                        TypeDescriptor.GetConverter(conversionType).ConvertFromInvariantString(value.ToString()!)!;
+                }
+
+                if (conversionType.IsEnum)
+                {
+                    return (TProperty)Enum.Parse(conversionType, value.ToString()!);
+                }
+
+                return (TProperty)Convert.ChangeType(value, conversionType, CultureInfo.InvariantCulture);
             }
 
-            if (conversionType.IsEnum)
-            {
-                return (TProperty)Enum.Parse(conversionType, value.ToString()!);
-            }
-
-            return (TProperty)Convert.ChangeType(value, conversionType, CultureInfo.InvariantCulture);
-        }
-
-        throw new InvalidOperationException(
-            "GetProperty<TProperty> does not support non-primitive types. Use non-generic GetProperty method and handle type casting manually."
-        );
-    }
-
-    public static object? GetProperty(this IHasExtraProperties source, string name, object? defaultValue = null)
-    {
-        return source.ExtraProperties.TryGetValue(name, out var value) ? value : value ?? defaultValue;
-    }
-
-    public static TSource SetProperty<TSource>(this TSource source, string name, object? value)
-        where TSource : IHasExtraProperties
-    {
-        source.ExtraProperties[name] = value;
-
-        return source;
-    }
-
-    public static TSource RemoveProperty<TSource>(this TSource source, string name)
-        where TSource : IHasExtraProperties
-    {
-        source.ExtraProperties.Remove(name);
-
-        return source;
-    }
-
-    public static void SetExtraPropertiesToRegularProperties(this IHasExtraProperties source)
-    {
-        var properties = source
-            .GetType()
-            .GetProperties()
-            .Where(info =>
-                source.ExtraProperties.ContainsKey(info.Name) && info.GetSetMethod(nonPublic: true) is not null
+            throw new InvalidOperationException(
+                "GetProperty<TProperty> does not support non-primitive types. Use non-generic GetProperty method and handle type casting manually."
             );
+        }
 
-        foreach (var property in properties)
+        public object? GetProperty(string name, object? defaultValue = null)
         {
-            property.SetValue(source, source.ExtraProperties[property.Name]);
-            source.RemoveProperty(property.Name);
+            return source.ExtraProperties.TryGetValue(name, out var value) ? value : value ?? defaultValue;
+        }
+
+        [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
+        public void SetExtraPropertiesToRegularProperties()
+        {
+            var properties = source
+                .GetType()
+                .GetProperties()
+                .Where(info =>
+                    source.ExtraProperties.ContainsKey(info.Name) && info.GetSetMethod(nonPublic: true) is not null
+                );
+
+            foreach (var property in properties)
+            {
+                property.SetValue(source, source.ExtraProperties[property.Name]);
+                source.RemoveProperty(property.Name);
+            }
+        }
+
+        public bool HasSameExtraProperties(IHasExtraProperties other)
+        {
+            Argument.IsNotNull(source);
+            Argument.IsNotNull(other);
+
+            return source.ExtraProperties.HasSameItems(other.ExtraProperties);
         }
     }
 
-    public static bool HasSameExtraProperties(this IHasExtraProperties source, IHasExtraProperties other)
+    extension<TSource>(TSource source)
+        where TSource : IHasExtraProperties
     {
-        Argument.IsNotNull(source);
-        Argument.IsNotNull(other);
+        public TSource SetProperty(string name, object? value)
+        {
+            source.ExtraProperties[name] = value;
 
-        return source.ExtraProperties.HasSameItems(other.ExtraProperties);
+            return source;
+        }
+
+        public TSource RemoveProperty(string name)
+        {
+            source.ExtraProperties.Remove(name);
+
+            return source;
+        }
     }
 }
 

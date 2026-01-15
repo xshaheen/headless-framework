@@ -37,7 +37,7 @@ public sealed class PaymobCashOutException(string? message, HttpStatusCode statu
 #pragma warning restore ERP022
 
         var statusCode = ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
-        var message = $"Paymob Cash In - Http request failed with status code ({statusCode}).";
+        var message = $"Paymob Cash Out - Http request failed with status code ({statusCode}).";
 
         throw new PaymobCashOutException(message, response.StatusCode, body);
     }

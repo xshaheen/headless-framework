@@ -11,9 +11,7 @@ public static class EntityFrameworkPermissionsSetup
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddPermissionsManagementDbContextStorage(
-            Action<DbContextOptionsBuilder> setupAction
-        )
+        public IServiceCollection AddPermissionsManagementDbContextStorage(Action<DbContextOptionsBuilder> setupAction)
         {
             services.AddPooledDbContextFactory<PermissionsDbContext>(setupAction);
             services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();

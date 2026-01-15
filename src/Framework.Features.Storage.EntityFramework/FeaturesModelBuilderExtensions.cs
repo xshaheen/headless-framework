@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Features.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +37,8 @@ public static class FeaturesModelBuilderExtensions
                     x.ProviderKey,
                 })
                 .IsUnique();
+
+            b.HasIndex(x => new { x.ProviderName, x.ProviderKey });
         });
 
         modelBuilder.Entity<FeatureGroupDefinitionRecord>(b =>

@@ -55,7 +55,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
     }
 
     public async Task<List<SettingValueRecord>> GetListAsync(
-        string[] names,
+        HashSet<string> names,
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default

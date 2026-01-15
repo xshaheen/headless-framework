@@ -15,7 +15,7 @@ public sealed class SettingValueCacheItem(string? value)
         return string.Format(CultureInfo.InvariantCulture, _Format, providerName, providerKey, name);
     }
 
-    public static string? GetSettingNameFormCacheKey(string cacheKey)
+    public static string? GetSettingNameFromCacheKey(string cacheKey)
     {
         var result = FormattedStringValueExtractor.Extract(cacheKey, _Format.Format, ignoreCase: true);
 

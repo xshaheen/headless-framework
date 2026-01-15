@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Payments.Paymob.CashOut;
+using Framework.Payments.Paymob.CashOut.Internals;
 using Framework.Payments.Paymob.CashOut.Models;
 using Framework.Payments.Paymob.Services.CashOut.Requests;
 using Framework.Payments.Paymob.Services.CashOut.Responses;
@@ -34,11 +35,6 @@ public interface ICashOutService
 public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<PaymobCashOutService> logger)
     : ICashOutService
 {
-    private static readonly JsonSerializerOptions _Options = new(JsonSerializerDefaults.Web)
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
-
     public async Task<CashOutResult<CashOutResponse>> DisburseAsync(VodafoneCashOutRequest request)
     {
         var disburseRequest = CashOutDisburseRequest.Vodafone(request.Amount, request.PhoneNumber);
@@ -143,12 +139,14 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
             );
         }
 
+        var json = JsonSerializer.Serialize(result, CashOutJsonOptions.JsonOptions);
+
         if (result.IsPending() || result.IsSuccess())
         {
-            return CashOutResult.Success(result, JsonSerializer.Serialize(result, _Options));
+            return CashOutResult.Success(result, json);
         }
 
-        return CashOutResult.Failure<CashOutTransaction>(_GetError(result), JsonSerializer.Serialize(result, _Options));
+        return CashOutResult.Failure<CashOutTransaction>(_GetError(result), json);
     }
 
     private ErrorDescriptor _GetError(CashOutTransaction result)

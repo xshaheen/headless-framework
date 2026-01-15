@@ -92,12 +92,11 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
             .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithReuse(true)
             .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder("redis:7-alpine").WithLabel("type", "settings").WithReuse(true).Build();
+        return new RedisBuilder("redis:7-alpine").Build();
     }
 }

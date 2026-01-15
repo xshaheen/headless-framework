@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System.Text;
@@ -11,7 +13,7 @@ public static class StringBuilderExtensions
     [SystemPure]
     public static bool StartsWith(this StringBuilder stringBuilder, char prefix)
     {
-        ArgumentNullException.ThrowIfNull(stringBuilder);
+        Argument.IsNotNull(stringBuilder);
 
         if (stringBuilder.Length == 0)
         {
@@ -25,8 +27,8 @@ public static class StringBuilderExtensions
     [SystemPure]
     public static bool StartsWith(this StringBuilder stringBuilder, string prefix)
     {
-        ArgumentNullException.ThrowIfNull(stringBuilder);
-        ArgumentNullException.ThrowIfNull(prefix);
+        Argument.IsNotNull(stringBuilder);
+        Argument.IsNotNull(prefix);
 
         if (stringBuilder.Length < prefix.Length)
         {
@@ -48,7 +50,7 @@ public static class StringBuilderExtensions
     [SystemPure]
     public static bool EndsWith(this StringBuilder stringBuilder, char suffix)
     {
-        ArgumentNullException.ThrowIfNull(stringBuilder);
+        Argument.IsNotNull(stringBuilder);
 
         if (stringBuilder.Length == 0)
         {
@@ -62,8 +64,8 @@ public static class StringBuilderExtensions
     [SystemPure]
     public static bool EndsWith(this StringBuilder stringBuilder, string suffix)
     {
-        ArgumentNullException.ThrowIfNull(stringBuilder);
-        ArgumentNullException.ThrowIfNull(suffix);
+        Argument.IsNotNull(stringBuilder);
+        Argument.IsNotNull(suffix);
 
         if (stringBuilder.Length < suffix.Length)
         {
@@ -83,7 +85,7 @@ public static class StringBuilderExtensions
 
     public static void TrimStart(this StringBuilder stringBuilder, char trimChar)
     {
-        ArgumentNullException.ThrowIfNull(stringBuilder);
+        Argument.IsNotNull(stringBuilder);
 
         for (var i = 0; i < stringBuilder.Length; i++)
         {
@@ -103,7 +105,7 @@ public static class StringBuilderExtensions
 
     public static void TrimEnd(this StringBuilder stringBuilder, char trimChar)
     {
-        ArgumentNullException.ThrowIfNull(stringBuilder);
+        Argument.IsNotNull(stringBuilder);
 
         for (var i = stringBuilder.Length - 1; i >= 0; i--)
         {
@@ -123,10 +125,10 @@ public static class StringBuilderExtensions
 
     public static void Trim(this StringBuilder stringBuilder, char trimChar)
     {
-        ArgumentNullException.ThrowIfNull(stringBuilder);
+        Argument.IsNotNull(stringBuilder);
 
-        TrimEnd(stringBuilder, trimChar);
-        TrimStart(stringBuilder, trimChar);
+        stringBuilder.TrimEnd(trimChar);
+        stringBuilder.TrimStart(trimChar);
     }
 
     public static StringBuilder AppendInvariant(this StringBuilder sb, byte value)

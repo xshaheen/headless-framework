@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
+
 namespace Framework.UI;
 
 [PublicAPI]
@@ -7,7 +9,7 @@ public static class DebounceExtensions
 {
     public static Action Debounce(this Action action, TimeSpan interval)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -33,7 +35,7 @@ public static class DebounceExtensions
 
     public static Action<T0> Debounce<T0>(this Action<T0> action, TimeSpan interval)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -59,7 +61,7 @@ public static class DebounceExtensions
 
     public static Action<T0, T1> Debounce<T0, T1>(this Action<T0, T1> action, TimeSpan interval)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -85,7 +87,7 @@ public static class DebounceExtensions
 
     public static Action<T0, T1, T2> Debounce<T0, T1, T2>(this Action<T0, T1, T2> action, TimeSpan interval)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -111,7 +113,7 @@ public static class DebounceExtensions
 
     public static Action<T0, T1, T2, T3> Debounce<T0, T1, T2, T3>(this Action<T0, T1, T2, T3> action, TimeSpan interval)
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -140,7 +142,7 @@ public static class DebounceExtensions
         TimeSpan interval
     )
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -169,7 +171,7 @@ public static class DebounceExtensions
         TimeSpan interval
     )
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -198,7 +200,7 @@ public static class DebounceExtensions
         TimeSpan interval
     )
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -227,7 +229,7 @@ public static class DebounceExtensions
         TimeSpan interval
     )
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 
@@ -256,7 +258,7 @@ public static class DebounceExtensions
         TimeSpan interval
     )
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         var last = 0;
 

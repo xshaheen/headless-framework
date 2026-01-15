@@ -39,6 +39,32 @@ public static class DependencyInjectionExtensions
     }
 
     /// <summary>
+    /// Executes the specified action if the specified <paramref name="condition"/> is <see langword="true"/> which can be
+    /// used to conditionally configure the MVC services.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="condition">If <see langword="true"/> is returned the action is executed.</param>
+    /// <param name="action">The action used to configure the MVC services.</param>
+    /// <returns>The same services collection.</returns>
+    public static IServiceCollection AddIf(
+        this IServiceCollection services,
+        Func<IServiceCollection, bool> condition,
+        Func<IServiceCollection, IServiceCollection> action
+    )
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(condition);
+        Argument.IsNotNull(action);
+
+        if (condition(services))
+        {
+            services = action(services);
+        }
+
+        return services;
+    }
+
+    /// <summary>
     /// Executes the specified <paramref name="ifAction"/> if the specified <paramref name="condition"/> is
     /// <see langword="true"/>, otherwise executes the <paramref name="elseAction"/>. This can be used to conditionally
     /// configure the MVC services.
@@ -61,6 +87,32 @@ public static class DependencyInjectionExtensions
         Argument.IsNotNull(elseAction);
 
         return condition ? ifAction(services) : elseAction(services);
+    }
+
+    /// <summary>
+    /// Executes the specified <paramref name="ifAction"/> if the specified <paramref name="condition"/> is
+    /// <see langword="true"/>, otherwise executes the <paramref name="elseAction"/>. This can be used to conditionally
+    /// configure the MVC services.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="condition">If <see langword="true"/> is returned the <paramref name="ifAction"/> is executed, otherwise the
+    /// <paramref name="elseAction"/> is executed.</param>
+    /// <param name="ifAction">The action used to configure the MVC services if the condition is <see langword="true"/>.</param>
+    /// <param name="elseAction">The action used to configure the MVC services if the condition is <see langword="false"/>.</param>
+    /// <returns>The same services collection.</returns>
+    public static IServiceCollection AddIfElse(
+        this IServiceCollection services,
+        Func<IServiceCollection, bool> condition,
+        Func<IServiceCollection, IServiceCollection> ifAction,
+        Func<IServiceCollection, IServiceCollection> elseAction
+    )
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(condition);
+        Argument.IsNotNull(ifAction);
+        Argument.IsNotNull(elseAction);
+
+        return condition(services) ? ifAction(services) : elseAction(services);
     }
 
     #endregion
@@ -166,16 +218,17 @@ public static class DependencyInjectionExtensions
     public static void Replace<TService>(this IServiceCollection services, Func<IServiceProvider, TService> factory)
         where TService : class
     {
-        var descriptor = services.Single(descriptor => descriptor.ServiceType == typeof(TService));
+        for (var i = 0; i < services.Count; i++)
+        {
+            if (services[i].ServiceType == typeof(TService))
+            {
+                var lifetime = services[i].Lifetime;
+                services[i] = new ServiceDescriptor(typeof(TService), factory, lifetime);
+                return;
+            }
+        }
 
-        var newServiceDescriptor = new ServiceDescriptor(
-            serviceType: typeof(TService),
-            factory: factory,
-            lifetime: descriptor.Lifetime
-        );
-
-        services.Remove(descriptor);
-        services.Add(newServiceDescriptor);
+        throw new InvalidOperationException($"Service '{typeof(TService).Name}' is not registered.");
     }
 
     #endregion
@@ -184,13 +237,17 @@ public static class DependencyInjectionExtensions
 
     public static bool Unregister<TService>(this IServiceCollection services)
     {
+        Argument.IsNotNull(services);
+
         var unregistered = false;
 
-        foreach (var descriptor in services.Where(d => d.ServiceType == typeof(TService)).ToList())
+        for (var i = services.Count - 1; i >= 0; i--)
         {
-            services.Remove(descriptor);
-
-            unregistered = true;
+            if (services[i].ServiceType == typeof(TService))
+            {
+                services.RemoveAt(i);
+                unregistered = true;
+            }
         }
 
         return unregistered;
@@ -202,11 +259,16 @@ public static class DependencyInjectionExtensions
 
     public static bool IsAdded<T>(this IServiceCollection services)
     {
+        Argument.IsNotNull(services);
+
         return services.IsAdded(typeof(T));
     }
 
     public static bool IsAdded(this IServiceCollection services, Type type)
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(type);
+
         return services.Any(d => d.ServiceType == type);
     }
 
@@ -221,6 +283,9 @@ public static class DependencyInjectionExtensions
     )
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(implementationFactory);
+
         return services.AddKeyedSingleton<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
 
@@ -231,6 +296,9 @@ public static class DependencyInjectionExtensions
     )
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(implementationFactory);
+
         return services.AddKeyedScoped<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
 
@@ -241,15 +309,31 @@ public static class DependencyInjectionExtensions
     )
         where TService : class
     {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(implementationFactory);
+
         return services.AddKeyedTransient<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
     #endregion
 
     #region Hosted Service
 
+    /// <summary>
+    /// Removes a hosted service of type <typeparamref name="T"/> from the service collection.
+    /// </summary>
+    /// <typeparam name="T">The type of the hosted service to remove.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The same service collection.</returns>
+    /// <remarks>
+    /// This method only removes services registered via <c>AddHostedService&lt;T&gt;()</c> with a type parameter.
+    /// Services registered with a factory delegate (e.g., <c>AddHostedService(sp => new T(...))</c>) will NOT be removed
+    /// because <see cref="ServiceDescriptor.ImplementationType"/> is null for factory-based registrations.
+    /// </remarks>
     public static IServiceCollection RemoveHostedService<T>(this IServiceCollection services)
         where T : IHostedService
     {
+        Argument.IsNotNull(services);
+
         var hostedServiceDescriptor = services.FirstOrDefault(descriptor =>
             descriptor.ServiceType == typeof(IHostedService) && descriptor.ImplementationType == typeof(T)
         );

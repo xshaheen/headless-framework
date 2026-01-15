@@ -14,13 +14,13 @@ public interface IPermissionManager
         CancellationToken cancellationToken = default
     );
 
-    Task<List<GrantedPermissionResult>> GetAllAsync(
+    Task<IReadOnlyList<GrantedPermissionResult>> GetAllAsync(
         ICurrentUser currentUser,
         string? providerName = null,
         CancellationToken cancellationToken = default
     );
 
-    Task<List<GrantedPermissionResult>> GetAllAsync(
+    Task<IReadOnlyList<GrantedPermissionResult>> GetAllAsync(
         IReadOnlyCollection<string> permissionNames,
         ICurrentUser currentUser,
         string? providerName = null,

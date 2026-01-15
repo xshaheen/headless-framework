@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Xml;
 using System.Xml.Schema;
@@ -41,6 +42,8 @@ public static class XmlHelper
     }
 
     /// <summary>Serializes a datetime</summary>
+    [RequiresUnreferencedCode("XmlSerializer uses reflection which is not compatible with trimming.")]
+    [RequiresDynamicCode("XmlSerializer requires dynamic code generation.")]
     public static async Task<string> SerializeDateTimeAsync(DateTime dateTime)
     {
         var xmlS = new XmlSerializer(typeof(DateTime));

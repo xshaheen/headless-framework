@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Cysharp.Text;
+using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
@@ -19,7 +19,7 @@ public sealed class WordDocumentMediaFileTextProvider : IMediaFileTextProvider
             return Task.FromResult(string.Empty);
         }
 
-        using var stringBuilder = ZString.CreateStringBuilder();
+        var stringBuilder = new StringBuilder();
 
         foreach (var paragraph in paragraphs)
         {

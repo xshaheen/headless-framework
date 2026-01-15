@@ -2,6 +2,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
 using Framework.Serializer;
 
@@ -16,6 +17,8 @@ public static class ToObjectExtensions
     /// <param name="obj">Object to be converted</param>
     /// <typeparam name="T">Type of the target object</typeparam>
     /// <returns>Converted object</returns>
+    [RequiresUnreferencedCode("This method uses TypeDescriptor and JSON deserialization which require reflection.")]
+    [RequiresDynamicCode("This method uses JSON deserialization which might require runtime code generation.")]
     public static T? To<T>(this object? obj, JsonSerializerOptions? options = null)
     {
         if (obj is null)

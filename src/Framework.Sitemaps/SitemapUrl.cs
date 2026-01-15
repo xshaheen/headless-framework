@@ -51,17 +51,18 @@ public sealed class SitemapUrl
     /// <summary>Gets the full URL of the page.</summary>
     public Uri? Location { get; }
 
-    /// <summary>The date of the last modification of the page. Currently (2021) Google ignores it.</summary>
+    /// <summary>
+    /// The priority of that URL relative to other URLs on the site (0.0 to 1.0).
+    /// This allows webmasters to suggest to crawlers which pages are considered more important.
+    /// </summary>
+    /// <remarks>Currently (2021) Google ignores it.</remarks>
     public float? Priority { get; }
 
-    /// <summary>How frequently the page is likely to change.</summary>
+    /// <summary>The date of the last modification of the page.</summary>
     public DateTime? LastModified { get; }
 
-    /// <summary>
-    /// The priority of that URL relative to other URLs on the site. This allows webmasters
-    /// to suggest to crawlers which pages are considered more important.
-    /// </summary>
-    /// <remarks>Currently (2021) Google ignore it.</remarks>
+    /// <summary>How frequently the page is likely to change.</summary>
+    /// <remarks>Currently (2021) Google ignores it.</remarks>
     public ChangeFrequency? ChangeFrequency { get; }
 
     /// <summary>

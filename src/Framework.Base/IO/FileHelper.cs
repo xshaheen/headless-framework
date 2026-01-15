@@ -43,7 +43,7 @@ public static class FileHelper
             try
             {
                 await _BaseSaveFileAsync(blob.BlobStream, blob.BlobName, directoryPath, token);
-                return Result<Exception>.Success();
+                return Result<Exception>.Ok();
             }
             catch (Exception e)
             {
@@ -76,6 +76,12 @@ public static class FileHelper
         CancellationToken token
     )
     {
+        // Reset stream position for seekable streams
+        if (blobStream.CanSeek && blobStream.Position != 0)
+        {
+            blobStream.Seek(0, SeekOrigin.Begin);
+        }
+
         var filePath = Path.Combine(directoryPath, uniqueSaveName);
         await _IoRetryPipeline.ExecuteAsync(writeFileAsync, (filePath, blobStream), token);
 
@@ -83,9 +89,16 @@ public static class FileHelper
 
         static async ValueTask writeFileAsync((string FilePath, Stream BlobStream) state, CancellationToken token)
         {
-            await using var fileStream = File.Open(state.FilePath, FileMode.Create, FileAccess.Write);
+            // Use FileShare.Read to allow concurrent read access during write
+            await using var fileStream = new FileStream(
+                state.FilePath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.Read,
+                bufferSize: 4096,
+                useAsync: true
+            );
             await state.BlobStream.CopyToAsync(fileStream, token);
-            await state.BlobStream.FlushAsync(token);
         }
     }
 

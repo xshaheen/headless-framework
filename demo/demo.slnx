@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Framework.Api.Demo/Framework.Api.Demo.csproj" />
+  <Project Path="Framework.EntityFramework.Migrations.Startup/Framework.EntityFramework.Migrations.Startup.csproj" />
+  <Project Path="Framework.OpenApi.Nswag.Demo/Framework.OpenApi.Nswag.Demo.csproj" />
+  <Project Path="Framework.Recaptcha.Demo/Framework.Recaptcha.Demo.csproj" />
+  <Project Path="Framework.Tus.Demo/Framework.Tus.Demo.csproj" />
+</Solution>

@@ -88,27 +88,27 @@
         <Project Path="src/Framework.Base/Framework.Base.csproj" />
         <Project Path="src/Framework.BuildingBlocks/Framework.BuildingBlocks.csproj" />
         <Project Path="src/Framework.Checks/Framework.Checks.csproj" />
-        <Project Path="src/Framework.Domain/Framework.Domain.csproj" />
         <Project Path="src/Framework.Hosting/Framework.Hosting.csproj" />
         <Project Path="src/Framework.NetTopologySuite/Framework.NetTopologySuite.csproj" />
-        <Project Path="src/Framework.Specifications/Framework.Specifications.csproj" />
         <Project Path="src/Framework.Testing.Testcontainers/Framework.Testing.Testcontainers.csproj" />
         <Project Path="src/Framework.Testing/Framework.Testing.csproj" />
         <Project Path="src/Framework.Domain.DistributedMessagePublisher.Cap/Framework.Domain.DistributedMessagePublisher.Cap.csproj" />
         <Project Path="src/Framework.Domain.LocalMessagePublisher.DI/Framework.Domain.LocalMessagePublisher.DI.csproj" />
+        <Project Path="src\Framework.Domain\Framework.Domain.csproj" />
         <Project Path="tests/Framework.Base.Tests.Unit/Framework.Base.Tests.Unit.csproj" />
         <Project Path="tests/Framework.BuildingBlocks.Tests.Unit/Framework.BuildingBlocks.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Checks.Tests.Unit/Framework.Checks.Tests.Unit.csproj" />
-        <Project Path="tests/Framework.Domain.Tests.Unit/Framework.Domain.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Hosting.Tests.Unit/Framework.Hosting.Tests.Unit.csproj" />
-        <Project Path="tests/Framework.Specifications.Tests.Unit/Framework.Specifications.Tests.Unit.csproj" />
+        <Project Path="tests\Framework.Domain.Tests.Unit\Framework.Domain.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Locks/">
         <Project Path="src/Framework.ResourceLocks.Cache/Framework.ResourceLocks.Cache.csproj" />
         <Project Path="src/Framework.ResourceLocks.Core/Framework.ResourceLocks.Core.csproj" />
+        <Project Path="src/Framework.ResourceLocks.InMemory/Framework.ResourceLocks.InMemory.csproj" />
         <Project Path="src/Framework.ResourceLocks.Redis/Framework.ResourceLocks.Redis.csproj" />
         <Project Path="src\Framework.ResourceLocks.Abstractions\Framework.ResourceLocks.Abstractions.csproj" />
         <Project Path="tests/Framework.ResourceLocks.Cache.Tests.Integration/Framework.ResourceLocks.Cache.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.ResourceLocks.InMemory.Tests.Unit/Framework.ResourceLocks.InMemory.Tests.Unit.csproj" />
         <Project Path="tests/Framework.ResourceLocks.Redis.Tests.Integration/Framework.ResourceLocks.Redis.Tests.Integration.csproj" />
         <Project Path="tests/Framework.ResourceLocks.Tests.Harness/Framework.ResourceLocks.Tests.Harness.csproj" />
     </Folder>
@@ -140,6 +140,7 @@
         <Project Path="tests/Framework.Payments.Paymob.CashOut.Tests.Unit/Framework.Payments.Paymob.CashOut.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Permissions/">
+        <Project Path="demo/Framework.Permissions.Api.Demo/Framework.Permissions.Api.Demo.csproj" />
         <Project Path="src/Framework.Permissions.Core/Framework.Permissions.Core.csproj" />
         <Project Path="src/Framework.Permissions.Storage.EntityFramework/Framework.Permissions.Storage.EntityFramework.csproj" />
         <Project Path="src\Framework.Permissions.Abstractions\Framework.Permissions.Abstractions.csproj" />

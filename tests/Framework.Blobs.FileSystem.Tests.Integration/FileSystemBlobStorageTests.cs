@@ -2,6 +2,7 @@
 
 using Framework.Blobs;
 using Framework.Blobs.FileSystem;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -13,10 +14,11 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     protected override IBlobStorage GetStorage()
     {
         var options = new FileSystemBlobStorageOptions { BaseDirectoryPath = _baseDirectoryPath };
-
         var optionsWrapper = new OptionsWrapper<FileSystemBlobStorageOptions>(options);
+        var logger = NullLogger<FileSystemBlobStorage>.Instance;
+        var normalizer = new CrossOsNamingNormalizer();
 
-        return new FileSystemBlobStorage(optionsWrapper);
+        return new FileSystemBlobStorage(optionsWrapper, normalizer, logger);
     }
 
     [Fact]
@@ -116,9 +118,9 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]
@@ -132,7 +134,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     {
         var container = Container;
         var containerName = ContainerName;
-        using var storage = (FileSystemBlobStorage)GetStorage();
+        await using var storage = (FileSystemBlobStorage)GetStorage();
         await ResetAsync(storage);
 
         var result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
@@ -219,4 +221,66 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
     {
         return base.can_call_get_paged_list_with_empty_container();
     }
+
+    #region Path Traversal Security Tests
+
+    [Theory]
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
+    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    {
+        return base.should_throw_when_blob_name_has_path_traversal(blobName);
+    }
+
+    [Fact]
+    public override Task should_throw_when_container_has_path_traversal()
+    {
+        return base.should_throw_when_container_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_upload_blob_has_path_traversal()
+    {
+        return base.should_throw_when_upload_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_download_blob_has_path_traversal()
+    {
+        return base.should_throw_when_download_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_delete_blob_has_path_traversal()
+    {
+        return base.should_throw_when_delete_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_rename_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_rename_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_copy_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_copy_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_blob_name_has_control_characters()
+    {
+        return base.should_throw_when_blob_name_has_control_characters();
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    {
+        return base.should_throw_when_blob_name_is_absolute_path(blobName);
+    }
+
+    #endregion
 }

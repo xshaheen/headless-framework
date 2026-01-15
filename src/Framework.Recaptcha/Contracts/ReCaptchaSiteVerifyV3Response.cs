@@ -23,11 +23,11 @@ public sealed class ReCaptchaSiteVerifyV3Response
 
     /// <summary>The score for this request (0.0 - 1.0)</summary>
     [JsonPropertyName("score")]
-    public float? Score { get; set; }
+    public float? Score { get; init; }
 
     /// <summary>The action name for this request (important to verify)</summary>
     [JsonPropertyName("action")]
-    public string? Action { get; set; }
+    public string? Action { get; init; }
 
     /// <summary>Error code if not <see cref="Success"/>.</summary>
     [JsonPropertyName("error-codes")]

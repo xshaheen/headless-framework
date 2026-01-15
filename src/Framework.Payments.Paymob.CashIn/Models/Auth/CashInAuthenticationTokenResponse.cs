@@ -14,5 +14,5 @@ public sealed class CashInAuthenticationTokenResponse
     public CashInProfile? Profile { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

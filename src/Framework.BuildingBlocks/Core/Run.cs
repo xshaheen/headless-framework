@@ -50,7 +50,7 @@ public static class Run
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(action);
+        Argument.IsNotNull(action);
 
         timeProvider ??= TimeProvider.System;
         var attempts = 1;

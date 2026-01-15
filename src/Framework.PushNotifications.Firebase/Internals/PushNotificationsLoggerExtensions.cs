@@ -8,14 +8,28 @@ internal static partial class PushNotificationsLoggerExtensions
 {
     [LoggerMessage(
         EventId = 1,
-        EventName = "FailedToSendPushNotification",
+        EventName = "FcmFailedToSendPushNotification",
         Level = LogLevel.Critical,
-        Message = "PushNotification: Failed to send notification to device. Client token: {ClientToken}",
+        Message = "FCM: Failed to send notification to device. Token prefix: {ClientTokenPrefix}",
         SkipEnabledCheck = true
     )]
     public static partial void FailedToSendPushNotification(
         this ILogger logger,
         Exception exception,
-        string clientToken
+        string clientTokenPrefix
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "FcmRetryingRequest",
+        Level = LogLevel.Warning,
+        Message = "FCM: Retrying request (attempt {AttemptNumber}) after {DelaySeconds}s delay. Error: {ErrorMessage}",
+        SkipEnabledCheck = true
+    )]
+    public static partial void LogRetryAttempt(
+        this ILogger logger,
+        int attemptNumber,
+        double delaySeconds,
+        string errorMessage
     );
 }

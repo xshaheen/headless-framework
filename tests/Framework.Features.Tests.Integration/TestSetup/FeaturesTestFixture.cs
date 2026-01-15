@@ -88,16 +88,14 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
         return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
-            .WithLabel("type", "features")
             .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithReuse(true)
             .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder("redis:7-alpine").WithLabel("type", "features").WithReuse(true).Build();
+        return new RedisBuilder("redis:7-alpine").Build();
     }
 }

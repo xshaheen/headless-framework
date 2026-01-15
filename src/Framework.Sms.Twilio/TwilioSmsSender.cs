@@ -2,21 +2,22 @@
 
 using Framework.Checks;
 using Microsoft.Extensions.Options;
-using Twilio;
+using Twilio.Clients;
 using Twilio.Rest.Api.V2010.Account;
 using Twilio.Types;
 
 namespace Framework.Sms.Twilio;
 
-public sealed class TwilioSmsSender : ISmsSender
+/// <summary>
+/// SMS sender implementation using Twilio API.
+/// </summary>
+/// <remarks>
+/// Accepts <see cref="ITwilioRestClient"/> for testability and multi-tenant support.
+/// Register the client via DI or use <see cref="TwilioRestClient"/> directly.
+/// </remarks>
+public sealed class TwilioSmsSender(ITwilioRestClient client, IOptions<TwilioSmsOptions> optionsAccessor) : ISmsSender
 {
-    private readonly TwilioSmsOptions _options;
-
-    public TwilioSmsSender(IOptions<TwilioSmsOptions> optionsAccessor)
-    {
-        _options = optionsAccessor.Value;
-        TwilioClient.Init(_options.Sid, _options.AuthToken);
-    }
+    private readonly TwilioSmsOptions _options = optionsAccessor.Value;
 
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
@@ -31,12 +32,15 @@ public sealed class TwilioSmsSender : ISmsSender
             return SendSingleSmsResponse.Failed("Twilio only supports sending to one destination at a time");
         }
 
-        var respond = await MessageResource.CreateAsync(
-            to: new PhoneNumber(request.Destinations.ToString()),
-            from: new PhoneNumber(_options.PhoneNumber),
-            body: request.Text,
-            maxPrice: _options.MaxPrice
-        );
+        var respond = await MessageResource
+            .CreateAsync(
+                to: new PhoneNumber(request.Destinations[0].ToString(hasPlusPrefix: true)),
+                from: new PhoneNumber(_options.PhoneNumber),
+                body: request.Text,
+                maxPrice: _options.MaxPrice,
+                client: client
+            )
+            .AnyContext();
 
         return respond.ErrorCode.HasValue
             ? SendSingleSmsResponse.Failed(respond.ErrorMessage)

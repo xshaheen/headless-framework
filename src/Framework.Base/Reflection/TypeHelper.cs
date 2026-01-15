@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace Framework.Reflection;
@@ -8,27 +9,6 @@ namespace Framework.Reflection;
 [PublicAPI]
 public static class TypeHelper
 {
-    public static readonly Type ObjectType = typeof(object);
-    public static readonly Type StringType = typeof(string);
-    public static readonly Type CharType = typeof(char);
-    public static readonly Type NullableCharType = typeof(char?);
-    public static readonly Type DateTimeType = typeof(DateTime);
-    public static readonly Type NullableDateTimeType = typeof(DateTime?);
-    public static readonly Type BoolType = typeof(bool);
-    public static readonly Type NullableBoolType = typeof(bool?);
-    public static readonly Type ByteArrayType = typeof(byte[]);
-    public static readonly Type ByteType = typeof(byte);
-    public static readonly Type SByteType = typeof(sbyte);
-    public static readonly Type SingleType = typeof(float);
-    public static readonly Type DecimalType = typeof(decimal);
-    public static readonly Type Int16Type = typeof(short);
-    public static readonly Type UInt16Type = typeof(ushort);
-    public static readonly Type Int32Type = typeof(int);
-    public static readonly Type UInt32Type = typeof(uint);
-    public static readonly Type Int64Type = typeof(long);
-    public static readonly Type UInt64Type = typeof(ulong);
-    public static readonly Type DoubleType = typeof(double);
-
     public static bool IsNonNullablePrimitiveType(Type type)
     {
         return type == typeof(byte)
@@ -70,7 +50,10 @@ public static class TypeHelper
         return default!;
     }
 
-    public static object? GetDefaultValue(Type type)
+    [RequiresUnreferencedCode("Uses Activator.CreateInstance which may not work correctly with trimming.")]
+    public static object? GetDefaultValue(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] Type type
+    )
     {
         return type.IsValueType ? Activator.CreateInstance(type) : null;
     }
@@ -85,6 +68,7 @@ public static class TypeHelper
         return Nullable.GetUnderlyingType(type) ?? type;
     }
 
+    [RequiresUnreferencedCode("Uses assembly scanning which is not compatible with trimming.")]
     public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly> assemblies)
     {
         var types = new List<Type>();

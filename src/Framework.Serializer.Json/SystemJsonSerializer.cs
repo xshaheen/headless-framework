@@ -1,7 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Framework.Serializer;
 
+[RequiresUnreferencedCode(
+    "JSON serialization and deserialization might require types that cannot be statically analyzed."
+)]
+[RequiresDynamicCode("JSON serialization and deserialization might require runtime code generation.")]
 public sealed class SystemJsonSerializer(IJsonOptionsProvider? optionsProvider = null) : IJsonSerializer
 {
     private readonly IJsonOptionsProvider _optionsProvider = optionsProvider ?? new DefaultJsonOptionsProvider();

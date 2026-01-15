@@ -77,11 +77,10 @@ public static class FileValidators
         }
     }
 
-    extension<T, TIFormFile>(IRuleBuilder<T, TIFormFile?> builder) where TIFormFile : IFormFile
+    extension<T, TIFormFile>(IRuleBuilder<T, TIFormFile?> builder)
+        where TIFormFile : IFormFile
     {
-        public IRuleBuilderOptions<T, TIFormFile?> ContentTypes(
-            IReadOnlyList<string> contentTypes
-        )
+        public IRuleBuilderOptions<T, TIFormFile?> ContentTypes(IReadOnlyList<string> contentTypes)
         {
             return builder
                 .Must(

@@ -56,7 +56,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
 
     public void ApplyRule(RewriteContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Argument.IsNotNull(context);
 
         if (HttpMethods.IsGet(context.HttpContext.Request.Method))
         {
@@ -75,7 +75,11 @@ public sealed class RedirectToCanonicalUrlRule : IRule
     /// <returns><see langword="true"/> if the URL is canonical, otherwise <see langword="false"/>.</returns>
     private bool _TryGetCanonicalUrl(RewriteContext context, [NotNullWhen(false)] out Uri? canonicalUrl)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        Argument.IsNotNull(context);
+
+        // Cache attribute lookups to avoid O(n) metadata scans on each check
+        var hasNoTrailingSlash = _HasAttribute<NoTrailingSlashAttribute>(context);
+        var hasNoLowercaseQueryString = _HasAttribute<NoLowercaseQueryStringAttribute>(context);
 
         var isCanonical = true;
 
@@ -91,7 +95,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
             if (AppendTrailingSlash)
             {
                 // Append a trailing slash to the end of the URL.
-                if (!hasTrailingSlash && !_HasAttribute<NoTrailingSlashAttribute>(context))
+                if (!hasTrailingSlash && !hasNoTrailingSlash)
                 {
                     request.Path = new PathString(request.Path.Value + _SlashCharacter);
                     isCanonical = false;
@@ -110,7 +114,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
 
         if (hasPath || request.QueryString.HasValue)
         {
-            if (LowercaseUrls && !_HasAttribute<NoTrailingSlashAttribute>(context))
+            if (LowercaseUrls && !hasNoTrailingSlash)
             {
                 foreach (var character in request.Path.Value!)
                 {
@@ -123,7 +127,7 @@ public sealed class RedirectToCanonicalUrlRule : IRule
                     }
                 }
 
-                if (request.QueryString.HasValue && !_HasAttribute<NoLowercaseQueryStringAttribute>(context))
+                if (request.QueryString.HasValue && !hasNoLowercaseQueryString)
                 {
                     foreach (var character in request.QueryString.Value!)
                     {

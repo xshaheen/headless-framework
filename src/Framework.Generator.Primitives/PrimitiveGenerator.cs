@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
 
 namespace Framework.Generator.Primitives;
@@ -21,6 +22,8 @@ public sealed class PrimitiveGenerator : IIncrementalGenerator
         //         System.Diagnostics.Debugger.Launch();
         // #endif
 
+        // The semantic transform now returns PrimitiveTypeInfo? which is equatable,
+        // enabling proper incremental caching in the generator pipeline.
         var primitivesToGenerate = context
             .SyntaxProvider.CreateSyntaxProvider(
                 predicate: Parser.IsSyntaxTargetForGeneration,

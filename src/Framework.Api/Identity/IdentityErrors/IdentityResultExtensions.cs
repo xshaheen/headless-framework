@@ -16,7 +16,7 @@ public static class IdentityResultExtensions
     public static ErrorDescriptor ToErrorDescriptor(this IdentityError error)
     {
         return error is ParamsIdentityError paramsError
-            ? ToErrorDescriptor(paramsError)
+            ? paramsError.ToErrorDescriptor()
             : new ErrorDescriptor(error.Code, error.Description);
     }
 
@@ -37,10 +37,10 @@ public static class IdentityResultExtensions
         return descriptor;
     }
 
-    public static NoDataResult ToResult(this IdentityResult result)
+    public static Result<IReadOnlyList<ErrorDescriptor>> ToResult(this IdentityResult result)
     {
         return result.Succeeded
-            ? NoDataResult.Success()
+            ? Result<IReadOnlyList<ErrorDescriptor>>.Ok()
             : result.Errors.Select(error => error.ToErrorDescriptor()).ToList();
     }
 }

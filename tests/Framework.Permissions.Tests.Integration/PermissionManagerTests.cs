@@ -50,8 +50,7 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
 
         // then
         permissions.Should().HaveCount(16);
-        var allNotGranted = permissions.TrueForAll(x => !x.IsGranted);
-        allNotGranted.Should().BeTrue();
+        permissions.Should().AllSatisfy(x => x.IsGranted.Should().BeFalse());
         permission.Should().NotBeNull();
         permission.IsGranted.Should().BeFalse();
         permission.Name.Should().Be(somePermission.Name);
@@ -135,6 +134,87 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
         permission.IsGranted.Should().BeFalse();
         permission.Name.Should().Be(somePermission.Name);
         permission.Providers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_deny_permission_when_any_provider_prohibits()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
+
+        const string roleName = "Role1";
+        var userId = new UserId("123");
+        var somePermission = _GroupDefinitions[0].Permissions[0];
+
+        var currentUser = new TestCurrentUser
+        {
+            IsAuthenticated = true,
+            UserId = userId,
+            WritableRoles = { roleName },
+        };
+
+        // when: grant to user
+        await permissionManager.GrantToUserAsync(somePermission.Name, userId, AbortToken);
+
+        // then: user has permission
+        var permission = await permissionManager.GetAsync(
+            somePermission.Name,
+            currentUser,
+            cancellationToken: AbortToken
+        );
+        permission.IsGranted.Should().BeTrue();
+
+        // when: deny at role level (explicit deny via revoke = Prohibited status)
+        await permissionManager.RevokeFromRoleAsync(somePermission.Name, roleName, AbortToken);
+
+        // then: explicit deny overrides user grant (AWS IAM-style)
+        permission = await permissionManager.GetAsync(somePermission.Name, currentUser, cancellationToken: AbortToken);
+        permission.IsGranted.Should().BeFalse("explicit deny should override all grants");
+        permission.Providers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_grant_when_no_provider_prohibits()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
+
+        const string roleName = "Role1";
+        var userId = new UserId("123");
+        var somePermission = _GroupDefinitions[0].Permissions[0];
+
+        var currentUser = new TestCurrentUser
+        {
+            IsAuthenticated = true,
+            UserId = userId,
+            WritableRoles = { roleName },
+        };
+
+        // when: grant to role
+        await permissionManager.GrantToRoleAsync(somePermission.Name, roleName, AbortToken);
+
+        // then: permission granted via role
+        var permission = await permissionManager.GetAsync(
+            somePermission.Name,
+            currentUser,
+            cancellationToken: AbortToken
+        );
+        permission.IsGranted.Should().BeTrue();
+        permission.Providers.Should().ContainSingle();
+
+        // when: also grant to user
+        await permissionManager.GrantToUserAsync(somePermission.Name, userId, AbortToken);
+
+        // then: permission still granted, multiple providers
+        permission = await permissionManager.GetAsync(somePermission.Name, currentUser, cancellationToken: AbortToken);
+        permission.IsGranted.Should().BeTrue();
+        permission.Providers.Should().HaveCount(2);
     }
 
     [Fact]

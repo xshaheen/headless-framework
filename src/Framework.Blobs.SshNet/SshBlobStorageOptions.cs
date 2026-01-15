@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Microsoft.Extensions.Logging;
 using Renci.SshNet;
 
 namespace Framework.Blobs.SshNet;
@@ -18,7 +17,23 @@ public sealed class SshBlobStorageOptions
 
     public string? PrivateKeyPassPhrase { get; set; }
 
-    public ILoggerFactory? LoggerFactory { get; set; }
+    /// <summary>
+    /// Maximum concurrent operations for bulk upload/delete. Default is 4.
+    /// SSH/SFTP connections have limited channel capacity, so this should be kept low.
+    /// </summary>
+    public int MaxConcurrentOperations { get; set; } = 4;
+
+    /// <summary>
+    /// Maximum pooled SFTP connections. Must be >= MaxConcurrentOperations.
+    /// Each connection uses ~40-70KB memory. Default is 4.
+    /// </summary>
+    public int MaxPoolSize { get; set; } = 4;
+
+    /// <summary>
+    /// Allow none-authentication fallback. When false (default), throws if no password or private key is provided.
+    /// Set to true only if intentionally using passwordless authentication.
+    /// </summary>
+    public bool AllowNoneAuthentication { get; set; } = false;
 }
 
 internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlobStorageOptions>
@@ -27,5 +42,11 @@ internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlob
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
         RuleFor(x => x.ProxyType).IsInEnum();
+        RuleFor(x => x.MaxConcurrentOperations).InclusiveBetween(1, 100);
+
+        RuleFor(x => x.MaxPoolSize)
+            .InclusiveBetween(1, 100)
+            .GreaterThanOrEqualTo(x => x.MaxConcurrentOperations)
+            .WithMessage("MaxPoolSize must be >= MaxConcurrentOperations");
     }
 }
