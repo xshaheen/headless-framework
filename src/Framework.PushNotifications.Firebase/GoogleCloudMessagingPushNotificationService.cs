@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using FirebaseAdmin.Messaging;
 using Framework.Checks;
 using Framework.PushNotifications.Firebase.Internals;
 using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Registry;
 
 namespace Framework.PushNotifications.Firebase;
 
@@ -11,17 +14,20 @@ namespace Framework.PushNotifications.Firebase;
 /// Firebase Cloud Messaging (FCM) push notification service implementation.
 /// </summary>
 /// <remarks>
-/// This service does not implement retry logic for transient failures.
-/// Callers should implement their own retry policies using Polly or similar
-/// for handling rate limits and temporary network issues.
+/// Implements automatic retry for transient FCM failures (rate limits, temporary outages, server errors)
+/// using exponential backoff with jitter. Permanent errors (invalid tokens, malformed requests) return immediately.
+/// Retry behavior configurable via <see cref="FirebaseOptions.Retry"/>.
 /// </remarks>
 public sealed class GoogleCloudMessagingPushNotificationService(
-    ILogger<GoogleCloudMessagingPushNotificationService> logger
+    ILogger<GoogleCloudMessagingPushNotificationService> logger,
+    ResiliencePipelineProvider<string> pipelineProvider
 ) : IPushNotificationService
 {
     private const int _MaxTitleLength = 100;
     private const int _MaxBodyLength = 4000;
     private const int _MaxTokensPerBatch = 500;
+
+    private readonly ResiliencePipeline _retryPipeline = pipelineProvider.GetPipeline("fcm-retry");
 
     public async ValueTask<PushNotificationResponse> SendToDeviceAsync(
         string clientToken,
@@ -58,9 +64,29 @@ public sealed class GoogleCloudMessagingPushNotificationService(
 
         try
         {
-            var messageId = await FirebaseMessaging.DefaultInstance.SendAsync(message, cancellationToken).AnyContext();
+            var context = ResilienceContextPool.Shared.Get(cancellationToken);
+            context.Properties.Set(new ResiliencePropertyKey<ILogger>("logger"), logger);
 
-            return PushNotificationResponse.Succeeded(clientToken, messageId);
+            try
+            {
+                var messageId = await _retryPipeline
+                    .ExecuteAsync(
+                        static async (ctx, state) =>
+                        {
+                            var (msg, ct) = state;
+                            return await FirebaseMessaging.DefaultInstance.SendAsync(msg, ct).ConfigureAwait(false);
+                        },
+                        context,
+                        (message, cancellationToken)
+                    )
+                    .ConfigureAwait(false);
+
+                return PushNotificationResponse.Succeeded(clientToken, messageId);
+            }
+            finally
+            {
+                ResilienceContextPool.Shared.Return(context);
+            }
         }
         catch (FirebaseMessagingException e) when (e.MessagingErrorCode is MessagingErrorCode.Unregistered)
         {
@@ -120,42 +146,62 @@ public sealed class GoogleCloudMessagingPushNotificationService(
                     Apns = new ApnsConfig { Aps = new Aps { Badge = 1 } },
                 };
 
-                var batchResponse = await FirebaseMessaging
-                    .DefaultInstance.SendEachForMulticastAsync(message, cancellationToken)
-                    .AnyContext();
+                var context = ResilienceContextPool.Shared.Get(cancellationToken);
+                context.Properties.Set(new ResiliencePropertyKey<ILogger>("logger"), logger);
 
-                if (batchResponse.Responses.Count != batchList.Count)
+                try
                 {
-                    throw new InvalidOperationException(
-                        $"Firebase response count ({batchResponse.Responses.Count}) does not match token count ({batchList.Count})"
-                    );
-                }
+                    var batchResponse = await _retryPipeline
+                        .ExecuteAsync(
+                            static async (ctx, state) =>
+                            {
+                                var (msg, ct) = state;
+                                return await FirebaseMessaging
+                                    .DefaultInstance.SendEachForMulticastAsync(msg, ct)
+                                    .ConfigureAwait(false);
+                            },
+                            context,
+                            (message, cancellationToken)
+                        )
+                        .ConfigureAwait(false);
 
-                successCount += batchResponse.SuccessCount;
-                failureCount += batchResponse.FailureCount;
-
-                for (var i = 0; i < batchResponse.Responses.Count; i++)
-                {
-                    var response = batchResponse.Responses[i];
-                    var token = batchList[i];
-
-                    if (response.IsSuccess)
+                    if (batchResponse.Responses.Count != batchList.Count)
                     {
-                        allResponses.Add(PushNotificationResponse.Succeeded(token, response.MessageId));
-                    }
-                    else if (response.Exception.MessagingErrorCode == MessagingErrorCode.Unregistered)
-                    {
-                        allResponses.Add(PushNotificationResponse.Unregistered(token));
-                    }
-                    else
-                    {
-                        allResponses.Add(
-                            PushNotificationResponse.Failed(
-                                token,
-                                _FirebaseMessagingExceptionToString(response.Exception)
-                            )
+                        throw new InvalidOperationException(
+                            $"Firebase response count ({batchResponse.Responses.Count}) does not match token count ({batchList.Count})"
                         );
                     }
+
+                    successCount += batchResponse.SuccessCount;
+                    failureCount += batchResponse.FailureCount;
+
+                    for (var i = 0; i < batchResponse.Responses.Count; i++)
+                    {
+                        var response = batchResponse.Responses[i];
+                        var token = batchList[i];
+
+                        if (response.IsSuccess)
+                        {
+                            allResponses.Add(PushNotificationResponse.Succeeded(token, response.MessageId));
+                        }
+                        else if (response.Exception.MessagingErrorCode == MessagingErrorCode.Unregistered)
+                        {
+                            allResponses.Add(PushNotificationResponse.Unregistered(token));
+                        }
+                        else
+                        {
+                            allResponses.Add(
+                                PushNotificationResponse.Failed(
+                                    token,
+                                    _FirebaseMessagingExceptionToString(response.Exception)
+                                )
+                            );
+                        }
+                    }
+                }
+                finally
+                {
+                    ResilienceContextPool.Shared.Return(context);
                 }
             }
         }
