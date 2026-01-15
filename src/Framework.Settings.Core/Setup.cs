@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Settings.Definitions;
 using Framework.Settings.Entities;
 using Framework.Settings.Helpers;

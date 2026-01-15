@@ -3,7 +3,7 @@
 using System.Text.Json.Serialization.Metadata;
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Permissions.Entities;
 using Framework.Permissions.Events;
 using Framework.Permissions.Models;

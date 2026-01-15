@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq.Expressions;
 using System.Reflection;
 using Framework.Abstractions;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Orm.EntityFramework.Configurations;
 using Framework.Primitives;
 using Framework.Reflection;

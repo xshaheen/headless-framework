@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Features.Entities;
 
 namespace Framework.Features.Values;
