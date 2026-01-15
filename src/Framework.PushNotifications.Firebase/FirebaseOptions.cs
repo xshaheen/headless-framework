@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json.Serialization;
+using FluentValidation;
+using Framework.Checks;
 
 namespace Framework.PushNotifications.Firebase;
 
@@ -21,7 +22,7 @@ public sealed class FirebaseOptions
     /// <summary>
     /// Retry policy configuration for FCM API calls.
     /// </summary>
-    public RetryOptions Retry { get; init; } = new();
+    public FirebaseRetryOptions Retry { get; init; } = new();
 
     /// <inheritdoc />
     public override string ToString() => "FirebaseOptions { Json = [REDACTED] }";
@@ -30,12 +31,8 @@ public sealed class FirebaseOptions
 /// <summary>
 /// Retry policy configuration for Firebase Cloud Messaging API calls.
 /// </summary>
-public sealed class RetryOptions
+public sealed class FirebaseRetryOptions
 {
-    private int _maxAttempts = 5;
-    private TimeSpan _maxDelay = TimeSpan.FromMinutes(1);
-    private TimeSpan _rateLimitDelay = TimeSpan.FromSeconds(60);
-
     /// <summary>
     /// Maximum retry attempts for transient failures. Set to 0 to disable retry.
     /// </summary>
@@ -46,12 +43,17 @@ public sealed class RetryOptions
     /// </remarks>
     public int MaxAttempts
     {
-        get => _maxAttempts;
-        init =>
-            _maxAttempts = value is >= 0 and <= 10
-                ? value
-                : throw new ArgumentOutOfRangeException(nameof(value), "MaxAttempts must be 0-10");
-    }
+        get;
+        init
+        {
+            field = Argument.IsInclusiveBetween(
+                argument: value,
+                minimumValue: 0,
+                maximumValue: 10,
+                argumentParamName: nameof(MaxAttempts)
+            );
+        }
+    } = 5;
 
     /// <summary>
     /// Maximum delay between retry attempts. Individual retries capped at this value.
@@ -62,13 +64,17 @@ public sealed class RetryOptions
     /// </remarks>
     public TimeSpan MaxDelay
     {
-        get => _maxDelay;
-        init =>
-            _maxDelay =
-                value > TimeSpan.Zero && value <= TimeSpan.FromMinutes(5)
-                    ? value
-                    : throw new ArgumentOutOfRangeException(nameof(value), "MaxDelay must be > 0 and <= 5 minutes");
-    }
+        get;
+        init
+        {
+            field = Argument.IsInclusiveBetween(
+                argument: value,
+                minimumValue: TimeSpan.Zero,
+                maximumValue: TimeSpan.FromMinutes(5),
+                argumentParamName: nameof(MaxDelay)
+            );
+        }
+    } = TimeSpan.FromMinutes(1);
 
     /// <summary>
     /// Delay used when FCM returns HTTP 429 QuotaExceeded error.
@@ -80,16 +86,17 @@ public sealed class RetryOptions
     /// </remarks>
     public TimeSpan RateLimitDelay
     {
-        get => _rateLimitDelay;
-        init =>
-            _rateLimitDelay =
-                value > TimeSpan.Zero && value <= TimeSpan.FromMinutes(5)
-                    ? value
-                    : throw new ArgumentOutOfRangeException(
-                        nameof(value),
-                        "RateLimitDelay must be > 0 and <= 5 minutes"
-                    );
-    }
+        get;
+        init
+        {
+            field = Argument.IsInclusiveBetween(
+                argument: value,
+                minimumValue: TimeSpan.Zero,
+                maximumValue: TimeSpan.FromMinutes(5),
+                argumentParamName: nameof(RateLimitDelay)
+            );
+        }
+    } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Enable jitter to prevent thundering herd on retry.
@@ -99,4 +106,24 @@ public sealed class RetryOptions
     /// Distributes retry load across time to avoid overwhelming FCM servers.
     /// </remarks>
     public bool UseJitter { get; init; } = true;
+}
+
+public sealed class FirebaseOptionsValidator : AbstractValidator<FirebaseOptions>
+{
+    public FirebaseOptionsValidator()
+    {
+        RuleFor(x => x.Json).NotEmpty().WithMessage("Firebase JSON credentials must be provided.");
+
+        RuleFor(x => x.Retry.MaxAttempts)
+            .InclusiveBetween(0, 10)
+            .WithMessage("Retry MaxAttempts must be between 0 and 10.");
+
+        RuleFor(x => x.Retry.MaxDelay)
+            .InclusiveBetween(TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5))
+            .WithMessage("Retry MaxDelay must be between 1 second and 5 minutes.");
+
+        RuleFor(x => x.Retry.RateLimitDelay)
+            .InclusiveBetween(TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5))
+            .WithMessage("Retry RateLimitDelay must be between 1 second and 5 minutes.");
+    }
 }

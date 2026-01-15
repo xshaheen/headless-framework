@@ -126,5 +126,5 @@ services.AddPushNotifications(new FirebaseOptions
 ## Side Effects
 
 - Registers `IPushNotificationService` as singleton
-- Registers `ResiliencePipeline` named "fcm-retry"
+- Registers `ResiliencePipeline` named "Headless:FcmRetry"
 - Initializes Firebase Admin SDK
