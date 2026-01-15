@@ -64,7 +64,7 @@ public sealed class DynamicFeatureDefinitionStore(
         // Fast path: lock-free read if cache is fresh
         if (!_IsUpdateMemoryCacheRequired())
         {
-            var cache = _featureMemoryCache; // Capture local reference for thread safety
+            var cache = _featureMemoryCache; // Eventual consistency: may read stale data if cache invalidated after freshness check
             return cache.GetValueOrDefault(name);
         }
 
@@ -88,7 +88,7 @@ public sealed class DynamicFeatureDefinitionStore(
         // Fast path: lock-free read if cache is fresh
         if (!_IsUpdateMemoryCacheRequired())
         {
-            var cache = _featureMemoryCache; // Capture local reference for thread safety
+            var cache = _featureMemoryCache; // Eventual consistency: may read stale data if cache invalidated after freshness check
             return cache.Values.ToImmutableList();
         }
 
@@ -235,7 +235,8 @@ public sealed class DynamicFeatureDefinitionStore(
             }
         }
 
-        // Atomic swap via volatile
+        // Swap references to new immutable caches. Each assignment is atomic, but the two updates are not atomic as a unit,
+        // so readers may briefly observe one cache updated while the other is stale. This transient state is acceptable here.
         _groupMemoryCache = newGroupCache.ToImmutable();
         _featureMemoryCache = newFeatureCache.ToImmutable();
     }
