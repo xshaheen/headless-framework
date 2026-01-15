@@ -114,7 +114,7 @@ public sealed class DynamicFeatureDefinitionStore(
         // Fast path: lock-free read if cache is fresh
         if (!_IsUpdateMemoryCacheRequired())
         {
-            var cache = _groupMemoryCache; // Capture local reference for thread safety
+            var cache = _groupMemoryCache; // Eventual consistency: may read stale data if cache invalidated after freshness check
             return cache.Values.ToImmutableList();
         }
 
