@@ -16,6 +16,7 @@ public sealed class MassTransitMessageBusAdapter(
 ) : IMessageBus
 {
     private readonly ConcurrentDictionary<Type, SubscriptionState> _subscriptions = new();
+    private readonly ConcurrentBag<Task> _pendingCleanups = new();
     private int _disposed;
 
     public async Task PublishAsync<T>(
@@ -76,6 +77,16 @@ public sealed class MassTransitMessageBusAdapter(
             throw new InvalidOperationException($"Already subscribed to {typeof(TPayload).Name}");
         }
 
+        // Check if already cancelled to avoid race condition
+        if (cancellationToken.IsCancellationRequested)
+        {
+            await _RemoveSubscriptionAsync(typeof(TPayload)).AnyContext();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        // Register cleanup BEFORE Ready check to prevent leak if Ready throws
+        state.Registration = cancellationToken.Register(() => _RemoveSubscriptionSync(typeof(TPayload)));
+
         try
         {
             await handle.Ready.AnyContext();
@@ -85,16 +96,6 @@ public sealed class MassTransitMessageBusAdapter(
             await _RemoveSubscriptionAsync(typeof(TPayload)).AnyContext();
             throw;
         }
-
-        // Check if already cancelled to avoid race condition
-        if (cancellationToken.IsCancellationRequested)
-        {
-            await _RemoveSubscriptionAsync(typeof(TPayload)).AnyContext();
-            return;
-        }
-
-        // Register cleanup with proper error handling
-        state.Registration = cancellationToken.Register(() => _RemoveSubscriptionSync(typeof(TPayload)));
     }
 
     private void _RemoveSubscriptionSync(Type payloadType)
@@ -104,23 +105,20 @@ public sealed class MassTransitMessageBusAdapter(
             return;
         }
 
-        // Track removal task for proper cleanup and error handling
-        var removalTask = _RemoveSubscriptionAsync(payloadType);
-        state.PendingRemovalTask = removalTask;
-
-        // Continue task to log unobserved exceptions
-        _ = removalTask.ContinueWith(
-            static (t, s) =>
+        // Wrap async cleanup in Task.Run and track in bag for disposal coordination
+        var cleanupTask = Task.Run(async () =>
+        {
+            try
             {
-                var (log, type) = ((ILogger, Type))s!;
-                if (t.Exception is not null)
-                {
-                    log.LogError(t.Exception, "Unhandled error removing subscription for {Type}", type.Name);
-                }
-            },
-            (logger, payloadType),
-            TaskScheduler.Default
-        );
+                await _RemoveSubscriptionAsync(payloadType).AnyContext();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error removing subscription for {Type}", payloadType.Name);
+            }
+        });
+
+        _pendingCleanups.Add(cleanupTask);
     }
 
     private async Task _RemoveSubscriptionAsync(Type payloadType)
@@ -165,28 +163,23 @@ public sealed class MassTransitMessageBusAdapter(
         }
 
         var subscriptions = _subscriptions.ToArray();
-        _subscriptions.Clear();
 
-        var stopTasks = subscriptions.Select(async kvp =>
+        // Phase 1: Dispose all cancellation registrations FIRST
+        // This prevents new cancellation callbacks from starting
+        foreach (var kvp in subscriptions)
         {
-            // Wait for any pending removal task first
-            if (kvp.Value.PendingRemovalTask is not null)
-            {
-                try
-                {
-                    await kvp.Value.PendingRemovalTask.AnyContext();
-                }
-                catch (Exception e)
-                {
-                    logger.LogWarning(e, "Error in pending removal for {Type}", kvp.Key.Name);
-                }
-            }
-
             if (kvp.Value.Registration.HasValue)
             {
                 await kvp.Value.Registration.Value.DisposeAsync().AnyContext();
             }
+        }
 
+        // Phase 2: Clear subscriptions and stop all handles
+        // Safe now that no more callbacks can fire
+        _subscriptions.Clear();
+
+        var stopTasks = subscriptions.Select(async kvp =>
+        {
             try
             {
                 await kvp.Value.Handle.StopAsync().AnyContext();
@@ -198,13 +191,15 @@ public sealed class MassTransitMessageBusAdapter(
         });
 
         await Task.WhenAll(stopTasks).AnyContext();
+
+        // Phase 3: Wait for all pending cleanup tasks to complete
+        await Task.WhenAll(_pendingCleanups).AnyContext();
     }
 
     private sealed class SubscriptionState(HostReceiveEndpointHandle handle)
     {
         public HostReceiveEndpointHandle Handle { get; } = handle;
         public CancellationTokenRegistration? Registration { get; set; }
-        public Task? PendingRemovalTask { get; set; }
     }
 
     private sealed class DelegateConsumer<TPayload>(
