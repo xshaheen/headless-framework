@@ -22,12 +22,12 @@ public class MemoryFoundationLockProviderTests : ResourceLockProviderTestsBase
         _storage = new CacheResourceLockStorage(_cache);
     }
 
-    protected override ValueTask DisposeAsyncCore()
+    protected override async ValueTask DisposeAsyncCore()
     {
-        _foundatioMessageBus?.Dispose();
-        _bus?.Dispose();
-        _cache?.Dispose();
-        return base.DisposeAsyncCore();
+        _cache.Dispose();
+        _foundatioMessageBus.Dispose();
+        await _bus.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 
     protected override IResourceLockProvider GetLockProvider()

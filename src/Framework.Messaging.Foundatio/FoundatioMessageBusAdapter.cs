@@ -67,12 +67,5 @@ public sealed class FoundatioMessageBusAdapter(IFoundatioMessageBus bus, IGuidGe
         );
     }
 
-    public void Dispose()
-    {
-        throw new NotSupportedException(
-            "FoundatioMessageBusAdapter must be disposed asynchronously. Use DisposeAsync() instead."
-        );
-    }
-
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

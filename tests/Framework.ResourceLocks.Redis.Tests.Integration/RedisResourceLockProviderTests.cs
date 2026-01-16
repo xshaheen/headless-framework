@@ -39,11 +39,11 @@ public sealed class RedisResourceLockProviderTests : ResourceLockProviderTestsBa
         await _fixture.ConnectionMultiplexer.FlushAllAsync();
     }
 
-    protected override ValueTask DisposeAsyncCore()
+    protected override async ValueTask DisposeAsyncCore()
     {
-        _bus?.Dispose();
-        _redisMessageBus?.Dispose();
-        return base.DisposeAsyncCore();
+        _redisMessageBus.Dispose();
+        await _bus.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 
     protected override IResourceLockProvider GetLockProvider()
