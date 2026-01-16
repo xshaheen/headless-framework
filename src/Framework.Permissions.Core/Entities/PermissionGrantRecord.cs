@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
-using Framework.Domains;
+using Framework.Domain;
 
 namespace Framework.Permissions.Entities;
 
@@ -16,6 +16,12 @@ public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant
 
     public string? TenantId { get; private init; }
 
+    /// <summary>
+    /// Indicates whether this record represents a grant (true) or explicit denial (false).
+    /// Absence of record = undefined, record with IsGranted=false = explicit deny (AWS IAM-style).
+    /// </summary>
+    public bool IsGranted { get; private init; }
+
     [UsedImplicitly]
     private PermissionGrantRecord()
     {
@@ -25,12 +31,20 @@ public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant
     }
 
     [SetsRequiredMembers]
-    public PermissionGrantRecord(Guid id, string name, string providerName, string providerKey, string? tenantId = null)
+    public PermissionGrantRecord(
+        Guid id,
+        string name,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        string? tenantId = null
+    )
     {
         Id = id;
         Name = Argument.IsNotNullOrWhiteSpace(name);
         ProviderName = Argument.IsNotNullOrWhiteSpace(providerName);
         ProviderKey = Argument.IsNotNullOrWhiteSpace(providerKey);
+        IsGranted = isGranted;
         TenantId = tenantId;
     }
 }

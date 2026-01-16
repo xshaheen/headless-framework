@@ -1,5 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using CommunityToolkit.HighPerformance;
+using Framework.Checks;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace System;
@@ -7,259 +10,297 @@ namespace System;
 #pragma warning disable CA5394 // CA5394: Random is an insecure random number generator.
 public static class RandomExtensions
 {
-    public static T Pick<T>(this Random random, params ReadOnlySpan<T> array)
+    extension(Random random)
     {
-        ArgumentNullException.ThrowIfNull(random);
-
-        if (array.Length == 0)
+        public T Pick<T>(params ReadOnlySpan<T> array)
         {
-            throw new ArgumentException("Array is empty.", nameof(array));
+            Argument.IsNotNull(random);
+
+            if (array.Length == 0)
+            {
+                throw new ArgumentException("Array is empty.", nameof(array));
+            }
+
+            var index = random.NextInt32(0, array.Length);
+
+            return array[index];
         }
 
-        var index = random.NextInt32(0, array.Length);
-
-        return array[index];
-    }
-
-    public static T GetItem<T>(this Random random, T[] array)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(array);
-
-        if (array.Length == 0)
+        public T GetItem<T>(T[] array)
         {
-            throw new ArgumentException("Array is empty.", nameof(array));
+            Argument.IsNotNull(random);
+            Argument.IsNotNull(array);
+
+            if (array.Length == 0)
+            {
+                throw new ArgumentException("Array is empty.", nameof(array));
+            }
+
+            var index = random.NextInt32(0, array.Length);
+
+            return array[index];
         }
 
-        var index = random.NextInt32(0, array.Length);
-
-        return array[index];
-    }
-
-    public static T GetItem<T>(this Random random, IList<T> list)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(list);
-
-        if (list.Count == 0)
+        public T GetItem<T>(IList<T> list)
         {
-            throw new ArgumentException("List is empty.", nameof(list));
+            Argument.IsNotNull(random);
+            Argument.IsNotNull(list);
+
+            if (list.Count == 0)
+            {
+                throw new ArgumentException("List is empty.", nameof(list));
+            }
+
+            var index = random.NextInt32(0, list.Count);
+
+            return list[index];
         }
 
-        var index = random.NextInt32(0, list.Count);
-
-        return list[index];
-    }
-
-    public static T GetItem<T>(this Random random, ICollection<T> list)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(list);
-
-        if (list.Count == 0)
+        public T GetItem<T>(ICollection<T> list)
         {
-            throw new ArgumentException("List is empty.", nameof(list));
+            Argument.IsNotNull(random);
+            Argument.IsNotNull(list);
+
+            if (list.Count == 0)
+            {
+                throw new ArgumentException("List is empty.", nameof(list));
+            }
+
+            var index = random.NextInt32(0, list.Count);
+
+            return list.ElementAt(index);
         }
 
-        var index = random.NextInt32(0, list.Count);
-
-        return list.ElementAt(index);
-    }
-
-    public static T GetItem<T>(this Random random, ReadOnlySpan<T> list)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        if (list.Length == 0)
+        public T GetItem<T>(ReadOnlySpan<T> list)
         {
-            throw new ArgumentException("List is empty.", nameof(list));
+            Argument.IsNotNull(random);
+
+            if (list.Length == 0)
+            {
+                throw new ArgumentException("List is empty.", nameof(list));
+            }
+
+            var index = random.NextInt32(0, list.Length);
+
+            return list[index];
         }
 
-        var index = random.NextInt32(0, list.Length);
-
-        return list[index];
-    }
-
-    public static T GetItem<T>(this Random random, ReadOnlyMemory<T> list)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        if (list.Length == 0)
+        public T GetItem<T>(ReadOnlyMemory<T> list)
         {
-            throw new ArgumentException("List is empty.", nameof(list));
+            Argument.IsNotNull(random);
+
+            if (list.Length == 0)
+            {
+                throw new ArgumentException("List is empty.", nameof(list));
+            }
+
+            var index = random.NextInt32(0, list.Length);
+
+            return list.Span[index];
         }
 
-        var index = random.NextInt32(0, list.Length);
-
-        return list.Span[index];
-    }
-
-    public static T GetItem<T>(this Random random, IReadOnlyList<T> list)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(list);
-
-        if (list.Count == 0)
+        public T GetItem<T>(IReadOnlyList<T> list)
         {
-            throw new ArgumentException("List is empty.", nameof(list));
+            Argument.IsNotNull(random);
+            Argument.IsNotNull(list);
+
+            if (list.Count == 0)
+            {
+                throw new ArgumentException("List is empty.", nameof(list));
+            }
+
+            var index = random.NextInt32(0, list.Count);
+
+            return list[index];
         }
 
-        var index = random.NextInt32(0, list.Count);
-
-        return list[index];
-    }
-
-    public static T GetItem<T>(this Random random, IReadOnlyCollection<T> list)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(list);
-
-        if (list.Count == 0)
+        public T GetItem<T>(IReadOnlyCollection<T> list)
         {
-            throw new ArgumentException("List is empty.", nameof(list));
+            Argument.IsNotNull(random);
+            Argument.IsNotNull(list);
+
+            if (list.Count == 0)
+            {
+                throw new ArgumentException("List is empty.", nameof(list));
+            }
+
+            var index = random.NextInt32(0, list.Count);
+
+            return list.ElementAt(index);
         }
 
-        var index = random.NextInt32(0, list.Count);
-
-        return list.ElementAt(index);
-    }
-
-    public static T GetItem<T>(this Random random, HashSet<T> set)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(set);
-
-        if (set.Count == 0)
+        public T GetItem<T>(HashSet<T> set)
         {
-            throw new ArgumentException("List is empty.", nameof(set));
+            Argument.IsNotNull(random);
+            Argument.IsNotNull(set);
+
+            if (set.Count == 0)
+            {
+                throw new ArgumentException("List is empty.", nameof(set));
+            }
+
+            var index = random.NextInt32(0, set.Count);
+
+            return set.ElementAt(index);
         }
 
-        var index = random.NextInt32(0, set.Count);
-
-        return set.ElementAt(index);
-    }
-
-    public static bool NextBoolean(this Random random)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return random.Next(0, 2) != 0;
-    }
-
-    public static byte NextByte(this Random random, byte min = 0, byte max = byte.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (byte)random.Next(min, max);
-    }
-
-    public static sbyte NextSByte(this Random random, sbyte min = 0, sbyte max = sbyte.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (sbyte)random.Next(min, max);
-    }
-
-    public static DateTime NextDateTime(this Random random, DateTime min, DateTime max)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        var diff = max.Ticks - min.Ticks;
-        var range = (long)(diff * random.NextDouble());
-
-        return min + new TimeSpan(range);
-    }
-
-    public static double NextDouble(this Random random, double min = 0D, double max = 1D)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (random.NextDouble() * (max - min)) + min;
-    }
-
-    public static short NextInt16(this Random random, short min = 0, short max = short.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (short)random.Next(min, max);
-    }
-
-    public static int NextInt32(this Random random, int min = 0, int max = int.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return random.Next(min, max);
-    }
-
-    public static long NextInt64(this Random random, long min = 0L, long max = long.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return min == max ? min : (long)((random.NextDouble() * (max - min)) + min);
-    }
-
-    public static float NextSingle(this Random random, float min = 0f, float max = 1f)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (float)random.NextDouble(min, max);
-    }
-
-    public static ushort NextUInt16(this Random random, ushort min = 0, ushort max = ushort.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (ushort)random.Next(min, max);
-    }
-
-    public static uint NextUInt32(this Random random, uint min = 0u, uint max = uint.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (uint)random.NextInt64(min, max);
-    }
-
-    public static ulong NextUInt64(this Random random, ulong min = 0ul, ulong max = ulong.MaxValue)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        var buffer = new byte[sizeof(long)];
-        random.NextBytes(buffer);
-
-        return (BitConverter.ToUInt64(buffer, 0) * (max - min) / ulong.MaxValue) + min;
-    }
-
-    public static decimal NextDecimal(
-        this Random random,
-        decimal min = decimal.MinValue,
-        decimal max = decimal.MaxValue
-    )
-    {
-        ArgumentNullException.ThrowIfNull(random);
-
-        return (((decimal)random.NextDouble()) * (max - min)) + min;
-    }
-
-    public static string NextString(this Random random, int length, string chars)
-    {
-        return NextString(random, length, length, chars);
-    }
-
-    public static string NextString(this Random random, int minLength, int maxLength, string chars)
-    {
-        ArgumentNullException.ThrowIfNull(random);
-        ArgumentNullException.ThrowIfNull(chars);
-
-        var length = minLength + random.Next(0, maxLength - minLength + 1); // length of the string
-
-        var max = chars.Length; // number of available characters
-        var sb = new StringBuilder(length);
-
-        for (var i = 0; i < length; i++)
+        public bool NextBoolean()
         {
-            sb.Append(chars[random.Next(0, max)]);
+            Argument.IsNotNull(random);
+
+            return random.Next(0, 2) != 0;
         }
 
-        return sb.ToString();
+        public byte NextByte(byte min = 0, byte max = byte.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return (byte)random.Next(min, max);
+        }
+
+        public sbyte NextSByte(sbyte min = 0, sbyte max = sbyte.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return (sbyte)random.Next(min, max);
+        }
+
+        public DateTime NextDateTime(DateTime min, DateTime max)
+        {
+            Argument.IsNotNull(random);
+
+            var diff = max.Ticks - min.Ticks;
+            var range = (long)(diff * random.NextDouble());
+
+            return min + new TimeSpan(range);
+        }
+
+        public double NextDouble(double min = 0D, double max = 1D)
+        {
+            Argument.IsNotNull(random);
+
+            return (random.NextDouble() * (max - min)) + min;
+        }
+
+        public short NextInt16(short min = 0, short max = short.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return (short)random.Next(min, max);
+        }
+
+        public int NextInt32(int min = 0, int max = int.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return random.Next(min, max);
+        }
+
+        public long NextInt64(long min = 0L, long max = long.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return min == max ? min : (long)((random.NextDouble() * (max - min)) + min);
+        }
+
+        public float NextSingle(float min = 0f, float max = 1f)
+        {
+            Argument.IsNotNull(random);
+
+            return (float)random.NextDouble(min, max);
+        }
+
+        public ushort NextUInt16(ushort min = 0, ushort max = ushort.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return (ushort)random.Next(min, max);
+        }
+
+        public uint NextUInt32(uint min = 0u, uint max = uint.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return (uint)random.NextInt64(min, max);
+        }
+
+        public ulong NextUInt64(ulong min = 0ul, ulong max = ulong.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            var buffer = new byte[sizeof(long)];
+            random.NextBytes(buffer);
+
+            return (BitConverter.ToUInt64(buffer, 0) * (max - min) / ulong.MaxValue) + min;
+        }
+
+        public decimal NextDecimal(decimal min = decimal.MinValue, decimal max = decimal.MaxValue)
+        {
+            Argument.IsNotNull(random);
+
+            return ((decimal)random.NextDouble() * (max - min)) + min;
+        }
+
+        public string NextString(int length, string chars)
+        {
+            return random.NextString(length, length, chars);
+        }
+
+        public string NextString(int minLength, int maxLength, string chars)
+        {
+            Argument.IsNotNull(random);
+            Argument.IsNotNull(chars);
+
+            var length = minLength + random.Next(0, maxLength - minLength + 1); // length of the string
+
+            var max = chars.Length; // number of available characters
+            var sb = new StringBuilder(length);
+
+            for (var i = 0; i < length; i++)
+            {
+                sb.Append(chars[random.Next(0, max)]);
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Gets random of given objects.
+        /// </summary>
+        /// <typeparam name="T">Type of the objects</typeparam>
+        /// <param name="objects">List of object to select a random one</param>
+        public T GetRandomOf<T>(params ReadOnlySpan<T> objects)
+        {
+            Argument.IsNotEmpty(objects);
+
+            return objects[random.Next(0, objects.Length)];
+        }
+
+        /// <summary>
+        /// Gets random item from the given list.
+        /// </summary>
+        /// <typeparam name="T">Type of the objects</typeparam>
+        /// <param name="list">List of object to select a random one</param>
+        public T GetRandomOfList<T>(IList<T> list)
+        {
+            Argument.IsNotNullOrEmpty(list);
+
+            return list[random.Next(0, list.Count)];
+        }
+
+        /// <summary>
+        /// Generates a randomized list from given enumerable.
+        /// </summary>
+        /// <typeparam name="T">Type of items in the list</typeparam>
+        /// <param name="items">items</param>
+        public List<T> GenerateRandomizedList<T>(IEnumerable<T> items)
+        {
+            Argument.IsNotNullOrEmpty(items);
+
+            var result = items.ToList();
+            random.Shuffle(result.AsSpan());
+
+            return result;
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Permissions.Entities;
 
 namespace Framework.Permissions.Grants;

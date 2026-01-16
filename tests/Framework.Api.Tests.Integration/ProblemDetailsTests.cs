@@ -135,12 +135,8 @@ public sealed class ProblemDetailsTests : TestBase
      *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.5.5",
      *   "title" : "entity-not-found",
      *   "status" : 404,
-     *   "detail" : "The requested entity does not exist. There is no entity matches 'Entity:Key'.",
+     *   "detail" : "The requested resource was not found.",
      *   "instance" : "/minimal/entity-not-found",
-     *   "params" : {
-     *     "entity" : "Entity",
-     *     "key" : "Key"
-     *   },
      *   "traceId" : "00-4782502e77808f3d0eff63531d30c35b-49c15b7ba6e935a6-00",
      *   "buildNumber" : "2.16.1.109",
      *   "commitNumber" : "2.16.1.109",
@@ -188,13 +184,11 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.EntityNotFound,
             HeadlessProblemDetailsConstants.Titles.EntityNotFound,
             StatusCodes.Status404NotFound,
-            HeadlessProblemDetailsConstants.Details.EntityNotFound("Entity", "Key")
+            HeadlessProblemDetailsConstants.Details.EntityNotFound
         );
 
-        jsonElement.GetProperty("params").GetProperty("entity").GetString().Should().Be("Entity");
-        jsonElement.GetProperty("params").GetProperty("key").GetString().Should().Be("Key");
-
-        jsonElement.EnumerateObject().Should().HaveCount(10);
+        // Entity/key params removed for security (OWASP A01:2021 - prevents info disclosure)
+        jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 
     #endregion

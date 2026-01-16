@@ -9,7 +9,8 @@ Provides a provider-agnostic API for file storage operations, enabling seamless 
 ## Key Features
 
 - `IBlobStorage` - Core interface for all storage operations:
-  - Upload/Download blobs with metadata
+  - Upload blobs with metadata
+  - Open read stream for downloading
   - Bulk upload/delete operations
   - Copy/Rename/Delete operations
   - Exists check and blob info retrieval
@@ -40,10 +41,14 @@ public sealed class FileService(IBlobStorage storage)
         );
     }
 
-    public async Task<Stream?> DownloadAsync(string fileName, CancellationToken ct)
+    public async Task<string?> GetContentAsync(string fileName, CancellationToken ct)
     {
-        var result = await storage.DownloadAsync(["uploads", "images"], fileName, ct);
-        return result?.Stream;
+        // IMPORTANT: Dispose result promptly - holding it may exhaust connection pools
+        await using var result = await storage.OpenReadStreamAsync(["uploads", "images"], fileName, ct);
+        if (result is null) return null;
+
+        using var reader = new StreamReader(result.Stream);
+        return await reader.ReadToEndAsync(ct);
     }
 }
 ```

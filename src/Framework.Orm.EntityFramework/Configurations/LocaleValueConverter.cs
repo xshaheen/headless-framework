@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json.Serialization.Metadata;
 using Framework.Primitives;
-using Framework.Serializer;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -11,16 +11,18 @@ namespace Framework.Orm.EntityFramework.Configurations;
 public sealed class LocalesValueConverter()
     : ValueConverter<Locales?, string?>(x => _Serialize(x), x => _Deserialize(x))
 {
+    private static readonly JsonTypeInfo<Locales> _TypeInfo = EfCoreJsonSerializerContext.Default.Locales;
+
     private static string _Serialize(Locales? locale)
     {
-        return JsonSerializer.Serialize(locale, JsonConstants.DefaultInternalJsonOptions);
+        return locale is null ? "{}" : JsonSerializer.Serialize(locale, _TypeInfo);
     }
 
     private static Locales? _Deserialize(string? json)
     {
         return string.IsNullOrEmpty(json) || string.Equals(json, "{}", StringComparison.Ordinal)
             ? null
-            : JsonSerializer.Deserialize<Locales>(json, JsonConstants.DefaultInternalJsonOptions);
+            : JsonSerializer.Deserialize(json, _TypeInfo);
     }
 }
 

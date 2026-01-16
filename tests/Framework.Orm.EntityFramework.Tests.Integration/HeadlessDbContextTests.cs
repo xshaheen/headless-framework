@@ -1,4 +1,4 @@
-﻿using Framework.Domains;
+﻿using Framework.Domain;
 using Framework.Orm.EntityFramework.Contexts;
 using Framework.Testing.Order;
 using Framework.Testing.Tests;
@@ -211,24 +211,30 @@ public sealed class HeadlessDbContextTests : TestBase
 
         var committed = false;
 
-        await db.ExecuteTransactionAsync(async () =>
-        {
-            await db.Basics.AddAsync(new BasicEntity { Name = "in-tx" });
-            committed = true;
+        await db.ExecuteTransactionAsync(
+            async () =>
+            {
+                await db.Basics.AddAsync(new BasicEntity { Name = "in-tx" });
+                committed = true;
 
-            return true;
-        });
+                return true;
+            },
+            cancellationToken: AbortToken
+        );
 
         (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
         committed.Should().BeTrue();
 
         // rollback path
-        await db.ExecuteTransactionAsync(async () =>
-        {
-            await db.Basics.AddAsync(new BasicEntity { Name = "rolled" });
+        await db.ExecuteTransactionAsync(
+            async () =>
+            {
+                await db.Basics.AddAsync(new BasicEntity { Name = "rolled" });
 
-            return false;
-        });
+                return false;
+            },
+            cancellationToken: AbortToken
+        );
 
         (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
     }

@@ -11,18 +11,14 @@ public static class RedisBlobSetup
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddRedisBlobStorage(
-            Action<RedisBlobStorageOptions, IServiceProvider> setupAction
-        )
+        public IServiceCollection AddRedisBlobStorage(Action<RedisBlobStorageOptions, IServiceProvider> setupAction)
         {
             services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
 
             return services._AddCore();
         }
 
-        public IServiceCollection AddRedisBlobStorage(
-            Action<RedisBlobStorageOptions> setupAction
-        )
+        public IServiceCollection AddRedisBlobStorage(Action<RedisBlobStorageOptions> setupAction)
         {
             services.Configure<RedisBlobStorageOptions, RedisBlobStorageOptionsValidator>(setupAction);
 

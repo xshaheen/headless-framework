@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Primitives;
 
 namespace Framework.Permissions.Entities;
@@ -56,15 +56,8 @@ public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasE
 
     public void Patch(PermissionGroupDefinitionRecord otherRecord)
     {
-        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
-        {
-            Name = otherRecord.Name;
-        }
-
-        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
-        {
-            DisplayName = otherRecord.DisplayName;
-        }
+        Name = otherRecord.Name;
+        DisplayName = otherRecord.DisplayName;
 
         if (!this.HasSameExtraProperties(otherRecord))
         {

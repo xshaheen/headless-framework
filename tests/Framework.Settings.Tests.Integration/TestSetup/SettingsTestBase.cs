@@ -1,7 +1,7 @@
 ﻿using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Messaging;
 using Framework.Redis;
 using Framework.ResourceLocks;
@@ -64,7 +64,12 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddResourceLock<RedisResourceLockStorage>();
 
         services
-            .AddSettingsManagementCore()
+            .AddSettingsManagementCore(encryption =>
+            {
+                encryption.DefaultPassPhrase = "TestPassPhrase123456";
+                encryption.InitVectorBytes = "TestIV0123456789"u8.ToArray();
+                encryption.DefaultSalt = "TestSalt"u8.ToArray();
+            })
             .AddSettingsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.RemoveHostedService<SettingsInitializationBackgroundService>();

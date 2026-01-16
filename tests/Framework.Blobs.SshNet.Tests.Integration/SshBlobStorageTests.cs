@@ -2,35 +2,43 @@
 
 using Framework.Blobs;
 using Framework.Blobs.SshNet;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.TestSetup;
 
+// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
-[Collection<SshBlobTestFixture>]
-public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorageTestsBase
+[Collection<SshBlobStorageFixture>]
+public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {
-        var options = new SshBlobStorageOptions { ConnectionString = fixture.GetConnectionString() };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
-
-        return new SshBlobStorage(optionsWrapper);
+        return new SshBlobStorage(
+            fixture.Pool,
+            fixture.CrossOsNamingNormalizer,
+            fixture.OptionsMonitor,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
     }
 
     [Fact]
-    public void can_create_ssh_file_storage_without_Connection_string_password()
+    public async Task can_create_ssh_file_storage_without_Connection_string_password()
     {
         // given
         var options = new SshBlobStorageOptions { ConnectionString = "sftp://framework@localhost:2222" };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
+        var optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper);
+        await using var storage = new SshBlobStorage(
+            fixture.Pool,
+            fixture.CrossOsNamingNormalizer,
+            optionsMonitor,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
     }
 
     [Fact]
-    public void can_create_ssh_file_storage_without_proxy_password()
+    public async Task can_create_ssh_file_storage_without_proxy_password()
     {
         // given
         var options = new SshBlobStorageOptions
@@ -38,21 +46,25 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
             ConnectionString = "sftp://username@host",
             Proxy = "proxy://username@host",
         };
-        var optionsWrapper = new OptionsWrapper<SshBlobStorageOptions>(options);
+        var optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
 
         // when
-        using var storage = new SshBlobStorage(optionsWrapper);
+        await using var storage = new SshBlobStorage(
+            fixture.Pool,
+            fixture.CrossOsNamingNormalizer,
+            optionsMonitor,
+            LoggerFactory.CreateLogger<SshBlobStorage>()
+        );
     }
 
     [Fact]
     public async Task will_not_return_directory_in_get_page()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
         var container = Container;
-        var containerName = ContainerName;
 
         var result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
         result.HasMore.Should().BeFalse();
@@ -62,10 +74,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         result.Blobs.Should().BeEmpty();
 
         const string directory = "EmptyDirectory";
-        var client = storage is SshBlobStorage sshStorage ? await sshStorage.GetClientAsync(AbortToken) : null;
-        client.Should().NotBeNull();
-
-        await client.CreateDirectoryAsync($"{containerName}/{directory}", AbortToken);
+        await storage.CreateContainerAsync([.. container, directory], AbortToken);
 
         result = await storage.GetPagedListAsync(container, cancellationToken: AbortToken);
         result.HasMore.Should().BeFalse();
@@ -82,7 +91,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         await storage.DeleteAllAsync(container, "*", AbortToken);
 
         // Assert folder was removed by Delete Files
-        (await client.ExistsAsync($"{containerName}/{directory}", AbortToken))
+        (await storage.ExistsAsync(container, directory, AbortToken))
             .Should()
             .BeFalse();
         (await storage.GetBlobInfoAsync(container, directory, AbortToken)).Should().BeNull();
@@ -136,7 +145,7 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
         return base.can_rename_files();
     }
 
-    [Fact(Skip = "Doesn't work well with SFTP")]
+    [Fact]
     public override Task can_concurrently_manage_files()
     {
         return base.can_concurrently_manage_files();
@@ -185,9 +194,9 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]
@@ -249,4 +258,66 @@ public sealed class SshBlobStorageTests(SshBlobTestFixture fixture) : BlobStorag
     {
         return base.can_call_get_paged_list_with_empty_container();
     }
+
+    #region Path Traversal Security Tests
+
+    [Theory]
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
+    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    {
+        return base.should_throw_when_blob_name_has_path_traversal(blobName);
+    }
+
+    [Fact]
+    public override Task should_throw_when_container_has_path_traversal()
+    {
+        return base.should_throw_when_container_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_upload_blob_has_path_traversal()
+    {
+        return base.should_throw_when_upload_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_download_blob_has_path_traversal()
+    {
+        return base.should_throw_when_download_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_delete_blob_has_path_traversal()
+    {
+        return base.should_throw_when_delete_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_rename_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_rename_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_copy_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_copy_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_blob_name_has_control_characters()
+    {
+        return base.should_throw_when_blob_name_has_control_characters();
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    {
+        return base.should_throw_when_blob_name_is_absolute_path(blobName);
+    }
+
+    #endregion
 }

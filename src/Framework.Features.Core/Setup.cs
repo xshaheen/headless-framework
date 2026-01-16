@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Features.Definitions;
 using Framework.Features.Entities;
 using Framework.Features.Filters;
@@ -38,9 +38,7 @@ public static class CoreSetup
         /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
         /// to be able to use this feature.
         /// </summary>
-        public IServiceCollection AddFeaturesManagementCore(
-            Action<FeatureManagementOptions>? setupAction = null
-        )
+        public IServiceCollection AddFeaturesManagementCore(Action<FeatureManagementOptions>? setupAction = null)
         {
             services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
 

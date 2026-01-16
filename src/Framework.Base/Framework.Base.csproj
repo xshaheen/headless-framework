@@ -5,7 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.HighPerformance" />
-    <PackageReference Include="Flurl" />
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="IdGen" />
     <PackageReference Include="Microsoft.Bcl.TimeProvider" />
@@ -20,7 +19,6 @@
     <PackageReference Include="Polly.Core" />
     <PackageReference Include="System.Reactive" />
     <PackageReference Include="TimeZoneConverter" />
-    <PackageReference Include="ZString" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />

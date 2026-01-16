@@ -47,6 +47,7 @@ public sealed class GrantPermissionsSeedHelper(
                 name: permissionName,
                 providerName: RolePermissionGrantProvider.ProviderName,
                 providerKey: roleName,
+                isGranted: true,
                 tenantId: currentTenant.Id
             ));
 

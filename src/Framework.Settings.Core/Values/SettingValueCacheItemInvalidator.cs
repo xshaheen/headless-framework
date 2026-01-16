@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Caching;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Settings.Entities;
 
 namespace Framework.Settings.Values;
@@ -20,6 +20,6 @@ public sealed class SettingValueCacheItemInvalidator(ICache<SettingValueCacheIte
             message.Entity.ProviderKey
         );
 
-        await cache.RemoveAsync(cacheKey, cancellationToken);
+        await cache.RemoveAsync(cacheKey, cancellationToken).AnyContext();
     }
 }

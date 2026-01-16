@@ -45,6 +45,17 @@ builder.Services.AddRedisBlobStorage(options =>
 }
 ```
 
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `MaxBlobSizeBytes` | 10 MB | Maximum blob size. Set to 0 to disable. |
+| `MaxBulkParallelism` | 10 | Maximum parallelism for bulk operations. |
+
+## Usage Notes
+
+**Size Limits:** Redis blob storage is designed for small, ephemeral blobs (cache data, session files, temporary uploads). The default 10 MB limit prevents memory exhaustion. For large files, use Azure Blob Storage or S3.
+
 ## Dependencies
 
 - `Framework.Blobs.Abstractions`

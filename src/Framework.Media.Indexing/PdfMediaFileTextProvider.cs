@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Cysharp.Text;
+using System.Text;
 using UglyToad.PdfPig;
 
 namespace Framework.Media.Indexing;
@@ -28,7 +28,7 @@ public sealed class PdfMediaFileTextProvider : IMediaFileTextProvider
             }
 
             using var document = PdfDocument.Open(seekableStream ?? fileStream);
-            using var stringBuilder = ZString.CreateStringBuilder();
+            var stringBuilder = new StringBuilder();
 
             foreach (var page in document.GetPages())
             {

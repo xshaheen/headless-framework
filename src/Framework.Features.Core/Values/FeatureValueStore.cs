@@ -130,8 +130,7 @@ public sealed class FeatureValueStore(
     )
     {
         var definitions = await featureDefinitionManager.GetFeaturesAsync(cancellationToken);
-        var dbValues = await repository.GetListAsync(providerName, providerKey, cancellationToken);
-        var dbValuesMap = dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
+        var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken);
 
         Dictionary<string, FeatureValueCacheItem> cacheItems = new(StringComparer.Ordinal);
         string? featureValueToFind = null;
@@ -152,6 +151,16 @@ public sealed class FeatureValueStore(
         await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
 
         return featureValueToFind;
+    }
+
+    private async Task<Dictionary<string, string>> _GetProviderValuesMapAsync(
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        var dbValues = await repository.GetListAsync(providerName, providerKey, cancellationToken);
+        return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 
     #endregion

@@ -12,7 +12,6 @@ namespace Framework.Api.OperationProcessors;
 
 public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
 {
-    private const string _ForbiddenStatusCode = "403";
     private static readonly OpenApiResponse _ForbiddenResponse = _CreateForbiddenResponse();
 
     public bool Process(OperationProcessorContext context)
@@ -24,7 +23,7 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
 
         var responses = ctx.OperationDescription.Operation.Responses;
 
-        if (responses.ContainsKey(_ForbiddenStatusCode))
+        if (responses.ContainsKey(OpenApiStatusCodes.Forbidden))
         {
             return true;
         }
@@ -40,7 +39,7 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
 
         if (authorizeAttribute.Exists(attribute => attribute.Policy is not null || attribute.Roles is not null))
         {
-            responses.Add(_ForbiddenStatusCode, _ForbiddenResponse);
+            responses.Add(OpenApiStatusCodes.Forbidden, _ForbiddenResponse);
 
             return true;
         }
@@ -58,7 +57,7 @@ public sealed class ForbiddenResponseOperationProcessor : IOperationProcessor
             )
         )
         {
-            responses.Add(_ForbiddenStatusCode, _ForbiddenResponse);
+            responses.Add(OpenApiStatusCodes.Forbidden, _ForbiddenResponse);
         }
 
         return true;

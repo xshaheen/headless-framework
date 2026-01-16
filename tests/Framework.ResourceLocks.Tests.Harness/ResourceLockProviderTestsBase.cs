@@ -334,4 +334,93 @@ public abstract class ResourceLockProviderTestsBase : TestBase
             );
         }
     }
+
+    #region Observability Tests
+
+    public virtual async Task should_get_expiration_for_locked_resource()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+        var ttl = TimeSpan.FromMinutes(5);
+
+        await using var handle = await locker.TryAcquireAsync(resource, timeUntilExpires: ttl);
+        handle.Should().NotBeNull();
+
+        var expiration = await locker.GetExpirationAsync(resource);
+
+        expiration.Should().NotBeNull();
+        expiration!.Value.Should().BeCloseTo(ttl, TimeSpan.FromSeconds(5));
+    }
+
+    public virtual async Task should_return_null_expiration_when_not_locked()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        var expiration = await locker.GetExpirationAsync(resource);
+
+        expiration.Should().BeNull();
+    }
+
+    public virtual async Task should_get_lock_info_for_locked_resource()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+        var ttl = TimeSpan.FromMinutes(5);
+
+        await using var handle = await locker.TryAcquireAsync(resource, timeUntilExpires: ttl);
+        handle.Should().NotBeNull();
+
+        var info = await locker.GetLockInfoAsync(resource);
+
+        info.Should().NotBeNull();
+        info.Resource.Should().Be(resource);
+        info.LockId.Should().Be(handle!.LockId);
+        info.TimeToLive.Should().NotBeNull();
+        info.TimeToLive!.Value.Should().BeCloseTo(ttl, TimeSpan.FromSeconds(5));
+    }
+
+    public virtual async Task should_return_null_lock_info_when_not_locked()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        var info = await locker.GetLockInfoAsync(resource);
+
+        info.Should().BeNull();
+    }
+
+    public virtual async Task should_list_active_locks()
+    {
+        var locker = GetLockProvider();
+        var resource1 = $"list-test-{Faker.Random.String2(3, 10)}";
+        var resource2 = $"list-test-{Faker.Random.String2(3, 10)}";
+
+        await using var handle1 = await locker.TryAcquireAsync(resource1);
+        await using var handle2 = await locker.TryAcquireAsync(resource2);
+
+        handle1.Should().NotBeNull();
+        handle2.Should().NotBeNull();
+
+        var locks = await locker.ListActiveLocksAsync();
+
+        locks.Should().Contain(l => l.Resource == resource1);
+        locks.Should().Contain(l => l.Resource == resource2);
+    }
+
+    public virtual async Task should_get_active_locks_count()
+    {
+        var locker = GetLockProvider();
+
+        var initialCount = await locker.GetActiveLocksCountAsync();
+
+        var resource = $"count-test-{Faker.Random.String2(3, 10)}";
+        await using var handle = await locker.TryAcquireAsync(resource);
+        handle.Should().NotBeNull();
+
+        var countAfterAcquire = await locker.GetActiveLocksCountAsync();
+        countAfterAcquire.Should().BeGreaterThan(initialCount);
+    }
+
+    #endregion
 }

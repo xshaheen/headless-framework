@@ -3,7 +3,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
-using Cysharp.Text;
 using Framework.Exceptions;
 
 #pragma warning disable IDE0130
@@ -58,20 +57,20 @@ public static class ExceptionExtensions
             return string.Empty;
         }
 
-        var sb = ZString.CreateStringBuilder();
+        var sb = new StringBuilder();
 
         if (e is AggregateException aggregate)
         {
-            expandAggregate(ref sb, aggregate, maxDepth);
+            expandAggregate(sb, aggregate, maxDepth);
         }
         else
         {
-            expandException(ref sb, e, maxDepth);
+            expandException(sb, e, maxDepth);
         }
 
         return sb.ToString();
 
-        static void expandException(ref Utf16ValueStringBuilder sb, Exception e, int max)
+        static void expandException(StringBuilder sb, Exception e, int max)
         {
             var depthLevel = 0;
             var exception = e;
@@ -85,18 +84,18 @@ public static class ExceptionExtensions
 
                 if (exception is AggregateException aggregateException)
                 {
-                    expandAggregate(ref sb, aggregateException, max);
+                    expandAggregate(sb, aggregateException, max);
 
                     break;
                 }
 
-                addException(ref sb, exception);
+                addException(sb, exception);
 
                 exception = exception.InnerException;
             }
         }
 
-        static void expandAggregate(ref Utf16ValueStringBuilder sb, AggregateException e, int max)
+        static void expandAggregate(StringBuilder sb, AggregateException e, int max)
         {
             e = e.Flatten();
 
@@ -117,7 +116,7 @@ public static class ExceptionExtensions
                     sb.Append(Environment.NewLine);
                 }
 
-                addException(ref sb, exception.GetInnermostException());
+                addException(sb, exception.GetInnermostException());
 
                 count++;
             }
@@ -134,7 +133,7 @@ public static class ExceptionExtensions
             sb.Append("###");
         }
 
-        static void addException(ref Utf16ValueStringBuilder sb, Exception e)
+        static void addException(StringBuilder sb, Exception e)
         {
             sb.Append(e.GetType().Name);
             sb.Append(": ");

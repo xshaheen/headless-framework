@@ -20,6 +20,7 @@ public sealed class SettingsInitializationBackgroundService(
 {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
+    private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicSettingsTask;
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -29,20 +30,30 @@ public sealed class SettingsInitializationBackgroundService(
             return Task.CompletedTask;
         }
 
-        _initializeDynamicSettingsTask = _InitializeDynamicSettingsAsync(cancellationToken);
+        _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellationTokenSource.Token);
+        _initializeDynamicSettingsTask = _InitializeDynamicSettingsAsync(_linkedCts.Token);
 
         return Task.CompletedTask;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _cancellationTokenSource.CancelAsync();
+        await _cancellationTokenSource.CancelAsync().AnyContext();
+
+        if (_initializeDynamicSettingsTask is not null)
+        {
+            try
+            {
+                await _initializeDynamicSettingsTask.WaitAsync(cancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) { }
+        }
     }
 
     public void Dispose()
     {
+        _linkedCts?.Dispose();
         _cancellationTokenSource.Dispose();
-        _initializeDynamicSettingsTask?.Dispose();
     }
 
     private async Task _InitializeDynamicSettingsAsync(CancellationToken cancellationToken)
@@ -54,14 +65,14 @@ public sealed class SettingsInitializationBackgroundService(
 
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
-        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken);
+        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken).AnyContext();
 
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        await _PreCacheDynamicSettingsAsync(scope, cancellationToken);
+        await _PreCacheDynamicSettingsAsync(scope, cancellationToken).AnyContext();
     }
 
     private async Task _SaveStaticSettingsToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
@@ -93,7 +104,7 @@ public sealed class SettingsInitializationBackgroundService(
 
                 try
                 {
-                    await store.SaveAsync(cancellationToken);
+                    await store.SaveAsync(cancellationToken).AnyContext();
                 }
                 catch (Exception e)
                 {
@@ -118,7 +129,7 @@ public sealed class SettingsInitializationBackgroundService(
 
         try
         {
-            await store.GetAllAsync(cancellationToken); // Pre-cache settings, so the first request doesn't wait
+            await store.GetAllAsync(cancellationToken).AnyContext(); // Pre-cache settings, so the first request doesn't wait
         }
         catch (Exception e)
         {

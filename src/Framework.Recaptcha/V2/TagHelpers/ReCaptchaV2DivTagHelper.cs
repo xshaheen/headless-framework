@@ -10,7 +10,7 @@ namespace Framework.Recaptcha.V2.TagHelpers;
 [HtmlTargetElement("recaptcha-div-v2", TagStructure = TagStructure.WithoutEndTag)]
 public sealed class ReCaptchaV2DivTagHelper(IOptionsSnapshot<ReCaptchaOptions> optionsAccessor) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V2);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V2Name);
 
     public string? Badge { get; set; }
 

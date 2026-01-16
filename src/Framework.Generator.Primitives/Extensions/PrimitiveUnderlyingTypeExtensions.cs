@@ -30,39 +30,47 @@ internal static class PrimitiveUnderlyingTypeExtensions
             SpecialType.System_Single => PrimitiveUnderlyingType.Single,
             SpecialType.System_Double => PrimitiveUnderlyingType.Double,
             SpecialType.System_DateTime => PrimitiveUnderlyingType.DateTime,
-            _ => type.ToDisplayString() switch
-            {
-                "System.Guid" => PrimitiveUnderlyingType.Guid,
-                "System.DateOnly" => PrimitiveUnderlyingType.DateOnly,
-                "System.TimeOnly" => PrimitiveUnderlyingType.TimeOnly,
-                "System.TimeSpan" => PrimitiveUnderlyingType.TimeSpan,
-                "System.DateTimeOffset" => PrimitiveUnderlyingType.DateTimeOffset,
-                _ => PrimitiveUnderlyingType.Other,
-            },
+            _ => _GetNonSpecialPrimitiveType(type),
         };
     }
 
-    /// <summary>Determines if the given PrimitiveUnderlyingType is numeric.</summary>
-    /// <param name="underlyingType">The PrimitiveUnderlyingType to check.</param>
-    /// <returns>True if the underlyingType is numeric, false otherwise.</returns>
-    public static bool IsNumeric(this PrimitiveUnderlyingType underlyingType)
+    private static PrimitiveUnderlyingType _GetNonSpecialPrimitiveType(INamedTypeSymbol type)
     {
-        return underlyingType switch
-        {
-            PrimitiveUnderlyingType.Byte => true,
-            PrimitiveUnderlyingType.SByte => true,
-            PrimitiveUnderlyingType.Int16 => true,
-            PrimitiveUnderlyingType.Int32 => true,
-            PrimitiveUnderlyingType.Int64 => true,
-            PrimitiveUnderlyingType.UInt16 => true,
-            PrimitiveUnderlyingType.UInt32 => true,
-            PrimitiveUnderlyingType.UInt64 => true,
-            PrimitiveUnderlyingType.Decimal => true,
-            PrimitiveUnderlyingType.Double => true,
-            PrimitiveUnderlyingType.Single => true,
+        var name = type.Name;
+        if (!_IsSystemNamespace(type.ContainingNamespace))
+            return PrimitiveUnderlyingType.Other;
 
-            _ => false,
+        return name switch
+        {
+            "Guid" => PrimitiveUnderlyingType.Guid,
+            "DateOnly" => PrimitiveUnderlyingType.DateOnly,
+            "TimeOnly" => PrimitiveUnderlyingType.TimeOnly,
+            "TimeSpan" => PrimitiveUnderlyingType.TimeSpan,
+            "DateTimeOffset" => PrimitiveUnderlyingType.DateTimeOffset,
+            _ => PrimitiveUnderlyingType.Other,
         };
+    }
+
+    private static bool _IsSystemNamespace(INamespaceSymbol ns) =>
+        ns is { Name: "System", ContainingNamespace.IsGlobalNamespace: true };
+
+    /// <summary>Determines if the given PrimitiveUnderlyingType is numeric.</summary>
+    /// <param name="type">The PrimitiveUnderlyingType to check.</param>
+    /// <returns>True if the underlyingType is numeric, false otherwise.</returns>
+    public static bool IsNumeric(this PrimitiveUnderlyingType type)
+    {
+        return type
+            is PrimitiveUnderlyingType.Byte
+                or PrimitiveUnderlyingType.SByte
+                or PrimitiveUnderlyingType.Int16
+                or PrimitiveUnderlyingType.Int32
+                or PrimitiveUnderlyingType.Int64
+                or PrimitiveUnderlyingType.UInt16
+                or PrimitiveUnderlyingType.UInt32
+                or PrimitiveUnderlyingType.UInt64
+                or PrimitiveUnderlyingType.Decimal
+                or PrimitiveUnderlyingType.Double
+                or PrimitiveUnderlyingType.Single;
     }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is a date or time type.</summary>
@@ -70,16 +78,12 @@ internal static class PrimitiveUnderlyingTypeExtensions
     /// <returns>True if the underlyingType is a date or time type, false otherwise.</returns>
     public static bool IsDateOrTime(this PrimitiveUnderlyingType underlyingType)
     {
-        return underlyingType switch
-        {
-            PrimitiveUnderlyingType.DateTime => true,
-            PrimitiveUnderlyingType.DateOnly => true,
-            PrimitiveUnderlyingType.TimeOnly => true,
-            PrimitiveUnderlyingType.DateTimeOffset => true,
-            PrimitiveUnderlyingType.TimeSpan => true,
-
-            _ => false,
-        };
+        return underlyingType
+            is PrimitiveUnderlyingType.DateTime
+                or PrimitiveUnderlyingType.DateOnly
+                or PrimitiveUnderlyingType.TimeOnly
+                or PrimitiveUnderlyingType.DateTimeOffset
+                or PrimitiveUnderlyingType.TimeSpan;
     }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is a floating point type.</summary>
@@ -87,14 +91,10 @@ internal static class PrimitiveUnderlyingTypeExtensions
     /// <returns>True if the underlying type is a floating point type, false otherwise.</returns>
     public static bool IsFloatingPoint(this PrimitiveUnderlyingType underlyingType)
     {
-        return underlyingType switch
-        {
-            PrimitiveUnderlyingType.Decimal => true,
-            PrimitiveUnderlyingType.Double => true,
-            PrimitiveUnderlyingType.Single => true,
-
-            _ => false,
-        };
+        return underlyingType
+            is PrimitiveUnderlyingType.Decimal
+                or PrimitiveUnderlyingType.Double
+                or PrimitiveUnderlyingType.Single;
     }
 
     /// <summary>Determines if the given PrimitiveUnderlyingType is a byte or short.</summary>
@@ -102,15 +102,11 @@ internal static class PrimitiveUnderlyingTypeExtensions
     /// <returns>True if the underlyingType is a byte or short, false otherwise.</returns>
     public static bool IsByteOrShort(this PrimitiveUnderlyingType underlyingType)
     {
-        return underlyingType switch
-        {
-            PrimitiveUnderlyingType.Byte => true,
-            PrimitiveUnderlyingType.SByte => true,
-            PrimitiveUnderlyingType.Int16 => true,
-            PrimitiveUnderlyingType.UInt16 => true,
-
-            _ => false,
-        };
+        return underlyingType
+            is PrimitiveUnderlyingType.Byte
+                or PrimitiveUnderlyingType.SByte
+                or PrimitiveUnderlyingType.Int16
+                or PrimitiveUnderlyingType.UInt16;
     }
 
     /// <summary>Gets the default value for the specified PrimitiveUnderlyingType.</summary>

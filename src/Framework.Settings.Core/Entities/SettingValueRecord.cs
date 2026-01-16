@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Domains;
+using Framework.Domain;
 
 namespace Framework.Settings.Entities;
 
-public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>
+public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>, ICreateAudit, IUpdateAudit
 {
     [UsedImplicitly]
     private SettingValueRecord()
@@ -36,7 +36,9 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>
 
     public string? ProviderKey { get; private init; }
 
-    // TODO: Add DateCreated, DateUpdated, CreatedBy, UpdatedBy, ...
+    public DateTimeOffset DateCreated { get; private set; }
+
+    public DateTimeOffset? DateUpdated { get; private set; }
 
     public override string ToString()
     {

@@ -247,11 +247,4 @@ public static class ListExtensions
     {
         return CollectionsMarshal.AsSpan(list);
     }
-
-    /// <inheritdoc cref="CollectionsMarshal.AsSpan{T}"/>
-    [MustUseReturnValue]
-    public static ReadOnlySpan<T> AsSpan<T>(this List<T> list)
-    {
-        return CollectionsMarshal.AsSpan(list);
-    }
 }

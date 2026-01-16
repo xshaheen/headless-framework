@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
+using Framework.Blobs.Internals;
 using Framework.Core;
 
 namespace Framework.Blobs.Aws;
@@ -56,6 +57,7 @@ public sealed partial class AwsBlobNamingNormalizer : IBlobNamingNormalizer
     /// <summary><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html" /></summary>
     public string NormalizeBlobName(string blobName)
     {
+        PathValidation.ValidatePathSegment(blobName);
         return blobName;
     }
 

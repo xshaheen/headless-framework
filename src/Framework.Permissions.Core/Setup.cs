@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Permissions.Definitions;
 using Framework.Permissions.Entities;
 using Framework.Permissions.GrantProviders;
@@ -30,9 +30,7 @@ public static class PermissionsSetup
             return _AddCore(services);
         }
 
-        public IServiceCollection AddPermissionsManagementCore(
-            Action<PermissionManagementOptions>? setupAction = null
-        )
+        public IServiceCollection AddPermissionsManagementCore(Action<PermissionManagementOptions>? setupAction = null)
         {
             services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
 

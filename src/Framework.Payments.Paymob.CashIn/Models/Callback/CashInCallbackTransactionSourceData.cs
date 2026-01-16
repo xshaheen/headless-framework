@@ -22,5 +22,5 @@ public sealed class CashInCallbackTransactionSourceData
     public string? PhoneNumber { get; init; }
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

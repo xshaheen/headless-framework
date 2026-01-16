@@ -8,7 +8,8 @@ public sealed class NoopPushNotificationService : IPushNotificationService
         string clientToken,
         string title,
         string body,
-        IReadOnlyDictionary<string, string>? data = null
+        IReadOnlyDictionary<string, string>? data = null,
+        CancellationToken cancellationToken = default
     )
     {
         var response = PushNotificationResponse.Succeeded(clientToken, Guid.NewGuid().ToString());
@@ -20,7 +21,8 @@ public sealed class NoopPushNotificationService : IPushNotificationService
         IReadOnlyList<string> clientTokens,
         string title,
         string body,
-        IReadOnlyDictionary<string, string>? data = null
+        IReadOnlyDictionary<string, string>? data = null,
+        CancellationToken cancellationToken = default
     )
     {
         var responses = clientTokens

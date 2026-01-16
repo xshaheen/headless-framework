@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Payments.Paymob.CashIn.Internal;
+using Framework.Payments.Paymob.CashIn.Internals;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Transactions;
 
@@ -60,5 +60,5 @@ public sealed class CashInTransactionBillingData
     public string? ExtraDescription { get; init; } = "NA";
 
     [JsonExtensionData]
-    public IDictionary<string, object?>? ExtensionData { get; init; }
+    public IDictionary<string, object?>? ExtensionData { get; set; }
 }

@@ -4,12 +4,12 @@ using Framework.Blobs;
 using Framework.Blobs.Redis;
 using Framework.Serializer;
 using Microsoft.Extensions.Options;
-using Tests.TestSetup;
 
+// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
-[Collection<RedisTestFixture>]
-public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorageTestsBase
+[Collection<RedisBlobStorageFixture>]
+public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : BlobStorageTestsBase
 {
     protected override IBlobStorage GetStorage()
     {
@@ -116,9 +116,9 @@ public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorag
     }
 
     [Fact]
-    public override Task will_respect_stream_offset()
+    public override Task will_reset_stream_position()
     {
-        return base.will_respect_stream_offset();
+        return base.will_reset_stream_position();
     }
 
     [Fact]
@@ -180,4 +180,129 @@ public sealed class RedisBlobStorageTests(RedisTestFixture fixture) : BlobStorag
     {
         return base.can_call_get_paged_list_with_empty_container();
     }
+
+    [Fact]
+    public async Task should_throw_when_blob_exceeds_max_size()
+    {
+        // Arrange
+        var options = new RedisBlobStorageOptions
+        {
+            ConnectionMultiplexer = fixture.ConnectionMultiplexer,
+            MaxBlobSizeBytes = 100, // 100 bytes limit
+        };
+        var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
+        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+
+        var largeData = new byte[200]; // Exceeds 100 byte limit
+        Array.Fill(largeData, (byte)'x');
+        await using var stream = new MemoryStream(largeData);
+
+        // Act & Assert
+        var act = async () => await storage.UploadAsync(["test-container"], "large-blob.bin", stream);
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*exceeds maximum size*");
+    }
+
+    [Fact]
+    public async Task should_allow_blob_within_size_limit()
+    {
+        // Arrange
+        var options = new RedisBlobStorageOptions
+        {
+            ConnectionMultiplexer = fixture.ConnectionMultiplexer,
+            MaxBlobSizeBytes = 1000,
+        };
+        var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
+        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+
+        var data = new byte[500]; // Within limit
+        Array.Fill(data, (byte)'x');
+        await using var stream = new MemoryStream(data);
+
+        // Act & Assert
+        Func<Task> act = async () => await storage.UploadAsync(["test-container"], "small-blob.bin", stream);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_skip_size_validation_when_max_size_is_zero()
+    {
+        // Arrange
+        var options = new RedisBlobStorageOptions
+        {
+            ConnectionMultiplexer = fixture.ConnectionMultiplexer,
+            MaxBlobSizeBytes = 0, // Disabled
+        };
+        var optionsWrapper = new OptionsWrapper<RedisBlobStorageOptions>(options);
+        await using var storage = new RedisBlobStorage(optionsWrapper, new SystemJsonSerializer());
+
+        var data = new byte[1000];
+        Array.Fill(data, (byte)'x');
+        await using var stream = new MemoryStream(data);
+
+        // Act & Assert
+        var act = async () => await storage.UploadAsync(["test-container"], "no-limit-blob.bin", stream);
+        await act.Should().NotThrowAsync();
+    }
+
+    #region Path Traversal Security Tests
+
+    [Theory]
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
+    public override Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    {
+        return base.should_throw_when_blob_name_has_path_traversal(blobName);
+    }
+
+    [Fact]
+    public override Task should_throw_when_container_has_path_traversal()
+    {
+        return base.should_throw_when_container_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_upload_blob_has_path_traversal()
+    {
+        return base.should_throw_when_upload_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_download_blob_has_path_traversal()
+    {
+        return base.should_throw_when_download_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_delete_blob_has_path_traversal()
+    {
+        return base.should_throw_when_delete_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_rename_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_rename_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_copy_source_blob_has_path_traversal()
+    {
+        return base.should_throw_when_copy_source_blob_has_path_traversal();
+    }
+
+    [Fact]
+    public override Task should_throw_when_blob_name_has_control_characters()
+    {
+        return base.should_throw_when_blob_name_has_control_characters();
+    }
+
+    [Theory]
+    [InlineData("/etc/passwd")]
+    public override Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    {
+        return base.should_throw_when_blob_name_is_absolute_path(blobName);
+    }
+
+    #endregion
 }

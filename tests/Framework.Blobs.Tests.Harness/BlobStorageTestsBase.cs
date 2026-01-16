@@ -4,10 +4,10 @@ using System.Collections.Concurrent;
 using System.Xml.Linq;
 using Framework.Blobs;
 using Framework.Core;
-using Framework.Testing.Helpers;
 using Framework.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
+// ReSharper disable AccessToDisposedClosure
 namespace Tests;
 
 public abstract class BlobStorageTestsBase : TestBase
@@ -20,7 +20,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_get_empty_file_list_on_missing_directory()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -31,7 +31,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_get_file_list_for_single_folder()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -54,7 +54,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_get_file_list_for_single_file()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -75,7 +75,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_get_paged_file_list_for_single_folder()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -133,7 +133,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_get_file_info()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -190,7 +190,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_get_non_existent_file_info()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -204,7 +204,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_manage_files()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -226,7 +226,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_rename_files()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -248,7 +248,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_delete_entire_folder()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -264,7 +264,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_delete_entire_folder_with_wildcard()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -284,7 +284,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_delete_folder_with_multi_folder_wildcards()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -329,7 +329,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_delete_specific_files()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -356,7 +356,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_delete_nested_folder()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -382,7 +382,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_delete_specific_files_in_nested_folder()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -412,7 +412,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_round_trip_seekable_stream()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -432,45 +432,45 @@ public abstract class BlobStorageTestsBase : TestBase
         Logger.LogInformation("Saved contents with position {Position}", memoryStream.Position);
 
         // Download the stream from storage
-        var downloadResult = await storage.DownloadAsync(container, path);
+        await using var downloadResult = await storage.OpenReadStreamAsync(container, path);
         downloadResult.Should().NotBeNull();
-        await using var stream = downloadResult.Stream;
-        var actual = XElement.Load(stream);
+        var actual = XElement.Load(downloadResult!.Stream);
         actual.ToString(SaveOptions.DisableFormatting).Should().Be(element.ToString(SaveOptions.DisableFormatting));
     }
 
-    public virtual async Task will_respect_stream_offset()
+    public virtual async Task will_reset_stream_position()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
-        const string blobName = "blake.txt";
+        const string blobName = "test.txt";
+        const string content = "EricBlake";
         var container = Container;
 
         await using var memoryStream = new MemoryStream();
 
-        long offset;
-
         await using (var writer = new StreamWriter(memoryStream, StringHelper.Utf8WithoutBom, 1024, true))
         {
-            writer.AutoFlush = true;
-            await writer.WriteAsync("Eric");
-            offset = memoryStream.Position;
-            await writer.WriteAsync("Blake");
+            await writer.WriteAsync(content);
             await writer.FlushAsync();
         }
 
-        memoryStream.Seek(offset, SeekOrigin.Begin);
+        // Position stream at offset (not at start)
+        memoryStream.Seek(4, SeekOrigin.Begin);
+
         var blob = new BlobUploadRequest(memoryStream, blobName);
         await storage.UploadAsync(container, blob);
 
-        (await storage.GetBlobContentAsync(container, blobName)).Should().Be("Blake");
+        // Service should reset stream and upload full content
+        (await storage.GetBlobContentAsync(container, blobName))
+            .Should()
+            .Be(content);
     }
 
     public virtual async Task can_concurrently_manage_files()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -546,7 +546,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_save_over_existing_stored_content()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -564,7 +564,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_delete_all_async_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -578,7 +578,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_delete_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -593,7 +593,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_bulk_Delete_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -608,7 +608,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_rename_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -625,7 +625,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_copy_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -642,7 +642,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_exists_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -657,7 +657,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_download_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -665,14 +665,14 @@ public abstract class BlobStorageTestsBase : TestBase
         var blobName = Faker.Random.String2(5, 25);
 
         // ReSharper disable once AccessToDisposedClosure
-        var action = () => storage.DownloadAsync(container, blobName).AsTask();
+        var action = () => storage.OpenReadStreamAsync(container, blobName).AsTask();
 
         await action.Should().NotThrowAsync();
     }
 
     public virtual async Task can_call_get_blob_info_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -687,7 +687,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
     public virtual async Task can_call_get_paged_list_with_empty_container()
     {
-        using var storage = GetStorage();
+        await using var storage = GetStorage();
 
         await ResetAsync(storage);
 
@@ -698,6 +698,130 @@ public abstract class BlobStorageTestsBase : TestBase
 
         await action.Should().NotThrowAsync();
     }
+
+    #region Path Traversal Security Tests
+
+    public virtual async Task should_throw_when_blob_name_has_path_traversal(string blobName)
+    {
+        await using var storage = GetStorage();
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, blobName, AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName(nameof(blobName));
+    }
+
+    public virtual async Task should_throw_when_container_has_path_traversal()
+    {
+        await using var storage = GetStorage();
+        var maliciousContainer = new[] { "uploads", "..", "..", "etc" };
+
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(maliciousContainer, "passwd", AbortToken).AsTask());
+
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("container");
+    }
+
+    public virtual async Task should_throw_when_upload_blob_has_path_traversal()
+    {
+        // given
+        await using var storage = GetStorage();
+        await using var stream = new MemoryStream("test"u8.ToArray());
+
+        // when
+        var act = FluentActions.Awaiting(
+            () =>
+                storage
+                    .UploadAsync(Container, "../../.ssh/authorized_keys", stream, cancellationToken: AbortToken)
+                    .AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    public virtual async Task should_throw_when_download_blob_has_path_traversal()
+    {
+        // given
+        await using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.OpenReadStreamAsync(Container, "../../../etc/passwd", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    public virtual async Task should_throw_when_delete_blob_has_path_traversal()
+    {
+        // given
+        await using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.DeleteAsync(Container, "../../../../important/file.txt", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    public virtual async Task should_throw_when_rename_source_blob_has_path_traversal()
+    {
+        // given
+        await using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.RenameAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    public virtual async Task should_throw_when_copy_source_blob_has_path_traversal()
+    {
+        // given
+        await using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(
+            () => storage.CopyAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    public virtual async Task should_throw_when_blob_name_has_control_characters()
+    {
+        // given
+        await using var storage = GetStorage();
+
+        // when
+        // ReSharper disable once VariableLengthStringHexEscapeSequence
+        // ReSharper disable once CanSimplifyStringEscapeSequence
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, "file\x00name.txt", AbortToken).AsTask());
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("blobName");
+    }
+
+    [InlineData("/etc/passwd")]
+    public virtual async Task should_throw_when_blob_name_is_absolute_path(string blobName)
+    {
+        // given
+        await using var storage = GetStorage();
+
+        // when
+        var act = FluentActions.Awaiting(() => storage.ExistsAsync(Container, blobName, AbortToken).AsTask());
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName(nameof(blobName));
+    }
+
+    #endregion
 
     protected async Task ResetAsync(IBlobStorage? storage)
     {

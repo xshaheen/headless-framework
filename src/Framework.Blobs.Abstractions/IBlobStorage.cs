@@ -1,26 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Primitives;
-using JetBrainsPure = JetBrains.Annotations.PureAttribute;
-using SystemPure = System.Diagnostics.Contracts.PureAttribute;
 
 namespace Framework.Blobs;
 
 [PublicAPI]
-public interface IBlobStorage : IDisposable
+public interface IBlobStorage : IAsyncDisposable
 {
     #region Create Container
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask CreateContainerAsync(string[] container, CancellationToken cancellationToken = default);
 
     #endregion
 
     #region Upload
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask UploadAsync(
         string[] container,
         string blobName,
@@ -33,8 +27,6 @@ public interface IBlobStorage : IDisposable
 
     #region Bulk Upload
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<IReadOnlyList<Result<Exception>>> BulkUploadAsync(
         string[] container,
         IReadOnlyCollection<BlobUploadRequest> blobs,
@@ -45,16 +37,12 @@ public interface IBlobStorage : IDisposable
 
     #region Delete
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<bool> DeleteAsync(string[] container, string blobName, CancellationToken cancellationToken = default);
 
     #endregion
 
     #region Bulk Delete
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<IReadOnlyList<Result<bool, Exception>>> BulkDeleteAsync(
         string[] container,
         IReadOnlyCollection<string> blobNames,
@@ -71,8 +59,6 @@ public interface IBlobStorage : IDisposable
 
     #region Rename
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<bool> RenameAsync(
         string[] blobContainer,
         string blobName,
@@ -85,8 +71,6 @@ public interface IBlobStorage : IDisposable
 
     #region Copy
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<bool> CopyAsync(
         string[] blobContainer,
         string blobName,
@@ -99,24 +83,36 @@ public interface IBlobStorage : IDisposable
 
     #region Exists
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<bool> ExistsAsync(string[] container, string blobName, CancellationToken cancellationToken = default);
 
     #endregion
 
     #region Download
 
-    [SystemPure]
-    [JetBrainsPure]
-    ValueTask<BlobDownloadResult?> DownloadAsync(
+    /// <summary>
+    /// Opens a read stream for the specified blob.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>IMPORTANT:</b> The returned stream should be disposed promptly after use.
+    /// Holding the stream open for extended periods may impact performance or exhaust
+    /// connection resources depending on the storage provider.
+    /// </para>
+    /// <para>
+    /// Always use <c>await using</c> or dispose the stream in a finally block.
+    /// </para>
+    /// </remarks>
+    /// <param name="container">Container path segments.</param>
+    /// <param name="blobName">Name of the blob to download.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Download result with stream, or null if blob not found.</returns>
+    [MustDisposeResource]
+    ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
     );
 
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<BlobInfo?> GetBlobInfoAsync(
         string[] container,
         string blobName,
@@ -127,7 +123,28 @@ public interface IBlobStorage : IDisposable
 
     #region List
 
-    /// <summary>Get page</summary>
+    /// <summary>
+    /// Stream blobs from container with O(n) performance.
+    /// Recommended for iterating all blobs or large datasets.
+    /// </summary>
+    /// <param name="container">Container directory to enumerate.</param>
+    /// <param name="blobSearchPattern">
+    /// The search string to match against the names of files in a path. This parameter can contain
+    /// a combination of valid literal path and wildcard (* and ?) characters, but it doesn't support
+    /// regular expressions.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    IAsyncEnumerable<BlobInfo> GetBlobsAsync(
+        string[] container,
+        string? blobSearchPattern = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Get page of blobs.
+    /// WARNING: Has O(page * pageSize) performance per page due to re-enumeration.
+    /// Use GetBlobsAsync() for better performance when iterating all blobs.
+    /// </summary>
     /// <param name="container">Container directory to paginate.</param>
     /// <param name="blobSearchPattern">
     /// The search string to match against the names of files in a path. This parameter can contain
@@ -136,8 +153,6 @@ public interface IBlobStorage : IDisposable
     /// </param>
     /// <param name="pageSize">Size of the page.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    [SystemPure]
-    [JetBrainsPure]
     ValueTask<PagedFileListResult> GetPagedListAsync(
         string[] container,
         string? blobSearchPattern = null,

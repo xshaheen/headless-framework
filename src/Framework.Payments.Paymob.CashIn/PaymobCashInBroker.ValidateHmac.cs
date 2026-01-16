@@ -28,30 +28,14 @@ public partial class PaymobCashInBroker
         Argument.IsNotNullOrEmpty(concatenatedString);
         Argument.IsNotNullOrEmpty(hmac);
 
+        var keyBytes = Encoding.UTF8.GetBytes(Options.Hmac);
         var textBytes = Encoding.UTF8.GetBytes(concatenatedString);
-        var keyBytes = Encoding.UTF8.GetBytes(_options.Hmac);
-        var hashBytes = _GetHashBytes(textBytes, keyBytes);
-        var lowerCaseHexHash = _ToLowerCaseHex(hashBytes);
+        var hashBytes = HMACSHA512.HashData(keyBytes, textBytes);
+        var computedHmac = Convert.ToHexStringLower(hashBytes);
 
-        return lowerCaseHexHash.Equals(hmac, StringComparison.Ordinal);
-    }
+        var computedBytes = Encoding.UTF8.GetBytes(computedHmac);
+        var providedBytes = Encoding.UTF8.GetBytes(hmac);
 
-    private static string _ToLowerCaseHex(byte[] hashBytes)
-    {
-        var sb = new StringBuilder(hashBytes.Length * 2);
-
-        foreach (var b in hashBytes)
-        {
-            sb.Append(CultureInfo.InvariantCulture, $"{b:x2}");
-        }
-
-        return sb.ToString();
-    }
-
-    private static byte[] _GetHashBytes(byte[] textBytes, byte[] keyBytes)
-    {
-        using var hash = new HMACSHA512(keyBytes);
-
-        return hash.ComputeHash(textBytes);
+        return CryptographicOperations.FixedTimeEquals(computedBytes, providedBytes);
     }
 }

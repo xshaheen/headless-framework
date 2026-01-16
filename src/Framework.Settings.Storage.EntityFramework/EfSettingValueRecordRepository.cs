@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Settings.Entities;
 using Framework.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -55,7 +55,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
     }
 
     public async Task<List<SettingValueRecord>> GetListAsync(
-        string[] names,
+        HashSet<string> names,
         string providerName,
         string? providerKey,
         CancellationToken cancellationToken = default

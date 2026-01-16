@@ -15,7 +15,7 @@ public sealed class ReCaptchaV3ScriptTagHelper(
     IReCaptchaLanguageCodeProvider reCaptchaLanguageCodeProvider
 ) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V3);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V3Name);
 
     public bool HideBadge { get; set; }
 
@@ -27,7 +27,7 @@ public sealed class ReCaptchaV3ScriptTagHelper(
         output.TagName = "";
 
         var src =
-            $"{_options.VerifyBaseUrl.RemovePostFix(StringComparison.OrdinalIgnoreCase, "/")}/recaptcha/api.js?hl={reCaptchaLanguageCodeProvider.GetLanguageCode()}&render={_options.SiteKey}";
+            $"{_options.VerifyBaseUrl.RemovePostFix(StringComparison.OrdinalIgnoreCase, "/")}/recaptcha/api.js?hl={Uri.EscapeDataString(reCaptchaLanguageCodeProvider.GetLanguageCode())}&render={Uri.EscapeDataString(_options.SiteKey)}";
 
         output.Content.SetHtmlContent($"<script src=\"{src}\"></script>");
 

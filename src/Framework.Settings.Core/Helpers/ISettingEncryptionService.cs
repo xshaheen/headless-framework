@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
+using Framework.Exceptions;
 using Framework.Settings.Models;
 using Microsoft.Extensions.Logging;
 
@@ -50,9 +51,9 @@ public sealed class SettingEncryptionService(
         }
         catch (Exception e)
         {
-            logger.LogWarning(e, "Failed to decrypt setting value: {SettingDefinition}", settingDefinition.Name);
+            logger.LogError(e, "Failed to decrypt setting value: {SettingDefinition}", settingDefinition.Name);
 
-            return null;
+            throw new ConflictException($@"Failed to decrypt setting '{settingDefinition.Name}'.", e);
         }
     }
 }

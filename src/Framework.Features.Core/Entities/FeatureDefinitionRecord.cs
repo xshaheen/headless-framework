@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Framework.Checks;
-using Framework.Domains;
+using Framework.Domain;
 using Framework.Primitives;
 
 namespace Framework.Features.Entities;
@@ -150,50 +150,15 @@ public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
 
     public void Patch(FeatureDefinitionRecord otherRecord)
     {
-        if (!string.Equals(Name, otherRecord.Name, StringComparison.Ordinal))
-        {
-            Name = otherRecord.Name;
-        }
-
-        if (!string.Equals(GroupName, otherRecord.GroupName, StringComparison.Ordinal))
-        {
-            GroupName = otherRecord.GroupName;
-        }
-
-        if (!string.Equals(ParentName, otherRecord.ParentName, StringComparison.Ordinal))
-        {
-            ParentName = otherRecord.ParentName;
-        }
-
-        if (!string.Equals(DisplayName, otherRecord.DisplayName, StringComparison.Ordinal))
-        {
-            DisplayName = otherRecord.DisplayName;
-        }
-
-        if (!string.Equals(Description, otherRecord.Description, StringComparison.Ordinal))
-        {
-            Description = otherRecord.Description;
-        }
-
-        if (!string.Equals(DefaultValue, otherRecord.DefaultValue, StringComparison.Ordinal))
-        {
-            DefaultValue = otherRecord.DefaultValue;
-        }
-
-        if (IsVisibleToClients != otherRecord.IsVisibleToClients)
-        {
-            IsVisibleToClients = otherRecord.IsVisibleToClients;
-        }
-
-        if (IsAvailableToHost != otherRecord.IsAvailableToHost)
-        {
-            IsAvailableToHost = otherRecord.IsAvailableToHost;
-        }
-
-        if (!string.Equals(Providers, otherRecord.Providers, StringComparison.Ordinal))
-        {
-            Providers = otherRecord.Providers;
-        }
+        Name = otherRecord.Name;
+        GroupName = otherRecord.GroupName;
+        ParentName = otherRecord.ParentName;
+        DisplayName = otherRecord.DisplayName;
+        Description = otherRecord.Description;
+        DefaultValue = otherRecord.DefaultValue;
+        IsVisibleToClients = otherRecord.IsVisibleToClients;
+        IsAvailableToHost = otherRecord.IsAvailableToHost;
+        Providers = otherRecord.Providers;
 
         if (!this.HasSameExtraProperties(otherRecord))
         {

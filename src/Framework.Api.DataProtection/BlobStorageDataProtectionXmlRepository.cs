@@ -66,7 +66,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         foreach (var file in files)
         {
             _logger.LogTrace("Loading element: {File}", file.BlobKey);
-            var downloadResult = await _storage.DownloadAsync(_Containers, file.BlobKey);
+            await using var downloadResult = await _storage.OpenReadStreamAsync(_Containers, file.BlobKey);
 
             if (downloadResult is null)
             {
@@ -75,10 +75,7 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 continue;
             }
 
-            await using (var stream = downloadResult.Stream)
-            {
-                elements.Add(XElement.Load(stream));
-            }
+            elements.Add(XElement.Load(downloadResult.Stream));
 
             _logger.LogTrace("Loaded element: {File}", file.BlobKey);
         }

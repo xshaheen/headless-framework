@@ -28,6 +28,9 @@ public sealed class SettingManagementOptions
     /// <summary>Default: 5 minutes.</summary>
     public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = 5.Minutes();
 
+    /// <summary>Default: 5 hours.</summary>
+    public TimeSpan ValueCacheExpiration { get; set; } = 5.Hours();
+
     /// <summary>Default: 30 days.</summary>
     public TimeSpan SettingsHashCacheExpiration { get; set; } = 30.Days();
 
@@ -50,6 +53,7 @@ public sealed class SettingManagementOptionsValidator : AbstractValidator<Settin
         RuleFor(x => x.CrossApplicationsCommonLockAcquireTimeout).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.ApplicationSaveLockExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.ApplicationSaveLockAcquireTimeout).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.ValueCacheExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.SettingsHashCacheExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.CommonSettingsUpdatedStampCacheExpiration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.CommonSettingsUpdatedStampCacheKey).NotEmpty();

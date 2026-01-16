@@ -102,9 +102,15 @@ public sealed class ConfigService(ISettingManager settings)
 ```csharp
 services.AddSettingsManagementCore(options =>
 {
-    options.CacheKeyPrefix = "settings:";
-    options.DefinitionCacheDuration = TimeSpan.FromHours(1);
-    options.ValueCacheDuration = TimeSpan.FromMinutes(5);
+    // Cache expiration for setting values (default: 5 hours)
+    options.ValueCacheExpiration = TimeSpan.FromHours(5);
+
+    // Cache expiration for dynamic definitions (default: 30 seconds)
+    options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
+
+    // Lock settings for cross-application updates
+    options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
+    options.CrossApplicationsCommonLockExpiration = TimeSpan.FromMinutes(10);
 });
 ```
 

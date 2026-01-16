@@ -25,7 +25,7 @@ public sealed class ReCaptchaV2ScriptTagHelper(
 
     public bool HideBadge { get; set; }
 
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaConstants.V2);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V2Name);
 
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
@@ -35,22 +35,15 @@ public sealed class ReCaptchaV2ScriptTagHelper(
 
         output.TagName = "";
 
-        var src =
-            $"{_options.VerifyBaseUrl.RemovePostFix(StringComparison.OrdinalIgnoreCase, "/")}/recaptcha/api.js?"
-            + $"hl={reCaptchaLanguageCodeProvider.GetLanguageCode()}";
+        var baseUrl = _options.VerifyBaseUrl.RemovePostFix(StringComparison.OrdinalIgnoreCase, "/");
+        var langCode = Uri.EscapeDataString(reCaptchaLanguageCodeProvider.GetLanguageCode());
+        var onloadParam = string.IsNullOrWhiteSpace(Onload) ? "" : $"&onload={Uri.EscapeDataString(Onload)}";
+        var renderParam = string.IsNullOrWhiteSpace(Render) ? "" : $"&render={Uri.EscapeDataString(Render)}";
 
-        if (!string.IsNullOrWhiteSpace(Onload))
-        {
-            src += $"&onload={Onload}";
-        }
+        var src = $"{baseUrl}/recaptcha/api.js?hl={langCode}{onloadParam}{renderParam}";
 
-        if (!string.IsNullOrWhiteSpace(Render))
-        {
-            src += $"&render={Render}";
-        }
-
-        var scriptAsync = ScriptAsync ? "async" : string.Empty;
-        var scriptDefer = ScriptDefer ? "defer" : string.Empty;
+        var scriptAsync = ScriptAsync ? "async" : "";
+        var scriptDefer = ScriptDefer ? "defer" : "";
 
         output.Content.SetHtmlContent($"<script {scriptAsync} {scriptDefer} src=\"{src}\"></script>");
 

@@ -52,7 +52,6 @@ public sealed class HeadlessDbContextTestFixture : ICollectionFixture<HeadlessDb
             .WithDatabase("framework_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
-            .WithReuse(true)
             .Build();
     }
 

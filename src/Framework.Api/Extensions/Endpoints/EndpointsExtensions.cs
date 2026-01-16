@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Flurl;
+using Framework.Urls;
 using Microsoft.AspNetCore.Http;
 
 #pragma warning disable IDE0130

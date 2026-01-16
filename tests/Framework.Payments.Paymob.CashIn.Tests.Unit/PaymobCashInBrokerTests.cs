@@ -14,7 +14,7 @@ public partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture) : ICla
     {
         var token = fixture.AutoFixture.Create<string>();
         var authenticator = Substitute.For<IPaymobCashInAuthenticator>();
-        authenticator.GetAuthenticationTokenAsync().Returns(token);
+        authenticator.GetAuthenticationTokenAsync(Arg.Any<CancellationToken>()).Returns(token);
         return (authenticator, token);
     }
 

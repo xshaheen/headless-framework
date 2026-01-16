@@ -1,0 +1,19 @@
+// Configure JWT Bearer authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = builder.Configuration["Auth:Authority"];
+        options.Audience = builder.Configuration["Auth:Audience"];
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+
+        // Token validation parameters
+        options.TokenValidationParameters = new()
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ClockSkew = TimeSpan.FromMinutes(5)
+        };
+    });
+

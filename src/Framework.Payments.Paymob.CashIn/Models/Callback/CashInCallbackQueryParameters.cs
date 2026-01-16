@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Payments.Paymob.CashIn.Internal;
+using Framework.Payments.Paymob.CashIn.Internals;
 using Humanizer;
 
 namespace Framework.Payments.Paymob.CashIn.Models.Callback;

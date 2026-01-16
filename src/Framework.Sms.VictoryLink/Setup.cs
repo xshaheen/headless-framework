@@ -9,6 +9,8 @@ namespace Framework.Sms.VictoryLink;
 [PublicAPI]
 public static class VictoryLinkSetup
 {
+    internal const string HttpClientName = "Headless:VictoryLinkSms";
+
     public static IServiceCollection AddVictoryLinkSmsSender(
         this IServiceCollection services,
         IConfiguration config,
@@ -54,8 +56,8 @@ public static class VictoryLinkSetup
         services.AddSingleton<ISmsSender, VictoryLinkSmsSender>();
 
         var httpClientBuilder = configureClient is null
-            ? services.AddHttpClient<ISmsSender, VictoryLinkSmsSender>()
-            : services.AddHttpClient<ISmsSender, VictoryLinkSmsSender>(configureClient);
+            ? services.AddHttpClient(HttpClientName)
+            : services.AddHttpClient(HttpClientName, configureClient);
 
         if (configureResilience is not null)
         {

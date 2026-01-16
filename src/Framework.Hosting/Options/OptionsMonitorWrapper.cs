@@ -11,7 +11,7 @@ namespace Microsoft.Extensions.Options;
 public sealed class OptionsMonitorWrapper<TOptions>(TOptions options) : IOptionsMonitor<TOptions>
     where TOptions : class
 {
-    public TOptions CurrentValue { get; set; } = options;
+    public TOptions CurrentValue { get; init; } = options;
 
     public TOptions Get(string? name)
     {
