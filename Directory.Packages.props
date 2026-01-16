@@ -49,6 +49,7 @@
     <PackageVersion Include="EFCore.CheckConstraints" Version="10.0.0" />
     <PackageVersion Include="FileSignatures" Version="6.1.1" />
     <PackageVersion Include="FirebaseAdmin" Version="3.4.0" />
+    <PackageVersion Include="FlexLabs.EntityFrameworkCore.Upsert" Version="9.102.0" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="Foundatio" Version="12.0.0" />
