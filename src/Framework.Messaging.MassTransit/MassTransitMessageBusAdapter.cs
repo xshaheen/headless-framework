@@ -86,8 +86,41 @@ public sealed class MassTransitMessageBusAdapter(
             throw;
         }
 
-        // Register cleanup - use synchronous callback to avoid async void
-        state.Registration = cancellationToken.Register(() => _ = _RemoveSubscriptionAsync(typeof(TPayload)));
+        // Check if already cancelled to avoid race condition
+        if (cancellationToken.IsCancellationRequested)
+        {
+            await _RemoveSubscriptionAsync(typeof(TPayload)).AnyContext();
+            return;
+        }
+
+        // Register cleanup with proper error handling
+        state.Registration = cancellationToken.Register(() => _RemoveSubscriptionSync(typeof(TPayload)));
+    }
+
+    private void _RemoveSubscriptionSync(Type payloadType)
+    {
+        if (!_subscriptions.TryGetValue(payloadType, out var state))
+        {
+            return;
+        }
+
+        // Track removal task for proper cleanup and error handling
+        var removalTask = _RemoveSubscriptionAsync(payloadType);
+        state.PendingRemovalTask = removalTask;
+
+        // Continue task to log unobserved exceptions
+        _ = removalTask.ContinueWith(
+            static (t, s) =>
+            {
+                var (log, type) = ((ILogger, Type))s!;
+                if (t.Exception is not null)
+                {
+                    log.LogError(t.Exception, "Unhandled error removing subscription for {Type}", type.Name);
+                }
+            },
+            (logger, payloadType),
+            TaskScheduler.Default
+        );
     }
 
     private async Task _RemoveSubscriptionAsync(Type payloadType)
@@ -117,6 +150,13 @@ public sealed class MassTransitMessageBusAdapter(
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
     }
 
+    public void Dispose()
+    {
+        throw new NotSupportedException(
+            "MassTransitMessageBusAdapter must be disposed asynchronously. Use DisposeAsync() instead."
+        );
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -129,6 +169,19 @@ public sealed class MassTransitMessageBusAdapter(
 
         var stopTasks = subscriptions.Select(async kvp =>
         {
+            // Wait for any pending removal task first
+            if (kvp.Value.PendingRemovalTask is not null)
+            {
+                try
+                {
+                    await kvp.Value.PendingRemovalTask.AnyContext();
+                }
+                catch (Exception e)
+                {
+                    logger.LogWarning(e, "Error in pending removal for {Type}", kvp.Key.Name);
+                }
+            }
+
             if (kvp.Value.Registration.HasValue)
             {
                 await kvp.Value.Registration.Value.DisposeAsync().AnyContext();
@@ -151,6 +204,7 @@ public sealed class MassTransitMessageBusAdapter(
     {
         public HostReceiveEndpointHandle Handle { get; } = handle;
         public CancellationTokenRegistration? Registration { get; set; }
+        public Task? PendingRemovalTask { get; set; }
     }
 
     private sealed class DelegateConsumer<TPayload>(
