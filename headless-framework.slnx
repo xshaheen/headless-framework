@@ -31,6 +31,7 @@
         <Project Path="src\Framework.Blobs.Abstractions\Framework.Blobs.Abstractions.csproj" />
         <Project Path="tests/Framework.Blobs.Aws.Tests.Integration/Framework.Blobs.Aws.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Blobs.Azure.Tests.Integration/Framework.Blobs.Azure.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.Azure.Tests.Unit/Framework.Blobs.Azure.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Blobs.FileSystem.Tests.Integration/Framework.Blobs.FileSystem.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Blobs.Redis.Tests.Integration/Framework.Blobs.Redis.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Blobs.SshNet.Tests.Integration/Framework.Blobs.SshNet.Tests.Integration.csproj" />
