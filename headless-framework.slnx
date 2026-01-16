@@ -151,10 +151,6 @@
         <Project Path="src/Framework.PushNotifications.Firebase/Framework.PushNotifications.Firebase.csproj" />
         <Project Path="src\Framework.PushNotifications.Abstractions\Framework.PushNotifications.Abstractions.csproj" />
     </Folder>
-    <Folder Name="/Queueing/">
-        <Project Path="src/Framework.Queueing.Foundatio/Framework.Queueing.Foundatio.csproj" />
-        <Project Path="src\Framework.Queueing.Abstractions\Framework.Queueing.Abstractions.csproj" />
-    </Folder>
     <Folder Name="/Seo/">
         <Project Path="src/Framework.Sitemaps/Framework.Sitemaps.csproj" />
         <Project Path="src/Framework.Slugs/Framework.Slugs.csproj" />
