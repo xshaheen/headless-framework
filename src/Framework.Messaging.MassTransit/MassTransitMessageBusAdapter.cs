@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using Framework.Abstractions;
-using Framework.Domains.Messages;
+using Framework.Domain.Messages;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 
