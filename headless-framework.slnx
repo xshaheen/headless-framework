@@ -28,7 +28,7 @@
         <Project Path="src/Framework.Tus.Azure/Framework.Tus.Azure.csproj" />
         <Project Path="src/Framework.Tus.ResourceLock/Framework.Tus.ResourceLock.csproj" />
         <Project Path="src/Framework.Tus/Framework.Tus.csproj" />
-        <Project Path="src\Framework.Blobs.Abstractions\Framework.Blobs.Abstractions.csproj" />
+        <Project Path="src/Framework.Blobs.Abstractions/Framework.Blobs.Abstractions.csproj" />
         <Project Path="tests/Framework.Blobs.Aws.Tests.Integration/Framework.Blobs.Aws.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Blobs.Azure.Tests.Integration/Framework.Blobs.Azure.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Blobs.Azure.Tests.Unit/Framework.Blobs.Azure.Tests.Unit.csproj" />
@@ -41,7 +41,7 @@
     <Folder Name="/Caching/">
         <Project Path="src/Framework.Caching.Foundatio.Memory/Framework.Caching.Foundatio.Memory.csproj" />
         <Project Path="src/Framework.Caching.Foundatio.Redis/Framework.Caching.Foundatio.Redis.csproj" />
-        <Project Path="src\Framework.Caching.Abstractions\Framework.Caching.Abstractions.csproj" />
+        <Project Path="src/Framework.Caching.Abstractions/Framework.Caching.Abstractions.csproj" />
     </Folder>
     <Folder Name="/Captcha/">
         <Project Path="demo/Framework.Recaptcha.Demo/Framework.Recaptcha.Demo.csproj" />
@@ -52,7 +52,7 @@
         <Project Path="src/Framework.Sql.PostgreSql/Framework.Sql.PostgreSql.csproj" />
         <Project Path="src/Framework.Sql.Sqlite/Framework.Sql.Sqlite.csproj" />
         <Project Path="src/Framework.Sql.SqlServer/Framework.Sql.SqlServer.csproj" />
-        <Project Path="src\Framework.Sql.Abstractions\Framework.Sql.Abstractions.csproj" />
+        <Project Path="src/Framework.Sql.Abstractions/Framework.Sql.Abstractions.csproj" />
         <Project Path="tests/Framework.Sql.PostgreSql.Tests.Integration/Framework.Sql.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Sql.Sqlite.Tests.Integration/Framework.Sql.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Sql.SqlServer.Tests.Integration/Framework.Sql.SqlServer.Tests.Integration.csproj" />
@@ -63,7 +63,7 @@
         <Project Path="src/Framework.Emails.Core/Framework.Emails.Core.csproj" />
         <Project Path="src/Framework.Emails.Dev/Framework.Emails.Dev.csproj" />
         <Project Path="src/Framework.Emails.Mailkit/Framework.Emails.Mailkit.csproj" />
-        <Project Path="src\Framework.Emails.Abstractions\Framework.Emails.Abstractions.csproj" />
+        <Project Path="src/Framework.Emails.Abstractions/Framework.Emails.Abstractions.csproj" />
     </Folder>
     <Folder Name="/Features/">
         <Project Path="src/Framework.Features.Abstractions/Framework.Features.Abstractions.csproj" />
@@ -82,7 +82,7 @@
     <Folder Name="/Imaging/">
         <Project Path="src/Framework.Imaging.Core/Framework.Imaging.Core.csproj" />
         <Project Path="src/Framework.Imaging.ImageSharp/Framework.Imaging.ImageSharp.csproj" />
-        <Project Path="src\Framework.Imaging.Abstractions\Framework.Imaging.Abstractions.csproj" />
+        <Project Path="src/Framework.Imaging.Abstractions/Framework.Imaging.Abstractions.csproj" />
         <Project Path="tests/Framework.Imaging.ImageSharp.Tests.Unit/Framework.Imaging.ImageSharp.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Kernel/">
@@ -93,21 +93,21 @@
         <Project Path="src/Framework.NetTopologySuite/Framework.NetTopologySuite.csproj" />
         <Project Path="src/Framework.Testing.Testcontainers/Framework.Testing.Testcontainers.csproj" />
         <Project Path="src/Framework.Testing/Framework.Testing.csproj" />
-        <Project Path="src\Framework.Domain.DistributedMessagePublisher.Cap\Framework.Domain.DistributedMessagePublisher.Cap.csproj" />
-        <Project Path="src\Framework.Domain.LocalMessagePublisher.DI\Framework.Domain.LocalMessagePublisher.DI.csproj" />
-        <Project Path="src\Framework.Domain\Framework.Domain.csproj" />
+        <Project Path="src/Framework.Domain.DistributedMessagePublisher.Cap/Framework.Domain.DistributedMessagePublisher.Cap.csproj" />
+        <Project Path="src/Framework.Domain.LocalMessagePublisher.DI/Framework.Domain.LocalMessagePublisher.DI.csproj" />
+        <Project Path="src/Framework.Domain/Framework.Domain.csproj" />
         <Project Path="tests/Framework.Base.Tests.Unit/Framework.Base.Tests.Unit.csproj" />
         <Project Path="tests/Framework.BuildingBlocks.Tests.Unit/Framework.BuildingBlocks.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Checks.Tests.Unit/Framework.Checks.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Hosting.Tests.Unit/Framework.Hosting.Tests.Unit.csproj" />
-        <Project Path="tests\Framework.Domain.Tests.Unit\Framework.Domain.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Domain.Tests.Unit/Framework.Domain.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Locks/">
         <Project Path="src/Framework.ResourceLocks.Cache/Framework.ResourceLocks.Cache.csproj" />
         <Project Path="src/Framework.ResourceLocks.Core/Framework.ResourceLocks.Core.csproj" />
         <Project Path="src/Framework.ResourceLocks.InMemory/Framework.ResourceLocks.InMemory.csproj" />
         <Project Path="src/Framework.ResourceLocks.Redis/Framework.ResourceLocks.Redis.csproj" />
-        <Project Path="src\Framework.ResourceLocks.Abstractions\Framework.ResourceLocks.Abstractions.csproj" />
+        <Project Path="src/Framework.ResourceLocks.Abstractions/Framework.ResourceLocks.Abstractions.csproj" />
         <Project Path="tests/Framework.ResourceLocks.Cache.Tests.Integration/Framework.ResourceLocks.Cache.Tests.Integration.csproj" />
         <Project Path="tests/Framework.ResourceLocks.InMemory.Tests.Unit/Framework.ResourceLocks.InMemory.Tests.Unit.csproj" />
         <Project Path="tests/Framework.ResourceLocks.Redis.Tests.Integration/Framework.ResourceLocks.Redis.Tests.Integration.csproj" />
@@ -115,7 +115,7 @@
     </Folder>
     <Folder Name="/MediaIndexing/">
         <Project Path="src/Framework.Media.Indexing/Framework.Media.Indexing.csproj" />
-        <Project Path="src\Framework.Media.Indexing.Abstractions\Framework.Media.Indexing.Abstractions.csproj" />
+        <Project Path="src/Framework.Media.Indexing.Abstractions/Framework.Media.Indexing.Abstractions.csproj" />
         <Project Path="tests/Framework.Media.Indexing.Tests.Unit/Framework.Media.Indexing.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Messaging/">
@@ -144,13 +144,13 @@
         <Project Path="demo/Framework.Permissions.Api.Demo/Framework.Permissions.Api.Demo.csproj" />
         <Project Path="src/Framework.Permissions.Core/Framework.Permissions.Core.csproj" />
         <Project Path="src/Framework.Permissions.Storage.EntityFramework/Framework.Permissions.Storage.EntityFramework.csproj" />
-        <Project Path="src\Framework.Permissions.Abstractions\Framework.Permissions.Abstractions.csproj" />
+        <Project Path="src/Framework.Permissions.Abstractions/Framework.Permissions.Abstractions.csproj" />
         <Project Path="tests/Framework.Permissions.Tests.Integration/Framework.Permissions.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/PushNotifications/">
         <Project Path="src/Framework.PushNotifications.Dev/Framework.PushNotifications.Dev.csproj" />
         <Project Path="src/Framework.PushNotifications.Firebase/Framework.PushNotifications.Firebase.csproj" />
-        <Project Path="src\Framework.PushNotifications.Abstractions\Framework.PushNotifications.Abstractions.csproj" />
+        <Project Path="src/Framework.PushNotifications.Abstractions/Framework.PushNotifications.Abstractions.csproj" />
     </Folder>
     <Folder Name="/Seo/">
         <Project Path="src/Framework.Sitemaps/Framework.Sitemaps.csproj" />
@@ -161,13 +161,13 @@
     <Folder Name="/Serializers/">
         <Project Path="src/Framework.Serializer.Json/Framework.Serializer.Json.csproj" />
         <Project Path="src/Framework.Serializer.MessagePack/Framework.Serializer.MessagePack.csproj" />
-        <Project Path="src\Framework.Serializer.Abstractions\Framework.Serializer.Abstractions.csproj" />
+        <Project Path="src/Framework.Serializer.Abstractions/Framework.Serializer.Abstractions.csproj" />
         <Project Path="tests/Framework.Serializer.Tests.Unit/Framework.Serializer.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Settings/">
         <Project Path="src/Framework.Settings.Core/Framework.Settings.Core.csproj" />
         <Project Path="src/Framework.Settings.Storage.EntityFramework/Framework.Settings.Storage.EntityFramework.csproj" />
-        <Project Path="src\Framework.Settings.Abstractions\Framework.Settings.Abstractions.csproj" />
+        <Project Path="src/Framework.Settings.Abstractions/Framework.Settings.Abstractions.csproj" />
         <Project Path="tests/Framework.Settings.Tests.Integration/Framework.Settings.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Sms/">
@@ -179,7 +179,7 @@
         <Project Path="src/Framework.Sms.Twilio/Framework.Sms.Twilio.csproj" />
         <Project Path="src/Framework.Sms.VictoryLink/Framework.Sms.VictoryLink.csproj" />
         <Project Path="src/Framework.Sms.Vodafone/Framework.Sms.Vodafone.csproj" />
-        <Project Path="src\Framework.Sms.Abstractions\Framework.Sms.Abstractions.csproj" />
+        <Project Path="src/Framework.Sms.Abstractions/Framework.Sms.Abstractions.csproj" />
     </Folder>
     <Folder Name="/Solution Items/">
         <File Path=".editorconfig" />
@@ -193,6 +193,47 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
+    </Folder>
+    <Folder Name="/Ticker/">
+        <Project Path="demo/Framework.Messages.AmazonSqs.InMemory.Demo/Framework.Messages.AmazonSqs.InMemory.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.AzureServiceBus.InMemory.Demo/Framework.Messages.AzureServiceBus.InMemory.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.Console.Demo/Framework.Messages.Console.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.Dashboard.Auth.Demo/Framework.Messages.Dashboard.Auth.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.Dashboard.Jwt.Demo/Framework.Messages.Dashboard.Jwt.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.Kafka.PostgreSql.Demo/Framework.Messages.Kafka.PostgreSql.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.Pulsar.InMemory.Demo/Framework.Messages.Pulsar.InMemory.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.RabbitMq.SqlServer.Demo/Framework.Messages.RabbitMq.SqlServer.Demo.csproj" />
+        <Project Path="demo/Framework.Messages.Redis.SqlServer.Demo/Framework.Messages.Redis.SqlServer.Demo.csproj" />
+        <Project Path="demo/Framework.Ticker.Api.Demo/Framework.Ticker.Api.Demo.csproj" />
+        <Project Path="demo/Framework.Ticker.Console.Demo/Framework.Ticker.Console.Demo.csproj" />
+        <Project Path="src/Framework.Messages.Core/Framework.Messages.Core.csproj" />
+        <Project Path="src/Framework.Messages.InMemoryQueue/Framework.Messages.InMemoryQueue.csproj" />
+        <Project Path="src/Framework.Messages.Abstractions/Framework.Messages.Abstractions.csproj" />
+        <Project Path="src/Framework.Messages.AmazonSQS/Framework.Messages.AmazonSQS.csproj" />
+        <Project Path="src/Framework.Messages.AzureServiceBus/Framework.Messages.AzureServiceBus.csproj" />
+        <Project Path="src/Framework.Messages.Dashboard.K8s/Framework.Messages.Dashboard.K8s.csproj" />
+        <Project Path="src/Framework.Messages.Dashboard/Framework.Messages.Dashboard.csproj" />
+        <Project Path="src/Framework.Messages.InMemoryStorage/Framework.Messages.InMemoryStorage.csproj" />
+        <Project Path="src/Framework.Messages.Kafka/Framework.Messages.Kafka.csproj" />
+        <Project Path="src/Framework.Messages.NATS/Framework.Messages.NATS.csproj" />
+        <Project Path="src/Framework.Messages.OpenTelemetry/Framework.Messages.OpenTelemetry.csproj" />
+        <Project Path="src/Framework.Messages.PostgreSql/Framework.Messages.PostgreSql.csproj" />
+        <Project Path="src/Framework.Messages.Pulsar/Framework.Messages.Pulsar.csproj" />
+        <Project Path="src/Framework.Messages.RabbitMQ/Framework.Messages.RabbitMQ.csproj" />
+        <Project Path="src/Framework.Messages.RedisStreams/Framework.Messages.RedisStreams.csproj" />
+        <Project Path="src/Framework.Messages.SqlServer/Framework.Messages.SqlServer.csproj" />
+        <Project Path="src/Framework.Ticker.Abstractions/Framework.Ticker.Abstractions.csproj" />
+        <Project Path="src/Framework.Ticker.Caching.Redis/Framework.Ticker.Caching.Redis.csproj" />
+        <Project Path="src/Framework.Ticker.Core/Framework.Ticker.Core.csproj" />
+        <Project Path="src/Framework.Ticker.Dashboard/Framework.Ticker.Dashboard.csproj" />
+        <Project Path="src/Framework.Ticker.EntityFramework/Framework.Ticker.EntityFramework.csproj" />
+        <Project Path="src/Framework.Ticker.OpenTelemetry/Framework.Ticker.OpenTelemetry.csproj" />
+        <Project Path="src/Framework.Ticker.SourceGenerator/Framework.Ticker.SourceGenerator.csproj" />
+        <Project Path="tests/Framework.Messages.AzureServiceBus.Tests.Unit/Framework.Messages.AzureServiceBus.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Messages.Core.Tests.Harness/Framework.Messages.Core.Tests.Harness.csproj" />
+        <Project Path="tests/Framework.Messages.Core.Tests.Unit/Framework.Messages.Core.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Messages.PostgreSql.Tests.Unit/Framework.Messages.PostgreSql.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Ticker.Tests.Unit/Framework.Ticker.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />

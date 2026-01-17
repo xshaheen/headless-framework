@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNetCore.CAP.Internal;
-using DotNetCore.CAP.Messages;
 using DotNetCore.CAP.Monitoring;
-using DotNetCore.CAP.Persistence;
 using Framework.Domain;
+using Framework.Messages.Internal;
+using Framework.Messages.Messages;
+using Framework.Messages.Monitoring;
+using Framework.Messages.Persistence;
+using Framework.Primitives;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -26,13 +28,13 @@ public static class CapServiceProviderExtensions
             return message?.GetPayloadMessage<TPayload>();
         }
 
-        public async Task<MessageDto?> GetMessageAsync(
+        public async Task<MessageView?> GetMessageAsync(
             string name,
             MessageType type = MessageType.Publish,
             string? status = nameof(StatusName.Succeeded)
         )
         {
-            var messageQuery = new MessageQueryDto
+            var messageQuery = new MessageQuery
             {
                 Name = name,
                 MessageType = type,
@@ -43,10 +45,15 @@ public static class CapServiceProviderExtensions
 
             var messages = await provider.GetMessageAsync(messageQuery);
 
-            return messages.Items?.FirstOrDefault();
+            foreach (var item in messages.Items)
+            {
+                return item;
+            }
+
+            return null;
         }
 
-        public async Task<PagedQueryResult<MessageDto>> GetMessageAsync(MessageQueryDto query)
+        public async Task<IndexPage<MessageView>> GetMessageAsync(MessageQuery query)
         {
             var monitoringApi = provider.GetRequiredService<IDataStorage>().GetMonitoringApi();
             var messages = await monitoringApi.GetMessagesAsync(query);

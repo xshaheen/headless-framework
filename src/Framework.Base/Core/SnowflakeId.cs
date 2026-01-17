@@ -16,6 +16,7 @@ public sealed class SnowflakeId
     private readonly IdGenerator _generator;
 
     /// <summary>If we have multiple instance of the application we should use unique generatorId per instance.</summary>
+    /// <param name="generatorId">The generator identifier (0-1023).</param>
     public SnowflakeId(short generatorId = 0)
     {
         Argument.IsPositive(generatorId);

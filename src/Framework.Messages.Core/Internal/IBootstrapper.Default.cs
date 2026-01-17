@@ -1,0 +1,167 @@
+﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Messages.Configuration;
+using Framework.Messages.Persistence;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace Framework.Messages.Internal;
+
+/// <summary>Default implement of <see cref="IBootstrapper" />.</summary>
+internal sealed class Bootstrapper(
+    IEnumerable<IProcessingServer> processors,
+    IStorageInitializer storageInitializer,
+    IServiceProvider serviceProvider,
+    ILogger<IBootstrapper> logger
+) : BackgroundService, IBootstrapper
+{
+    private bool _disposed;
+    private CancellationTokenSource? _cts;
+    public bool IsStarted => !_cts?.IsCancellationRequested ?? false;
+
+    public async Task BootstrapAsync(CancellationToken cancellationToken = default)
+    {
+        if (_cts is not null)
+        {
+            logger.LogInformation("### CAP background task is already started!");
+
+            return;
+        }
+
+        logger.LogDebug("### CAP background task is starting.");
+
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        _CheckRequirement();
+
+        try
+        {
+            await storageInitializer.InitializeAsync(_cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not InvalidOperationException)
+        {
+            logger.LogError(e, "Initializing the storage structure failed!");
+        }
+
+        _cts.Token.Register(() =>
+        {
+            logger.LogDebug("### CAP background task is stopping.");
+
+            foreach (var item in processors)
+            {
+                try
+                {
+                    item.Dispose();
+                }
+                catch (OperationCanceledException ex)
+                {
+                    logger.ExpectedOperationCanceledException(ex);
+                }
+            }
+        });
+
+        await _BootstrapCoreAsync().ConfigureAwait(false);
+
+        _disposed = false;
+        logger.LogInformation("### CAP started!");
+    }
+
+    private async Task _BootstrapCoreAsync()
+    {
+        foreach (var item in processors)
+        {
+            try
+            {
+                _cts!.Token.ThrowIfCancellationRequested();
+
+                await item.StartAsync(_cts!.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // ignore
+            }
+            catch (Exception ex)
+            {
+                logger.ProcessorsStartedError(ex);
+            }
+        }
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await BootstrapAsync(stoppingToken).ConfigureAwait(false);
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_cts != null)
+        {
+            await _cts.CancelAsync();
+        }
+
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private void _CheckRequirement()
+    {
+        var marker = serviceProvider.GetService<CapMarkerService>();
+        if (marker == null)
+        {
+            throw new InvalidOperationException(
+                "AddCap() must be added on the service collection.   eg: services.AddCap(...)"
+            );
+        }
+
+        var messageQueueMarker = serviceProvider.GetService<CapMessageQueueMakerService>();
+        if (messageQueueMarker == null)
+        {
+            throw new InvalidOperationException(
+                "You must be config transport provider for CAP!"
+                    + Environment.NewLine
+                    + "=================================================================================="
+                    + Environment.NewLine
+                    + "========   eg: services.AddCap( options => { options.UseRabbitMQ(...) }); ========"
+                    + Environment.NewLine
+                    + "=================================================================================="
+            );
+        }
+
+        var databaseMarker = serviceProvider.GetService<CapStorageMarkerService>();
+
+        if (databaseMarker == null)
+        {
+            throw new InvalidOperationException(
+                "You must be config storage provider for CAP!"
+                    + Environment.NewLine
+                    + "==================================================================================="
+                    + Environment.NewLine
+                    + "========   eg: services.AddCap( options => { options.UseSqlServer(...) }); ========"
+                    + Environment.NewLine
+                    + "==================================================================================="
+            );
+        }
+    }
+
+    public override void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        _disposed = true;
+
+        base.Dispose();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+
+        return ValueTask.CompletedTask;
+    }
+}

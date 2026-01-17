@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Framework.Messages</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Framework.Messages.AmazonSQS" />
+    <InternalsVisibleTo Include="Framework.Messages.AzureServiceBus" />
+    <InternalsVisibleTo Include="Framework.Messages.Dashboard" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Framework.Messages.Abstractions\Framework.Messages.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

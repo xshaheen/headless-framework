@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Framework.Ticker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Ticker.Abstractions\Framework.Ticker.Abstractions.csproj" />
+    <ProjectReference Include="..\Framework.Ticker.Core\Framework.Ticker.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup Label="Embedded Resources">
+    <EmbeddedResource Include="wwwroot\dist\**\*" />
+    <None Remove="wwwroot\src\**\*" />
+    <None Remove="wwwroot\node_modules\**\*" />
+    <None Remove="wwwroot\**\.vite\**\*" />
+    <None Remove="wwwroot\**\*.map" />
+    <None Remove="wwwroot\*" />
+    <None Remove="wwwroot\public\*" />
+  </ItemGroup>
+</Project>

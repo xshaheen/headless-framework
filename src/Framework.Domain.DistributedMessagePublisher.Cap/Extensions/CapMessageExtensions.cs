@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Domain;
+using Framework.Messages.Monitoring;
 using Framework.Serializer;
 
 #pragma warning disable IDE0130
@@ -12,7 +13,7 @@ public static class CapMessageExtensions
 {
     private static readonly JsonSerializerOptions _JsonOptions = JsonConstants.DefaultInternalJsonOptions;
 
-    extension(MessageDto message)
+    extension(MessageView message)
     {
         public DistributedMessage<TPayload> GetPayloadMessage<TPayload>()
         {
