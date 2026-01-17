@@ -1,3 +1,4 @@
+using Dapper;
 using Framework.Abstractions;
 using Framework.Messages;
 using Framework.Messages.Configuration;
@@ -5,28 +6,52 @@ using Framework.Messages.Internal;
 using Framework.Messages.Messages;
 using Framework.Messages.Persistence;
 using Framework.Messages.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Tests;
 
-[Collection("PostgreSql")]
-public class PostgreSqlStorageConnectionTest : DatabaseTestHost
+[Collection<PostgreSqlTestFixture>]
+public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixture) : IAsyncLifetime
 {
-    private readonly PostgreSqlDataStorage _storage;
-    private readonly ILongIdGenerator _longIdGenerator;
+    private PostgreSqlDataStorage _storage = null!;
+    private ILongIdGenerator _longIdGenerator = null!;
 
-    public PostgreSqlStorageConnectionTest()
+    public async ValueTask InitializeAsync()
     {
-        var serializer = GetService<ISerializer>();
-        var options = GetService<IOptions<PostgreSqlOptions>>();
-        var capOptions = GetService<IOptions<CapOptions>>();
-        var initializer = GetService<IStorageInitializer>();
-        _longIdGenerator = GetService<ILongIdGenerator>();
-        _storage = new PostgreSqlDataStorage(options, capOptions, initializer, serializer, _longIdGenerator);
+        var services = new ServiceCollection();
+        services.AddOptions();
+        services.AddLogging();
+        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<CapOptions>(x => x.Version = "v1");
+        services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+
+        var provider = services.BuildServiceProvider();
+        var initializer = provider.GetRequiredService<IStorageInitializer>();
+        await initializer.InitializeAsync();
+
+        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
+        _storage = new PostgreSqlDataStorage(
+            provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
+            provider.GetRequiredService<IOptions<CapOptions>>(),
+            initializer,
+            provider.GetRequiredService<ISerializer>(),
+            _longIdGenerator
+        );
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await connection.OpenAsync();
+        await connection.ExecuteAsync("TRUNCATE TABLE cap.published; TRUNCATE TABLE cap.received;");
     }
 
     [Fact]
-    public void StorageMessageTest()
+    public void should_store_published_message()
     {
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
@@ -37,7 +62,7 @@ public class PostgreSqlStorageConnectionTest : DatabaseTestHost
     }
 
     [Fact]
-    public void StoreReceivedMessageTest()
+    public void should_store_received_message()
     {
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
@@ -48,13 +73,13 @@ public class PostgreSqlStorageConnectionTest : DatabaseTestHost
     }
 
     [Fact]
-    public async Task StoreReceivedExceptionMessageTest()
+    public async Task should_store_received_exception_message()
     {
         await _storage.StoreReceivedExceptionMessageAsync("test.name", "test.group", "");
     }
 
     [Fact]
-    public async Task ChangePublishStateTest()
+    public async Task should_change_publish_state()
     {
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
@@ -66,7 +91,7 @@ public class PostgreSqlStorageConnectionTest : DatabaseTestHost
     }
 
     [Fact]
-    public async Task ChangeReceiveStateTest()
+    public async Task should_change_receive_state()
     {
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };

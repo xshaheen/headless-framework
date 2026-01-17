@@ -232,7 +232,7 @@
         <Project Path="tests/Framework.Messages.AzureServiceBus.Tests.Unit/Framework.Messages.AzureServiceBus.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Messages.Core.Tests.Harness/Framework.Messages.Core.Tests.Harness.csproj" />
         <Project Path="tests/Framework.Messages.Core.Tests.Unit/Framework.Messages.Core.Tests.Unit.csproj" />
-        <Project Path="tests/Framework.Messages.PostgreSql.Tests.Unit/Framework.Messages.PostgreSql.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Messages.PostgreSql.Tests.Integration/Framework.Messages.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Ticker.Tests.Unit/Framework.Ticker.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Validations/">
