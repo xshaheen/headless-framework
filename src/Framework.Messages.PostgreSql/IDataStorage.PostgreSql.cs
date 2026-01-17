@@ -325,7 +325,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Id", long.Parse(message.DbId)),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
-            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt),
+            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
