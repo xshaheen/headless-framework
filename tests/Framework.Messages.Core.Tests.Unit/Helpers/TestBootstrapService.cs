@@ -1,0 +1,17 @@
+﻿using Framework.Messages;
+using Microsoft.Extensions.Hosting;
+
+namespace Tests.Helpers;
+
+public class TestBootstrapService(IBootstrapper bootstrapper) : IHostedService
+{
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await bootstrapper.BootstrapAsync();
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+}

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNetCore.CAP;
 using Framework.Domain.Filters;
+using Framework.Messages.Configuration;
 using Framework.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,7 +27,7 @@ public static class AddCapDistributedMessagingExtensions
             setupAction.Invoke(capOptions);
         });
 
-        capBuilder.AddSubscribeFilter<StopMarkHttpTimeoutAsSuccessFilter>();
+        capBuilder.AddSubscribeFilter<StopMarkHttpTimeoutAsSuccessConsumeFilter>();
 
         return capBuilder;
     }

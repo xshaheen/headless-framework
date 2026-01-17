@@ -135,5 +135,5 @@ public sealed class EnsureTests
             .WithMessage("*Tests.EnsureTests+TestDisposableObject*");
     }
 
-    private sealed class TestDisposableObject { }
+    private sealed class TestDisposableObject;
 }

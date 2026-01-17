@@ -4,12 +4,9 @@
     <RootNamespace>Framework.Domain</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="DotNetCore.CAP" />
-    <PackageReference Include="DotNetCore.CAP.Dashboard" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
     <ProjectReference Include="..\Framework.Domain\Framework.Domain.csproj" />
+    <ProjectReference Include="..\Framework.Messages.Dashboard\Framework.Messages.Dashboard.csproj" />
     <ProjectReference Include="..\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
   </ItemGroup>
 </Project>

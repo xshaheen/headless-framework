@@ -2,8 +2,9 @@
 
 using System.Reflection;
 using System.Reflection.Emit;
-using DotNetCore.CAP;
 using Framework.Domain.Messages;
+using Framework.Messages;
+using Framework.Messages.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Domain;
@@ -32,19 +33,19 @@ public static class CapDistributedMessageHandlerFactory
     public static Type Create(IReadOnlyCollection<TypeInfo> messageHandlerTypes)
     {
         // Base Type
-        var baseType = typeof(CapMessageHandlerSubscribeBase);
+        var baseType = typeof(CapHandlerSubscribeBase);
 
         var baseTypeConstructor =
             baseType.GetConstructor([typeof(IServiceProvider)])
-            ?? throw new InvalidOperationException($"{nameof(CapMessageHandlerSubscribeBase)} Constructor not found");
+            ?? throw new InvalidOperationException($"{nameof(CapHandlerSubscribeBase)} Constructor not found");
 
         var baseTriggerHandlerAsyncMethod =
             baseType.GetMethod(
-                nameof(CapMessageHandlerSubscribeBase.TriggerHandlerAsync),
+                nameof(CapHandlerSubscribeBase.TriggerHandlerAsync),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )
             ?? throw new InvalidOperationException(
-                $"{nameof(CapMessageHandlerSubscribeBase)} {nameof(CapMessageHandlerSubscribeBase.TriggerHandlerAsync)} Method not found"
+                $"{nameof(CapHandlerSubscribeBase)} {nameof(CapHandlerSubscribeBase.TriggerHandlerAsync)} Method not found"
             );
 
         // Subscribe Attribute
@@ -133,7 +134,7 @@ public static class CapDistributedMessageHandlerFactory
                     name: methodName,
                     attributes: MethodAttributes.Public | MethodAttributes.HideBySig,
                     returnType: typeof(ValueTask),
-                    parameterTypes: [messageType, typeof(CapHeader), typeof(CancellationToken)]
+                    parameterTypes: [messageType, typeof(MessageHeader), typeof(CancellationToken)]
                 );
 
                 // Add the FromCap attribute to the header parameter to inject the CapHeader
@@ -233,11 +234,11 @@ public static class CapDistributedMessageHandlerFactory
     #region Base Class
 
     [UsedImplicitly]
-    public class CapMessageHandlerSubscribeBase(IServiceProvider serviceProvider) : ICapSubscribe
+    public class CapHandlerSubscribeBase(IServiceProvider serviceProvider) : IConsumer
     {
         public async ValueTask TriggerHandlerAsync<T>(
             T data,
-            CapHeader header,
+            MessageHeader header,
             Type handler,
             CancellationToken cancellationToken = default
         )

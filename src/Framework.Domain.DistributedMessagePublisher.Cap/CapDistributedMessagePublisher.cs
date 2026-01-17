@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNetCore.CAP;
 using Framework.Domain.Messages;
+using Framework.Messages;
 
 namespace Framework.Domain;
 
-public sealed class CapDistributedMessagePublisher(ICapPublisher publisher) : IDistributedMessagePublisher
+public sealed class CapDistributedMessagePublisher(IOutboxPublisher publisher) : IDistributedMessagePublisher
 {
     public void Publish<T>(T message)
         where T : class, IDistributedMessage

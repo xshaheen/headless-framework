@@ -1,0 +1,87 @@
+using Framework.Ticker.Utilities.Entities;
+using Framework.Ticker.Utilities.Interfaces;
+using Framework.Ticker.Utilities.Models;
+
+namespace Framework.Ticker.Utilities.Temps;
+
+internal class NoOpTickerQNotificationHubSender : ITickerQNotificationHubSender
+{
+    public Task AddCronTickerNotifyAsync(object cronTicker)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateCronTickerNotifyAsync(object cronTicker)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveCronTickerNotifyAsync(Guid id)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task AddTimeTickerNotifyAsync(Guid id)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task AddTimeTickersBatchNotifyAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateTimeTickerNotifyAsync(object timeTicker)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveTimeTickerNotifyAsync(Guid id)
+    {
+        return Task.CompletedTask;
+    }
+
+    public void UpdateActiveThreads(object activeThreads) { }
+
+    public void UpdateNextOccurrence(object nextOccurrence) { }
+
+    public void UpdateHostStatus(object active) { }
+
+    public void UpdateHostException(object exceptionMessage) { }
+
+    public Task UpdateNodeHeartBeatAsync(object nodeHeartBeat)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task AddCronOccurrenceAsync(Guid groupId, object occurrence)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateCronOccurrenceAsync(Guid groupId, object occurrence)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateTimeTickerFromInternalFunctionContext<TTimeTickerEntity>(
+        InternalFunctionContext internalFunctionContext
+    )
+        where TTimeTickerEntity : TimeTickerEntity<TTimeTickerEntity>, new()
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronTickerEntity>(
+        InternalFunctionContext internalFunctionContext
+    )
+        where TCronTickerEntity : CronTickerEntity, new()
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task CanceledTickerNotifyAsync(Guid id)
+    {
+        return Task.CompletedTask;
+    }
+}
