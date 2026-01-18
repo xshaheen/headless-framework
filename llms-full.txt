@@ -1336,96 +1336,6 @@ None.
 
 ---
 
-# Framework.Domains.DistributedMessagePublisher.Cap
-
-
-CAP-based implementation of `IDistributedMessagePublisher` for reliable distributed messaging with transactional outbox pattern.
-
-## Problem Solved
-
-Provides reliable distributed message publishing using CAP (eventually consistent processing) with support for multiple message brokers (RabbitMQ, Kafka, etc.) and transactional outbox.
-
-## Key Features
-
-- `IDistributedMessagePublisher` implementation using DotNetCore.CAP
-- Transactional outbox pattern support
-- Multiple broker support (RabbitMQ, Kafka, Azure Service Bus, etc.)
-- Dashboard for monitoring
-- Automatic retry and dead-letter handling
-- JSON serialization integration
-
-## Installation
-
-```bash
-dotnet add package Framework.Domains.DistributedMessagePublisher.Cap
-```
-
-## Quick Start
-
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddCap(options =>
-{
-    options.UseEntityFramework<AppDbContext>();
-    options.UseRabbitMQ("localhost");
-    options.UseDashboard();
-});
-
-builder.Services.AddCapDistributedMessagePublisher();
-```
-
-### Publishing Messages
-
-```csharp
-public sealed class OrderService(IDistributedMessagePublisher publisher)
-{
-    public async Task CompleteOrderAsync(Order order, CancellationToken ct)
-    {
-        order.Complete();
-
-        // Publish distributed message
-        await publisher.PublishAsync(
-            new OrderCompletedMessage(order.Id, order.Total),
-            ct
-        ).AnyContext();
-    }
-}
-```
-
-### Handling Messages
-
-```csharp
-[Message("orders.completed")]
-public sealed class OrderCompletedHandler : IDistributedMessageHandler<OrderCompletedMessage>
-{
-    public async Task HandleAsync(OrderCompletedMessage message, CancellationToken ct)
-    {
-        // Handle the message
-    }
-}
-```
-
-## Configuration
-
-Configured via CAP options. See CAP documentation for broker-specific settings.
-
-## Dependencies
-
-- `Framework.Domains`
-- `Framework.Base`
-- `Framework.Serializer.Json`
-- `DotNetCore.CAP`
-- `DotNetCore.CAP.Dashboard`
-
-## Side Effects
-
-- Registers `IDistributedMessagePublisher`
-- CAP registers background services for message processing
-
----
-
-# Framework.Domains.LocalMessagePublisher.DI
 
 
 DI-based implementation of `ILocalMessagePublisher` for in-process domain event handling.
@@ -1511,97 +1421,6 @@ No configuration required.
 
 ---
 
-# Framework.Domains
-
-
-Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
-
-## Problem Solved
-
-Provides building blocks for implementing DDD patterns: entities with identity, aggregate roots with domain events, value objects, auditing interfaces, and messaging contracts.
-
-## Key Features
-
-- **Entity Abstractions**: `IEntity`, `IEntity<T>`, base `Entity` class
-- **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
-- **Value Objects**: `ValueObject` base class with equality
-- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
-- **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
-- **Multi-tenancy**: `IMultiTenant`
-- **Local Messaging**: `ILocalMessage`, `ILocalMessagePublisher`, `ILocalMessageHandler`
-- **Distributed Messaging**: `IDistributedMessage`, `IDistributedMessagePublisher`, `IDistributedMessageHandler`
-- **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
-
-## Installation
-
-```bash
-dotnet add package Framework.Domains
-```
-
-## Quick Start
-
-```csharp
-public sealed class Order : AggregateRoot<Guid>, ICreateAudit
-{
-    public required string CustomerName { get; init; }
-    public decimal Total { get; private set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
-
-    public void Complete()
-    {
-        Status = OrderStatus.Completed;
-        AddMessage(new OrderCompletedEvent(Id));
-    }
-}
-
-public sealed record OrderCompletedEvent(Guid OrderId) : ILocalMessage;
-```
-
-### Auditing
-
-Implement audit interfaces for automatic tracking:
-
-```csharp
-public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
-{
-    public required string Name { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
-    public DateTimeOffset? UpdatedAt { get; set; }
-    public string? UpdatedBy { get; set; }
-}
-```
-
-### Value Objects
-
-```csharp
-public sealed class Address : ValueObject
-{
-    public required string Street { get; init; }
-    public required string City { get; init; }
-
-    protected override IEnumerable<object?> GetEqualityComponents()
-    {
-        yield return Street;
-        yield return City;
-    }
-}
-```
-
-## Configuration
-
-No configuration required. This is an abstractions package.
-
-## Dependencies
-
-None.
-
-## Side Effects
-
-None.
-
----
 
 # Framework.Emails.Abstractions
 
@@ -4159,117 +3978,7 @@ services.AddFirebasePushNotificationService(options =>
 
 ---
 
-# Framework.Queueing.Abstractions
 
-
-Defines the unified interface for queue operations.
-
-## Problem Solved
-
-Provides a provider-agnostic queue API with full lifecycle management (enqueue, dequeue, complete, abandon), enabling seamless switching between queue implementations without changing application code.
-
-## Key Features
-
-- `IQueue<T>` - Core interface for queue operations
-- `IQueueEntry<T>` - Queue entry with data and metadata
-- `IQueueBehavior<T>` - Extensible queue behaviors
-- Async events: Enqueuing, Enqueued, Dequeued, Completed, Abandoned
-- Dead letter queue support
-- Queue statistics
-
-## Installation
-
-```bash
-dotnet add package Framework.Queueing.Abstractions
-```
-
-## Usage
-
-```csharp
-public sealed class OrderProcessor(IQueue<OrderMessage> queue)
-{
-    public async Task EnqueueOrderAsync(OrderMessage order)
-    {
-        await queue.EnqueueAsync(order, new QueueEntryOptions
-        {
-            CorrelationId = order.Id.ToString()
-        });
-    }
-
-    public async Task ProcessOrdersAsync(CancellationToken ct)
-    {
-        await queue.StartAsync(async (entry, token) =>
-        {
-            await ProcessAsync(entry.Value);
-        }, autoComplete: true, ct);
-    }
-}
-```
-
-## Configuration
-
-No configuration required. This is an abstractions-only package.
-
-## Dependencies
-
-- `Framework.Base`
-
-## Side Effects
-
-None.
-
----
-
-# Framework.Queueing.Foundatio
-
-
-Foundatio-based queue implementation with in-memory and Redis support.
-
-## Problem Solved
-
-Provides queue implementations using Foundatio library, supporting in-memory queuing for development/testing and Redis/SQS/Azure for production distributed queuing.
-
-## Key Features
-
-- `QueueFoundatioAdapter<T>` - Adapter bridging Foundatio to framework interfaces
-- In-memory queue for development
-- Redis queue for production (via Foundatio.Redis)
-- Queue behaviors and event integration
-- Dead letter queue support
-
-## Installation
-
-```bash
-dotnet add package Framework.Queueing.Foundatio
-```
-
-## Quick Start
-
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-// In-memory queue
-builder.Services.AddSingleton<IQueue<OrderMessage>>(sp =>
-    new QueueFoundatioAdapter<OrderMessage>(
-        new InMemoryQueue<OrderMessage>()
-    )
-);
-```
-
-## Configuration
-
-Uses Foundatio queue configuration. See Foundatio documentation for provider-specific options.
-
-## Dependencies
-
-- `Framework.Queueing.Abstractions`
-- `Foundatio`
-
-## Side Effects
-
-None directly. Queue instances should be registered appropriately.
-
----
 
 # Framework.Recaptcha
 
@@ -5898,101 +5607,6 @@ builder.Services.AddVodafoneSmsSender(options =>
 
 ---
 
-# Framework.Specifications
-
-
-Implementation of the Specification pattern for composable business rules.
-
-## Problem Solved
-
-Provides a type-safe, composable specification pattern implementation enabling complex business rules to be expressed as reusable, testable objects that can be combined using logical operators and used with LINQ/EF Core.
-
-## Key Features
-
-- `ISpecification<T>` - Base specification interface
-- `Specification<T>` - Abstract base class with expression support
-- Composite specifications:
-  - `AndSpecification<T>` - Logical AND
-  - `OrSpecification<T>` - Logical OR
-  - `NotSpecification<T>` - Logical NOT
-  - `AndNotSpecification<T>` - Logical AND NOT
-  - `OrNotSpecification<T>` - Logical OR NOT
-- `AnySpecification<T>` - Always returns true
-- `NoneSpecification<T>` - Always returns false
-- `ExpressionSpecification<T>` - Wrap LINQ expressions
-- Implicit conversion to/from `Expression<Func<T, bool>>`
-
-## Installation
-
-```bash
-dotnet add package Framework.Specifications
-```
-
-## Usage
-
-### Define Specifications
-
-```csharp
-public sealed class IsActiveUserSpec : Specification<User>
-{
-    public override Expression<Func<User, bool>> ToExpression()
-    {
-        return user => user.IsActive && !user.IsDeleted;
-    }
-}
-
-public sealed class HasPremiumPlanSpec : Specification<User>
-{
-    public override Expression<Func<User, bool>> ToExpression()
-    {
-        return user => user.PlanType == PlanType.Premium;
-    }
-}
-```
-
-### Combine Specifications
-
-```csharp
-var isActiveUser = new IsActiveUserSpec();
-var hasPremiumPlan = new HasPremiumPlanSpec();
-
-// Combine with AND
-var activePremiumUser = isActiveUser.And(hasPremiumPlan);
-
-// Combine with OR
-var activeOrPremium = isActiveUser.Or(hasPremiumPlan);
-
-// Negate
-var inactiveUser = isActiveUser.Not();
-```
-
-### Use with EF Core
-
-```csharp
-var spec = new IsActiveUserSpec().And(new HasPremiumPlanSpec());
-var users = await dbContext.Users.Where(spec).ToListAsync();
-```
-
-### Ad-hoc Specifications
-
-```csharp
-var spec = Specification<User>.FromExpression(u => u.Age > 18);
-```
-
-## Configuration
-
-No configuration required.
-
-## Dependencies
-
-None.
-
-## Side Effects
-
-None.
-
----
-
 # Framework.Sql.Abstractions
 
 
@@ -6620,6 +6234,2034 @@ No configuration required.
 ## Side Effects
 
 None.
+
+---
+
+# Framework.Caching.Memory
+
+> **Note:** This package is currently a placeholder and contains no implementation.
+
+## Status
+
+This package directory exists for future development. Functionality may be available through:
+- `Framework.Caching.Foundatio.Memory` - In-memory caching implementation
+
+## Installation
+
+Not available for installation.
+
+---
+
+# Framework.Cap.Dashboard
+
+> **Note:** This package is currently a placeholder and contains no implementation.
+
+## Status
+
+This package directory exists for future development. Dashboard functionality is available through:
+- `Framework.Messages.Dashboard` - Web dashboard for messaging system
+
+## Installation
+
+Not available for installation.
+
+---
+
+# Framework.Domain
+
+Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
+
+## Problem Solved
+
+Provides building blocks for implementing DDD patterns: entities with identity, aggregate roots with domain events, value objects, auditing interfaces, and messaging contracts.
+
+## Key Features
+
+- **Entity Abstractions**: `IEntity`, `IEntity<T>`, base `Entity` class
+- **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
+- **Value Objects**: `ValueObject` base class with equality
+- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
+- **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
+- **Multi-tenancy**: `IMultiTenant`
+- **Local Messaging**: `ILocalMessage`, `ILocalMessagePublisher`, `ILocalMessageHandler`
+- **Distributed Messaging**: `IDistributedMessage`, `IDistributedMessagePublisher`, `IDistributedMessageHandler`
+- **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
+
+## Installation
+
+```bash
+dotnet add package Framework.Domains
+```
+
+## Quick Start
+
+```csharp
+public sealed class Order : AggregateRoot<Guid>, ICreateAudit
+{
+    public required string CustomerName { get; init; }
+    public decimal Total { get; private set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+
+    public void Complete()
+    {
+        Status = OrderStatus.Completed;
+        AddMessage(new OrderCompletedEvent(Id));
+    }
+}
+
+public sealed record OrderCompletedEvent(Guid OrderId) : ILocalMessage;
+```
+
+### Auditing
+
+Implement audit interfaces for automatic tracking:
+
+```csharp
+public sealed class Product : Entity<int>, ICreateAudit, IUpdateAudit
+{
+    public required string Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+}
+```
+
+### Value Objects
+
+```csharp
+public sealed class Address : ValueObject
+{
+    public required string Street { get; init; }
+    public required string City { get; init; }
+
+    protected override IEnumerable<object?> GetEqualityComponents()
+    {
+        yield return Street;
+        yield return City;
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions package.
+
+## Dependencies
+
+None.
+
+## Side Effects
+
+None.
+
+---
+
+# Framework.Domain.DistributedMessagePublisher.Cap
+
+CAP-based implementation of `IDistributedMessagePublisher` for reliable distributed messaging with transactional outbox pattern.
+
+## Problem Solved
+
+Provides reliable distributed message publishing using CAP (eventually consistent processing) with support for multiple message brokers (RabbitMQ, Kafka, etc.) and transactional outbox.
+
+## Key Features
+
+- `IDistributedMessagePublisher` implementation using DotNetCore.CAP
+- Transactional outbox pattern support
+- Multiple broker support (RabbitMQ, Kafka, Azure Service Bus, etc.)
+- Dashboard for monitoring
+- Automatic retry and dead-letter handling
+- JSON serialization integration
+
+## Installation
+
+```bash
+dotnet add package Framework.Domains.DistributedMessagePublisher.Cap
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCap(options =>
+{
+    options.UseEntityFramework<AppDbContext>();
+    options.UseRabbitMQ("localhost");
+    options.UseDashboard();
+});
+
+builder.Services.AddCapDistributedMessagePublisher();
+```
+
+### Publishing Messages
+
+```csharp
+public sealed class OrderService(IDistributedMessagePublisher publisher)
+{
+    public async Task CompleteOrderAsync(Order order, CancellationToken ct)
+    {
+        order.Complete();
+
+        // Publish distributed message
+        await publisher.PublishAsync(
+            new OrderCompletedMessage(order.Id, order.Total),
+            ct
+        ).AnyContext();
+    }
+}
+```
+
+### Handling Messages
+
+```csharp
+[Message("orders.completed")]
+public sealed class OrderCompletedHandler : IDistributedMessageHandler<OrderCompletedMessage>
+{
+    public async Task HandleAsync(OrderCompletedMessage message, CancellationToken ct)
+    {
+        // Handle the message
+    }
+}
+```
+
+## Configuration
+
+Configured via CAP options. See CAP documentation for broker-specific settings.
+
+## Dependencies
+
+- `Framework.Domains`
+- `Framework.Base`
+- `Framework.Serializer.Json`
+- `DotNetCore.CAP`
+- `DotNetCore.CAP.Dashboard`
+
+## Side Effects
+
+- Registers `IDistributedMessagePublisher`
+- CAP registers background services for message processing
+
+---
+
+# Framework.Domain.LocalMessagePublisher.DI
+
+DI-based implementation of `ILocalMessagePublisher` for in-process domain event handling.
+
+## Problem Solved
+
+Provides in-memory local message publishing that resolves handlers from the DI container, enabling decoupled event-driven architecture within a single process.
+
+## Key Features
+
+- `ILocalMessagePublisher` implementation using DI
+- Automatic handler discovery and resolution
+- Handler ordering via `LocalEventHandlerOrderAttribute`
+- Sync and async publishing support
+- Scoped handler resolution
+
+## Installation
+
+```bash
+dotnet add package Framework.Domains.LocalMessagePublisher.DI
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Register local message publisher
+builder.Services.AddLocalMessagePublisher();
+
+// Register handlers (automatically discovered or explicit)
+builder.Services.AddScoped<ILocalMessageHandler<OrderCreatedEvent>, OrderCreatedHandler>();
+```
+
+### Publishing Events
+
+```csharp
+public sealed class OrderService(ILocalMessagePublisher publisher)
+{
+    public async Task CreateOrderAsync(Order order, CancellationToken ct)
+    {
+        await _repository.AddAsync(order, ct).AnyContext();
+
+        await publisher.PublishAsync(new OrderCreatedEvent(order.Id), ct).AnyContext();
+    }
+}
+```
+
+### Handling Events
+
+```csharp
+public sealed class OrderCreatedHandler : ILocalMessageHandler<OrderCreatedEvent>
+{
+    public async Task HandleAsync(OrderCreatedEvent message, CancellationToken ct)
+    {
+        // Send email, update read model, etc.
+    }
+}
+
+[LocalEventHandlerOrder(1)] // Execute first
+public sealed class AuditHandler : ILocalMessageHandler<OrderCreatedEvent>
+{
+    public Task HandleAsync(OrderCreatedEvent message, CancellationToken ct)
+    {
+        // Audit logging
+        return Task.CompletedTask;
+    }
+}
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `Framework.Domains`
+- `Framework.Hosting`
+
+## Side Effects
+
+- Registers `ILocalMessagePublisher` as scoped
+
+---
+
+# Framework.Messages.Abstractions
+
+Core abstractions for type-safe, high-performance message consumption and publishing with outbox pattern support.
+
+## Problem Solved
+
+Provides standardized interfaces for building reliable distributed messaging systems with compile-time type safety, avoiding reflection overhead and enabling transactional outbox patterns for guaranteed message delivery.
+
+## Key Features
+
+- **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
+- **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
+- **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
+- **Consumer Configuration**: `IMessagingBuilder` for assembly scanning and manual consumer registration
+- **Delayed Publishing**: Schedule messages for future delivery
+- **Multi-Type Consumers**: Single consumer can handle multiple message types
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.Abstractions
+```
+
+## Quick Start
+
+```csharp
+// Define message consumer
+public sealed class OrderPlacedHandler(
+    IOrderRepository orders,
+    ILogger<OrderPlacedHandler> logger) : IConsume<OrderPlacedEvent>
+{
+    public async ValueTask Consume(
+        ConsumeContext<OrderPlacedEvent> context,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Processing order {OrderId} at {Timestamp}",
+            context.Message.OrderId,
+            context.Timestamp);
+
+        await orders.CreateAsync(context.Message, cancellationToken);
+    }
+}
+
+// Register consumers
+builder.Services.AddMessages(options =>
+{
+    options.ScanConsumers(typeof(Program).Assembly);
+    options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
+});
+
+// Publish with outbox
+public sealed class OrderService(IOutboxPublisher publisher)
+{
+    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
+    {
+        // Publish transactionally with database changes
+        await publisher.PublishAsync("orders.placed", new OrderPlacedEvent
+        {
+            OrderId = order.Id,
+            Total = order.Total
+        }, cancellationToken: ct);
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions package. Implementations are provided by:
+- `Framework.Messages.Core` (base implementation)
+- Transport packages: `Framework.Messages.RabbitMQ`, `Framework.Messages.Kafka`, etc.
+- Storage packages: `Framework.Messages.PostgreSql`, `Framework.Messages.SqlServer`, etc.
+
+## Dependencies
+
+- `Framework.Base`
+- `Framework.Checks`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
+
+## Side Effects
+
+None. This is an abstractions package.
+
+---
+
+# Framework.Messages.AmazonSQS
+
+Amazon SQS and SNS transport provider for the messaging system.
+
+## Problem Solved
+
+Enables reliable message delivery using AWS SQS queues and SNS topics with automatic queue creation, dead-letter queues, and IAM policy management.
+
+## Key Features
+
+- **SQS Consumer**: Reliable queue-based message consumption
+- **SNS Publisher**: Topic-based message distribution
+- **Auto-Provisioning**: Automatic queue and topic creation
+- **Dead Letter Queues**: Built-in failure handling
+- **IAM Integration**: Automatic policy configuration
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.AmazonSQS
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseAmazonSQS(sqs =>
+    {
+        sqs.Region = "us-east-1";
+        sqs.Credentials = new BasicAWSCredentials("key", "secret");
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseAmazonSQS(sqs =>
+{
+    sqs.Region = "us-east-1";
+    sqs.Credentials = awsCredentials;
+    sqs.SNSServiceUrl = "https://sns.us-east-1.amazonaws.com";
+    sqs.SQSServiceUrl = "https://sqs.us-east-1.amazonaws.com";
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `AWSSDK.SimpleNotificationService`
+- `AWSSDK.SQS`
+
+## Side Effects
+
+- Creates SQS queues and SNS topics if they don't exist
+- Configures IAM policies for queue access
+- Establishes persistent connections to AWS services
+
+---
+
+# Framework.Messages.AzureServiceBus
+
+Azure Service Bus transport provider for the messaging system.
+
+## Problem Solved
+
+Enables enterprise messaging using Azure Service Bus with topics, subscriptions, sessions, and advanced routing capabilities.
+
+## Key Features
+
+- **Topic/Subscription Model**: Pub/sub messaging with filters
+- **Sessions**: Message ordering and state management
+- **Auto-Provisioning**: Automatic topic and subscription creation
+- **Advanced Routing**: Message routing rules and filters
+- **Enterprise Features**: Transactions, duplicate detection, dead-lettering
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.AzureServiceBus
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseSqlServer("connection_string");
+
+    options.UseAzureServiceBus(asb =>
+    {
+        asb.ConnectionString = "Endpoint=sb://namespace.servicebus.windows.net/;...";
+        asb.TopicPath = "myapp";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseAzureServiceBus(asb =>
+{
+    asb.ConnectionString = "connection_string";
+    asb.TopicPath = "myapp-topic";
+    asb.EnableSessions = true;
+    asb.ManagementTokenProvider = tokenProvider;
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `Azure.Messaging.ServiceBus`
+
+## Side Effects
+
+- Creates Service Bus topics and subscriptions if they don't exist
+- Establishes persistent connections to Azure Service Bus
+- Configures message routing rules and filters
+
+---
+
+# Framework.Messages.Core
+
+Core implementation of the type-safe messaging system with outbox pattern, message processing, and consumer lifecycle management.
+
+## Problem Solved
+
+Provides the foundational runtime for reliable distributed messaging with transactional outbox, automatic retries, delayed delivery, and type-safe consumer orchestration across multiple transport providers.
+
+## Key Features
+
+- **Outbox Publisher**: Transactional message publishing with database consistency
+- **Consumer Management**: Automatic registration, invocation, and lifecycle handling
+- **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
+- **Extension System**: Pluggable storage and transport providers
+- **Bootstrapper**: Hosted service for startup and shutdown coordination
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.Core
+```
+
+## Quick Start
+
+```csharp
+// Register messaging with storage and transport
+builder.Services.AddMessages(options =>
+{
+    // Core configuration
+    options.SucceedMessageExpiredAfter = 24 * 3600;
+    options.FailedRetryCount = 50;
+
+    // Add storage (required)
+    options.UsePostgreSql("connection_string");
+
+    // Add transport (required)
+    options.UseRabbitMQ(rmq =>
+    {
+        rmq.HostName = "localhost";
+        rmq.Port = 5672;
+    });
+
+    // Register consumers
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+
+// Publish messages with outbox
+public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction transaction)
+{
+    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
+    {
+        using (transaction.Begin())
+        {
+            // Database changes and message publish are atomic
+            await publisher.PublishAsync("orders.placed", order, cancellationToken: ct);
+            await transaction.CommitAsync(ct);
+        }
+    }
+}
+```
+
+## Configuration
+
+Register in `Program.cs`:
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.FailedRetryCount = 50;
+    options.SucceedMessageExpiredAfter = 24 * 3600;
+    options.ConsumerThreadCount = 1;
+    options.DefaultGroupName = "myapp";
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Abstractions`
+- `Framework.Base`
+- `Framework.Checks`
+- Transport package (RabbitMQ, Kafka, etc.)
+- Storage package (PostgreSql, SqlServer, etc.)
+
+## Side Effects
+
+- Starts background hosted service for message processing
+- Creates database tables for outbox storage (via storage provider)
+- Establishes transport connections (via transport provider)
+
+---
+
+# Framework.Messages.Dashboard
+
+Web-based dashboard for monitoring and managing distributed messaging infrastructure.
+
+## Problem Solved
+
+Provides real-time visibility into message processing, failures, retries, and system health through an embedded web UI for operations and troubleshooting.
+
+## Key Features
+
+- **Real-Time Monitoring**: Live message throughput and latency metrics
+- **Message Explorer**: Search, filter, and inspect messages
+- **Failure Management**: View and retry failed messages
+- **Node Discovery**: Multi-instance cluster visibility
+- **Performance Metrics**: Consumer processing stats and bottlenecks
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.Dashboard
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    options.UseRabbitMQ(config);
+
+    options.UseDashboard(dashboard =>
+    {
+        dashboard.PathMatch = "/messages";
+        dashboard.StatsPollingInterval = 2000;
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+
+// Access dashboard at: http://localhost:5000/messages
+```
+
+## Configuration
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.PathMatch = "/messages";
+    dashboard.StatsPollingInterval = 2000;
+    dashboard.Authorization = new[] { new CustomDashboardAuthFilter() };
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- Embedded web UI assets
+
+## Side Effects
+
+- Exposes web endpoint at configured path (default: `/cap`)
+- Periodically polls message storage for statistics
+- Requires authentication configuration for production use
+
+---
+
+# Framework.Messages.Dashboard.K8s
+
+Kubernetes-aware node discovery for the messaging dashboard in clustered environments.
+
+## Problem Solved
+
+Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying pod endpoints for multi-instance dashboard visibility.
+
+## Key Features
+
+- **Auto-Discovery**: Automatically finds messaging nodes in Kubernetes namespace
+- **Service Integration**: Uses Kubernetes Service for node enumeration
+- **Health Monitoring**: Tracks node availability and status
+- **Dynamic Updates**: Reflects pod scaling events in real-time
+- **No Configuration**: Works with default Kubernetes service discovery
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.Dashboard.K8s
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    options.UseRabbitMQ(config);
+
+    options.UseDashboard();
+
+    options.UseK8sDiscovery(k8s =>
+    {
+        k8s.Namespace = "production";
+        k8s.ServiceName = "messaging-service";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseK8sDiscovery(k8s =>
+{
+    k8s.Namespace = "production";
+    k8s.ServiceName = "messaging-service";
+    k8s.Port = 8080;
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Dashboard`
+- `KubernetesClient`
+
+## Side Effects
+
+- Queries Kubernetes API for pod endpoints
+- Requires appropriate RBAC permissions (read pods/endpoints)
+- Periodically polls for cluster topology changes
+
+---
+
+# Framework.Messages.InMemoryQueue
+
+In-memory message queue transport for testing and development.
+
+## Problem Solved
+
+Provides a lightweight, no-infrastructure message queue for local development, testing, and single-instance applications without external dependencies.
+
+## Key Features
+
+- **Zero Dependencies**: No external broker required
+- **Fast**: In-process message delivery
+- **Testing Friendly**: Deterministic, synchronous behavior
+- **Same API**: Identical interface to production transports
+- **Thread-Safe**: Concurrent producer/consumer support
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.InMemoryQueue
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseInMemoryStorage();
+    options.UseInMemoryQueue();
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+No configuration required. Just call `UseInMemoryQueue()`.
+
+## Dependencies
+
+- `Framework.Messages.Core`
+
+## Side Effects
+
+None. Messages are stored in memory only and lost on restart.
+
+---
+
+# Framework.Messages.InMemoryStorage
+
+In-memory outbox storage for testing and development.
+
+## Problem Solved
+
+Provides ephemeral message storage without database dependencies for local development, integration tests, and prototyping.
+
+## Key Features
+
+- **Zero Dependencies**: No database required
+- **Fast**: In-memory operations
+- **Testing**: Deterministic behavior for tests
+- **Full API**: Complete outbox storage implementation
+- **Monitoring**: In-memory dashboard data
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.InMemoryStorage
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseInMemoryStorage();
+    options.UseRabbitMQ(config);
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+No configuration required. Just call `UseInMemoryStorage()`.
+
+## Dependencies
+
+- `Framework.Messages.Core`
+
+## Side Effects
+
+None. All messages are stored in memory and lost on restart. Not suitable for production.
+
+---
+
+# Framework.Messages.Kafka
+
+Apache Kafka transport provider for the messaging system.
+
+## Problem Solved
+
+Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups, partitions, and exactly-once semantics.
+
+## Key Features
+
+- **High Throughput**: Handle millions of messages per second
+- **Partitioning**: Parallel processing with ordered delivery per partition
+- **Consumer Groups**: Load balancing across consumers
+- **Retention**: Persistent message storage with configurable retention
+- **Exactly-Once**: Transactional publishing and consuming
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.Kafka
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseKafka(kafka =>
+    {
+        kafka.Servers = "localhost:9092";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseKafka(kafka =>
+{
+    kafka.Servers = "localhost:9092,localhost:9093";
+    kafka.ConnectionPoolSize = 10;
+    kafka.CustomHeaders = headers => headers.Add("app", "myapp");
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `Confluent.Kafka`
+
+## Side Effects
+
+- Creates Kafka topics if they don't exist
+- Establishes persistent connections to Kafka brokers
+- Joins consumer groups for load balancing
+
+---
+
+# Framework.Messages.NATS
+
+NATS messaging system transport provider for the messaging system.
+
+## Problem Solved
+
+Enables lightweight, cloud-native messaging using NATS with JetStream for persistence, subjects for routing, and NATS Streaming for reliable delivery.
+
+## Key Features
+
+- **Lightweight**: Minimal resource footprint
+- **Cloud-Native**: Kubernetes-friendly, easy clustering
+- **JetStream**: Persistent streams with at-least-once delivery
+- **Subject Routing**: Hierarchical topic patterns (e.g., `orders.*.created`)
+- **Request-Reply**: Built-in RPC support
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.NATS
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseNATS(nats =>
+    {
+        nats.Servers = "nats://localhost:4222";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseNATS(nats =>
+{
+    nats.Servers = "nats://localhost:4222,nats://localhost:4223";
+    nats.ConnectionPoolSize = 10;
+    nats.EnableJetStream = true;
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `NATS.Client`
+
+## Side Effects
+
+- Establishes persistent connections to NATS servers
+- Creates JetStream streams if enabled
+- Subscribes to subjects for message consumption
+
+---
+
+# Framework.Messages.OpenTelemetry
+
+OpenTelemetry instrumentation for distributed tracing and metrics in the messaging system.
+
+## Problem Solved
+
+Provides automatic tracing spans, metrics, and context propagation for message publishing and consumption to enable end-to-end observability across distributed systems.
+
+## Key Features
+
+- **Distributed Tracing**: Automatic span creation for publish/consume operations
+- **Context Propagation**: W3C Trace Context header injection/extraction
+- **Metrics**: Message throughput, latency, failures, and retry counts
+- **Correlation**: Links messages to originating HTTP requests and spans
+- **Standard Export**: Compatible with Jaeger, Zipkin, Prometheus, and other backends
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.OpenTelemetry
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddSource("Framework.Messages")
+        .AddJaegerExporter());
+
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    options.UseRabbitMQ(config);
+    options.UseOpenTelemetry();
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseOpenTelemetry(otel =>
+{
+    otel.EnrichPublisher = (activity, message) =>
+    {
+        activity?.SetTag("message.type", message.GetType().Name);
+    };
+
+    otel.EnrichConsumer = (activity, context) =>
+    {
+        activity?.SetTag("consumer.topic", context.Topic);
+    };
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `OpenTelemetry.Api`
+- `OpenTelemetry.Extensions.Hosting`
+
+## Side Effects
+
+- Creates tracing spans for all message operations
+- Injects W3C Trace Context headers into messages
+- Exports telemetry to configured exporters
+
+---
+
+# Framework.Messages.PostgreSql
+
+PostgreSQL outbox storage provider for the messaging system.
+
+## Problem Solved
+
+Provides durable, transactional message storage using PostgreSQL with automatic schema management, message archival, and high-performance queries.
+
+## Key Features
+
+- **Transactional Outbox**: ACID-compliant message publishing with database changes
+- **Auto-Migration**: Automatic table creation and schema updates
+- **Archival**: Automatic cleanup of old messages
+- **Performance**: Optimized indexes and queries for high throughput
+- **Monitoring**: Built-in dashboard data queries
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.PostgreSql
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql(config =>
+    {
+        config.ConnectionString = "Host=localhost;Database=myapp;...";
+        config.Schema = "messaging";
+    });
+
+    options.UseRabbitMQ(rmq => { /* ... */ });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UsePostgreSql(config =>
+{
+    config.ConnectionString = "connection_string";
+    config.Schema = "messaging";
+    config.TableNamePrefix = "msg";
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `Npgsql`
+
+## Side Effects
+
+- Creates database tables in configured schema:
+  - `{prefix}_published` - Published messages
+  - `{prefix}_received` - Received messages
+  - `{prefix}_lock` - Distributed lock table
+- Creates indexes for message queries
+- Periodically cleans up expired messages
+
+---
+
+# Framework.Messages.Pulsar
+
+Apache Pulsar transport provider for the messaging system.
+
+## Problem Solved
+
+Enables cloud-native, multi-tenant messaging using Apache Pulsar with geo-replication, tiered storage, and unified streaming and queuing models.
+
+## Key Features
+
+- **Multi-Tenancy**: Native namespace and tenant isolation
+- **Geo-Replication**: Cross-datacenter message replication
+- **Tiered Storage**: Offload old messages to S3/GCS/Azure Blob
+- **Unified Model**: Both streaming and queuing semantics
+- **Schema Registry**: Built-in schema validation and evolution
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.Pulsar
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UsePulsar(pulsar =>
+    {
+        pulsar.ServiceUrl = "pulsar://localhost:6650";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UsePulsar(pulsar =>
+{
+    pulsar.ServiceUrl = "pulsar://localhost:6650";
+    pulsar.TenantName = "public";
+    pulsar.NamespaceName = "default";
+    pulsar.ConnectionPoolSize = 10;
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `DotPulsar`
+
+## Side Effects
+
+- Creates Pulsar topics in configured tenant/namespace
+- Establishes persistent connections to Pulsar brokers
+- Creates subscriptions for consumer groups
+
+---
+
+# Framework.Messages.RabbitMQ
+
+RabbitMQ transport provider for the messaging system.
+
+## Problem Solved
+
+Enables reliable message delivery using RabbitMQ with exchanges, queues, routing keys, and advanced AMQP features for flexible pub/sub patterns.
+
+## Key Features
+
+- **Exchange/Queue Model**: Flexible routing with topic, direct, fanout, and headers exchanges
+- **Reliability**: Publisher confirms, consumer acknowledgments, and dead-letter exchanges
+- **Auto-Provisioning**: Automatic exchange and queue creation
+- **Clustering**: High availability with RabbitMQ clusters
+- **Priority Queues**: Message priority support
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.RabbitMQ
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseRabbitMQ(rmq =>
+    {
+        rmq.HostName = "localhost";
+        rmq.Port = 5672;
+        rmq.UserName = "guest";
+        rmq.Password = "guest";
+        rmq.VirtualHost = "/";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseRabbitMQ(rmq =>
+{
+    rmq.HostName = "localhost";
+    rmq.Port = 5672;
+    rmq.UserName = "guest";
+    rmq.Password = "guest";
+    rmq.VirtualHost = "/";
+    rmq.ExchangeName = "myapp.events";
+    rmq.ConnectionFactoryOptions = factory =>
+    {
+        factory.AutomaticRecoveryEnabled = true;
+        factory.NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
+    };
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `RabbitMQ.Client`
+
+## Side Effects
+
+- Creates exchanges and queues if they don't exist
+- Establishes persistent connections to RabbitMQ
+- Configures dead-letter exchanges for failed messages
+
+---
+
+# Framework.Messages.RedisStreams
+
+Redis Streams transport provider for the messaging system.
+
+## Problem Solved
+
+Enables lightweight, high-performance message streaming using Redis Streams with consumer groups, persistence, and at-least-once delivery guarantees.
+
+## Key Features
+
+- **Redis Streams**: Append-only log structure for message streaming
+- **Consumer Groups**: Load balancing and parallel processing
+- **Persistence**: Durable message storage with configurable retention
+- **Claim Messages**: Automatic reprocessing of unacknowledged messages
+- **Low Latency**: Sub-millisecond message delivery
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.RedisStreams
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseRedisStreams(redis =>
+    {
+        redis.Configuration = "localhost:6379";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseRedisStreams(redis =>
+{
+    redis.Configuration = "localhost:6379,ssl=true,password=secret";
+    redis.StreamEntriesCount = 10;
+    redis.ConnectionPoolSize = 10;
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `StackExchange.Redis`
+
+## Side Effects
+
+- Creates Redis Streams for each topic
+- Creates consumer groups for message distribution
+- Maintains persistent connections to Redis
+- Periodically claims pending messages for retry
+
+---
+
+# Framework.Messages.SqlServer
+
+SQL Server outbox storage provider for the messaging system.
+
+## Problem Solved
+
+Provides durable, transactional message storage using SQL Server with automatic schema management, message archival, and optimized queries for Windows environments.
+
+## Key Features
+
+- **Transactional Outbox**: ACID-compliant message publishing with database changes
+- **Auto-Migration**: Automatic table creation and schema updates
+- **Archival**: Automatic cleanup of old messages
+- **Performance**: Optimized indexes and queries for SQL Server
+- **Monitoring**: Built-in dashboard data queries
+
+## Installation
+
+```bash
+dotnet add package Framework.Messages.SqlServer
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseSqlServer(config =>
+    {
+        config.ConnectionString = "Server=localhost;Database=myapp;...";
+        config.Schema = "messaging";
+    });
+
+    options.UseRabbitMQ(rmq => { /* ... */ });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseSqlServer(config =>
+{
+    config.ConnectionString = "connection_string";
+    config.Schema = "messaging";
+    config.TableNamePrefix = "msg";
+});
+```
+
+## Dependencies
+
+- `Framework.Messages.Core`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+- Creates database tables in configured schema:
+  - `{prefix}_published` - Published messages
+  - `{prefix}_received` - Received messages
+  - `{prefix}_lock` - Distributed lock table
+- Creates indexes for message queries
+- Periodically cleans up expired messages
+
+---
+
+# Framework.ResourceLocks.InMemory
+
+In-memory resource lock provider for single-instance deployments, development, and testing.
+
+## Problem Solved
+
+Provides lightweight distributed locking and throttling using in-memory storage without external dependencies. Suitable for single-instance applications, local development, and testing scenarios.
+
+## Key Features
+
+- **Zero Dependencies**: No Redis or database required
+- **Fast**: In-process lock operations
+- **Throttling Support**: Rate limiting with in-memory storage
+- **Keyed Locks**: Multiple named lock instances
+- **Testing**: Deterministic behavior for tests
+
+## Installation
+
+```bash
+dotnet add package Framework.ResourceLocks.InMemory
+```
+
+## Quick Start
+
+```csharp
+// Register in-memory resource locks
+builder.Services.AddInMemoryResourceLock();
+
+// Use resource locks
+public sealed class OrderService(IResourceLockProvider locks)
+{
+    public async Task ProcessOrderAsync(string orderId, CancellationToken ct)
+    {
+        await using var lockHandle = await locks.AcquireAsync(
+            $"order:{orderId}",
+            TimeSpan.FromSeconds(30),
+            ct);
+
+        if (lockHandle == null)
+        {
+            // Lock acquisition failed, order is being processed elsewhere
+            return;
+        }
+
+        // Process order with exclusive lock
+    }
+}
+
+// Throttling example
+builder.Services.AddInMemoryThrottlingResourceLock(new ThrottlingResourceLockOptions
+{
+    MaxRequests = 100,
+    TimeWindow = TimeSpan.FromMinutes(1)
+});
+```
+
+## Configuration
+
+```csharp
+// Basic resource lock
+builder.Services.AddInMemoryResourceLock((options, sp) =>
+{
+    options.DefaultExpiration = TimeSpan.FromMinutes(5);
+});
+
+// Throttling lock
+builder.Services.AddInMemoryThrottlingResourceLock(new ThrottlingResourceLockOptions
+{
+    MaxRequests = 100,
+    TimeWindow = TimeSpan.FromMinutes(1)
+});
+
+// Keyed throttling lock
+builder.Services.AddKeyedInMemoryThrottlingResourceLock("api", new ThrottlingResourceLockOptions
+{
+    MaxRequests = 1000,
+    TimeWindow = TimeSpan.FromMinutes(1)
+});
+```
+
+## Dependencies
+
+- `Framework.ResourceLocks.Cache`
+- `Framework.Caching.Foundatio.Memory`
+- `Framework.Messaging.Foundatio`
+
+## Side Effects
+
+None. Locks are stored in memory only and lost on restart. Not suitable for multi-instance production deployments.
+
+---
+
+# Framework.Send.Abstractions
+
+> **Note:** This package is currently a placeholder and contains no implementation.
+
+## Status
+
+This package directory exists for future development. Sending functionality is currently available through:
+- `Framework.Emails.Abstractions` - Email sending abstractions
+- `Framework.Sms.Abstractions` - SMS sending abstractions
+- `Framework.PushNotifications.Abstractions` - Push notification abstractions
+
+## Installation
+
+Not available for installation.
+
+---
+
+# Framework.Send.Core
+
+> **Note:** This package is currently a placeholder and contains no implementation.
+
+## Status
+
+This package directory exists for future development. Sending functionality is currently available through:
+- `Framework.Emails.Core` - Email sending core implementation
+- `Framework.Sms.*` - SMS provider implementations
+- `Framework.PushNotifications.*` - Push notification implementations
+
+## Installation
+
+Not available for installation.
+
+---
+
+# Framework.Ticker.Abstractions
+
+Simple utilities for queuing and executing cron/time-based jobs in the background.  
+Part of the [TickerQ](https://github.com/arcenox/TickerQ) suite by [Arcenox](https://arcenox.com).
+
+---
+
+## 📦 Installation
+
+```bash
+dotnet add package Framework.Ticker.Utilities
+---
+
+# Framework.Ticker.Caching.Redis
+
+Redis-backed distributed coordination for TickerQ with node heartbeat monitoring and dead node detection.
+
+## Problem Solved
+
+Enables multi-instance TickerQ deployments with Redis-based node registry, heartbeat monitoring, and automatic dead node cleanup for high availability job scheduling.
+
+## Key Features
+
+- **Node Registry**: Track all TickerQ nodes in Redis
+- **Heartbeat Monitoring**: Periodic node liveness checks
+- **Dead Node Detection**: Automatic cleanup of failed nodes
+- **Distributed Coordination**: Shared state across TickerQ instances
+- **Dashboard Integration**: Real-time cluster visibility
+
+## Installation
+
+```bash
+dotnet add package Framework.Ticker.Caching.Redis
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddTickerQ(options =>
+{
+    options.MaxConcurrency(10);
+
+    // Enable Redis coordination
+    options.UseRedisCoordination(redis =>
+    {
+        redis.ConnectionString = "localhost:6379";
+        redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
+    });
+});
+
+app.UseTickerQ();
+```
+
+## Configuration
+
+```csharp
+options.UseRedisCoordination(redis =>
+{
+    redis.ConnectionString = "localhost:6379,ssl=true,password=secret";
+    redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
+    redis.NodeIdentifier = "instance-1"; // Auto-generated if not set
+});
+```
+
+## Dependencies
+
+- `Framework.Ticker.Abstractions`
+- `Microsoft.Extensions.Caching.StackExchangeRedis`
+
+## Side Effects
+
+- Stores node registry and heartbeats in Redis
+- Background service sends periodic heartbeats
+- Periodically scans for and removes dead nodes
+- Creates Redis keys: `nodes:registry`, `hb:{nodeId}`
+
+---
+
+# Framework.Ticker.Core
+
+Core implementation of TickerQ, a high-performance background job scheduler for .NET with cron expressions and time-based scheduling.
+
+## Problem Solved
+
+Provides reliable, distributed background job scheduling with cron expressions, delayed execution, custom task scheduling, and real-time monitoring without external dependencies like Hangfire or Quartz.
+
+## Key Features
+
+- **Cron Scheduling**: Full cron expression support with timezone handling
+- **Time-Based Jobs**: Schedule jobs at specific times or intervals
+- **Custom Thread Pool**: Optimized task scheduler for background jobs
+- **Persistence**: In-memory or database-backed job storage
+- **Fallback**: Automatic recovery and retry for failed jobs
+- **Zero Allocations**: High-performance execution with minimal GC pressure
+- **Hot Reload**: Dynamic job registration and configuration updates
+
+## Installation
+
+```bash
+dotnet add package Framework.Ticker.Core
+```
+
+## Quick Start
+
+```csharp
+// Register TickerQ
+builder.Services.AddTickerQ(options =>
+{
+    options.MaxConcurrency(10);
+    options.TimeZone(TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+});
+
+// Define cron job
+[TickerQ("*/5 * * * *")] // Every 5 minutes
+public static class CleanupJob
+{
+    public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        var logger = sp.GetRequiredService<ILogger<CleanupJob>>();
+        logger.LogInformation("Running cleanup job");
+
+        await Task.CompletedTask;
+    }
+}
+
+// Initialize TickerQ
+app.UseTickerQ();
+
+// Schedule time-based job programmatically
+public sealed class OrderService(ITimeTickerManager<TimeTickerEntity> ticker)
+{
+    public async Task SendReminderAsync(string orderId, CancellationToken ct)
+    {
+        await ticker.ScheduleAsync(new TimeTickerEntity
+        {
+            TickerKey = $"order-reminder-{orderId}",
+            OccurrenceTime = DateTime.UtcNow.AddHours(24),
+            Request = new { OrderId = orderId }
+        }, ct);
+    }
+}
+```
+
+## Configuration
+
+```csharp
+builder.Services.AddTickerQ(options =>
+{
+    // Scheduler options
+    options.MaxConcurrency(10);
+    options.IdleWorkerTimeout(TimeSpan.FromMinutes(5));
+    options.TimeZone(TimeZoneInfo.Utc);
+
+    // Seeding options
+    options.SeedDefinedCronTickers = true;
+    options.CustomTimeSeeder = async sp =>
+    {
+        // Seed initial jobs
+    };
+
+    // Exception handling
+    options.UseExceptionHandler<CustomTickerExceptionHandler>();
+
+    // Disable background services (for testing)
+    options.DisableBackgroundServices();
+});
+
+// Start modes
+app.UseTickerQ(TickerQStartMode.Immediate); // Start immediately (default)
+app.UseTickerQ(TickerQStartMode.Manual);    // Wait for manual trigger
+```
+
+## Dependencies
+
+- `Framework.Ticker.Abstractions`
+- `Framework.Base`
+
+## Side Effects
+
+- Starts background hosted services for job scheduling and execution
+- Creates in-memory job storage (or database tables with persistence providers)
+- Runs custom thread pool for job execution
+- Periodically scans for due jobs and executes them
+
+---
+
+# Framework.Ticker.Dashboard
+
+Simple, clean authentication for your TickerQ Dashboard.
+
+## 🚀 Quick Examples
+
+### No Authentication (Public Dashboard)
+```csharp
+services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+{
+    config.AddDashboard(dashboard =>
+    {
+        // No authentication setup = public dashboard
+    });
+});
+```
+
+### Basic Authentication
+```csharp
+services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+{
+    config.AddDashboard(dashboard =>
+    {
+        dashboard.WithBasicAuth("admin", "secret123");
+    });
+});
+```
+
+### API Key Authentication
+```csharp
+services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+{
+    config.AddDashboard(dashboard =>
+    {
+        dashboard.WithApiKey("my-secret-api-key-12345");
+    });
+});
+```
+
+### Use Host Application's Authentication
+```csharp
+services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+{
+    config.AddDashboard(dashboard =>
+    {
+        dashboard.WithHostAuthentication();
+    });
+});
+```
+
+### Use Host Authentication with Custom Policy
+```csharp
+services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+{
+    config.AddDashboard(dashboard =>
+    {
+        dashboard.WithHostAuthentication("AdminPolicy");
+    });
+});
+```
+
+## 🔧 Fluent API Methods
+
+- `WithBasicAuth(username, password)` - Enable username/password authentication
+- `WithApiKey(apiKey)` - Enable API key authentication  
+- `WithHostAuthentication(policy)` - Use your app's existing auth with optional policy (e.g., "AdminPolicy")
+- `SetBasePath(path)` - Set dashboard URL path
+- `SetBackendDomain(domain)` - Set backend API domain
+- `SetCorsPolicy(policy)` - Configure CORS
+
+## 🔒 How It Works
+
+The dashboard automatically detects your authentication method:
+
+1. **No auth configured** → Public dashboard
+2. **Basic auth configured** → Username/password login
+3. **Bearer token configured** → API key authentication
+4. **Host auth configured** → Delegates to your app's auth system
+
+## 🌐 Frontend Integration
+
+The frontend automatically adapts based on your backend configuration:
+- Shows appropriate login UI
+- Handles SignalR authentication 
+- Supports both header and query parameter auth (for WebSockets)
+
+That's it! Simple and clean. 🎉
+
+---
+
+# Framework.Ticker.EntityFramework
+
+Entity Framework Core integration for [TickerQ](https://github.com/arcenox/TickerQ), a high-performance background job scheduler for .NET.
+
+This package enables persistence of time-based and cron-based jobs using EF Core, allowing for robust tracking, retry logic, and job state management.
+
+---
+
+## 📦 Installation
+
+```bash
+dotnet add package Framework.Ticker.EntityFrameworkCore
+---
+
+# Framework.Ticker.OpenTelemetry
+
+OpenTelemetry instrumentation package for TickerQ job scheduler with distributed tracing support.
+
+## Features
+
+- **Distributed Tracing**: Full OpenTelemetry activity/span creation for job execution lifecycle
+- **Structured Logging**: Rich logging with job context through ILogger integration
+- **Parent-Child Relationships**: Maintains trace relationships between parent and child jobs
+- **Retry Tracking**: Tracks retry attempts with detailed context
+- **Performance Metrics**: Comprehensive execution time and outcome tracking
+- **Error Tracking**: Detailed exception and cancellation tracking
+- **Caller Information**: Automatic detection of where jobs are enqueued from
+
+## Installation
+
+```bash
+dotnet add package Framework.Ticker.Instrumentation.OpenTelemetry
+```
+
+## Usage
+
+### Basic Setup
+
+```csharp
+using Framework.Ticker.Instrumentation.OpenTelemetry;
+using OpenTelemetry.Trace;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Configure OpenTelemetry with TickerQ ActivitySource
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing.AddSource("TickerQ") // Add TickerQ ActivitySource
+               .AddConsoleExporter()
+               .AddJaegerExporter();
+    });
+
+// Add TickerQ with OpenTelemetry instrumentation
+builder.Services.AddTickerQ<MyTimeTicker, MyCronTicker>(options => { })
+    .AddOperationalStore(ef => { })
+    .AddOpenTelemetryInstrumentation(); // 👈 Enable tracing
+
+var app = builder.Build();
+app.Run();
+```
+
+### With Jaeger
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing.AddTickerQInstrumentation()
+               .AddJaegerExporter(options =>
+               {
+                   options.Endpoint = new Uri("http://localhost:14268/api/traces");
+               });
+    });
+```
+
+### With Application Insights
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing.AddTickerQInstrumentation()
+               .AddAzureMonitorTraceExporter();
+    });
+```
+
+## Trace Structure
+
+### Job Execution Activities
+```
+Framework.Ticker.job.execute.timeticker (main job execution span)
+├── Framework.Ticker.job.enqueued (when job starts execution)
+├── Framework.Ticker.job.completed (on successful completion)
+├── Framework.Ticker.job.failed (on failure)
+├── Framework.Ticker.job.cancelled (on cancellation)
+├── Framework.Ticker.job.skipped (when skipped)
+├── Framework.Ticker.seeding.started (for data seeding)
+└── Framework.Ticker.seeding.completed (seeding completion)
+```
+
+### Tags Added to Activities
+
+| Tag | Description | Example |
+|-----|-------------|---------|
+| `Framework.Ticker.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
+| `Framework.Ticker.job.type` | Type of ticker | `TimeTicker`, `CronTicker` |
+| `Framework.Ticker.job.function` | Function name being executed | `ProcessEmails` |
+| `Framework.Ticker.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
+| `Framework.Ticker.job.machine` | Machine executing the job | `web-server-01` |
+| `Framework.Ticker.job.parent_id` | Parent job ID (for child jobs) | `parent-job-guid` |
+| `Framework.Ticker.job.enqueued_from` | Where the job was enqueued from | `UserController.CreateUser (Program.cs:42)` |
+| `Framework.Ticker.job.is_due` | Whether the job was due | `true`, `false` |
+| `Framework.Ticker.job.is_child` | Whether this is a child job | `true`, `false` |
+| `Framework.Ticker.job.retries` | Maximum retry attempts | `3` |
+| `Framework.Ticker.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
+| `Framework.Ticker.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
+| `Framework.Ticker.job.final_retry_count` | Final retry count reached | `2` |
+| `Framework.Ticker.job.execution_time_ms` | Execution time in milliseconds | `1250` |
+| `Framework.Ticker.job.success` | Whether execution was successful | `true`, `false` |
+| `Framework.Ticker.job.error_type` | Exception type for failures | `SqlException`, `TimeoutException` |
+| `Framework.Ticker.job.error_message` | Error message | `Connection timeout` |
+| `Framework.Ticker.job.error_stack_trace` | Full stack trace | `at MyService.ProcessData()...` |
+| `Framework.Ticker.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
+| `Framework.Ticker.job.skip_reason` | Reason for skipping | `Another instance is already running` |
+
+## Logging Output
+
+The instrumentation provides structured logging for all job events:
+
+```
+[INF] TickerQ Job enqueued: TimeTicker - ProcessEmails (123e4567-e89b-12d3-a456-426614174000) from ExecutionTaskHandler
+[INF] TickerQ Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 1250ms - Success: True
+[ERR] TickerQ Job failed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Retry 1 - Connection timeout
+[INF] TickerQ Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 2500ms - Success: False
+[WRN] TickerQ Job cancelled: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Task was cancelled
+[INF] TickerQ Job skipped: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Another CronOccurrence is already running!
+[INF] TickerQ start seeding data: TimeTicker (production-node-01)
+[INF] TickerQ completed seeding data: TimeTicker (production-node-01)
+```
+
+## Integration with Logging Frameworks
+
+This package works seamlessly with any logging framework that integrates with `ILogger`:
+
+### Serilog
+```csharp
+builder.Host.UseSerilog((context, config) =>
+{
+    config.WriteTo.Console()
+          .WriteTo.File("logs/tickerq-.txt", rollingInterval: RollingInterval.Day)
+          .Enrich.FromLogContext();
+});
+```
+
+### NLog
+```csharp
+builder.Logging.ClearProviders();
+builder.Logging.AddNLog();
+```
+
+## Performance Impact
+
+- **Minimal Overhead**: Activities are only created when OpenTelemetry listeners are active
+- **Efficient Logging**: Uses structured logging with minimal string allocations
+- **Conditional Tracing**: No performance impact when tracing is disabled
+
+## Requirements
+
+- .NET 8.0 or later
+- OpenTelemetry 1.7.0 or later
+- Framework.Ticker.Utilities (automatically included)
+
+---
+
+# Framework.Ticker.SourceGenerator
+
+C# source generator for TickerQ that generates boilerplate code for background job registration and execution.
+
+## Problem Solved
+
+Eliminates reflection overhead and manual job registration by generating compile-time code for TickerQ job functions marked with `[TickerQ]` attribute.
+
+## Key Features
+
+- **Zero Reflection**: Compile-time code generation
+- **Auto-Registration**: Automatic job discovery and registration
+- **Type Safety**: Compile-time validation of job signatures
+- **DI Integration**: Generates constructor injection code
+- **Incremental**: Fast rebuild with incremental generation
+- **Diagnostics**: Rich compile-time error messages
+
+## Installation
+
+```bash
+dotnet add package Framework.Ticker.SourceGenerator
+```
+
+## Quick Start
+
+```csharp
+// Define job with attribute
+[TickerQ("*/5 * * * *")] // Every 5 minutes
+public static class CleanupJob
+{
+    public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        var logger = sp.GetRequiredService<ILogger<CleanupJob>>();
+        logger.LogInformation("Running cleanup");
+    }
+}
+
+// Source generator creates:
+// - Job registration code
+// - Execution delegates
+// - Constructor injection
+// - Request type mapping
+
+// No manual registration needed - jobs auto-discovered at compile time
+```
+
+## Configuration
+
+No runtime configuration. Uses attributes:
+
+```csharp
+// Cron job
+[TickerQ("0 0 * * *", Priority = TickerTaskPriority.High)]
+public static class DailyReport { /* ... */ }
+
+// Job with request payload
+[TickerQ("ProcessOrder")]
+public sealed class OrderProcessor(IOrderService orders)
+{
+    public async Task ExecuteAsync(
+        TickerFunctionContext<OrderRequest> context,
+        CancellationToken ct)
+    {
+        await orders.ProcessAsync(context.Request, ct);
+    }
+}
+
+// Custom constructor
+public sealed class ComplexJob
+{
+    [TickerQConstructor]
+    public ComplexJob(ILogger<ComplexJob> logger, IConfiguration config)
+    {
+        // Custom initialization
+    }
+
+    [TickerQ("ComplexTask")]
+    public async Task ExecuteAsync(/* ... */) { }
+}
+```
+
+## Dependencies
+
+- `Microsoft.CodeAnalysis.CSharp` (analyzer/generator)
+
+## Side Effects
+
+Generates `TickerQInstanceFactoryExtensions.g.cs` at compile time with:
+- Module initializer for auto-registration
+- Job execution delegates
+- Constructor factory methods
+- Request type registrations
 
 ---
 
