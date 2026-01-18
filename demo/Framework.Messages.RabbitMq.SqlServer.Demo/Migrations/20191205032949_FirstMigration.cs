@@ -10,9 +10,7 @@ namespace Sample.RabbitMQ.SqlServer.Migrations
                 name: "Persons",
                 columns: table => new
                 {
-                    Id = table
-                        .Column<int>(nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Id = table.Column<int>(nullable: false).Annotation("SqlServer:Identity", "1, 1"),
                     Name = table.Column<string>(nullable: true),
                 },
                 constraints: table =>

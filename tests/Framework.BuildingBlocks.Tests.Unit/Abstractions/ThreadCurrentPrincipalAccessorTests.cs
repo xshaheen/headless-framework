@@ -12,12 +12,10 @@ public sealed class ThreadCurrentPrincipalAccessorTests
     private static ClaimsPrincipal _FakerClaimsPrincipal()
     {
         return new ClaimsPrincipal(
-            new ClaimsIdentity(
-                [
-                    new Claim(UserClaimTypes.Name, FakerData.GenerateName()),
-                    new Claim(UserClaimTypes.Email, FakerData.GenerateEmail()),
-                ]
-            )
+            new ClaimsIdentity([
+                new Claim(UserClaimTypes.Name, FakerData.GenerateName()),
+                new Claim(UserClaimTypes.Email, FakerData.GenerateEmail()),
+            ])
         );
     }
 

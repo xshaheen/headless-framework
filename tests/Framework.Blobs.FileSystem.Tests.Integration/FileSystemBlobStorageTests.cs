@@ -161,7 +161,7 @@ public sealed class FileSystemBlobStorageTests : BlobStorageTestsBase
         // Ensure delete files can remove all files including fake folders
         await storage.DeleteAllAsync(container, "*", AbortToken);
 
-        // Assert folder was removed by Delete Files
+        // then folder was removed by Delete Files
         Directory.Exists(Path.Combine(_baseDirectoryPath, containerName, directory)).Should().BeFalse();
 
         info = await storage.GetBlobInfoAsync(container, directory, AbortToken);

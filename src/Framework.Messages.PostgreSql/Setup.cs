@@ -58,7 +58,8 @@ public static class CapOptionsExtensions
         }
     }
 
-    private sealed class PostgreSqlMessagesOptionsExtension(Action<PostgreSqlOptions> configure) : IMessagesOptionsExtension
+    private sealed class PostgreSqlMessagesOptionsExtension(Action<PostgreSqlOptions> configure)
+        : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
@@ -70,5 +71,4 @@ public static class CapOptionsExtensions
             services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         }
     }
-
 }

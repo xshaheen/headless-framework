@@ -101,12 +101,7 @@ internal static class LoggerExtensions
             );
         }
 
-        public void ConsumerExecuteFailed(
-            string topic,
-            string id,
-            string? instance,
-            Exception? ex
-        )
+        public void ConsumerExecuteFailed(string topic, string id, string? instance, Exception? ex)
         {
             logger.LogError(
                 ex,

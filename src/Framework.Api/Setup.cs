@@ -158,9 +158,11 @@ public static class ApiSetup
         services
             .AddResponseCompression(options =>
             {
-                options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
-                    [ContentTypes.Applications.ProblemJson, ContentTypes.Images.SvgXml, ContentTypes.Images.Icon]
-                );
+                options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat([
+                    ContentTypes.Applications.ProblemJson,
+                    ContentTypes.Images.SvgXml,
+                    ContentTypes.Images.Icon,
+                ]);
 
                 options.Providers.Add<BrotliCompressionProvider>();
                 options.Providers.Add<GzipCompressionProvider>();

@@ -66,7 +66,7 @@ public sealed class CurrentTenantTests
             // when
             using (currentTenant.Change("456", "Another Tenant"))
             {
-                // Assert the tenant was changed
+                // then the tenant was changed
                 currentTenant.Id.Should().Be("456");
                 currentTenant.Name.Should().Be("Another Tenant");
             }
@@ -102,14 +102,14 @@ public sealed class CurrentTenantTests
 
         using (currentTenant.Change("Tenant1", "First Tenant"))
         {
-            // Assert the first tenant is set
+            // then the first tenant is set
             currentTenant.Id.Should().Be("Tenant1");
             currentTenant.Name.Should().Be("First Tenant");
 
             // when
             using (currentTenant.Change("Tenant2", "Second Tenant"))
             {
-                // Assert the second tenant is set
+                // then the second tenant is set
                 currentTenant.Id.Should().Be("Tenant2");
                 currentTenant.Name.Should().Be("Second Tenant");
             }

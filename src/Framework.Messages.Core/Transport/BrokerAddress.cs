@@ -68,5 +68,5 @@ public struct BrokerAddress
     /// Returns the string representation of the broker address in the format "Name$Endpoint".
     /// </summary>
     /// <returns>A string combining the broker name and endpoint separated by "$".</returns>
-    public readonly override string ToString() => Name + "$" + Endpoint;
+    public override readonly string ToString() => Name + "$" + Endpoint;
 }

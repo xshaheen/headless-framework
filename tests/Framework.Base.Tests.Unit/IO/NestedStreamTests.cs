@@ -48,7 +48,7 @@ public sealed class NestedStreamTests : TestBase
         var noReadStream = Substitute.For<Stream>();
         Assert.Throws<ArgumentException>(() => noReadStream.ReadSlice(1));
 
-        // Assert that read functions were not called.
+        // then that read functions were not called.
         Assert.Same(
             typeof(Stream)
                 .GetProperty(

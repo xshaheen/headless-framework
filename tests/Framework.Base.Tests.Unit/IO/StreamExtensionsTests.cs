@@ -133,7 +133,7 @@ public sealed class StreamExtensionsTests : TestBase
         memoryStream.Length.Should().Be(stream.Length);
         memoryStream.ToArray().Should().BeEquivalentTo(bytes);
 
-        // assert original stream is not changed
+        // then original stream is not changed
         stream.Position.Should().Be(bytes.Length);
         stream.Length.Should().Be(bytes.Length);
         stream.ToArray().Should().BeEquivalentTo(bytes);
@@ -156,7 +156,7 @@ public sealed class StreamExtensionsTests : TestBase
         memoryStream.Length.Should().Be(stream.Length);
         memoryStream.ToArray().Should().BeEquivalentTo(bytes);
 
-        // assert original stream is not changed
+        // then original stream is not changed
         stream.Position.Should().Be(bytes.Length);
         stream.Length.Should().Be(bytes.Length);
         stream.ToArray().Should().BeEquivalentTo(bytes);

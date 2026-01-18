@@ -18,9 +18,13 @@ internal static class TypeConverterSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings(
-            [data.Namespace, "System", "System.ComponentModel", "System.Globalization", AbstractionConstants.Namespace]
-        );
+        builder.AppendUsings([
+            data.Namespace,
+            "System",
+            "System.ComponentModel",
+            "System.Globalization",
+            AbstractionConstants.Namespace,
+        ]);
         builder.AppendNamespace(data.Namespace + ".Converters");
         builder.AppendSummary($"TypeConverter for <see cref = \"{data.ClassName}\"/>");
 

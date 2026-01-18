@@ -37,13 +37,13 @@ public sealed class OrderServiceTests : TestBase
     [Fact]
     public async Task should_create_order()
     {
-        // Arrange
+        // given
         var order = Faker.OrderFaker().Generate();
 
-        // Act
+        // when
         var result = await _sut.CreateAsync(order, AbortToken);
 
-        // Assert
+        // then
         result.Should().NotBeNull();
     }
 

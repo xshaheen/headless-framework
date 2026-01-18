@@ -82,7 +82,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     [Fact]
     public async Task should_pass_through_when_header_missing()
     {
-        // arrange
+        // given
         var cache = Substitute.For<ICache>();
         var middleware = _CreateMiddleware(cache: cache);
         var context = _CreateContext();
@@ -93,10 +93,10 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             return Task.CompletedTask;
         }
 
-        // act
+        // when
         await middleware.InvokeAsync(context, next);
 
-        // assert
+        // then
         nextCalled.Should().BeTrue();
         await cache
             .DidNotReceiveWithAnyArgs()
@@ -108,7 +108,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     [InlineData(null)]
     public async Task should_pass_through_when_header_empty_or_null(string? value)
     {
-        // arrange
+        // given
         var cache = Substitute.For<ICache>();
         var middleware = _CreateMiddleware(cache: cache);
         var context = _CreateContext(value);
@@ -119,10 +119,10 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             return Task.CompletedTask;
         }
 
-        // act
+        // when
         await middleware.InvokeAsync(context, next);
 
-        // assert
+        // then
         nextCalled.Should().BeTrue();
         await cache
             .DidNotReceiveWithAnyArgs()
@@ -132,7 +132,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     [Fact]
     public async Task should_insert_and_call_next_when_new_key()
     {
-        // arrange
+        // given
         var cache = Substitute.For<ICache>();
         cache
             .TryInsertAsync(
@@ -151,10 +151,10 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             return Task.CompletedTask;
         }
 
-        // act
+        // when
         await middleware.InvokeAsync(context, next);
 
-        // assert
+        // then
         nextCalled.Should().BeTrue();
         await cache
             .Received(1)
@@ -169,7 +169,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     [Fact]
     public async Task should_return_409_when_duplicate_key()
     {
-        // arrange
+        // given
         var cache = Substitute.For<ICache>();
         cache
             .TryInsertAsync(
@@ -188,10 +188,10 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             return Task.CompletedTask;
         }
 
-        // act
+        // when
         await middleware.InvokeAsync(context, next);
 
-        // assert
+        // then
         nextCalled.Should().BeFalse();
         context.Response.StatusCode.Should().Be((int)HttpStatusCode.Conflict);
         context.Response.ContentType.Should().StartWith("application/problem+json");

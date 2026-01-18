@@ -11,7 +11,7 @@ namespace Framework.Messages.Transactions;
 /// A thread-safe holder for storing the current CAP transaction context within a scope (e.g., per HTTP request or async execution context).
 /// This is used internally to associate a transaction with the ambient execution context.
 /// </summary>
-internal sealed class CapTransactionHolder
+internal sealed class OutboxTransactionHolder
 {
     /// <summary>
     /// Gets or sets the CAP transaction associated with the current context.

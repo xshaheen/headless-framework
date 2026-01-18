@@ -18,14 +18,14 @@ public class RetryBehaviorTests
     [Fact()]
     public async Task ExecuteTaskAsync_CronTickerOccurrence_AppliesRetryIntervals_AndUpdatesRetryCount()
     {
-        // Arrange: cron occurrence -> RunContextFunctionAsync path
+        // given: cron occurrence -> RunContextFunctionAsync path
         // Use three distinct short intervals so we can verify mapping without overly long waits
         var (handler, context, _, attempts) = _SetupRetryTestFixture([1, 2, 3], retries: 3);
 
-        // Act
+        // when
         await handler.ExecuteTaskAsync(context, isDue: true);
 
-        // Assert - initial + 3 retries = 4 attempts
+        // then - initial + 3 retries = 4 attempts
         attempts.Should().HaveCount(4);
         for (int i = 0; i < 4; i++)
             attempts[i].RetryCount.Should().Be(i);
@@ -62,7 +62,7 @@ public class RetryBehaviorTests
     [Fact]
     public async Task ExecuteTaskAsync_CronTickerOccurrence_StopsRetrying_WhenFunctionSucceeds()
     {
-        // Arrange: succeed on RetryCount==2
+        // given: succeed on RetryCount==2
         // Use zero intervals for speed; succeed at retry=2
         var (handler, context, _, attempts) = _SetupRetryTestFixture([0, 0, 0, 0], retries: 4, succeedOnRetryCount: 2);
 
