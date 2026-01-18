@@ -1,6 +1,6 @@
 # Headless .NET Framework
 
-> A modern, modular .NET 10 framework for building APIs and backend services with ~94 NuGet packages organized by functional domains, featuring unopinionated design and zero lock-in architecture.
+> A modern, modular .NET 10 framework for building APIs and backend services with 116+ NuGet packages organized by functional domains, featuring unopinionated design and zero lock-in architecture.
 
 Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add exactly one provider implementation (Redis/Azure/Aws/etc) as needed.
 
@@ -26,8 +26,9 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Framework.Base](./src/Framework.Base/README.md): Foundational utility library providing extension methods, primitives, helpers, and common abstractions.
 - [Framework.BuildingBlocks](./src/Framework.BuildingBlocks/README.md): Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
 - [Framework.Checks](./src/Framework.Checks/README.md): Guard clause library for argument validation and defensive programming.
-- [Framework.Domains](./src/Framework.Domains/README.md): Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
-- [Framework.Specifications](./src/Framework.Specifications/README.md): Implementation of the Specification pattern for composable business rules.
+- [Framework.Domain](./src/Framework.Domain/README.md): Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
+- [Framework.Domain.DistributedMessagePublisher.Cap](./src/Framework.Domain.DistributedMessagePublisher.Cap/README.md): CAP-based implementation of IDistributedMessagePublisher for reliable distributed messaging with transactional outbox.
+- [Framework.Domain.LocalMessagePublisher.DI](./src/Framework.Domain.LocalMessagePublisher.DI/README.md): DI-based implementation of ILocalMessagePublisher for in-process domain event handling.
 
 ### Blob Storage
 
@@ -43,6 +44,7 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Framework.Caching.Abstractions](./src/Framework.Caching.Abstractions/README.md): Defines the unified caching interface for both in-memory and distributed cache implementations.
 - [Framework.Caching.Foundatio.Memory](./src/Framework.Caching.Foundatio.Memory/README.md): In-memory cache implementation using Foundatio for single-instance applications.
 - [Framework.Caching.Foundatio.Redis](./src/Framework.Caching.Foundatio.Redis/README.md): Redis distributed cache implementation using Foundatio for multi-instance applications.
+- [Framework.Caching.Memory](./src/Framework.Caching.Memory/README.md): Placeholder for future in-memory cache implementation.
 
 ### Email
 
@@ -77,13 +79,30 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Framework.Media.Indexing.Abstractions](./src/Framework.Media.Indexing.Abstractions/README.md): Defines the interface for extracting text from media files for indexing.
 - [Framework.Media.Indexing](./src/Framework.Media.Indexing/README.md): Text extraction implementations for PDF, Word, and PowerPoint documents.
 
-### Messaging
+### Messages (Distributed Message Bus)
+
+- [Framework.Messages.Abstractions](./src/Framework.Messages.Abstractions/README.md): Standardized interfaces for reliable distributed messaging with compile-time type safety and transactional outbox patterns.
+- [Framework.Messages.Core](./src/Framework.Messages.Core/README.md): Foundational runtime for reliable distributed messaging with transactional outbox, automatic retries, delayed delivery, and type-safe consumer orchestration.
+- [Framework.Messages.Dashboard](./src/Framework.Messages.Dashboard/README.md): Real-time web UI for monitoring message processing, failures, retries, and system health.
+- [Framework.Messages.Dashboard.K8s](./src/Framework.Messages.Dashboard.K8s/README.md): Automatic discovery and monitoring of messaging nodes in Kubernetes clusters.
+- [Framework.Messages.OpenTelemetry](./src/Framework.Messages.OpenTelemetry/README.md): Automatic tracing, metrics, and context propagation for message publishing and consumption.
+- [Framework.Messages.AmazonSQS](./src/Framework.Messages.AmazonSQS/README.md): AWS SQS and SNS transport with automatic queue creation and dead-letter queues.
+- [Framework.Messages.AzureServiceBus](./src/Framework.Messages.AzureServiceBus/README.md): Azure Service Bus transport with topics, subscriptions, and sessions.
+- [Framework.Messages.Kafka](./src/Framework.Messages.Kafka/README.md): Apache Kafka transport with consumer groups, partitions, and exactly-once semantics.
+- [Framework.Messages.NATS](./src/Framework.Messages.NATS/README.md): NATS with JetStream transport for cloud-native messaging.
+- [Framework.Messages.Pulsar](./src/Framework.Messages.Pulsar/README.md): Apache Pulsar transport with geo-replication and tiered storage.
+- [Framework.Messages.RabbitMQ](./src/Framework.Messages.RabbitMQ/README.md): RabbitMQ transport with exchanges, queues, and AMQP features.
+- [Framework.Messages.RedisStreams](./src/Framework.Messages.RedisStreams/README.md): Redis Streams transport with consumer groups and at-least-once delivery.
+- [Framework.Messages.InMemoryQueue](./src/Framework.Messages.InMemoryQueue/README.md): In-memory queue transport for local development and testing.
+- [Framework.Messages.PostgreSql](./src/Framework.Messages.PostgreSql/README.md): PostgreSQL storage for durable, transactional message persistence.
+- [Framework.Messages.SqlServer](./src/Framework.Messages.SqlServer/README.md): SQL Server storage for durable message persistence in Windows environments.
+- [Framework.Messages.InMemoryStorage](./src/Framework.Messages.InMemoryStorage/README.md): Ephemeral message storage for development and testing.
+
+### Messaging (Simple Pub/Sub)
 
 - [Framework.Messaging.Abstractions](./src/Framework.Messaging.Abstractions/README.md): Defines the unified interface for message bus operations (publish/subscribe).
 - [Framework.Messaging.Foundatio](./src/Framework.Messaging.Foundatio/README.md): Foundatio-based message bus implementation with in-memory and Redis support.
 - [Framework.Messaging.MassTransit](./src/Framework.Messaging.MassTransit/README.md): MassTransit integration for enterprise messaging with RabbitMQ, Azure Service Bus, and more.
-- [Framework.Domains.DistributedMessagePublisher.Cap](./src/Framework.Domains.DistributedMessagePublisher.Cap/README.md): CAP-based implementation of IDistributedMessagePublisher for reliable distributed messaging with transactional outbox.
-- [Framework.Domains.LocalMessagePublisher.DI](./src/Framework.Domains.LocalMessagePublisher.DI/README.md): DI-based implementation of ILocalMessagePublisher for in-process domain event handling.
 
 ### OpenAPI
 
@@ -114,16 +133,12 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Framework.PushNotifications.Dev](./src/Framework.PushNotifications.Dev/README.md): Development push notification implementation that does nothing.
 - [Framework.PushNotifications.Firebase](./src/Framework.PushNotifications.Firebase/README.md): Firebase Cloud Messaging (FCM) implementation for push notifications.
 
-### Queueing
-
-- [Framework.Queueing.Abstractions](./src/Framework.Queueing.Abstractions/README.md): Defines the unified interface for queue operations.
-- [Framework.Queueing.Foundatio](./src/Framework.Queueing.Foundatio/README.md): Foundatio-based queue implementation with in-memory and Redis support.
-
 ### Resource Locking
 
 - [Framework.ResourceLocks.Abstractions](./src/Framework.ResourceLocks.Abstractions/README.md): Defines the unified interface for distributed resource locking.
 - [Framework.ResourceLocks.Core](./src/Framework.ResourceLocks.Core/README.md): Core implementation of distributed resource locking with storage abstraction.
 - [Framework.ResourceLocks.Cache](./src/Framework.ResourceLocks.Cache/README.md): Cache-based resource lock storage using ICache.
+- [Framework.ResourceLocks.InMemory](./src/Framework.ResourceLocks.InMemory/README.md): In-memory resource lock storage for single-instance applications and testing.
 - [Framework.ResourceLocks.Redis](./src/Framework.ResourceLocks.Redis/README.md): Redis-based resource lock storage using StackExchange.Redis.
 
 ### Serialization
@@ -161,6 +176,16 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 
 - [Framework.Testing](./src/Framework.Testing/README.md): Core testing utilities and base classes for xUnit tests.
 - [Framework.Testing.Testcontainers](./src/Framework.Testing.Testcontainers/README.md): Testcontainers fixtures for integration testing.
+
+### Ticker (Background Jobs)
+
+- [Framework.Ticker.Abstractions](./src/Framework.Ticker.Abstractions/README.md): Simple utilities for queuing and executing cron/time-based jobs in the background.
+- [Framework.Ticker.Core](./src/Framework.Ticker.Core/README.md): Reliable distributed background job scheduling with cron expressions, delayed execution, and monitoring.
+- [Framework.Ticker.Dashboard](./src/Framework.Ticker.Dashboard/README.md): Authentication and web UI for TickerQ background job monitoring.
+- [Framework.Ticker.SourceGenerator](./src/Framework.Ticker.SourceGenerator/README.md): Compile-time code generation for TickerQ jobs marked with [TickerQ] attribute.
+- [Framework.Ticker.OpenTelemetry](./src/Framework.Ticker.OpenTelemetry/README.md): OpenTelemetry tracing and metrics for TickerQ job execution.
+- [Framework.Ticker.Caching.Redis](./src/Framework.Ticker.Caching.Redis/README.md): Redis-based node registry and heartbeat monitoring for multi-instance TickerQ deployments.
+- [Framework.Ticker.EntityFramework](./src/Framework.Ticker.EntityFramework/README.md): Entity Framework Core persistence for TickerQ job tracking and state management.
 
 ### TUS (Resumable Uploads)
 
