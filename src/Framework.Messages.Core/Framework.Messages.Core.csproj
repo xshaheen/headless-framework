@@ -9,7 +9,16 @@
     <InternalsVisibleTo Include="Framework.Messages.Dashboard" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FastExpressionCompiler" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
     <ProjectReference Include="..\Framework.Messages.Abstractions\Framework.Messages.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Internal\LegacyAttributes.cs" />
+    <Compile Remove="Internal\IConsumeFilter.cs" />
+    <Compile Remove="Internal\ConsumerContext.cs" />
   </ItemGroup>
 </Project>
