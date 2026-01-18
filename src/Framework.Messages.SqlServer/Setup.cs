@@ -61,7 +61,8 @@ public static class MessagesSqlServerSetup
         }
     }
 
-    private sealed class SqlServerMessagesOptionsExtension(Action<SqlServerOptions> configure) : IMessagesOptionsExtension
+    private sealed class SqlServerMessagesOptionsExtension(Action<SqlServerOptions> configure)
+        : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

@@ -8,26 +8,26 @@ public class HelperTest
     [Fact]
     public void IsControllerTest()
     {
-        //Arrange
+        // given
         var typeInfo = typeof(HomeController).GetTypeInfo();
 
-        //Act
+        // when
         var result = Helper.IsController(typeInfo);
 
-        //Assert
+        // then
         result.Should().BeTrue();
     }
 
     [Fact]
     public void IsControllerAbstractTest()
     {
-        //Arrange
+        // given
         var typeInfo = typeof(AbstractController).GetTypeInfo();
 
-        //Act
+        // when
         var result = Helper.IsController(typeInfo);
 
-        //Assert
+        // then
         result.Should().BeFalse();
     }
 
@@ -41,10 +41,10 @@ public class HelperTest
     [InlineData(typeof(Uri))]
     public void IsSimpleTypeTest(Type type)
     {
-        //Act
+        // when
         var result = Helper.IsComplexType(type);
 
-        //Assert
+        // then
         result.Should().BeFalse();
     }
 
@@ -53,10 +53,10 @@ public class HelperTest
     [InlineData(typeof(Exception))]
     public void IsComplexTypeTest(Type type)
     {
-        //Act
+        // when
         var result = Helper.IsComplexType(type);
 
-        //Assert
+        // then
         result.Should().BeTrue();
     }
 

@@ -184,7 +184,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     [Fact]
     public async Task should_throw_when_blob_exceeds_max_size()
     {
-        // Arrange
+        // given
         var options = new RedisBlobStorageOptions
         {
             ConnectionMultiplexer = fixture.ConnectionMultiplexer,
@@ -197,7 +197,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         Array.Fill(largeData, (byte)'x');
         await using var stream = new MemoryStream(largeData);
 
-        // Act & Assert
+        // when & then
         var act = async () => await storage.UploadAsync(["test-container"], "large-blob.bin", stream);
         await act.Should().ThrowAsync<ArgumentException>().WithMessage("*exceeds maximum size*");
     }
@@ -205,7 +205,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     [Fact]
     public async Task should_allow_blob_within_size_limit()
     {
-        // Arrange
+        // given
         var options = new RedisBlobStorageOptions
         {
             ConnectionMultiplexer = fixture.ConnectionMultiplexer,
@@ -218,7 +218,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         Array.Fill(data, (byte)'x');
         await using var stream = new MemoryStream(data);
 
-        // Act & Assert
+        // when & then
         Func<Task> act = async () => await storage.UploadAsync(["test-container"], "small-blob.bin", stream);
         await act.Should().NotThrowAsync();
     }
@@ -226,7 +226,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
     [Fact]
     public async Task should_skip_size_validation_when_max_size_is_zero()
     {
-        // Arrange
+        // given
         var options = new RedisBlobStorageOptions
         {
             ConnectionMultiplexer = fixture.ConnectionMultiplexer,
@@ -239,7 +239,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         Array.Fill(data, (byte)'x');
         await using var stream = new MemoryStream(data);
 
-        // Act & Assert
+        // when & then
         var act = async () => await storage.UploadAsync(["test-container"], "no-limit-blob.bin", stream);
         await act.Should().NotThrowAsync();
     }

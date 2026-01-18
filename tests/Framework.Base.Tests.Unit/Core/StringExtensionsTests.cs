@@ -237,13 +237,13 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [InlineData("  ", "  ")]
     public void RemoveAccentCharacters_tests(string? value, string? expected)
     {
-        // act
+        // when
         var result = value.RemoveAccentCharacters();
 
         output.WriteLine($"result   =>{result}");
         output.WriteLine($"expected =>{expected}");
 
-        // assert
+        // then
         result.Should().Be(expected);
     }
 
@@ -259,23 +259,23 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     [InlineData("user.Profile.HOME_ADDRESS", "user.profile.hOME_ADDRESS")]
     public void CamelizePropertyPath_ShouldCorrectlyConvertToCamelCase(string input, string expected)
     {
-        // Act
+        // when
         var result = input.CamelizePropertyPath();
 
-        // Assert
+        // then
         result.Should().Be(expected);
     }
 
     [Fact]
     public void CamelizePropertyPath_WithNullInput_ShouldReturnNull()
     {
-        // Arrange
+        // given
         const string? input = null;
 
-        // Act
+        // when
         var result = input.CamelizePropertyPath();
 
-        // Assert
+        // then
         result.Should().BeNull();
     }
 }

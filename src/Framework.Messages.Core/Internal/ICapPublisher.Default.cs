@@ -25,7 +25,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     private readonly IDataStorage _storage = service.GetRequiredService<IDataStorage>();
     private readonly ILongIdGenerator _longIdGenerator = service.GetRequiredService<ILongIdGenerator>();
 
-    private readonly AsyncLocal<CapTransactionHolder> _asyncLocal = new();
+    private readonly AsyncLocal<OutboxTransactionHolder> _asyncLocal = new();
 
     public IServiceProvider ServiceProvider { get; } = service;
 
@@ -34,7 +34,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
         get => _asyncLocal.Value?.Transaction;
         set
         {
-            _asyncLocal.Value ??= new CapTransactionHolder();
+            _asyncLocal.Value ??= new OutboxTransactionHolder();
             _asyncLocal.Value.Transaction = value;
         }
     }

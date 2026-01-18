@@ -7,7 +7,7 @@
   <ItemGroup>
     <PackageReference Include="NATS.Client" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <ProjectReference Include="..\Framework.Messages.Core\Framework.Messages.Core.csproj" />
   </ItemGroup>

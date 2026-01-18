@@ -7,11 +7,11 @@ public class ServiceBusHelpersTests
     [Fact]
     public void GetBrokerAddress_ShouldThrowArgumentException_WhenBothInputsAreNull()
     {
-        // Arrange
+        // given
         const string? connectionString = null;
         const string? @namespace = null;
 
-        // Act & Assert
+        // when & then
         Action testCode = () => ServiceBusHelpers.GetBrokerAddress(connectionString, @namespace);
 
         testCode
@@ -23,14 +23,14 @@ public class ServiceBusHelpersTests
     [Fact]
     public void GetBrokerAddress_ShouldReturnNamespace_WhenConnectionStringIsNull()
     {
-        // Arrange
+        // given
         const string? connectionString = null;
         const string? @namespace = "sb://mynamespace.servicebus.windows.net/";
 
-        // Act
+        // when
         var result = ServiceBusHelpers.GetBrokerAddress(connectionString, @namespace);
 
-        // Assert
+        // then
         result.Name.Should().Be("servicebus");
         result.Endpoint.Should().Be("sb://mynamespace.servicebus.windows.net/");
     }
@@ -38,15 +38,15 @@ public class ServiceBusHelpersTests
     [Fact]
     public void GetBrokerAddress_ShouldReturnExtractedNamespace_WhenNamespaceIsNull()
     {
-        // Arrange
+        // given
         const string? connectionString =
             "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey";
         const string? @namespace = null;
 
-        // Act
+        // when
         var result = ServiceBusHelpers.GetBrokerAddress(connectionString, @namespace);
 
-        // Assert
+        // then
         result.Name.Should().Be("servicebus");
         result.Endpoint.Should().Be("sb://mynamespace.servicebus.windows.net/");
     }
@@ -54,11 +54,11 @@ public class ServiceBusHelpersTests
     [Fact]
     public void GetBrokerAddress_ShouldThrowInvalidOperationException_WhenNamespaceExtractionFails()
     {
-        // Arrange
+        // given
         const string? connectionString = "InvalidConnectionString";
         const string? @namespace = null;
 
-        // Act & Assert
+        // when & then
         var func = () => ServiceBusHelpers.GetBrokerAddress(connectionString, @namespace);
 
         func.Should()
@@ -69,15 +69,15 @@ public class ServiceBusHelpersTests
     [Fact]
     public void GetBrokerAddress_ShouldReturnNamespace_WhenBothNamespaceAndConnectionStringAreProvided()
     {
-        // Arrange
+        // given
         const string? connectionString =
             "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey";
         const string? @namespace = "anothernamespace";
 
-        // Act
+        // when
         var result = ServiceBusHelpers.GetBrokerAddress(connectionString, @namespace);
 
-        // Assert
+        // then
         result.Name.Should().Be("servicebus");
         result.Endpoint.Should().Be("anothernamespace");
     }
@@ -85,15 +85,15 @@ public class ServiceBusHelpersTests
     [Fact]
     public void GetBrokerAddress_ShouldReturnExtractedNamespace_WhenConnectionStringIsValidAndNamespaceIsEmpty()
     {
-        // Arrange
+        // given
         const string? connectionString =
             "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey";
         const string? @namespace = "";
 
-        // Act
+        // when
         var result = ServiceBusHelpers.GetBrokerAddress(connectionString, @namespace);
 
-        // Assert
+        // then
         result.Name.Should().Be("servicebus");
         result.Endpoint.Should().Be("sb://mynamespace.servicebus.windows.net/");
     }
@@ -101,14 +101,14 @@ public class ServiceBusHelpersTests
     [Fact]
     public void GetBrokerAddress_ShouldReturnNamespace_WhenConnectionStringIsEmpty()
     {
-        // Arrange
+        // given
         const string? connectionString = "";
         const string? @namespace = "sb://mynamespace.servicebus.windows.net/";
 
-        // Act
+        // when
         var result = ServiceBusHelpers.GetBrokerAddress(connectionString, @namespace);
 
-        // Assert
+        // then
         result.Name.Should().Be("servicebus");
         result.Endpoint.Should().Be("sb://mynamespace.servicebus.windows.net/");
     }

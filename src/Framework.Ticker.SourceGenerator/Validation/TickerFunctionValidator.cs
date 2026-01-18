@@ -188,8 +188,7 @@ internal static class TickerFunctionValidator
             // Check for generic TickerFunctionContext<T>
             else if (
                 parameterType is INamedTypeSymbol { IsGenericType: true } namedType
-                && namedType.ConstructedFrom?.ToDisplayString()
-                    == "Framework.Ticker.Base.TickerFunctionContext<T>"
+                && namedType.ConstructedFrom?.ToDisplayString() == "Framework.Ticker.Base.TickerFunctionContext<T>"
             )
             {
                 isValidParameter = true;

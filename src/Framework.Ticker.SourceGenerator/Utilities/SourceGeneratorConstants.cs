@@ -10,8 +10,7 @@ internal static class SourceGeneratorConstants
     public const string TickerFunctionAttributeName = "TickerFunctionAttribute";
     public const string CancellationTokenTypeName = "System.Threading.CancellationToken";
     public const string BaseTickerFunctionContextTypeName = "Framework.Ticker.Base.TickerFunctionContext";
-    public const string BaseGenericTickerFunctionContextTypeName =
-        "Framework.Ticker.Base.TickerFunctionContext`1";
+    public const string BaseGenericTickerFunctionContextTypeName = "Framework.Ticker.Base.TickerFunctionContext`1";
     public const string FromKeyedServicesAttributeName = "FromKeyedServicesAttribute";
 
     #endregion

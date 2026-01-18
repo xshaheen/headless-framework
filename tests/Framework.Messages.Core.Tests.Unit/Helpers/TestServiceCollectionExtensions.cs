@@ -20,9 +20,7 @@ public static class TestServiceCollectionExtensions
             });
         }
 
-        public ServiceProvider BuildTestContainer(
-            CancellationToken cancellationToken
-        )
+        public ServiceProvider BuildTestContainer(CancellationToken cancellationToken)
         {
             var container = services.BuildServiceProvider();
             container.GetRequiredService<IBootstrapper>().BootstrapAsync(cancellationToken).Wait(cancellationToken);

@@ -60,12 +60,10 @@ public sealed class StringExtensionsToInvariantDigitsTests : IDisposable
 
     private static void _Test(string? value, string? expected)
     {
-        // act
-
+        // when
         var result = value.ToInvariantDigits();
 
-        // assert
-
+        // then
         result.Should().Be(expected);
     }
 }

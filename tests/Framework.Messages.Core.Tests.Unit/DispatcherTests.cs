@@ -18,7 +18,7 @@ public class DispatcherTests
     [Fact]
     public async Task EnqueueToPublish_ShouldInvokeSend_WhenParallelSendDisabled()
     {
-        // Arrange
+        // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new CapOptions
@@ -35,12 +35,12 @@ public class DispatcherTests
         using var cts = new CancellationTokenSource();
         const string messageId = "testId";
 
-        // Act
+        // when
         await dispatcher.StartAsync(cts.Token);
         await dispatcher.EnqueueToPublish(_CreateTestMessage(messageId));
         await cts.CancelAsync();
 
-        // Assert
+        // then
         sender.Count.Should().Be(1);
         sender.ReceivedMessages[0].DbId.Should().Be(messageId);
     }
@@ -48,7 +48,7 @@ public class DispatcherTests
     [Fact]
     public async Task EnqueueToPublish_ShouldBeThreadSafe_WhenParallelSendDisabled()
     {
-        // Arrange
+        // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new CapOptions
@@ -68,14 +68,14 @@ public class DispatcherTests
             .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
 
-        // Act
+        // when
         await dispatcher.StartAsync(cts.Token);
 
         var tasks = messages.Select(msg => Task.Run(() => dispatcher.EnqueueToPublish(msg), CancellationToken.None));
         await Task.WhenAll(tasks);
         await cts.CancelAsync();
 
-        // Assert
+        // then
         sender.Count.Should().Be(100);
         var receivedMessages = sender.ReceivedMessages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
         var expected = messages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
@@ -85,7 +85,7 @@ public class DispatcherTests
     [Fact]
     public async Task EnqueueToScheduler_ShouldBeThreadSafe_WhenDelayLessThenMinute()
     {
-        // Arrange
+        // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new CapOptions
@@ -105,7 +105,7 @@ public class DispatcherTests
             .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
 
-        // Act
+        // when
         await dispatcher.StartAsync(cts.Token);
         var dateTime = DateTime.Now.AddSeconds(1);
         await Parallel.ForEachAsync(
@@ -121,7 +121,7 @@ public class DispatcherTests
 
         await cts.CancelAsync();
 
-        // Assert
+        // then
         sender.Count.Should().Be(10000);
 
         var receivedMessages = sender.ReceivedMessages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
@@ -132,7 +132,7 @@ public class DispatcherTests
     [Fact]
     public async Task EnqueueToScheduler_ShouldSendMessagesInCorrectOrder_WhenEarlierMessageIsSentLater()
     {
-        // Arrange
+        // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new CapOptions
@@ -152,7 +152,7 @@ public class DispatcherTests
             .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
 
-        // Act
+        // when
         await dispatcher.StartAsync(cts.Token);
         var dateTime = DateTime.Now;
 
@@ -163,14 +163,14 @@ public class DispatcherTests
         await Task.Delay(1200, CancellationToken.None);
         await cts.CancelAsync();
 
-        // Assert
+        // then
         sender.ReceivedMessages.Select(m => m.DbId).Should().Equal(["3", "2", "1"]);
     }
 
     [Fact]
     public async Task EnqueueToScheduler_ShouldBeThreadSafe_WhenDelayLessThenMinuteAndParallelSendEnabled()
     {
-        // Arrange
+        // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new CapOptions
@@ -190,7 +190,7 @@ public class DispatcherTests
             .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
 
-        // Act
+        // when
         await dispatcher.StartAsync(cts.Token);
         var dateTime = DateTime.Now.AddMilliseconds(50);
 
@@ -207,7 +207,7 @@ public class DispatcherTests
 
         await cts.CancelAsync();
 
-        // Assert
+        // then
         sender.Count.Should().Be(10000);
 
         var receivedMessages = sender.ReceivedMessages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
@@ -218,7 +218,7 @@ public class DispatcherTests
     [Fact]
     public async Task EnqueueToScheduler_ShouldSendMessagesInCorrectOrder_WhenParallelSendEnabled()
     {
-        // Arrange
+        // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new CapOptions
@@ -238,7 +238,7 @@ public class DispatcherTests
             .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
 
-        // Act
+        // when
         await dispatcher.StartAsync(cts.Token);
         var dateTime = DateTime.Now;
 
@@ -249,7 +249,7 @@ public class DispatcherTests
         await Task.Delay(1200, CancellationToken.None);
         await cts.CancelAsync();
 
-        // Assert
+        // then
         sender.ReceivedMessages.Select(m => m.DbId).Should().Equal(["3", "2", "1"]);
     }
 

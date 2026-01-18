@@ -13,7 +13,6 @@ using Framework.ResourceLocks.Cache;
 using Framework.ResourceLocks.RegularLocks;
 using Framework.Settings;
 using Microsoft.EntityFrameworkCore;
-using Framework.Messages;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
 using IMessageBus = Framework.Messaging.IMessageBus;
 

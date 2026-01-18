@@ -8,7 +8,7 @@ public class TickerFunctionContextTests
     [Fact]
     public void GenericContext_Preserves_ScheduledFor_From_Base_Context()
     {
-        // Arrange
+        // given
         var scheduledFor = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
         var baseContext = new TickerFunctionContext
@@ -25,7 +25,7 @@ public class TickerFunctionContextTests
 
         var request = new TestRequest { Value = 42 };
 
-        // Act
+        // when
         var genericContext = new TickerFunctionContext<TestRequest>(baseContext, request)
         {
             FunctionName = baseContext.FunctionName,
@@ -33,7 +33,7 @@ public class TickerFunctionContextTests
             RequestCancelOperationAction = baseContext.RequestCancelOperationAction,
         };
 
-        // Assert
+        // then
         Assert.Equal(baseContext.Id, genericContext.Id);
         Assert.Equal(baseContext.Type, genericContext.Type);
         Assert.Equal(baseContext.RetryCount, genericContext.RetryCount);

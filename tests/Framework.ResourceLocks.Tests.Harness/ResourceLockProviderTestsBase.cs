@@ -146,7 +146,7 @@ public abstract class ResourceLockProviderTestsBase : TestBase
 
         try
         {
-            // Assert is locked
+            // then is locked
             lock1.Should().NotBeNull();
             (await locker.IsLockedAsync(resource)).Should().BeTrue();
 
