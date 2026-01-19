@@ -8,11 +8,11 @@ builder.Services.AddMessages(messaging =>
 });
 
 builder.Services.AddCap(x =>
-    {
-        x.UseInMemoryStorage();
-        x.UsePulsar(pulsarUri);
-        x.UseDashboard();
-    });
+{
+    x.UseInMemoryStorage();
+    x.UsePulsar(pulsarUri);
+    x.UseDashboard();
+});
 
 builder.Services.AddControllers();
 

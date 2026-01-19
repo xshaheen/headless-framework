@@ -532,7 +532,8 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
                         .Select(statusGroup => new Tuple<int, int>((int)statusGroup.Key, statusGroup.Count()))
                         .ToArray(),
                 })
-                .FirstOrDefault() ?? new CronOccurrenceTickerGraphData { Date = today, Results = [] };
+                .FirstOrDefault()
+            ?? new CronOccurrenceTickerGraphData { Date = today, Results = [] };
 
         var cronTickerOccurrencesFuture = await _persistenceProvider.GetAllCronTickerOccurrences(
             x => x.CronTickerId == guid && x.ExecutionTime.Date > today,

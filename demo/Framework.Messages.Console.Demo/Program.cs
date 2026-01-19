@@ -13,14 +13,15 @@ container.AddMessages(messaging =>
     messaging.Consumer<EventConsumer>().Topic("sample.console.showtime").Build();
 });
 
-container.AddCap(x =>
-{
-    //console app does not support dashboard
+container
+    .AddCap(x =>
+    {
+        //console app does not support dashboard
 
-    x.UseInMemoryStorage();
-    x.UseInMemoryMessageQueue();
-})
-.AddSubscribeFilter<CustomConsumerFilter>();
+        x.UseInMemoryStorage();
+        x.UseInMemoryMessageQueue();
+    })
+    .AddSubscribeFilter<CustomConsumerFilter>();
 
 var sp = container.BuildServiceProvider();
 

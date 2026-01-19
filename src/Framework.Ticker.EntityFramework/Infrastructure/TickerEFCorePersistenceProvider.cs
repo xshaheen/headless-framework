@@ -51,7 +51,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var baseQuery = dbContext
             .Set<TTimeTicker>()
             .Include(x => x.Children)
-            .ThenInclude(x => x.Children)
+                .ThenInclude(x => x.Children)
             .AsNoTracking();
 
         if (predicate != null)
@@ -78,7 +78,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var baseQuery = dbContext
             .Set<TTimeTicker>()
             .Include(x => x.Children)
-            .ThenInclude(x => x.Children)
+                .ThenInclude(x => x.Children)
             .AsNoTracking();
 
         if (predicate != null)
@@ -121,7 +121,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var tickersToDelete = await dbContext
             .Set<TTimeTicker>()
             .Include(x => x.Children)
-            .ThenInclude(x => x.Children) // Include grandchildren if needed
+                .ThenInclude(x => x.Children) // Include grandchildren if needed
             .Where(x => timeTickerIds.Contains(x.Id))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);

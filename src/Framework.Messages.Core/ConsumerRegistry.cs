@@ -34,8 +34,8 @@ internal sealed class ConsumerRegistry
         if (_frozen != null)
         {
             throw new InvalidOperationException(
-                "Cannot register consumers after the registry has been frozen. " +
-                "Ensure all consumers are registered during configuration before the application starts."
+                "Cannot register consumers after the registry has been frozen. "
+                    + "Ensure all consumers are registered during configuration before the application starts."
             );
         }
 
@@ -54,9 +54,7 @@ internal sealed class ConsumerRegistry
     {
         if (_frozen != null)
         {
-            throw new InvalidOperationException(
-                "Cannot update consumers after the registry has been frozen."
-            );
+            throw new InvalidOperationException("Cannot update consumers after the registry has been frozen.");
         }
 
         var index = _consumers!.FindIndex(m => predicate(m));
@@ -76,7 +74,7 @@ internal sealed class ConsumerRegistry
         if (_frozen == null)
         {
             _frozen = _consumers!.AsReadOnly();
-            _consumers = null;  // Release for GC
+            _consumers = null; // Release for GC
         }
 
         return _frozen;

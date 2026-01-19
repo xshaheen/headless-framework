@@ -151,7 +151,10 @@ public class SqlServerDataStorage(
             new SqlParameter("@Content", content),
             new SqlParameter("@Retries", capOptions.Value.FailedRetryCount),
             new SqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
-            new SqlParameter("@ExpiresAt", timeProvider.GetUtcNow().UtcDateTime.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)),
+            new SqlParameter(
+                "@ExpiresAt",
+                timeProvider.GetUtcNow().UtcDateTime.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)
+            ),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
         ];
 

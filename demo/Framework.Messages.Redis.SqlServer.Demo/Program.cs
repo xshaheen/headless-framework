@@ -15,20 +15,20 @@ builder.Services.AddMessages(messaging =>
 });
 
 builder.Services.AddCap(options =>
+{
+    options.UseRedis(redis =>
     {
-        options.UseRedis(redis =>
+        redis.Configuration = ConfigurationOptions.Parse("redis-node-0:6379,password=cap");
+        redis.OnConsumeError = context =>
         {
-            redis.Configuration = ConfigurationOptions.Parse("redis-node-0:6379,password=cap");
-            redis.OnConsumeError = context =>
-            {
-                throw new InvalidOperationException("");
-            };
-        });
-
-        options.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
-
-        options.UseDashboard();
+            throw new InvalidOperationException("");
+        };
     });
+
+    options.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
+
+    options.UseDashboard();
+});
 
 var app = builder.Build();
 

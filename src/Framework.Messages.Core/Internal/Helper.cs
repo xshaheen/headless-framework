@@ -65,14 +65,12 @@ public static class Helper
 
         if (wildcard.IndexOf('*') >= 0)
         {
-            return ("^" + Regex.Escape(wildcard) + "$")
-                .Replace(Regex.Escape("*"), "[0-9a-zA-Z]+?");  // Non-greedy
+            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("*"), "[0-9a-zA-Z]+?"); // Non-greedy
         }
 
         if (wildcard.IndexOf('#') >= 0)
         {
-            return ("^" + Regex.Escape(wildcard) + "$")
-                .Replace(Regex.Escape("#"), "[0-9a-zA-Z\\.]+?");  // Non-greedy
+            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("#"), "[0-9a-zA-Z\\.]+?"); // Non-greedy
         }
 
         return Regex.Escape(wildcard);
