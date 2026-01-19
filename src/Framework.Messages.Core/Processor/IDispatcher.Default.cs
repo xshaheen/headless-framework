@@ -19,7 +19,8 @@ public class Dispatcher : IDispatcher
     private readonly CapOptions _options;
     private readonly IMessageSender _sender;
     private readonly IDataStorage _storage;
-    private readonly ScheduledMediumMessageQueue _schedulerQueue = new();
+    private readonly TimeProvider _timeProvider;
+    private readonly ScheduledMediumMessageQueue _schedulerQueue;
     private readonly bool _enableParallelExecute;
     private readonly bool _enableParallelSend;
     private readonly int _publishChannelSize;
@@ -34,7 +35,8 @@ public class Dispatcher : IDispatcher
         IMessageSender sender,
         IOptions<CapOptions> options,
         ISubscribeExecutor executor,
-        IDataStorage storage
+        IDataStorage storage,
+        TimeProvider timeProvider
     )
     {
         _logger = logger;
@@ -42,6 +44,8 @@ public class Dispatcher : IDispatcher
         _options = options.Value;
         _executor = executor;
         _storage = storage;
+        _timeProvider = timeProvider;
+        _schedulerQueue = new ScheduledMediumMessageQueue(timeProvider);
         _enableParallelExecute = _options.EnableSubscriberParallelExecute;
         _enableParallelSend = _options.EnablePublishParallelSend;
         _publishChannelSize = Environment.ProcessorCount * 500;
@@ -72,7 +76,7 @@ public class Dispatcher : IDispatcher
     {
         message.ExpiresAt = publishTime;
 
-        var timeSpan = publishTime - DateTime.Now;
+        var timeSpan = publishTime - _timeProvider.GetUtcNow().UtcDateTime;
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
         await _storage.ChangePublishStateAsync(message, statusName, transaction).ConfigureAwait(false);

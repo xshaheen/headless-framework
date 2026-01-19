@@ -4,7 +4,7 @@ using Framework.Messages.Monitoring;
 
 namespace Framework.Messages.Internal;
 
-public class ScheduledMediumMessageQueue
+public class ScheduledMediumMessageQueue(TimeProvider timeProvider)
 {
     private readonly SortedSet<(long, MediumMessage)> _queue = new(
         Comparer<(long, MediumMessage)>.Create(
@@ -66,7 +66,7 @@ public class ScheduledMediumMessageQueue
                 if (_queue.Count > 0)
                 {
                     var topMessage = _queue.First();
-                    var timeLeft = topMessage.Item1 - DateTime.Now.Ticks;
+                    var timeLeft = topMessage.Item1 - timeProvider.GetUtcNow().UtcDateTime.Ticks;
                     if (timeLeft < 500000) // 50ms
                     {
                         nextItem = topMessage;

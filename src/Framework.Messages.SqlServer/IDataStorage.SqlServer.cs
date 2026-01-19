@@ -20,7 +20,8 @@ public class SqlServerDataStorage(
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
     ISerializer serializer,
-    ILongIdGenerator longIdGenerator
+    ILongIdGenerator longIdGenerator,
+    TimeProvider timeProvider
 ) : IDataStorage
 {
     private readonly string _lockName = initializer.GetLockTableName();
@@ -41,9 +42,9 @@ public class SqlServerDataStorage(
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
-            new SqlParameter("@LastLockTime", DateTime.Now),
+            new SqlParameter("@LastLockTime", timeProvider.GetUtcNow().UtcDateTime),
             new SqlParameter("@Key", key),
-            new SqlParameter("@TTL", DateTime.Now.Subtract(ttl)),
+            new SqlParameter("@TTL", timeProvider.GetUtcNow().UtcDateTime.Subtract(ttl)),
         ];
         var opResult = await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
         return opResult > 0;
@@ -103,7 +104,7 @@ public class SqlServerDataStorage(
             DbId = content.GetId(),
             Origin = content,
             Content = serializer.Serialize(content),
-            Added = DateTime.Now,
+            Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
             Retries = 0,
         };
@@ -149,8 +150,8 @@ public class SqlServerDataStorage(
             new SqlParameter("@Group", group),
             new SqlParameter("@Content", content),
             new SqlParameter("@Retries", capOptions.Value.FailedRetryCount),
-            new SqlParameter("@Added", DateTime.Now),
-            new SqlParameter("@ExpiresAt", DateTime.Now.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)),
+            new SqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
+            new SqlParameter("@ExpiresAt", timeProvider.GetUtcNow().UtcDateTime.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
         ];
 
@@ -164,7 +165,7 @@ public class SqlServerDataStorage(
             DbId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
             Origin = message,
             Content = serializer.Serialize(message),
-            Added = DateTime.Now,
+            Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
             Retries = 0,
         };
@@ -261,8 +262,8 @@ public class SqlServerDataStorage(
         object[] sqlParams =
         [
             new SqlParameter("@Version", capOptions.Value.Version),
-            new SqlParameter("@TwoMinutesLater", DateTime.Now.AddMinutes(2)),
-            new SqlParameter("@OneMinutesAgo", DateTime.Now.AddMinutes(-1)),
+            new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2)),
+            new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1)),
             new SqlParameter("@BatchSize", capOptions.Value.SchedulerBatchSize),
         ];
 
@@ -306,7 +307,7 @@ public class SqlServerDataStorage(
 
     public IMonitoringApi GetMonitoringApi()
     {
-        return new SqlServerMonitoringApi(options, initializer, serializer);
+        return new SqlServerMonitoringApi(options, initializer, serializer, timeProvider);
     }
 
     private async Task _ChangeMessageStateAsync(
@@ -357,7 +358,7 @@ public class SqlServerDataStorage(
         TimeSpan lookbackSeconds
     )
     {
-        var fourMinAgo = DateTime.Now.Subtract(lookbackSeconds);
+        var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
 
         var sql =
             $"SELECT TOP (200) Id, Content, Retries, Added FROM {tableName} WITH (READPAST) "

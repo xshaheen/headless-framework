@@ -81,6 +81,7 @@ public static class Setup
         services.AddSingleton(_ => services);
         services.TryAddSingleton(new CapMarkerService("CAP"));
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxPublisher, OutboxPublisher>();
 
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();

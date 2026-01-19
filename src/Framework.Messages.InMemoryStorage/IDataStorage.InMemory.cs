@@ -16,7 +16,8 @@ namespace Framework.Messages;
 internal class InMemoryStorage(
     IOptions<CapOptions> capOptions,
     ISerializer serializer,
-    ILongIdGenerator longIdGenerator
+    ILongIdGenerator longIdGenerator,
+    TimeProvider timeProvider
 )
 #pragma warning restore MA0049
     : IDataStorage
@@ -73,7 +74,7 @@ internal class InMemoryStorage(
             DbId = content.GetId(),
             Origin = content,
             Content = serializer.Serialize(content),
-            Added = DateTime.Now,
+            Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
             Retries = 0,
         };
@@ -105,8 +106,8 @@ internal class InMemoryStorage(
             Name = name,
             Content = content,
             Retries = capOptions.Value.FailedRetryCount,
-            Added = DateTime.Now,
-            ExpiresAt = DateTime.Now.AddSeconds(capOptions.Value.FailedMessageExpiredAfter),
+            Added = timeProvider.GetUtcNow().UtcDateTime,
+            ExpiresAt = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(capOptions.Value.FailedMessageExpiredAfter),
             StatusName = StatusName.Failed,
         };
 
@@ -120,7 +121,7 @@ internal class InMemoryStorage(
             DbId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
             Origin = message,
             Content = serializer.Serialize(message),
-            Added = DateTime.Now,
+            Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
             Retries = 0,
         };
@@ -178,7 +179,7 @@ internal class InMemoryStorage(
         IEnumerable<MediumMessage> result = PublishedMessages
             .Values.Where(x =>
                 x.Retries < capOptions.Value.FailedRetryCount
-                && x.Added < DateTime.Now.Subtract(lookbackSeconds)
+                && x.Added < timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds)
                 && (x.StatusName == StatusName.Scheduled || x.StatusName == StatusName.Failed)
             )
             .Take(200)
@@ -198,7 +199,7 @@ internal class InMemoryStorage(
         IEnumerable<MediumMessage> result = ReceivedMessages
             .Values.Where(x =>
                 x.Retries < capOptions.Value.FailedRetryCount
-                && x.Added < DateTime.Now.Subtract(lookbackSeconds)
+                && x.Added < timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds)
                 && (x.StatusName == StatusName.Scheduled || x.StatusName == StatusName.Failed)
             )
             .Take(200)
@@ -227,8 +228,8 @@ internal class InMemoryStorage(
     {
         var result = PublishedMessages
             .Values.Where(x =>
-                (x.StatusName == StatusName.Delayed && x.ExpiresAt < DateTime.Now.AddMinutes(2))
-                || (x.StatusName == StatusName.Queued && x.ExpiresAt < DateTime.Now.AddMinutes(-1))
+                (x.StatusName == StatusName.Delayed && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2))
+                || (x.StatusName == StatusName.Queued && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1))
             )
             .Take(capOptions.Value.SchedulerBatchSize)
             .Select(x => (MediumMessage)x);
@@ -238,6 +239,6 @@ internal class InMemoryStorage(
 
     public IMonitoringApi GetMonitoringApi()
     {
-        return new InMemoryMonitoringApi();
+        return new InMemoryMonitoringApi(timeProvider);
     }
 }
