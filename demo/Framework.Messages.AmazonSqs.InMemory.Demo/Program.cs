@@ -8,11 +8,11 @@ builder.Services.AddMessages(messaging =>
 });
 
 builder.Services.AddCap(x =>
-    {
-        x.UseInMemoryStorage();
-        x.UseAmazonSqs(RegionEndpoint.CNNorthWest1);
-        x.UseDashboard();
-    });
+{
+    x.UseInMemoryStorage();
+    x.UseAmazonSqs(RegionEndpoint.CNNorthWest1);
+    x.UseDashboard();
+});
 
 builder.Services.AddControllers();
 

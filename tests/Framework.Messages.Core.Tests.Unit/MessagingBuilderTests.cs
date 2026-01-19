@@ -369,11 +369,7 @@ public class MessagingBuilderTests
         // When
         services.AddMessages(messaging =>
         {
-            messaging
-                .Consumer<TestOrderConsumer>("orders.placed")
-                .WithConcurrency(5)
-                .Group("order-service")
-                .Build();
+            messaging.Consumer<TestOrderConsumer>("orders.placed").WithConcurrency(5).Group("order-service").Build();
         });
 
         var provider = services.BuildServiceProvider();

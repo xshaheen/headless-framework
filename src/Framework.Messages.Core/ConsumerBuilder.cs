@@ -19,7 +19,13 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private string? _group;
     private byte _concurrency = 1;
 
-    internal ConsumerBuilder(MessagingBuilder parent, ConsumerRegistry registry, Type messageType, string? topic = null, bool autoRegistered = false)
+    internal ConsumerBuilder(
+        MessagingBuilder parent,
+        ConsumerRegistry registry,
+        Type messageType,
+        string? topic = null,
+        bool autoRegistered = false
+    )
     {
         _parent = parent;
         _registry = registry;

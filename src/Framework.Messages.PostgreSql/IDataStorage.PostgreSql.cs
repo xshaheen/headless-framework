@@ -149,7 +149,10 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Content", content),
             new NpgsqlParameter("@Retries", capOptions.Value.FailedRetryCount),
             new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
-            new NpgsqlParameter("@ExpiresAt", timeProvider.GetUtcNow().UtcDateTime.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)),
+            new NpgsqlParameter(
+                "@ExpiresAt",
+                timeProvider.GetUtcNow().UtcDateTime.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)
+            ),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
         ];
 

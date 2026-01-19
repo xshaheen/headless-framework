@@ -229,7 +229,10 @@ internal class InMemoryStorage(
         var result = PublishedMessages
             .Values.Where(x =>
                 (x.StatusName == StatusName.Delayed && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2))
-                || (x.StatusName == StatusName.Queued && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1))
+                || (
+                    x.StatusName == StatusName.Queued
+                    && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1)
+                )
             )
             .Take(capOptions.Value.SchedulerBatchSize)
             .Select(x => (MediumMessage)x);

@@ -14,16 +14,14 @@ namespace Framework.Messages.Internal.ObjectMethodExecutor;
 internal class ObjectMethodExecutor
 {
     private static readonly ConstructorInfo _ObjectMethodExecutorAwaitableConstructor =
-        typeof(ObjectMethodExecutorAwaitable).GetConstructor(
-            [
-                typeof(object), // customAwaitable
-                typeof(Func<object, object>), // getAwaiterMethod
-                typeof(Func<object, bool>), // isCompletedMethod
-                typeof(Func<object, object>), // getResultMethod
-                typeof(Action<object, Action>), // onCompletedMethod
-                typeof(Action<object, Action>), // unsafeOnCompletedMethod
-            ]
-        )!;
+        typeof(ObjectMethodExecutorAwaitable).GetConstructor([
+            typeof(object), // customAwaitable
+            typeof(Func<object, object>), // getAwaiterMethod
+            typeof(Func<object, bool>), // isCompletedMethod
+            typeof(Func<object, object>), // getResultMethod
+            typeof(Action<object, Action>), // onCompletedMethod
+            typeof(Action<object, Action>), // unsafeOnCompletedMethod
+        ])!;
 
     private readonly MethodExecutor? _executor;
     private readonly MethodExecutorAsync? _executorAsync;
