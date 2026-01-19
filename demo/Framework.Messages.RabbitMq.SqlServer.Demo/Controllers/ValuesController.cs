@@ -131,11 +131,13 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
 
         return Content("ok");
     }
+}
 
-    [NonAction]
-    [CapSubscribe("sample.rabbitmq.sqlserver")]
-    public void Subscriber(Person p)
+public sealed class PersonConsumer : IConsume<Person>
+{
+    public ValueTask Consume(ConsumeContext<Person> context, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($@"{DateTime.Now} Subscriber invoked, Info: {p}");
+        Console.WriteLine($@"{DateTime.Now} Subscriber invoked, Info: {context.Message}");
+        return ValueTask.CompletedTask;
     }
 }

@@ -8,6 +8,10 @@ var container = new ServiceCollection();
 
 container.AddLogging(x => x.AddConsole());
 container
+    .AddMessages(messaging =>
+    {
+        messaging.Consumer<EventConsumer>().Topic("sample.console.showtime").Build();
+    })
     .AddCap(x =>
     {
         //console app does not support dashboard
@@ -16,8 +20,6 @@ container
         x.UseInMemoryMessageQueue();
     })
     .AddSubscribeFilter<CustomConsumerFilter>();
-
-container.AddSingleton<EventConsumer>();
 
 var sp = container.BuildServiceProvider();
 

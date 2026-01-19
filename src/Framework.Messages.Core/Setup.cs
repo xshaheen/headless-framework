@@ -86,6 +86,7 @@ public static class Setup
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
+        services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
@@ -133,5 +134,52 @@ public static class Setup
         services.AddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
 
         return new CapBuilder(services);
+    }
+
+    /// <summary>
+    /// Registers message consumers and configures messaging infrastructure using the type-safe IConsume&lt;T&gt; pattern.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">A delegate to configure message consumers and topic mappings.</param>
+    /// <returns>A <see cref="CapBuilder"/> for additional CAP configuration.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// This method provides a fluent API for registering message consumers that implement <see cref="IConsume{TMessage}"/>.
+    /// It supports both automatic assembly scanning and explicit consumer registration.
+    /// </para>
+    /// <para>
+    /// <strong>Example:</strong>
+    /// <code>
+    /// services.AddMessages(messaging =>
+    /// {
+    ///     // Auto-discover consumers
+    ///     messaging.ScanConsumers(typeof(Program).Assembly);
+    ///
+    ///     // Or register specific consumers
+    ///     messaging.Consumer&lt;OrderPlacedHandler&gt;()
+    ///         .Topic("orders.placed")
+    ///         .Group("order-service")
+    ///         .WithConcurrency(5)
+    ///         .Build();
+    ///
+    ///     // Map message types to topics
+    ///     messaging.WithTopicMapping&lt;OrderPlaced&gt;("orders.placed");
+    /// });
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public static CapBuilder AddMessages(this IServiceCollection services, Action<IMessagingBuilder> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        // Create the messaging builder
+        var builder = new MessagingBuilder(services);
+
+        // Let the user configure consumers
+        configure(builder);
+
+        // Continue with standard CAP registration (empty config - user configures CAP separately)
+        return services.AddCap(_ => { });
     }
 }

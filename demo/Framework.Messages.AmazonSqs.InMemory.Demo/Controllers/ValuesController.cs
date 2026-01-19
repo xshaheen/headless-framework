@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher producer) : Controller, IConsumer
+public class ValuesController(IOutboxPublisher producer) : Controller
 {
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
@@ -13,10 +13,15 @@ public class ValuesController(IOutboxPublisher producer) : Controller, IConsumer
 
         return Ok();
     }
+}
 
-    [CapSubscribe("sample.aws.in-memory")]
-    public void SubscribeInMemoryTopic(DateTime value)
+public record AmazonSqsMessage(DateTime Value);
+
+public sealed class AmazonSqsMessageConsumer : IConsume<AmazonSqsMessage>
+{
+    public ValueTask Consume(ConsumeContext<AmazonSqsMessage> context, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"Subscriber output message: {value}");
+        Console.WriteLine($"Subscriber output message: {context.Message.Value}");
+        return ValueTask.CompletedTask;
     }
 }

@@ -2,13 +2,13 @@ using Framework.Messages;
 
 namespace Demo;
 
-public class SampleSubscriber : IConsumer
-{
-    public record Message(string Content);
+public record SampleMessage(string Content);
 
-    [CapSubscribe("cap.sample.tests")]
-    public void Handle(Message message)
+public sealed class SampleSubscriber : IConsume<SampleMessage>
+{
+    public ValueTask Consume(ConsumeContext<SampleMessage> context, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"Message {message.Content} received");
+        Console.WriteLine($"Message {context.Message.Content} received");
+        return ValueTask.CompletedTask;
     }
 }

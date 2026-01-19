@@ -76,179 +76,71 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
 
     protected virtual IEnumerable<ConsumerExecutorDescriptor> FindConsumersFromInterfaceTypes(IServiceProvider provider)
     {
-        // Single-pass scan over service registrations to discover IConsumer implementations (keyed & non-keyed)
-        var results = new List<ConsumerExecutorDescriptor>();
-        var subscribeTypeInfo = typeof(IConsumer).GetTypeInfo();
+        // Get registered consumers from the ConsumerRegistry
+        var registry = provider.GetService<ConsumerRegistry>();
 
-        using var scope = provider.CreateScope();
-        var scopeProvider = scope.ServiceProvider;
-        var serviceCollection = scopeProvider.GetRequiredService<IServiceCollection>();
-
-        foreach (var service in serviceCollection)
+        // If no registry found, return empty (backwards compatibility with old pattern)
+        if (registry == null)
         {
-            Type detectType;
-            Type? actualType;
+            return [];
+        }
 
-            if (service.IsKeyedService)
+        var results = new List<ConsumerExecutorDescriptor>();
+        var metadata = registry.GetAll();
+
+        foreach (var consumer in metadata)
+        {
+            // Build ConsumerExecutorDescriptor from metadata
+            var consumeMethod = typeof(IConsume<>)
+                .MakeGenericType(consumer.MessageType)
+                .GetMethod(nameof(IConsume<object>.Consume))!;
+
+            var descriptor = new ConsumerExecutorDescriptor
             {
-                // Fast skip for keyed services
-                var hasKeyedImpl =
-                    service.KeyedImplementationType != null || service.KeyedImplementationFactory != null;
-                if (!hasKeyedImpl)
-                {
-                    continue;
-                }
+                ServiceTypeInfo = consumer.ConsumerType.GetTypeInfo(),
+                ImplTypeInfo = consumer.ConsumerType.GetTypeInfo(),
+                MethodInfo = consumeMethod,
+                TopicName = consumer.Topic,
+                GroupName = _GetGroupName(consumer),
+                Parameters = _BuildParameters(consumeMethod),
+                TopicNamePrefix = _capOptions.TopicNamePrefix,
+            };
 
-                detectType = service.KeyedImplementationType ?? service.ServiceType;
-                if (!subscribeTypeInfo.IsAssignableFrom(detectType))
-                {
-                    continue;
-                }
-
-                actualType = service.KeyedImplementationType;
-                if (actualType == null && service.KeyedImplementationFactory != null)
-                {
-                    // Resolve keyed instance to get its runtime type
-                    var instance = scopeProvider.GetRequiredKeyedService(service.ServiceType, service.ServiceKey);
-                    actualType = instance?.GetType();
-                }
-            }
-            else
-            {
-                // Fast skip for non-keyed services
-                var hasImpl = service.ImplementationType != null || service.ImplementationFactory != null;
-                if (!hasImpl)
-                {
-                    continue;
-                }
-
-                detectType = service.ImplementationType ?? service.ServiceType;
-                if (!subscribeTypeInfo.IsAssignableFrom(detectType))
-                {
-                    continue;
-                }
-
-                actualType = service.ImplementationType;
-                if (actualType == null && service.ImplementationFactory != null)
-                {
-                    // Resolve instance produced by factory to inspect runtime type
-                    var instance = scopeProvider.GetRequiredService(service.ServiceType);
-                    actualType = instance?.GetType();
-                }
-            }
-
-            if (actualType == null)
-            {
-                // Consistent error message for diagnostic purposes
-                throw new InvalidOperationException(
-                    $"Unable to resolve actual subscriber type for service: {service.ServiceType.FullName}"
-                );
-            }
-
-            var serviceTypeInfo = service.ServiceType.GetTypeInfo();
-            results.AddRange(GetTopicAttributesDescription(actualType.GetTypeInfo(), serviceTypeInfo));
+            results.Add(descriptor);
         }
 
         return results;
     }
 
-    protected virtual IEnumerable<ConsumerExecutorDescriptor> FindConsumersFromControllerTypes()
-    {
-        var executorDescriptorList = new List<ConsumerExecutorDescriptor>();
-
-        var types = Assembly.GetEntryAssembly()!.ExportedTypes;
-        foreach (var type in types)
-        {
-            var typeInfo = type.GetTypeInfo();
-            if (Helper.IsController(typeInfo))
-            {
-                executorDescriptorList.AddRange(GetTopicAttributesDescription(typeInfo));
-            }
-        }
-
-        return executorDescriptorList;
-    }
-
-    protected IEnumerable<ConsumerExecutorDescriptor> GetTopicAttributesDescription(
-        TypeInfo typeInfo,
-        TypeInfo? serviceTypeInfo = null
-    )
-    {
-        var topicClassAttribute = typeInfo.GetCustomAttribute<TopicAttribute>(true);
-
-        foreach (var method in typeInfo.GetRuntimeMethods())
-        {
-            var topicMethodAttributes = method.GetCustomAttributes<TopicAttribute>(true);
-
-            // Ignore partial attributes when no topic attribute is defined on class.
-            if (topicClassAttribute is null)
-            {
-                topicMethodAttributes = topicMethodAttributes.Where(x => !x.IsPartial && x.Name != null);
-            }
-
-            if (!topicMethodAttributes.Any())
-            {
-                continue;
-            }
-
-            foreach (var attr in topicMethodAttributes)
-            {
-                SetSubscribeAttribute(attr);
-
-                var parameters = method
-                    .GetParameters()
-                    .Select(parameter => new ParameterDescriptor
-                    {
-                        Name = parameter.Name!,
-                        ParameterType = parameter.ParameterType,
-                        IsFromCap =
-                            parameter.GetCustomAttributes(typeof(FromCapAttribute)).Any()
-                            || typeof(CancellationToken).IsAssignableFrom(parameter.ParameterType),
-                    })
-                    .ToList();
-
-                yield return _InitDescriptor(attr, method, typeInfo, serviceTypeInfo, parameters, topicClassAttribute);
-            }
-        }
-    }
-
-    protected virtual void SetSubscribeAttribute(TopicAttribute attribute)
+    private string _GetGroupName(ConsumerMetadata metadata)
     {
         var prefix = !string.IsNullOrEmpty(_capOptions.GroupNamePrefix)
             ? $"{_capOptions.GroupNamePrefix}."
             : string.Empty;
 
-        if (attribute.Group == null && attribute.GroupConcurrent > 0)
-        {
-            attribute.Group = $"{prefix}{attribute.Name}.{_capOptions.Version}";
-        }
-        else
-        {
-            attribute.Group = $"{prefix}{attribute.Group ?? _capOptions.DefaultGroupName}.{_capOptions.Version}";
-        }
+        var baseGroup = metadata.Group ?? _capOptions.DefaultGroupName;
+
+        return $"{prefix}{baseGroup}.{_capOptions.Version}";
     }
 
-    private ConsumerExecutorDescriptor _InitDescriptor(
-        TopicAttribute attr,
-        MethodInfo methodInfo,
-        TypeInfo implType,
-        TypeInfo? serviceTypeInfo,
-        List<ParameterDescriptor> parameters,
-        TopicAttribute? classAttr = null
-    )
+    private List<ParameterDescriptor> _BuildParameters(MethodInfo method)
     {
-        var descriptor = new ConsumerExecutorDescriptor
-        {
-            Attribute = attr,
-            ClassAttribute = classAttr,
-            MethodInfo = methodInfo,
-            ImplTypeInfo = implType,
-            ServiceTypeInfo = serviceTypeInfo,
-            Parameters = parameters,
-            TopicNamePrefix = _capOptions.TopicNamePrefix,
-        };
+        return method
+            .GetParameters()
+            .Select(p => new ParameterDescriptor
+            {
+                Name = p.Name!,
+                ParameterType = p.ParameterType,
+                IsFromCap = p.ParameterType == typeof(CancellationToken),
+            })
+            .ToList();
+    }
 
-        return descriptor;
+    protected virtual IEnumerable<ConsumerExecutorDescriptor> FindConsumersFromControllerTypes()
+    {
+        // Controller-based consumers are no longer supported with IConsume<T> pattern
+        // Use IMessagingBuilder.ScanConsumers() or Consumer<T>() instead
+        return [];
     }
 
     private static ConsumerExecutorDescriptor? _MatchUsingName(
@@ -268,7 +160,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
         IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor
     )
     {
-        var group = executeDescriptor[0].Attribute.Group;
+        var group = executeDescriptor[0].GroupName;
         if (!_cacheList.TryGetValue(group, out var tmpList))
         {
             tmpList = executeDescriptor

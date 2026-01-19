@@ -28,9 +28,7 @@ namespace Framework.Messages;
 ///     // Or register specific consumers with custom configuration
 ///     options.Consumer&lt;OrderPlacedHandler&gt;()
 ///         .Topic("orders.placed")
-///         .WithRetry(new ExponentialBackoffStrategy())
-///         .WithConcurrency(maxInFlight: 10)
-///         .WithThrottling(maxMessages: 100, perSecond: 1);
+///         .WithConcurrency(10);
 /// });
 /// </code>
 /// </para>
@@ -89,16 +87,14 @@ public interface IMessagingBuilder
     /// <remarks>
     /// <para>
     /// Use this method when you need fine-grained control over a specific consumer's configuration,
-    /// such as custom topic names, retry strategies, concurrency limits, or filtering.
+    /// such as custom topic names, concurrency limits, or filtering.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
     /// options.Consumer&lt;OrderPlacedHandler&gt;()
     ///     .Topic("orders.placed.v2") // Override convention-based topic
-    ///     .WithConcurrency(maxInFlight: 5) // Limit concurrent processing
-    ///     .WithRetry(new ExponentialBackoffStrategy())
-    ///     .WithOrdering(ctx => ctx.Message.OrderId.ToString()); // Sequential per OrderId
+    ///     .WithConcurrency(5); // Limit concurrent processing
     /// </code>
     /// </para>
     /// </remarks>

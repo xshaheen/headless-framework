@@ -105,11 +105,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
         try
         {
-            _logger.ConsumerExecuting(
-                descriptor.ImplTypeInfo.Name,
-                descriptor.MethodInfo.Name,
-                descriptor.Attribute.Group
-            );
+            _logger.ConsumerExecuting(descriptor.ImplTypeInfo.Name, descriptor.MethodInfo.Name, descriptor.GroupName);
 
             var sp = Stopwatch.StartNew();
 
@@ -123,7 +119,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
             _logger.ConsumerExecuted(
                 descriptor.ImplTypeInfo.Name,
                 descriptor.MethodInfo.Name,
-                descriptor.Attribute.Group,
+                descriptor.GroupName,
                 sp.Elapsed.TotalMilliseconds,
                 message.Origin.GetExecutionInstanceId()
             );

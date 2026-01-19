@@ -167,12 +167,9 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
         var methodCall = Expression.Call(handlerParam, consumeMethod, contextParam, cancellationTokenParam);
 
         // Create lambda: (handler, context, ct) => handler.Consume(context, ct)
-        var lambda = Expression.Lambda<Func<IConsume<TMessage>, ConsumeContext<TMessage>, CancellationToken, ValueTask>>(
-            methodCall,
-            handlerParam,
-            contextParam,
-            cancellationTokenParam
-        );
+        var lambda = Expression.Lambda<
+            Func<IConsume<TMessage>, ConsumeContext<TMessage>, CancellationToken, ValueTask>
+        >(methodCall, handlerParam, contextParam, cancellationTokenParam);
 
         // Compile with FastExpressionCompiler for optimal performance
         return lambda.CompileFast();

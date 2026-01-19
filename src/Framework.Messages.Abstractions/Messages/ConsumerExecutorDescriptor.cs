@@ -16,42 +16,19 @@ public class ConsumerExecutorDescriptor
 
     public required TypeInfo ImplTypeInfo { get; init; }
 
-    public required TopicAttribute Attribute { get; init; }
-
-    public TopicAttribute? ClassAttribute { get; init; }
-
     public List<ParameterDescriptor> Parameters { get; init; } = [];
 
     public string? TopicNamePrefix { get; init; }
 
     /// <summary>
-    /// Topic name based on both <see cref="Attribute" /> and <see cref="ClassAttribute" />.
+    /// Topic name for the consumer. Can be set directly or computed from attributes (legacy).
     /// </summary>
-    public string TopicName
-    {
-        get
-        {
-            if (field == null)
-            {
-                if (ClassAttribute != null && Attribute.IsPartial)
-                {
-                    // Allows class level attribute name to end with a '.' and allows methods level attribute to start with a '.'.
-                    field = $"{ClassAttribute.Name.TrimEnd('.')}.{Attribute.Name.TrimStart('.')}";
-                }
-                else
-                {
-                    field = Attribute.Name;
-                }
+    public required string TopicName { get; init; }
 
-                if (!string.IsNullOrEmpty(TopicNamePrefix) && !string.IsNullOrEmpty(field))
-                {
-                    field = $"{TopicNamePrefix}.{field}";
-                }
-            }
-
-            return field;
-        }
-    }
+    /// <summary>
+    /// Group name for the consumer.
+    /// </summary>
+    public required string GroupName { get; init; }
 }
 
 public sealed class ParameterDescriptor
