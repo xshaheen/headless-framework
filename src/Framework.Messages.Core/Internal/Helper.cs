@@ -43,17 +43,39 @@ public static class Helper
 
     public static string WildcardToRegex(string wildcard)
     {
+        const int MaxWildcardLength = 200;
+        const int MaxWildcardCount = 10;
+
+        if (wildcard.Length > MaxWildcardLength)
+        {
+            throw new ArgumentException(
+                $"Topic pattern exceeds maximum length of {MaxWildcardLength} characters",
+                nameof(wildcard)
+            );
+        }
+
+        var wildcardCount = wildcard.Count(c => c == '*' || c == '#');
+        if (wildcardCount > MaxWildcardCount)
+        {
+            throw new ArgumentException(
+                $"Topic pattern contains too many wildcards (max: {MaxWildcardCount})",
+                nameof(wildcard)
+            );
+        }
+
         if (wildcard.IndexOf('*') >= 0)
         {
-            return ("^" + wildcard + "$").Replace("*", "[0-9a-zA-Z]+").Replace(".", "\\.");
+            return ("^" + Regex.Escape(wildcard) + "$")
+                .Replace(Regex.Escape("*"), "[0-9a-zA-Z]+?");  // Non-greedy
         }
 
         if (wildcard.IndexOf('#') >= 0)
         {
-            return ("^" + wildcard.Replace(".", "\\.") + "$").Replace("#", "[0-9a-zA-Z\\.]+");
+            return ("^" + Regex.Escape(wildcard) + "$")
+                .Replace(Regex.Escape("#"), "[0-9a-zA-Z\\.]+?");  // Non-greedy
         }
 
-        return wildcard;
+        return Regex.Escape(wildcard);
     }
 
     public static string? GetInstanceHostname()

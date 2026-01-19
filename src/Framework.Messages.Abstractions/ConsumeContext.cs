@@ -34,25 +34,26 @@ public sealed class ConsumeContext<TMessage>
     /// Gets the unique identifier for this message.
     /// </summary>
     /// <value>
-    /// A unique GUID that identifies this specific message instance across the entire system.
+    /// A unique string identifier that identifies this specific message instance across the entire system.
     /// Used for deduplication, tracking, and correlation in logs.
+    /// Supports GUID, ULID, snowflake IDs, or custom formats.
     /// </value>
     /// <exception cref="ArgumentException">
-    /// Thrown when attempting to set an empty GUID (<see cref="Guid.Empty"/>).
+    /// Thrown when attempting to set a null or whitespace value.
     /// </exception>
     /// <remarks>
     /// This ID should be unique per message and persist across retries of the same message.
     /// The validation prevents common configuration errors where MessageId is not properly initialized.
     /// </remarks>
-    public required Guid MessageId
+    public required string MessageId
     {
         get;
         init
         {
-            if (value == Guid.Empty)
+            if (string.IsNullOrWhiteSpace(value))
             {
                 throw new ArgumentException(
-                    "MessageId cannot be an empty GUID. Each message must have a unique identifier.",
+                    "MessageId cannot be null or whitespace. Each message must have a unique identifier.",
                     nameof(value)
                 );
             }
@@ -65,12 +66,13 @@ public sealed class ConsumeContext<TMessage>
     /// Gets the correlation identifier that links related messages together.
     /// </summary>
     /// <value>
-    /// An optional GUID that correlates this message with other related messages in a workflow or conversation.
+    /// An optional string identifier that correlates this message with other related messages in a workflow or conversation.
     /// Returns <c>null</c> if no correlation is established.
+    /// Supports GUID, ULID, snowflake IDs, or custom formats.
     /// </value>
     /// <exception cref="ArgumentException">
-    /// Thrown when attempting to set an empty GUID (<see cref="Guid.Empty"/>).
-    /// An empty GUID is not a valid correlation ID; use <c>null</c> instead to indicate no correlation.
+    /// Thrown when attempting to set an empty string.
+    /// Use <c>null</c> instead to indicate no correlation.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -87,15 +89,15 @@ public sealed class ConsumeContext<TMessage>
     /// typically be set to the parent message's MessageId or CorrelationId to maintain the trace.
     /// </para>
     /// </remarks>
-    public required Guid? CorrelationId
+    public required string? CorrelationId
     {
         get;
         init
         {
-            if (value == Guid.Empty)
+            if (value is not null && string.IsNullOrWhiteSpace(value))
             {
                 throw new ArgumentException(
-                    "CorrelationId cannot be an empty GUID. Use null to indicate no correlation.",
+                    "CorrelationId cannot be an empty string. Use null to indicate no correlation.",
                     nameof(value)
                 );
             }

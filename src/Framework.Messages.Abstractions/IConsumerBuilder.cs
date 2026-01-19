@@ -33,10 +33,6 @@ public interface IConsumerBuilder<TConsumer>
     /// <param name="topic">
     /// The topic name to subscribe to. Must not be null or whitespace.
     /// </param>
-    /// <param name="isPartial">
-    /// If true, the topic will be combined with a class-level topic to form the final topic name
-    /// (e.g., class topic "orders" + method topic "created" = "orders.created").
-    /// </param>
     /// <returns>
     /// The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.
     /// </returns>
@@ -51,14 +47,10 @@ public interface IConsumerBuilder<TConsumer>
     /// // Subscribe to versioned topic instead of default
     /// options.Consumer&lt;OrderPlacedHandler&gt;()
     ///     .Topic("orders.placed.v2");
-    ///
-    /// // Use partial topic (combines with class-level topic)
-    /// options.Consumer&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("created", isPartial: true); // becomes "orders.created" if class topic is "orders"
     /// </code>
     /// </para>
     /// </remarks>
-    IConsumerBuilder<TConsumer> Topic(string topic, bool isPartial = false);
+    IConsumerBuilder<TConsumer> Topic(string topic);
 
     /// <summary>
     /// Sets the consumer group name for this consumer.

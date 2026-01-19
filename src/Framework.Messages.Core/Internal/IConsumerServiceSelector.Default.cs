@@ -175,7 +175,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
 
         foreach (var red in tmpList)
         {
-            if (Regex.IsMatch(key, red.Name, RegexOptions.Singleline))
+            if (Regex.IsMatch(key, red.Name, RegexOptions.Singleline, TimeSpan.FromSeconds(1)))
             {
                 return red.Descriptor;
             }
