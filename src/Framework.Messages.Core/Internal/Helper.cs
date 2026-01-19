@@ -118,37 +118,51 @@ public static class Helper
 
     public static bool IsInnerIp(string ipAddress)
     {
-        var ipNum = _GetIpNum(ipAddress);
+        if (string.IsNullOrWhiteSpace(ipAddress))
+        {
+            return false;
+        }
+
+        // Ensure proper IPv4 format (must have exactly 3 dots)
+        var octets = ipAddress.Split('.');
+        if (octets.Length != 4)
+        {
+            return false;
+        }
+
+        if (!IPAddress.TryParse(ipAddress, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            return false;
+        }
 
         //Private IP：
         //category A: 10.0.0.0-10.255.255.255
         //category B: 172.16.0.0-172.31.255.255
         //category C: 192.168.0.0-192.168.255.255
 
-        var aBegin = _GetIpNum("10.0.0.0");
-        var aEnd = _GetIpNum("10.255.255.255");
-        var bBegin = _GetIpNum("172.16.0.0");
-        var bEnd = _GetIpNum("172.31.255.255");
-        var cBegin = _GetIpNum("192.168.0.0");
-        var cEnd = _GetIpNum("192.168.255.255");
-        return _IsInner(ipNum, aBegin, aEnd) || _IsInner(ipNum, bBegin, bEnd) || _IsInner(ipNum, cBegin, cEnd);
-    }
+        var bytes = ip.GetAddressBytes();
+        var first = bytes[0];
+        var second = bytes[1];
 
-    private static long _GetIpNum(string ipAddress)
-    {
-        var ip = ipAddress.Split('.');
-        long a = int.Parse(ip[0]);
-        long b = int.Parse(ip[1]);
-        long c = int.Parse(ip[2]);
-        long d = int.Parse(ip[3]);
+        // Class A: 10.0.0.0/8
+        if (first == 10)
+        {
+            return true;
+        }
 
-        var ipNum = a * 256 * 256 * 256 + b * 256 * 256 + c * 256 + d;
-        return ipNum;
-    }
+        // Class B: 172.16.0.0/12
+        if (first == 172 && second >= 16 && second <= 31)
+        {
+            return true;
+        }
 
-    private static bool _IsInner(long userIp, long begin, long end)
-    {
-        return userIp >= begin && userIp <= end;
+        // Class C: 192.168.0.0/16
+        if (first == 192 && second == 168)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool _CanConvertFromString(Type destinationType)
