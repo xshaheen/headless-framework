@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "008"
 tags: [code-review, dry, api-design, messages]
@@ -131,3 +131,9 @@ await publisher.PublishAsync<XMessage>(msg);  // Type-safe!
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-19 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

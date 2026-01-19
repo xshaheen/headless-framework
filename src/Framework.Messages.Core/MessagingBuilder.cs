@@ -81,12 +81,45 @@ internal sealed class MessagingBuilder : IMessagingBuilder
     }
 
     /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> Consumer<TConsumer>(string topic)
+        where TConsumer : class
+    {
+        Argument.IsNotNullOrWhiteSpace(topic);
+
+        // Find IConsume<T> interface
+        var consumeInterface = typeof(TConsumer)
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>));
+
+        if (consumeInterface == null)
+        {
+            throw new InvalidOperationException($"{typeof(TConsumer).Name} does not implement IConsume<T>");
+        }
+
+        var messageType = consumeInterface.GetGenericArguments()[0];
+
+        // Automatically create topic mapping
+        WithTopicMapping(messageType, topic);
+
+        return new ConsumerBuilder<TConsumer>(this, messageType, topic);
+    }
+
+    /// <inheritdoc />
     public IMessagingBuilder WithTopicMapping<TMessage>(string topic)
         where TMessage : class
     {
         Argument.IsNotNullOrWhiteSpace(topic);
 
-        var messageType = typeof(TMessage);
+        WithTopicMapping(typeof(TMessage), topic);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a topic mapping for a message type (non-generic version for internal use).
+    /// </summary>
+    internal void WithTopicMapping(Type messageType, string topic)
+    {
+        Argument.IsNotNullOrWhiteSpace(topic);
 
         if (_topicMappings.TryGetValue(messageType, out var existingTopic) && existingTopic != topic)
         {
@@ -96,7 +129,6 @@ internal sealed class MessagingBuilder : IMessagingBuilder
         }
 
         _topicMappings[messageType] = topic;
-        return this;
     }
 
     /// <summary>

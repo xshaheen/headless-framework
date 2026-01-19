@@ -8,7 +8,7 @@ using Framework.Primitives;
 
 namespace Framework.Messages;
 
-internal class InMemoryMonitoringApi : IMonitoringApi
+internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
 {
     public ValueTask<MediumMessage?> GetPublishedMessageAsync(long id)
     {
@@ -186,9 +186,9 @@ internal class InMemoryMonitoringApi : IMonitoringApi
         );
     }
 
-    private static ValueTask<Dictionary<DateTime, int>> _GetHourlyTimelineStats(MessageType type, string statusName)
+    private ValueTask<Dictionary<DateTime, int>> _GetHourlyTimelineStats(MessageType type, string statusName)
     {
-        var endDate = DateTime.Now;
+        var endDate = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
         for (var i = 0; i < 24; i++)
         {

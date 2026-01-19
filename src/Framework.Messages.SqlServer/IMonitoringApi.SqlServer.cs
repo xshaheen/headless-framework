@@ -14,7 +14,8 @@ namespace Framework.Messages;
 internal class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
-    ISerializer serializer
+    ISerializer serializer,
+    TimeProvider timeProvider
 ) : IMonitoringApi
 {
     private readonly SqlServerOptions _options = options.Value ?? throw new ArgumentNullException(nameof(options));
@@ -211,7 +212,7 @@ internal class SqlServerMonitoringApi(
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(string tableName, string statusName)
     {
-        var endDate = DateTime.Now;
+        var endDate = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
         for (var i = 0; i < 24; i++)
         {

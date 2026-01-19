@@ -313,6 +313,78 @@ public class MessagingBuilderTests
         var consumers = registry.GetAll();
         consumers.Should().HaveCount(2);
     }
+
+    [Fact]
+    public void should_implicitly_create_topic_mapping_when_using_consumer_with_topic()
+    {
+        // Given
+        var services = new ServiceCollection();
+
+        // When
+        services.AddMessages(messaging =>
+        {
+            messaging.Consumer<TestOrderConsumer>("orders.placed");
+        });
+
+        var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // Then
+        var consumer = registry.GetAll().First();
+        consumer.Topic.Should().Be("orders.placed");
+        consumer.ConsumerType.Should().Be(typeof(TestOrderConsumer));
+    }
+
+    [Fact]
+    public void should_eliminate_need_for_separate_topic_mapping_call()
+    {
+        // Given
+        var services = new ServiceCollection();
+
+        // When
+        services.AddMessages(messaging =>
+        {
+            // Old way (still supported):
+            // messaging.Consumer<TestOrderConsumer>().Topic("orders.placed").Build();
+            // messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
+
+            // New way - single call, implicit mapping:
+            messaging.Consumer<TestOrderConsumer>("orders.placed");
+        });
+
+        var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // Then
+        var consumer = registry.GetAll().First();
+        consumer.Topic.Should().Be("orders.placed");
+    }
+
+    [Fact]
+    public void should_allow_chaining_with_implicit_topic_mapping()
+    {
+        // Given
+        var services = new ServiceCollection();
+
+        // When
+        services.AddMessages(messaging =>
+        {
+            messaging
+                .Consumer<TestOrderConsumer>("orders.placed")
+                .WithConcurrency(5)
+                .Group("order-service")
+                .Build();
+        });
+
+        var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // Then
+        var consumer = registry.GetAll().First();
+        consumer.Topic.Should().Be("orders.placed");
+        consumer.Concurrency.Should().Be(5);
+        consumer.Group.Should().Be("order-service");
+    }
 }
 
 // Test message types

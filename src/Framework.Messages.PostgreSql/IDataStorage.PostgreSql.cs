@@ -19,7 +19,8 @@ public sealed class PostgreSqlDataStorage(
     IOptions<CapOptions> capOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
-    ILongIdGenerator longIdGenerator
+    ILongIdGenerator longIdGenerator,
+    TimeProvider timeProvider
 ) : IDataStorage
 {
     private readonly string _lockName = initializer.GetLockTableName();
@@ -40,9 +41,9 @@ public sealed class PostgreSqlDataStorage(
         object[] sqlParams =
         [
             new NpgsqlParameter("@Instance", instance),
-            new NpgsqlParameter("@LastLockTime", DateTime.Now),
+            new NpgsqlParameter("@LastLockTime", timeProvider.GetUtcNow().UtcDateTime),
             new NpgsqlParameter("@Key", key),
-            new NpgsqlParameter("@TTL", DateTime.Now.Subtract(ttl)),
+            new NpgsqlParameter("@TTL", timeProvider.GetUtcNow().UtcDateTime.Subtract(ttl)),
         ];
         var opResult = await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
         return opResult > 0;
@@ -103,7 +104,7 @@ public sealed class PostgreSqlDataStorage(
             DbId = content.GetId(),
             Origin = content,
             Content = serializer.Serialize(content),
-            Added = DateTime.Now,
+            Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
             Retries = 0,
         };
@@ -147,8 +148,8 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Group", group),
             new NpgsqlParameter("@Content", content),
             new NpgsqlParameter("@Retries", capOptions.Value.FailedRetryCount),
-            new NpgsqlParameter("@Added", DateTime.Now),
-            new NpgsqlParameter("@ExpiresAt", DateTime.Now.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)),
+            new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@ExpiresAt", timeProvider.GetUtcNow().UtcDateTime.AddSeconds(capOptions.Value.FailedMessageExpiredAfter)),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
         ];
 
@@ -162,7 +163,7 @@ public sealed class PostgreSqlDataStorage(
             DbId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
             Origin = message,
             Content = serializer.Serialize(message),
-            Added = DateTime.Now,
+            Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
             Retries = 0,
         };
@@ -256,7 +257,7 @@ public sealed class PostgreSqlDataStorage(
         var sqlParams = new object[]
         {
             new NpgsqlParameter("@Version", capOptions.Value.Version),
-            new NpgsqlParameter("@TwoMinutesLater", DateTime.Now.AddMinutes(2)),
+            new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2)),
             new NpgsqlParameter("@OneMinutesAgo", QueuedMessageFetchTime()),
             new NpgsqlParameter("@BatchSize", capOptions.Value.SchedulerBatchSize),
         };
@@ -302,12 +303,12 @@ public sealed class PostgreSqlDataStorage(
 
     public IMonitoringApi GetMonitoringApi()
     {
-        return new PostgreSqlMonitoringApi(options, initializer, serializer);
+        return new PostgreSqlMonitoringApi(options, initializer, serializer, timeProvider);
     }
 
     private DateTime QueuedMessageFetchTime()
     {
-        return DateTime.Now.AddMinutes(-1);
+        return timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1);
     }
 
     private async Task _ChangeMessageStateAsync(
@@ -358,7 +359,7 @@ public sealed class PostgreSqlDataStorage(
         TimeSpan lookbackSeconds
     )
     {
-        var fourMinAgo = DateTime.Now.Subtract(lookbackSeconds);
+        var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
         var sql =
             $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\" FROM {tableName} WHERE \"Retries\"<@Retries "
             + $"AND \"Version\"=@Version AND \"Added\"<@Added AND \"StatusName\" IN ('{StatusName.Failed}','{StatusName.Scheduled}') LIMIT 200;";

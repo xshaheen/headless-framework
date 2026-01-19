@@ -28,6 +28,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
     private readonly ILogger _logger;
     private readonly CapOptions _options;
     private readonly IServiceProvider _provider;
+    private readonly TimeProvider _timeProvider;
 
     public SubscribeExecutor(ILogger<SubscribeExecutor> logger, IOptions<CapOptions> options, IServiceProvider provider)
     {
@@ -37,6 +38,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
         _dataStorage = _provider.GetRequiredService<IDataStorage>();
         Invoker = _provider.GetRequiredService<ISubscribeInvoker>();
+        _timeProvider = _provider.GetRequiredService<TimeProvider>();
         _hostName = Helper.GetInstanceHostname();
     }
 
@@ -141,7 +143,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
     private Task _SetSuccessfulState(MediumMessage message)
     {
-        message.ExpiresAt = DateTime.Now.AddSeconds(_options.SucceedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
 
         return _dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded);
     }

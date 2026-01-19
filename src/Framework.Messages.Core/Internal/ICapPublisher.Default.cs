@@ -24,6 +24,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     private readonly IDispatcher _dispatcher = service.GetRequiredService<IDispatcher>();
     private readonly IDataStorage _storage = service.GetRequiredService<IDataStorage>();
     private readonly ILongIdGenerator _longIdGenerator = service.GetRequiredService<ILongIdGenerator>();
+    private readonly TimeProvider _timeProvider = service.GetRequiredService<TimeProvider>();
 
     private readonly AsyncLocal<OutboxTransactionHolder> _asyncLocal = new();
 
@@ -144,7 +145,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
         headers.Add(Headers.MessageName, name);
         headers.Add(Headers.Type, typeof(T).Name);
 
-        var publishTime = DateTime.Now;
+        var publishTime = _timeProvider.GetUtcNow().UtcDateTime;
         if (delayTime != null)
         {
             publishTime += delayTime.Value;

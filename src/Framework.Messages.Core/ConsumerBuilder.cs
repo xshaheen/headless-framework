@@ -17,10 +17,11 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private string? _group;
     private byte _concurrency = 1;
 
-    internal ConsumerBuilder(MessagingBuilder parent, Type messageType)
+    internal ConsumerBuilder(MessagingBuilder parent, Type messageType, string? topic = null)
     {
         _parent = parent;
         _messageType = messageType;
+        _topic = topic;
     }
 
     /// <inheritdoc />

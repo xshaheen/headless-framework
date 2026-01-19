@@ -14,6 +14,7 @@ public sealed class CollectorProcessor : IProcessor
     private readonly TimeSpan _delay = TimeSpan.FromSeconds(1);
     private readonly ILogger _logger;
     private readonly IServiceProvider _serviceProvider;
+    private readonly TimeProvider _timeProvider;
 
     private readonly string[] _tableNames;
     private readonly TimeSpan _waitingInterval;
@@ -26,6 +27,7 @@ public sealed class CollectorProcessor : IProcessor
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
+        _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
         _waitingInterval = TimeSpan.FromSeconds(options.Value.CollectorCleaningInterval);
 
         var initializer = _serviceProvider.GetRequiredService<IStorageInitializer>();
@@ -40,7 +42,7 @@ public sealed class CollectorProcessor : IProcessor
             _logger.LogDebug($"Collecting expired data from table: {table}");
 
             int deletedCount;
-            var time = DateTime.Now;
+            var time = _timeProvider.GetUtcNow().UtcDateTime;
             do
             {
                 try

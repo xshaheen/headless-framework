@@ -5,7 +5,7 @@ var pulsarUri = builder.Configuration.GetValue("AppSettings:PulsarUri", "pulsar:
 builder
     .Services.AddMessages(messaging =>
     {
-        messaging.Consumer<PulsarMessageConsumer>().Topic("persistent://public/default/captesttopic").Build();
+        messaging.Consumer<PulsarMessageConsumer>("persistent://public/default/captesttopic");
     })
     .AddCap(x =>
     {

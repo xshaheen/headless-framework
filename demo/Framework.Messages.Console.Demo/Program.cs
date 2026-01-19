@@ -10,7 +10,7 @@ container.AddLogging(x => x.AddConsole());
 container
     .AddMessages(messaging =>
     {
-        messaging.Consumer<EventConsumer>().Topic("sample.console.showtime").Build();
+        messaging.Consumer<EventConsumer>("sample.console.showtime");
     })
     .AddCap(x =>
     {

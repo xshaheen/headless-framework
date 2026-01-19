@@ -102,6 +102,44 @@ public interface IMessagingBuilder
         where TConsumer : class;
 
     /// <summary>
+    /// Registers a specific consumer type with a topic, automatically creating a topic mapping for type-safe publishing.
+    /// </summary>
+    /// <typeparam name="TConsumer">
+    /// The consumer type to register. Must implement at least one <see cref="IConsume{TMessage}"/> interface.
+    /// </typeparam>
+    /// <param name="topic">
+    /// The topic name to subscribe to. This automatically creates a topic mapping for the message type.
+    /// </param>
+    /// <returns>
+    /// An <see cref="IConsumerBuilder{TConsumer}"/> instance for configuring the consumer's behavior.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="topic"/> is null or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if <typeparamref name="TConsumer"/> does not implement any <see cref="IConsume{TMessage}"/> interfaces.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// This is the preferred method for registering consumers as it eliminates topic name duplication
+    /// by automatically creating a topic mapping for the message type. This enables type-safe publishing
+    /// without requiring a separate <see cref="WithTopicMapping{TMessage}"/> call.
+    /// </para>
+    /// <para>
+    /// <strong>Example:</strong>
+    /// <code>
+    /// // Register consumer and implicitly map OrderPlaced → "orders.placed"
+    /// options.Consumer&lt;OrderPlacedHandler&gt;("orders.placed")
+    ///     .WithConcurrency(5);
+    ///
+    /// // Later in code - type-safe publishing works automatically:
+    /// await publisher.PublishAsync(new OrderPlaced { OrderId = 123 });
+    /// // ^ automatically publishes to "orders.placed"
+    /// </code>
+    /// </para>
+    /// </remarks>
+    IConsumerBuilder<TConsumer> Consumer<TConsumer>(string topic)
+        where TConsumer : class;
+
+    /// <summary>
     /// Registers a topic mapping for a message type to enable type-safe publishing.
     /// </summary>
     /// <typeparam name="TMessage">The message type.</typeparam>

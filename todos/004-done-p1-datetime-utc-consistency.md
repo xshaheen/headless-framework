@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "004"
 tags: [code-review, data-integrity, messages, timezone, critical]
@@ -112,3 +112,9 @@ Global replace `DateTime.Now` → `DateTime.UtcNow` (not testable)
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-19 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

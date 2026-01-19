@@ -26,6 +26,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
     private readonly IOptions<CapOptions> _options = serviceProvider.GetRequiredService<IOptions<CapOptions>>();
     private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
     private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
+    private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
 
     public async Task<OperateResult> SendAsync(MediumMessage message)
     {
@@ -69,7 +70,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
     private async Task _SetSuccessfulState(MediumMessage message)
     {
-        message.ExpiresAt = DateTime.Now.AddSeconds(_options.Value.SucceedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.Value.SucceedMessageExpiredAfter);
         await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
     }
 

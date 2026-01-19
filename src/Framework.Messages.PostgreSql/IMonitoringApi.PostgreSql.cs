@@ -14,7 +14,8 @@ namespace Framework.Messages;
 public class PostgreSqlMonitoringApi(
     IOptions<PostgreSqlOptions> options,
     IStorageInitializer initializer,
-    ISerializer serializer
+    ISerializer serializer,
+    TimeProvider timeProvider
 ) : IMonitoringApi
 {
     private readonly PostgreSqlOptions _options = options.Value ?? throw new ArgumentNullException(nameof(options));
@@ -209,7 +210,7 @@ public class PostgreSqlMonitoringApi(
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(string tableName, string statusName)
     {
-        var endDate = DateTime.Now;
+        var endDate = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
         for (var i = 0; i < 24; i++)
         {
