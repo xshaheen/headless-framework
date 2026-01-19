@@ -77,7 +77,7 @@ internal sealed class MessagingBuilder : IMessagingBuilder
 
         var messageType = consumeInterface.GetGenericArguments()[0];
 
-        return new ConsumerBuilder<TConsumer>(this, messageType);
+        return new ConsumerBuilder<TConsumer>(this, _registry, messageType);
     }
 
     /// <inheritdoc />
@@ -101,7 +101,11 @@ internal sealed class MessagingBuilder : IMessagingBuilder
         // Automatically create topic mapping
         WithTopicMapping(messageType, topic);
 
-        return new ConsumerBuilder<TConsumer>(this, messageType, topic);
+        // Immediately register with default settings (concurrency=1, group=null)
+        RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
+
+        // Return builder that can update the registration if further configuration is needed
+        return new ConsumerBuilder<TConsumer>(this, _registry, messageType, topic, autoRegistered: true);
     }
 
     /// <inheritdoc />

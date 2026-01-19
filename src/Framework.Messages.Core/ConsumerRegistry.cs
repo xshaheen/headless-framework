@@ -43,6 +43,30 @@ internal sealed class ConsumerRegistry
     }
 
     /// <summary>
+    /// Updates consumer metadata matching the predicate.
+    /// </summary>
+    /// <param name="predicate">Predicate to find the metadata to update.</param>
+    /// <param name="newMetadata">New metadata to replace with.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if update is attempted after the registry has been frozen.
+    /// </exception>
+    public void Update(Func<ConsumerMetadata, bool> predicate, ConsumerMetadata newMetadata)
+    {
+        if (_frozen != null)
+        {
+            throw new InvalidOperationException(
+                "Cannot update consumers after the registry has been frozen."
+            );
+        }
+
+        var index = _consumers!.FindIndex(m => predicate(m));
+        if (index >= 0)
+        {
+            _consumers[index] = newMetadata;
+        }
+    }
+
+    /// <summary>
     /// Gets all registered consumer metadata.
     /// Freezes the registry on first call, preventing further registrations.
     /// </summary>

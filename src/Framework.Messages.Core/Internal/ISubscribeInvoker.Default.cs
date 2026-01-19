@@ -247,7 +247,7 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
             Expression.New(
                 dateTimeOffsetCtor,
                 addedProperty,
-                Expression.Property(null, typeof(TimeSpan), nameof(TimeSpan.Zero))
+                Expression.Field(null, typeof(TimeSpan), nameof(TimeSpan.Zero))
             )
         );
 
