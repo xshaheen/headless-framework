@@ -56,7 +56,10 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
             }
             else
             {
-                messageInstance = Convert.ChangeType(mediumMessage.Origin.Value, messageType);
+                throw new InvalidOperationException(
+                    $"Unsupported message value type: {mediumMessage.Origin.Value?.GetType().Name}. " +
+                    $"Expected JSON string, JsonElement, or {messageType.Name}"
+                );
             }
         }
 
@@ -131,17 +134,15 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
     {
         var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
 
-        // Parse IDs
-        var messageId = Guid.Parse(mediumMessage.Origin.GetId());
+        // Get IDs as strings (no parsing)
+        var messageId = mediumMessage.Origin.GetId();
 
         // Read correlation ID from headers (nullable)
-        Guid? correlationId = null;
-        if (
-            mediumMessage.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationIdStr)
-            && !string.IsNullOrEmpty(correlationIdStr)
-        )
+        string? correlationId = null;
+        if (mediumMessage.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationIdStr)
+            && !string.IsNullOrWhiteSpace(correlationIdStr))
         {
-            correlationId = Guid.Parse(correlationIdStr);
+            correlationId = correlationIdStr;
         }
 
         // Parse timestamp

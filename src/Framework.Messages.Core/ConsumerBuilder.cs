@@ -16,7 +16,6 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private string? _topic;
     private string? _group;
     private byte _concurrency = 1;
-    private bool _isPartial;
 
     internal ConsumerBuilder(MessagingBuilder parent, Type messageType)
     {
@@ -25,12 +24,11 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Topic(string topic, bool isPartial = false)
+    public IConsumerBuilder<TConsumer> Topic(string topic)
     {
         Argument.IsNotNullOrWhiteSpace(topic);
 
         _topic = topic;
-        _isPartial = isPartial;
         return this;
     }
 

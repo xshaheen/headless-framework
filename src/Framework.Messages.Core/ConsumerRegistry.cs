@@ -6,26 +6,55 @@ namespace Framework.Messages;
 /// Central registry for all registered message consumers.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The registry stores metadata for all consumers registered via <see cref="IMessagingBuilder"/>.
 /// This metadata is used by <see cref="IConsumerServiceSelector"/> during startup to discover
 /// and configure message subscriptions. The registry is registered as a singleton in DI.
+/// </para>
+/// <para>
+/// Thread-safety: Registration is expected during configuration phase (single-threaded).
+/// Once <see cref="GetAll"/> is called, the registry is frozen and subsequent registrations throw.
+/// This freeze-on-first-read pattern ensures zero-allocation reads at runtime.
+/// </para>
 /// </remarks>
 internal sealed class ConsumerRegistry
 {
-    private readonly List<ConsumerMetadata> _consumers = [];
+    private List<ConsumerMetadata>? _consumers = [];
+    private IReadOnlyList<ConsumerMetadata>? _frozen;
 
     /// <summary>
     /// Registers a consumer's metadata in the registry.
     /// </summary>
     /// <param name="metadata">The consumer metadata to register.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if registration is attempted after the registry has been frozen (after first <see cref="GetAll"/> call).
+    /// </exception>
     public void Register(ConsumerMetadata metadata)
     {
-        _consumers.Add(metadata);
+        if (_frozen != null)
+        {
+            throw new InvalidOperationException(
+                "Cannot register consumers after the registry has been frozen. " +
+                "Ensure all consumers are registered during configuration before the application starts."
+            );
+        }
+
+        _consumers!.Add(metadata);
     }
 
     /// <summary>
     /// Gets all registered consumer metadata.
+    /// Freezes the registry on first call, preventing further registrations.
     /// </summary>
     /// <returns>A read-only list of all registered consumer metadata.</returns>
-    public IReadOnlyList<ConsumerMetadata> GetAll() => _consumers;
+    public IReadOnlyList<ConsumerMetadata> GetAll()
+    {
+        if (_frozen == null)
+        {
+            _frozen = _consumers!.AsReadOnly();
+            _consumers = null;  // Release for GC
+        }
+
+        return _frozen;
+    }
 }
