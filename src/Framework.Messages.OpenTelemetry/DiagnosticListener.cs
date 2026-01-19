@@ -4,15 +4,14 @@ using System.Diagnostics;
 using Framework.Messages.Diagnostics;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
-using CapEvents = Framework.Messages.Diagnostics.CapDiagnosticListenerNames;
 
-namespace DotNetCore.CAP.OpenTelemetry;
+namespace Framework.Messages;
 
 internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
 {
-    public const string SourceName = "DotNetCore.CAP.OpenTelemetry";
+    public const string SourceName = "Headless.Messaging.OpenTelemetry";
 
-    private const string _OperateNamePrefix = "CAP/";
+    private const string _OperateNamePrefix = "Headless/";
     private const string _ProducerOperateNameSuffix = "/Publisher";
     private const string _ConsumerOperateNameSuffix = "/Subscriber";
     private static readonly ActivitySource _ActivitySource = new(SourceName, "1.0.0");
@@ -26,17 +25,21 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
     {
         switch (evt.Key)
         {
-            case CapEvents.BeforePublishMessageStore:
+            case MessageDiagnosticListenerNames.BeforePublishMessageStore:
                 {
-                    var eventData = (CapEventDataPubStore)evt.Value!;
-                    ActivityContext parentContext = _Propagator
+                    var eventData = (MessageEventDataPubStore)evt.Value!;
+
+                    var parentContext = _Propagator
                         .Extract(
                             default,
                             eventData.Message,
                             (msg, key) =>
                             {
                                 if (msg.Headers.TryGetValue(key, out var value) && value != null)
+                                {
                                     return [value];
+                                }
+
                                 return [];
                             }
                         )
@@ -75,9 +78,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.AfterPublishMessageStore:
+            case MessageDiagnosticListenerNames.AfterPublishMessageStore:
                 {
-                    var eventData = (CapEventDataPubStore)evt.Value!;
+                    var eventData = (MessageEventDataPubStore)evt.Value!;
 
                     Activity.Current?.AddEvent(
                         new ActivityEvent(
@@ -90,9 +93,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     Activity.Current?.Stop();
                 }
                 break;
-            case CapEvents.ErrorPublishMessageStore:
+            case MessageDiagnosticListenerNames.ErrorPublishMessageStore:
                 {
-                    var eventData = (CapEventDataPubStore)evt.Value!;
+                    var eventData = (MessageEventDataPubStore)evt.Value!;
                     if (Activity.Current is { } activity)
                     {
                         var exception = eventData.Exception!;
@@ -102,9 +105,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.BeforePublish:
+            case MessageDiagnosticListenerNames.BeforePublish:
                 {
-                    var eventData = (CapEventDataPubSend)evt.Value!;
+                    var eventData = (MessageEventDataPubSend)evt.Value!;
                     var parentContext = _Propagator.Extract(
                         default,
                         eventData.TransportMessage,
@@ -164,9 +167,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.AfterPublish:
+            case MessageDiagnosticListenerNames.AfterPublish:
                 {
-                    var eventData = (CapEventDataPubSend)evt.Value!;
+                    var eventData = (MessageEventDataPubSend)evt.Value!;
                     if (Activity.Current is { } activity)
                     {
                         activity.AddEvent(
@@ -180,9 +183,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.ErrorPublish:
+            case MessageDiagnosticListenerNames.ErrorPublish:
                 {
-                    var eventData = (CapEventDataPubSend)evt.Value!;
+                    var eventData = (MessageEventDataPubSend)evt.Value!;
                     if (Activity.Current is { } activity)
                     {
                         var exception = eventData.Exception!;
@@ -192,16 +195,19 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.BeforeConsume:
+            case MessageDiagnosticListenerNames.BeforeConsume:
                 {
-                    var eventData = (CapEventDataSubStore)evt.Value!;
+                    var eventData = (MessageEventDataSubStore)evt.Value!;
                     var parentContext = _Propagator.Extract(
                         default,
                         eventData.TransportMessage,
                         (msg, key) =>
                         {
                             if (msg.Headers.TryGetValue(key, out var value) && value != null)
+                            {
                                 return [value];
+                            }
+
                             return [];
                         }
                     );
@@ -243,9 +249,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.AfterConsume:
+            case MessageDiagnosticListenerNames.AfterConsume:
                 {
-                    var eventData = (CapEventDataSubStore)evt.Value!;
+                    var eventData = (MessageEventDataSubStore)evt.Value!;
                     if (Activity.Current is { } activity)
                     {
                         activity.AddEvent(
@@ -260,9 +266,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.ErrorConsume:
+            case MessageDiagnosticListenerNames.ErrorConsume:
                 {
-                    var eventData = (CapEventDataSubStore)evt.Value!;
+                    var eventData = (MessageEventDataSubStore)evt.Value!;
                     if (Activity.Current is { } activity)
                     {
                         var exception = eventData.Exception!;
@@ -272,17 +278,20 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.BeforeSubscriberInvoke:
+            case MessageDiagnosticListenerNames.BeforeSubscriberInvoke:
                 {
                     ActivityContext context = default;
-                    var eventData = (CapEventDataSubExecute)evt.Value!;
+                    var eventData = (MessageEventDataSubExecute)evt.Value!;
                     var propagatedContext = _Propagator.Extract(
                         default,
                         eventData.Message,
                         (msg, key) =>
                         {
                             if (msg.Headers.TryGetValue(key, out var value) && value != null)
+                            {
                                 return [value];
+                            }
+
                             return [];
                         }
                     );
@@ -312,9 +321,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.AfterSubscriberInvoke:
+            case MessageDiagnosticListenerNames.AfterSubscriberInvoke:
                 {
-                    var eventData = (CapEventDataSubExecute)evt.Value!;
+                    var eventData = (MessageEventDataSubExecute)evt.Value!;
                     if (Activity.Current is { } activity)
                     {
                         activity.AddEvent(
@@ -329,9 +338,9 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
-            case CapEvents.ErrorSubscriberInvoke:
+            case MessageDiagnosticListenerNames.ErrorSubscriberInvoke:
                 {
-                    var eventData = (CapEventDataSubExecute)evt.Value!;
+                    var eventData = (MessageEventDataSubExecute)evt.Value!;
                     if (Activity.Current is { } activity)
                     {
                         var exception = eventData.Exception!;

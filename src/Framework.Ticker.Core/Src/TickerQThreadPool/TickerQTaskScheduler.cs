@@ -40,7 +40,9 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
     )
     {
         if (maxConcurrency <= 0)
+        {
             throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "Must be greater than zero");
+        }
 
         _maxConcurrency = maxConcurrency;
         _idleWorkerTimeout = idleWorkerTimeout ?? TimeSpan.FromSeconds(60);
@@ -71,10 +73,14 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(work);
 
         if (_disposed)
+        {
             throw new ObjectDisposedException(nameof(TickerQTaskScheduler));
+        }
 
         if (_isFrozen)
+        {
             throw new InvalidOperationException("Scheduler is frozen");
+        }
 
         // Handle long-running tasks specially
         if (priority == TickerTaskPriority.LongRunning)
@@ -165,12 +171,16 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
     private void _TryStartWorker()
     {
         if (_shutdownCts.IsCancellationRequested || _disposed)
+        {
             return;
+        }
 
         // Try to increment active workers
         var currentWorkers = _activeWorkers;
         if (currentWorkers >= _maxConcurrency)
+        {
             return;
+        }
 
         if (Interlocked.CompareExchange(ref _activeWorkers, currentWorkers + 1, currentWorkers) == currentWorkers)
         {
@@ -296,7 +306,9 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         {
             var victimIndex = (startIndex + i) % _maxConcurrency;
             if (victimIndex == thiefWorkerId)
+            {
                 continue; // Don't steal from ourselves
+            }
 
             var victimQueue = _workerQueues[victimIndex];
 
@@ -312,7 +324,9 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         {
             var victimIndex = (startIndex + i) % _maxConcurrency;
             if (victimIndex == thiefWorkerId)
+            {
                 continue;
+            }
 
             if (_workerQueues[victimIndex].TryDequeue(out workItem))
             {
@@ -338,7 +352,9 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
                 var task = workItem.Work(workItem.UserToken);
 
                 if (task == null)
+                {
                     return;
+                }
 
                 if (!task.IsCompleted)
                 {
@@ -395,7 +411,9 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
     internal void PostContinuation(SendOrPostCallback callback, object? state)
     {
         if (_disposed || _shutdownCts.Token.IsCancellationRequested)
+        {
             return;
+        }
 
         // Continuations get queued to the current worker's queue if possible
         var queueIndex = _threadWorkerIndex >= 0 ? _threadWorkerIndex : _GetNextQueueIndex();
@@ -508,7 +526,9 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         while (_totalQueuedTasks > 0 || _activeWorkers > 0)
         {
             if (DateTime.UtcNow > deadline)
+            {
                 return false; // Timeout
+            }
 
             await Task.Delay(10);
         }
@@ -519,7 +539,9 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
+        {
             return;
+        }
 
         _disposed = true;
         _isFrozen = true; // Prevent new tasks

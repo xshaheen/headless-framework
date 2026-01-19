@@ -1,10 +1,10 @@
-using Framework.Ticker.EntityFrameworkCore.Customizer;
-using Framework.Ticker.EntityFrameworkCore.DbContextFactory;
+using Framework.Ticker.Customizer;
+using Framework.Ticker.DbContextFactory;
 using Framework.Ticker.Utilities.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Ticker.EntityFrameworkCore;
+namespace Framework.Ticker;
 
 public class TickerQEfCoreOptionBuilder<TTimeTicker, TCronTicker>
     where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()

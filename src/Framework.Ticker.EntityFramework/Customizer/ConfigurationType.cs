@@ -1,4 +1,4 @@
-namespace Framework.Ticker.EntityFrameworkCore.Customizer;
+namespace Framework.Ticker.Customizer;
 
 public enum ConfigurationType
 {

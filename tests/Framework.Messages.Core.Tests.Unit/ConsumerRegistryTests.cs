@@ -29,7 +29,8 @@ public class ConsumerRegistryTests
 
         // when
         _ = registry.GetAll(); // Freeze
-        var act = () => registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test2", null, 1));
+        var act = () =>
+            registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test2", null, 1));
 
         // then
         act.Should()
@@ -67,7 +68,10 @@ public class ConsumerRegistryTests
         registry.Register(original);
 
         // when
-        registry.Update(m => m.ConsumerType == typeof(OtherConsumer), new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "new", null, 1));
+        registry.Update(
+            m => m.ConsumerType == typeof(OtherConsumer),
+            new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "new", null, 1)
+        );
         var all = registry.GetAll();
 
         // then
@@ -84,10 +88,11 @@ public class ConsumerRegistryTests
         _ = registry.GetAll(); // Freeze
 
         // when
-        var act = () => registry.Update(
-            m => m.ConsumerType == typeof(TestConsumer),
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "updated", null, 1)
-        );
+        var act = () =>
+            registry.Update(
+                m => m.ConsumerType == typeof(TestConsumer),
+                new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "updated", null, 1)
+            );
 
         // then
         act.Should()
@@ -120,20 +125,25 @@ public class ConsumerRegistryTests
         // when
         for (var i = 1; i <= consumerCount; i++)
         {
-            registry.Register(new ConsumerMetadata(
-                typeof(TestMessage),
-                typeof(TestConsumer),
-                $"topic.{i}",
-                $"group.{i}",
-                (byte)(i % 10 + 1)
-            ));
+            registry.Register(
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(TestConsumer),
+                    $"topic.{i}",
+                    $"group.{i}",
+                    (byte)(i % 10 + 1)
+                )
+            );
         }
 
         var all = registry.GetAll();
 
         // then
         all.Should().HaveCount(consumerCount, "all registrations should succeed");
-        all.Select(m => m.Topic).Distinct().Should().HaveCount(consumerCount, "all topics should be unique");
+        all.Select(m => m.Topic)
+            .Distinct(StringComparer.Ordinal)
+            .Should()
+            .HaveCount(consumerCount, "all topics should be unique");
     }
 
     [Fact]
@@ -180,7 +190,13 @@ public class ConsumerRegistryTests
         {
             registry.Update(
                 m => m.ConsumerType == typeof(TestConsumer),
-                new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), $"topic.{i}", $"group.{i}", (byte)(i % 10 + 1))
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(TestConsumer),
+                    $"topic.{i}",
+                    $"group.{i}",
+                    (byte)(i % 10 + 1)
+                )
             );
         }
 

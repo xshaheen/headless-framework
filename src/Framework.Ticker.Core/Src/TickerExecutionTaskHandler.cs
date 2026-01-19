@@ -51,7 +51,9 @@ internal class TickerExecutionTaskHandler(
                 if (child.CachedDelegate != null)
                 {
                     if (child.RunCondition == RunCondition.InProgress)
+                    {
                         tasksToRunNow[tasksToRunNowCount++] = _SafeRecursiveExecution(child, isDue, cancellationToken);
+                    }
                     else
                     {
                         childrenToRunAfter[childrenToRunAfterCount++] = child;
@@ -99,14 +101,18 @@ internal class TickerExecutionTaskHandler(
 
             // Bulk update skipped children
             if (childrenToSkip.Count > 0)
+            {
                 await internalTickerManager.UpdateSkipTimeTickersWithUnifiedContextAsync(
                     childrenToSkip.ToArray(),
                     cancellationToken
                 );
+            }
 
             // Wait for deferred tasks
             if (taskCount > 0)
+            {
                 await Task.WhenAll(childrenToRunAfterTask.AsSpan(0, taskCount).ToArray());
+            }
         }
     }
 
@@ -138,7 +144,9 @@ internal class TickerExecutionTaskHandler(
         context.SetProperty(x => x.Status, TickerStatus.InProgress);
 
         if (isChild)
+        {
             await internalTickerManager.UpdateTickerAsync(context, cancellationToken);
+        }
 
         var stopWatch = new Stopwatch();
         var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -160,7 +168,9 @@ internal class TickerExecutionTaskHandler(
                 SkipIfAlreadyRunningAction = () =>
                 {
                     if (context.Type == TickerType.TimeTicker)
+                    {
                         return;
+                    }
 
                     // Check for other running occurrences of the same parent (excluding self)
                     // Since we're already registered, we need to exclude ourselves from the check
@@ -172,7 +182,9 @@ internal class TickerExecutionTaskHandler(
                         );
 
                     if (isRunning)
+                    {
                         throw new TerminateExecutionException("Another CronOccurrence is already running!");
+                    }
                 },
             },
         };
@@ -190,7 +202,9 @@ internal class TickerExecutionTaskHandler(
             try
             {
                 if (await _WaitForRetry(context, cancellationToken, attempt, cancellationTokenSource))
+                {
                     break;
+                }
 
                 stopWatch.Start();
 
@@ -223,7 +237,9 @@ internal class TickerExecutionTaskHandler(
                 tickerQInstrumentation.LogJobCancelled(context.TickerId, context.FunctionName, "Task was cancelled");
 
                 if (serviceProvider.GetService(typeof(ITickerExceptionHandler)) is ITickerExceptionHandler handler)
+                {
                     await handler.HandleCanceledExceptionAsync(ex, context.TickerId, context.Type);
+                }
 
                 await internalTickerManager.UpdateTickerAsync(context, cancellationToken);
 
@@ -321,7 +337,9 @@ internal class TickerExecutionTaskHandler(
             var handler = serviceProvider.GetService(typeof(ITickerExceptionHandler)) as ITickerExceptionHandler;
 
             if (handler != null)
+            {
                 await handler.HandleExceptionAsync(lastException, context.TickerId, context.Type);
+            }
 
             await internalTickerManager.UpdateTickerAsync(context, cancellationToken);
         }
@@ -339,10 +357,14 @@ internal class TickerExecutionTaskHandler(
     )
     {
         if (attempt == 0)
+        {
             return false;
+        }
 
         if (attempt > context.Retries)
+        {
             return true;
+        }
 
         context.SetProperty(x => x.RetryCount, attempt);
 
@@ -407,7 +429,9 @@ internal class TickerExecutionTaskHandler(
     private static void _GatherDescendantsToSkip(InternalFunctionContext parent, List<InternalFunctionContext> skipList)
     {
         if (parent.TimeTickerChildren == null || parent.TimeTickerChildren.Count == 0)
+        {
             return;
+        }
 
         foreach (var child in parent.TimeTickerChildren)
         {

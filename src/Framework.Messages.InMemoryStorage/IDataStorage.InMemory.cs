@@ -14,7 +14,7 @@ namespace Framework.Messages;
 
 #pragma warning disable MA0049
 internal class InMemoryStorage(
-    IOptions<CapOptions> capOptions,
+    IOptions<MessagingOptions> capOptions,
     ISerializer serializer,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider
@@ -157,7 +157,9 @@ internal class InMemoryStorage(
             foreach (var id in ids)
             {
                 if (PublishedMessages.TryRemove(id, out _))
+                {
                     removed++;
+                }
             }
         }
         else
@@ -167,7 +169,9 @@ internal class InMemoryStorage(
             foreach (var id in ids)
             {
                 if (ReceivedMessages.TryRemove(id, out _))
+                {
                     removed++;
+                }
             }
         }
 

@@ -34,7 +34,7 @@ public class ConnectionPool : IConnectionPool, IDisposable
             return producer;
         }
 
-        var config = new ProducerConfig(new Dictionary<string, string>(_options.MainConfig))
+        var config = new ProducerConfig(new Dictionary<string, string>(_options.MainConfig, StringComparer.Ordinal))
         {
             BootstrapServers = _options.Servers,
         };

@@ -19,11 +19,11 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
     // diagnostics listener
     // ReSharper disable once InconsistentNaming
     private static readonly DiagnosticListener s_diagnosticListener = new(
-        CapDiagnosticListenerNames.DiagnosticListenerName
+        MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
     private readonly ILogger _logger = logger;
-    private readonly CapOptions _options = serviceProvider.GetRequiredService<IOptions<CapOptions>>().Value;
+    private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
     private Task? _compositeTask;
 
@@ -351,9 +351,9 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
 
     private long? _TracingBefore(TransportMessage message, BrokerAddress broker)
     {
-        if (s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.BeforeConsume))
+        if (s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeConsume))
         {
-            var eventData = new CapEventDataSubStore
+            var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
@@ -361,7 +361,7 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
                 TransportMessage = message,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.BeforeConsume, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.BeforeConsume, eventData);
 
             return eventData.OperationTimestamp;
         }
@@ -371,11 +371,11 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
 
     private void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
     {
-        CapEventCounterSource.Log.WriteConsumeMetrics();
-        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.AfterConsume))
+        MessageEventCounterSource.Log.WriteConsumeMetrics();
+        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterConsume))
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventData = new CapEventDataSubStore
+            var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -384,17 +384,17 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
                 ElapsedTimeMs = now - tracingTimestamp.Value,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.AfterConsume, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.AfterConsume, eventData);
         }
     }
 
     private void _TracingError(long? tracingTimestamp, TransportMessage message, BrokerAddress broker, Exception ex)
     {
-        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.ErrorConsume))
+        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorConsume))
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-            var eventData = new CapEventDataSubStore
+            var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -404,7 +404,7 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
                 Exception = ex,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.ErrorConsume, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.ErrorConsume, eventData);
         }
     }
 

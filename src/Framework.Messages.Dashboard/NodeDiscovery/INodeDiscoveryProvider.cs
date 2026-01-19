@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace DotNetCore.CAP.Dashboard.NodeDiscovery;
+namespace Framework.Messages.NodeDiscovery;
 
 public interface INodeDiscoveryProvider
 {

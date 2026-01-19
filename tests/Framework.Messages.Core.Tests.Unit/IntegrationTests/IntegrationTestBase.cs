@@ -18,8 +18,8 @@ public abstract class IntegrationTestBase : TestBase
     {
         var services = new ServiceCollection();
         services.AddTestSetup(testOutput);
-        services.AddSingleton(new CapMessageQueueMakerService("Broker"));
-        services.AddSingleton(new CapStorageMarkerService("Storage"));
+        services.AddSingleton(new MessageQueueMarkerService("Broker"));
+        services.AddSingleton(new MessageStorageMarkerService("Storage"));
         services.AddSingleton(_ => new TestMessageCollector(HandledMessages));
 
         ConfigureServices(services);

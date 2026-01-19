@@ -16,7 +16,7 @@ public class Dispatcher : IDispatcher
 {
     private readonly ISubscribeExecutor _executor;
     private readonly ILogger<Dispatcher> _logger;
-    private readonly CapOptions _options;
+    private readonly MessagingOptions _options;
     private readonly IMessageSender _sender;
     private readonly IDataStorage _storage;
     private readonly TimeProvider _timeProvider;
@@ -33,7 +33,7 @@ public class Dispatcher : IDispatcher
     public Dispatcher(
         ILogger<Dispatcher> logger,
         IMessageSender sender,
-        IOptions<CapOptions> options,
+        IOptions<MessagingOptions> options,
         ISubscribeExecutor executor,
         IDataStorage storage,
         TimeProvider timeProvider
@@ -94,7 +94,7 @@ public class Dispatcher : IDispatcher
             if (_IsCancellationRequested())
             {
                 _logger.LogWarning(
-                    "The message has been persisted, but CAP is currently stopped. It will be attempted to be sent once CAP becomes available."
+                    "The message has been persisted, but the messaging system is currently stopped. It will be attempted to be sent once the system becomes available."
                 );
                 return;
             }

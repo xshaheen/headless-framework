@@ -2,7 +2,7 @@ using System.Linq.Expressions;
 using Framework.Ticker.Utilities.Entities;
 using Framework.Ticker.Utilities.Enums;
 
-namespace Framework.Ticker.EntityFrameworkCore.Infrastructure;
+namespace Framework.Ticker.Infrastructure;
 
 public static class TickerQueryExtensions
 {

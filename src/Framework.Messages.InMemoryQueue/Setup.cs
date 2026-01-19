@@ -13,7 +13,7 @@ public static class InMemoryQueueSetup
     /// <summary>Configuration to use In-Memory message queue in CAP.</summary>
     /// <param name="options">CAP configuration options</param>
     /// <returns>The CAP options for method chaining</returns>
-    public static CapOptions UseInMemoryMessageQueue(this CapOptions options)
+    public static MessagingOptions UseInMemoryMessageQueue(this MessagingOptions options)
     {
         options.RegisterExtension(new InMemoryQueueOptionsExtension());
 
@@ -27,7 +27,7 @@ public static class InMemoryQueueSetup
         /// <param name="services">The service collection to add services to</param>
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapMessageQueueMakerService("InMemoryQueue"));
+            services.AddSingleton(new MessageQueueMarkerService("InMemoryQueue"));
             services.AddSingleton<InMemoryQueue>();
             services.AddSingleton<IConsumerClientFactory, InMemoryConsumerClientFactory>();
             services.AddSingleton<ITransport, InMemoryQueueTransport>();

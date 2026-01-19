@@ -49,7 +49,9 @@ public static class TickerFunctionProvider
         ArgumentNullException.ThrowIfNull(functions);
 
         if (functions.Count == 0)
+        {
             return;
+        }
 
         _functionRegistrations += dict =>
         {
@@ -87,7 +89,9 @@ public static class TickerFunctionProvider
         ArgumentNullException.ThrowIfNull(requestTypes);
 
         if (requestTypes.Count == 0)
+        {
             return;
+        }
 
         _requestTypeRegistrations += dict =>
         {
@@ -149,11 +153,10 @@ public static class TickerFunctionProvider
         if (_functionRegistrations != null)
         {
             // Single pass: execute callbacks directly on final dictionary
-            var functionsDict =
-                new Dictionary<
-                    string,
-                    (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)
-                >();
+            var functionsDict = new Dictionary<
+                string,
+                (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)
+            >(StringComparer.Ordinal);
             _functionRegistrations(functionsDict);
             TickerFunctions = functionsDict.ToFrozenDictionary();
             _functionRegistrations = null; // Release callback chain
@@ -163,21 +166,23 @@ public static class TickerFunctionProvider
             TickerFunctions = new Dictionary<
                 string,
                 (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)
-            >().ToFrozenDictionary();
+            >(StringComparer.Ordinal).ToFrozenDictionary();
         }
 
         // Build request types dictionary
         if (_requestTypeRegistrations != null)
         {
             // Single pass: execute callbacks directly on final dictionary
-            var requestTypesDict = new Dictionary<string, (string, Type)>();
+            var requestTypesDict = new Dictionary<string, (string, Type)>(StringComparer.Ordinal);
             _requestTypeRegistrations(requestTypesDict);
             TickerFunctionRequestTypes = requestTypesDict.ToFrozenDictionary();
             _requestTypeRegistrations = null; // Release callback chain
         }
         else
         {
-            TickerFunctionRequestTypes = new Dictionary<string, (string, Type)>().ToFrozenDictionary();
+            TickerFunctionRequestTypes = new Dictionary<string, (string, Type)>(
+                StringComparer.Ordinal
+            ).ToFrozenDictionary();
         }
     }
 }

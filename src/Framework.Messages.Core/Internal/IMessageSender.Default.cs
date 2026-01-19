@@ -18,12 +18,12 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 {
     // ReSharper disable once InconsistentNaming
     protected static readonly DiagnosticListener s_diagnosticListener = new(
-        CapDiagnosticListenerNames.DiagnosticListenerName
+        MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
     private readonly IDataStorage _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
     private readonly ILogger _logger = logger;
-    private readonly IOptions<CapOptions> _options = serviceProvider.GetRequiredService<IOptions<CapOptions>>();
+    private readonly IOptions<MessagingOptions> _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>();
     private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
     private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
@@ -125,11 +125,11 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
     private long? _TracingBefore(TransportMessage message, BrokerAddress broker)
     {
-        CapEventCounterSource.Log.WritePublishMetrics();
+        MessageEventCounterSource.Log.WritePublishMetrics();
 
-        if (s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.BeforePublish))
+        if (s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforePublish))
         {
-            var eventData = new CapEventDataPubSend
+            var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
@@ -137,7 +137,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
                 TransportMessage = message,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.BeforePublish, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublish, eventData);
 
             return eventData.OperationTimestamp;
         }
@@ -147,10 +147,10 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
     private void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
     {
-        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.AfterPublish))
+        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventData = new CapEventDataPubSend
+            var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -159,7 +159,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
                 ElapsedTimeMs = now - tracingTimestamp.Value,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.AfterPublish, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublish, eventData);
         }
     }
 
@@ -170,12 +170,12 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
         OperateResult result
     )
     {
-        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.ErrorPublish))
+        if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
             var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-            var eventData = new CapEventDataPubSend
+            var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -185,7 +185,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
                 Exception = ex,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.ErrorPublish, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublish, eventData);
         }
     }
 

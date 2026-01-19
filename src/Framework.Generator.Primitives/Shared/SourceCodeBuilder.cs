@@ -375,7 +375,10 @@ public sealed class SourceCodeBuilder
         static string quote(string? value)
         {
             if (value is null)
+            {
                 return "\"\"";
+            }
+
             var escaped = value
                 .Replace("\\", "\\\\")
                 .Replace("\"", "\\\"")

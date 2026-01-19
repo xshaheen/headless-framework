@@ -1,8 +1,8 @@
-using Framework.Ticker.Dashboard.Authentication;
+using Framework.Ticker.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 
-namespace Framework.Ticker.Dashboard;
+namespace Framework.Ticker;
 
 public class DashboardOptionsBuilder
 {

@@ -47,7 +47,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
     public FirstChildBuilder WithFirstChild(Action<ChildBuilder<TTimeTicker>> configure)
     {
         if (_childrenUsed[0])
+        {
             throw new InvalidOperationException("First child has already been configured");
+        }
 
         _childrenUsed[0] = true;
         var child = _CreateChild();
@@ -64,7 +66,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
     public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeTicker>> configure)
     {
         if (_childrenUsed[1])
+        {
             throw new InvalidOperationException("Second child has already been configured");
+        }
 
         _childrenUsed[1] = true;
         var child = _CreateChild();
@@ -81,7 +85,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
     public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeTicker>> configure)
     {
         if (_childrenUsed[2])
+        {
             throw new InvalidOperationException("Third child has already been configured");
+        }
 
         _childrenUsed[2] = true;
         var child = _CreateChild();
@@ -98,7 +104,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
     public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeTicker>> configure)
     {
         if (_childrenUsed[3])
+        {
             throw new InvalidOperationException("Fourth child has already been configured");
+        }
 
         _childrenUsed[3] = true;
         var child = _CreateChild();
@@ -115,7 +123,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
     public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeTicker>> configure)
     {
         if (_childrenUsed[4])
+        {
             throw new InvalidOperationException("Fifth child has already been configured");
+        }
 
         _childrenUsed[4] = true;
         var child = _CreateChild();
@@ -177,7 +187,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FirstChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
+            {
                 throw new InvalidOperationException("First grandchild of first child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -190,7 +202,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FirstChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
+            {
                 throw new InvalidOperationException("Second grandchild of first child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -203,7 +217,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FirstChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
+            {
                 throw new InvalidOperationException("Third grandchild of first child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -216,7 +232,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FirstChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
+            {
                 throw new InvalidOperationException("Fourth grandchild of first child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -229,7 +247,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FirstChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
+            {
                 throw new InvalidOperationException("Fifth grandchild of first child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -276,7 +296,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public SecondChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
+            {
                 throw new InvalidOperationException("First grandchild of second child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -289,7 +311,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public SecondChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
+            {
                 throw new InvalidOperationException("Second grandchild of second child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -302,7 +326,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public SecondChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
+            {
                 throw new InvalidOperationException("Third grandchild of second child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -315,7 +341,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public SecondChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
+            {
                 throw new InvalidOperationException("Fourth grandchild of second child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -328,7 +356,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public SecondChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
+            {
                 throw new InvalidOperationException("Fifth grandchild of second child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -368,7 +398,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public ThirdChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
+            {
                 throw new InvalidOperationException("First grandchild of third child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -381,7 +413,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public ThirdChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
+            {
                 throw new InvalidOperationException("Second grandchild of third child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -394,7 +428,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public ThirdChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
+            {
                 throw new InvalidOperationException("Third grandchild of third child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -407,7 +443,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public ThirdChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
+            {
                 throw new InvalidOperationException("Fourth grandchild of third child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -420,7 +458,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public ThirdChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
+            {
                 throw new InvalidOperationException("Fifth grandchild of third child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -461,7 +501,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FourthChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
+            {
                 throw new InvalidOperationException("First grandchild of fourth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -474,7 +516,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FourthChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
+            {
                 throw new InvalidOperationException("Second grandchild of fourth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -487,7 +531,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FourthChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
+            {
                 throw new InvalidOperationException("Third grandchild of fourth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -500,7 +546,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FourthChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
+            {
                 throw new InvalidOperationException("Fourth grandchild of fourth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -513,7 +561,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FourthChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
+            {
                 throw new InvalidOperationException("Fifth grandchild of fourth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -547,7 +597,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FifthChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
+            {
                 throw new InvalidOperationException("First grandchild of fifth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -560,7 +612,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FifthChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
+            {
                 throw new InvalidOperationException("Second grandchild of fifth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -573,7 +627,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FifthChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
+            {
                 throw new InvalidOperationException("Third grandchild of fifth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -586,7 +642,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FifthChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
+            {
                 throw new InvalidOperationException("Fourth grandchild of fifth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);
@@ -599,7 +657,9 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public FifthChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
+            {
                 throw new InvalidOperationException("Fifth grandchild of fifth child has already been configured");
+            }
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _mainBuilder._CreateGrandChild(_child);

@@ -1,13 +1,13 @@
-using Framework.Ticker.Dashboard.Authentication;
-using Framework.Ticker.Dashboard.Hubs;
-using Framework.Ticker.Dashboard.Infrastructure.Dashboard;
+using Framework.Ticker.Authentication;
+using Framework.Ticker.Hubs;
+using Framework.Ticker.Infrastructure.Dashboard;
 using Framework.Ticker.Utilities;
 using Framework.Ticker.Utilities.Entities;
 using Framework.Ticker.Utilities.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Framework.Ticker.Dashboard.DependencyInjection;
+namespace Framework.Ticker.DependencyInjection;
 
 public static class ServiceExtensions
 {
@@ -51,7 +51,7 @@ public static class ServiceExtensions
                 // We just ensure they're available
                 var hasAuthenticationService = services.Any(s =>
                     s.ServiceType == typeof(Microsoft.AspNetCore.Authentication.IAuthenticationService)
-                    || s.ServiceType.Name == "IAuthenticationSchemeProvider"
+                    || string.Equals(s.ServiceType.Name, "IAuthenticationSchemeProvider", StringComparison.Ordinal)
                 );
 
                 if (!hasAuthenticationService)

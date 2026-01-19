@@ -23,7 +23,7 @@ public class IConsumeIntegrationTests
             messaging.Consumer<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service").Build();
         });
 
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -59,7 +59,7 @@ public class IConsumeIntegrationTests
             messaging.Consumer<OrderPlacedConsumer>().Topic("orders.placed").Build();
         });
 
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -74,7 +74,7 @@ public class IConsumeIntegrationTests
             Message = message,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>()),
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
             Topic = "orders.placed",
         };
@@ -104,7 +104,7 @@ public class IConsumeIntegrationTests
             messaging.Consumer<OrderAnalyticsConsumer>().Topic("orders.placed").Group("analytics-service").Build();
         });
 
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -139,7 +139,7 @@ public class IConsumeIntegrationTests
             messaging.ScanConsumers(typeof(IConsumeIntegrationTests).Assembly);
         });
 
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -172,7 +172,7 @@ public class IConsumeIntegrationTests
             messaging.ScanConsumers(typeof(IConsumeIntegrationTests).Assembly);
         });
 
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -245,7 +245,7 @@ public class IConsumeIntegrationTests
             Message = orderPlaced,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>()),
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
             Topic = "orders.placed",
         };
@@ -255,7 +255,7 @@ public class IConsumeIntegrationTests
             Message = orderCancelled,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>()),
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
             Topic = "orders.cancelled",
         };

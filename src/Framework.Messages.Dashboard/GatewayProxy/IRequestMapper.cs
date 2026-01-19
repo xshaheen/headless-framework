@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace DotNetCore.CAP.Dashboard.GatewayProxy;
+namespace Framework.Messages.GatewayProxy;
 
 public interface IRequestMapper
 {

@@ -1,6 +1,6 @@
 using Framework.Ticker.Utilities;
 
-namespace Framework.Ticker.Tests;
+namespace Tests;
 
 public class CronScheduleCacheTests
 {

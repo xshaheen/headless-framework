@@ -23,7 +23,9 @@ public static class TickerQDiscoveryExtension
         foreach (var assembly in assembliesToLoad)
         {
             if (!string.IsNullOrEmpty(assembly.FullName))
+            {
                 Assembly.Load(assembly.FullName);
+            }
         }
 
         return tickerConfiguration;

@@ -11,22 +11,24 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesNatsSetup
 {
-    extension(CapOptions options)
+    extension(MessagingOptions options)
     {
         /// <summary>Configuration to use NATS in CAP.</summary>
         /// <param name="bootstrapServers">NATS bootstrap server urls.</param>
-        public CapOptions UseNats(string? bootstrapServers = null)
+        public MessagingOptions UseNats(string? bootstrapServers = null)
         {
             return options.UseNats(opt =>
             {
                 if (bootstrapServers != null)
+                {
                     opt.Servers = bootstrapServers;
+                }
             });
         }
 
         /// <summary>Configuration to use NATS in CAP.</summary>
         /// <param name="configure">Provides programmatic configuration for the NATS.</param>
-        public CapOptions UseNats(Action<NatsOptions> configure)
+        public MessagingOptions UseNats(Action<NatsOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -40,7 +42,7 @@ public static class MessagesNatsSetup
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapMessageQueueMakerService("NATS JetStream"));
+            services.AddSingleton(new MessageQueueMarkerService("NATS JetStream"));
 
             services.Configure(configure);
 

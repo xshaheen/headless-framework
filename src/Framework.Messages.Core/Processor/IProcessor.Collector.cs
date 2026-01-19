@@ -21,7 +21,7 @@ public sealed class CollectorProcessor : IProcessor
 
     public CollectorProcessor(
         ILogger<CollectorProcessor> logger,
-        IOptions<CapOptions> options,
+        IOptions<MessagingOptions> options,
         IServiceProvider serviceProvider
     )
     {

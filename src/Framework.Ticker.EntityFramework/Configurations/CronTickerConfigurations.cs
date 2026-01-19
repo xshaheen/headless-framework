@@ -2,15 +2,12 @@ using Framework.Ticker.Utilities.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Framework.Ticker.EntityFrameworkCore.Configurations;
+namespace Framework.Ticker.Configurations;
 
-public class CronTickerConfigurations<TCronTicker> : IEntityTypeConfiguration<TCronTicker>
+public class CronTickerConfigurations<TCronTicker>(string schema = Constants.DefaultSchema)
+    : IEntityTypeConfiguration<TCronTicker>
     where TCronTicker : CronTickerEntity, new()
 {
-    private readonly string _schema;
-
-    public CronTickerConfigurations(string schema = Constants.DefaultSchema) => _schema = schema;
-
     public void Configure(EntityTypeBuilder<TCronTicker> builder)
     {
         builder.HasKey("Id");
@@ -22,6 +19,6 @@ public class CronTickerConfigurations<TCronTicker> : IEntityTypeConfiguration<TC
         // Index for common lookups by function + expression
         builder.HasIndex("Function", "Expression").HasDatabaseName("IX_Function_Expression");
 
-        builder.ToTable("CronTickers", _schema);
+        builder.ToTable("CronTickers", schema);
     }
 }

@@ -1,7 +1,7 @@
 using Framework.Ticker.Utilities.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Ticker.EntityFrameworkCore.Infrastructure;
+namespace Framework.Ticker.Infrastructure;
 
 public static class PaginationExtensions
 {

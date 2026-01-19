@@ -1,7 +1,7 @@
 using Framework.Ticker.Base;
 using Framework.Ticker.Utilities.Enums;
 
-namespace Framework.Ticker.Tests;
+namespace Tests;
 
 public class TickerFunctionContextTests
 {

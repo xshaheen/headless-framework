@@ -1,6 +1,6 @@
 using Framework.Ticker.Utilities;
 
-namespace Framework.Ticker.Dashboard.Infrastructure;
+namespace Framework.Ticker.Infrastructure;
 
 public class StringToByteArrayConverter : JsonConverter<byte[]>
 {

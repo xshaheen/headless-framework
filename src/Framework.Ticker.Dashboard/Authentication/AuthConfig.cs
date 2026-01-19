@@ -1,4 +1,4 @@
-namespace Framework.Ticker.Dashboard.Authentication;
+namespace Framework.Ticker.Authentication;
 
 /// <summary>
 /// Authentication configuration for TickerQ Dashboard

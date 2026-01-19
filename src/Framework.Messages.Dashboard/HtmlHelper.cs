@@ -3,9 +3,8 @@
 using System.Reflection;
 using Framework.Messages.Internal;
 using Framework.Messages.Internal.ObjectMethodExecutor;
-using Microsoft.Extensions.Internal;
 
-namespace DotNetCore.CAP.Dashboard;
+namespace Framework.Messages;
 
 public class HtmlHelper
 {
@@ -21,9 +20,13 @@ public class HtmlHelper
             async = _WrapKeyword("async");
             var asyncResultType = coercedAwaitableInfo.AwaitableInfo.ResultType;
             if (asyncResultType.Name == "Void")
+            {
                 @return = _WrapType("Task");
+            }
             else
+            {
                 @return = _WrapType("Task") + _WrapIdentifier("<") + _WrapType(asyncResultType) + _WrapIdentifier(">");
+            }
         }
         else
         {
@@ -55,16 +58,24 @@ public class HtmlHelper
     private static string _WrapType(Type type)
     {
         if (type == null)
+        {
             return string.Empty;
+        }
 
         if (type.Name == "Void")
+        {
             return _WrapKeyword(type.Name.ToLower());
+        }
 
         if (Helper.IsComplexType(type))
+        {
             return _WrapType(type.Name);
+        }
 
         if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal))
+        {
             return _WrapKeyword(type.Name.ToLower());
+        }
 
         return _WrapType(type.Name);
     }

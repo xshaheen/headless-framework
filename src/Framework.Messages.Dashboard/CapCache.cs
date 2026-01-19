@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 
-namespace DotNetCore.CAP.Dashboard;
+namespace Framework.Messages;
 
 #region Cache<T> class
 
@@ -140,7 +140,9 @@ public class Cache<TKey, T> : IDisposable
     public void AddOrUpdate(TKey key, T? cacheObject, TimeSpan? cacheTimeout, bool restartTimerIfExists = false)
     {
         if (_disposed)
+        {
             return;
+        }
 
         try
         {
@@ -148,9 +150,13 @@ public class Cache<TKey, T> : IDisposable
             _CheckTimer(key, cacheTimeout, restartTimerIfExists);
 
             if (!_cache.ContainsKey(key))
+            {
                 _cache.Add(key, cacheObject);
+            }
             else
+            {
                 _cache[key] = cacheObject;
+            }
         }
         finally
         {

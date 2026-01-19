@@ -146,7 +146,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         HashSet<string>? typeNameConflicts = null
     )
     {
-        var usedFunctionNames = new HashSet<string>();
+        var usedFunctionNames = new HashSet<string>(StringComparer.Ordinal);
         var validatedClasses = new HashSet<ClassDeclarationSyntax>();
 
         foreach (var pair in methodPairs)
@@ -346,7 +346,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
     /// </summary>
     private static HashSet<string> _DetectClassNameConflicts(List<string> fullClassNames)
     {
-        var simpleNameCounts = new Dictionary<string, int>();
+        var simpleNameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Count occurrences of each simple class name
         foreach (var fullClassName in fullClassNames)
@@ -359,7 +359,10 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         }
 
         // Return simple names that have conflicts (count > 1)
-        return new HashSet<string>(simpleNameCounts.Where(kv => kv.Value > 1).Select(kv => kv.Key));
+        return new HashSet<string>(
+            simpleNameCounts.Where(kv => kv.Value > 1).Select(kv => kv.Key),
+            StringComparer.Ordinal
+        );
     }
 
     /// <summary>
@@ -367,7 +370,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
     /// </summary>
     private static HashSet<string> _DetectTypeNameConflicts(List<string> fullTypeNames)
     {
-        var simpleNameCounts = new Dictionary<string, int>();
+        var simpleNameCounts = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Count occurrences of each simple type name
         foreach (var fullTypeName in fullTypeNames)
@@ -385,7 +388,10 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         }
 
         // Return simple names that have conflicts (count > 1)
-        return new HashSet<string>(simpleNameCounts.Where(kv => kv.Value > 1).Select(kv => kv.Key));
+        return new HashSet<string>(
+            simpleNameCounts.Where(kv => kv.Value > 1).Select(kv => kv.Key),
+            StringComparer.Ordinal
+        );
     }
 
     /// <summary>

@@ -1,16 +1,16 @@
 using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
-using Framework.Ticker.Dashboard.Authentication;
-using Framework.Ticker.Dashboard.Endpoints;
-using Framework.Ticker.Dashboard.Infrastructure;
+using Framework.Ticker.Authentication;
+using Framework.Ticker.Endpoints;
+using Framework.Ticker.Infrastructure;
 using Framework.Ticker.Utilities.Entities;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 
-namespace Framework.Ticker.Dashboard.DependencyInjection;
+namespace Framework.Ticker.DependencyInjection;
 
 internal static class ServiceCollectionExtensions
 {
@@ -257,7 +257,7 @@ internal static class ServiceCollectionExtensions
         pathBase ??= string.Empty;
         basePath ??= "/";
 
-        if (string.IsNullOrEmpty(basePath) || basePath == "/")
+        if (string.IsNullOrEmpty(basePath) || string.Equals(basePath, "/", StringComparison.Ordinal))
         {
             return string.IsNullOrEmpty(pathBase) ? "/" : pathBase;
         }

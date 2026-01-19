@@ -1,3 +1,4 @@
+using Framework.Messages;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 

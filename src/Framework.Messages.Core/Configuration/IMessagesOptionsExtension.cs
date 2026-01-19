@@ -5,19 +5,19 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Framework.Messages.Configuration;
 
 /// <summary>
-/// Defines an extension mechanism for customizing CAP configuration during dependency injection setup.
+/// Defines an extension mechanism for customizing messaging configuration during dependency injection setup.
 /// Implementations of this interface allow third-party libraries and custom code to register services
-/// and configure CAP functionality without modifying the core CAP assembly.
+/// and configure messaging functionality without modifying the core messaging assembly.
 /// </summary>
 /// <remarks>
-/// Extensions are registered through <see cref="CapOptions.RegisterExtension(IMessagesOptionsExtension)"/>
+/// Extensions are registered through <see cref="MessagingOptions.RegisterExtension(IMessagesOptionsExtension)"/>
 /// and are executed during the <c>AddCap()</c> service registration process.
-/// This allows modular and composable configuration of storage backends, transport implementations, and other CAP components.
+/// This allows modular and composable configuration of storage backends, transport implementations, and other messaging components.
 /// </remarks>
 public interface IMessagesOptionsExtension
 {
     /// <summary>
-    /// Called during CAP service registration to add and configure child services in the dependency injection container.
+    /// Called during messaging service registration to add and configure child services in the dependency injection container.
     /// </summary>
     /// <remarks>
     /// Implementations should use <c>TryAdd</c> or <c>Replace</c> extension methods to register services,

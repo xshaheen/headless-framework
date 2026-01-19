@@ -14,7 +14,7 @@ namespace Framework.Messages;
 /// This record stores the configuration metadata for a consumer registered via
 /// <see cref="IMessagingBuilder.Consumer{TConsumer}"/> or <see cref="IMessagingBuilder.ScanConsumers"/>.
 /// The metadata is used by <see cref="IConsumerServiceSelector"/> to build consumer descriptors
-/// that CAP uses for message routing and execution.
+/// that the messaging system uses for message routing and execution.
 /// </remarks>
 internal sealed record ConsumerMetadata(
     Type MessageType,

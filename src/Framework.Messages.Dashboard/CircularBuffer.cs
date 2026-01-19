@@ -3,7 +3,7 @@
 using System.Collections;
 using Framework.Checks;
 
-namespace DotNetCore.CAP.Dashboard;
+namespace Framework.Messages;
 
 /// <summary>
 /// A generic circular buffer.
@@ -27,8 +27,7 @@ internal class CircularBuffer<T> : ICollection<T>
     /// <exception cref="ArgumentOutOfRangeException">If <paramref name="capacity" /> is negative.</exception>
     public CircularBuffer(int capacity)
     {
-        if (capacity < 0)
-            throw new ArgumentOutOfRangeException(nameof(capacity));
+        Argument.IsPositiveOrZero(capacity);
 
         _items = new T[capacity];
         Clear();
@@ -59,7 +58,9 @@ internal class CircularBuffer<T> : ICollection<T>
         get
         {
             if (!(index >= 0 && index < Count))
+            {
                 throw new ArgumentOutOfRangeException(nameof(index));
+            }
 
             return _items[_WrapIndex(index)];
         }
@@ -79,7 +80,9 @@ internal class CircularBuffer<T> : ICollection<T>
     private int _WrapIndex(int zeroBasedIndex)
     {
         if (Capacity == 0 || zeroBasedIndex < 0)
+        {
             throw new ArgumentOutOfRangeException(nameof(zeroBasedIndex));
+        }
 
         return (zeroBasedIndex + _firstIndex) % Capacity;
     }
@@ -128,7 +131,9 @@ internal class CircularBuffer<T> : ICollection<T>
     public void Add(T item)
     {
         if (Capacity == 0)
+        {
             return;
+        }
 
         int itemIndex;
 
@@ -162,10 +167,14 @@ internal class CircularBuffer<T> : ICollection<T>
         Argument.IsNotNull(array);
 
         if (arrayIndex < 0)
+        {
             throw new ArgumentOutOfRangeException(nameof(arrayIndex));
+        }
 
         if (Count > array.Length - arrayIndex)
+        {
             throw new ArgumentException("arrayIndex");
+        }
 
         // Iterate through the buffer in correct order.
         foreach (var item in this)

@@ -11,13 +11,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesAzureServiceBusSetup
 {
-    extension(CapOptions options)
+    extension(MessagingOptions options)
     {
         /// <summary>
         /// Configuration to use Azure Service Bus in CAP.
         /// </summary>
         /// <param name="connectionString">Connection string for namespace or the entity.</param>
-        public CapOptions UseAzureServiceBus(string connectionString)
+        public MessagingOptions UseAzureServiceBus(string connectionString)
         {
             Argument.IsNotNull(connectionString);
 
@@ -31,7 +31,7 @@ public static class MessagesAzureServiceBusSetup
         /// Configuration to use Azure Service Bus in CAP.
         /// </summary>
         /// <param name="configure">Provides programmatic configuration for the Azure Service Bus.</param>
-        public CapOptions UseAzureServiceBus(Action<AzureServiceBusOptions> configure)
+        public MessagingOptions UseAzureServiceBus(Action<AzureServiceBusOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -46,7 +46,7 @@ public static class MessagesAzureServiceBusSetup
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapMessageQueueMakerService("Azure Service Bus"));
+            services.AddSingleton(new MessageQueueMarkerService("Azure Service Bus"));
 
             services.Configure(configure);
 

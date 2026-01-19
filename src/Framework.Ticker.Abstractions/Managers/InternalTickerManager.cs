@@ -43,7 +43,9 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         var timeTickerTime = minTimeTickers.Length > 0 ? minTimeTickers[0].ExecutionTime : null;
 
         if (cronTime is null && timeTickerTime is null)
+        {
             return (Timeout.InfiniteTimeSpan, []);
+        }
 
         TimeSpan timeRemaining;
         bool includeCron = false;
@@ -98,26 +100,38 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         }
 
         if (!includeCron && !includeTimeTickers)
+        {
             return (Timeout.InfiniteTimeSpan, []);
+        }
 
         InternalFunctionContext[] cronFunctions = [];
         InternalFunctionContext[] timeFunctions = [];
 
         if (includeCron && minCronGroup is not null)
+        {
             cronFunctions = await _QueueNextCronTickersAsync(minCronGroup.Value, cancellationToken)
                 .ConfigureAwait(false);
+        }
 
         if (includeTimeTickers && minTimeTickers.Length > 0)
+        {
             timeFunctions = await _QueueNextTimeTickersAsync(minTimeTickers, cancellationToken).ConfigureAwait(false);
+        }
 
         if (cronFunctions.Length == 0 && timeFunctions.Length == 0)
+        {
             return (timeRemaining, []);
+        }
 
         if (cronFunctions.Length == 0)
+        {
             return (timeRemaining, timeFunctions);
+        }
 
         if (timeFunctions.Length == 0)
+        {
             return (timeRemaining, cronFunctions);
+        }
 
         var merged = new InternalFunctionContext[cronFunctions.Length + timeFunctions.Length];
         cronFunctions.AsSpan().CopyTo(merged.AsSpan(0, cronFunctions.Length));
@@ -213,13 +227,17 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             );
 
             if (occurrence.CreatedAt == occurrence.UpdatedAt && _notificationHubSender != null)
+            {
                 await _notificationHubSender
                     .AddCronOccurrenceAsync(occurrence.CronTickerId, occurrence)
                     .ConfigureAwait(false);
+            }
             else if (_notificationHubSender != null)
+            {
                 await _notificationHubSender
                     .UpdateCronOccurrenceAsync(occurrence.CronTickerId, occurrence)
                     .ConfigureAwait(false);
+            }
         }
 
         return results.ToArray();
@@ -258,14 +276,18 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         {
             var next = CronScheduleCache.GetNextOccurrenceOrDefault(cronTicker.Expression, now);
             if (next is null)
+            {
                 continue;
+            }
 
             if (
                 earliestStored != null
                 && earliestStored.ExecutionTime == next
                 && cronTicker.Id == earliestStored.CronTickerId
             )
+            {
                 continue;
+            }
 
             var n = next.Value;
             if (min is null || n < min)
@@ -311,13 +333,17 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
 
             // If no in-memory occurrences or stored is earlier, return stored only
             if (min is null || storedTime < min.Value)
+            {
                 return (storedTime, [storedItem]);
+            }
 
             // If stored time equals the earliest in-memory time, aggregate them
             if (storedTime == min.Value)
             {
                 if (ties is null)
+                {
                     return (min.Value, [first!, storedItem]);
+                }
 
                 ties.Add(storedItem);
                 return (min.Value, ties.ToArray());
@@ -330,7 +356,9 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
 
         // No stored occurrence - return in-memory winners or null if none
         if (min is null)
+        {
             return null;
+        }
 
         var finalWinners = ties is null ? [first!] : ties.ToArray();
         return (min.Value, finalWinners);
@@ -369,6 +397,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         else
         {
             if (cronTickerIds.Length != 0)
+            {
                 await _persistenceProvider
                     .UpdateCronTickerOccurrencesWithUnifiedContext(
                         cronTickerIds,
@@ -376,11 +405,14 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                         cancellationToken
                     )
                     .ConfigureAwait(false);
+            }
 
             if (timeTickerIds.Length != 0)
+            {
                 await _persistenceProvider
                     .UpdateTimeTickersWithUnifiedContext(timeTickerIds, unifiedFunctionContext, cancellationToken)
                     .ConfigureAwait(false);
+            }
         }
 
         foreach (var resource in resources)
@@ -388,13 +420,17 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             resource.Status = TickerStatus.InProgress;
 
             if (resource.Type == TickerType.TimeTicker)
+            {
                 await _notificationHubSender
                     .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(resource)
                     .ConfigureAwait(false);
+            }
             else
+            {
                 await _notificationHubSender
                     .UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(resource)
                     .ConfigureAwait(false);
+            }
         }
     }
 
@@ -418,9 +454,11 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                 : resources.Where(x => x.Type == TickerType.CronTickerOccurrence).Select(x => x.TickerId).ToArray();
 
         if (cronTickerIds.Length != 0)
+        {
             await _persistenceProvider
                 .ReleaseAcquiredCronTickerOccurrences(cronTickerIds, cancellationToken)
                 .ConfigureAwait(false);
+        }
 
         var timeTickerIds =
             resources.Length == 0
@@ -428,9 +466,11 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                 : resources.Where(x => x.Type == TickerType.TimeTicker).Select(x => x.TickerId).ToArray();
 
         if (timeTickerIds.Length != 0)
+        {
             await _persistenceProvider
                 .ReleaseAcquiredTimeTickers(timeTickerIds, cancellationToken)
                 .ConfigureAwait(false);
+        }
     }
 
     public async Task UpdateTickerAsync(
@@ -467,6 +507,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             .SetProperty(x => x.ExceptionDetails, "Rule RunCondition did not match!");
 
         if (resources.Length != 0)
+        {
             await _persistenceProvider
                 .UpdateTimeTickersWithUnifiedContext(
                     resources.Select(x => x.TickerId).ToArray(),
@@ -474,6 +515,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+        }
 
         foreach (var resource in resources)
         {
@@ -481,13 +523,17 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             resource.Status = TickerStatus.Skipped;
             resource.ExceptionDetails = "Rule RunCondition did not match!";
             if (resource.Type == TickerType.TimeTicker)
+            {
                 await _notificationHubSender
                     .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(resource)
                     .ConfigureAwait(false);
+            }
             else
+            {
                 await _notificationHubSender
                     .UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(resource)
                     .ConfigureAwait(false);
+            }
         }
     }
 
@@ -593,9 +639,13 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
     public async Task DeleteTicker(Guid tickerId, TickerType type, CancellationToken cancellationToken = default)
     {
         if (type == TickerType.CronTickerOccurrence)
+        {
             await _persistenceProvider.RemoveCronTickers([tickerId], cancellationToken).ConfigureAwait(false);
+        }
         else
+        {
             await _persistenceProvider.RemoveTimeTickers([tickerId], cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public async Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default)

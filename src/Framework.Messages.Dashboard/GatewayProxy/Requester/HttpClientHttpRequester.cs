@@ -3,7 +3,7 @@
 using Framework.Checks;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.Messages.Dashboard.GatewayProxy.Requester;
+namespace Framework.Messages.GatewayProxy.Requester;
 
 public class HttpClientHttpRequester(ILoggerFactory loggerFactory, IHttpClientCache cacheHandlers) : IHttpRequester
 {
@@ -37,7 +37,9 @@ public class HttpClientHttpRequester(ILoggerFactory loggerFactory, IHttpClientCa
         var httpClient = cacheHandlers.Get(cacheKey);
 
         if (httpClient == null)
+        {
             httpClient = builder.Create();
+        }
 
         return httpClient;
     }

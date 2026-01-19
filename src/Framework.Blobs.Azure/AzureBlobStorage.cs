@@ -608,12 +608,17 @@ public sealed class AzureBlobStorage(
 
         var sb = new StringBuilder(blobServiceClient.Uri.AbsoluteUri);
         if (sb[^1] != '/')
+        {
             sb.Append('/');
+        }
 
         for (var i = 0; i < container.Length; i++)
         {
             if (i > 0)
+            {
                 sb.Append('/');
+            }
+
             sb.Append(_NormalizeContainerName(container[i]));
         }
 
@@ -639,11 +644,17 @@ public sealed class AzureBlobStorage(
         for (var i = 1; i < container.Length; i++)
         {
             if (sb.Length > 0)
+            {
                 sb.Append('/');
+            }
+
             sb.Append(_NormalizeContainerName(container[i]));
         }
         if (sb.Length > 0)
+        {
             sb.Append('/');
+        }
+
         sb.Append(_NormalizeSlashes(normalizedBlobName));
 
         return (_GetContainer(container), sb.ToString());

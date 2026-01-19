@@ -9,15 +9,15 @@ using Framework.Messages.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class CapOptionsExtensions
+public static class MessagingOptionsExtensions
 {
-    extension(CapOptions options)
+    extension(MessagingOptions options)
     {
         /// <summary>
         /// Configuration to use pulsar in CAP.
         /// </summary>
         /// <param name="serverUrl">Pulsar bootstrap server urls.</param>
-        public CapOptions UsePulsar(string serverUrl)
+        public MessagingOptions UsePulsar(string serverUrl)
         {
             return options.UsePulsar(opt =>
             {
@@ -30,7 +30,7 @@ public static class CapOptionsExtensions
         /// </summary>
         /// <param name="configure">Provides programmatic configuration for the pulsar .</param>
         /// <returns></returns>
-        public CapOptions UsePulsar(Action<PulsarOptions> configure)
+        public MessagingOptions UsePulsar(Action<PulsarOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -44,7 +44,7 @@ public static class CapOptionsExtensions
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapMessageQueueMakerService("Apache Pulsar"));
+            services.AddSingleton(new MessageQueueMarkerService("Apache Pulsar"));
 
             services.Configure(configure);
 

@@ -16,9 +16,9 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesSqlServerSetup
 {
-    extension(CapOptions options)
+    extension(MessagingOptions options)
     {
-        public CapOptions UseSqlServer(string connectionString)
+        public MessagingOptions UseSqlServer(string connectionString)
         {
             return options.UseSqlServer(opt =>
             {
@@ -26,7 +26,7 @@ public static class MessagesSqlServerSetup
             });
         }
 
-        public CapOptions UseSqlServer(Action<SqlServerOptions> configure)
+        public MessagingOptions UseSqlServer(Action<SqlServerOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -37,13 +37,13 @@ public static class MessagesSqlServerSetup
             return options;
         }
 
-        public CapOptions UseEntityFramework<TContext>()
+        public MessagingOptions UseEntityFramework<TContext>()
             where TContext : DbContext
         {
             return options.UseEntityFramework<TContext>(opt => { });
         }
 
-        public CapOptions UseEntityFramework<TContext>(Action<EfOptions> configure)
+        public MessagingOptions UseEntityFramework<TContext>(Action<SqlServerEntityFrameworkMessagingOptions> configure)
             where TContext : DbContext
         {
             Argument.IsNotNull(configure);
@@ -66,7 +66,7 @@ public static class MessagesSqlServerSetup
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapStorageMarkerService("SqlServer"));
+            services.AddSingleton(new MessageStorageMarkerService("SqlServer"));
 
             services.AddSingleton<DiagnosticProcessorObserver>();
             services.AddSingleton<IDataStorage, SqlServerDataStorage>();

@@ -23,7 +23,9 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
         _pulsarOptions = pulsarOptions;
 
         if (_pulsarOptions.Value.EnableClientLog)
+        {
             PulsarClient.Logger = loggerFactory.CreateLogger<PulsarClient>();
+        }
     }
 
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)

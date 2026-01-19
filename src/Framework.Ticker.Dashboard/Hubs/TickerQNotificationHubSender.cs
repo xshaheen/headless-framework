@@ -3,7 +3,7 @@ using Framework.Ticker.Utilities.Interfaces;
 using Framework.Ticker.Utilities.Models;
 using Microsoft.AspNetCore.SignalR;
 
-namespace Framework.Ticker.Dashboard.Hubs;
+namespace Framework.Ticker.Hubs;
 
 internal class TickerQNotificationHubSender : ITickerQNotificationHubSender
 {

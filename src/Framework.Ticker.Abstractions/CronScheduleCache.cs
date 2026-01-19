@@ -33,7 +33,9 @@ internal static partial class CronScheduleCache
         var parsed = Get(_Normalize(expression));
 
         if (parsed == null)
+        {
             return null;
+        }
 
         var localTime = TimeZoneInfo.ConvertTimeFromUtc(dateTime, TimeZoneInfo);
 

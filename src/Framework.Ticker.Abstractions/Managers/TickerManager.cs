@@ -103,12 +103,16 @@ internal class TickerManager<TTimeTicker, TCronTicker>
     )
     {
         if (entity.Id == Guid.Empty)
+        {
             entity.Id = Guid.NewGuid();
+        }
 
         if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != entity?.Function))
+        {
             return new TickerResult<TTimeTicker>(
                 new TickerValidatorException($"Cannot find TickerFunction with name {entity?.Function}")
             );
+        }
 
         entity.ExecutionTime =
             entity.ExecutionTime == null ? _clock.UtcNow : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
@@ -160,17 +164,23 @@ internal class TickerManager<TTimeTicker, TCronTicker>
     )
     {
         if (entity.Id == Guid.Empty)
+        {
             entity.Id = Guid.NewGuid();
+        }
 
         if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != entity?.Function))
+        {
             return new TickerResult<TCronTicker>(
                 new TickerValidatorException($"Cannot find TickerFunction with name {entity?.Function}")
             );
+        }
 
         if (CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _clock.UtcNow) is not { } nextOccurrence)
+        {
             return new TickerResult<TCronTicker>(
                 new TickerValidatorException($"Cannot parse expression {entity.Expression}")
             );
+        }
 
         entity.CreatedAt = _clock.UtcNow;
         entity.UpdatedAt = _clock.UtcNow;
@@ -197,12 +207,16 @@ internal class TickerManager<TTimeTicker, TCronTicker>
     )
     {
         if (timeTicker is null)
+        {
             return new TickerResult<TTimeTicker>(new TickerValidatorException($"Ticker must not be null!"));
+        }
 
         if (timeTicker.ExecutionTime == null)
+        {
             return new TickerResult<TTimeTicker>(
                 new TickerValidatorException($"Ticker ExecutionTime must not be null!")
             );
+        }
 
         timeTicker.UpdatedAt = _clock.UtcNow;
         timeTicker.ExecutionTime = _ConvertToUtcIfNeeded(timeTicker.ExecutionTime.Value);
@@ -214,9 +228,13 @@ internal class TickerManager<TTimeTicker, TCronTicker>
                 .ConfigureAwait(false);
 
             if (_executionContext.Functions.Any(x => x.TickerId == timeTicker.Id))
+            {
                 _tickerQHostScheduler.Restart();
+            }
             else
+            {
                 _tickerQHostScheduler.RestartIfNeeded(timeTicker.ExecutionTime);
+            }
 
             return new TickerResult<TTimeTicker>(timeTicker, affectedRows);
         }
@@ -232,19 +250,25 @@ internal class TickerManager<TTimeTicker, TCronTicker>
     )
     {
         if (cronTicker is null)
+        {
             return new TickerResult<TCronTicker>(new Exception($"Cron ticker must not be null!"));
+        }
 
         if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != cronTicker?.Function))
+        {
             return new TickerResult<TCronTicker>(
                 new TickerValidatorException($"Cannot find TickerFunction with name {cronTicker.Function}")
             );
+        }
 
         if (
             CronScheduleCache.GetNextOccurrenceOrDefault(cronTicker.Expression, _clock.UtcNow) is not { } nextOccurrence
         )
+        {
             return new TickerResult<TCronTicker>(
                 new TickerValidatorException($"Cannot parse expression {cronTicker.Expression}")
             );
+        }
 
         try
         {
@@ -284,7 +308,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         var affectedRows = await _persistenceProvider.RemoveCronTickers([id], cancellationToken: cancellationToken);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.ParentId == id))
+        {
             _tickerQHostScheduler.Restart();
+        }
 
         return new TickerResult<TCronTicker>(affectedRows);
     }
@@ -297,7 +323,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         var affectedRows = await _persistenceProvider.RemoveTimeTickers([id], cancellationToken: cancellationToken);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.TickerId == id))
+        {
             _tickerQHostScheduler.Restart();
+        }
 
         return new TickerResult<TTimeTicker>(affectedRows);
     }
@@ -363,21 +391,30 @@ internal class TickerManager<TTimeTicker, TCronTicker>
     )
     {
         if (entities == null || entities.Count == 0)
+        {
             return new TickerResult<List<TTimeTicker>>(entities ?? new List<TTimeTicker>());
+        }
 
-        var tickerFunctionsHashSet = new HashSet<string>(TickerFunctionProvider.TickerFunctions.Keys);
+        var tickerFunctionsHashSet = new HashSet<string>(
+            TickerFunctionProvider.TickerFunctions.Keys,
+            StringComparer.Ordinal
+        );
         var immediateTickers = new List<Guid>();
         var now = _clock.UtcNow;
         DateTime earliestForNonImmediate = default;
         foreach (var entity in entities)
         {
             if (entity.Id == Guid.Empty)
+            {
                 entity.Id = Guid.NewGuid();
+            }
 
             if (!tickerFunctionsHashSet.Contains(entity.Function))
+            {
                 return new TickerResult<List<TTimeTicker>>(
                     new TickerValidatorException($"Cannot find TickerFunction with name {entity?.Function}")
                 );
+            }
 
             entity.ExecutionTime ??= now;
             entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
@@ -387,9 +424,13 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             entity.UpdatedAt = now;
 
             if (entity.ExecutionTime.Value <= now.AddSeconds(1))
+            {
                 immediateTickers.Add(entity.Id);
+            }
             else if (earliestForNonImmediate == default || entity.ExecutionTime <= earliestForNonImmediate)
+            {
                 earliestForNonImmediate = entity.ExecutionTime.Value;
+            }
         }
 
         try
@@ -438,7 +479,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         foreach (var entity in entities)
         {
             if (entity.Id == Guid.Empty)
+            {
                 entity.Id = Guid.NewGuid();
+            }
 
             if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != entity?.Function))
             {
@@ -461,8 +504,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             nextOccurrences.Add(nextOccurrence);
         }
 
-        if (errors.Any())
+        if (errors.Count != 0)
+        {
             return new TickerResult<List<TCronTicker>>(errors.First());
+        }
 
         try
         {
@@ -516,13 +561,17 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             timeTicker.ExecutionTime = _ConvertToUtcIfNeeded(timeTicker.ExecutionTime.Value);
 
             if (_executionContext.Functions.Any(x => x.TickerId == timeTicker.Id))
+            {
                 needsRestart = true;
+            }
 
             validTickers.Add(timeTicker);
         }
 
-        if (errors.Any())
+        if (errors.Count != 0)
+        {
             return new TickerResult<List<TTimeTicker>>(errors.First());
+        }
 
         try
         {
@@ -531,8 +580,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
                 .ConfigureAwait(false);
 
             if (needsRestart)
+            {
                 _tickerQHostScheduler.Restart();
-            else if (validTickers.Any())
+            }
+            else if (validTickers.Count != 0)
             {
                 var earliestExecution = validTickers.Min(t => t.ExecutionTime);
                 _tickerQHostScheduler.RestartIfNeeded(earliestExecution);
@@ -593,8 +644,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             nextOccurrences.Add(nextOccurrence);
         }
 
-        if (errors.Any())
+        if (errors.Count != 0)
+        {
             return new TickerResult<List<TCronTicker>>(errors.First());
+        }
 
         try
         {
@@ -612,8 +665,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             }
 
             if (needsRestart)
+            {
                 _tickerQHostScheduler.Restart();
-            else if (nextOccurrences.Any())
+            }
+            else if (nextOccurrences.Count != 0)
             {
                 var earliestOccurrence = nextOccurrences.Min();
                 _tickerQHostScheduler.RestartIfNeeded(earliestOccurrence);
@@ -638,7 +693,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         );
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.TickerId)))
+        {
             _tickerQHostScheduler.Restart();
+        }
 
         return new TickerResult<TTimeTicker>(affectedRows);
     }
@@ -654,7 +711,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         );
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.ParentId ?? Guid.Empty)))
+        {
             _tickerQHostScheduler.Restart();
+        }
 
         return new TickerResult<TCronTicker>(affectedRows);
     }

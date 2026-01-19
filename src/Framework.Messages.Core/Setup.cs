@@ -14,13 +14,13 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Provides extension methods for registering and configuring CAP (Consistency And Partition) services
+/// Provides extension methods for registering and configuring messaging services
 /// in a <see cref="IServiceCollection"/> dependency injection container.
 /// </summary>
 public static class Setup
 {
     /// <summary>
-    /// Registers and configures all CAP services in the dependency injection container.
+    /// Registers and configures all messaging services in the dependency injection container.
     /// </summary>
     /// <remarks>
     /// This method performs the following registrations:
@@ -28,25 +28,25 @@ public static class Setup
     /// <item><description>Core services: Message publisher, consumer selector, subscription invoker, and method matcher cache.</description></item>
     /// <item><description>Message processors: Retry processor, transport check processor, delayed message processor, and message collector.</description></item>
     /// <item><description>Message transport: Message sender and default JSON serializer.</description></item>
-    /// <item><description>Processing servers: Consumer registration server, dispatcher, and main CAP processing server.</description></item>
+    /// <item><description>Processing servers: Consumer registration server, dispatcher, and main messaging processing server.</description></item>
     /// <item><description>Bootstrapper and hosted service for application startup and lifecycle management.</description></item>
-    /// <item><description>Extensions: Any configured storage and transport extensions (registered via <see cref="CapOptions.RegisterExtension"/>).</description></item>
+    /// <item><description>Extensions: Any configured storage and transport extensions (registered via <see cref="MessagingOptions.RegisterExtension"/>).</description></item>
     /// </list>
     /// All core services are registered with singleton lifetime to ensure consistency across the application.
     /// Storage and transport extensions must be added before calling this method (typically through AddCap callback).
     /// </remarks>
     /// <param name="services">
-    /// The <see cref="IServiceCollection"/> where CAP services will be registered.
+    /// The <see cref="IServiceCollection"/> where messaging services will be registered.
     /// This collection represents the application's dependency injection container.
     /// </param>
     /// <param name="setupAction">
-    /// A delegate that configures the <see cref="CapOptions"/> settings for CAP.
+    /// A delegate that configures the <see cref="MessagingOptions"/> settings for the messaging system.
     /// This action is invoked to customize behavior such as message expiration, retry policies, concurrency settings,
     /// and to register storage and transport extensions.
     /// Use this to call <c>UseRabbitMQ()</c>, <c>UseSqlServer()</c>, and other extension methods.
     /// </param>
     /// <returns>
-    /// A <see cref="CapBuilder"/> instance that provides a fluent API for additional CAP configuration,
+    /// A <see cref="MessagingBuilder"/> instance that provides a fluent API for additional messaging configuration,
     /// such as registering subscriber filters and custom subscriber assembly scanning.
     /// </returns>
     /// <exception cref="ArgumentNullException">
@@ -74,12 +74,13 @@ public static class Setup
     /// .AddSubscriberAssembly(typeof(MyCapHandlers));
     /// </code>
     /// </example>
-    public static CapBuilder AddCap(this IServiceCollection services, Action<CapOptions> setupAction)
+    [Obsolete("AddCap is deprecated. Use AddMessages() for the new IConsume<T> pattern, or continue using AddCap with the new MessagingOptions parameter name.", false)]
+    public static MessagingBuilder AddCap(this IServiceCollection services, Action<MessagingOptions> setupAction)
     {
         Argument.IsNotNull(setupAction);
 
         services.AddSingleton(_ => services);
-        services.TryAddSingleton(new CapMarkerService("CAP"));
+        services.TryAddSingleton(new MessagingMarkerService("Messages"));
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxPublisher, OutboxPublisher>();
@@ -100,7 +101,7 @@ public static class Setup
                 sp.GetRequiredService<IConsumerRegister>()
             )
         );
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, CapProcessingServer>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, MessageProcessingServer>());
 
         //Queue's message processor
         services.TryAddSingleton<MessageNeedToRetryProcessor>();
@@ -117,7 +118,7 @@ public static class Setup
         services.TryAddSingleton<ISubscribeExecutor, SubscribeExecutor>();
 
         //Options and extension service
-        var options = new CapOptions();
+        var options = new MessagingOptions();
         setupAction(options);
 
         services.TryAddSingleton<IDispatcher, Dispatcher>();
@@ -134,7 +135,7 @@ public static class Setup
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
         services.AddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
 
-        return new CapBuilder(services);
+        return new MessagingBuilder(services);
     }
 
     /// <summary>
@@ -142,7 +143,7 @@ public static class Setup
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">A delegate to configure message consumers and topic mappings.</param>
-    /// <returns>A <see cref="CapBuilder"/> for additional CAP configuration.</returns>
+    /// <returns>A <see cref="MessagingBuilder"/> for additional messaging configuration.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
     /// <remarks>
     /// <para>
@@ -170,17 +171,17 @@ public static class Setup
     /// </code>
     /// </para>
     /// </remarks>
-    public static CapBuilder AddMessages(this IServiceCollection services, Action<IMessagingBuilder> configure)
+    public static MessagingBuilder AddMessages(this IServiceCollection services, Action<IMessagingBuilder> configure)
     {
         Argument.IsNotNull(configure);
 
-        // Create the messaging builder
-        var builder = new MessagingBuilder(services);
+        // Create the consumer configurator
+        var builder = new ConsumerConfigurator(services);
 
         // Let the user configure consumers
         configure(builder);
 
-        // Continue with standard CAP registration (empty config - user configures CAP separately)
+        // Continue with standard messaging registration (empty config - user configures messaging separately)
         return services.AddCap(_ => { });
     }
 }

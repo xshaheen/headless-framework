@@ -18,7 +18,9 @@ internal class TickerQDispatcher(TickerQTaskScheduler taskScheduler, TickerExecu
     public async Task DispatchAsync(InternalFunctionContext[] contexts, CancellationToken cancellationToken = default)
     {
         if (contexts == null || contexts.Length == 0)
+        {
             return;
+        }
 
         foreach (var context in contexts)
         {

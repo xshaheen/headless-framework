@@ -20,17 +20,21 @@ internal class SubscribeExecutor : ISubscribeExecutor
     // diagnostics listener
     // ReSharper disable once InconsistentNaming
     private static readonly DiagnosticListener s_diagnosticListener = new(
-        CapDiagnosticListenerNames.DiagnosticListenerName
+        MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
     private readonly IDataStorage _dataStorage;
     private readonly string? _hostName;
     private readonly ILogger _logger;
-    private readonly CapOptions _options;
+    private readonly MessagingOptions _options;
     private readonly IServiceProvider _provider;
     private readonly TimeProvider _timeProvider;
 
-    public SubscribeExecutor(ILogger<SubscribeExecutor> logger, IOptions<CapOptions> options, IServiceProvider provider)
+    public SubscribeExecutor(
+        ILogger<SubscribeExecutor> logger,
+        IOptions<MessagingOptions> options,
+        IServiceProvider provider
+    )
     {
         _provider = provider;
         _logger = logger;
@@ -117,7 +121,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
             await _SetSuccessfulState(message).ConfigureAwait(false);
 
-            CapEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
+            MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             _logger.ConsumerExecuted(
                 descriptor.ImplTypeInfo.Name,
                 descriptor.MethodInfo.Name,
@@ -217,7 +221,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {
-                ret.CallbackHeader ??= new Dictionary<string, string?>();
+                ret.CallbackHeader ??= new Dictionary<string, string?>(StringComparer.Ordinal);
                 ret.CallbackHeader[Headers.CorrelationId] = message.Origin.GetId();
                 ret.CallbackHeader[Headers.CorrelationSequence] = (
                     message.Origin.GetCorrelationSequence() + 1
@@ -252,9 +256,9 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
     private long? _TracingBefore(Message message, MethodInfo method)
     {
-        if (s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.BeforeSubscriberInvoke))
+        if (s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeSubscriberInvoke))
         {
-            var eventData = new CapEventDataSubExecute
+            var eventData = new MessageEventDataSubExecute
             {
                 OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
@@ -262,7 +266,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 MethodInfo = method,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.BeforeSubscriberInvoke, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.BeforeSubscriberInvoke, eventData);
 
             return eventData.OperationTimestamp;
         }
@@ -272,14 +276,14 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
     private void _TracingAfter(long? tracingTimestamp, Message message, MethodInfo method)
     {
-        CapEventCounterSource.Log.WriteInvokeMetrics();
+        MessageEventCounterSource.Log.WriteInvokeMetrics();
         if (
             tracingTimestamp != null
-            && s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.AfterSubscriberInvoke)
+            && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterSubscriberInvoke)
         )
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventData = new CapEventDataSubExecute
+            var eventData = new MessageEventDataSubExecute
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -288,7 +292,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 ElapsedTimeMs = now - tracingTimestamp.Value,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.AfterSubscriberInvoke, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.AfterSubscriberInvoke, eventData);
         }
     }
 
@@ -296,11 +300,11 @@ internal class SubscribeExecutor : ISubscribeExecutor
     {
         if (
             tracingTimestamp != null
-            && s_diagnosticListener.IsEnabled(CapDiagnosticListenerNames.ErrorSubscriberInvoke)
+            && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorSubscriberInvoke)
         )
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventData = new CapEventDataSubExecute
+            var eventData = new MessageEventDataSubExecute
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -310,7 +314,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 Exception = ex,
             };
 
-            s_diagnosticListener.Write(CapDiagnosticListenerNames.ErrorSubscriberInvoke, eventData);
+            s_diagnosticListener.Write(MessageDiagnosticListenerNames.ErrorSubscriberInvoke, eventData);
         }
     }
 

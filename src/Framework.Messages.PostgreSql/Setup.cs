@@ -11,11 +11,11 @@ using Microsoft.Extensions.Options;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class CapOptionsExtensions
+public static class MessagingOptionsExtensions
 {
-    extension(CapOptions options)
+    extension(MessagingOptions options)
     {
-        public CapOptions UsePostgreSql(string connectionString)
+        public MessagingOptions UsePostgreSql(string connectionString)
         {
             return options.UsePostgreSql(opt =>
             {
@@ -23,7 +23,7 @@ public static class CapOptionsExtensions
             });
         }
 
-        public CapOptions UsePostgreSql(Action<PostgreSqlOptions> configure)
+        public MessagingOptions UsePostgreSql(Action<PostgreSqlOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -34,13 +34,13 @@ public static class CapOptionsExtensions
             return options;
         }
 
-        public CapOptions UseEntityFramework<TContext>()
+        public MessagingOptions UseEntityFramework<TContext>()
             where TContext : DbContext
         {
             return options.UseEntityFramework<TContext>(opt => { });
         }
 
-        public CapOptions UseEntityFramework<TContext>(Action<EfOptions> configure)
+        public MessagingOptions UseEntityFramework<TContext>(Action<PostgreSqlEntityFrameworkMessagingOptions> configure)
             where TContext : DbContext
         {
             Argument.IsNotNull(configure);
@@ -63,7 +63,7 @@ public static class CapOptionsExtensions
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapStorageMarkerService("PostgreSql"));
+            services.AddSingleton(new MessageStorageMarkerService("PostgreSql"));
             services.Configure(configure);
             services.AddSingleton<IConfigureOptions<PostgreSqlOptions>, ConfigurePostgreSqlOptions>();
 

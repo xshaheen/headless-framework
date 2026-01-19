@@ -127,7 +127,9 @@ public class TickerOptionsBuilder<TTimeTicker, TCronTicker> : ITickerOptionsSeed
     )
     {
         if (timeSeeder == null)
+        {
             return this;
+        }
 
         TimeSeederAction = async sp =>
         {
@@ -146,7 +148,9 @@ public class TickerOptionsBuilder<TTimeTicker, TCronTicker> : ITickerOptionsSeed
     )
     {
         if (cronSeeder == null)
+        {
             return this;
+        }
 
         CronSeederAction = async sp =>
         {

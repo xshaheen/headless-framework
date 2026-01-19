@@ -1,6 +1,5 @@
+using Framework.Ticker.DbContextFactory;
 using Framework.Ticker.DependencyInjection;
-using Framework.Ticker.EntityFrameworkCore.DbContextFactory;
-using Framework.Ticker.EntityFrameworkCore.DependencyInjection;
 using Framework.Ticker.Utilities.Entities;
 using Framework.Ticker.Utilities.Interfaces.Managers;
 using Microsoft.EntityFrameworkCore;

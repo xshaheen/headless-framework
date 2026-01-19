@@ -23,7 +23,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
     /// </summary>
     private readonly ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>> _cacheList;
 
-    private readonly CapOptions _capOptions;
+    private readonly MessagingOptions _capOptions;
     private readonly ILogger<ConsumerServiceSelector> _logger;
     private readonly IServiceProvider _serviceProvider;
 
@@ -33,9 +33,11 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
     public ConsumerServiceSelector(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider;
-        _capOptions = serviceProvider.GetRequiredService<IOptions<CapOptions>>().Value;
+        _capOptions = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _logger = serviceProvider.GetRequiredService<ILogger<ConsumerServiceSelector>>();
-        _cacheList = new ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>();
+        _cacheList = new ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>(
+            StringComparer.Ordinal
+        );
     }
 
     public IReadOnlyList<ConsumerExecutorDescriptor> SelectCandidates()
@@ -150,9 +152,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
     {
         Argument.IsNotNull(key);
 
-        return executeDescriptor.FirstOrDefault(x =>
-            x.TopicName.Equals(key, StringComparison.InvariantCultureIgnoreCase)
-        );
+        return executeDescriptor.FirstOrDefault(x => x.TopicName.Equals(key, StringComparison.OrdinalIgnoreCase));
     }
 
     private ConsumerExecutorDescriptor? _MatchWildcardUsingRegex(

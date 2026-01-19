@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 
-namespace Framework.Ticker.Dashboard.Authentication;
+namespace Framework.Ticker.Authentication;
 
 /// <summary>
 /// Authentication service interface

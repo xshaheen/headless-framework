@@ -118,7 +118,7 @@ public class SubscribeInvokerTests
         {
             DbId = "1",
             Origin = new Message(
-                new Dictionary<string, string?>
+                new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     [Headers.MessageId] = Guid.NewGuid().ToString(),
                     [Headers.MessageName] = "test.topic",
@@ -242,7 +242,7 @@ public class SubscribeInvokerTests
         Guid? correlationId = null
     )
     {
-        var headers = new Dictionary<string, string?>
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = messageId ?? Guid.NewGuid().ToString(),
             [Headers.MessageName] = topicName,

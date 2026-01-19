@@ -1,26 +1,25 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Messages.Internal;
 using Framework.Messages.Messages;
 using Framework.Messages.Transport;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
-namespace Framework.Messages.RabbitMQ;
+namespace Framework.Messages;
 
 internal sealed class RabbitMqConsumerClient(
     string groupName,
     byte groupConcurrent,
     IConnectionChannelPool connectionChannelPool,
-    IOptions<RabbitMQOptions> options,
+    IOptions<RabbitMqOptions> options,
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly string _exchangeName = connectionChannelPool.Exchange;
-    private readonly RabbitMQOptions _rabbitMqOptions = options.Value;
+    private readonly RabbitMqOptions _rabbitMqOptions = options.Value;
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
 
@@ -123,7 +122,7 @@ internal sealed class RabbitMqConsumerClient(
         {
             _channel = await connection.CreateChannelAsync();
 
-            await _channel.ExchangeDeclareAsync(_exchangeName, RabbitMQOptions.ExchangeType, true);
+            await _channel.ExchangeDeclareAsync(_exchangeName, RabbitMqOptions.ExchangeType, true);
 
             var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
@@ -131,10 +130,14 @@ internal sealed class RabbitMqConsumerClient(
             };
 
             if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueMode))
+            {
                 arguments.Add("x-queue-mode", _rabbitMqOptions.QueueArguments.QueueMode);
+            }
 
             if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueType))
+            {
                 arguments.Add("x-queue-type", _rabbitMqOptions.QueueArguments.QueueType);
+            }
 
             try
             {

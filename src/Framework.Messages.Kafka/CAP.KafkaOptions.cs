@@ -16,7 +16,7 @@ public class KafkaOptions
     /// Topic configuration parameters are specified via the "default.topic.config" sub-dictionary config parameter.
     /// </para>
     /// </summary>
-    public Dictionary<string, string> MainConfig { get; } = new();
+    public Dictionary<string, string> MainConfig { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Producer connection pool size, default is 10

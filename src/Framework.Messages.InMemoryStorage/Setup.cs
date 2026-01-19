@@ -12,7 +12,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class InMemoryStorageSetup
 {
-    public static CapOptions UseInMemoryStorage(this CapOptions options)
+    public static MessagingOptions UseInMemoryStorage(this MessagingOptions options)
     {
         options.RegisterExtension(new InMemoryMessagesOptionsExtension());
         return options;
@@ -22,7 +22,7 @@ public static class InMemoryStorageSetup
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapStorageMarkerService("InMemory"));
+            services.AddSingleton(new MessageStorageMarkerService("InMemory"));
 
             services.AddTransient<IOutboxTransaction, InMemoryOutboxTransaction>();
             services.AddSingleton<IDataStorage, InMemoryStorage>();

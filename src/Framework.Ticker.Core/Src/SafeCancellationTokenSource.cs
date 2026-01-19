@@ -33,7 +33,9 @@ public sealed class SafeCancellationTokenSource : IDisposable
     public void Cancel()
     {
         if (!IsDisposed)
+        {
             _innerCts.Cancel();
+        }
     }
 
     public void Cancel(bool throwOnFirstException) => _innerCts.Cancel(throwOnFirstException);
@@ -45,7 +47,10 @@ public sealed class SafeCancellationTokenSource : IDisposable
     public void Dispose()
     {
         if (IsDisposed)
+        {
             return;
+        }
+
         IsDisposed = true;
         _innerCts.Dispose();
     }

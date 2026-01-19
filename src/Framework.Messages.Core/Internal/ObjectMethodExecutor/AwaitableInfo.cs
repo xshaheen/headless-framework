@@ -107,7 +107,7 @@ internal readonly struct AwaitableInfo(
         // Awaiter must have method matching "void GetResult" or "T GetResult()"
         var getResultMethod = awaiterType
             .GetRuntimeMethods()
-            .FirstOrDefault(m => m.Name.Equals("GetResult") && m.GetParameters().Length == 0);
+            .FirstOrDefault(m => m.Name.Equals("GetResult", StringComparison.Ordinal) && m.GetParameters().Length == 0);
         if (getResultMethod == null)
         {
             awaitableInfo = default;

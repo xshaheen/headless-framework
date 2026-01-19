@@ -56,7 +56,9 @@ internal class TickerQRedisContext : ITickerQRedisContext
         // Get all registered nodes
         var nodesJson = await _cache.GetStringAsync("nodes:registry");
         if (string.IsNullOrEmpty(nodesJson))
+        {
             return [];
+        }
 
         var allNodes = JsonSerializer.Deserialize<HashSet<string>>(nodesJson) ?? [];
         var deadNodes = new HashSet<string>(StringComparer.Ordinal);
@@ -72,7 +74,9 @@ internal class TickerQRedisContext : ITickerQRedisContext
         }
 
         if (deadNodes.Count != 0)
+        {
             await _RemoveNodesFromRegistryAsync(deadNodes);
+        }
 
         //if(deadNodes.Count != 0)
         //Todo notification
@@ -131,7 +135,9 @@ internal class TickerQRedisContext : ITickerQRedisContext
                 var cached = JsonSerializer.Deserialize<TResult[]>(cachedSpan);
 
                 if (cached != null)
+                {
                     return cached;
+                }
             }
         }
         catch (Exception)
@@ -142,7 +148,9 @@ internal class TickerQRedisContext : ITickerQRedisContext
         var result = await factory(cancellationToken);
 
         if (result == null)
+        {
             return null;
+        }
 
         try
         {

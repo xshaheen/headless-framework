@@ -1,4 +1,4 @@
-namespace Framework.Ticker.Dashboard.Infrastructure.Dashboard;
+namespace Framework.Ticker.Infrastructure.Dashboard;
 
 internal static class JsonExampleGenerator
 {

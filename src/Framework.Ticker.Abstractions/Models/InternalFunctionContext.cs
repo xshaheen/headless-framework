@@ -41,7 +41,9 @@ public class InternalFunctionContext
             ParametersToUpdate.Add(prop.Name);
         }
         else
+        {
             throw new ArgumentException("Expression must point to a property", nameof(property));
+        }
 
         return this;
     }

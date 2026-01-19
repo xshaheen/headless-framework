@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.Ticker.Dashboard.Authentication;
+namespace Framework.Ticker.Authentication;
 
 /// <summary>
 /// Simple authentication middleware that only protects API endpoints
@@ -70,7 +70,7 @@ public class AuthMiddleware
             || path.EndsWith(".jpg")
             || path.EndsWith(".svg")
             || path.Contains("/negotiate")
-            || path == "/api/auth/validate"
-            || path == "/api/auth/info";
+            || string.Equals(path, "/api/auth/validate", StringComparison.Ordinal)
+            || string.Equals(path, "/api/auth/info", StringComparison.Ordinal);
     }
 }

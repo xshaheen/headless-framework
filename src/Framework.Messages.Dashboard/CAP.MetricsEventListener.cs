@@ -3,7 +3,7 @@
 using System.Diagnostics.Tracing;
 using Framework.Messages.Diagnostics;
 
-namespace DotNetCore.CAP.Dashboard;
+namespace Framework.Messages;
 
 internal class CapMetricsEventListener : EventListener
 {
@@ -48,14 +48,16 @@ internal class CapMetricsEventListener : EventListener
 
     protected override void OnEventSourceCreated(EventSource source)
     {
-        if (!source.Name.Equals(CapDiagnosticListenerNames.MetricListenerName))
+        if (!source.Name.Equals(MessageDiagnosticListenerNames.MetricListenerName, StringComparison.Ordinal))
+        {
             return;
+        }
 
         EnableEvents(
             source,
             EventLevel.LogAlways,
             EventKeywords.All,
-            new Dictionary<string, string?>
+            new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 //report interval
                 ["EventCounterIntervalSec"] = "1",
@@ -65,28 +67,30 @@ internal class CapMetricsEventListener : EventListener
 
     protected override void OnEventWritten(EventWrittenEventArgs eventData)
     {
-        if (!eventData.EventName!.Equals("EventCounters"))
+        if (!eventData.EventName!.Equals("EventCounters", StringComparison.Ordinal))
+        {
             return;
+        }
 
         var payload = (IDictionary<string, object>)eventData.Payload![0]!;
 
         var val = payload.Values.ToArray();
 
-        if ((string)val[0] == CapDiagnosticListenerNames.PublishedPerSec)
+        if ((string)val[0] == MessageDiagnosticListenerNames.PublishedPerSec)
         {
             PublishedPerSec.Add(Convert.ToInt32(val[3]));
         }
-        //else if ((string)val[0] == CapDiagnosticListenerNames.ConsumePerSec)
+        //else if ((string)val[0] == MessageDiagnosticListenerNames.ConsumePerSec)
         //{
         //        ConsumePerSec.Dequeue();
         //        var v = (double)val[3];
         //        ConsumePerSec.Enqueue(v);
         //}
-        else if ((string)val[0] == CapDiagnosticListenerNames.InvokeSubscriberPerSec)
+        else if ((string)val[0] == MessageDiagnosticListenerNames.InvokeSubscriberPerSec)
         {
             InvokeSubscriberPerSec.Add(Convert.ToInt32(val[3]));
         }
-        else if ((string)val[0] == CapDiagnosticListenerNames.InvokeSubscriberElapsedMs)
+        else if ((string)val[0] == MessageDiagnosticListenerNames.InvokeSubscriberElapsedMs)
         {
             var v = Convert.ToInt32(val[2]);
             InvokeSubscriberElapsedMs.Add(v == 0 ? null : v);

@@ -2,11 +2,13 @@
 
 using System.Collections.Concurrent;
 
-namespace Framework.Messages.Dashboard.GatewayProxy.Requester;
+namespace Framework.Messages.GatewayProxy.Requester;
 
 public class MemoryHttpClientCache : IHttpClientCache
 {
-    private readonly ConcurrentDictionary<string, ConcurrentQueue<IHttpClient>> _httpClientsCache = new();
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<IHttpClient>> _httpClientsCache = new(
+        StringComparer.Ordinal
+    );
 
     public void Set(string id, IHttpClient client, TimeSpan expirationTime)
     {
