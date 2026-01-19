@@ -5,7 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder
     .Services.AddMessages(messaging =>
     {
-        messaging.Consumer<AmazonSqsMessageConsumer>("sample.aws.in-memory");
+        messaging.ScanConsumers(typeof(Program).Assembly);
     })
     .AddCap(x =>
     {

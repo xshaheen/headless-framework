@@ -30,7 +30,7 @@ public class DispatcherTests
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage);
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
 
         using var cts = new CancellationTokenSource();
         const string messageId = "testId";
@@ -60,7 +60,7 @@ public class DispatcherTests
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage);
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -97,7 +97,7 @@ public class DispatcherTests
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage);
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -144,7 +144,7 @@ public class DispatcherTests
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage);
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -182,7 +182,7 @@ public class DispatcherTests
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage);
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -230,7 +230,7 @@ public class DispatcherTests
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage);
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable

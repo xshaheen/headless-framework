@@ -94,8 +94,8 @@ public class SubscribeInvokerTests
         // Then
         var consumed = InvokerTestConsumer.LastConsumed;
         consumed.Should().NotBeNull();
-        consumed!.MessageId.Should().Be(Guid.Parse(messageId));
-        consumed.CorrelationId.Should().Be(correlationId);
+        consumed!.MessageId.Should().Be(messageId);
+        consumed.CorrelationId.Should().Be(correlationId.ToString());
         consumed.Topic.Should().Be("test.topic");
         consumed.Headers.Should().NotBeNull();
     }

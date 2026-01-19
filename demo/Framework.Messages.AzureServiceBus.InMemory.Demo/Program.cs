@@ -12,7 +12,7 @@ builder.Services.AddLogging(l => l.AddConsole());
 builder
     .Services.AddMessages(messaging =>
     {
-        messaging.Consumer<SampleSubscriber>("cap.sample.tests");
+        messaging.Consumer<SampleSubscriber>().Topic("cap.sample.tests").Build();
     })
     .AddCap(c =>
     {

@@ -93,7 +93,8 @@
         <Project Path="src/Framework.NetTopologySuite/Framework.NetTopologySuite.csproj" />
         <Project Path="src/Framework.Testing.Testcontainers/Framework.Testing.Testcontainers.csproj" />
         <Project Path="src/Framework.Testing/Framework.Testing.csproj" />
-        <Project Path="src/Framework.Domain.DistributedMessagePublisher.Cap/Framework.Domain.DistributedMessagePublisher.Cap.csproj" />
+        <!-- OBSOLETE: Commented out - depends on removed CapSubscribeAttribute/FromCapAttribute -->
+        <!-- <Project Path="src/Framework.Domain.DistributedMessagePublisher.Cap/Framework.Domain.DistributedMessagePublisher.Cap.csproj" /> -->
         <Project Path="src/Framework.Domain.LocalMessagePublisher.DI/Framework.Domain.LocalMessagePublisher.DI.csproj" />
         <Project Path="src/Framework.Domain/Framework.Domain.csproj" />
         <Project Path="tests/Framework.Base.Tests.Unit/Framework.Base.Tests.Unit.csproj" />
