@@ -1,5 +1,4 @@
 ﻿using Framework.Messages;
-using Framework.Messages.Messages;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,7 +6,7 @@ namespace Demo.Controllers;
 
 [Authorize]
 [Route("api/[controller]")]
-public sealed class ValuesController(IOutboxPublisher publisher, ILogger<ValuesController> logger) : Controller
+public sealed class ValuesController(IOutboxPublisher publisher) : Controller
 {
     private const string _MyTopic = "sample.dashboard.auth";
 
@@ -19,16 +18,21 @@ public sealed class ValuesController(IOutboxPublisher publisher, ILogger<ValuesC
         return Ok();
     }
 
-    [NonAction]
-    [CapSubscribe(_MyTopic)]
-    public void Subscribe(Person p, [FromCap] MessageHeader header)
-    {
-        logger.LogInformation("Subscribe Invoked {Topic} {Person} {Headers}", _MyTopic, p, header);
-    }
-
     public sealed record Person
     {
         public int Id { get; set; }
         public required string Name { get; set; }
+    }
+}
+
+public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<ValuesController.Person>
+{
+    public ValueTask Consume(
+        ConsumeContext<ValuesController.Person> context,
+        CancellationToken cancellationToken = default
+    )
+    {
+        logger.LogInformation("Subscribe Invoked {Topic} {Person}", context.Topic, context.Message);
+        return ValueTask.CompletedTask;
     }
 }

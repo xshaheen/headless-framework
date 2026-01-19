@@ -102,15 +102,20 @@ public class Startup
                 null
             );
 
-        services.AddCap(cap =>
-        {
-            cap.UseDashboard(d =>
+        services
+            .AddMessages(messaging =>
             {
-                d.AuthorizationPolicy = myDashboardAuthenticationPolicy;
+                messaging.ScanConsumers(typeof(Startup).Assembly);
+            })
+            .AddCap(cap =>
+            {
+                cap.UseDashboard(d =>
+                {
+                    d.AuthorizationPolicy = myDashboardAuthenticationPolicy;
+                });
+                cap.UseInMemoryStorage();
+                cap.UseInMemoryMessageQueue();
             });
-            cap.UseInMemoryStorage();
-            cap.UseInMemoryMessageQueue();
-        });
 
         return services;
     }
@@ -169,15 +174,20 @@ public class Startup
 
     public IServiceCollection AddCapWithAnonymousAccess(IServiceCollection services)
     {
-        services.AddCap(cap =>
-        {
-            cap.UseDashboard(d =>
+        services
+            .AddMessages(messaging =>
             {
-                d.AllowAnonymousExplicit = true;
+                messaging.ScanConsumers(typeof(Startup).Assembly);
+            })
+            .AddCap(cap =>
+            {
+                cap.UseDashboard(d =>
+                {
+                    d.AllowAnonymousExplicit = true;
+                });
+                cap.UseInMemoryStorage();
+                cap.UseInMemoryMessageQueue();
             });
-            cap.UseInMemoryStorage();
-            cap.UseInMemoryMessageQueue();
-        });
 
         return services;
     }

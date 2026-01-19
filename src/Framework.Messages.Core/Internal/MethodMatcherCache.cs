@@ -14,7 +14,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
-    /// the Key is the CAPSubscribeAttribute Group, the Value for the current Group of candidates
+    /// the Key is the Group name, the Value for the current Group of candidates
     /// </summary>
     public ConcurrentDictionary<
         string,
@@ -28,20 +28,14 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
         var executorCollection = selector.SelectCandidates();
 
-        foreach (var executor in executorCollection)
-        {
-            GroupConcurrent.AddOrUpdate(
-                executor.Attribute.Group,
-                executor.Attribute.GroupConcurrent,
-                (group, val) => (byte)(val + executor.Attribute.GroupConcurrent)
-            );
-        }
-
-        var groupedCandidates = executorCollection.GroupBy(x => x.Attribute.Group);
+        // Group by GroupName directly
+        var groupedCandidates = executorCollection.GroupBy(x => x.GroupName);
 
         foreach (var item in groupedCandidates)
         {
             Entries.TryAdd(item.Key, item.ToList());
+            // Note: GroupConcurrent is no longer tracked per consumer, defaults to 1
+            GroupConcurrent.TryAdd(item.Key, 1);
         }
 
         return Entries;

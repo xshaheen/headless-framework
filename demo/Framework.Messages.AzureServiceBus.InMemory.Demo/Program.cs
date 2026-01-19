@@ -9,40 +9,43 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(l => l.AddConsole());
 
-builder.Services.AddCap(c =>
-{
-    c.UseInMemoryStorage();
-    c.UseAzureServiceBus(asb =>
+builder
+    .Services.AddMessages(messaging =>
     {
-        asb.ConnectionString = builder.Configuration.GetConnectionString("AzureServiceBus")!;
-        asb.CustomHeadersBuilder = (message, serviceProvider) =>
+        messaging.Consumer<SampleSubscriber>().Topic("cap.sample.tests").Build();
+    })
+    .AddCap(c =>
+    {
+        c.UseInMemoryStorage();
+        c.UseAzureServiceBus(asb =>
         {
-            var longIdGenerator = serviceProvider.GetRequiredService<ILongIdGenerator>();
-
-            return new List<KeyValuePair<string, string>>
+            asb.ConnectionString = builder.Configuration.GetConnectionString("AzureServiceBus")!;
+            asb.CustomHeadersBuilder = (message, serviceProvider) =>
             {
-                new(Headers.MessageId, longIdGenerator.Create().ToString(CultureInfo.InvariantCulture)),
-                new(Headers.MessageName, message.Subject),
-                new("IsFromSampleProject", "'true'"),
+                var longIdGenerator = serviceProvider.GetRequiredService<ILongIdGenerator>();
+
+                return new List<KeyValuePair<string, string>>
+                {
+                    new(Headers.MessageId, longIdGenerator.Create().ToString(CultureInfo.InvariantCulture)),
+                    new(Headers.MessageName, message.Subject),
+                    new("IsFromSampleProject", "'true'"),
+                };
             };
-        };
-        asb.SqlFilters = new List<KeyValuePair<string, string>>
-        {
-            new("IsFromSampleProjectFilter", "IsFromSampleProject = 'true'"),
-        };
+            asb.SqlFilters = new List<KeyValuePair<string, string>>
+            {
+                new("IsFromSampleProjectFilter", "IsFromSampleProject = 'true'"),
+            };
 
-        asb.ConfigureCustomProducer<EntityCreatedForIntegration>(cfg =>
-            cfg.UseTopic("entity-created").WithSubscription()
-        );
-        asb.ConfigureCustomProducer<EntityDeletedForIntegration>(cfg =>
-            cfg.UseTopic("entity-deleted").WithSubscription()
-        );
+            asb.ConfigureCustomProducer<EntityCreatedForIntegration>(cfg =>
+                cfg.UseTopic("entity-created").WithSubscription()
+            );
+            asb.ConfigureCustomProducer<EntityDeletedForIntegration>(cfg =>
+                cfg.UseTopic("entity-deleted").WithSubscription()
+            );
+        });
+
+        c.UseDashboard();
     });
-
-    c.UseDashboard();
-});
-
-builder.Services.AddSingleton<SampleSubscriber>();
 
 var app = builder.Build();
 

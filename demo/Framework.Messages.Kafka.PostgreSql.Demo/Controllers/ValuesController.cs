@@ -7,7 +7,7 @@ using Npgsql;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher producer) : Controller, IConsumer
+public class ValuesController(IOutboxPublisher producer) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -77,10 +77,15 @@ public class ValuesController(IOutboxPublisher producer) : Controller, IConsumer
         }
         return Ok();
     }
+}
 
-    [CapSubscribe("sample.kafka.postgrsql")]
-    public void Test2(DateTime value)
+public record KafkaMessage(DateTime Value);
+
+public sealed class KafkaMessageConsumer : IConsume<KafkaMessage>
+{
+    public ValueTask Consume(ConsumeContext<KafkaMessage> context, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine("Subscriber output message: " + value);
+        Console.WriteLine("Subscriber output message: " + context.Message.Value);
+        return ValueTask.CompletedTask;
     }
 }

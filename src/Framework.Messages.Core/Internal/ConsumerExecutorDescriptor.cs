@@ -12,7 +12,7 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         //Check whether the compared objects reference the same data.
         if (ReferenceEquals(x, y))
         {
-            logger.ConsumerDuplicates(x!.TopicName, x.Attribute.Group);
+            logger.ConsumerDuplicates(x!.TopicName, x.GroupName);
             return true;
         }
 
@@ -26,13 +26,13 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         var ret =
             x.TopicName.Equals(y.TopicName, StringComparison.OrdinalIgnoreCase)
             && (
-                (y.Attribute.Group is null && x.Attribute.Group is null)
-                || x.Attribute.Group?.Equals(y.Attribute.Group, StringComparison.OrdinalIgnoreCase) == true
+                (y.GroupName is null && x.GroupName is null)
+                || x.GroupName?.Equals(y.GroupName, StringComparison.OrdinalIgnoreCase) == true
             );
 
         if (ret && (x.ImplTypeInfo != y.ImplTypeInfo || x.MethodInfo != y.MethodInfo))
         {
-            logger.ConsumerDuplicates(x.TopicName, x.Attribute.Group);
+            logger.ConsumerDuplicates(x.TopicName, x.GroupName);
         }
 
         return ret;
@@ -46,13 +46,13 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
             return 0;
         }
 
-        //Get hash code for the Attribute Group field if it is not null.
-        var hashAttributeGroup = obj.Attribute?.Group == null ? 0 : obj.Attribute.Group.GetHashCode();
+        //Get hash code for the GroupName field if it is not null.
+        var hashGroup = obj.GroupName == null ? 0 : obj.GroupName.GetHashCode();
 
         //Get hash code for the TopicName field.
         var hashTopicName = obj.TopicName.GetHashCode();
 
         //Calculate the hash code.
-        return hashAttributeGroup ^ hashTopicName;
+        return hashGroup ^ hashTopicName;
     }
 }

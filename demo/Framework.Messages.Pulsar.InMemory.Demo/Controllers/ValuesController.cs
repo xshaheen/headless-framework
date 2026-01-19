@@ -3,7 +3,7 @@
 namespace Framework.Messages.Pulsar.InMemory.Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher producer) : Controller, IConsumer
+public class ValuesController(IOutboxPublisher producer) : Controller
 {
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
@@ -12,10 +12,15 @@ public class ValuesController(IOutboxPublisher producer) : Controller, IConsumer
 
         return Ok();
     }
+}
 
-    [CapSubscribe("persistent://public/default/captesttopic")]
-    public void Test2T2(string value)
+public record PulsarMessage(string Value);
+
+public sealed class PulsarMessageConsumer : IConsume<PulsarMessage>
+{
+    public ValueTask Consume(ConsumeContext<PulsarMessage> context, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"Subscriber output message: {value}");
+        Console.WriteLine($"Subscriber output message: {context.Message.Value}");
+        return ValueTask.CompletedTask;
     }
 }

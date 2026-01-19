@@ -31,22 +31,27 @@ await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
     );
 }
 
-builder.Services.AddCap(x =>
-{
-    x.UseEntityFramework<AppDbContext>();
-    x.UseRabbitMq("127.0.0.1");
-    x.UseDashboard();
+builder
+    .Services.AddMessages(messaging =>
+    {
+        messaging.ScanConsumers(typeof(Program).Assembly);
+    })
+    .AddCap(x =>
+    {
+        x.UseEntityFramework<AppDbContext>();
+        x.UseRabbitMq("127.0.0.1");
+        x.UseDashboard();
 
-    //x.EnablePublishParallelSend = true;
+        //x.EnablePublishParallelSend = true;
 
-    //x.FailedThresholdCallback = failed =>
-    //{
-    //    var logger = failed.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    //    logger.LogError($@"A message of type {failed.MessageType} failed after executing {x.FailedRetryCount} several times,
-    //        requiring manual troubleshooting. Message name: {failed.Message.GetName()}");
-    //};
-    //x.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
-});
+        //x.FailedThresholdCallback = failed =>
+        //{
+        //    var logger = failed.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        //    logger.LogError($@"A message of type {failed.MessageType} failed after executing {x.FailedRetryCount} several times,
+        //        requiring manual troubleshooting. Message name: {failed.Message.GetName()}");
+        //};
+        //x.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
+    });
 
 builder.Services.AddControllers();
 

@@ -2,12 +2,13 @@
 
 namespace Demo;
 
-public class EventConsumer : IConsumer
+public record ShowTimeEvent(DateTime Date);
+
+public sealed class EventConsumer : IConsume<ShowTimeEvent>
 {
-    [CapSubscribe("sample.console.showtime")]
-    public async Task ShowTime(DateTime date)
+    public ValueTask Consume(ConsumeContext<ShowTimeEvent> context, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine(date);
-        await Task.CompletedTask;
+        Console.WriteLine(context.Message.Date);
+        return ValueTask.CompletedTask;
     }
 }
