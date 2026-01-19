@@ -2,12 +2,12 @@
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder
-    .Services.AddMessages(messaging =>
-    {
-        messaging.ScanConsumers(typeof(Program).Assembly);
-    })
-    .AddCap(x =>
+builder.Services.AddMessages(messaging =>
+{
+    messaging.ScanConsumers(typeof(Program).Assembly);
+});
+
+builder.Services.AddCap(x =>
     {
         x.UseInMemoryStorage();
         x.UseAmazonSqs(RegionEndpoint.CNNorthWest1);

@@ -2,12 +2,12 @@
 
 var pulsarUri = builder.Configuration.GetValue("AppSettings:PulsarUri", "pulsar://localhost:6650");
 
-builder
-    .Services.AddMessages(messaging =>
-    {
-        messaging.ScanConsumers(typeof(Program).Assembly);
-    })
-    .AddCap(x =>
+builder.Services.AddMessages(messaging =>
+{
+    messaging.ScanConsumers(typeof(Program).Assembly);
+});
+
+builder.Services.AddCap(x =>
     {
         x.UseInMemoryStorage();
         x.UsePulsar(pulsarUri);

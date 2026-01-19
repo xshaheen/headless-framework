@@ -44,11 +44,8 @@ builder.AddHeadlessApi(encryption =>
 
 addInMemoryResourceLock(builder.Services);
 
-builder.Services.AddCapDistributedMessaging(options =>
-{
-    options.UseInMemoryStorage();
-    options.UseInMemoryMessageQueue();
-});
+// NOTE: Messaging not needed for migrations-only startup project
+// If needed, use: builder.Services.AddMessages(...); builder.Services.AddCap(...);
 
 const string connectionString = "Host=localhost;Database=Framework;Username=postgres;Password=postgres";
 

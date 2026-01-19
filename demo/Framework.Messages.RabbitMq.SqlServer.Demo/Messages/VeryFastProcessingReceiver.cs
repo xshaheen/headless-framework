@@ -1,14 +1,13 @@
-using Demo.TypedConsumers;
+using Framework.Messages;
 
 namespace Demo.Messages;
 
-[QueueHandlerTopic("fasttopic")]
-public class VeryFastProcessingReceiver(ILogger<VeryFastProcessingReceiver> logger) : QueueHandler
+public class VeryFastProcessingReceiver(ILogger<VeryFastProcessingReceiver> logger) : IConsume<TestMessage>
 {
-    public async Task Handle(TestMessage value)
+    public async ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken = default)
     {
-        logger.LogInformation($"Starting FAST processing handler {DateTime.Now:O}: {value.Text}");
-        await Task.Delay(50);
-        logger.LogInformation($"Ending   FAST processing handler {DateTime.Now:O}: {value.Text}");
+        logger.LogInformation($"Starting FAST processing handler {DateTime.Now:O}: {context.Message.Text}");
+        await Task.Delay(50, cancellationToken);
+        logger.LogInformation($"Ending   FAST processing handler {DateTime.Now:O}: {context.Message.Text}");
     }
 }

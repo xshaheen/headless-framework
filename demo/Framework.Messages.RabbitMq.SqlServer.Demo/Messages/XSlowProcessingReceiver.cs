@@ -1,14 +1,13 @@
-using Demo.TypedConsumers;
+using Framework.Messages;
 
 namespace Demo.Messages;
 
-[QueueHandlerTopic("slowtopic")]
-public class XSlowProcessingReceiver(ILogger<XSlowProcessingReceiver> logger) : QueueHandler
+public class XSlowProcessingReceiver(ILogger<XSlowProcessingReceiver> logger) : IConsume<TestMessage>
 {
-    public async Task Handle(TestMessage value)
+    public async ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken = default)
     {
-        logger.LogInformation($"Starting SLOW processing handler {DateTime.Now:O}: {value.Text}");
-        await Task.Delay(10000);
-        logger.LogInformation($"Ending   SLOW processing handler {DateTime.Now:O}: {value.Text}");
+        logger.LogInformation($"Starting SLOW processing handler {DateTime.Now:O}: {context.Message.Text}");
+        await Task.Delay(10000, cancellationToken);
+        logger.LogInformation($"Ending   SLOW processing handler {DateTime.Now:O}: {context.Message.Text}");
     }
 }

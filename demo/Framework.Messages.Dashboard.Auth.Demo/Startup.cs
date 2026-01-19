@@ -102,20 +102,20 @@ public class Startup
                 null
             );
 
-        services
-            .AddMessages(messaging =>
+        services.AddMessages(messaging =>
+        {
+            messaging.ScanConsumers(typeof(Startup).Assembly);
+        });
+
+        services.AddCap(cap =>
+        {
+            cap.UseDashboard(d =>
             {
-                messaging.ScanConsumers(typeof(Startup).Assembly);
-            })
-            .AddCap(cap =>
-            {
-                cap.UseDashboard(d =>
-                {
-                    d.AuthorizationPolicy = myDashboardAuthenticationPolicy;
-                });
-                cap.UseInMemoryStorage();
-                cap.UseInMemoryMessageQueue();
+                d.AuthorizationPolicy = myDashboardAuthenticationPolicy;
             });
+            cap.UseInMemoryStorage();
+            cap.UseInMemoryMessageQueue();
+        });
 
         return services;
     }
@@ -174,20 +174,20 @@ public class Startup
 
     public IServiceCollection AddCapWithAnonymousAccess(IServiceCollection services)
     {
-        services
-            .AddMessages(messaging =>
+        services.AddMessages(messaging =>
+        {
+            messaging.ScanConsumers(typeof(Startup).Assembly);
+        });
+
+        services.AddCap(cap =>
+        {
+            cap.UseDashboard(d =>
             {
-                messaging.ScanConsumers(typeof(Startup).Assembly);
-            })
-            .AddCap(cap =>
-            {
-                cap.UseDashboard(d =>
-                {
-                    d.AllowAnonymousExplicit = true;
-                });
-                cap.UseInMemoryStorage();
-                cap.UseInMemoryMessageQueue();
+                d.AllowAnonymousExplicit = true;
             });
+            cap.UseInMemoryStorage();
+            cap.UseInMemoryMessageQueue();
+        });
 
         return services;
     }
