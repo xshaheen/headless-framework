@@ -18,7 +18,7 @@ public class MessageNeedToRetryProcessor : IProcessor
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
     private readonly TimeSpan _waitingInterval;
-    private readonly IOptions<CapOptions> _options;
+    private readonly IOptions<MessagingOptions> _options;
     private readonly IDataStorage _dataStorage;
     private readonly TimeSpan _ttl;
     private readonly TimeSpan _lookbackSeconds;
@@ -26,7 +26,7 @@ public class MessageNeedToRetryProcessor : IProcessor
     private Task? _failedRetryConsumeTask;
 
     public MessageNeedToRetryProcessor(
-        IOptions<CapOptions> options,
+        IOptions<MessagingOptions> options,
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
         IDataStorage dataStorage

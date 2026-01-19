@@ -1,17 +1,15 @@
-﻿using Framework.Ticker.EntityFrameworkCore.Configurations;
+﻿using Framework.Ticker.Configurations;
 using Framework.Ticker.Utilities.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
-namespace Framework.Ticker.EntityFrameworkCore.Customizer;
+namespace Framework.Ticker.Customizer;
 
-internal class TickerModelCustomizer<TTimeTicker, TCronTicker> : RelationalModelCustomizer
+internal sealed class TickerModelCustomizer<TTimeTicker, TCronTicker>(ModelCustomizerDependencies dependencies)
+    : RelationalModelCustomizer(dependencies)
     where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
     where TCronTicker : CronTickerEntity, new()
 {
-    public TickerModelCustomizer(ModelCustomizerDependencies dependencies)
-        : base(dependencies) { }
-
     public override void Customize(ModelBuilder builder, DbContext context)
     {
         builder.ApplyConfiguration(new TimeTickerConfigurations<TTimeTicker>());

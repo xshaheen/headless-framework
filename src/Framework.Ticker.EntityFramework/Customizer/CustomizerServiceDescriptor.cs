@@ -1,5 +1,5 @@
-using Framework.Ticker.EntityFrameworkCore.DbContextFactory;
-using Framework.Ticker.EntityFrameworkCore.Infrastructure;
+using Framework.Ticker.DbContextFactory;
+using Framework.Ticker.Infrastructure;
 using Framework.Ticker.Utilities.Entities;
 using Framework.Ticker.Utilities.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Framework.Ticker.EntityFrameworkCore.Customizer;
+namespace Framework.Ticker.Customizer;
 
 public static class ServiceBuilder
 {
@@ -29,14 +29,14 @@ public static class ServiceBuilder
 
                 if (originalDescriptor == null)
                 {
-                    throw new Exception(
+                    throw new InvalidOperationException(
                         $"Ticker: Cannot use UseModelCustomizer with empty {typeof(TContext).Name} configurations"
                     );
                 }
 
                 if (originalDescriptor.ImplementationFactory == null)
                 {
-                    throw new Exception(
+                    throw new InvalidOperationException(
                         $"Ticker: DbContextOptions<{typeof(TContext).Name}> must be registered with an ImplementationFactory"
                     );
                 }
@@ -62,7 +62,9 @@ public static class ServiceBuilder
                 );
 
                 if (serviceDescriptor?.ImplementationFactory == null)
+                {
                     throw new InvalidOperationException($"Cannot resolve DbContextOptions<{typeof(TContext).Name}>");
+                }
 
                 var options = (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
 
@@ -84,7 +86,7 @@ public static class ServiceBuilder
         where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
         where TCronTicker : CronTickerEntity, new()
     {
-        builder.ConfigureServices = (services) =>
+        builder.ConfigureServices = services =>
         {
             services.AddDbContext<TContext>(optionsAction);
             services.TryAddSingleton<IDbContextFactory<TContext>>(sp =>

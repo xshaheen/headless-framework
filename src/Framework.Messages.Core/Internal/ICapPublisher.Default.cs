@@ -18,9 +18,9 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
 {
     // ReSharper disable once InconsistentNaming
     protected static DiagnosticListener DiagnosticListener { get; } =
-        new(CapDiagnosticListenerNames.DiagnosticListenerName);
+        new(MessageDiagnosticListenerNames.DiagnosticListenerName);
 
-    private readonly CapOptions _capOptions = service.GetRequiredService<IOptions<CapOptions>>().Value;
+    private readonly MessagingOptions _capOptions = service.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly IDispatcher _dispatcher = service.GetRequiredService<IDispatcher>();
     private readonly IDataStorage _storage = service.GetRequiredService<IDataStorage>();
     private readonly ILongIdGenerator _longIdGenerator = service.GetRequiredService<ILongIdGenerator>();
@@ -209,16 +209,16 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
 
     private static long? _TracingBefore(Message message)
     {
-        if (DiagnosticListener.IsEnabled(CapDiagnosticListenerNames.BeforePublishMessageStore))
+        if (DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforePublishMessageStore))
         {
-            var eventData = new CapEventDataPubStore
+            var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
             };
 
-            DiagnosticListener.Write(CapDiagnosticListenerNames.BeforePublishMessageStore, eventData);
+            DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublishMessageStore, eventData);
 
             return eventData.OperationTimestamp;
         }
@@ -230,11 +230,11 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     {
         if (
             tracingTimestamp != null
-            && DiagnosticListener.IsEnabled(CapDiagnosticListenerNames.AfterPublishMessageStore)
+            && DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublishMessageStore)
         )
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventData = new CapEventDataPubStore
+            var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -242,7 +242,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
                 ElapsedTimeMs = now - tracingTimestamp.Value,
             };
 
-            DiagnosticListener.Write(CapDiagnosticListenerNames.AfterPublishMessageStore, eventData);
+            DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublishMessageStore, eventData);
         }
     }
 
@@ -250,11 +250,11 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     {
         if (
             tracingTimestamp != null
-            && DiagnosticListener.IsEnabled(CapDiagnosticListenerNames.ErrorPublishMessageStore)
+            && DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublishMessageStore)
         )
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventData = new CapEventDataPubStore
+            var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
                 Operation = message.GetName(),
@@ -263,7 +263,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
                 Exception = ex,
             };
 
-            DiagnosticListener.Write(CapDiagnosticListenerNames.ErrorPublishMessageStore, eventData);
+            DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublishMessageStore, eventData);
         }
     }
 

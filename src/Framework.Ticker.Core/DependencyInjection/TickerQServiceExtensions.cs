@@ -97,7 +97,9 @@ public static class TickerQServiceExtensions
         optionInstance.DashboardServiceAction?.Invoke(services);
 
         if (optionInstance.TickerExceptionHandlerType != null)
+        {
             services.AddSingleton(typeof(ITickerExceptionHandler), optionInstance.TickerExceptionHandlerType);
+        }
 
         services.AddSingleton(_ => optionInstance);
         services.AddSingleton(_ => tickerExecutionContext);
@@ -141,7 +143,9 @@ public static class TickerQServiceExtensions
             tickerExecutionContext.NotifyCoreAction += (value, type) =>
             {
                 if (value == null)
+                {
                     return;
+                }
 
                 if (type == CoreNotifyActionType.NotifyHostExceptionMessage)
                 {
@@ -149,11 +153,17 @@ public static class TickerQServiceExtensions
                     tickerExecutionContext.LastHostExceptionMessage = (string)value;
                 }
                 else if (type == CoreNotifyActionType.NotifyNextOccurence)
+                {
                     notificationHubSender.UpdateNextOccurrence(value);
+                }
                 else if (type == CoreNotifyActionType.NotifyHostStatus)
+                {
                     notificationHubSender.UpdateHostStatus(value);
+                }
                 else if (type == CoreNotifyActionType.NotifyThreadCount)
+                {
                     notificationHubSender.UpdateActiveThreads(value);
+                }
             };
         }
         // If background services are not registered (due to DisableBackgroundServices()),

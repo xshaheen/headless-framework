@@ -196,7 +196,6 @@
         <File Path="README.md" />
     </Folder>
     <Folder Name="/Ticker/">
-        <Project Path="demo/Framework.Messages.AmazonSqs.InMemory.Demo/Framework.Messages.AmazonSqs.InMemory.Demo.csproj" />
         <Project Path="demo/Framework.Messages.AzureServiceBus.InMemory.Demo/Framework.Messages.AzureServiceBus.InMemory.Demo.csproj" />
         <Project Path="demo/Framework.Messages.Console.Demo/Framework.Messages.Console.Demo.csproj" />
         <Project Path="demo/Framework.Messages.Dashboard.Auth.Demo/Framework.Messages.Dashboard.Auth.Demo.csproj" />
@@ -209,14 +208,13 @@
         <Project Path="demo/Framework.Ticker.Console.Demo/Framework.Ticker.Console.Demo.csproj" />
         <Project Path="src/Framework.Messages.Core/Framework.Messages.Core.csproj" />
         <Project Path="src/Framework.Messages.InMemoryQueue/Framework.Messages.InMemoryQueue.csproj" />
+        <Project Path="demo\Framework.Messages.AwsSqs.InMemory.Demo\Framework.Messages.AwsSqs.InMemory.Demo.csproj" />
         <Project Path="src/Framework.Messages.Abstractions/Framework.Messages.Abstractions.csproj" />
-        <Project Path="src/Framework.Messages.AmazonSQS/Framework.Messages.AmazonSQS.csproj" />
         <Project Path="src/Framework.Messages.AzureServiceBus/Framework.Messages.AzureServiceBus.csproj" />
         <Project Path="src/Framework.Messages.Dashboard.K8s/Framework.Messages.Dashboard.K8s.csproj" />
         <Project Path="src/Framework.Messages.Dashboard/Framework.Messages.Dashboard.csproj" />
         <Project Path="src/Framework.Messages.InMemoryStorage/Framework.Messages.InMemoryStorage.csproj" />
         <Project Path="src/Framework.Messages.Kafka/Framework.Messages.Kafka.csproj" />
-        <Project Path="src/Framework.Messages.NATS/Framework.Messages.NATS.csproj" />
         <Project Path="src/Framework.Messages.OpenTelemetry/Framework.Messages.OpenTelemetry.csproj" />
         <Project Path="src/Framework.Messages.PostgreSql/Framework.Messages.PostgreSql.csproj" />
         <Project Path="src/Framework.Messages.Pulsar/Framework.Messages.Pulsar.csproj" />
@@ -230,6 +228,8 @@
         <Project Path="src/Framework.Ticker.EntityFramework/Framework.Ticker.EntityFramework.csproj" />
         <Project Path="src/Framework.Ticker.OpenTelemetry/Framework.Ticker.OpenTelemetry.csproj" />
         <Project Path="src/Framework.Ticker.SourceGenerator/Framework.Ticker.SourceGenerator.csproj" />
+        <Project Path="src\Framework.Messages.AwsSqs\Framework.Messages.AwsSqs.csproj" />
+        <Project Path="src\Framework.Messages.Nats\Framework.Messages.Nats.csproj" />
         <Project Path="tests/Framework.Messages.AzureServiceBus.Tests.Unit/Framework.Messages.AzureServiceBus.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Messages.Core.Tests.Harness/Framework.Messages.Core.Tests.Harness.csproj" />
         <Project Path="tests/Framework.Messages.Core.Tests.Unit/Framework.Messages.Core.Tests.Unit.csproj" />

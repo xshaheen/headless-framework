@@ -62,7 +62,7 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
         services.AddOptions();
         services.AddLogging();
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
-        services.Configure<CapOptions>(x => x.Version = "v1");
+        services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
 
         var provider = services.BuildServiceProvider();

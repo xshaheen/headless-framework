@@ -1,9 +1,8 @@
-using Framework.Ticker.Dashboard.Authentication;
+using Framework.Ticker.Authentication;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.Ticker.Dashboard.Hubs;
+namespace Framework.Ticker.Hubs;
 
 public class TickerQNotificationHub(ILogger<TickerQNotificationHub> logger, IAuthService authService) : Hub
 {

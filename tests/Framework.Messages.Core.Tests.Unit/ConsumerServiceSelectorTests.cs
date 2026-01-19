@@ -22,7 +22,7 @@ public class ConsumerServiceSelectorTests
         {
             messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Group("test-group").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -55,7 +55,7 @@ public class ConsumerServiceSelectorTests
         {
             messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Group("test-group").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.GroupNamePrefix = "my-app";
             opt.DefaultGroupName = "default";
@@ -83,7 +83,7 @@ public class ConsumerServiceSelectorTests
         {
             messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default-group";
             opt.Version = "v1";
@@ -110,7 +110,7 @@ public class ConsumerServiceSelectorTests
         {
             messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.TopicNamePrefix = "my-app";
             opt.DefaultGroupName = "default";
@@ -139,7 +139,7 @@ public class ConsumerServiceSelectorTests
             messaging.Consumer<SelectorTestConsumer>().Topic("orders.placed").Build();
             messaging.Consumer<AnotherSelectorConsumer>().Topic("orders.cancelled").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -168,7 +168,7 @@ public class ConsumerServiceSelectorTests
         {
             messaging.Consumer<SelectorTestConsumer>().Topic("orders.placed").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -195,7 +195,7 @@ public class ConsumerServiceSelectorTests
         {
             messaging.Consumer<SelectorTestConsumer>().Topic("orders.*").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -224,7 +224,7 @@ public class ConsumerServiceSelectorTests
             messaging.Consumer<SelectorTestConsumer>().Topic("orders.placed").Group("group1").Build();
             messaging.Consumer<AnotherSelectorConsumer>().Topic("orders.placed").Group("group2").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -252,7 +252,7 @@ public class ConsumerServiceSelectorTests
         {
             messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
         });
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";
@@ -281,7 +281,7 @@ public class ConsumerServiceSelectorTests
         // Given - no registry registered
         var services = new ServiceCollection();
         services.AddLogging();
-        services.Configure<CapOptions>(opt =>
+        services.Configure<MessagingOptions>(opt =>
         {
             opt.DefaultGroupName = "default";
             opt.Version = "v1";

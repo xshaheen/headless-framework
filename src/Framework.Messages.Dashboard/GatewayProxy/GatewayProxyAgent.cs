@@ -1,14 +1,14 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using DotNetCore.CAP.Dashboard.NodeDiscovery;
-using Framework.Messages.Dashboard.GatewayProxy.Requester;
+using Framework.Messages.GatewayProxy.Requester;
+using Framework.Messages.NodeDiscovery;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 
-namespace DotNetCore.CAP.Dashboard.GatewayProxy;
+namespace Framework.Messages.GatewayProxy;
 
 public class GatewayProxyAgent(
     ILoggerFactory loggerFactory,
@@ -32,12 +32,16 @@ public class GatewayProxyAgent(
         var request = context.Request;
         var isSwitchNode = request.Cookies.TryGetValue(CookieNodeName, out var requestNodeName);
         if (!isSwitchNode)
+        {
             return false;
+        }
 
         _logger.LogDebug("start calling remote endpoint...");
 
         if (requestNodeName == null)
+        {
             return false;
+        }
 
         Node? node;
         if (_consulDiscoveryOptions == null) // it's k8s
@@ -62,7 +66,9 @@ public class GatewayProxyAgent(
         else
         {
             if (_consulDiscoveryOptions.NodeName == requestNodeName)
+            {
                 return false;
+            }
 
             if (CapCache.Global.TryGet(requestNodeName, out var nodeObj))
             {
@@ -134,7 +140,9 @@ public class GatewayProxyAgent(
 
         await using Stream stream = new MemoryStream(content);
         if (response.StatusCode != HttpStatusCode.NotModified)
+        {
             await stream.CopyToAsync(context.Response.Body);
+        }
     }
 
     private void _SetDownStreamRequestUri(Node node, string requestPath, string queryString)

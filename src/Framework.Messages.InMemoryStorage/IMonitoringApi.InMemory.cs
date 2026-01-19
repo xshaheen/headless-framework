@@ -65,19 +65,19 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
             if (!string.IsNullOrEmpty(query.StatusName))
             {
                 expression = expression.Where(x =>
-                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.InvariantCultureIgnoreCase)
+                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.OrdinalIgnoreCase)
                 );
             }
 
             if (!string.IsNullOrEmpty(query.Name))
             {
-                expression = expression.Where(x =>
-                    x.Name.Equals(query.Name, StringComparison.InvariantCultureIgnoreCase)
-                );
+                expression = expression.Where(x => x.Name.Equals(query.Name, StringComparison.OrdinalIgnoreCase));
             }
 
             if (!string.IsNullOrEmpty(query.Content))
+            {
                 expression = expression.Where(x => x.Content.Contains(query.Content));
+            }
 
             var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;
@@ -110,26 +110,24 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
             if (!string.IsNullOrEmpty(query.StatusName))
             {
                 expression = expression.Where(x =>
-                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.InvariantCultureIgnoreCase)
+                    x.StatusName.ToString().Equals(query.StatusName, StringComparison.OrdinalIgnoreCase)
                 );
             }
 
             if (!string.IsNullOrEmpty(query.Name))
             {
-                expression = expression.Where(x =>
-                    x.Name.Equals(query.Name, StringComparison.InvariantCultureIgnoreCase)
-                );
+                expression = expression.Where(x => x.Name.Equals(query.Name, StringComparison.OrdinalIgnoreCase));
             }
 
             if (!string.IsNullOrEmpty(query.Group))
             {
-                expression = expression.Where(x =>
-                    x.Group.Equals(query.Group, StringComparison.InvariantCultureIgnoreCase)
-                );
+                expression = expression.Where(x => x.Group.Equals(query.Group, StringComparison.OrdinalIgnoreCase));
             }
 
             if (!string.IsNullOrEmpty(query.Content))
+            {
                 expression = expression.Where(x => x.Content.Contains(query.Content));
+            }
 
             var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;

@@ -4,7 +4,7 @@ namespace Framework.Messages.Messages;
 
 /// <summary>
 /// Represents the result of a message operation (publish or consume), including success/failure status and optional error details.
-/// This struct is used throughout CAP to standardize how operation outcomes are reported.
+/// This struct is used throughout the messaging system to standardize how operation outcomes are reported.
 /// </summary>
 /// <remarks>
 /// The <see cref="OperateResult"/> can represent:

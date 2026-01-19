@@ -4,7 +4,7 @@ namespace Framework.Messages;
 
 public static class AzureServiceBusHeaders
 {
-    public const string SessionId = "cap-session-id";
+    public const string SessionId = "headless-session-id";
 
     /// <summary>
     /// The scheduled enqueue time as DateTimeOffset. This value is for delayed message sending.
@@ -13,5 +13,5 @@ public static class AzureServiceBusHeaders
     /// <remarks>
     /// See https://docs.microsoft.com/en-us/azure/service-bus-messaging/message-sequencing#scheduled-messages for details.
     /// </remarks>
-    public const string ScheduledEnqueueTimeUtc = "cap-scheduled-enqueue-time-utc";
+    public const string ScheduledEnqueueTimeUtc = "headless-scheduled-enqueue-time-utc";
 }

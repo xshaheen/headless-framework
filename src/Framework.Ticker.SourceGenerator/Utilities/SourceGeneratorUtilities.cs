@@ -127,8 +127,8 @@ internal static class SourceGeneratorUtilities
         string? targetNamespace = null
     )
     {
-        var aliases = new Dictionary<string, string>();
-        var usedAliases = new HashSet<string>();
+        var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        var usedAliases = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var typeName in typeNames.Where(t => !string.IsNullOrEmpty(t)))
         {

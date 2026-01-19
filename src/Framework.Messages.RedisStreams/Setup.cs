@@ -16,16 +16,16 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesRedisSetup
 {
-    extension(CapOptions options)
+    extension(MessagingOptions options)
     {
-        public CapOptions UseRedis()
+        public MessagingOptions UseRedis()
         {
             return options.UseRedis(_ => { });
         }
 
         /// <summary>Use redis streams as the message transport.</summary>
         /// <param name="connection">The StackExchange.Redis <see cref="ConfigurationOptions" /> comma-delimited configuration string.</param>
-        public CapOptions UseRedis(string connection)
+        public MessagingOptions UseRedis(string connection)
         {
             return options.UseRedis(opt => opt.Configuration = ConfigurationOptions.Parse(connection));
         }
@@ -33,7 +33,7 @@ public static class MessagesRedisSetup
         /// <summary>Use redis streams as the message transport.</summary>
         /// <param name="configure">The CAP redis client options.</param>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null"/>.</exception>
-        public CapOptions UseRedis(Action<CapRedisOptions> configure)
+        public MessagingOptions UseRedis(Action<CapRedisOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -50,7 +50,7 @@ public static class MessagesRedisSetup
 
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapMessageQueueMakerService("RedisStreams"));
+            services.AddSingleton(new MessageQueueMarkerService("RedisStreams"));
             services.AddSingleton<IRedisStreamManager, RedisStreamManager>();
             services.AddSingleton<IConsumerClientFactory, RedisConsumerClientFactory>();
             services.AddSingleton<ITransport, RedisTransport>();

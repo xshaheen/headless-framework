@@ -51,7 +51,7 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             var isSqlRule = _asbOptions.SqlFilters?.FirstOrDefault(o => o.Key == newRule).Value is not null;
 
-            RuleFilter? currentRuleToAdd = default;
+            RuleFilter? currentRuleToAdd;
 
             if (isSqlRule)
             {
@@ -76,14 +76,14 @@ internal sealed class AzureServiceBusConsumerClient(
                 new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd }
             );
 
-            logger.LogInformation($"Azure Service Bus add rule: {newRule}");
+            logger.LogInformation("Azure Service Bus add rule: {NewRule}", newRule);
         }
 
-        foreach (var oldRule in allRuleNames.Except(topics))
+        foreach (var oldRule in allRuleNames.Except(topics, StringComparer.Ordinal))
         {
             await _administrationClient.DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule);
 
-            logger.LogInformation($"Azure Service Bus remove rule: {oldRule}");
+            logger.LogInformation("Azure Service Bus remove rule: {OldRule}", oldRule);
         }
     }
 
@@ -109,7 +109,10 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
         if (!_serviceBusProcessor!.AutoCompleteMessages)
+        {
             await commitInput.CompleteMessageAsync();
+        }
+
         _semaphore.Release();
     }
 
@@ -123,7 +126,9 @@ internal sealed class AzureServiceBusConsumerClient(
     public async ValueTask DisposeAsync()
     {
         if (!_serviceBusProcessor!.IsProcessing)
+        {
             await _serviceBusProcessor.DisposeAsync();
+        }
     }
 
     private Task _serviceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
@@ -170,7 +175,9 @@ internal sealed class AzureServiceBusConsumerClient(
     public async Task ConnectAsync()
     {
         if (_serviceBusProcessor != null)
+        {
             return;
+        }
 
         await _connectionLock.WaitAsync();
 
@@ -205,7 +212,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     if (!await _administrationClient.TopicExistsAsync(topicPath))
                     {
                         await _administrationClient.CreateTopicAsync(topicPath);
-                        logger.LogInformation($"Azure Service Bus created topic: {topicPath}");
+                        logger.LogInformation("Azure Service Bus created topic: {TopicPath}", topicPath);
                     }
 
                     if (subscribe && !await _administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName))
@@ -222,7 +229,9 @@ internal sealed class AzureServiceBusConsumerClient(
                         await _administrationClient.CreateSubscriptionAsync(subscriptionDescription);
 
                         logger.LogInformation(
-                            $"Azure Service Bus topic {topicPath} created subscription: {subscriptionName}"
+                            "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}",
+                            topicPath,
+                            subscriptionName
                         );
                     }
                 }
@@ -266,7 +275,11 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private TransportMessage _ConvertMessage(ServiceBusReceivedMessage message)
     {
-        var headers = message.ApplicationProperties.ToDictionary(x => x.Key, y => y.Value?.ToString());
+        var headers = message.ApplicationProperties.ToDictionary(
+            x => x.Key,
+            y => y.Value?.ToString(),
+            StringComparer.Ordinal
+        );
 
         headers[Headers.Group] = subscriptionName;
 
@@ -278,10 +291,12 @@ internal sealed class AzureServiceBusConsumerClient(
                 var added = headers.TryAdd(customHeader.Key, customHeader.Value);
 
                 if (!added)
+                {
                     logger.LogWarning(
                         "Not possible to add the custom header {Header}. A value with the same key already exists in the Message headers.",
                         customHeader.Key
                     );
+                }
             }
         }
 
@@ -295,39 +310,49 @@ internal sealed class AzureServiceBusConsumerClient(
         char[] invalidEntityPathCharacters = ['@', '?', '#', '*'];
 
         if (string.IsNullOrWhiteSpace(subscriptionName))
+        {
             throw new ArgumentNullException(subscriptionName);
+        }
 
         // and "\" will be converted to "/" on the REST path anyway. Gateway/REST do not
         // have to worry about the begin/end slash problem, so this is purely a client side check.
         var tmpName = subscriptionName.Replace(@"\", pathDelimiter);
         if (tmpName.Length > ruleNameMaximumLength)
+        {
             throw new ArgumentOutOfRangeException(
                 subscriptionName,
                 $@"Subscribe name '{subscriptionName}' exceeds the '{ruleNameMaximumLength}' character limit."
             );
+        }
 
         if (
             tmpName.StartsWith(pathDelimiter, StringComparison.OrdinalIgnoreCase)
             || tmpName.EndsWith(pathDelimiter, StringComparison.OrdinalIgnoreCase)
         )
+        {
             throw new ArgumentException(
                 $@"The subscribe name cannot contain '/' as prefix or suffix. The supplied value is '{subscriptionName}'",
                 subscriptionName
             );
+        }
 
         if (tmpName.Contains(pathDelimiter))
+        {
             throw new ArgumentException(
                 $@"The subscribe name contains an invalid character '{pathDelimiter}'",
                 subscriptionName
             );
+        }
 
         foreach (var uriSchemeKey in invalidEntityPathCharacters)
         {
-            if (subscriptionName.IndexOf(uriSchemeKey) >= 0)
+            if (subscriptionName.Contains(uriSchemeKey, StringComparison.Ordinal))
+            {
                 throw new ArgumentException(
                     $@"'{subscriptionName}' contains character '{uriSchemeKey}' which is not allowed because it is reserved in the Uri scheme.",
                     subscriptionName
                 );
+            }
         }
     }
 

@@ -1,10 +1,9 @@
 using System.Reflection;
-using AwesomeAssertions;
 using Framework.Ticker.Utilities;
 using Framework.Ticker.Utilities.Enums;
 using Framework.Ticker.Utilities.Models;
 
-namespace Framework.Ticker.Tests;
+namespace Tests;
 
 public class InternalFunctionContextTests
 {

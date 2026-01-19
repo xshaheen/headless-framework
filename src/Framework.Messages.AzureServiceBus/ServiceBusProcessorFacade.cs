@@ -86,8 +86,13 @@ public class ServiceBusProcessorFacade : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_serviceBusProcessor is not null)
+        {
             await _serviceBusProcessor.DisposeAsync();
+        }
+
         if (_serviceBusSessionProcessor is not null)
+        {
             await _serviceBusSessionProcessor.DisposeAsync();
+        }
     }
 }

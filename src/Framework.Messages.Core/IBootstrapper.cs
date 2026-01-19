@@ -3,7 +3,7 @@
 namespace Framework.Messages;
 
 /// <summary>
-/// Defines the contract for CAP bootstrapping logic that initializes the system when the application starts.
+/// Defines the contract for messaging bootstrapping logic that initializes the system when the application starts.
 /// Implementations perform setup tasks such as initializing storage, registering consumers, or preparing the message queue.
 /// </summary>
 /// <remarks>
@@ -25,7 +25,7 @@ public interface IBootstrapper : IAsyncDisposable
     bool IsStarted { get; }
 
     /// <summary>
-    /// Asynchronously performs the bootstrap initialization for CAP.
+    /// Asynchronously performs the bootstrap initialization for the messaging system.
     /// This method is called when the application starts and should complete all necessary initialization.
     /// </summary>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>

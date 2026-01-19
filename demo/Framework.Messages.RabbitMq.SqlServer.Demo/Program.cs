@@ -1,5 +1,6 @@
 ﻿using Dapper;
 using Demo;
+using Framework.Messages;
 using Microsoft.Data.SqlClient;
 
 var builder = WebApplication.CreateBuilder(args);

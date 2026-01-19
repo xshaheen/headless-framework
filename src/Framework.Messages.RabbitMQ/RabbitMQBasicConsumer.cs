@@ -1,13 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Messages.Internal;
 using Framework.Messages.Messages;
 using Framework.Messages.Transport;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using Headers = Framework.Messages.Messages.Headers;
 
-namespace Framework.Messages.RabbitMQ;
+namespace Framework.Messages;
 
 public class RabbitMqBasicConsumer(
     IChannel channel,
@@ -61,16 +60,22 @@ public class RabbitMqBasicConsumer(
         ReadOnlyMemory<byte> body
     )
     {
-        var headers = new Dictionary<string, string?>();
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
 
         if (properties.Headers != null)
+        {
             foreach (var header in properties.Headers)
             {
                 if (header.Value is byte[] val)
+                {
                     headers.Add(header.Key, Encoding.UTF8.GetString(val));
+                }
                 else
+                {
                     headers.Add(header.Key, header.Value?.ToString());
+                }
             }
+        }
 
         headers[Headers.Group] = groupName;
 
@@ -100,7 +105,9 @@ public class RabbitMqBasicConsumer(
     public async Task BasicAck(ulong deliveryTag)
     {
         if (Channel.IsOpen)
+        {
             await Channel.BasicAckAsync(deliveryTag, false);
+        }
 
         _semaphore.Release();
     }
@@ -108,7 +115,9 @@ public class RabbitMqBasicConsumer(
     public async Task BasicReject(ulong deliveryTag)
     {
         if (Channel.IsOpen)
+        {
             await Channel.BasicRejectAsync(deliveryTag, true);
+        }
 
         _semaphore.Release();
     }

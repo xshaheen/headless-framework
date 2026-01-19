@@ -10,7 +10,8 @@ public static class ServiceBusHelpers
         {
             _ when string.IsNullOrWhiteSpace(@namespace) && string.IsNullOrWhiteSpace(connectionString) =>
                 throw new ArgumentException("Either connection string or namespace are required."),
-            _ when string.IsNullOrWhiteSpace(connectionString)
+            _
+                when string.IsNullOrWhiteSpace(connectionString)
                     || (!string.IsNullOrWhiteSpace(@namespace) && !string.IsNullOrWhiteSpace(connectionString)) =>
                 @namespace!,
             _ when string.IsNullOrWhiteSpace(@namespace) => _TryGetEndpointFromConnectionString(
@@ -30,19 +31,25 @@ public static class ServiceBusHelpers
         @namespace = string.Empty;
 
         if (string.IsNullOrWhiteSpace(connectionString))
+        {
             return false;
+        }
 
         var keyValuePairs = connectionString.Split(';');
 
         foreach (var kvp in keyValuePairs)
         {
             if (!kvp.StartsWith("Endpoint", StringComparison.InvariantCultureIgnoreCase))
+            {
                 continue;
+            }
 
             var endpointParts = kvp.Split('=');
 
             if (endpointParts.Length != 2)
+            {
                 continue;
+            }
 
             var uri = new Uri(endpointParts[1]);
 

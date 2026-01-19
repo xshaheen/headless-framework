@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace Framework.Ticker.Dashboard.Authentication;
+namespace Framework.Ticker.Authentication;
 
 /// <summary>
 /// Clean, simple authentication service
@@ -92,10 +92,10 @@ public class AuthService : IAuthService
         {
             // Handle both "Basic <credentials>" and raw credentials
             var credentials = authHeader.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase)
-                ? authHeader.Substring(6)
+                ? authHeader[6..]
                 : authHeader;
 
-            if (credentials == _config.BasicCredentials)
+            if (string.Equals(credentials, _config.BasicCredentials, StringComparison.Ordinal))
             {
                 // Decode to get username for display
                 var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(credentials));
@@ -123,7 +123,7 @@ public class AuthService : IAuthService
                 _ => authHeader,
             };
 
-            if (token == _config.ApiKey)
+            if (string.Equals(token, _config.ApiKey, StringComparison.Ordinal))
             {
                 return Task.FromResult(AuthResult.Success("api-user"));
             }

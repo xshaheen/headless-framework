@@ -24,7 +24,7 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
         services.AddOptions();
         services.AddLogging();
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
-        services.Configure<CapOptions>(x => x.Version = "v1");
+        services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
         services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
@@ -36,7 +36,7 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
         _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _storage = new PostgreSqlDataStorage(
             provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
-            provider.GetRequiredService<IOptions<CapOptions>>(),
+            provider.GetRequiredService<IOptions<MessagingOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
             _longIdGenerator,

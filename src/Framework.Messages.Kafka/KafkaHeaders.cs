@@ -4,5 +4,5 @@ namespace Framework.Messages;
 
 public static class KafkaHeaders
 {
-    public const string KafkaKey = "cap-kafka-key";
+    public const string KafkaKey = "headless-kafka-key";
 }

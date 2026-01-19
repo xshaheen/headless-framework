@@ -6,7 +6,7 @@ using Framework.Ticker.Utilities.Interfaces;
 using Framework.Ticker.Utilities.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace Framework.Ticker.EntityFrameworkCore.Infrastructure;
+namespace Framework.Ticker.Infrastructure;
 
 internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTicker>
     : BasePersistenceProvider<TDbContext, TTimeTicker, TCronTicker>,
@@ -51,11 +51,13 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var baseQuery = dbContext
             .Set<TTimeTicker>()
             .Include(x => x.Children)
-                .ThenInclude(x => x.Children)
+            .ThenInclude(x => x.Children)
             .AsNoTracking();
 
         if (predicate != null)
+        {
             baseQuery = baseQuery.Where(predicate);
+        }
 
         return await baseQuery
             .Where(x => x.ParentId == null)
@@ -78,11 +80,13 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var baseQuery = dbContext
             .Set<TTimeTicker>()
             .Include(x => x.Children)
-                .ThenInclude(x => x.Children)
+            .ThenInclude(x => x.Children)
             .AsNoTracking();
 
         if (predicate != null)
+        {
             baseQuery = baseQuery.Where(predicate);
+        }
 
         baseQuery = baseQuery.Where(x => x.ParentId == null).OrderByDescending(x => x.ExecutionTime);
 
@@ -121,7 +125,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var tickersToDelete = await dbContext
             .Set<TTimeTicker>()
             .Include(x => x.Children)
-                .ThenInclude(x => x.Children) // Include grandchildren if needed
+            .ThenInclude(x => x.Children) // Include grandchildren if needed
             .Where(x => timeTickerIds.Contains(x.Id))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -160,7 +164,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var baseQuery = dbContext.Set<TCronTicker>().AsNoTracking();
 
         if (predicate != null)
+        {
             baseQuery = baseQuery.Where(predicate);
+        }
 
         return await baseQuery
             .OrderByDescending(x => x.CreatedAt)
@@ -182,7 +188,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var baseQuery = dbContext.Set<TCronTicker>().AsNoTracking();
 
         if (predicate != null)
+        {
             baseQuery = baseQuery.Where(predicate);
+        }
 
         baseQuery = baseQuery.OrderByDescending(x => x.CreatedAt);
 
@@ -220,9 +228,11 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         if (RedisContext.HasRedisConnection)
+        {
             await RedisContext
                 .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
                 .ConfigureAwait(false);
+        }
 
         return result;
     }
@@ -239,9 +249,11 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
             .ConfigureAwait(false);
 
         if (RedisContext.HasRedisConnection)
+        {
             await RedisContext
                 .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
                 .ConfigureAwait(false);
+        }
 
         return result;
     }
@@ -287,7 +299,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
             .AsNoTracking();
 
         if (predicate != null)
+        {
             baseQuery = baseQuery.Where(predicate);
+        }
 
         baseQuery = baseQuery.OrderByDescending(x => x.ExecutionTime);
 
@@ -332,7 +346,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
     )
     {
         if (occurrenceIds == null || occurrenceIds.Length == 0)
+        {
             return Array.Empty<CronTickerOccurrenceEntity<TCronTicker>>();
+        }
 
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -359,7 +375,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
             .ConfigureAwait(false);
 
         if (affected == 0)
+        {
             return Array.Empty<CronTickerOccurrenceEntity<TCronTicker>>();
+        }
 
         // Return acquired occurrences with CronTicker populated
         return await dbContext

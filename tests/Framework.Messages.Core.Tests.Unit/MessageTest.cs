@@ -25,10 +25,10 @@ public class MessageTest
         var givenMessage = new Message(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { "cap-msg-name", "authentication.users.update" },
-                { "cap-msg-type", "User" },
-                { "cap-corr-seq", "0" },
-                { "cap-msg-group", "service.v1" },
+                { "headless-msg-name", "authentication.users.update" },
+                { "headless-msg-type", "User" },
+                { "headless-corr-seq", "0" },
+                { "headless-msg-group", "service.v1" },
             },
             value: new MessageValue("test@test.com", "User")
         );

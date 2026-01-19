@@ -1,4 +1,5 @@
 using Demo.Controllers;
+using Framework.Messages;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);

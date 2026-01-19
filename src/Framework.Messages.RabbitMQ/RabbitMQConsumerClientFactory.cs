@@ -4,10 +4,10 @@ using Framework.Messages.Exceptions;
 using Framework.Messages.Transport;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Messages.RabbitMQ;
+namespace Framework.Messages;
 
 internal sealed class RabbitMqConsumerClientFactory(
-    IOptions<RabbitMQOptions> rabbitMqOptions,
+    IOptions<RabbitMqOptions> rabbitMqOptions,
     IConnectionChannelPool channelPool,
     IServiceProvider serviceProvider
 ) : IConsumerClientFactory

@@ -24,12 +24,12 @@ internal sealed class Bootstrapper(
     {
         if (_cts is not null)
         {
-            logger.LogInformation("### CAP background task is already started!");
+            logger.LogInformation("### Messaging background task is already started!");
 
             return;
         }
 
-        logger.LogDebug("### CAP background task is starting.");
+        logger.LogDebug("### Messaging background task is starting.");
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
@@ -46,7 +46,7 @@ internal sealed class Bootstrapper(
 
         _cts.Token.Register(() =>
         {
-            logger.LogDebug("### CAP background task is stopping.");
+            logger.LogDebug("### Messaging background task is stopping.");
 
             foreach (var item in processors)
             {
@@ -64,7 +64,7 @@ internal sealed class Bootstrapper(
         await _BootstrapCoreAsync().ConfigureAwait(false);
 
         _disposed = false;
-        logger.LogInformation("### CAP started!");
+        logger.LogInformation("### Messaging system started!");
     }
 
     private async Task _BootstrapCoreAsync()
@@ -105,7 +105,7 @@ internal sealed class Bootstrapper(
 
     private void _CheckRequirement()
     {
-        var marker = serviceProvider.GetService<CapMarkerService>();
+        var marker = serviceProvider.GetService<MessagingMarkerService>();
         if (marker == null)
         {
             throw new InvalidOperationException(
@@ -113,11 +113,11 @@ internal sealed class Bootstrapper(
             );
         }
 
-        var messageQueueMarker = serviceProvider.GetService<CapMessageQueueMakerService>();
+        var messageQueueMarker = serviceProvider.GetService<MessageQueueMarkerService>();
         if (messageQueueMarker == null)
         {
             throw new InvalidOperationException(
-                "You must be config transport provider for CAP!"
+                "You must be config transport provider for the messaging system!"
                     + Environment.NewLine
                     + "=================================================================================="
                     + Environment.NewLine
@@ -127,12 +127,12 @@ internal sealed class Bootstrapper(
             );
         }
 
-        var databaseMarker = serviceProvider.GetService<CapStorageMarkerService>();
+        var databaseMarker = serviceProvider.GetService<MessageStorageMarkerService>();
 
         if (databaseMarker == null)
         {
             throw new InvalidOperationException(
-                "You must be config storage provider for CAP!"
+                "You must be config storage provider for the messaging system!"
                     + Environment.NewLine
                     + "==================================================================================="
                     + Environment.NewLine

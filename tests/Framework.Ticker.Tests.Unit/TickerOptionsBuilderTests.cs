@@ -1,31 +1,25 @@
-using AwesomeAssertions;
+using System.Reflection;
 using Framework.Ticker.Utilities;
 using Framework.Ticker.Utilities.Entities;
 using Framework.Ticker.Utilities.Enums;
 using Framework.Ticker.Utilities.Interfaces;
 using Framework.Ticker.Utilities.Interfaces.Managers;
 
-namespace Framework.Ticker.Tests;
+namespace Tests;
 
 public class TickerOptionsBuilderTests
 {
-    private sealed class FakeTimeTicker : TimeTickerEntity<FakeTimeTicker> { }
+    private sealed class FakeTimeTicker : TimeTickerEntity<FakeTimeTicker>;
 
-    private sealed class FakeCronTicker : CronTickerEntity { }
+    private sealed class FakeCronTicker : CronTickerEntity;
 
     private sealed class FakeExceptionHandler : ITickerExceptionHandler
     {
-        public System.Threading.Tasks.Task HandleExceptionAsync(
-            Exception exception,
-            Guid tickerId,
-            TickerType tickerType
-        ) => System.Threading.Tasks.Task.CompletedTask;
+        public Task HandleExceptionAsync(Exception exception, Guid tickerId, TickerType tickerType) =>
+            Task.CompletedTask;
 
-        public System.Threading.Tasks.Task HandleCanceledExceptionAsync(
-            Exception exception,
-            Guid tickerId,
-            TickerType tickerType
-        ) => System.Threading.Tasks.Task.CompletedTask;
+        public Task HandleCanceledExceptionAsync(Exception exception, Guid tickerId, TickerType tickerType) =>
+            Task.CompletedTask;
     }
 
     [Fact]
@@ -45,8 +39,8 @@ public class TickerOptionsBuilderTests
         var jsonOptions =
             typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
                 .GetProperty(
-                    "RequestJsonSerializerOptions",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                    nameof(TickerOptionsBuilder<,>.RequestJsonSerializerOptions),
+                    BindingFlags.Instance | BindingFlags.NonPublic
                 )!
                 .GetValue(builder) as JsonSerializerOptions;
 
@@ -67,8 +61,8 @@ public class TickerOptionsBuilderTests
 
         var flag = typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
             .GetProperty(
-                "RequestGZipCompressionEnabled",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                nameof(TickerOptionsBuilder<,>.RequestGZipCompressionEnabled),
+                BindingFlags.Instance | BindingFlags.NonPublic
             )!
             .GetValue(builder);
 
@@ -87,8 +81,8 @@ public class TickerOptionsBuilderTests
 
         var flag = typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
             .GetProperty(
-                "SeedDefinedCronTickers",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                nameof(TickerOptionsBuilder<,>.SeedDefinedCronTickers),
+                BindingFlags.Instance | BindingFlags.NonPublic
             )!
             .GetValue(builder);
 
@@ -108,12 +102,12 @@ public class TickerOptionsBuilderTests
         var handlerType =
             typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
                 .GetProperty(
-                    "TickerExceptionHandlerType",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                    nameof(TickerOptionsBuilder<,>.TickerExceptionHandlerType),
+                    BindingFlags.Instance | BindingFlags.NonPublic
                 )!
                 .GetValue(builder) as Type;
 
-        handlerType.Should().Be(typeof(FakeExceptionHandler));
+        handlerType.Should().Be<FakeExceptionHandler>();
     }
 
     [Fact]
@@ -127,14 +121,14 @@ public class TickerOptionsBuilderTests
         builder.UseTickerSeeder(
             async (ITimeTickerManager<FakeTimeTicker> _) =>
             {
-                await System.Threading.Tasks.Task.CompletedTask;
+                await Task.CompletedTask;
             }
         );
 
         var seeder = typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
             .GetProperty(
-                "TimeSeederAction",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                nameof(TickerOptionsBuilder<,>.TimeSeederAction),
+                BindingFlags.Instance | BindingFlags.NonPublic
             )!
             .GetValue(builder);
 
@@ -152,14 +146,14 @@ public class TickerOptionsBuilderTests
         builder.UseTickerSeeder(
             async (ICronTickerManager<FakeCronTicker> _) =>
             {
-                await System.Threading.Tasks.Task.CompletedTask;
+                await Task.CompletedTask;
             }
         );
 
         var seeder = typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
             .GetProperty(
-                "CronSeederAction",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                nameof(TickerOptionsBuilder<,>.CronSeederAction),
+                BindingFlags.Instance | BindingFlags.NonPublic
             )!
             .GetValue(builder);
 
@@ -195,8 +189,8 @@ public class TickerOptionsBuilderTests
         // Default should be true
         var defaultFlag = typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
             .GetProperty(
-                "RegisterBackgroundServices",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                nameof(TickerOptionsBuilder<,>.RegisterBackgroundServices),
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);
         defaultFlag.Should().BeOfType<bool>().Which.Should().BeTrue();
@@ -206,8 +200,8 @@ public class TickerOptionsBuilderTests
 
         var flag = typeof(TickerOptionsBuilder<FakeTimeTicker, FakeCronTicker>)
             .GetProperty(
-                "RegisterBackgroundServices",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+                nameof(TickerOptionsBuilder<,>.RegisterBackgroundServices),
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);
 

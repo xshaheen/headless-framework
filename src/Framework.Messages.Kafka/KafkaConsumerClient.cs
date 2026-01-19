@@ -103,9 +103,14 @@ public class KafkaConsumerClient(
                 consumerResult = _consumerClient!.Consume(timeout);
 
                 if (consumerResult == null)
+                {
                     continue;
+                }
+
                 if (consumerResult.IsPartitionEOF || consumerResult.Message.Value == null)
+                {
                     continue;
+                }
             }
             catch (ConsumeException e) when (_kafkaOptions.RetriableErrorCodes.Contains(e.Error.Code))
             {
@@ -155,13 +160,17 @@ public class KafkaConsumerClient(
     public void Connect()
     {
         if (_consumerClient != null)
+        {
             return;
+        }
 
         lock (_Lock)
         {
             if (_consumerClient == null)
             {
-                var config = new ConsumerConfig(new Dictionary<string, string>(_kafkaOptions.MainConfig));
+                var config = new ConsumerConfig(
+                    new Dictionary<string, string>(_kafkaOptions.MainConfig, StringComparer.Ordinal)
+                );
                 config.BootstrapServers ??= _kafkaOptions.Servers;
                 config.GroupId ??= groupId;
                 config.AutoOffsetReset ??= AutoOffsetReset.Earliest;
@@ -176,7 +185,7 @@ public class KafkaConsumerClient(
 
     private async Task _ConsumeAsync(ConsumeResult<string, byte[]> consumerResult)
     {
-        var headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count);
+        var headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count, StringComparer.Ordinal);
         foreach (var header in consumerResult.Message.Headers)
         {
             var val = header.GetValueBytes();

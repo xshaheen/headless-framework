@@ -2,16 +2,12 @@ using Framework.Ticker.Utilities.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Framework.Ticker.EntityFrameworkCore.Configurations;
+namespace Framework.Ticker.Configurations;
 
-public class CronTickerOccurrenceConfigurations<TCronTicker>
+public class CronTickerOccurrenceConfigurations<TCronTicker>(string schema = Constants.DefaultSchema)
     : IEntityTypeConfiguration<CronTickerOccurrenceEntity<TCronTicker>>
     where TCronTicker : CronTickerEntity
 {
-    private readonly string _schema;
-
-    public CronTickerOccurrenceConfigurations(string schema = Constants.DefaultSchema) => _schema = schema;
-
     public void Configure(EntityTypeBuilder<CronTickerOccurrenceEntity<TCronTicker>> builder)
     {
         builder.HasKey("Id");
@@ -34,6 +30,6 @@ public class CronTickerOccurrenceConfigurations<TCronTicker>
 
         builder.HasIndex("CronTickerId", "ExecutionTime").IsUnique().HasDatabaseName("UQ_CronTickerId_ExecutionTime");
 
-        builder.ToTable("CronTickerOccurrences", _schema);
+        builder.ToTable("CronTickerOccurrences", schema);
     }
 }

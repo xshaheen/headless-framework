@@ -1,9 +1,9 @@
-using Framework.Ticker.EntityFrameworkCore.Configurations;
+using Framework.Ticker.Configurations;
 using Framework.Ticker.Utilities.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
-namespace Framework.Ticker.EntityFrameworkCore.DbContextFactory;
+namespace Framework.Ticker.DbContextFactory;
 
 public class TickerQDbContext<TTimeTicker, TCronTicker> : DbContext
     where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
@@ -26,8 +26,5 @@ public class TickerQDbContext<TTimeTicker, TCronTicker> : DbContext
     }
 }
 
-public class TickerQDbContext : TickerQDbContext<TimeTickerEntity, CronTickerEntity>
-{
-    public TickerQDbContext(DbContextOptions<TickerQDbContext> options)
-        : base(options) { }
-}
+public class TickerQDbContext(DbContextOptions<TickerQDbContext> options)
+    : TickerQDbContext<TimeTickerEntity, CronTickerEntity>(options);

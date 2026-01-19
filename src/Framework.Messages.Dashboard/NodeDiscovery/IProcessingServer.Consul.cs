@@ -2,7 +2,7 @@
 
 using Framework.Messages.Internal;
 
-namespace DotNetCore.CAP.Dashboard.NodeDiscovery;
+namespace Framework.Messages.NodeDiscovery;
 
 internal class ConsulProcessingNodeServer(INodeDiscoveryProvider discoveryProvider) : IProcessingServer
 {

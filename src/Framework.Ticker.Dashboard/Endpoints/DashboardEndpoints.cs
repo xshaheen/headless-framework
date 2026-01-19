@@ -1,5 +1,5 @@
-using Framework.Ticker.Dashboard.Authentication;
-using Framework.Ticker.Dashboard.Hubs;
+using Framework.Ticker.Authentication;
+using Framework.Ticker.Hubs;
 using Framework.Ticker.Utilities;
 using Framework.Ticker.Utilities.Entities;
 using Framework.Ticker.Utilities.Enums;
@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 
-namespace Framework.Ticker.Dashboard.Endpoints;
+namespace Framework.Ticker.Endpoints;
 
 public static class DashboardEndpoints
 {

@@ -4,7 +4,7 @@ using System.Net;
 using Consul;
 using Microsoft.Extensions.Logging;
 
-namespace DotNetCore.CAP.Dashboard.NodeDiscovery;
+namespace Framework.Messages.NodeDiscovery;
 
 public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryOptions options) : INodeDiscoveryProvider
 {
@@ -107,11 +107,15 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
                     $"http://{options.CurrentNodeHostName}:{options.CurrentNodePort}{options.MatchPath}/api/health";
             }
             else if (options.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+            {
                 healthCheck.TCP = $"{options.CurrentNodeHostName}:{options.CurrentNodePort}";
+            }
 
             var tags = new[] { "CAP", "Client", "Dashboard" };
             if (options.CustomTags != null && options.CustomTags.Length > 0)
-                tags = tags.Union(options.CustomTags).ToArray();
+            {
+                tags = tags.Union(options.CustomTags, StringComparer.Ordinal).ToArray();
+            }
 
             using var consul = new ConsulClient(config =>
             {
@@ -133,7 +137,9 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
             );
 
             if (result.StatusCode == HttpStatusCode.OK)
+            {
                 _logger.LogInformation("Consul node register success!");
+            }
         }
         catch (Exception ex)
         {

@@ -1,10 +1,9 @@
-using Framework.Ticker.DependencyInjection;
 using Framework.Ticker.Utilities;
 using Framework.Ticker.Utilities.Enums;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Framework.Ticker.Dashboard.DependencyInjection;
+namespace Framework.Ticker.DependencyInjection;
 
 /// <summary>
 /// ASP.NET Core specific extensions for TickerQ with Dashboard support

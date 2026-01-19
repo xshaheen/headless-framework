@@ -5,7 +5,7 @@ using Framework.Ticker.Utilities.Interfaces.Managers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace Framework.Ticker.EntityFrameworkCore.DependencyInjection;
+namespace Framework.Ticker.DependencyInjection;
 
 public static class ServiceExtension
 {
@@ -21,10 +21,12 @@ public static class ServiceExtension
         efConfiguration?.Invoke(efCoreOptionBuilder);
 
         if (efCoreOptionBuilder.PoolSize <= 0)
+        {
             throw new ArgumentOutOfRangeException(
                 nameof(efCoreOptionBuilder.PoolSize),
                 "Pool size must be greater than 0"
             );
+        }
 
         tickerConfiguration.ExternalProviderConfigServiceAction += (services) =>
             services.AddSingleton(_ => efCoreOptionBuilder);

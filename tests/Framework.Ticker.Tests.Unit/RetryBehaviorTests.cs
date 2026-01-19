@@ -1,14 +1,12 @@
-using AwesomeAssertions;
 using Framework.Ticker.Utilities.Enums;
 using Framework.Ticker.Utilities.Instrumentation;
 using Framework.Ticker.Utilities.Interfaces;
 using Framework.Ticker.Utilities.Interfaces.Managers;
 using Framework.Ticker.Utilities.Models;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using TickerQ;
 
-namespace Framework.Ticker.Tests;
+namespace Tests;
 
 public class RetryBehaviorTests
 {
@@ -113,7 +111,9 @@ public class RetryBehaviorTests
                 attempts.Add(new Attempt(DateTime.UtcNow, tctx.RetryCount));
 
                 if (succeedOnRetryCount.HasValue && tctx.RetryCount >= succeedOnRetryCount.Value)
+                {
                     return Task.CompletedTask;
+                }
 
                 throw new InvalidOperationException("Fail for retry test");
             },

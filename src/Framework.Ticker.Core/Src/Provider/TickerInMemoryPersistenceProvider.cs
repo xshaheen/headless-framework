@@ -170,7 +170,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var minExecutionTime = baseQuery.OrderBy(x => x.ExecutionTime).Select(x => x.ExecutionTime).FirstOrDefault();
 
         if (minExecutionTime == null)
+        {
             return Task.FromResult(Array.Empty<TimeTickerEntity>());
+        }
 
         // Round the minimum execution time down to its second
         var minSecond = new DateTime(
@@ -206,7 +208,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             _ApplyFunctionContextToTicker(updatedTicker, functionContext);
 
             if (_TimeTickers.TryUpdate(functionContext.TickerId, updatedTicker, ticker))
+            {
                 return Task.FromResult(1);
+            }
         }
 
         return Task.FromResult(0);
@@ -247,7 +251,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
     )
     {
         if (ids == null || ids.Length == 0)
+        {
             return Task.FromResult(Array.Empty<TimeTickerEntity>());
+        }
 
         var now = _clock.UtcNow;
         var acquired = new List<TimeTickerEntity>();
@@ -257,10 +263,14 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!_TimeTickers.TryGetValue(id, out var ticker))
+            {
                 continue;
+            }
 
             if (!_CanAcquire(ticker))
+            {
                 continue;
+            }
 
             var updatedTicker = _CloneTicker(ticker);
             updatedTicker.LockHolder = _lockHolder;
@@ -297,7 +307,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var query = _TimeTickers.Values.AsEnumerable();
 
         if (compiledPredicate != null)
+        {
             query = query.Where(compiledPredicate);
+        }
 
         // Match EF Core - only return root items (ParentId == null) with nested children
         var results = query
@@ -320,7 +332,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var query = _TimeTickers.Values.AsEnumerable();
 
         if (compiledPredicate != null)
+        {
             query = query.Where(compiledPredicate);
+        }
 
         // Match EF Core - only count and paginate root items
         query = query.Where(x => x.ParentId == null);
@@ -371,7 +385,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         {
             // Maintain children index
             if (ticker.ParentId.HasValue)
+            {
                 _AddChildIndex(ticker.ParentId.Value, ticker.Id);
+            }
 
             count++;
 
@@ -422,9 +438,14 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
                 if (existing.ParentId != ticker.ParentId)
                 {
                     if (existing.ParentId.HasValue)
+                    {
                         _RemoveChildIndex(existing.ParentId.Value, ticker.Id);
+                    }
+
                     if (ticker.ParentId.HasValue)
+                    {
                         _AddChildIndex(ticker.ParentId.Value, ticker.Id);
+                    }
                 }
 
                 count++;
@@ -464,7 +485,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
                 // Clean children index
                 if (removed.ParentId.HasValue)
+                {
                     _RemoveChildIndex(removed.ParentId.Value, removed.Id);
+                }
 
                 // Remove children
                 var childrenIds = _GetChildrenIds(id);
@@ -475,7 +498,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
                     {
                         count++;
                         if (child.ParentId.HasValue)
+                        {
                             _RemoveChildIndex(child.ParentId.Value, child.Id);
+                        }
                     }
                 }
             }
@@ -502,7 +527,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         foreach (var ticker in releasable)
         {
             if (!_TimeTickers.TryGetValue(ticker.Id, out var currentTicker))
+            {
                 continue;
+            }
 
             var updatedTicker = _CloneTicker(currentTicker);
             updatedTicker.LockHolder = null;
@@ -521,7 +548,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         foreach (var ticker in inProgress)
         {
             if (!_TimeTickers.TryGetValue(ticker.Id, out var currentTicker))
+            {
                 continue;
+            }
 
             var updatedTicker = _CloneTicker(currentTicker);
             updatedTicker.Status = TickerStatus.Skipped;
@@ -594,7 +623,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var query = _CronTickers.Values.AsEnumerable();
 
         if (compiledPredicate != null)
+        {
             query = query.Where(compiledPredicate);
+        }
 
         var results = query.OrderByDescending(x => x.CreatedAt).ToArray();
 
@@ -612,7 +643,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var query = _CronTickers.Values.AsEnumerable();
 
         if (compiledPredicate != null)
+        {
             query = query.Where(compiledPredicate);
+        }
 
         var totalCount = query.Count();
 
@@ -639,7 +672,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         foreach (var ticker in tickers)
         {
             if (_CronTickers.TryAdd(ticker.Id, ticker))
+            {
                 count++;
+            }
         }
 
         return Task.FromResult(count);
@@ -653,7 +688,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             if (_CronTickers.TryGetValue(ticker.Id, out var existing))
             {
                 if (_CronTickers.TryUpdate(ticker.Id, ticker, existing))
+                {
                     count++;
+                }
             }
         }
 
@@ -666,7 +703,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         foreach (var id in cronTickerIds)
         {
             if (_CronTickers.TryRemove(id, out _))
+            {
                 count++;
+            }
         }
 
         return Task.FromResult(count);
@@ -687,7 +726,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var query = _CronOccurrences.Values.AsEnumerable();
 
         if (ids != null && ids.Length > 0)
+        {
             query = query.Where(x => ids.Contains(x.CronTickerId));
+        }
 
         var occurrence = query
             .Where(x => _CanAcquireCronOccurrence(x))
@@ -842,10 +883,14 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         if (_CronOccurrences.TryGetValue(tickerId, out var occurrence))
         {
             if (occurrence.CronTicker != null)
+            {
                 return Task.FromResult(occurrence.CronTicker.Request ?? Array.Empty<byte>());
+            }
 
             if (_CronTickers.TryGetValue(occurrence.CronTickerId, out var cronTicker))
+            {
                 return Task.FromResult(cronTicker.Request ?? Array.Empty<byte>());
+            }
         }
 
         return Task.FromResult(Array.Empty<byte>());
@@ -888,7 +933,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         foreach (var occurrence in releasable)
         {
             if (!_CronOccurrences.TryGetValue(occurrence.Id, out var currentOccurrence))
+            {
                 continue;
+            }
 
             var updatedOccurrence = _CloneCronOccurrence(currentOccurrence);
             updatedOccurrence.LockHolder = null;
@@ -907,7 +954,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         foreach (var occurrence in inProgress)
         {
             if (!_CronOccurrences.TryGetValue(occurrence.Id, out var currentOccurrence))
+            {
                 continue;
+            }
 
             var updatedOccurrence = _CloneCronOccurrence(currentOccurrence);
             updatedOccurrence.Status = TickerStatus.Skipped;
@@ -930,7 +979,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var query = _CronOccurrences.Values.AsEnumerable();
 
         if (compiledPredicate != null)
+        {
             query = query.Where(compiledPredicate);
+        }
 
         var results = query.OrderByDescending(x => x.CreatedAt).ToArray();
 
@@ -948,7 +999,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var query = _CronOccurrences.Values.AsEnumerable();
 
         if (compiledPredicate != null)
+        {
             query = query.Where(compiledPredicate);
+        }
 
         var totalCount = query.Count();
 
@@ -984,7 +1037,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             }
 
             if (_CronOccurrences.TryAdd(occurrence.Id, occurrence))
+            {
                 count++;
+            }
         }
 
         return Task.FromResult(count);
@@ -996,7 +1051,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         foreach (var id in cronTickerOccurrences)
         {
             if (_CronOccurrences.TryRemove(id, out _))
+            {
                 count++;
+            }
         }
 
         return Task.FromResult(count);
@@ -1008,7 +1065,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
     )
     {
         if (occurrenceIds == null || occurrenceIds.Length == 0)
+        {
             return Task.FromResult(Array.Empty<CronTickerOccurrenceEntity<TCronTicker>>());
+        }
 
         var now = _clock.UtcNow;
         var acquired = new List<CronTickerOccurrenceEntity<TCronTicker>>();
@@ -1018,10 +1077,14 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!_CronOccurrences.TryGetValue(id, out var occurrence))
+            {
                 continue;
+            }
 
             if (!_CanAcquireCronOccurrence(occurrence))
+            {
                 continue;
+            }
 
             var updated = _CloneCronOccurrence(occurrence);
             updated.LockHolder = _lockHolder;
@@ -1052,14 +1115,18 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
     private List<TTimeTicker> _BuildChildrenHierarchy(Guid parentId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children) || children.IsEmpty)
+        {
             return new List<TTimeTicker>();
+        }
 
         var results = new List<TTimeTicker>(children.Count);
 
         foreach (var childId in children.Keys)
         {
             if (!_TimeTickers.TryGetValue(childId, out var child))
+            {
                 continue;
+            }
 
             var clonedChild = _CloneTicker(child);
             clonedChild.Children = _BuildChildrenHierarchy(child.Id);
@@ -1092,11 +1159,15 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             foreach (var childId in directChildren.Keys)
             {
                 if (!_TimeTickers.TryGetValue(childId, out var ch))
+                {
                     continue;
+                }
 
                 // Only children with null ExecutionTime, matching EF mapping
                 if (ch.ExecutionTime != null)
+                {
                     continue;
+                }
 
                 var childEntity = new TimeTickerEntity
                 {
@@ -1116,7 +1187,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
                     foreach (var grandChildId in grandChildren.Keys)
                     {
                         if (!_TimeTickers.TryGetValue(grandChildId, out var gch))
+                        {
                             continue;
+                        }
 
                         grandChildList.Add(
                             new TimeTickerEntity
@@ -1151,7 +1224,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
     private static void _RemoveChildIndex(Guid parentId, Guid childId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children))
+        {
             return;
+        }
 
         children.TryRemove(childId, out _);
 
@@ -1165,7 +1240,9 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
     private static Guid[] _GetChildrenIds(Guid parentId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children))
+        {
             return Array.Empty<Guid>();
+        }
 
         return children.Keys.ToArray();
     }

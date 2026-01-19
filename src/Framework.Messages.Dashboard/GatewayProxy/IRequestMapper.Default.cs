@@ -4,7 +4,7 @@ using Framework.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 
-namespace DotNetCore.CAP.Dashboard.GatewayProxy;
+namespace Framework.Messages.GatewayProxy;
 
 public class RequestMapper : IRequestMapper
 {
@@ -76,7 +76,9 @@ public class RequestMapper : IRequestMapper
     private async Task<HttpContent?> _MapContent(HttpRequest request)
     {
         if (request.Body == null)
+        {
             return null;
+        }
 
         var content = new ByteArrayContent(await _ToByteArray(request.Body));
 
@@ -100,7 +102,9 @@ public class RequestMapper : IRequestMapper
         foreach (var header in request.Headers)
         {
             if (_IsSupportedHeader(header))
+            {
                 requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
         }
     }
 

@@ -11,7 +11,7 @@ namespace Framework.Messages;
 internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     where TConsumer : class
 {
-    private readonly MessagingBuilder _parent;
+    private readonly ConsumerConfigurator _parent;
     private readonly ConsumerRegistry _registry;
     private readonly Type _messageType;
     private readonly bool _autoRegistered;
@@ -20,7 +20,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private byte _concurrency = 1;
 
     internal ConsumerBuilder(
-        MessagingBuilder parent,
+        ConsumerConfigurator parent,
         ConsumerRegistry registry,
         Type messageType,
         string? topic = null,

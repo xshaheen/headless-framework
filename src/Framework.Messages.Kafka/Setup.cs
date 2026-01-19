@@ -11,11 +11,11 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesKafkaSetup
 {
-    extension(CapOptions options)
+    extension(MessagingOptions options)
     {
         /// <summary>Configuration to use kafka in CAP.</summary>
         /// <param name="bootstrapServers">Kafka bootstrap server urls.</param>
-        public CapOptions UseKafka(string bootstrapServers)
+        public MessagingOptions UseKafka(string bootstrapServers)
         {
             return options.UseKafka(opt =>
             {
@@ -25,7 +25,7 @@ public static class MessagesKafkaSetup
 
         /// <summary>Configuration to use kafka in CAP.</summary>
         /// <param name="configure">Provides programmatic configuration for the kafka .</param>
-        public CapOptions UseKafka(Action<KafkaOptions> configure)
+        public MessagingOptions UseKafka(Action<KafkaOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -39,7 +39,7 @@ public static class MessagesKafkaSetup
     {
         public void AddServices(IServiceCollection services)
         {
-            services.AddSingleton(new CapMessageQueueMakerService("Kafka"));
+            services.AddSingleton(new MessageQueueMarkerService("Kafka"));
 
             services.Configure(configure);
 

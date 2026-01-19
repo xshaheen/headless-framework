@@ -38,7 +38,9 @@ internal static class PrimitiveUnderlyingTypeExtensions
     {
         var name = type.Name;
         if (!_IsSystemNamespace(type.ContainingNamespace))
+        {
             return PrimitiveUnderlyingType.Other;
+        }
 
         return name switch
         {

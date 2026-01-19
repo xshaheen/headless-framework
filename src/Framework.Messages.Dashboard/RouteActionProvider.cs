@@ -2,13 +2,12 @@
 
 using System.Diagnostics;
 using System.Net;
-using DotNetCore.CAP.Dashboard.GatewayProxy;
-using DotNetCore.CAP.Dashboard.NodeDiscovery;
-using Framework.Messages;
 using Framework.Messages.Configuration;
+using Framework.Messages.GatewayProxy;
 using Framework.Messages.Internal;
 using Framework.Messages.Messages;
 using Framework.Messages.Monitoring;
+using Framework.Messages.NodeDiscovery;
 using Framework.Messages.Persistence;
 using Framework.Messages.Transport;
 using Microsoft.AspNetCore.Builder;
@@ -17,9 +16,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 
-// ReSharper disable UnusedMember.Global
-
-namespace DotNetCore.CAP.Dashboard;
+namespace Framework.Messages;
 
 public class RouteActionProvider
 {
@@ -98,7 +95,9 @@ public class RouteActionProvider
     public async Task Metrics(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var metrics = _serviceProvider.GetRequiredService<CapMetricsEventListener>();
         await httpContext.Response.WriteAsJsonAsync(metrics.GetRealTimeMetrics());
@@ -107,16 +106,18 @@ public class RouteActionProvider
     public async Task MetaInfo(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
-        var cap = _serviceProvider.GetService<CapMarkerService>();
-        var broker = _serviceProvider.GetService<CapMessageQueueMakerService>();
-        var storage = _serviceProvider.GetService<CapStorageMarkerService>();
+        var cap = _serviceProvider.GetService<MessagingMarkerService>();
+        var broker = _serviceProvider.GetService<MessageQueueMarkerService>();
+        var storage = _serviceProvider.GetService<MessageStorageMarkerService>();
 
         await httpContext.Response.WriteAsJsonAsync(
             new
             {
-                cap,
+                cap = cap,
                 broker,
                 storage,
             }
@@ -126,7 +127,9 @@ public class RouteActionProvider
     public async Task Stats(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var result = await MonitoringApi.GetStatisticsAsync();
         await setServersCountAsync(result);
@@ -153,7 +156,9 @@ public class RouteActionProvider
     public async Task MetricsHistory(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         const string cacheKey = "dashboard.metrics.history";
         if (CapCache.Global.TryGet(cacheKey, out var ret))
@@ -191,7 +196,9 @@ public class RouteActionProvider
     public async Task PublishedMessageDetails(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         if (long.TryParse(httpContext.GetRouteData().Values["id"]?.ToString() ?? string.Empty, out var id))
         {
@@ -213,7 +220,9 @@ public class RouteActionProvider
     public async Task ReceivedMessageDetails(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         if (long.TryParse(httpContext.GetRouteData().Values["id"]?.ToString() ?? string.Empty, out var id))
         {
@@ -235,7 +244,9 @@ public class RouteActionProvider
     public async Task PublishedRequeue(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
         if (messageIds == null || messageIds.Length == 0)
@@ -248,7 +259,9 @@ public class RouteActionProvider
         {
             var message = await MonitoringApi.GetPublishedMessageAsync(messageId);
             if (message != null)
+            {
                 await _serviceProvider.GetRequiredService<IDispatcher>().EnqueueToPublish(message);
+            }
         }
 
         httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -257,7 +270,9 @@ public class RouteActionProvider
     public async Task PublishedDelete(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
         if (messageIds == null || messageIds.Length == 0)
@@ -277,7 +292,9 @@ public class RouteActionProvider
     public async Task ReceivedRequeue(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
         if (messageIds == null || messageIds.Length == 0)
@@ -290,7 +307,9 @@ public class RouteActionProvider
         {
             var message = await MonitoringApi.GetReceivedMessageAsync(messageId);
             if (message != null)
+            {
                 await _serviceProvider.GetRequiredService<IDispatcher>().EnqueueToExecute(message);
+            }
         }
 
         httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -299,7 +318,9 @@ public class RouteActionProvider
     public async Task ReceivedDelete(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
         if (messageIds == null || messageIds.Length == 0)
@@ -319,7 +340,9 @@ public class RouteActionProvider
     public async Task PublishedList(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var routeValue = httpContext.GetRouteData().Values;
         var pageSize = httpContext.Request.Query["perPage"].ToInt32OrDefault(20);
@@ -346,7 +369,9 @@ public class RouteActionProvider
     public async Task ReceivedList(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var routeValue = httpContext.GetRouteData().Values;
         var pageSize = httpContext.Request.Query["perPage"].ToInt32OrDefault(20);
@@ -375,7 +400,9 @@ public class RouteActionProvider
     public async Task Subscribers(HttpContext httpContext)
     {
         if (_agent != null && await _agent.Invoke(httpContext))
+        {
             return;
+        }
 
         var cache = _serviceProvider.GetRequiredService<MethodMatcherCache>();
         var subscribers = cache.GetCandidatesMethodsOfGroupNameGrouped();
@@ -429,7 +456,9 @@ public class RouteActionProvider
 
         var nsList = await discoveryProvider.GetNamespaces(httpContext.RequestAborted);
         if (nsList == null)
+        {
             httpContext.Response.StatusCode = 404;
+        }
         else
         {
             await httpContext.Response.WriteAsJsonAsync(
@@ -443,7 +472,9 @@ public class RouteActionProvider
         var @namespace = string.Empty;
 
         if (httpContext.Request.RouteValues.TryGetValue("namespace", out var val))
+        {
             @namespace = val!.ToString();
+        }
 
         var discoveryProvider = _serviceProvider.GetService<INodeDiscoveryProvider>();
         if (discoveryProvider == null)

@@ -12,78 +12,78 @@ public static class Headers
     /// Unique identifier for the message.
     /// Can be set explicitly when publishing a message, or automatically assigned by CAP.
     /// This ID is used to track and correlate messages throughout their lifecycle.
-    /// Value: "cap-msg-id"
+    /// Value: "headless-msg-id"
     /// </summary>
-    public const string MessageId = "cap-msg-id";
+    public const string MessageId = "headless-msg-id";
 
     /// <summary>
     /// The topic or message name that identifies what kind of message this is.
     /// Used for routing to the correct subscribers.
-    /// Value: "cap-msg-name"
+    /// Value: "headless-msg-name"
     /// </summary>
-    public const string MessageName = "cap-msg-name";
+    public const string MessageName = "headless-msg-name";
 
     /// <summary>
     /// The consumer group that should receive this message.
     /// In Kafka, this maps to the consumer group; in RabbitMQ, it maps to the queue name.
-    /// Value: "cap-msg-group"
+    /// Value: "headless-msg-group"
     /// </summary>
-    public const string Group = "cap-msg-group";
+    public const string Group = "headless-msg-group";
 
     /// <summary>
     /// The .NET type name of the message value/payload.
     /// Used during deserialization to reconstruct the original object type.
-    /// Value: "cap-msg-type"
+    /// Value: "headless-msg-type"
     /// </summary>
-    public const string Type = "cap-msg-type";
+    public const string Type = "headless-msg-type";
 
     /// <summary>
     /// Correlation ID for linking related messages in a message flow or saga pattern.
     /// Allows tracing a chain of messages across different topics and services.
-    /// Value: "cap-corr-id"
+    /// Value: "headless-corr-id"
     /// </summary>
-    public const string CorrelationId = "cap-corr-id";
+    public const string CorrelationId = "headless-corr-id";
 
     /// <summary>
     /// Sequence number for ordering correlated messages.
     /// Indicates the position of this message in a correlated sequence.
-    /// Value: "cap-corr-seq"
+    /// Value: "headless-corr-seq"
     /// </summary>
-    public const string CorrelationSequence = "cap-corr-seq";
+    public const string CorrelationSequence = "headless-corr-seq";
 
     /// <summary>
     /// Name of the subscriber callback handler that should process the response to this message.
     /// Used in request-response patterns where a subscriber needs to send a reply.
-    /// Value: "cap-callback-name"
+    /// Value: "headless-callback-name"
     /// </summary>
-    public const string CallbackName = "cap-callback-name";
+    public const string CallbackName = "headless-callback-name";
 
     /// <summary>
     /// Identifier of the application instance that executed or is executing the message.
     /// Useful in distributed systems to track which instance processed a message.
-    /// Value: "cap-exec-instance-id"
+    /// Value: "headless-exec-instance-id"
     /// </summary>
-    public const string ExecutionInstanceId = "cap-exec-instance-id";
+    public const string ExecutionInstanceId = "headless-exec-instance-id";
 
     /// <summary>
     /// Timestamp indicating when the message was sent/published, in UTC ISO 8601 format.
-    /// Value: "cap-senttime"
+    /// Value: "headless-senttime"
     /// </summary>
-    public const string SentTime = "cap-senttime";
+    public const string SentTime = "headless-senttime";
 
     /// <summary>
     /// Timestamp indicating when a delayed message should be published, in UTC ISO 8601 format.
     /// This header is only present for messages scheduled for delayed delivery.
-    /// Value: "cap-delaytime"
+    /// Value: "headless-delaytime"
     /// </summary>
-    public const string DelayTime = "cap-delaytime";
+    public const string DelayTime = "headless-delaytime";
 
     /// <summary>
     /// Exception information if the message processing failed.
     /// Contains the exception type name and message formatted as "ExceptionTypeName-->ExceptionMessage".
-    /// Value: "cap-exception"
+    /// Value: "headless-exception"
     /// </summary>
-    public const string Exception = "cap-exception";
+    public const string Exception = "headless-exception";
 
     /// <summary>
     /// W3C Trace Context parent trace ID for distributed tracing and OpenTelemetry integration.

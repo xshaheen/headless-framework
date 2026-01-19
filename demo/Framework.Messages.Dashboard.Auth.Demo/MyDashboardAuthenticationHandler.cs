@@ -11,7 +11,7 @@ public static class MyDashboardAuthenticationSchemeDefaults
     public const string Scheme = "MyDashboardAuthenticationScheme";
 }
 
-public class MyDashboardAuthenticationSchemeOptions : AuthenticationSchemeOptions { }
+public class MyDashboardAuthenticationSchemeOptions : AuthenticationSchemeOptions;
 
 public class MyDashboardAuthenticationHandler(
     IOptionsMonitor<MyDashboardAuthenticationSchemeOptions> options,

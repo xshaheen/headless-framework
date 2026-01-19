@@ -4,7 +4,7 @@ using Framework.Ticker.Utilities.Enums;
 using Framework.Ticker.Utilities.Models;
 using Microsoft.EntityFrameworkCore.Query;
 
-namespace Framework.Ticker.EntityFrameworkCore.Infrastructure;
+namespace Framework.Ticker.Infrastructure;
 
 internal static class MappingExtensions
 {

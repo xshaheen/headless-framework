@@ -2,15 +2,12 @@ using Framework.Ticker.Utilities.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Framework.Ticker.EntityFrameworkCore.Configurations;
+namespace Framework.Ticker.Configurations;
 
-public class TimeTickerConfigurations<TTimeTicker> : IEntityTypeConfiguration<TTimeTicker>
+public class TimeTickerConfigurations<TTimeTicker>(string schema = Constants.DefaultSchema)
+    : IEntityTypeConfiguration<TTimeTicker>
     where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
 {
-    private readonly string _schema;
-
-    public TimeTickerConfigurations(string schema = Constants.DefaultSchema) => _schema = schema;
-
     public void Configure(EntityTypeBuilder<TTimeTicker> builder)
     {
         builder.HasKey(x => x.Id);
@@ -30,6 +27,6 @@ public class TimeTickerConfigurations<TTimeTicker> : IEntityTypeConfiguration<TT
         // Index for scheduler queries: many tickers can share the same status/time
         builder.HasIndex("Status", "ExecutionTime").HasDatabaseName("IX_TimeTicker_Status_ExecutionTime");
 
-        builder.ToTable("TimeTickers", _schema);
+        builder.ToTable("TimeTickers", schema);
     }
 }

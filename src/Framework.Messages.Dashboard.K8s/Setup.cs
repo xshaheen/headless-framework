@@ -1,7 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNetCore.CAP;
-using DotNetCore.CAP.Dashboard.K8s;
 using Framework.Messages;
 using Framework.Messages.Configuration;
 

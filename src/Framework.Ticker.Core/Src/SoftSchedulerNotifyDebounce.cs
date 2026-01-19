@@ -26,7 +26,9 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
         Volatile.Write(ref _latest, count);
 
         if (Volatile.Read(ref _disposed) == 1)
+        {
             return;
+        }
 
         // Call immediately so the reported thread count stays in sync
         _Callback(null);
@@ -43,13 +45,17 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
     private void _Callback(object? _)
     {
         if (Volatile.Read(ref _disposed) == 1)
+        {
             return;
+        }
 
         var latest = Volatile.Read(ref _latest);
         var last = Volatile.Read(ref _lastNotified);
 
         if (latest != 0 && latest == last)
+        {
             return;
+        }
 
         Volatile.Write(ref _lastNotified, latest);
 
@@ -59,7 +65,9 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
             return;
+        }
 
         try
         {

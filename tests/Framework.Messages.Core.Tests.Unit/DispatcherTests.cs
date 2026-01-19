@@ -21,7 +21,7 @@ public class DispatcherTests
         // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
-            new CapOptions
+            new MessagingOptions
             {
                 EnableSubscriberParallelExecute = true,
                 EnablePublishParallelSend = false,
@@ -51,7 +51,7 @@ public class DispatcherTests
         // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
-            new CapOptions
+            new MessagingOptions
             {
                 EnableSubscriberParallelExecute = true,
                 EnablePublishParallelSend = false,
@@ -88,7 +88,7 @@ public class DispatcherTests
         // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
-            new CapOptions
+            new MessagingOptions
             {
                 EnableSubscriberParallelExecute = true,
                 EnablePublishParallelSend = false,
@@ -135,7 +135,7 @@ public class DispatcherTests
         // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
-            new CapOptions
+            new MessagingOptions
             {
                 EnableSubscriberParallelExecute = true,
                 EnablePublishParallelSend = false,
@@ -173,7 +173,7 @@ public class DispatcherTests
         // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
-            new CapOptions
+            new MessagingOptions
             {
                 EnableSubscriberParallelExecute = false,
                 EnablePublishParallelSend = true,
@@ -221,7 +221,7 @@ public class DispatcherTests
         // given
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
-            new CapOptions
+            new MessagingOptions
             {
                 EnableSubscriberParallelExecute = true,
                 EnablePublishParallelSend = true,
@@ -256,7 +256,7 @@ public class DispatcherTests
     private static MediumMessage _CreateTestMessage(string id = "1")
     {
         var message = new Message(
-            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { "cap-msg-id", id } },
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", id } },
             value: new MessageValue("test@test.com", "User")
         );
 

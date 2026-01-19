@@ -1,11 +1,11 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNetCore.CAP.Dashboard.NodeDiscovery;
+using Framework.Messages.NodeDiscovery;
 using k8s;
 using k8s.Models;
 using Microsoft.Extensions.Logging;
 
-namespace DotNetCore.CAP.Dashboard.K8s;
+namespace Framework.Messages;
 
 // ReSharper disable once InconsistentNaming
 public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions options) : INodeDiscoveryProvider
@@ -245,7 +245,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
             //check for portName-X tag.
             //If multiple tags with portName are found only the last has power
-            if (capTagScope.Equals("portName", StringComparison.InvariantCultureIgnoreCase))
+            if (capTagScope.Equals("portName", StringComparison.OrdinalIgnoreCase))
             {
                 filteredPortName = tag.Value;
             }
@@ -256,7 +256,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
     private int? _CheckFilterPortIndex(KeyValuePair<string, string> tag, string capTagScope)
     {
-        if (!capTagScope.Equals("portIndex", StringComparison.InvariantCultureIgnoreCase))
+        if (!capTagScope.Equals("portIndex", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
@@ -272,13 +272,13 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
     private bool _IsNodeHidden(KeyValuePair<string, string> tag, string capTagScope)
     {
-        if (!capTagScope.Equals("visibility", StringComparison.InvariantCultureIgnoreCase))
+        if (!capTagScope.Equals("visibility", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         //We will not show the node if the tag value is "dotnetcore.cap.visibility:hide"
-        if (tag.Value.Equals("hide", StringComparison.InvariantCultureIgnoreCase))
+        if (tag.Value.Equals("hide", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -291,7 +291,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
             return false;
         }
 
-        return !tag.Value.Equals("show", StringComparison.InvariantCultureIgnoreCase);
+        return !tag.Value.Equals("show", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string _GetTagScope(KeyValuePair<string, string> tag)

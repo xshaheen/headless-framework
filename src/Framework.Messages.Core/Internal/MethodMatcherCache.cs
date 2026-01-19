@@ -8,9 +8,10 @@ namespace Framework.Messages.Internal;
 
 public class MethodMatcherCache(IConsumerServiceSelector selector)
 {
-    private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> Entries { get; } = new();
+    private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> Entries { get; } =
+        new(StringComparer.Ordinal);
 
-    private ConcurrentDictionary<string, byte> GroupConcurrent { get; } = new();
+    private ConcurrentDictionary<string, byte> GroupConcurrent { get; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
@@ -29,7 +30,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         var executorCollection = selector.SelectCandidates();
 
         // Group by GroupName directly
-        var groupedCandidates = executorCollection.GroupBy(x => x.GroupName);
+        var groupedCandidates = executorCollection.GroupBy(x => x.GroupName, StringComparer.Ordinal);
 
         foreach (var item in groupedCandidates)
         {

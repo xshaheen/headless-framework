@@ -6,7 +6,7 @@ namespace Framework.Messages.Messages;
 
 /// <summary>
 /// Contains information about a message that has failed processing and exceeded the retry threshold.
-/// This class is used when invoking the <see cref="CapOptions.FailedThresholdCallback"/> callback.
+/// This class is used when invoking the <see cref="MessagingOptions.FailedThresholdCallback"/> callback.
 /// </summary>
 public class FailedInfo
 {

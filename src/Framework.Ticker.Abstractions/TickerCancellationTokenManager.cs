@@ -176,7 +176,9 @@ public static class TickerCancellationTokenManager
     public static bool IsParentRunningExcludingSelf(Guid parentId, Guid excludeTickerId)
     {
         if (!_ParentIdIndex.TryGetValue(parentId, out var tickerSet))
+        {
             return false;
+        }
 
         return tickerSet.HasOtherItemsBesides(excludeTickerId);
     }
@@ -252,10 +254,14 @@ public class ConcurrentHashSet<T> : IDisposable
         {
             _lock.EnterReadLock();
             if (_set.Count == 0)
+            {
                 return false;
+            }
 
             if (_set.Count == 1)
+            {
                 return !_set.Contains(excludeItem);
+            }
 
             // Multiple items - at least one must be different from excludeItem
             return true;

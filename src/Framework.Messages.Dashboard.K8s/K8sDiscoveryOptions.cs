@@ -2,7 +2,7 @@
 
 using k8s;
 
-namespace DotNetCore.CAP.Dashboard.K8s;
+namespace Framework.Messages;
 
 // ReSharper disable once InconsistentNaming
 /// <summary>

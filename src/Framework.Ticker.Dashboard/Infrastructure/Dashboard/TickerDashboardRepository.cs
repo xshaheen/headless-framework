@@ -5,7 +5,7 @@ using Framework.Ticker.Utilities.Enums;
 using Framework.Ticker.Utilities.Interfaces;
 using Framework.Ticker.Utilities.Models;
 
-namespace Framework.Ticker.Dashboard.Infrastructure.Dashboard;
+namespace Framework.Ticker.Infrastructure.Dashboard;
 
 internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
     : ITickerDashboardRepository<TTimeTicker, TCronTicker>
@@ -339,7 +339,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         var timeTickers = await _persistenceProvider.GetTimeTickers(x => x.LockedAt != null, cancellationToken);
 
         var timeTickerCounts = timeTickers
-            .GroupBy(x => x.LockHolder)
+            .GroupBy(x => x.LockHolder, StringComparer.Ordinal)
             .Select(g => new { LockHolder = g.Key, Count = g.Count() })
             .ToList();
 
@@ -348,7 +348,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
             cancellationToken
         );
         var cronTickerCounts = cronTickerOccurrences
-            .GroupBy(x => x.LockHolder)
+            .GroupBy(x => x.LockHolder, StringComparer.Ordinal)
             .Select(g => new { LockHolder = g.Key, Count = g.Count() })
             .ToList();
 
@@ -358,7 +358,9 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         foreach (var item in timeTickerCounts)
         {
             if (item.LockHolder == null)
+            {
                 continue;
+            }
 
             if (combined.ContainsKey(item.LockHolder))
             {
@@ -373,7 +375,9 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         foreach (var item in cronTickerCounts)
         {
             if (item.LockHolder == null)
+            {
                 continue;
+            }
 
             if (combined.ContainsKey(item.LockHolder))
             {
@@ -532,8 +536,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
                         .Select(statusGroup => new Tuple<int, int>((int)statusGroup.Key, statusGroup.Count()))
                         .ToArray(),
                 })
-                .FirstOrDefault()
-            ?? new CronOccurrenceTickerGraphData { Date = today, Results = [] };
+                .FirstOrDefault() ?? new CronOccurrenceTickerGraphData { Date = today, Results = [] };
 
         var cronTickerOccurrencesFuture = await _persistenceProvider.GetAllCronTickerOccurrences(
             x => x.CronTickerId == guid && x.ExecutionTime.Date > today,

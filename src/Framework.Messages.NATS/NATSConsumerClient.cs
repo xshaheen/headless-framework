@@ -230,7 +230,9 @@ internal sealed class NatsConsumerClient(
     private void _DisconnectedEventHandler(object? sender, ConnEventArgs e)
     {
         if (e.Error is null)
+        {
             return;
+        }
 
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.ConnectError, Reason = e.Error.ToString() };
         OnLogCallback!(logArgs);

@@ -1,4 +1,4 @@
-namespace Framework.Ticker.EntityFrameworkCore;
+namespace Framework.Ticker;
 
 public static class Constants
 {
