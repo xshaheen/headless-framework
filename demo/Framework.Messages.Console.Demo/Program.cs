@@ -19,9 +19,8 @@ container.AddCap(x =>
 
     x.UseInMemoryStorage();
     x.UseInMemoryMessageQueue();
-});
-
-container.AddSubscribeFilter<CustomConsumerFilter>();
+})
+.AddSubscribeFilter<CustomConsumerFilter>();
 
 var sp = container.BuildServiceProvider();
 

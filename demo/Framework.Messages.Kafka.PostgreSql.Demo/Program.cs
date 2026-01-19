@@ -13,12 +13,12 @@ builder.Services.AddDbContext<AppDbContext>(
     }
 );
 
-builder
-    .Services.AddMessages(messaging =>
-    {
-        messaging.ScanConsumers(typeof(Program).Assembly);
-    })
-    .AddCap(x =>
+builder.Services.AddMessages(messaging =>
+{
+    messaging.ScanConsumers(typeof(Program).Assembly);
+});
+
+builder.Services.AddCap(x =>
     {
         //x.UseEntityFramework<AppDbContext>();
         //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres

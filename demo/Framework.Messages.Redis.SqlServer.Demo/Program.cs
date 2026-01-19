@@ -8,13 +8,13 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder
-    .Services.AddMessages(messaging =>
-    {
-        messaging.ScanConsumers(typeof(Program).Assembly);
-        messaging.WithTopicMapping<Person>("test-message");
-    })
-    .AddCap(options =>
+builder.Services.AddMessages(messaging =>
+{
+    messaging.ScanConsumers(typeof(Program).Assembly);
+    messaging.WithTopicMapping<Person>("test-message");
+});
+
+builder.Services.AddCap(options =>
     {
         options.UseRedis(redis =>
         {

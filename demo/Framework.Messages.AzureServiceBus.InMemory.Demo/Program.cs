@@ -9,12 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(l => l.AddConsole());
 
-builder
-    .Services.AddMessages(messaging =>
-    {
-        messaging.Consumer<SampleSubscriber>().Topic("cap.sample.tests").Build();
-    })
-    .AddCap(c =>
+builder.Services.AddMessages(messaging =>
+{
+    messaging.Consumer<SampleSubscriber>().Topic("cap.sample.tests").Build();
+});
+
+builder.Services.AddCap(c =>
     {
         c.UseInMemoryStorage();
         c.UseAzureServiceBus(asb =>
