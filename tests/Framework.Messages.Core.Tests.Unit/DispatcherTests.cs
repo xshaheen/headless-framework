@@ -107,7 +107,7 @@ public class DispatcherTests
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.Now.AddSeconds(1);
+        var dateTime = DateTime.UtcNow.AddSeconds(1);
         await Parallel.ForEachAsync(
             messages,
             CancellationToken.None,
@@ -154,7 +154,7 @@ public class DispatcherTests
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.Now;
+        var dateTime = DateTime.UtcNow;
 
         await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddSeconds(1));
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200));
@@ -192,7 +192,7 @@ public class DispatcherTests
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.Now.AddMilliseconds(50);
+        var dateTime = DateTime.UtcNow.AddMilliseconds(50);
 
         await Parallel.ForEachAsync(
             messages,
@@ -240,7 +240,7 @@ public class DispatcherTests
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTime.Now;
+        var dateTime = DateTime.UtcNow;
 
         await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddSeconds(1));
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200));
