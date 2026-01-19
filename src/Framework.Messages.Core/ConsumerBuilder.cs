@@ -12,16 +12,20 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     where TConsumer : class
 {
     private readonly MessagingBuilder _parent;
+    private readonly ConsumerRegistry _registry;
     private readonly Type _messageType;
+    private readonly bool _autoRegistered;
     private string? _topic;
     private string? _group;
     private byte _concurrency = 1;
 
-    internal ConsumerBuilder(MessagingBuilder parent, Type messageType, string? topic = null)
+    internal ConsumerBuilder(MessagingBuilder parent, ConsumerRegistry registry, Type messageType, string? topic = null, bool autoRegistered = false)
     {
         _parent = parent;
+        _registry = registry;
         _messageType = messageType;
         _topic = topic;
+        _autoRegistered = autoRegistered;
     }
 
     /// <inheritdoc />
@@ -39,6 +43,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         Argument.IsNotNullOrWhiteSpace(group);
 
         _group = group;
+        _UpdateIfAutoRegistered();
         return this;
     }
 
@@ -51,14 +56,41 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         }
 
         _concurrency = maxConcurrent;
+        _UpdateIfAutoRegistered();
         return this;
     }
 
     /// <inheritdoc />
     public IMessagingBuilder Build()
     {
-        // Register the consumer metadata with the parent builder
-        _parent.RegisterConsumer(typeof(TConsumer), _messageType, _topic, _group, _concurrency);
+        // If already auto-registered, just update with final settings
+        if (_autoRegistered)
+        {
+            _UpdateIfAutoRegistered();
+        }
+        else
+        {
+            // Register the consumer metadata with the parent builder
+            _parent.RegisterConsumer(typeof(TConsumer), _messageType, _topic, _group, _concurrency);
+        }
+
         return _parent;
+    }
+
+    private void _UpdateIfAutoRegistered()
+    {
+        if (!_autoRegistered)
+        {
+            return;
+        }
+
+        // Determine final topic
+        var finalTopic = _topic ?? _messageType.Name;
+
+        // Update the existing registration
+        _registry.Update(
+            m => m.ConsumerType == typeof(TConsumer) && m.MessageType == _messageType,
+            new ConsumerMetadata(_messageType, typeof(TConsumer), finalTopic, _group, _concurrency)
+        );
     }
 }
