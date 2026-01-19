@@ -7,19 +7,21 @@ using var cts = new CancellationTokenSource();
 var container = new ServiceCollection();
 
 container.AddLogging(x => x.AddConsole());
-container
-    .AddMessages(messaging =>
-    {
-        messaging.Consumer<EventConsumer>("sample.console.showtime");
-    })
-    .AddCap(x =>
-    {
-        //console app does not support dashboard
 
-        x.UseInMemoryStorage();
-        x.UseInMemoryMessageQueue();
-    })
-    .AddSubscribeFilter<CustomConsumerFilter>();
+container.AddMessages(messaging =>
+{
+    messaging.Consumer<EventConsumer>().Topic("sample.console.showtime").Build();
+});
+
+container.AddCap(x =>
+{
+    //console app does not support dashboard
+
+    x.UseInMemoryStorage();
+    x.UseInMemoryMessageQueue();
+});
+
+container.AddSubscribeFilter<CustomConsumerFilter>();
 
 var sp = container.BuildServiceProvider();
 

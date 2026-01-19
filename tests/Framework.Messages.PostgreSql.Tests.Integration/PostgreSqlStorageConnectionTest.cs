@@ -39,7 +39,8 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
             provider.GetRequiredService<IOptions<CapOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator
+            _longIdGenerator,
+            TimeProvider.System
         );
     }
 

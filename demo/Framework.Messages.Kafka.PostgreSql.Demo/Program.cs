@@ -16,7 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(
 builder
     .Services.AddMessages(messaging =>
     {
-        messaging.Consumer<KafkaMessageConsumer>("sample.kafka.postgrsql");
+        messaging.ScanConsumers(typeof(Program).Assembly);
     })
     .AddCap(x =>
     {

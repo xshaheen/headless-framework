@@ -72,7 +72,7 @@ public class IConsumeIntegrationTests
         var context = new ConsumeContext<OrderPlaced>
         {
             Message = message,
-            MessageId = Guid.NewGuid(),
+            MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>()),
             Timestamp = DateTimeOffset.UtcNow,
@@ -243,7 +243,7 @@ public class IConsumeIntegrationTests
         var placedContext = new ConsumeContext<OrderPlaced>
         {
             Message = orderPlaced,
-            MessageId = Guid.NewGuid(),
+            MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>()),
             Timestamp = DateTimeOffset.UtcNow,
@@ -253,7 +253,7 @@ public class IConsumeIntegrationTests
         var cancelledContext = new ConsumeContext<OrderCancelled>
         {
             Message = orderCancelled,
-            MessageId = Guid.NewGuid(),
+            MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>()),
             Timestamp = DateTimeOffset.UtcNow,

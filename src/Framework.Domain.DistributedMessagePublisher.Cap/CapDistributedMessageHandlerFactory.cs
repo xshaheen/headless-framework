@@ -234,7 +234,7 @@ public static class CapDistributedMessageHandlerFactory
     #region Base Class
 
     [UsedImplicitly]
-    public class CapHandlerSubscribeBase(IServiceProvider serviceProvider) : IConsumer
+    public class CapHandlerSubscribeBase(IServiceProvider serviceProvider)
     {
         public async ValueTask TriggerHandlerAsync<T>(
             T data,
