@@ -68,15 +68,17 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddCap(cap =>
+        services.AddMessages(x =>
         {
-            cap.UseDashboard(d =>
+            x.ScanConsumers(typeof(Startup).Assembly);
+            x.UseInMemoryStorage();
+            x.UseInMemoryMessageQueue();
+
+            x.UseDashboard(d =>
             {
                 d.AllowAnonymousExplicit = false;
                 d.AuthorizationPolicy = dashboardAuthorizationPolicy;
             });
-            cap.UseInMemoryStorage();
-            cap.UseInMemoryMessageQueue();
         });
 
         return services;
@@ -100,22 +102,19 @@ public class Startup
             .AddAuthentication()
             .AddScheme<MyDashboardAuthenticationSchemeOptions, MyDashboardAuthenticationHandler>(
                 MyDashboardAuthenticationSchemeDefaults.Scheme,
-                null
+                configureOptions: null
             );
 
-        services.AddMessages(messaging =>
+        services.AddMessages(x =>
         {
-            messaging.ScanConsumers(typeof(Startup).Assembly);
-        });
+            x.ScanConsumers(typeof(Startup).Assembly);
+            x.UseInMemoryStorage();
+            x.UseInMemoryMessageQueue();
 
-        services.AddCap(cap =>
-        {
-            cap.UseDashboard(d =>
+            x.UseDashboard(d =>
             {
                 d.AuthorizationPolicy = myDashboardAuthenticationPolicy;
             });
-            cap.UseInMemoryStorage();
-            cap.UseInMemoryMessageQueue();
         });
 
         return services;
@@ -159,15 +158,16 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddCap(cap =>
+        services.AddMessages(x =>
         {
-            cap.UseDashboard(d =>
+            x.ScanConsumers(typeof(Startup).Assembly);
+            x.UseDashboard(d =>
             {
                 d.AllowAnonymousExplicit = false;
                 d.AuthorizationPolicy = dashboardAuthorizationPolicy;
             });
-            cap.UseInMemoryStorage();
-            cap.UseInMemoryMessageQueue();
+            x.UseInMemoryStorage();
+            x.UseInMemoryMessageQueue();
         });
 
         return services;
@@ -175,19 +175,15 @@ public class Startup
 
     public IServiceCollection AddCapWithAnonymousAccess(IServiceCollection services)
     {
-        services.AddMessages(messaging =>
+        services.AddMessages(x =>
         {
-            messaging.ScanConsumers(typeof(Startup).Assembly);
-        });
-
-        services.AddCap(cap =>
-        {
-            cap.UseDashboard(d =>
+            x.ScanConsumers(typeof(Startup).Assembly);
+            x.UseDashboard(d =>
             {
                 d.AllowAnonymousExplicit = true;
             });
-            cap.UseInMemoryStorage();
-            cap.UseInMemoryMessageQueue();
+            x.UseInMemoryStorage();
+            x.UseInMemoryMessageQueue();
         });
 
         return services;

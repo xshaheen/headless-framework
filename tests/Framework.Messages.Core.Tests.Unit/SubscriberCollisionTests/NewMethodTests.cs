@@ -12,8 +12,8 @@ public class NewMethodTests
             nameof(ExternalModuleSubscriberClass.TestSubscriber)
         );
 
-        Assert.NotNull(methodInfo);
-        Assert.NotNull(externalMethodInfo);
+        methodInfo.Should().NotBeNull();
+        externalMethodInfo.Should().NotBeNull();
         Assert.NotEqual(methodInfo.MethodHandle, externalMethodInfo.MethodHandle);
     }
 
@@ -23,8 +23,8 @@ public class NewMethodTests
         var methodInfo1 = typeof(Subclass1OfSubscriberClass).GetMethod(nameof(SubscriberClass.TestSubscriber));
         var methodInfo2 = typeof(Subclass2OfSubscriberClass).GetMethod(nameof(SubscriberClass.TestSubscriber));
 
-        Assert.NotNull(methodInfo1);
-        Assert.NotNull(methodInfo2);
+        methodInfo1.Should().NotBeNull();
+        methodInfo2.Should().NotBeNull();
         Assert.Equal(methodInfo1.MethodHandle.Value, methodInfo2.MethodHandle.Value);
     }
 
@@ -34,14 +34,13 @@ public class NewMethodTests
         var methodInfo1 = typeof(Subclass1OfSubscriberClass).GetMethod(nameof(SubscriberClass.TestSubscriber));
         var methodInfo2 = typeof(Subclass2OfSubscriberClass).GetMethod(nameof(SubscriberClass.TestSubscriber));
 
-        Assert.NotNull(methodInfo1);
-        Assert.NotNull(methodInfo2);
-        Assert.NotNull(methodInfo1.ReflectedType);
-        Assert.NotNull(methodInfo2.ReflectedType);
-        Assert.NotEqual(
-            $"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}",
-            $"{methodInfo2.MethodHandle.Value}_{methodInfo2.ReflectedType.TypeHandle.Value}"
-        );
+        methodInfo1.Should().NotBeNull();
+        methodInfo2.Should().NotBeNull();
+        methodInfo1.ReflectedType.Should().NotBeNull();
+        methodInfo2.ReflectedType.Should().NotBeNull();
+        $"{methodInfo2.MethodHandle.Value}_{methodInfo2.ReflectedType.TypeHandle.Value}"
+.Should().NotBe(
+            $"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}");
     }
 
     [Fact]
@@ -54,14 +53,13 @@ public class NewMethodTests
             .MakeGenericType(typeof(MessageType2))
             .GetMethod(nameof(BaseClass<>.Handle));
 
-        Assert.NotNull(methodInfo1);
-        Assert.NotNull(methodInfo2);
-        Assert.NotNull(methodInfo1.ReflectedType);
-        Assert.NotNull(methodInfo2.ReflectedType);
-        Assert.NotEqual(
-            $"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}",
-            $"{methodInfo2.MethodHandle.Value}_{methodInfo2.ReflectedType.TypeHandle.Value}"
-        );
+        methodInfo1.Should().NotBeNull();
+        methodInfo2.Should().NotBeNull();
+        methodInfo1.ReflectedType.Should().NotBeNull();
+        methodInfo2.ReflectedType.Should().NotBeNull();
+        $"{methodInfo2.MethodHandle.Value}_{methodInfo2.ReflectedType.TypeHandle.Value}"
+.Should().NotBe(
+            $"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}");
     }
 
     private sealed class Subclass1OfSubscriberClass : SubscriberClass;

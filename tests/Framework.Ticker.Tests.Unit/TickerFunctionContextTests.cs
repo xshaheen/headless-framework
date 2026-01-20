@@ -38,8 +38,8 @@ public class TickerFunctionContextTests
         Assert.Equal(baseContext.Type, genericContext.Type);
         Assert.Equal(baseContext.RetryCount, genericContext.RetryCount);
         Assert.Equal(baseContext.IsDue, genericContext.IsDue);
-        Assert.Equal(baseContext.ScheduledFor, genericContext.ScheduledFor);
-        Assert.Equal(baseContext.FunctionName, genericContext.FunctionName);
+        genericContext.ScheduledFor.Should().Be(baseContext.ScheduledFor);
+        genericContext.FunctionName.Should().Be(baseContext.FunctionName);
         Assert.Equal(request, genericContext.Request);
     }
 
@@ -50,7 +50,7 @@ public class TickerFunctionContextTests
         // is an internal delegate that is only set by the runtime scheduler pipeline.
         // Verifying its behavior would require testing internal wiring rather than
         // the public surface area of TickerFunctionContext.
-        Assert.True(true);
+        true.Should().BeTrue();
     }
 
     private sealed class TestRequest

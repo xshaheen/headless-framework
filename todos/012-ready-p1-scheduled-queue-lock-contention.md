@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "012"
 tags: [performance, concurrency, lock-contention, scheduled-messages]
@@ -222,3 +222,9 @@ public async Task should_handle_100k_scheduled_messages_in_under_1_second()
 - Core feature (scheduled messages) breaks at scale
 - Simple fix available (PriorityQueue)
 - Measurable performance regression
+
+### 2026-01-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

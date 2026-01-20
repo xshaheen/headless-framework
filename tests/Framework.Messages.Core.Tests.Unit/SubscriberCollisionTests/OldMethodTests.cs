@@ -18,7 +18,7 @@ public class OldMethodTests
         var externalKey =
             $"{externalMethodInfo.Module.Name}_{externalReflectedType}_{externalMethodInfo.MetadataToken}";
 
-        Assert.NotEqual(key, externalKey);
+        externalKey.Should().NotBe(key);
     }
 
     [Fact]
@@ -32,20 +32,16 @@ public class OldMethodTests
         var externalReflectedType = methodInfo2.ReflectedType!.Name;
         var externalKey = $"{methodInfo2.Module.Name}_{externalReflectedType}_{methodInfo2.MetadataToken}";
 
-        Assert.NotEqual(key, externalKey);
+        externalKey.Should().NotBe(key);
     }
 
     [Fact]
     public void Collision_SubclassOfGenericOpenType_SameAssembly_Handle()
     {
-        var method1 = typeof(BaseClass<>)
-            .MakeGenericType(typeof(MessageType1))
-            .GetMethod(nameof(BaseClass<object>.Handle))!;
-        var method2 = typeof(BaseClass<>)
-            .MakeGenericType(typeof(MessageType2))
-            .GetMethod(nameof(BaseClass<object>.Handle))!;
+        var method1 = typeof(BaseClass<>).MakeGenericType(typeof(MessageType1)).GetMethod(nameof(BaseClass<>.Handle))!;
+        var method2 = typeof(BaseClass<>).MakeGenericType(typeof(MessageType2)).GetMethod(nameof(BaseClass<>.Handle))!;
 
-        Assert.Equal(method1.MetadataToken, method2.MetadataToken);
+        method2.MetadataToken.Should().Be(method1.MetadataToken);
     }
 
     private sealed class Subclass1OfSubscriberClass : SubscriberClass;

@@ -9,26 +9,20 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddMessages(messaging =>
+builder.Services.AddMessages(x =>
 {
-    messaging.ScanConsumers(typeof(Program).Assembly);
-    messaging.WithTopicMapping<Person>("test-message");
-});
+    x.ScanConsumers(typeof(Program).Assembly);
+    x.WithTopicMapping<Person>("test-message");
 
-builder.Services.AddCap(options =>
-{
-    options.UseRedis(redis =>
+    x.UseRedis(redis =>
     {
         redis.Configuration = ConfigurationOptions.Parse("redis-node-0:6379,password=cap");
-        redis.OnConsumeError = context =>
-        {
-            throw new InvalidOperationException("");
-        };
+        redis.OnConsumeError = context => throw new InvalidOperationException("Redis consume error", context.Exception);
     });
 
-    options.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
+    x.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
 
-    options.UseDashboard();
+    x.UseDashboard();
 });
 
 var app = builder.Build();

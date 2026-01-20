@@ -22,7 +22,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         IReadOnlyList<ConsumerExecutorDescriptor>
     > GetCandidatesMethodsOfGroupNameGrouped()
     {
-        if (Entries.Count != 0)
+        if (!Entries.IsEmpty)
         {
             return Entries;
         }
@@ -49,7 +49,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     public List<string> GetAllTopics()
     {
-        if (Entries.Count == 0)
+        if (Entries.IsEmpty)
         {
             GetCandidatesMethodsOfGroupNameGrouped();
         }

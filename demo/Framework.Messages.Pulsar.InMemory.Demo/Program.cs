@@ -4,13 +4,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 var pulsarUri = builder.Configuration.GetValue("AppSettings:PulsarUri", "pulsar://localhost:6650");
 
-builder.Services.AddMessages(messaging =>
+builder.Services.AddMessages(x =>
 {
-    messaging.ScanConsumers(typeof(Program).Assembly);
-});
-
-builder.Services.AddCap(x =>
-{
+    x.ScanConsumers(typeof(Program).Assembly);
     x.UseInMemoryStorage();
     x.UsePulsar(pulsarUri);
     x.UseDashboard();

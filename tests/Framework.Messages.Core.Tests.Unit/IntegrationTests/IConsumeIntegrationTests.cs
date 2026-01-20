@@ -37,7 +37,7 @@ public class IConsumeIntegrationTests
 
         // Then
         candidates.Should().HaveCount(1);
-        var descriptor = candidates.First();
+        var descriptor = candidates[0];
         descriptor.TopicName.Should().Be("orders.placed");
         descriptor.GroupName.Should().Be("order-service.v1");
 

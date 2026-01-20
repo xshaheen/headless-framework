@@ -6,7 +6,7 @@ using Framework.Messages.Internal.ObjectMethodExecutor;
 
 namespace Framework.Messages;
 
-public class HtmlHelper
+public static class HtmlHelper
 {
     public static string MethodEscaped(MethodInfo method)
     {

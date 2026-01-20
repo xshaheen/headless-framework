@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "013"
 tags: [async, deadlock, threading, sync-over-async]
@@ -197,3 +197,9 @@ rg "\.Result(?!\s*=)" src/  # .Result property (not assignment)
 - P1 because causes production deadlocks
 - Simple fix (remove methods)
 - Industry standard approach (async-only)
+
+### 2026-01-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

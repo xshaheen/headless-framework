@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "015"
 tags: [data-integrity, deduplication, idempotency, received-messages]
@@ -81,3 +81,9 @@ Implement Option 1 - database-level deduplication.
 - Identified missing deduplication
 - Proposed database-level solution
 - Analyzed at-least-once delivery semantics
+
+### 2026-01-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

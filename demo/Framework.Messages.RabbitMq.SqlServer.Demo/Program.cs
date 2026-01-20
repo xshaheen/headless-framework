@@ -32,13 +32,10 @@ await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
     );
 }
 
-builder.Services.AddMessages(messaging =>
+builder.Services.AddMessages(x =>
 {
-    messaging.ScanConsumers(typeof(Program).Assembly);
-});
+    x.ScanConsumers(typeof(Program).Assembly);
 
-builder.Services.AddCap(x =>
-{
     x.UseEntityFramework<AppDbContext>();
     x.UseRabbitMq("127.0.0.1");
     x.UseDashboard();

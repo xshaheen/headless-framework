@@ -12,8 +12,9 @@ public static class TestServiceCollectionExtensions
         public void AddTestSetup(ITestOutputHelper testOutput)
         {
             services.AddLogging(x => x.AddTestLogging(testOutput));
-            services.AddCap(x =>
+            services.AddMessages(x =>
             {
+                x.ScanConsumers(typeof(TestServiceCollectionExtensions).Assembly);
                 x.DefaultGroupName = TestGroupName;
                 x.UseInMemoryMessageQueue();
                 x.UseInMemoryStorage();

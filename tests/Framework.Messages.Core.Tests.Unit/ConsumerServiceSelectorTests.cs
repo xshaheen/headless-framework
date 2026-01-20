@@ -38,7 +38,7 @@ public class ConsumerServiceSelectorTests
         candidates.Should().NotBeEmpty();
         candidates.Should().HaveCount(1);
 
-        var descriptor = candidates.First();
+        var descriptor = candidates[0];
         descriptor.ServiceTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
         descriptor.ImplTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
         descriptor.MethodInfo.Name.Should().Be(nameof(IConsume<object>.Consume));
@@ -69,7 +69,7 @@ public class ConsumerServiceSelectorTests
         var candidates = selector.SelectCandidates();
 
         // Then
-        var descriptor = candidates.First();
+        var descriptor = candidates[0];
         descriptor.GroupName.Should().Be("my-app.test-group.v2");
     }
 
@@ -96,7 +96,7 @@ public class ConsumerServiceSelectorTests
         var candidates = selector.SelectCandidates();
 
         // Then
-        var descriptor = candidates.First();
+        var descriptor = candidates[0];
         descriptor.GroupName.Should().Be("default-group.v1");
     }
 
@@ -124,7 +124,7 @@ public class ConsumerServiceSelectorTests
         var candidates = selector.SelectCandidates();
 
         // Then
-        var descriptor = candidates.First();
+        var descriptor = candidates[0];
         descriptor.TopicNamePrefix.Should().Be("my-app");
     }
 
@@ -263,7 +263,7 @@ public class ConsumerServiceSelectorTests
 
         // When
         var candidates = selector.SelectCandidates();
-        var descriptor = candidates.First();
+        var descriptor = candidates[0];
 
         // Then
         descriptor.Parameters.Should().HaveCount(2);

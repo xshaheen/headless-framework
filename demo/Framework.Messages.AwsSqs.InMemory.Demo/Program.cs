@@ -3,13 +3,9 @@ using Framework.Messages;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddMessages(messaging =>
+builder.Services.AddMessages(x =>
 {
-    messaging.ScanConsumers(typeof(Program).Assembly);
-});
-
-builder.Services.AddCap(x =>
-{
+    x.ScanConsumers(typeof(Program).Assembly);
     x.UseInMemoryStorage();
     x.UseAmazonSqs(RegionEndpoint.CNNorthWest1);
     x.UseDashboard();

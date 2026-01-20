@@ -23,7 +23,7 @@ public class Person
 
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
-    public DbSet<Person> Persons { get; set; }
+    public required DbSet<Person> Persons { get; set; }
 }
 
 #pragma warning disable EF1001 // Internal EF Core API usage.
