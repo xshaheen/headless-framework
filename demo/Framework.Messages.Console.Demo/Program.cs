@@ -8,14 +8,11 @@ var container = new ServiceCollection();
 
 container.AddLogging(x => x.AddConsole());
 
-container.AddMessages(messaging =>
-{
-    messaging.Consumer<EventConsumer>().Topic("sample.console.showtime").Build();
-});
-
 container
-    .AddCap(x =>
+    .AddMessages(x =>
     {
+        x.Consumer<EventConsumer>().Topic("sample.console.showtime").Build();
+
         //console app does not support dashboard
 
         x.UseInMemoryStorage();

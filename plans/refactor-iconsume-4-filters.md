@@ -2,7 +2,7 @@
 
 **Priority**: MEDIUM-LOW
 **Dependencies**: Part 1 (Core Foundation)
-**Estimated Effort**: 0.25 day
+**Estimated Effort**: 0.3 day (2.5 hours)
 
 ## Goal
 
@@ -14,6 +14,7 @@ Expose CAP's built-in subscriber filter system through a cleaner API in the `Add
 - Wrapper API for CAP's `SubscriberFilters`
 - Global filter registration
 - Simple, clean configuration interface
+- Comprehensive XML documentation
 
 **Out of Scope:**
 - Custom filter pipeline implementation (CAP already has this)
@@ -30,6 +31,20 @@ Expose CAP's built-in subscriber filter system through a cleaner API in the `Add
 
 **DO provide cleaner API** over CAP's filter registration to match our builder pattern.
 
+## Pre-Implementation Verification
+
+**MUST verify these CAP behaviors before implementation:**
+
+1. **Insertion order preservation**: Does `CapOptions.SubscriberFilters` preserve insertion order? (Check CAP source)
+2. **Cancellation token support**: Does `ExecutingContext` expose `CancellationToken`? (Check CAP API)
+3. **Exception handling**: What happens when filter throws during `OnSubscribeExecutingAsync`?
+   - Does it route to DLQ?
+   - Does it trigger `OnSubscribeExceptionAsync` on all filters?
+   - Does it stop filter pipeline execution?
+4. **Scoped lifetime**: Verify CAP creates new DI scope per message (confirms scoped registration is correct)
+
+**Action**: Review CAP source code at https://github.com/dotnetcore/CAP before implementation.
+
 ## Implementation
 
 ### Phase 1: Filter Registration Wrapper
@@ -41,9 +56,44 @@ public interface IMessagingBuilder
 {
     // Existing methods...
 
-    // NEW - Wraps CAP's SubscriberFilters
+    /// <summary>
+    /// Registers a global filter that executes for all consumed messages.
+    /// Filters execute in registration order before and after message handlers.
+    /// </summary>
+    /// <typeparam name="TFilter">Filter type implementing <see cref="IConsumeFilter"/>.</typeparam>
+    /// <returns>The messaging builder for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Filters are registered with scoped lifetime. CAP creates a new DI scope per message,
+    /// so each message gets a fresh filter instance with its own dependency graph.
+    /// </para>
+    /// <para>
+    /// <strong>Execution order:</strong>
+    /// <list type="number">
+    /// <item>Filter1.OnSubscribeExecutingAsync (pre-processing)</item>
+    /// <item>Filter2.OnSubscribeExecutingAsync (pre-processing)</item>
+    /// <item>Message handler</item>
+    /// <item>Filter2.OnSubscribeExecutedAsync (post-processing, reverse order)</item>
+    /// <item>Filter1.OnSubscribeExecutedAsync (post-processing, reverse order)</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <strong>Exception handling:</strong> If an exception occurs during message processing
+    /// (in handler or filter), CAP calls OnSubscribeExceptionAsync on all filters in reverse
+    /// registration order. The exception is then handled according to retry/DLQ configuration.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// services.AddMessaging(m =>
+    /// {
+    ///     m.AddFilter&lt;LoggingFilter&gt;();
+    ///     m.AddFilter&lt;MetricsFilter&gt;();
+    ///     m.AddFilter&lt;ValidationFilter&gt;();
+    /// });
+    /// </code>
+    /// </example>
     IMessagingBuilder AddFilter<TFilter>() where TFilter : class, IConsumeFilter;
-    IMessagingBuilder AddFilter(Type filterType);
 }
 ```
 
@@ -58,27 +108,14 @@ public sealed class MessagingBuilder(IServiceCollection services) : IMessagingBu
 {
     private readonly List<Type> _filterTypes = [];
 
+    /// <inheritdoc />
     public IMessagingBuilder AddFilter<TFilter>() where TFilter : class, IConsumeFilter
     {
         _filterTypes.Add(typeof(TFilter));
 
-        // Register filter in DI (scoped - new instance per message)
+        // Register filter in DI with scoped lifetime
+        // CAP creates DI scope per message, ensuring thread-safe isolated filter instances
         services.AddScoped<TFilter>();
-
-        return this;
-    }
-
-    public IMessagingBuilder AddFilter(Type filterType)
-    {
-        if (!typeof(IConsumeFilter).IsAssignableFrom(filterType))
-        {
-            throw new ArgumentException(
-                $"{filterType.Name} must implement IConsumeFilter",
-                nameof(filterType));
-        }
-
-        _filterTypes.Add(filterType);
-        services.AddScoped(filterType);
 
         return this;
     }
@@ -88,15 +125,29 @@ public sealed class MessagingBuilder(IServiceCollection services) : IMessagingBu
         // Apply retry/DLQ configuration (from Part 3)
         // ...
 
-        // Apply filters
+        // Apply filters to CAP's subscriber pipeline
         foreach (var filterType in _filterTypes)
         {
-            // CAP's SubscriberFilters.Add method
-            capOptions.SubscriberFilters.Add(filterType);
+            try
+            {
+                capOptions.SubscriberFilters.Add(filterType);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to register filter {filterType.Name} with CAP. " +
+                    $"Ensure the type implements IConsumeFilter correctly.",
+                    ex);
+            }
         }
     }
 }
 ```
+
+**Design rationale:**
+- **Deferred registration**: Filters stored in `_filterTypes` then applied in `ApplyToCapOptions()` because `CapOptions` isn't available until `AddMessaging()` configures CAP
+- **Scoped lifetime**: CAP creates new DI scope per message, so scoped registration provides per-message filter instances
+- **Error handling**: Wrap CAP registration to provide better error messages if registration fails
 
 ### Phase 3: Integration with CAP Configuration
 
@@ -108,97 +159,164 @@ No additional changes needed - filters are registered alongside retry/DLQ config
 
 ### Unit Tests
 
+**FilterConfigurationTest.cs:**
+
 ```csharp
 public class FilterConfigurationTest
 {
     [Fact]
-    public void should_register_filter_in_di()
+    public void should_register_filter_in_di_and_cap()
     {
         var services = new ServiceCollection();
         services.AddLogging();
 
         services.AddMessaging(m =>
         {
-            m.AddFilter<LoggingFilter>();
+            m.ConfigureCap(cap =>
+            {
+                cap.UseInMemoryStorage();
+                cap.UseInMemoryMessageQueue();
+            });
+
+            m.AddFilter<TestFilter>();
         });
 
-        var sp = services.BuildServiceProvider();
-        var filter = sp.GetRequiredService<LoggingFilter>();
+        var capOptions = services.BuildServiceProvider()
+            .GetRequiredService<IOptions<CapOptions>>()
+            .Value;
 
-        filter.Should().NotBeNull();
+        // Verify DI registration
+        services.Should().Contain(sd =>
+            sd.ServiceType == typeof(TestFilter) &&
+            sd.Lifetime == ServiceLifetime.Scoped);
+
+        // Verify CAP registration
+        capOptions.SubscriberFilters.Should().Contain(typeof(TestFilter));
     }
 
     [Fact]
-    public void should_add_filter_to_cap_subscriber_filters()
+    public void should_register_multiple_filters()
     {
         var services = new ServiceCollection();
         services.AddLogging();
 
         services.AddMessaging(m =>
         {
-            m.AddFilter<LoggingFilter>();
-            m.AddFilter<MetricsFilter>();
+            m.ConfigureCap(cap =>
+            {
+                cap.UseInMemoryStorage();
+                cap.UseInMemoryMessageQueue();
+            });
+
+            m.AddFilter<TestFilter>();
+            m.AddFilter<AnotherTestFilter>();
         });
 
-        var capOptions = GetCapOptions(services);
+        var capOptions = services.BuildServiceProvider()
+            .GetRequiredService<IOptions<CapOptions>>()
+            .Value;
 
         capOptions.SubscriberFilters
-            .Should().Contain(typeof(LoggingFilter))
-            .And.Contain(typeof(MetricsFilter));
+            .Should().Contain(typeof(TestFilter))
+            .And.Contain(typeof(AnotherTestFilter));
     }
 
     [Fact]
-    public void should_throw_when_filter_not_iconsume_filter()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        var act = () =>
-        {
-            services.AddMessaging(m =>
-            {
-                m.AddFilter(typeof(InvalidFilter)); // Not IConsumeFilter
-            });
-        };
-
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*must implement IConsumeFilter*");
-    }
-
-    [Fact]
-    public void should_register_multiple_filters_in_order()
+    public void should_handle_duplicate_filter_registration()
     {
         var services = new ServiceCollection();
         services.AddLogging();
 
         services.AddMessaging(m =>
         {
-            m.AddFilter<Filter1>();
-            m.AddFilter<Filter2>();
-            m.AddFilter<Filter3>();
+            m.ConfigureCap(cap =>
+            {
+                cap.UseInMemoryStorage();
+                cap.UseInMemoryMessageQueue();
+            });
+
+            m.AddFilter<TestFilter>();
+            m.AddFilter<TestFilter>(); // Duplicate
         });
 
-        var capOptions = GetCapOptions(services);
+        var capOptions = services.BuildServiceProvider()
+            .GetRequiredService<IOptions<CapOptions>>()
+            .Value;
 
-        var filters = capOptions.SubscriberFilters.ToList();
-        filters.IndexOf(typeof(Filter1)).Should().BeLessThan(filters.IndexOf(typeof(Filter2)));
-        filters.IndexOf(typeof(Filter2)).Should().BeLessThan(filters.IndexOf(typeof(Filter3)));
+        // Both registrations should be present (CAP's behavior)
+        // Users responsible for avoiding duplicates
+        capOptions.SubscriberFilters
+            .Count(t => t == typeof(TestFilter))
+            .Should().Be(2);
+    }
+
+    [Fact]
+    public void should_fail_when_filter_has_missing_dependencies()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        // NOTE: Not registering IMissingDependency
+
+        services.AddMessaging(m =>
+        {
+            m.ConfigureCap(cap =>
+            {
+                cap.UseInMemoryStorage();
+                cap.UseInMemoryMessageQueue();
+            });
+
+            m.AddFilter<FilterWithDependency>();
+        });
+
+        var act = () => services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IMissingDependency*");
     }
 }
+
+// Test stubs
+public sealed class TestFilter : ConsumeFilter
+{
+    public static bool ExecutingCalled { get; set; }
+    public static bool ExecutedCalled { get; set; }
+
+    public override Task OnSubscribeExecutingAsync(ExecutingContext context)
+    {
+        ExecutingCalled = true;
+        return Task.CompletedTask;
+    }
+
+    public override Task OnSubscribeExecutedAsync(ExecutedContext context)
+    {
+        ExecutedCalled = true;
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class AnotherTestFilter : ConsumeFilter { }
+
+public sealed class FilterWithDependency(IMissingDependency dependency) : ConsumeFilter { }
 ```
 
 ### Integration Tests
+
+**FilterIntegrationTest.cs:**
 
 ```csharp
 public class FilterIntegrationTest
 {
     [Fact]
-    public async Task should_execute_filter_before_handler()
+    public async Task should_execute_filter_pipeline()
     {
-        var executionOrder = new List<string>();
+        // Smoke test: Verify filters are invoked by CAP
+        // Trust CAP for ordering, exception handling, lifecycle
+
+        var messageProcessed = new TaskCompletionSource<bool>();
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(executionOrder);
+        services.AddSingleton(messageProcessed);
 
         services.AddMessaging(m =>
         {
@@ -215,87 +333,70 @@ public class FilterIntegrationTest
         var sp = services.BuildServiceProvider();
         var publisher = sp.GetRequiredService<ICapPublisher>();
 
-        await publisher.PublishAsync("test.topic", new TestMessage());
-        await Task.Delay(100);
-
-        executionOrder.Should().Equal(
-            "Filter.Executing",
-            "Handler",
-            "Filter.Executed"
-        );
-    }
-
-    [Fact]
-    public async Task should_execute_multiple_filters_in_order()
-    {
-        var executionOrder = new List<string>();
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(executionOrder);
-
-        services.AddMessaging(m =>
-        {
-            m.ConfigureCap(cap =>
-            {
-                cap.UseInMemoryStorage();
-                cap.UseInMemoryMessageQueue();
-            });
-
-            m.AddFilter<Filter1>();
-            m.AddFilter<Filter2>();
-            m.AddConsumer<TrackingHandler>();
-        });
-
-        var sp = services.BuildServiceProvider();
-        var publisher = sp.GetRequiredService<ICapPublisher>();
+        // Reset tracking state
+        TrackingFilter.ExecutingCalled = false;
+        TrackingFilter.ExecutedCalled = false;
+        TrackingHandler.Called = false;
 
         await publisher.PublishAsync("test.topic", new TestMessage());
-        await Task.Delay(100);
 
-        executionOrder.Should().Equal(
-            "Filter1.Executing",
-            "Filter2.Executing",
-            "Handler",
-            "Filter2.Executed",
-            "Filter1.Executed"
-        );
-    }
+        // Wait for message processing with timeout (no flaky Task.Delay!)
+        var completed = await messageProcessed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        completed.Should().BeTrue("message should process within 5s");
 
-    [Fact]
-    public async Task should_call_exception_handler_on_failure()
-    {
-        var exceptionHandled = false;
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<Action<bool>>(handled => exceptionHandled = handled);
-
-        services.AddMessaging(m =>
-        {
-            m.ConfigureCap(cap =>
-            {
-                cap.UseInMemoryStorage();
-                cap.UseInMemoryMessageQueue();
-            });
-
-            m.AddFilter<ExceptionHandlingFilter>();
-            m.AddConsumer<FailingHandler>();
-        });
-
-        var sp = services.BuildServiceProvider();
-        var publisher = sp.GetRequiredService<ICapPublisher>();
-
-        await publisher.PublishAsync("test.topic", new TestMessage());
-        await Task.Delay(100);
-
-        exceptionHandled.Should().BeTrue();
+        // Verify filter was invoked
+        TrackingFilter.ExecutingCalled.Should().BeTrue();
+        TrackingFilter.ExecutedCalled.Should().BeTrue();
+        TrackingHandler.Called.Should().BeTrue();
     }
 }
+
+// Test infrastructure
+public sealed class TrackingFilter : ConsumeFilter
+{
+    public static bool ExecutingCalled { get; set; }
+    public static bool ExecutedCalled { get; set; }
+
+    public override Task OnSubscribeExecutingAsync(ExecutingContext context)
+    {
+        ExecutingCalled = true;
+        return Task.CompletedTask;
+    }
+
+    public override Task OnSubscribeExecutedAsync(ExecutedContext context)
+    {
+        ExecutedCalled = true;
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class TrackingHandler(TaskCompletionSource<bool> completion) : IConsume<TestMessage>
+{
+    public static bool Called { get; set; }
+
+    public Task ConsumeAsync(TestMessage message, CancellationToken cancellationToken)
+    {
+        Called = true;
+        completion.TrySetResult(true);
+        return Task.CompletedTask;
+    }
+}
+
+public record TestMessage;
 ```
 
-## Example Filters
+**Test strategy:**
+- **Unit tests**: Verify wrapper correctly registers filters with CAP and DI
+- **Integration tests**: Single smoke test verifying CAP invokes filters (trust CAP for ordering/exception handling)
+- **No flaky delays**: Use `TaskCompletionSource` for proper async synchronization
+
+## Documentation Examples
+
+**Example filters for README/documentation** (not in test code):
+
+### Logging Filter
 
 ```csharp
-// Logging filter
 public sealed class LoggingFilter(ILogger<LoggingFilter> logger) : ConsumeFilter
 {
     public override Task OnSubscribeExecutingAsync(ExecutingContext context)
@@ -327,27 +428,34 @@ public sealed class LoggingFilter(ILogger<LoggingFilter> logger) : ConsumeFilter
         return Task.CompletedTask;
     }
 }
+```
 
-// Metrics filter
+### Metrics Filter (Optimized)
+
+```csharp
 public sealed class MetricsFilter(IMetrics metrics) : ConsumeFilter
 {
-    private const string StopwatchKey = "MetricsFilter.Stopwatch";
+    private const string TimestampKey = "MetricsFilter.StartTimestamp";
 
     public override Task OnSubscribeExecutingAsync(ExecutingContext context)
     {
-        var stopwatch = Stopwatch.StartNew();
-        context.Items[StopwatchKey] = stopwatch;
-
+        // Use Stopwatch.GetTimestamp() to avoid allocation
+        context.Items[TimestampKey] = Stopwatch.GetTimestamp();
         metrics.IncrementCounter("messages.received");
         return Task.CompletedTask;
     }
 
     public override Task OnSubscribeExecutedAsync(ExecutedContext context)
     {
-        if (context.Items.TryGetValue(StopwatchKey, out var obj) && obj is Stopwatch sw)
+        if (context.Items.TryGetValue(TimestampKey, out var startObj) && startObj is long start)
         {
-            sw.Stop();
-            metrics.RecordHistogram("messages.duration_ms", sw.ElapsedMilliseconds);
+            var elapsed = Stopwatch.GetElapsedTime(start);
+            metrics.RecordHistogram("messages.duration_ms", elapsed.TotalMilliseconds);
+        }
+        else
+        {
+            // Defensive: Log if timestamp missing (indicates filter pipeline issue)
+            // Don't throw - metrics failure shouldn't break message processing
         }
 
         metrics.IncrementCounter("messages.success");
@@ -360,17 +468,20 @@ public sealed class MetricsFilter(IMetrics metrics) : ConsumeFilter
         return Task.CompletedTask;
     }
 }
+```
 
-// Validation filter
+### Validation Filter
+
+```csharp
 public sealed class ValidationFilter(IValidator validator) : ConsumeFilter
 {
     public override async Task OnSubscribeExecutingAsync(ExecutingContext context)
     {
-        // Extract message from context
-        var message = context.Arguments.FirstOrDefault();
-        if (message == null) return;
+        var message = context.Arguments.FirstOrDefault()
+            ?? throw new InvalidOperationException("No message in context - this indicates a CAP pipeline issue");
 
-        var validationResult = await validator.ValidateAsync(message);
+        var validationResult = await validator.ValidateAsync(message, context.CancellationToken)
+            .ConfigureAwait(false);
 
         if (!validationResult.IsValid)
         {
@@ -381,14 +492,18 @@ public sealed class ValidationFilter(IValidator validator) : ConsumeFilter
 }
 ```
 
+**Note**: Validation exceptions trigger CAP's retry/DLQ logic per Part 3 configuration.
+
 ## Acceptance Criteria
 
 - [ ] `AddFilter<T>()` registers filter with CAP's `SubscriberFilters`
-- [ ] Filters registered in DI as scoped (new instance per message)
-- [ ] Multiple filters execute in registration order
-- [ ] CAP handles filter pipeline execution (no custom pipeline)
-- [ ] Integration tests verify filter execution
+- [ ] Filters registered in DI as scoped (new instance per message scope)
+- [ ] CAP behaviors verified (insertion order, cancellation token, exception handling, scoped lifetime)
+- [ ] Comprehensive XML documentation on public API
+- [ ] Integration test uses proper synchronization (no `Task.Delay`)
+- [ ] Unit tests cover: basic registration, multiple filters, duplicate registration, missing dependencies
 - [ ] Unit tests pass
+- [ ] Integration tests pass
 - [ ] Coverage ≥85%
 
 ## Usage Example
@@ -434,100 +549,52 @@ services.AddMessaging(messaging =>
 ## Files Changed
 
 **Created:**
-- `tests/Framework.Messages.Core.Tests.Unit/FilterConfigurationTest.cs`
-- `tests/Framework.Messages.Core.Tests.Integration/FilterIntegrationTest.cs`
-- `tests/Framework.Messages.Core.Tests.Unit/Filters/LoggingFilter.cs` (example)
-- `tests/Framework.Messages.Core.Tests.Unit/Filters/MetricsFilter.cs` (example)
+- `tests/Framework.Messages.Core.Tests.Unit/FilterConfigurationTest.cs` (~80 LOC)
+- `tests/Framework.Messages.Core.Tests.Integration/FilterIntegrationTest.cs` (~40 LOC)
+- `src/Framework.Messages.Core/README.md` - Add filter examples section (~60 LOC)
 
 **Modified:**
-- `src/Framework.Messages.Abstractions/IMessagingBuilder.cs` (add AddFilter methods)
-- `src/Framework.Messages.Core/MessagingBuilder.cs` (add filter registration)
+- `src/Framework.Messages.Abstractions/IMessagingBuilder.cs` - Add `AddFilter<T>()` with XML docs (~30 LOC)
+- `src/Framework.Messages.Core/MessagingBuilder.cs` - Add filter registration (~20 LOC)
 
-**NOT Created** (vs original plan):
+**NOT Created** (removed from original plan):
 - ❌ `FilterPipeline.cs` - Using CAP's pipeline
 - ❌ Per-consumer filter support - CAP doesn't support this
 - ❌ Filter metadata storage - Not needed
 - ❌ Complex filter configurator - Keep simple
+- ❌ Non-generic `AddFilter(Type)` overload - YAGNI
+- ❌ Example filters in test projects - Moved to README
 
-**Total LOC**: ~50 lines (vs 250 lines in original plan)
-
-## Comparison: Before vs After
-
-### Before (Reimplementation)
-
-```csharp
-// Custom filter pipeline
-internal sealed class FilterPipeline(IServiceProvider serviceProvider)
-{
-    public async Task ExecuteAsync(
-        IEnumerable<Type> filterTypes,
-        Func<Task> next,
-        ExecutingContext executingContext,
-        ExecutedContext executedContext,
-        ExceptionContext? exceptionContext = null)
-    {
-        // 80 LOC of custom filter execution logic
-    }
-}
-
-// Per-consumer filters
-messaging.AddConsumer<PaymentHandler>(c =>
-{
-    c.AddFilter<ValidationFilter>();  // Can't do this with CAP
-});
-```
-
-### After (CAP Wrapper)
-
-```csharp
-// Simple wrapper over CAP.SubscriberFilters
-messaging.AddFilter<LoggingFilter>();  // → capOptions.SubscriberFilters.Add<LoggingFilter>()
-
-// ~50 LOC wrapper code, CAP does the work
-```
+**Total Production LOC**: ~50 lines
+**Total Test LOC**: ~120 lines
+**Total Documentation LOC**: ~60 lines
 
 ## Why This Approach is Better
 
-**Pragmatic** (per Scott Hanselman review):
+**Pragmatic**:
 - CAP already has filter pipeline - don't reimplement it
 - Global filters cover 95% of use cases
 - Per-consumer filters add complexity for little value
+- Wrapper adds ~50 LOC vs 250 LOC for custom pipeline
 
-**Correct** (per Stephen Toub review):
+**Correct**:
 - No async/await correctness issues (CAP handles it)
 - No filter exception handling bugs (CAP handles it)
 - No thread safety issues (CAP handles scoping)
+- Proper XML documentation explains behavior
+- Tests use proper synchronization (no flaky delays)
 
-**Simple** (per Simplicity review):
-- 80% less code (50 LOC vs 250 LOC)
+**Simple**:
 - Single responsibility: register filters with CAP
 - No custom pipeline to maintain
+- Minimal test surface (trust CAP for complex behavior)
+- Example filters in docs, not test code
 
 ## Limitations (By Design)
 
 **CAP only supports global filters** - No per-consumer filters:
 - Workaround: Use conditional logic inside filter based on message type
 - Rationale: Most apps need consistent filtering across all consumers
-
-**Example - Per-consumer behavior in global filter:**
-```csharp
-public sealed class ConditionalValidationFilter(IValidator validator) : ConsumeFilter
-{
-    public override async Task OnSubscribeExecutingAsync(ExecutingContext context)
-    {
-        var message = context.Arguments.FirstOrDefault();
-        if (message == null) return;
-
-        // Only validate payment messages
-        if (message.GetType().Name.Contains("Payment"))
-        {
-            var result = await validator.ValidateAsync(message);
-            if (!result.IsValid)
-                throw new ValidationException("Validation failed");
-        }
-    }
-}
-```
 
 **CAP executes filters in registration order** - No custom ordering:
 - Workaround: Register filters in desired order
@@ -537,41 +604,38 @@ public sealed class ConditionalValidationFilter(IValidator validator) : ConsumeF
 - Benefit: Thread-safe by default, no shared state
 - Rationale: Scoped lifetime is safer and more predictable
 
-## Migration from Original Part 4
-
-**Original plan**: Custom filter pipeline with per-consumer filters
-**Updated plan**: Thin wrapper over CAP's `SubscriberFilters`
-
-**Breaking change**: No per-consumer filters (use conditional logic in global filters instead)
-
 ## Estimated Effort
 
-**Original Part 4**: 1 day
-**Updated Part 4**: 0.25 day (2 hours)
+**Updated Part 4**: 0.3 day (2.5 hours)
 
 **Breakdown**:
-- 30 min: Implement `AddFilter()` methods
-- 30 min: Integrate with `ApplyToCapOptions()`
-- 30 min: Unit tests
-- 30 min: Integration tests
+- 15 min: Verify CAP behaviors (source code review)
+- 30 min: Implement `AddFilter<T>()` with XML docs
+- 20 min: Integrate with `ApplyToCapOptions()` + error handling
+- 45 min: Unit tests (registration, duplicates, missing deps)
+- 30 min: Integration test (smoke test with proper sync)
+- 20 min: Update README with example filters
 
-**Savings**: 0.75 day (6 hours)
+**Total**: 2.5 hours (up from 2.0 hours due to better testing + documentation)
 
 ## Summary
 
 **What we're building:**
-- `AddFilter<T>()` method that wraps `capOptions.SubscriberFilters.Add<T>()`
+- `AddFilter<T>()` method wrapping `capOptions.SubscriberFilters.Add<T>()`
 - DI registration for filters (scoped lifetime)
+- Comprehensive XML documentation
 - Simple, clean API
 
 **What we're NOT building:**
 - Custom filter pipeline
 - Per-consumer filter support
+- Non-generic `AddFilter(Type)` overload
 - Filter metadata storage
 - Complex filter configurator
 
 **Why this is better:**
-- 5x less code (50 LOC vs 250 LOC)
+- Minimal code (50 LOC production + 120 LOC tests)
 - CAP's filter pipeline is battle-tested
-- No custom async/await logic to maintain
+- Proper documentation explains behavior
+- Tests verify wrapper, trust CAP for complex scenarios
 - Pragmatic over perfect

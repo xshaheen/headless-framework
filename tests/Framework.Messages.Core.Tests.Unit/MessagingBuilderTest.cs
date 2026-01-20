@@ -28,7 +28,7 @@ public class MessagingBuilderTest
     public void CanAddCapService()
     {
         var services = new ServiceCollection();
-        services.AddCap(_ => { });
+        services.AddMessages(_ => { });
         var builder = services.BuildServiceProvider();
 
         var markService = builder.GetService<MessagingMarkerService>();
@@ -39,7 +39,7 @@ public class MessagingBuilderTest
     public void CanResolveMessagingOptions()
     {
         var services = new ServiceCollection();
-        services.AddCap(_ => { });
+        services.AddMessages(_ => { });
         var builder = services.BuildServiceProvider();
         var capOptions = builder.GetRequiredService<IOptions<MessagingOptions>>().Value;
         capOptions.Should().NotBeNull();

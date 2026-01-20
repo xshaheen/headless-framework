@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "009"
 tags: [security, sql-injection, postgresql, storage]
@@ -125,3 +125,9 @@ PostgreSQL-specific syntax note: Use `= ANY(@array)` instead of `IN (...)` for a
 - OWASP Top 10 vulnerability
 - Direct database access exposure
 - High severity, high likelihood
+
+### 2026-01-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

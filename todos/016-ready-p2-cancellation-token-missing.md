@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "016"
 tags: [async, cancellation, api-design, shutdown]
@@ -71,3 +71,9 @@ Implement Option 1 for new APIs, Option 2 for internal compatibility.
 - Audited async methods for cancellation support
 - Identified missing parameters
 - Proposed dual-track solution
+
+### 2026-01-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

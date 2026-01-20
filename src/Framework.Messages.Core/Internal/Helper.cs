@@ -63,12 +63,12 @@ public static class Helper
             );
         }
 
-        if (wildcard.IndexOf('*') >= 0)
+        if (wildcard.Contains('*'))
         {
             return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("*"), "[0-9a-zA-Z]+?"); // Non-greedy
         }
 
-        if (wildcard.IndexOf('#') >= 0)
+        if (wildcard.Contains('#'))
         {
             return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("#"), "[0-9a-zA-Z\\.]+?"); // Non-greedy
         }

@@ -391,7 +391,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
 
         return combined
             .Select(x => (x.Key, x.Value))
-            .OrderByDescending(x => x.Item2) // Optional: most active machines first
+            .OrderByDescending(x => x.Value) // Optional: most active machines first
             .ToList();
     }
 

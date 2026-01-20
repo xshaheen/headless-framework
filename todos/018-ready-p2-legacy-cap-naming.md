@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "018"
 tags: [naming, terminology, cap-rename, legacy]
@@ -68,3 +68,9 @@ Implement Option 1 for consistency.
 - Searched codebase for remaining CAP references
 - Categorized by visibility and impact
 - Recommended complete rename
+
+### 2026-01-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

@@ -7,9 +7,9 @@ namespace Tests.Fixture;
 public sealed class TestHeadlessDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
     : HeadlessDbContext(entityProcessor, options)
 {
-    public DbSet<TestEntity> Tests { get; set; }
+    public required DbSet<TestEntity> Tests { get; set; }
 
-    public DbSet<BasicEntity> Basics { get; set; }
+    public required DbSet<BasicEntity> Basics { get; set; }
 
     public List<EmitterDistributedMessages> EmittedDistributedMessages { get; } = [];
 

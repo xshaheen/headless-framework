@@ -74,7 +74,7 @@ public class MessagingBuilderTests
         var consumers = registry.GetAll();
         consumers.Should().HaveCount(1);
 
-        var consumer = consumers.First();
+        var consumer = consumers[0];
         consumer.ConsumerType.Should().Be(typeof(TestOrderConsumer));
         consumer.Topic.Should().Be("orders.placed");
         consumer.Group.Should().Be("order-service");
@@ -119,7 +119,7 @@ public class MessagingBuilderTests
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // Then
-        var consumer = registry.GetAll().First();
+        var consumer = registry.GetAll()[0];
         consumer.Topic.Should().Be("custom.orders");
     }
 
@@ -239,7 +239,7 @@ public class MessagingBuilderTests
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // Then
-        var consumer = registry.GetAll().First();
+        var consumer = registry.GetAll()[0];
         consumer.Concurrency.Should().Be(1);
     }
 
@@ -330,7 +330,7 @@ public class MessagingBuilderTests
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // Then
-        var consumer = registry.GetAll().First();
+        var consumer = registry.GetAll()[0];
         consumer.Topic.Should().Be("orders.placed");
         consumer.ConsumerType.Should().Be(typeof(TestOrderConsumer));
     }
@@ -356,7 +356,7 @@ public class MessagingBuilderTests
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // Then
-        var consumer = registry.GetAll().First();
+        var consumer = registry.GetAll()[0];
         consumer.Topic.Should().Be("orders.placed");
     }
 
@@ -376,7 +376,7 @@ public class MessagingBuilderTests
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // Then
-        var consumer = registry.GetAll().First();
+        var consumer = registry.GetAll()[0];
         consumer.Topic.Should().Be("orders.placed");
         consumer.Concurrency.Should().Be(5);
         consumer.Group.Should().Be("order-service");

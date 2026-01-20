@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "021"
 tags: [agent-native, introspection, api-design, discoverability]
@@ -82,3 +82,9 @@ Implement both - Option 1 for programmatic access, Option 2 for humans.
 - Identified missing introspection capability
 - Proposed dual API (programmatic + HTTP)
 - Aligned with agent-native principles
+
+### 2026-01-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

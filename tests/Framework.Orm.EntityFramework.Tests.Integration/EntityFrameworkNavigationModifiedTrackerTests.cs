@@ -167,11 +167,11 @@ public sealed class EntityFrameworkNavigationModifiedTrackerTests : IDisposable
 
     public sealed class TestDb(DbContextOptions options) : DbContext(options)
     {
-        public DbSet<User> Users { get; set; }
+        public DbSet<User> Users => Set<User>();
 
-        public DbSet<Role> Roles { get; set; }
+        public DbSet<Role> Roles => Set<Role>();
 
-        public DbSet<Post> Posts { get; set; }
+        public DbSet<Post> Posts => Set<Post>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

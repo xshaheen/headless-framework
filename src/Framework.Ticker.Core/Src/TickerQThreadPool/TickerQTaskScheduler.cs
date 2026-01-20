@@ -121,7 +121,7 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
 
         // Ensure we have workers to process the work
         // Check both queue count and total to avoid race conditions
-        if (newTotal > 0 || targetQueue.Count > 0)
+        if (newTotal > 0 || !targetQueue.IsEmpty)
         {
             _EnsureWorkerAvailable();
         }
@@ -263,7 +263,7 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
                     bool anyWorkRemaining = false;
                     for (int i = 0; i < _maxConcurrency; i++)
                     {
-                        if (_workerQueues[i].Count > 0)
+                        if (!_workerQueues[i].IsEmpty)
                         {
                             anyWorkRemaining = true;
                             break;
