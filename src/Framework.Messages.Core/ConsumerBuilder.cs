@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
+using Framework.Messages.Configuration;
 
 namespace Framework.Messages;
 
@@ -11,7 +12,7 @@ namespace Framework.Messages;
 internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     where TConsumer : class
 {
-    private readonly ConsumerConfigurator _parent;
+    private readonly MessagingOptions _parent;
     private readonly ConsumerRegistry _registry;
     private readonly Type _messageType;
     private readonly bool _autoRegistered;
@@ -20,17 +21,17 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private byte _concurrency = 1;
 
     internal ConsumerBuilder(
-        ConsumerConfigurator parent,
+        MessagingOptions parent,
         ConsumerRegistry registry,
         Type messageType,
-        string? topic = null,
+        string? _topic = null,
         bool autoRegistered = false
     )
     {
         _parent = parent;
         _registry = registry;
         _messageType = messageType;
-        _topic = topic;
+        this._topic = _topic;
         _autoRegistered = autoRegistered;
     }
 
