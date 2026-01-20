@@ -44,7 +44,7 @@
             </b-dropdown>
           </b-nav-item>
 
-          <b-nav-item href="https://github.com/dotnetcore/CAP" target="_blank" title="Github">
+          <b-nav-item href="https://github.com/xshaheen/headless-framework" target="_blank" title="Github">
             <b-icon-github style="width:24px;height:24px"></b-icon-github>
           </b-nav-item>
         </b-navbar-nav>
@@ -76,7 +76,7 @@ export default {
   data() {
     return {
       i18nPrefix: "_.Navigation.",
-      brandTitle: "CAP Dashboard",
+      brandTitle: "Headless Dashboard",
       languages: [
         { name: "English", code: "en-us", active: true },
         { name: "简体中文", code: "zh-cn", active: false }

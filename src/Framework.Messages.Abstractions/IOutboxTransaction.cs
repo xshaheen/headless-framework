@@ -3,12 +3,12 @@
 namespace Framework.Messages;
 
 /// <summary>
-/// Represents a CAP transaction wrapper that coordinates message publishing with a database transaction.
+/// Represents an outbox transaction wrapper that coordinates message publishing with a database transaction.
 /// This interface provides a consistent API for managing outbox pattern implementations where messages
 /// must be published atomically with database changes.
 /// </summary>
 /// <remarks>
-/// The CAP transaction wrapper enables the reliable message delivery pattern by ensuring that:
+/// The outbox transaction wrapper enables the reliable message delivery pattern by ensuring that:
 /// <list type="bullet">
 /// <item><description>Messages are published only when the database transaction succeeds.</description></item>
 /// <item><description>Uncommitted messages are discarded if the transaction is rolled back.</description></item>
@@ -33,13 +33,13 @@ public interface IOutboxTransaction : IDisposable
     object? DbTransaction { get; set; }
 
     /// <summary>
-    /// Synchronously commits the transaction context, causing all buffered CAP messages to be sent to the message queue.
+    /// Synchronously commits the transaction context, causing all buffered messages to be sent to the message queue.
     /// This must be called after publishing messages within a transaction to ensure they are delivered.
     /// </summary>
     void Commit();
 
     /// <summary>
-    /// Asynchronously commits the transaction context, causing all buffered CAP messages to be sent to the message queue.
+    /// Asynchronously commits the transaction context, causing all buffered messages to be sent to the message queue.
     /// This must be called after publishing messages within a transaction to ensure they are delivered.
     /// </summary>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
@@ -47,13 +47,13 @@ public interface IOutboxTransaction : IDisposable
     Task CommitAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Synchronously rolls back the transaction context, discarding all buffered CAP messages without sending them.
+    /// Synchronously rolls back the transaction context, discarding all buffered messages without sending them.
     /// This cancels any messages that were queued but not yet committed.
     /// </summary>
     void Rollback();
 
     /// <summary>
-    /// Asynchronously rolls back the transaction context, discarding all buffered CAP messages without sending them.
+    /// Asynchronously rolls back the transaction context, discarding all buffered messages without sending them.
     /// This cancels any messages that were queued but not yet committed.
     /// </summary>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>

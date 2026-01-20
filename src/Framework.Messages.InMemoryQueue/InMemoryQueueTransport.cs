@@ -8,7 +8,7 @@ namespace Framework.Messages;
 /// <summary>
 /// Transport implementation for in-memory message queue.
 /// </summary>
-internal class InMemoryQueueTransport(InMemoryQueue queue, ILogger<InMemoryQueueTransport> logger) : ITransport
+internal sealed class InMemoryQueueTransport(InMemoryQueue queue, ILogger<InMemoryQueueTransport> logger) : ITransport
 {
     private readonly ILogger _logger = logger;
 

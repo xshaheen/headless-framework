@@ -253,6 +253,68 @@ public class DispatcherTests
         sender.ReceivedMessages.Select(m => m.DbId).Should().Equal(["3", "2", "1"]);
     }
 
+    [Fact]
+    public async Task should_use_configured_batch_size_when_specified()
+    {
+        // given
+        var sender = new TestThreadSafeMessageSender();
+        var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = true, PublishBatchSize = 50 });
+
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        using var cts = new CancellationTokenSource();
+
+        var messages = Enumerable
+            .Range(1, 100)
+            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
+            .ToArray();
+
+        // when
+        await dispatcher.StartAsync(cts.Token);
+
+        foreach (var message in messages)
+        {
+            await dispatcher.EnqueueToPublish(message);
+        }
+
+        await Task.Delay(200, CancellationToken.None);
+        await cts.CancelAsync();
+
+        // then - verify all messages sent successfully
+        sender.Count.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task should_process_all_messages_with_auto_calculated_batch_size()
+    {
+        // given
+        var sender = new TestThreadSafeMessageSender();
+        var options = Options.Create(
+            new MessagingOptions { EnablePublishParallelSend = true } // Auto-calculate batch size
+        );
+
+        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        using var cts = new CancellationTokenSource();
+
+        var messages = Enumerable
+            .Range(1, 500)
+            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
+            .ToArray();
+
+        // when
+        await dispatcher.StartAsync(cts.Token);
+
+        foreach (var message in messages)
+        {
+            await dispatcher.EnqueueToPublish(message);
+        }
+
+        await Task.Delay(300, CancellationToken.None);
+        await cts.CancelAsync();
+
+        // then - verify all messages sent successfully
+        sender.Count.Should().Be(500);
+    }
+
     private static MediumMessage _CreateTestMessage(string id = "1")
     {
         var message = new Message(

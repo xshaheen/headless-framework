@@ -50,16 +50,11 @@ public sealed partial class MessagingConventions
 
     private static string _ToKebabCase(string value)
     {
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        return KebabCaseRegex().Replace(value, "-$1").ToLowerInvariant();
+        return string.IsNullOrEmpty(value) ? value : _KebabCaseRegex().Replace(value, "-$1").ToLowerInvariant();
     }
 
-    [GeneratedRegex(@"(?<!^)([A-Z][a-z]|(?<=[a-z])[A-Z])", RegexOptions.Compiled)]
-    private static partial Regex KebabCaseRegex();
+    [GeneratedRegex("(?<!^)([A-Z][a-z]|(?<=[a-z])[A-Z])", RegexOptions.Compiled | RegexOptions.ExplicitCapture, 100)]
+    private static partial Regex _KebabCaseRegex();
 }
 
 /// <summary>

@@ -7,11 +7,11 @@ using Framework.Messages.Persistence;
 
 namespace Framework.Messages;
 
-internal class MemoryMessage : MediumMessage
+internal sealed class MemoryMessage : MediumMessage
 {
-    public string Name { get; set; } = default!;
+    public required string Name { get; init; }
+
+    public string Group { get; init; } = null!;
 
     public StatusName StatusName { get; set; }
-
-    public string Group { get; set; } = default!;
 }

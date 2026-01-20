@@ -11,16 +11,16 @@ using Headers = Framework.Messages.Messages.Headers;
 
 namespace Framework.Messages;
 
-public class KafkaConsumerClient(
+public sealed class KafkaConsumerClient(
     string groupId,
     byte groupConcurrent,
-    IOptions<KafkaOptions> options,
+    IOptions<MessagingKafkaOptions> options,
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
     private static readonly Lock _Lock = new();
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private readonly KafkaOptions _kafkaOptions = options.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly MessagingKafkaOptions _kafkaOptions = Argument.IsNotNull(options.Value);
     private IConsumer<string, byte[]>? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -64,16 +64,18 @@ public class KafkaConsumerClient(
                     })
                 );
             }
-            catch (CreateTopicsException ex) when (ex.Message.Contains("already exists")) { }
-            catch (Exception ex)
+#pragma warning disable ERP022
+            catch (CreateTopicsException e) when (e.Message.Contains("already exists", StringComparison.Ordinal)) { }
+            catch (Exception e)
             {
                 var logArgs = new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumeError,
-                    Reason = "An error was encountered when automatically creating topic! -->" + ex.Message,
+                    Reason = "An error was encountered when automatically creating topic! -->" + e,
                 };
                 OnLogCallback!(logArgs);
             }
+#pragma warning restore ERP022
         }
 
         return regexTopicNames;
@@ -127,7 +129,7 @@ public class KafkaConsumerClient(
             if (groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
-                _ = Task.Run(() => _ConsumeAsync(consumerResult), cancellationToken).ConfigureAwait(false);
+                _ = Task.Run(() => _ConsumeAsync(consumerResult), cancellationToken).AnyContext();
             }
             else
             {
@@ -153,6 +155,7 @@ public class KafkaConsumerClient(
 
     public ValueTask DisposeAsync()
     {
+        _semaphore.Dispose();
         _consumerClient?.Dispose();
         return ValueTask.CompletedTask;
     }
@@ -166,7 +169,9 @@ public class KafkaConsumerClient(
 
         lock (_Lock)
         {
+#pragma warning disable CA1508 // Justification: other thread can make it null
             if (_consumerClient == null)
+#pragma warning restore CA1508
             {
                 var config = new ConsumerConfig(
                     new Dictionary<string, string>(_kafkaOptions.MainConfig, StringComparer.Ordinal)
@@ -178,7 +183,7 @@ public class KafkaConsumerClient(
                 config.EnableAutoCommit ??= false;
                 config.LogConnectionClose ??= false;
 
-                _consumerClient = BuildConsumer(config);
+                _consumerClient = _BuildConsumer(config);
             }
         }
     }
@@ -208,12 +213,12 @@ public class KafkaConsumerClient(
         await OnMessageCallback!(message, consumerResult);
     }
 
-    protected virtual IConsumer<string, byte[]> BuildConsumer(ConsumerConfig config)
+    private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)
     {
-        return new ConsumerBuilder<string, byte[]>(config).SetErrorHandler(ConsumerClient_OnConsumeError).Build();
+        return new ConsumerBuilder<string, byte[]>(config).SetErrorHandler(_ConsumerClientOnConsumeError).Build();
     }
 
-    private void ConsumerClient_OnConsumeError(IConsumer<string, byte[]> consumer, Error e)
+    private void _ConsumerClientOnConsumeError(IConsumer<string, byte[]> consumer, Error e)
     {
         var logArgs = new LogMessageEventArgs
         {

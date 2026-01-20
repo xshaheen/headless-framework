@@ -35,7 +35,7 @@ public class MyDashboardAuthenticationHandler(
         //Response.Headers["WWW-Authenticate"] = MyDashboardAuthenticationSchemeDefaults.Scheme;
         //return base.HandleChallengeAsync(properties);
 
-        // Challenge use OpenId for AddCapWithOpenIdAndCustomAuthorization
+        // Challenge use OpenId for AddMessagingWithOpenIdAndCustomAuthorization
         return Context.ChallengeAsync(OpenIdConnectDefaults.AuthenticationScheme, properties);
     }
 

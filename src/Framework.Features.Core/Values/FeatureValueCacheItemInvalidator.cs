@@ -9,7 +9,7 @@ namespace Framework.Features.Values;
 public sealed class FeatureValueCacheItemInvalidator(ICache<FeatureValueCacheItem> cache)
     : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
 {
-    public async Task HandleAsync(
+    public async ValueTask HandleAsync(
         EntityChangedEventData<FeatureValueRecord> message,
         CancellationToken cancellationToken = default
     )

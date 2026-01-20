@@ -1,20 +1,19 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Checks;
-using Framework.Messages.Internal;
 using Framework.Messages.Messages;
 using Framework.Messages.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
 internal class RedisConsumerClient(
     string groupId,
     byte groupConcurrent,
     IRedisStreamManager redis,
-    IOptions<CapRedisOptions> options,
+    IOptions<MessagingRedisOptions> options,
     ILogger<RedisConsumerClient> logger
 ) : IConsumerClient
 {
@@ -77,7 +76,7 @@ internal class RedisConsumerClient(
         //first time, we want to read our pending messages, in case we crashed and are recovering.
         var pendingMsgs = redis.PollStreamsPendingMessagesAsync(_topics, groupId, timeout, cancellationToken);
 
-        await _ConsumeMessages(pendingMsgs, StreamPosition.Beginning, cancellationToken).ConfigureAwait(false);
+        await _ConsumeMessages(pendingMsgs, StreamPosition.Beginning, cancellationToken).AnyContext();
 
         //Once we consumed our history, we can start getting new messages.
         var newMsgs = redis.PollStreamsLatestMessagesAsync(_topics, groupId, timeout, cancellationToken);
@@ -105,8 +104,7 @@ internal class RedisConsumerClient(
                     if (groupConcurrent > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken);
-                        _ = Task.Run(() => consumeAsync(position, stream, entry), cancellationToken)
-                            .ConfigureAwait(false);
+                        _ = Task.Run(() => consumeAsync(position, stream, entry), cancellationToken).AnyContext();
                     }
                     else
                     {
@@ -127,7 +125,7 @@ internal class RedisConsumerClient(
             {
                 logger.LogError(
                     ex,
-                    message: "Redis entry {EntryId} on stream {StreamKey} at position {Position} of group {GroupId} is not valid for Cap, see inner exception for more details.",
+                    message: "Redis entry {EntryId} on stream {StreamKey} at position {Position} of group {GroupId} is not valid for Messaging, see inner exception for more details.",
                     entry.Id,
                     stream.Key,
                     position,
@@ -139,17 +137,17 @@ internal class RedisConsumerClient(
                 try
                 {
                     var onError = options.Value.OnConsumeError?.Invoke(
-                        new CapRedisOptions.ConsumeErrorContext(ex, entry)
+                        new MessagingRedisOptions.ConsumeErrorContext(ex, entry)
                     );
 
-                    await (onError ?? Task.CompletedTask).ConfigureAwait(false);
+                    await (onError ?? Task.CompletedTask).AnyContext();
                 }
                 catch (Exception onError)
                 {
                     logger.LogError(
                         onError,
                         "Unhandled exception occurred in {Action} action, Exception has been caught",
-                        nameof(CapRedisOptions.OnConsumeError)
+                        nameof(MessagingRedisOptions.OnConsumeError)
                     );
                 }
                 finally

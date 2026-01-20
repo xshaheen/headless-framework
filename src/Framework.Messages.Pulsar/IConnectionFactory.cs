@@ -21,16 +21,16 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
     private readonly Lock _lock = new();
     private PulsarClient? _client;
-    private readonly PulsarOptions _options;
+    private readonly MessagingPulsarOptions _options;
     private readonly ConcurrentDictionary<string, Task<IProducer<byte[]>>> _topicProducers;
 
-    public ConnectionFactory(ILogger<ConnectionFactory> logger, IOptions<PulsarOptions> options)
+    public ConnectionFactory(ILogger<ConnectionFactory> logger, IOptions<MessagingPulsarOptions> options)
     {
         _options = options.Value;
         _topicProducers = new ConcurrentDictionary<string, Task<IProducer<byte[]>>>(StringComparer.Ordinal);
 
         logger.LogDebug(
-            "CAP Pulsar configuration: {Configuration}",
+            "Messaging Pulsar configuration: {Configuration}",
             JsonConvert.SerializeObject(_options, Formatting.Indented)
         );
     }

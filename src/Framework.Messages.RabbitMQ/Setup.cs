@@ -4,6 +4,7 @@ using Framework.Checks;
 using Framework.Messages;
 using Framework.Messages.Configuration;
 using Framework.Messages.Transport;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -21,7 +22,7 @@ public static class MessagesRabbitMqSetup
             });
         }
 
-        public MessagingOptions UseRabbitMq(Action<RabbitMqOptions> configure)
+        public MessagingOptions UseRabbitMq(Action<RabbitMQOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -33,14 +34,15 @@ public static class MessagesRabbitMqSetup
 
     // ReSharper disable once InconsistentNaming
 
-    private sealed class RabbitMqMessagesOptionsExtension(Action<RabbitMqOptions> configure) : IMessagesOptionsExtension
+    private sealed class RabbitMqMessagesOptionsExtension(Action<RabbitMQOptions> configure) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("RabbitMQ"));
             services.Configure(configure);
+            services.AddSingleton<IValidateOptions<RabbitMQOptions>, RabbitMQOptionsValidator>();
             services.AddSingleton<ITransport, RabbitMqTransport>();
-            services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
+            services.AddSingleton<IConsumerClientFactory, RabbitMQConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
         }
     }

@@ -59,7 +59,7 @@ services.AddFeaturesManagementCore(options =>
 ## Dependencies
 
 - `Framework.Features.Abstractions`
-- `Framework.Domains`
+- `Framework.Domain`
 - `Framework.Caching.Abstractions`
 - `Framework.ResourceLocks.Abstractions`
 

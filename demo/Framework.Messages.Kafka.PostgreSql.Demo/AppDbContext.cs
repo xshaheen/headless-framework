@@ -28,11 +28,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
 #pragma warning disable EF1001 // Internal EF Core API usage.
 
-public class CapNpgsqlRelationalConnection : NpgsqlRelationalConnection
+public class MessagingNpgsqlRelationalConnection : NpgsqlRelationalConnection
 {
     private readonly IOutboxPublisher _publisher;
 
-    protected CapNpgsqlRelationalConnection(RelationalConnectionDependencies dependencies, DbDataSource dataSource)
+    protected MessagingNpgsqlRelationalConnection(
+        RelationalConnectionDependencies dependencies,
+        DbDataSource dataSource
+    )
         : base(dependencies, dataSource)
     {
         _publisher = dependencies.CurrentContext.Context.GetService<IOutboxPublisher>();

@@ -4,10 +4,10 @@ using Framework.Messages.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
 internal class RedisConsumerClientFactory(
-    IOptions<CapRedisOptions> redisOptions,
+    IOptions<MessagingRedisOptions> redisOptions,
     IRedisStreamManager redis,
     ILogger<RedisConsumerClient> logger
 ) : IConsumerClientFactory

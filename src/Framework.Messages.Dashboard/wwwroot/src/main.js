@@ -16,7 +16,7 @@ import * as en from './assets/language/en-us'
 let baseURL = "";
 switch (import.meta.env.MODE) {
   case 'development':
-      baseURL = "/cap/api";
+      baseURL = "/messaging/api";
       break
   default:
       baseURL = window.serverUrl;

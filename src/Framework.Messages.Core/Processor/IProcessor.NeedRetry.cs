@@ -62,7 +62,7 @@ public class MessageNeedToRetryProcessor : IProcessor
                 context.CancellationToken
             );
 
-            await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+            await context.WaitAsync(_waitingInterval).AnyContext();
 
             return;
         }
@@ -74,7 +74,7 @@ public class MessageNeedToRetryProcessor : IProcessor
             _failedRetryConsumeTask = null;
         });
 
-        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+        await context.WaitAsync(_waitingInterval).AnyContext();
     }
 
     private async Task _ProcessPublishedAsync(IDataStorage connection, ProcessingContext context)
@@ -94,14 +94,13 @@ public class MessageNeedToRetryProcessor : IProcessor
             return;
         }
 
-        var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackSeconds)
-            .ConfigureAwait(false);
+        var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackSeconds).AnyContext();
 
         foreach (var message in messages)
         {
             context.ThrowIfStopping();
 
-            await _dispatcher.EnqueueToPublish(message).ConfigureAwait(false);
+            await _dispatcher.EnqueueToPublish(message, context.CancellationToken).AnyContext();
         }
 
         if (_options.Value.UseStorageLock)
@@ -131,14 +130,13 @@ public class MessageNeedToRetryProcessor : IProcessor
             return;
         }
 
-        var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackSeconds)
-            .ConfigureAwait(false);
+        var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackSeconds).AnyContext();
 
         foreach (var message in messages)
         {
             context.ThrowIfStopping();
 
-            await _dispatcher.EnqueueToExecute(message).ConfigureAwait(false);
+            await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).AnyContext();
         }
 
         if (_options.Value.UseStorageLock)
@@ -158,7 +156,7 @@ public class MessageNeedToRetryProcessor : IProcessor
     {
         try
         {
-            return await getMessagesAsync(lookbackSeconds).ConfigureAwait(false);
+            return await getMessagesAsync(lookbackSeconds).AnyContext();
         }
         catch (Exception ex)
         {

@@ -8,10 +8,10 @@ public class Startup
 {
     public void ConfigureServices(IServiceCollection services)
     {
-        // AddCapWithOpenIdAuthorization(services);
-        // AddCapWithAnonymousAccess(services);
-        // AddCapWithCustomAuthorization(services);
-        AddCapWithOpenIdAndCustomAuthorization(services);
+        // AddMessagingWithOpenIdAuthorization(services);
+        // AddMessagingWithAnonymousAccess(services);
+        // AddMessagingWithCustomAuthorization(services);
+        AddMessagingWithOpenIdAndCustomAuthorization(services);
 
         services.AddCors(x =>
         {
@@ -37,7 +37,7 @@ public class Startup
         });
     }
 
-    public IServiceCollection AddCapWithOpenIdAuthorization(IServiceCollection services)
+    public IServiceCollection AddMessagingWithOpenIdAuthorization(IServiceCollection services)
     {
         const string dashboardAuthorizationPolicy = "DashboardAuthorizationPolicy";
 
@@ -84,7 +84,7 @@ public class Startup
         return services;
     }
 
-    public IServiceCollection AddCapWithCustomAuthorization(IServiceCollection services)
+    public IServiceCollection AddMessagingWithCustomAuthorization(IServiceCollection services)
     {
         const string myDashboardAuthenticationPolicy = "MyDashboardAuthenticationPolicy";
 
@@ -120,7 +120,7 @@ public class Startup
         return services;
     }
 
-    public IServiceCollection AddCapWithOpenIdAndCustomAuthorization(IServiceCollection services)
+    public IServiceCollection AddMessagingWithOpenIdAndCustomAuthorization(IServiceCollection services)
     {
         const string dashboardAuthorizationPolicy = "DashboardAuthorizationPolicy";
 
@@ -173,7 +173,7 @@ public class Startup
         return services;
     }
 
-    public IServiceCollection AddCapWithAnonymousAccess(IServiceCollection services)
+    public IServiceCollection AddMessagingWithAnonymousAccess(IServiceCollection services)
     {
         services.AddMessages(x =>
         {

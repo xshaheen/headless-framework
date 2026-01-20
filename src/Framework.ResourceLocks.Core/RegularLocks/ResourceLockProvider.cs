@@ -7,7 +7,7 @@ using Framework.Abstractions;
 using Framework.Checks;
 using Framework.Constants;
 using Framework.Core;
-using Framework.Messaging;
+using Framework.Messages;
 using Framework.ResourceLocks.RegularLocks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;

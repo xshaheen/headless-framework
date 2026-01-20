@@ -1,6 +1,6 @@
 ﻿using Foundatio.Messaging;
 using Framework.Caching;
-using Framework.Messaging;
+using Framework.Messages;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
 using Framework.Serializer;

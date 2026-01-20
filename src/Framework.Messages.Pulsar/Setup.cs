@@ -14,7 +14,7 @@ public static class MessagingOptionsExtensions
     extension(MessagingOptions options)
     {
         /// <summary>
-        /// Configuration to use pulsar in CAP.
+        /// Configuration for messaging.
         /// </summary>
         /// <param name="serverUrl">Pulsar bootstrap server urls.</param>
         public MessagingOptions UsePulsar(string serverUrl)
@@ -26,11 +26,11 @@ public static class MessagingOptionsExtensions
         }
 
         /// <summary>
-        /// Configuration to use pulsar in CAP.
+        /// Configuration for messaging.
         /// </summary>
         /// <param name="configure">Provides programmatic configuration for the pulsar .</param>
         /// <returns></returns>
-        public MessagingOptions UsePulsar(Action<PulsarOptions> configure)
+        public MessagingOptions UsePulsar(Action<MessagingPulsarOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -40,7 +40,7 @@ public static class MessagingOptionsExtensions
         }
     }
 
-    private sealed class PulsarMessagesOptionsExtension(Action<PulsarOptions> configure) : IMessagesOptionsExtension
+    private sealed class PulsarMessagesOptionsExtension(Action<MessagingPulsarOptions> configure) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

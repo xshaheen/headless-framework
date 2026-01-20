@@ -8,9 +8,18 @@ namespace Framework.Messages.Transport;
 
 public interface IDispatcher : IProcessingServer
 {
-    ValueTask EnqueueToPublish(MediumMessage message);
+    ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default);
 
-    ValueTask EnqueueToExecute(MediumMessage message, ConsumerExecutorDescriptor? descriptor = null);
+    ValueTask EnqueueToExecute(
+        MediumMessage message,
+        ConsumerExecutorDescriptor? descriptor = null,
+        CancellationToken cancellationToken = default
+    );
 
-    Task EnqueueToScheduler(MediumMessage message, DateTime publishTime, object? transaction = null);
+    Task EnqueueToScheduler(
+        MediumMessage message,
+        DateTime publishTime,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    );
 }

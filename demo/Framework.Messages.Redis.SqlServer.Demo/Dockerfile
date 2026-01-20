@@ -12,9 +12,9 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["src/Directory.Build.props", "src/"]
 COPY ["samples/Samples.Redis.SqlServer/Samples.Redis.SqlServer.csproj", "samples/Samples.Redis.SqlServer/"]
-COPY ["src/DotNetCore.CAP.RedisStreams/DotNetCore.CAP.RedisStreams.csproj", "src/DotNetCore.CAP.RedisStreams/"]
-COPY ["src/DotNetCore.CAP/DotNetCore.CAP.csproj", "src/DotNetCore.CAP/"]
-COPY ["src/DotNetCore.CAP.SqlServer/DotNetCore.CAP.SqlServer.csproj", "src/DotNetCore.CAP.SqlServer/"]
+COPY ["src/Headless.Messaging.RedisStreams/Headless.Messaging.RedisStreams.csproj", "src/Headless.Messaging.RedisStreams/"]
+COPY ["src/Headless.Messaging/Headless.Messaging.csproj", "src/Headless.Messaging/"]
+COPY ["src/Headless.Messaging.SqlServer/Headless.Messaging.SqlServer.csproj", "src/Headless.Messaging.SqlServer/"]
 RUN dotnet restore "./samples/Samples.Redis.SqlServer/Samples.Redis.SqlServer.csproj"
 COPY . .
 WORKDIR "/src/samples/Samples.Redis.SqlServer"

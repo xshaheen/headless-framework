@@ -9,18 +9,18 @@ using RabbitMQ.Client.Events;
 
 namespace Framework.Messages;
 
-internal sealed class RabbitMqConsumerClient(
+internal sealed class RabbitMQConsumerClient(
     string groupName,
     byte groupConcurrent,
     IConnectionChannelPool connectionChannelPool,
-    IOptions<RabbitMqOptions> options,
+    IOptions<RabbitMQOptions> options,
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly string _exchangeName = connectionChannelPool.Exchange;
-    private readonly RabbitMqOptions _rabbitMqOptions = options.Value;
-    private RabbitMqBasicConsumer? _consumer;
+    private readonly RabbitMQOptions _rabbitMqOptions = options.Value;
+    private RabbitMQBasicConsumer? _consumer;
     private IChannel? _channel;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -60,7 +60,7 @@ internal sealed class RabbitMqConsumerClient(
             await _channel!.BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken);
         }
 
-        _consumer = new RabbitMqBasicConsumer(
+        _consumer = new RabbitMQBasicConsumer(
             _channel!,
             groupConcurrent,
             groupName,
@@ -86,10 +86,9 @@ internal sealed class RabbitMqConsumerClient(
             );
         }
 
-        while (true)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            cancellationToken.WaitHandle.WaitOne(timeout);
+            await Task.Delay(timeout, cancellationToken).AnyContext();
         }
         // ReSharper disable once FunctionNeverReturns
     }
@@ -122,7 +121,7 @@ internal sealed class RabbitMqConsumerClient(
         {
             _channel = await connection.CreateChannelAsync();
 
-            await _channel.ExchangeDeclareAsync(_exchangeName, RabbitMqOptions.ExchangeType, true);
+            await _channel.ExchangeDeclareAsync(_exchangeName, RabbitMQOptions.ExchangeType, true);
 
             var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
             {

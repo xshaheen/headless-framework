@@ -88,7 +88,7 @@
         </b-table>
         <span class="float-left"> {{ $t("Total") }}: {{ totals }} </span>
         <b-pagination :first-text="$t('First')" :prev-text="$t('Prev')" :next-text="$t('Next')" :last-text="$t('Last')"
-          v-model="formData.currentPage" :total-rows="totals" :per-page="formData.perPage" class="capPagination"
+          v-model="formData.currentPage" :total-rows="totals" :per-page="formData.perPage" class="messagingPagination"
           aria-controls="datatable"></b-pagination>
       </b-col>
     </b-row>
@@ -302,19 +302,19 @@ export default {
   align-items: center;
 }
 
-.capPagination::v-deep .page-link {
+.messagingPagination::v-deep .page-link {
   color: #6c757d;
   box-shadow: none;
   border-color: #6c757d;
 }
 
-.capPagination::v-deep .page-link:hover {
+.messagingPagination::v-deep .page-link:hover {
   color: #fff;
   background-color: #6c757d;
   border-color: #6c757d;
 }
 
-.capPagination::v-deep .active .page-link {
+.messagingPagination::v-deep .active .page-link {
   color: white;
   background-color: black;
 }

@@ -9,7 +9,7 @@ using NameGenerator.Generators;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher capPublisher) : Controller
+public class ValuesController(IOutboxPublisher publisher) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -28,7 +28,7 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await capPublisher.PublishAsync("sample.rabbitmq.sqlserver", new Person { Id = 123, Name = "Bar" });
+        await publisher.PublishAsync("sample.rabbitmq.sqlserver", new Person { Id = 123, Name = "Bar" });
 
         return Ok();
     }
@@ -36,7 +36,7 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
     [Route("~/delay/{delaySeconds:int}")]
     public async Task<IActionResult> Delay(int delaySeconds)
     {
-        await capPublisher.PublishDelayAsync(
+        await publisher.PublishDelayAsync(
             TimeSpan.FromSeconds(delaySeconds),
             "sample.rabbitmq.sqlserver",
             new Person { Id = 123, Name = "Bar" }
@@ -50,7 +50,7 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
     {
         await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
         {
-            using var transaction = await connection.BeginTransactionAsync(capPublisher, autoCommit: true);
+            using var transaction = await connection.BeginTransactionAsync(publisher, autoCommit: true);
 
             //your business code
             await connection.ExecuteAsync(
@@ -59,7 +59,7 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
                 transaction: transaction
             );
 
-            await capPublisher.PublishDelayAsync(
+            await publisher.PublishDelayAsync(
                 TimeSpan.FromSeconds(delaySeconds),
                 "sample.rabbitmq.sqlserver",
                 new Person { Id = 123, Name = "Bar" }
@@ -76,9 +76,9 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
 
         await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
         {
-            using var transaction = await connection.BeginTransactionAsync(capPublisher, autoCommit: false);
+            using var transaction = await connection.BeginTransactionAsync(publisher, autoCommit: false);
 
-            await capPublisher.PublishAsync("sample.rabbitmq.sqlserver", person);
+            await publisher.PublishAsync("sample.rabbitmq.sqlserver", person);
 
             await connection.ExecuteAsync(
                 "INSERT INTO Persons(Name,Age,CreateTime) VALUES(@Name,@Age, GETDATE())",
@@ -86,14 +86,14 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
                 transaction: transaction
             );
 
-            await capPublisher.PublishDelayAsync(TimeSpan.FromSeconds(5), "sample.rabbitmq.sqlserver", person);
+            await publisher.PublishDelayAsync(TimeSpan.FromSeconds(5), "sample.rabbitmq.sqlserver", person);
 
             await ((DbTransaction)transaction).CommitAsync();
         }
 
         person.Name = new RealNameGenerator().Generate();
 
-        await capPublisher.PublishAsync("sample.rabbitmq.sqlserver", person);
+        await publisher.PublishAsync("sample.rabbitmq.sqlserver", person);
 
         return Ok();
     }
@@ -101,11 +101,11 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
     [Route("~/ef/transaction")]
     public IActionResult EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
     {
-        using (dbContext.Database.BeginTransaction(capPublisher, autoCommit: true))
+        using (dbContext.Database.BeginTransaction(publisher, autoCommit: true))
         {
             dbContext.Persons.Add(new Person { Name = "ef.transaction" });
             dbContext.SaveChanges();
-            capPublisher.Publish("sample.rabbitmq.sqlserver", new Person { Id = 123, Name = "Bar" });
+            publisher.Publish("sample.rabbitmq.sqlserver", new Person { Id = 123, Name = "Bar" });
         }
         return Ok();
     }
@@ -120,12 +120,12 @@ public class ValuesController(IOutboxPublisher capPublisher) : Controller
 
         await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
         {
-            using var transaction = await connection.BeginTransactionAsync(capPublisher);
+            using var transaction = await connection.BeginTransactionAsync(publisher);
             // This is where you would do other work that is going to persist data to your database
 
             var message = TestMessage.Create($"This is message text created at {DateTime.Now:O}.");
 
-            await capPublisher.PublishAsync(typeof(TestMessage).FullName!, message);
+            await publisher.PublishAsync(typeof(TestMessage).FullName!, message);
             transaction.Commit();
         }
 

@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
 internal static class RedisErrorExtensions
 {

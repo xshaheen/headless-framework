@@ -6,7 +6,7 @@ using Framework.Api;
 using Framework.Caching;
 using Framework.Domain;
 using Framework.Features;
-using Framework.Messaging;
+using Framework.Messages;
 using Framework.Permissions;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Cache;
@@ -14,7 +14,7 @@ using Framework.ResourceLocks.RegularLocks;
 using Framework.Settings;
 using Microsoft.EntityFrameworkCore;
 using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
-using IMessageBus = Framework.Messaging.IMessageBus;
+using IMessageBus = Framework.Messages.IMessageBus;
 
 // To add a migration use:
 // dotnet ef migrations add InitialMigration -p .\demo\Framework.EntityFramework.Migrations.Startup --context FeaturesDbContext
@@ -43,9 +43,6 @@ builder.AddHeadlessApi(encryption =>
 });
 
 addInMemoryResourceLock(builder.Services);
-
-// NOTE: Messaging not needed for migrations-only startup project
-// If needed, use: builder.Services.AddMessages(...); builder.Services.AddCap(...);
 
 const string connectionString = "Host=localhost;Database=Framework;Username=postgres;Password=postgres";
 

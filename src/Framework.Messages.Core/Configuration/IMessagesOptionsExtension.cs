@@ -11,7 +11,7 @@ namespace Framework.Messages.Configuration;
 /// </summary>
 /// <remarks>
 /// Extensions are registered through <see cref="MessagingOptions.RegisterExtension(IMessagesOptionsExtension)"/>
-/// and are executed during the <c>AddCap()</c> service registration process.
+/// and are executed during the <c>AddMessaging()</c> service registration process.
 /// This allows modular and composable configuration of storage backends, transport implementations, and other messaging components.
 /// </remarks>
 public interface IMessagesOptionsExtension

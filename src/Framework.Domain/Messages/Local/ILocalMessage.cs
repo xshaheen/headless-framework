@@ -4,4 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Framework.Domain;
 
-public interface ILocalMessage;
+public interface ILocalMessage
+{
+    string UniqueId { get; }
+}

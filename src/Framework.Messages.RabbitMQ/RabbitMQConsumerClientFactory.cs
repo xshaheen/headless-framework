@@ -6,8 +6,8 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Messages;
 
-internal sealed class RabbitMqConsumerClientFactory(
-    IOptions<RabbitMqOptions> rabbitMqOptions,
+internal sealed class RabbitMQConsumerClientFactory(
+    IOptions<RabbitMQOptions> rabbitMqOptions,
     IConnectionChannelPool channelPool,
     IServiceProvider serviceProvider
 ) : IConsumerClientFactory
@@ -16,7 +16,7 @@ internal sealed class RabbitMqConsumerClientFactory(
     {
         try
         {
-            var client = new RabbitMqConsumerClient(groupId, concurrent, channelPool, rabbitMqOptions, serviceProvider);
+            var client = new RabbitMQConsumerClient(groupId, concurrent, channelPool, rabbitMqOptions, serviceProvider);
 
             await client.ConnectAsync();
 

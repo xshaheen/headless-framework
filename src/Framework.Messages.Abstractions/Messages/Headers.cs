@@ -3,14 +3,14 @@
 namespace Framework.Messages.Messages;
 
 /// <summary>
-/// Defines the standard header names used in CAP messages.
+/// Defines the standard header names used in messaging.
 /// These headers carry metadata and system information that controls message routing, tracking, and processing.
 /// </summary>
 public static class Headers
 {
     /// <summary>
     /// Unique identifier for the message.
-    /// Can be set explicitly when publishing a message, or automatically assigned by CAP.
+    /// Can be set explicitly when publishing a message, or automatically assigned by the framework.
     /// This ID is used to track and correlate messages throughout their lifecycle.
     /// Value: "headless-msg-id"
     /// </summary>

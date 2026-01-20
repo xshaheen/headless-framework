@@ -15,7 +15,7 @@ public class K8sDiscoveryOptions
 
     /// <summary>
     /// If this is set to TRUE will make all nodes hidden by default. Only kubernetes services
-    /// with label "dotnetcore.cap.visibility:show" will be listed in the nodes section.
+    /// with label "headless.messaging.visibility:show" will be listed in the nodes section.
     /// </summary>
     public bool ShowOnlyExplicitVisibleNodes { get; set; } = true;
 }

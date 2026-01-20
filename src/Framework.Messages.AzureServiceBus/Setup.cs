@@ -14,7 +14,7 @@ public static class MessagesAzureServiceBusSetup
     extension(MessagingOptions options)
     {
         /// <summary>
-        /// Configuration to use Azure Service Bus in CAP.
+        /// Configuration for messaging.
         /// </summary>
         /// <param name="connectionString">Connection string for namespace or the entity.</param>
         public MessagingOptions UseAzureServiceBus(string connectionString)
@@ -28,7 +28,7 @@ public static class MessagesAzureServiceBusSetup
         }
 
         /// <summary>
-        /// Configuration to use Azure Service Bus in CAP.
+        /// Configuration for messaging.
         /// </summary>
         /// <param name="configure">Provides programmatic configuration for the Azure Service Bus.</param>
         public MessagingOptions UseAzureServiceBus(Action<AzureServiceBusOptions> configure)

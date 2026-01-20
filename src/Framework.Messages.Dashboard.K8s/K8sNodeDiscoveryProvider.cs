@@ -10,7 +10,7 @@ namespace Framework.Messages;
 // ReSharper disable once InconsistentNaming
 public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions options) : INodeDiscoveryProvider
 {
-    private const string _TagPrefix = "dotnetcore.cap";
+    private const string _TagPrefix = "headless.messaging";
     private readonly ILogger<ConsulNodeDiscoveryProvider> _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
 
     public async Task<Node?> GetNode(string svcName, string? ns = null, CancellationToken cancellationToken = default)
@@ -54,13 +54,13 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
             var nodes = await ListServices(ns);
 
-            CapCache.Global.AddOrUpdate("cap.nodes.count", nodes.Count, TimeSpan.FromSeconds(60), true);
+            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60), true);
 
             return nodes;
         }
         catch (Exception ex)
         {
-            CapCache.Global.AddOrUpdate("cap.nodes.count", 0, TimeSpan.FromSeconds(20));
+            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
             _logger.LogError(ex, "Get k8s services raised an exception");
 
@@ -214,30 +214,28 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
         foreach (var tag in tags)
         {
-            //look out for dotnetcore.cap tags
+            //look out for headless.messaging tags
             //based on value will do conditions
-            var isCapTag = tag.Key.StartsWith(_TagPrefix, StringComparison.InvariantCultureIgnoreCase);
+            var isHeadlessMessagingTag = tag.Key.StartsWith(_TagPrefix, StringComparison.InvariantCultureIgnoreCase);
 
-            if (!isCapTag)
+            if (!isHeadlessMessagingTag)
             {
                 continue;
             }
 
-            string capTagScope = _GetTagScope(tag);
+            var messagingTagScope = _GetTagScope(tag);
 
             //check for hide Tag
-            if (_IsNodeHidden(tag, capTagScope))
+            if (_IsNodeHidden(tag, messagingTagScope))
             {
                 return new TagFilterResult(true, filteredPortIndex, filteredPortName);
             }
-            else
-            {
-                isNodeHidden = false;
-            }
+
+            isNodeHidden = false;
 
             //check for portIndex-X tag.
             //If multiple tags with portIndex are found only the last has power
-            var hasNewPort = _CheckFilterPortIndex(tag, capTagScope);
+            var hasNewPort = _CheckFilterPortIndex(tag, messagingTagScope);
             if (hasNewPort.HasValue)
             {
                 filteredPortIndex = hasNewPort.Value;
@@ -245,7 +243,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
             //check for portName-X tag.
             //If multiple tags with portName are found only the last has power
-            if (capTagScope.Equals("portName", StringComparison.OrdinalIgnoreCase))
+            if (messagingTagScope.Equals("portName", StringComparison.OrdinalIgnoreCase))
             {
                 filteredPortName = tag.Value;
             }
@@ -254,9 +252,9 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
         return new TagFilterResult(isNodeHidden, filteredPortIndex, filteredPortName);
     }
 
-    private int? _CheckFilterPortIndex(KeyValuePair<string, string> tag, string capTagScope)
+    private int? _CheckFilterPortIndex(KeyValuePair<string, string> tag, string messagingTagScope)
     {
-        if (!capTagScope.Equals("portIndex", StringComparison.OrdinalIgnoreCase))
+        if (!messagingTagScope.Equals("portIndex", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
@@ -270,14 +268,14 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
         return filterPort;
     }
 
-    private bool _IsNodeHidden(KeyValuePair<string, string> tag, string capTagScope)
+    private bool _IsNodeHidden(KeyValuePair<string, string> tag, string messagingTagScope)
     {
-        if (!capTagScope.Equals("visibility", StringComparison.OrdinalIgnoreCase))
+        if (!messagingTagScope.Equals("visibility", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        //We will not show the node if the tag value is "dotnetcore.cap.visibility:hide"
+        //We will not show the node if the tag value is "headless.messaging.visibility:hide"
         if (tag.Value.Equals("hide", StringComparison.OrdinalIgnoreCase))
         {
             return true;
@@ -285,7 +283,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
         //We will not show the node if the K8s Dashboard option is
         //ShowOnlyExplicitVisibleNodes=True
-        //and the tag value is NOT "dotnetcore.cap.visibility:show"
+        //and the tag value is NOT "headless.messaging.visibility:show"
         if (!options.ShowOnlyExplicitVisibleNodes)
         {
             return false;
@@ -296,13 +294,13 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
     private static string _GetTagScope(KeyValuePair<string, string> tag)
     {
-        var capTagScope = tag.Key.Replace(_TagPrefix, "", StringComparison.InvariantCultureIgnoreCase);
+        var messagingTagScope = tag.Key.Replace(_TagPrefix, "", StringComparison.InvariantCultureIgnoreCase);
 
-        if (capTagScope.StartsWith('.'))
+        if (messagingTagScope.StartsWith('.'))
         {
-            capTagScope = capTagScope[1..];
+            messagingTagScope = messagingTagScope[1..];
         }
 
-        return capTagScope;
+        return messagingTagScope;
     }
 }

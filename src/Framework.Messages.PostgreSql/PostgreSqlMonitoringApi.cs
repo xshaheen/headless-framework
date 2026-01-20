@@ -24,12 +24,12 @@ public class PostgreSqlMonitoringApi(
 
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(long id)
     {
-        return await _GetMessageAsync(_pubName, id).ConfigureAwait(false);
+        return await _GetMessageAsync(_pubName, id).AnyContext();
     }
 
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(long id)
     {
-        return await _GetMessageAsync(_recName, id).ConfigureAwait(false);
+        return await _GetMessageAsync(_recName, id).AnyContext();
     }
 
     public async ValueTask<StatisticsView> GetStatisticsAsync()
@@ -54,7 +54,7 @@ public class PostgreSqlMonitoringApi(
             """;
 
         var connection = _options.CreateConnection();
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         var statistics = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -62,7 +62,7 @@ public class PostgreSqlMonitoringApi(
                 {
                     var statisticsDto = new StatisticsView();
 
-                    while (await reader.ReadAsync().ConfigureAwait(false))
+                    while (await reader.ReadAsync().AnyContext())
                     {
                         statisticsDto.PublishedSucceeded = reader.GetInt32(0);
                         statisticsDto.ReceivedSucceeded = reader.GetInt32(1);
@@ -74,7 +74,7 @@ public class PostgreSqlMonitoringApi(
                     return statisticsDto;
                 }
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return statistics;
     }
@@ -108,7 +108,7 @@ public class PostgreSqlMonitoringApi(
             $"SELECT * FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
 
         var connection = _options.CreateConnection();
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
 
         var count = await connection
             .ExecuteScalarAsync<int>(
@@ -118,7 +118,7 @@ public class PostgreSqlMonitoringApi(
                 new NpgsqlParameter("@Name", query.Name ?? string.Empty),
                 new NpgsqlParameter("@Content", $"%{query.Content}%")
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         object[] sqlParams =
         [
@@ -137,7 +137,7 @@ public class PostgreSqlMonitoringApi(
                 {
                     var messages = new List<MessageView>();
 
-                    while (await reader.ReadAsync().ConfigureAwait(false))
+                    while (await reader.ReadAsync().AnyContext())
                     {
                         var index = 0;
                         messages.Add(
@@ -160,7 +160,7 @@ public class PostgreSqlMonitoringApi(
                 },
                 sqlParams: sqlParams
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return new(items, query.CurrentPage, query.PageSize, count);
     }
@@ -188,13 +188,13 @@ public class PostgreSqlMonitoringApi(
     public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(MessageType type)
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).ConfigureAwait(false);
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).AnyContext();
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(MessageType type)
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).ConfigureAwait(false);
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).AnyContext();
     }
 
     private async ValueTask<int> _GetNumberOfMessage(string tableName, string statusName)
@@ -202,10 +202,10 @@ public class PostgreSqlMonitoringApi(
         var sqlQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE Lower(\"StatusName\") = Lower(@State)";
 
         var connection = _options.CreateConnection();
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         return await connection
             .ExecuteScalarAsync<int>(sqlQuery, new NpgsqlParameter("@State", statusName))
-            .ConfigureAwait(false);
+            .AnyContext();
     }
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(string tableName, string statusName)
@@ -253,7 +253,7 @@ public class PostgreSqlMonitoringApi(
 
         Dictionary<string, int> valuesMap;
         var connection = _options.CreateConnection();
-        await using (connection.ConfigureAwait(false))
+        await using (connection)
         {
             valuesMap = await connection
                 .ExecuteReaderAsync(
@@ -262,7 +262,7 @@ public class PostgreSqlMonitoringApi(
                     {
                         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
 
-                        while (await reader.ReadAsync().ConfigureAwait(false))
+                        while (await reader.ReadAsync().AnyContext())
                         {
                             dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                         }
@@ -271,7 +271,7 @@ public class PostgreSqlMonitoringApi(
                     },
                     sqlParams: sqlParams
                 )
-                .ConfigureAwait(false);
+                .AnyContext();
         }
 
         foreach (var key in keyMaps.Keys)
@@ -295,7 +295,7 @@ public class PostgreSqlMonitoringApi(
             $@"SELECT ""Id"" AS ""DbId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"" FROM {tableName} WHERE ""Id""={id} FOR UPDATE SKIP LOCKED";
 
         var connection = _options.CreateConnection();
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         var mediumMessage = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -303,7 +303,7 @@ public class PostgreSqlMonitoringApi(
                 {
                     MediumMessage? message = null;
 
-                    while (await reader.ReadAsync().ConfigureAwait(false))
+                    while (await reader.ReadAsync().AnyContext())
                     {
                         message = new MediumMessage
                         {
@@ -319,7 +319,7 @@ public class PostgreSqlMonitoringApi(
                     return message;
                 }
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return mediumMessage;
     }

@@ -37,12 +37,12 @@ internal class SqlServerEntityFrameworkDbTransaction : IDbContextTransaction, II
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
-        await _transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        await _transaction.CommitAsync(cancellationToken).AnyContext();
     }
 
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {
-        await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        await _transaction.RollbackAsync(cancellationToken).AnyContext();
     }
 
     public ValueTask DisposeAsync()

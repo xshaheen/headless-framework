@@ -156,8 +156,7 @@ internal sealed class AzureServiceBusConsumerClient(
         if (groupConcurrent > 0)
         {
             await _semaphore.WaitAsync();
-            _ = Task.Run(() => OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)))
-                .ConfigureAwait(false);
+            _ = Task.Run(() => OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg))).AnyContext();
         }
         else
         {

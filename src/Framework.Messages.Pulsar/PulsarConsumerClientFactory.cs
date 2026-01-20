@@ -11,12 +11,12 @@ namespace Framework.Messages;
 internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
 {
     private readonly IConnectionFactory _connection;
-    private readonly IOptions<PulsarOptions> _pulsarOptions;
+    private readonly IOptions<MessagingPulsarOptions> _pulsarOptions;
 
     public PulsarConsumerClientFactory(
         IConnectionFactory connection,
         ILoggerFactory loggerFactory,
-        IOptions<PulsarOptions> pulsarOptions
+        IOptions<MessagingPulsarOptions> pulsarOptions
     )
     {
         _connection = connection;

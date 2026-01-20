@@ -23,7 +23,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
     /// </summary>
     private readonly ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>> _cacheList;
 
-    private readonly MessagingOptions _capOptions;
+    private readonly MessagingOptions _messagingOptions;
     private readonly ILogger<ConsumerServiceSelector> _logger;
     private readonly IServiceProvider _serviceProvider;
 
@@ -33,7 +33,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
     public ConsumerServiceSelector(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider;
-        _capOptions = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        _messagingOptions = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _logger = serviceProvider.GetRequiredService<ILogger<ConsumerServiceSelector>>();
         _cacheList = new ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>(
             StringComparer.Ordinal
@@ -105,7 +105,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
                 TopicName = consumer.Topic,
                 GroupName = _GetGroupName(consumer),
                 Parameters = _BuildParameters(consumeMethod),
-                TopicNamePrefix = _capOptions.TopicNamePrefix,
+                TopicNamePrefix = _messagingOptions.TopicNamePrefix,
             };
 
             results.Add(descriptor);
@@ -116,13 +116,13 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
 
     private string _GetGroupName(ConsumerMetadata metadata)
     {
-        var prefix = !string.IsNullOrEmpty(_capOptions.GroupNamePrefix)
-            ? $"{_capOptions.GroupNamePrefix}."
+        var prefix = !string.IsNullOrEmpty(_messagingOptions.GroupNamePrefix)
+            ? $"{_messagingOptions.GroupNamePrefix}."
             : string.Empty;
 
-        var baseGroup = metadata.Group ?? _capOptions.DefaultGroupName;
+        var baseGroup = metadata.Group ?? _messagingOptions.DefaultGroupName;
 
-        return $"{prefix}{baseGroup}.{_capOptions.Version}";
+        return $"{prefix}{baseGroup}.{_messagingOptions.Version}";
     }
 
     private List<ParameterDescriptor> _BuildParameters(MethodInfo method)
@@ -133,7 +133,7 @@ public class ConsumerServiceSelector : IConsumerServiceSelector
             {
                 Name = p.Name!,
                 ParameterType = p.ParameterType,
-                IsFromCap = p.ParameterType == typeof(CancellationToken),
+                IsFromMessaging = p.ParameterType == typeof(CancellationToken),
             })
             .ToList();
     }

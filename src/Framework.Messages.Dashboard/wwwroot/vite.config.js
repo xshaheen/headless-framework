@@ -16,7 +16,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '^/cap/api': {
+      '^/messaging/api': {
         target: 'http://localhost:5000',
         changeOrigin: true
       }

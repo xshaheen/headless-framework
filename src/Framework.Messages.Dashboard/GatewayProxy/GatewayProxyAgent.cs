@@ -18,8 +18,8 @@ public class GatewayProxyAgent(
     INodeDiscoveryProvider discoveryProvider
 )
 {
-    public const string CookieNodeName = "cap.node";
-    public const string CookieNodeNsName = "cap.node.ns";
+    public const string CookieNodeName = "messaging.node";
+    public const string CookieNodeNsName = "messaging.node.ns";
 
     private readonly ConsulDiscoveryOptions _consulDiscoveryOptions =
         serviceProvider.GetRequiredService<ConsulDiscoveryOptions>();
@@ -48,14 +48,14 @@ public class GatewayProxyAgent(
         {
             if (request.Cookies.TryGetValue(CookieNodeNsName, out var ns))
             {
-                if (CapCache.Global.TryGet(requestNodeName + ns, out var nodeObj))
+                if (MessagingCache.Global.TryGet(requestNodeName + ns, out var nodeObj))
                 {
                     node = (Node)nodeObj;
                 }
                 else
                 {
                     node = await discoveryProvider.GetNode(requestNodeName, ns);
-                    CapCache.Global.AddOrUpdate(requestNodeName + ns, node);
+                    MessagingCache.Global.AddOrUpdate(requestNodeName + ns, node);
                 }
             }
             else
@@ -70,14 +70,14 @@ public class GatewayProxyAgent(
                 return false;
             }
 
-            if (CapCache.Global.TryGet(requestNodeName, out var nodeObj))
+            if (MessagingCache.Global.TryGet(requestNodeName, out var nodeObj))
             {
                 node = (Node)nodeObj;
             }
             else
             {
                 node = await discoveryProvider.GetNode(requestNodeName);
-                CapCache.Global.AddOrUpdate(requestNodeName, node);
+                MessagingCache.Global.AddOrUpdate(requestNodeName, node);
             }
         }
 

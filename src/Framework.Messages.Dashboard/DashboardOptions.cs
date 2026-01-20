@@ -23,7 +23,7 @@ public class DashboardOptions
     public int StatsPollingInterval { get; set; } = 2000;
 
     /// <summary>
-    /// Explicitly allows anonymous access for the CAP dashboard API, passing AllowAnonymous to the ASP.NET Core global authorization filter.
+    /// Explicitly allows anonymous access for the messaging dashboard API, passing AllowAnonymous to the ASP.NET Core global authorization filter.
     /// </summary>
     public bool AllowAnonymousExplicit { get; set; } = true;
 

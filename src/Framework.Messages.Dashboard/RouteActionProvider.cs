@@ -99,7 +99,7 @@ public class RouteActionProvider
             return;
         }
 
-        var metrics = _serviceProvider.GetRequiredService<CapMetricsEventListener>();
+        var metrics = _serviceProvider.GetRequiredService<MessagingMetricsEventListener>();
         await httpContext.Response.WriteAsJsonAsync(metrics.GetRealTimeMetrics());
     }
 
@@ -110,14 +110,14 @@ public class RouteActionProvider
             return;
         }
 
-        var cap = _serviceProvider.GetService<MessagingMarkerService>();
+        var messaging = _serviceProvider.GetService<MessagingMarkerService>();
         var broker = _serviceProvider.GetService<MessageQueueMarkerService>();
         var storage = _serviceProvider.GetService<MessageStorageMarkerService>();
 
         await httpContext.Response.WriteAsJsonAsync(
             new
             {
-                cap = cap,
+                messaging,
                 broker,
                 storage,
             }
@@ -137,7 +137,7 @@ public class RouteActionProvider
 
         async Task setServersCountAsync(StatisticsView view)
         {
-            if (CapCache.Global.TryGet("cap.nodes.count", out var count))
+            if (MessagingCache.Global.TryGet("messaging.nodes.count", out var count))
             {
                 view.Servers = (int)count;
             }
@@ -161,7 +161,7 @@ public class RouteActionProvider
         }
 
         const string cacheKey = "dashboard.metrics.history";
-        if (CapCache.Global.TryGet(cacheKey, out var ret))
+        if (MessagingCache.Global.TryGet(cacheKey, out var ret))
         {
             await httpContext.Response.WriteAsJsonAsync(ret);
             return;
@@ -183,7 +183,7 @@ public class RouteActionProvider
             SubscribeFailed = sf.Values.Reverse(),
         };
 
-        CapCache.Global.AddOrUpdate(cacheKey, result, TimeSpan.FromMinutes(10));
+        MessagingCache.Global.AddOrUpdate(cacheKey, result, TimeSpan.FromMinutes(10));
 
         await httpContext.Response.WriteAsJsonAsync(result);
     }
@@ -260,7 +260,9 @@ public class RouteActionProvider
             var message = await MonitoringApi.GetPublishedMessageAsync(messageId);
             if (message != null)
             {
-                await _serviceProvider.GetRequiredService<IDispatcher>().EnqueueToPublish(message);
+                await _serviceProvider
+                    .GetRequiredService<IDispatcher>()
+                    .EnqueueToPublish(message, httpContext.RequestAborted);
             }
         }
 
@@ -308,7 +310,9 @@ public class RouteActionProvider
             var message = await MonitoringApi.GetReceivedMessageAsync(messageId);
             if (message != null)
             {
-                await _serviceProvider.GetRequiredService<IDispatcher>().EnqueueToExecute(message);
+                await _serviceProvider
+                    .GetRequiredService<IDispatcher>()
+                    .EnqueueToExecute(message, null, httpContext.RequestAborted);
             }
         }
 

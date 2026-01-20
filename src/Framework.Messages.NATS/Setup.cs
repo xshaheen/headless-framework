@@ -13,7 +13,7 @@ public static class MessagesNatsSetup
 {
     extension(MessagingOptions options)
     {
-        /// <summary>Configuration to use NATS in CAP.</summary>
+        /// <summary>Configuration for messaging.</summary>
         /// <param name="bootstrapServers">NATS bootstrap server urls.</param>
         public MessagingOptions UseNats(string? bootstrapServers = null)
         {
@@ -26,9 +26,9 @@ public static class MessagesNatsSetup
             });
         }
 
-        /// <summary>Configuration to use NATS in CAP.</summary>
+        /// <summary>Configuration for messaging.</summary>
         /// <param name="configure">Provides programmatic configuration for the NATS.</param>
-        public MessagingOptions UseNats(Action<NatsOptions> configure)
+        public MessagingOptions UseNats(Action<MessagingNatsOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -38,7 +38,7 @@ public static class MessagesNatsSetup
         }
     }
 
-    private sealed class NatsMessagesOptionsExtension(Action<NatsOptions> configure) : IMessagesOptionsExtension
+    private sealed class NatsMessagesOptionsExtension(Action<MessagingNatsOptions> configure) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
@@ -48,7 +48,7 @@ public static class MessagesNatsSetup
 
             services.AddSingleton<ITransport, NatsTransport>();
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();
-            services.AddSingleton<IConnectionPool, ConnectionPool>();
+            services.AddSingleton<INatsConnectionPool, NatsConnectionPool>();
         }
     }
 }

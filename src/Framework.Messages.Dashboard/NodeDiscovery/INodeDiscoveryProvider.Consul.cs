@@ -19,7 +19,7 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
                 config.WaitTime = TimeSpan.FromSeconds(5);
                 config.Address = new Uri($"http://{options.DiscoveryServerHostName}:{options.DiscoveryServerPort}");
             });
-            var serviceCatalog = await consul.Catalog.Service(nodeName, "CAP", cancellationToken);
+            var serviceCatalog = await consul.Catalog.Service(nodeName, "messaging", cancellationToken);
 
             if (serviceCatalog.StatusCode == HttpStatusCode.OK)
             {
@@ -59,7 +59,7 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
 
             foreach (var service in services.Response)
             {
-                var serviceInfo = await consul.Catalog.Service(service.Key, "CAP", cancellationToken);
+                var serviceInfo = await consul.Catalog.Service(service.Key, "messaging", cancellationToken);
 
                 var node = serviceInfo
                     .Response.Select(info => new Node
@@ -75,13 +75,13 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
                 nodes.AddRange(node);
             }
 
-            CapCache.Global.AddOrUpdate("cap.nodes.count", nodes.Count, TimeSpan.FromSeconds(60), true);
+            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60), true);
 
             return nodes;
         }
         catch (Exception ex)
         {
-            CapCache.Global.AddOrUpdate("cap.nodes.count", 0, TimeSpan.FromSeconds(20));
+            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
             _logger.LogError(
                 $"Get consul nodes raised an exception. Exception:{ex.Message},{ex.InnerException?.Message}"
@@ -111,8 +111,8 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
                 healthCheck.TCP = $"{options.CurrentNodeHostName}:{options.CurrentNodePort}";
             }
 
-            var tags = new[] { "CAP", "Client", "Dashboard" };
-            if (options.CustomTags != null && options.CustomTags.Length > 0)
+            var tags = new[] { "Headless", "Messaging", "Client", "Dashboard" };
+            if (options.CustomTags is { Length: > 0 })
             {
                 tags = tags.Union(options.CustomTags, StringComparer.Ordinal).ToArray();
             }

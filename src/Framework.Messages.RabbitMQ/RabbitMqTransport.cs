@@ -41,7 +41,7 @@ internal sealed class RabbitMqTransport : ITransport
             await channel.BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body);
 
             _logger.LogInformation(
-                "CAP message '{Name}' published, internal id '{Id}'",
+                "Headless message '{Name}' published, internal id '{Id}'",
                 message.GetName(),
                 message.GetId()
             );

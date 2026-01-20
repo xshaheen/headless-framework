@@ -27,34 +27,34 @@ internal sealed class K8sDiscoveryOptionsExtension(Action<K8sDiscoveryOptions>? 
     }
 }
 
-public static class CapDiscoveryOptionsExtensions
+public static class MessagingDiscoveryOptionsExtensions
 {
     // ReSharper disable once InconsistentNaming
     /// <summary>
     /// Use K8s as a service discovery to view data from other nodes in the Dashboard.
     /// </summary>
-    /// <param name="capOptions"></param>
-    public static MessagingOptions UseK8sDiscovery(this MessagingOptions capOptions)
+    /// <param name="messagingOptions"></param>
+    public static MessagingOptions UseK8sDiscovery(this MessagingOptions messagingOptions)
     {
-        return capOptions.UseK8sDiscovery(opt => { });
+        return messagingOptions.UseK8sDiscovery(opt => { });
     }
 
     // ReSharper disable once InconsistentNaming
     /// <summary>
     /// Use K8s as a service discovery to view data from other nodes in the Dashboard.
     /// </summary>
-    /// <param name="capOptions"></param>
+    /// <param name="messagingOptions"></param>
     /// <param name="options">The option of <see cref="K8sDiscoveryOptions" /></param>
     /// <exception cref="ArgumentNullException"></exception>
     public static MessagingOptions UseK8sDiscovery(
-        this MessagingOptions capOptions,
+        this MessagingOptions messagingOptions,
         Action<K8sDiscoveryOptions> options
     )
     {
         Argument.IsNotNull(options);
 
-        capOptions.RegisterExtension(new K8sDiscoveryOptionsExtension(options));
+        messagingOptions.RegisterExtension(new K8sDiscoveryOptionsExtension(options));
 
-        return capOptions;
+        return messagingOptions;
     }
 }

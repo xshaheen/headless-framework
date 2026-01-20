@@ -6,6 +6,5 @@
   <ItemGroup>
     <ProjectReference Include="..\Framework.ResourceLocks.Cache\Framework.ResourceLocks.Cache.csproj" />
     <ProjectReference Include="..\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
-    <ProjectReference Include="..\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
   </ItemGroup>
 </Project>

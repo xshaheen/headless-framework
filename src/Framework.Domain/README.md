@@ -1,4 +1,4 @@
-# Framework.Domains
+# Framework.Domain
 
 Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
 
@@ -21,7 +21,7 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 ## Installation
 
 ```bash
-dotnet add package Framework.Domains
+dotnet add package Framework.Domain
 ```
 
 ## Quick Start

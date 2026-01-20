@@ -12,13 +12,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class MessagesK8sDashboardSetup
 {
     /// <summary>
-    /// Run only CAP dashboard to view data based on the nodes discovered in Kubernetes.
+    /// Run only messaging dashboard to view data based on the nodes discovered in Kubernetes.
     /// </summary>
     /// <param name="services">The services available in the application.</param>
     /// <param name="option">An action to configure the <see cref="DashboardOptions" />.</param>
     /// <param name="k8SOption">An action to configure the <see cref="K8sDiscoveryOptions" />.</param>
-    /// <returns>An <see cref="CapBuilder" /> for application services.</returns>
-    public static IServiceCollection AddCapDashboardStandalone(
+    /// <returns>An <see cref="MessagingBuilder" /> for application services.</returns>
+    public static IServiceCollection AddMessagingDashboardStandalone(
         this IServiceCollection services,
         Action<DashboardOptions>? option = null,
         Action<K8sDiscoveryOptions>? k8SOption = null

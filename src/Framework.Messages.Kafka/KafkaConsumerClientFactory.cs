@@ -6,10 +6,12 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Messages;
 
-public class KafkaConsumerClientFactory(IOptions<KafkaOptions> kafkaOptions, IServiceProvider serviceProvider)
-    : IConsumerClientFactory
+public sealed class KafkaConsumerClientFactory(
+    IOptions<MessagingKafkaOptions> kafkaOptions,
+    IServiceProvider serviceProvider
+) : IConsumerClientFactory
 {
-    public virtual Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
         try
         {

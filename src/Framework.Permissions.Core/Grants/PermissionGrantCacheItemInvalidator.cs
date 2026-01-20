@@ -12,7 +12,7 @@ public sealed class PermissionGrantCacheItemInvalidator(
     ICurrentTenant currentTenant
 ) : ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>
 {
-    public async Task HandleAsync(
+    public async ValueTask HandleAsync(
         EntityChangedEventData<PermissionGrantRecord> message,
         CancellationToken cancellationToken = default
     )

@@ -6,9 +6,6 @@ namespace Framework.Domain;
 
 public interface IDistributedMessagePublisher
 {
-    void Publish<T>(T message)
-        where T : class, IDistributedMessage;
-
-    Task PublishAsync<T>(T message, CancellationToken cancellationToken = default)
+    ValueTask PublishAsync<T>(T message, CancellationToken cancellationToken = default)
         where T : class, IDistributedMessage;
 }

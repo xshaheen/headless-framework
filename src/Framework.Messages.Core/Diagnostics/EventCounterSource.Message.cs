@@ -21,13 +21,19 @@ public class MessageEventCounterSource : EventSource
     {
         if (args.Command == EventCommand.Enable)
         {
-            _publishPerSecondCounter ??= new IncrementingEventCounter(MessageDiagnosticListenerNames.PublishedPerSec, this)
+            _publishPerSecondCounter ??= new IncrementingEventCounter(
+                MessageDiagnosticListenerNames.PublishedPerSec,
+                this
+            )
             {
                 DisplayName = "Publish Rate",
                 DisplayRateTimeScale = TimeSpan.FromSeconds(1),
             };
 
-            _consumePerSecondCounter ??= new IncrementingEventCounter(MessageDiagnosticListenerNames.ConsumePerSec, this)
+            _consumePerSecondCounter ??= new IncrementingEventCounter(
+                MessageDiagnosticListenerNames.ConsumePerSec,
+                this
+            )
             {
                 DisplayName = "Consume Rate",
                 DisplayRateTimeScale = TimeSpan.FromSeconds(1),

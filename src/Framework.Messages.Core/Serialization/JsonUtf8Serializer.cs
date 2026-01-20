@@ -8,9 +8,9 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Messages.Serialization;
 
-public sealed class JsonUtf8Serializer(IOptions<MessagingOptions> capOptions) : ISerializer
+public sealed class JsonUtf8Serializer(IOptions<MessagingOptions> messagingOptionsAccessor) : ISerializer
 {
-    private readonly JsonSerializerOptions _jsonOptions = capOptions.Value.JsonSerializerOptions;
+    private readonly JsonSerializerOptions _jsonOptions = messagingOptionsAccessor.Value.JsonSerializerOptions;
 
     public ValueTask<TransportMessage> SerializeToTransportMessageAsync(Message message)
     {

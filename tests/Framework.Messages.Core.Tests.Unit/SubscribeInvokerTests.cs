@@ -283,7 +283,7 @@ public class SubscribeInvokerTests
                 {
                     Name = p.Name!,
                     ParameterType = p.ParameterType,
-                    IsFromCap = p.ParameterType == typeof(CancellationToken),
+                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
                 })
                 .ToList(),
         };
@@ -308,7 +308,7 @@ public class SubscribeInvokerTests
                 {
                     Name = p.Name!,
                     ParameterType = p.ParameterType,
-                    IsFromCap = p.ParameterType == typeof(CancellationToken),
+                    IsFromMessaging = p.ParameterType == typeof(CancellationToken),
                 })
                 .ToList(),
         };

@@ -6,8 +6,10 @@ using Microsoft.Extensions.Options;
 
 namespace Framework.Messages;
 
-internal sealed class NatsConsumerClientFactory(IOptions<NatsOptions> natsOptions, IServiceProvider serviceProvider)
-    : IConsumerClientFactory
+internal sealed class NatsConsumerClientFactory(
+    IOptions<MessagingNatsOptions> natsOptions,
+    IServiceProvider serviceProvider
+) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
@@ -17,7 +19,7 @@ internal sealed class NatsConsumerClientFactory(IOptions<NatsOptions> natsOption
             client.Connect();
             return Task.FromResult<IConsumerClient>(client);
         }
-        catch (System.Exception e)
+        catch (Exception e)
         {
             throw new BrokerConnectionException(e);
         }

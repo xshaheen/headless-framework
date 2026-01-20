@@ -41,14 +41,14 @@ public sealed class SqlServerStorageInitializer(
 
         var sql = _CreateDbTablesScript(options.Value.Schema);
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         object[] sqlParams =
         [
             new SqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
             new SqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
             new SqlParameter("@LastLockTime", DateTime.MinValue) { SqlDbType = SqlDbType.DateTime2 },
         ];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
 
         _logger.LogDebug("Ensuring all create database tables script are applied.");
     }
@@ -73,11 +73,14 @@ public sealed class SqlServerStorageInitializer(
             	[Added] [datetime2](7) NOT NULL,
                 [ExpiresAt] [datetime2](7) NULL,
             	[StatusName] [nvarchar](50) NOT NULL,
+                [MessageId] [nvarchar](200) NOT NULL,
              CONSTRAINT [PK_{GetReceivedTableName()}] PRIMARY KEY CLUSTERED
             (
             	[Id] ASC
             )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
             ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+
+            CREATE UNIQUE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_MessageId_Group] ON {GetReceivedTableName()} ([MessageId] ASC, [Group] ASC)
 
             CREATE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC)
             INCLUDE ([Id], [Content], [Retries], [Added])

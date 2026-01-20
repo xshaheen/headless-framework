@@ -39,8 +39,8 @@ public class NewMethodTests
         methodInfo1.ReflectedType.Should().NotBeNull();
         methodInfo2.ReflectedType.Should().NotBeNull();
         $"{methodInfo2.MethodHandle.Value}_{methodInfo2.ReflectedType.TypeHandle.Value}"
-.Should().NotBe(
-            $"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}");
+            .Should()
+            .NotBe($"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}");
     }
 
     [Fact]
@@ -58,8 +58,8 @@ public class NewMethodTests
         methodInfo1.ReflectedType.Should().NotBeNull();
         methodInfo2.ReflectedType.Should().NotBeNull();
         $"{methodInfo2.MethodHandle.Value}_{methodInfo2.ReflectedType.TypeHandle.Value}"
-.Should().NotBe(
-            $"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}");
+            .Should()
+            .NotBe($"{methodInfo1.MethodHandle.Value}_{methodInfo1.ReflectedType.TypeHandle.Value}");
     }
 
     private sealed class Subclass1OfSubscriberClass : SubscriberClass;

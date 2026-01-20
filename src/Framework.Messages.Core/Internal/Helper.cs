@@ -65,12 +65,14 @@ public static class Helper
 
         if (wildcard.Contains('*'))
         {
-            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("*"), "[0-9a-zA-Z]+?"); // Non-greedy
+            // Possessive quantifier (atomic group) prevents backtracking entirely
+            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("*"), "(?>[0-9a-zA-Z]+)");
         }
 
         if (wildcard.Contains('#'))
         {
-            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("#"), "[0-9a-zA-Z\\.]+?"); // Non-greedy
+            // Possessive quantifier (atomic group) prevents backtracking entirely
+            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("#"), "(?>[0-9a-zA-Z\\.]+)");
         }
 
         return Regex.Escape(wildcard);
@@ -130,7 +132,10 @@ public static class Helper
             return false;
         }
 
-        if (!IPAddress.TryParse(ipAddress, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (
+            !IPAddress.TryParse(ipAddress, out var ip)
+            || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork
+        )
         {
             return false;
         }

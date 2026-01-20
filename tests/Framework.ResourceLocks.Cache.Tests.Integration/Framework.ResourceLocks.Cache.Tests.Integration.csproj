@@ -18,7 +18,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Cache\Framework.ResourceLocks.Cache.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks.Tests.Harness\Framework.ResourceLocks.Tests.Harness.csproj" />
   </ItemGroup>

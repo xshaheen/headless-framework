@@ -74,6 +74,33 @@ builder.Services.AddMessages(options =>
 });
 ```
 
+## Message Ordering Guarantees
+
+Message ordering guarantees depend on the transport provider and configuration:
+
+### Transport-Specific Ordering
+
+- **Kafka**: Messages with same partition key are strictly ordered within partitions
+- **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
+- **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
+- **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
+- **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
+- **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
+- **Pulsar**: Ordered within partitions when using partition key
+- **InMemoryQueue**: FIFO ordering with single consumer thread
+
+### Configuration Impact on Ordering
+
+- **`ConsumerThreadCount > 1`**: Enables concurrent message consumption, messages may process out of order
+- **`EnableSubscriberParallelExecute = true`**: Buffers messages in-memory queue for parallel processing, no ordering guarantee
+- **Single consumer thread (`ConsumerThreadCount = 1`)**: Sequential processing, maintains transport order
+
+### Recommendations
+
+- For strict ordering: Use `ConsumerThreadCount = 1` with Kafka (partition key), Azure Service Bus (sessions), or AWS SQS (FIFO)
+- For high throughput: Use parallel processing; design consumers to be order-independent
+- Test ordering behavior with your specific transport and configuration
+
 ## Dependencies
 
 - `Framework.Messages.Abstractions`

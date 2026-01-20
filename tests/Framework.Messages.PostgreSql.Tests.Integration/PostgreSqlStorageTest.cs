@@ -35,8 +35,8 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
     }
 
     [Theory]
-    [InlineData("cap.published")]
-    [InlineData("cap.received")]
+    [InlineData("messaging.published")]
+    [InlineData("messaging.received")]
     public void should_create_table(string tableName)
     {
         using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());

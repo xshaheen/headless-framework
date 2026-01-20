@@ -37,5 +37,5 @@ public sealed class ParameterDescriptor
 
     public required Type ParameterType { get; init; }
 
-    public required bool IsFromCap { get; init; }
+    public required bool IsFromMessaging { get; init; }
 }

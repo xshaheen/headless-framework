@@ -50,13 +50,13 @@ public sealed class CollectorProcessor : IProcessor
                     deletedCount = await _serviceProvider
                         .GetRequiredService<IDataStorage>()
                         .DeleteExpiresAsync(table, time, _ItemBatch, context.CancellationToken)
-                        .ConfigureAwait(false);
+                        .AnyContext();
 
                     if (deletedCount != 0)
                     {
                         _logger.LogDebug($"Successfully deleted {deletedCount} expired items from table '{table}'.");
 
-                        await context.WaitAsync(_delay).ConfigureAwait(false);
+                        await context.WaitAsync(_delay).AnyContext();
                         context.ThrowIfStopping();
                     }
                 }
@@ -71,6 +71,6 @@ public sealed class CollectorProcessor : IProcessor
             } while (deletedCount != 0);
         }
 
-        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+        await context.WaitAsync(_waitingInterval).AnyContext();
     }
 }

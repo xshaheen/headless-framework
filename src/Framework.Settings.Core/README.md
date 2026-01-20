@@ -119,7 +119,7 @@ services.AddSettingsManagementCore(options =>
 - `Framework.Settings.Abstractions`
 - `Framework.Caching.Abstractions`
 - `Framework.ResourceLocks.Abstractions`
-- `Framework.Domains`
+- `Framework.Domain`
 
 ## Side Effects
 

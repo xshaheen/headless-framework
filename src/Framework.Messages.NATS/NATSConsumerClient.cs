@@ -13,13 +13,14 @@ namespace Framework.Messages;
 internal sealed class NatsConsumerClient(
     string name,
     byte groupConcurrent,
-    IOptions<NatsOptions> options,
+    IOptions<MessagingNatsOptions> options,
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
     private static readonly Lock _ConnectionLock = new();
 
-    private readonly NatsOptions _natsOptions = options.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly MessagingNatsOptions _natsOptions =
+        options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private IConnection? _consumerClient;
 
@@ -120,7 +121,7 @@ internal sealed class NatsConsumerClient(
                                 LogType = MqLogType.ConnectError,
                                 Reason =
                                     $"An error was encountered when attempting to subscribe to subject: {subject}.{Environment.NewLine}"
-                                    + $"{e.Message}",
+                                    + e,
                             }
                         );
                     }
@@ -146,7 +147,7 @@ internal sealed class NatsConsumerClient(
         if (groupConcurrent > 0)
         {
             await _semaphore.WaitAsync();
-            _ = Task.Run(consumeAsync).ConfigureAwait(false);
+            _ = Task.Run(consumeAsync).AnyContext();
         }
         else
         {

@@ -2,16 +2,19 @@
 
 using StackExchange.Redis;
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
 public class RedisConsumeMissingHeadersException(StreamEntry entry)
-    : Exception(message: $"Redis entry [{entry.Id}] is missing Cap headers.");
+    : Exception(message: $"Redis entry [{entry.Id}] is missing message headers.");
 
 public class RedisConsumeMissingBodyException(StreamEntry entry)
-    : Exception(message: $"Redis entry [{entry.Id}] is missing Cap body.");
+    : Exception(message: $"Redis entry [{entry.Id}] is missing message body.");
 
 public class RedisConsumeInvalidHeadersException(StreamEntry entry, Exception ex)
-    : Exception(message: $"Redis entry [{entry.Id}] has not headers that are formatted properly as Cap headers.", ex);
+    : Exception(
+        message: $"Redis entry [{entry.Id}] has not headers that are formatted properly as message headers.",
+        ex
+    );
 
 public class RedisConsumeInvalidBodyException(StreamEntry entry, Exception ex)
-    : Exception(message: $"Redis entry [{entry.Id}] has not body that is formatted properly as Cap body.", ex);
+    : Exception(message: $"Redis entry [{entry.Id}] has not body that is formatted properly as message body.", ex);

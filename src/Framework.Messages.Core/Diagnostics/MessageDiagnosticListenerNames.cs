@@ -7,7 +7,7 @@ namespace Framework.Messages.Diagnostics;
 /// </summary>
 public static class MessageDiagnosticListenerNames
 {
-    private const string _Prefix = "Headless.Messaging.";
+    private const string _Prefix = "Framework.Messages.";
 
     //Tracing
     public const string DiagnosticListenerName = "MessagingDiagnosticListener";

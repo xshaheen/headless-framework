@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Caching;
-using Framework.Messaging;
+using Framework.Messages;
 using Framework.ResourceLocks.Cache;
 using Microsoft.Extensions.DependencyInjection;
 

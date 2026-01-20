@@ -3,14 +3,16 @@
 namespace Framework.Messages;
 
 /// <summary>
-/// CAP instrumentation.
+/// Messaging instrumentation.
 /// </summary>
 internal sealed class MessagingInstrumentation : IDisposable
 {
     private readonly MessagingDiagnosticSourceSubscriber? _diagnosticSourceSubscriber;
+    private readonly MessagingMetrics? _metrics;
 
-    public MessagingInstrumentation(DiagnosticListener diagnosticListener)
+    public MessagingInstrumentation(DiagnosticListener diagnosticListener, MessagingMetrics? metrics = null)
     {
+        _metrics = metrics;
         _diagnosticSourceSubscriber = new MessagingDiagnosticSourceSubscriber(
             diagnosticListener,
             isEnabledFilter: null
@@ -22,5 +24,6 @@ internal sealed class MessagingInstrumentation : IDisposable
     public void Dispose()
     {
         _diagnosticSourceSubscriber?.Dispose();
+        _metrics?.Dispose();
     }
 }

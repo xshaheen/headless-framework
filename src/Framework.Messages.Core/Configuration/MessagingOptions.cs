@@ -3,6 +3,7 @@
 using System.Reflection;
 using Framework.Checks;
 using Framework.Messages.Messages;
+using Framework.Messages.Retry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -25,7 +26,7 @@ public class MessagingOptions : IMessagingBuilder
     /// <summary>
     /// Gets or sets the default consumer group name for subscribers.
     /// In Kafka, this corresponds to the consumer group name; in RabbitMQ, it corresponds to the queue name.
-    /// Default value is "cap.queue." followed by the entry assembly name in lowercase.
+    /// Default value is "headless.queue." followed by the entry assembly name in lowercase.
     /// </summary>
     public string DefaultGroupName { get; set; } =
         "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
@@ -118,6 +119,16 @@ public class MessagingOptions : IMessagingBuilder
     public bool EnablePublishParallelSend { get; set; }
 
     /// <summary>
+    /// Gets or sets the batch size for parallel message sending when <see cref="EnablePublishParallelSend"/> is enabled.
+    /// When null, the batch size is automatically calculated using a logarithmic formula based on channel capacity.
+    /// The automatic calculation uses: Math.Min(500, Math.Max(10, (int)Math.Log2(channelSize) * 10)).
+    /// Use this property to override the automatic calculation for custom tuning.
+    /// Valid range: 1-500. Values outside this range will be clamped.
+    /// Default is null (auto-calculate).
+    /// </summary>
+    public int? PublishBatchSize { get; set; }
+
+    /// <summary>
     /// Gets or sets the lookback time window (in seconds) for the retry processor to pick up scheduled or failed status messages.
     /// This ensures that messages with clocks slightly out of sync are still processed correctly.
     /// Default is 240 seconds (4 minutes).
@@ -153,6 +164,13 @@ public class MessagingOptions : IMessagingBuilder
     public bool UseStorageLock { get; set; }
 
     /// <summary>
+    /// Gets or sets the retry backoff strategy used to calculate retry delays and determine retry eligibility.
+    /// When null, defaults to <see cref="ExponentialBackoffStrategy"/> with 1s initial delay, 5min max delay, and 2x multiplier.
+    /// For fixed interval retries, use <see cref="FixedIntervalBackoffStrategy"/>.
+    /// </summary>
+    public IRetryBackoffStrategy? RetryBackoffStrategy { get; set; }
+
+    /// <summary>
     /// Registers a messaging options extension that will be executed when configuring messaging services.
     /// Extensions allow third-party libraries to customize messaging behavior without modifying core configuration.
     /// </summary>
@@ -172,29 +190,30 @@ public class MessagingOptions : IMessagingBuilder
         Argument.IsNotNull(Services, "Services must be initialized before calling ScanConsumers");
         Argument.IsNotNull(Registry, "Registry must be initialized before calling ScanConsumers");
 
-        // Find all types implementing IConsume<T>
-        var consumerTypes = assembly
+        // Single pass: filter types and cache their IConsume<T> interfaces
+        var consumerTypesWithInterfaces = assembly
             .GetTypes()
             .Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
-            .Where(t =>
-                t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
-            )
+            .Select(t =>
+            {
+                var interfaces = t.GetInterfaces();
+                var consumeInterfaces = interfaces
+                    .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
+                    .ToList();
+
+                return new { Type = t, ConsumeInterfaces = consumeInterfaces };
+            })
+            .Where(x => x.ConsumeInterfaces.Count > 0)
             .ToList();
 
-        foreach (var consumerType in consumerTypes)
+        foreach (var consumer in consumerTypesWithInterfaces)
         {
-            // Get all IConsume<T> interfaces (supports multi-message handlers)
-            var consumeInterfaces = consumerType
-                .GetInterfaces()
-                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
-                .ToList();
-
-            foreach (var consumeInterface in consumeInterfaces)
+            foreach (var consumeInterface in consumer.ConsumeInterfaces)
             {
                 var messageType = consumeInterface.GetGenericArguments()[0];
 
                 // Register consumer with default configuration
-                RegisterConsumer(consumerType, messageType, topic: null, group: null, concurrency: 1);
+                RegisterConsumer(consumer.Type, messageType, topic: null, group: null, concurrency: 1);
             }
         }
 
@@ -277,6 +296,7 @@ public class MessagingOptions : IMessagingBuilder
     internal void _WithTopicMapping(Type messageType, string topic)
     {
         Argument.IsNotNullOrWhiteSpace(topic);
+        _ValidateTopicName(topic);
 
         if (TopicMappings.TryGetValue(messageType, out var existingTopic) && existingTopic != topic)
         {
@@ -286,6 +306,43 @@ public class MessagingOptions : IMessagingBuilder
         }
 
         TopicMappings[messageType] = topic;
+    }
+
+    /// <summary>
+    /// Validates topic name format and constraints.
+    /// </summary>
+    private static void _ValidateTopicName(string topic)
+    {
+        const int MaxTopicLength = 255;
+
+        if (topic.Length > MaxTopicLength)
+        {
+            throw new ArgumentException(
+                $"Topic name '{topic}' exceeds maximum length of {MaxTopicLength} characters.",
+                nameof(topic)
+            );
+        }
+
+        if (topic.StartsWith('.') || topic.EndsWith('.'))
+        {
+            throw new ArgumentException($"Topic name '{topic}' cannot start or end with a dot.", nameof(topic));
+        }
+
+        if (topic.Contains(".."))
+        {
+            throw new ArgumentException($"Topic name '{topic}' cannot contain consecutive dots.", nameof(topic));
+        }
+
+        foreach (var c in topic)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
+            {
+                throw new ArgumentException(
+                    $"Topic name '{topic}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
+                    nameof(topic)
+                );
+            }
+        }
     }
 
     /// <summary>

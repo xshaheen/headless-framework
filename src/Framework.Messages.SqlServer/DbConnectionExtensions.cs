@@ -17,11 +17,11 @@ internal static class DbConnectionExtensions
     {
         if (connection.State == ConnectionState.Closed)
         {
-            await connection.OpenAsync().ConfigureAwait(false);
+            await connection.OpenAsync().AnyContext();
         }
 
         var command = connection.CreateCommand();
-        await using var _ = command.ConfigureAwait(false);
+        await using var _ = command;
         command.CommandType = CommandType.Text;
         command.CommandText = sql;
         foreach (var param in sqlParams)
@@ -34,7 +34,7 @@ internal static class DbConnectionExtensions
             command.Transaction = transaction;
         }
 
-        return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        return await command.ExecuteNonQueryAsync().AnyContext();
     }
 
     public static async Task<T> ExecuteReaderAsync<T>(
@@ -47,11 +47,11 @@ internal static class DbConnectionExtensions
     {
         if (connection.State == ConnectionState.Closed)
         {
-            await connection.OpenAsync().ConfigureAwait(false);
+            await connection.OpenAsync().AnyContext();
         }
 
         var command = connection.CreateCommand();
-        await using var _ = command.ConfigureAwait(false);
+        await using var _ = command;
         command.CommandType = CommandType.Text;
         command.CommandText = sql;
         foreach (var param in sqlParams)
@@ -64,12 +64,12 @@ internal static class DbConnectionExtensions
             command.Transaction = transaction;
         }
 
-        await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync().AnyContext();
 
         T result = default!;
         if (readerFunc != null)
         {
-            result = await readerFunc(reader).ConfigureAwait(false);
+            result = await readerFunc(reader).AnyContext();
         }
 
         return result;
@@ -83,11 +83,11 @@ internal static class DbConnectionExtensions
     {
         if (connection.State == ConnectionState.Closed)
         {
-            await connection.OpenAsync().ConfigureAwait(false);
+            await connection.OpenAsync().AnyContext();
         }
 
         var command = connection.CreateCommand();
-        await using var _ = command.ConfigureAwait(false);
+        await using var _ = command;
         command.CommandType = CommandType.Text;
         command.CommandText = sql;
         foreach (var param in sqlParams)
@@ -95,7 +95,7 @@ internal static class DbConnectionExtensions
             command.Parameters.Add(param);
         }
 
-        var objValue = await command.ExecuteScalarAsync().ConfigureAwait(false);
+        var objValue = await command.ExecuteScalarAsync().AnyContext();
 
         T result = default!;
         if (objValue != null)
