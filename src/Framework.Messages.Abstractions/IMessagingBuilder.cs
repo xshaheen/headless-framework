@@ -166,4 +166,30 @@ public interface IMessagingBuilder
     /// </remarks>
     IMessagingBuilder WithTopicMapping<TMessage>(string topic)
         where TMessage : class;
+
+    /// <summary>
+    /// Configures convention-based topic naming and default consumer settings.
+    /// </summary>
+    /// <param name="configure">A delegate to configure the messaging conventions.</param>
+    /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
+    /// <remarks>
+    /// <para>
+    /// Conventions allow automatic topic name generation from message types, reducing boilerplate
+    /// and ensuring consistent naming across your messaging infrastructure.
+    /// </para>
+    /// <para>
+    /// <strong>Example:</strong>
+    /// <code>
+    /// options.ConfigureConventions(c =>
+    /// {
+    ///     c.UseKebabCaseTopics(); // OrderCreated → order-created
+    ///     c.WithTopicPrefix("prod."); // → prod.order-created
+    ///     c.WithTopicSuffix(".v1"); // → prod.order-created.v1
+    ///     c.WithDefaultGroup("my-service");
+    /// });
+    /// </code>
+    /// </para>
+    /// </remarks>
+    IMessagingBuilder ConfigureConventions(Action<MessagingConventions> configure);
 }

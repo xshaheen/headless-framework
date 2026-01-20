@@ -20,6 +20,7 @@ public class MessagingOptions : IMessagingBuilder
     internal ConsumerRegistry? Registry { get; set; }
     internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
+    internal MessagingConventions? Conventions { get; private set; }
 
     /// <summary>
     /// Gets or sets the default consumer group name for subscribers.
@@ -260,6 +261,16 @@ public class MessagingOptions : IMessagingBuilder
         return this;
     }
 
+    /// <inheritdoc />
+    public IMessagingBuilder ConfigureConventions(Action<MessagingConventions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        Conventions ??= new MessagingConventions();
+        configure(Conventions);
+        return this;
+    }
+
     /// <summary>
     /// Registers a topic mapping for a message type (non-generic version for internal use).
     /// </summary>
@@ -289,10 +300,14 @@ public class MessagingOptions : IMessagingBuilder
         var finalTopic =
             topic
             ?? (TopicMappings.TryGetValue(messageType, out var mappedTopic) ? mappedTopic : null)
-            ?? messageType.Name; // Default to message type name
+            ?? Conventions?.GetTopicName(messageType)
+            ?? messageType.Name; // Fallback to message type name
+
+        // Determine the group name
+        var finalGroup = group ?? Conventions?.DefaultGroup;
 
         // Create metadata
-        var metadata = new ConsumerMetadata(messageType, consumerType, finalTopic, group, concurrency);
+        var metadata = new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency);
 
         // Register in registry
         Registry.Register(metadata);
