@@ -139,7 +139,7 @@ export default {
         }
       });
       this.isBusy = false;
-      var ns = this.getCookie("cap.node.ns");
+      var ns = this.getCookie("messaging.node.ns");
       if (ns) {
         this.selected = ns;
         this.fetchSvcs();
@@ -150,7 +150,7 @@ export default {
       if (!this.selected) return;
 
       this.isBusy = true;
-      var name = this.getCookie('cap.node');
+      var name = this.getCookie('messaging.node');
       if (this.pinging == true) {
         cancelToken.cancel();
         cancelToken = axios.CancelToken.source();
@@ -190,7 +190,7 @@ export default {
 
     fetchData() {
       this.isBusy = true;
-      var name = this.getCookie('cap.node');
+      var name = this.getCookie('messaging.node');
       axios.get('/nodes').then(res => {
         for (var item of res.data) {
           if (item.name == name) {
@@ -211,8 +211,8 @@ export default {
         timeout: 3000
       }).then(res => {
         item.latency = res.data;
-        document.cookie = `cap.node=${escape(item.name)};`;
-        document.cookie = `cap.node.ns=${this.selected};`;
+        document.cookie = `messaging.node=${escape(item.name)};`;
+        document.cookie = `messaging.node.ns=${this.selected};`;
         item._ping = false;
         location.reload();
       }).catch(err => {

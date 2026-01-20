@@ -63,10 +63,10 @@ Implement Option 1 for immediate query performance improvement.
 
 ## Acceptance Criteria
 
-- [ ] Composite indexes created for all retry queries
+- [x] Composite indexes created for all retry queries
+- [x] Migrations for PostgreSQL and SQL Server
 - [ ] Query plans show index usage (EXPLAIN ANALYZE)
 - [ ] Performance tests verify <100ms query time at 1M messages
-- [ ] Migrations for PostgreSQL and SQL Server
 - [ ] Documentation updated
 
 ## Notes
@@ -89,3 +89,23 @@ Partial indexes (WHERE clause) reduce index size and improve performance.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-21 - Implemented
+
+**By:** Claude Code
+**Actions:**
+- Added composite indexes for retry queries in PostgreSQL
+  - `idx_received_retry`: (StatusName, Retries, Added) WHERE StatusName IN ('Failed','Scheduled')
+  - `idx_received_delayed`: (StatusName, ExpiresAt) WHERE StatusName = 'Delayed'
+  - `idx_published_retry`: (StatusName, Retries, Added) WHERE StatusName IN ('Failed','Scheduled')
+  - `idx_published_delayed`: (StatusName, ExpiresAt) WHERE StatusName = 'Delayed'
+- Added same composite indexes for SQL Server
+  - `IX_Retry`: (StatusName, Retries, Added) WHERE StatusName IN ('Failed','Scheduled')
+  - `IX_Delayed`: (StatusName, ExpiresAt) WHERE StatusName = 'Delayed'
+- Modified: PostgreSqlStorageInitializer.cs
+- Modified: SqlServerStorageInitializer.cs
+- Indexes use partial/filtered WHERE clauses to reduce index size
+- Query patterns now covered:
+  1. Retry processor: `WHERE "Retries"<@Retries AND "StatusName" IN ('Failed','Scheduled')` → uses idx_*_retry
+  2. Delayed processor: `WHERE "StatusName" = 'Delayed' AND "ExpiresAt"< @time` → uses idx_*_delayed
+  3. Collector: Existing idx_*_ExpiresAt_StatusName covers cleanup queries

@@ -10,5 +10,5 @@ public interface ILocalMessageHandler<in TMessage>
     /// <summary>Handler handles the event by implementing this method.</summary>
     /// <param name="message">Message data</param>
     /// <param name="cancellationToken">Abort token</param>
-    Task HandleAsync(TMessage message, CancellationToken cancellationToken = default);
+    ValueTask HandleAsync(TMessage message, CancellationToken cancellationToken = default);
 }

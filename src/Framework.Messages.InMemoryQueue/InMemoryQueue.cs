@@ -5,9 +5,9 @@ using Microsoft.Extensions.Logging;
 namespace Framework.Messages;
 
 /// <summary>
-/// In-memory message queue implementation for CAP.
+/// In-memory message queue implementation for messaging.
 /// </summary>
-internal class InMemoryQueue(ILogger<InMemoryQueue> logger)
+internal sealed class InMemoryQueue(ILogger<InMemoryQueue> logger)
 {
     private static readonly Lock _Lock = new();
 

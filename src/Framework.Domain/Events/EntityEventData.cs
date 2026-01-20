@@ -6,6 +6,8 @@ namespace Framework.Domain;
 
 public abstract class EntityEventData<TEntity>(TEntity entity) : ILocalMessage
 {
+    public string UniqueId { get; } = Guid.CreateVersion7().ToString();
+
     /// <summary>Related entity with this event.</summary>
     public TEntity Entity { get; } = entity;
 }

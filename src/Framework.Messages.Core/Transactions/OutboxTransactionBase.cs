@@ -93,15 +93,16 @@ public abstract class OutboxTransactionBase(IDispatcher dispatcher) : IOutboxTra
     /// </summary>
     protected virtual void Flush()
     {
-        FlushAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+        FlushAsync().AnyContext().GetAwaiter().GetResult();
     }
 
     /// <summary>
     /// Asynchronously flushes all buffered messages from the internal queue to the dispatcher.
     /// Delayed messages are enqueued to the scheduler; immediate messages are enqueued for publishing.
     /// </summary>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous flush operation.</returns>
-    protected virtual async Task FlushAsync()
+    protected virtual async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         while (!_bufferList.IsEmpty)
         {
@@ -113,13 +114,15 @@ public abstract class OutboxTransactionBase(IDispatcher dispatcher) : IOutboxTra
                     await dispatcher
                         .EnqueueToScheduler(
                             message,
-                            DateTime.Parse(message.Origin.Headers[Headers.SentTime]!, CultureInfo.InvariantCulture)
+                            DateTime.Parse(message.Origin.Headers[Headers.SentTime]!, CultureInfo.InvariantCulture),
+                            null,
+                            cancellationToken
                         )
-                        .ConfigureAwait(false);
+                        .AnyContext();
                 }
                 else
                 {
-                    await dispatcher.EnqueueToPublish(message).ConfigureAwait(false);
+                    await dispatcher.EnqueueToPublish(message, cancellationToken).AnyContext();
                 }
             }
         }

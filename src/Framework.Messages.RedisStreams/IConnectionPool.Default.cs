@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
 internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
 {
@@ -13,11 +13,11 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
 
     private readonly ILoggerFactory _loggerFactory;
     private readonly SemaphoreSlim _poolLock = new(1);
-    private readonly CapRedisOptions _redisOptions;
+    private readonly MessagingRedisOptions _redisOptions;
     private bool _isDisposed;
     private bool _poolAlreadyConfigured;
 
-    public RedisConnectionPool(IOptions<CapRedisOptions> options, ILoggerFactory loggerFactory)
+    public RedisConnectionPool(IOptions<MessagingRedisOptions> options, ILoggerFactory loggerFactory)
     {
         _redisOptions = options.Value;
         _loggerFactory = loggerFactory;

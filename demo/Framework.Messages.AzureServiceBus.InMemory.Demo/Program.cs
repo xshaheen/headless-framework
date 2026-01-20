@@ -11,7 +11,7 @@ builder.Services.AddLogging(l => l.AddConsole());
 
 builder.Services.AddMessages(c =>
 {
-    c.Consumer<SampleSubscriber>().Topic("cap.sample.tests").Build();
+    c.Consumer<SampleSubscriber>().Topic("messaging.sample.tests").Build();
 
     c.UseInMemoryStorage();
     c.UseAzureServiceBus(asb =>

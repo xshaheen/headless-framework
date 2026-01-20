@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
 using System.Data.Common;
@@ -11,7 +11,6 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Messages;
 
@@ -61,14 +60,14 @@ public class SqlServerOutboxTransaction(IDispatcher dispatcher, DiagnosticProces
     {
         switch (DbTransaction)
         {
-            case NoopTransaction _:
-                await FlushAsync().ConfigureAwait(false);
+            case NoopTransaction:
+                await FlushAsync(cancellationToken).AnyContext();
                 break;
             case DbTransaction dbTransaction:
-                await dbTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await dbTransaction.CommitAsync(cancellationToken).AnyContext();
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await dbContextTransaction.CommitAsync(cancellationToken).AnyContext();
                 break;
         }
     }
@@ -91,19 +90,19 @@ public class SqlServerOutboxTransaction(IDispatcher dispatcher, DiagnosticProces
         switch (DbTransaction)
         {
             case DbTransaction dbTransaction:
-                await dbTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await dbTransaction.RollbackAsync(cancellationToken).AnyContext();
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await dbContextTransaction.RollbackAsync(cancellationToken).AnyContext();
                 break;
         }
     }
 }
 
-public static class CapTransactionExtensions
+public static class SqlServerTransactionExtensions
 {
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -115,11 +114,11 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        return database.BeginTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
+        return database.BeginEfOutboxTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -133,17 +132,11 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        var dbTransaction = database.BeginTransaction(isolationLevel);
-        publisher.Transaction = ActivatorUtilities.CreateInstance<SqlServerOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-        return new SqlServerEntityFrameworkDbTransaction(publisher.Transaction);
+        return database.BeginEfOutboxTransaction(isolationLevel, publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction async
+    /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -157,11 +150,16 @@ public static class CapTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return database.BeginTransactionAsync(IsolationLevel.Unspecified, publisher, autoCommit, cancellationToken);
+        return database.BeginEfOutboxTransactionAsync(
+            IsolationLevel.Unspecified,
+            publisher,
+            autoCommit,
+            cancellationToken
+        );
     }
 
     /// <summary>
-    /// Start the CAP transaction async
+    /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -169,7 +167,7 @@ public static class CapTransactionExtensions
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
-    public static async Task<IDbContextTransaction> BeginTransactionAsync(
+    public static Task<IDbContextTransaction> BeginTransactionAsync(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
         IOutboxPublisher publisher,
@@ -177,21 +175,11 @@ public static class CapTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var dbTransaction = await database
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .ConfigureAwait(false);
-
-        publisher.Transaction = ActivatorUtilities.CreateInstance<SqlServerOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return new SqlServerEntityFrameworkDbTransaction(publisher.Transaction);
+        return database.BeginEfOutboxTransactionAsync(isolationLevel, publisher, autoCommit, cancellationToken);
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -203,11 +191,11 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        return dbConnection.BeginTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
+        return (IDbTransaction)dbConnection.BeginOutboxTransaction<SqlServerOutboxTransaction>(publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
@@ -221,40 +209,35 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        if (dbConnection.State == ConnectionState.Closed)
-        {
-            dbConnection.Open();
-        }
-
-        var dbTransaction = dbConnection.BeginTransaction(isolationLevel);
-        publisher.Transaction = ActivatorUtilities.CreateInstance<SqlServerOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-        return dbTransaction;
+        return (IDbTransaction)
+            dbConnection.BeginOutboxTransaction<SqlServerOutboxTransaction>(isolationLevel, publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     /// <returns>The <see cref="IOutboxTransaction" /> object.</returns>
-    public static Task<IDbTransaction> BeginTransactionAsync(
+    public static async Task<IDbTransaction> BeginTransactionAsync(
         this IDbConnection dbConnection,
         IOutboxPublisher publisher,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
-        return dbConnection.BeginTransactionAsync(IsolationLevel.Unspecified, publisher, autoCommit, cancellationToken);
+        var transaction = await dbConnection.BeginOutboxTransactionAsync<SqlServerOutboxTransaction>(
+            publisher,
+            autoCommit,
+            cancellationToken
+        );
+        return (IDbTransaction)transaction;
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
@@ -270,21 +253,12 @@ public static class CapTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        if (dbConnection.State == ConnectionState.Closed)
-        {
-            await ((DbConnection)dbConnection).OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        var dbTransaction = await ((DbConnection)dbConnection)
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .ConfigureAwait(false);
-
-        publisher.Transaction = ActivatorUtilities.CreateInstance<SqlServerOutboxTransaction>(
-            publisher.ServiceProvider
+        var transaction = await dbConnection.BeginOutboxTransactionAsync<SqlServerOutboxTransaction>(
+            isolationLevel,
+            publisher,
+            autoCommit,
+            cancellationToken
         );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return dbTransaction;
+        return (IDbTransaction)transaction;
     }
 }

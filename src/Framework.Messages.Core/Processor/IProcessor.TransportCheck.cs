@@ -29,6 +29,6 @@ public class TransportCheckProcessor(ILogger<TransportCheckProcessor> logger, IC
             logger.LogDebug("Transport connection healthy!");
         }
 
-        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+        await context.WaitAsync(_waitingInterval).AnyContext();
     }
 }

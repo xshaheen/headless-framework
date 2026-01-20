@@ -38,7 +38,7 @@ public class SqlServerDataStorage(
         var sql =
             $"UPDATE {_lockName} SET [Instance]=@Instance,[LastLockTime]=@LastLockTime WHERE [Key]=@Key AND [LastLockTime] < @TTL;";
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
@@ -46,7 +46,7 @@ public class SqlServerDataStorage(
             new SqlParameter("@Key", key),
             new SqlParameter("@TTL", timeProvider.GetUtcNow().UtcDateTime.Subtract(ttl)),
         ];
-        var opResult = await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        var opResult = await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
         return opResult > 0;
     }
 
@@ -55,14 +55,14 @@ public class SqlServerDataStorage(
         var sql =
             $"UPDATE {_lockName} SET [Instance]='',[LastLockTime]=@LastLockTime WHERE [Key]=@Key AND [Instance]=@Instance;";
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
             new SqlParameter("@LastLockTime", DateTime.MinValue) { SqlDbType = SqlDbType.DateTime2 },
             new SqlParameter("@Key", key),
         ];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
     }
 
     public async Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
@@ -70,27 +70,27 @@ public class SqlServerDataStorage(
         var sql =
             $"UPDATE {_lockName} SET [LastLockTime]=DATEADD(s,{ttl.TotalSeconds},[LastLockTime]) WHERE [Key]=@Key AND [Instance]=@Instance;";
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         object[] sqlParams = [new SqlParameter("@Key", key), new SqlParameter("@Instance", instance)];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
     }
 
     public async Task ChangePublishStateToDelayedAsync(string[] ids)
     {
         var sql = $"UPDATE {_pubName} SET [StatusName]='{StatusName.Delayed}' WHERE [Id] IN ({string.Join(',', ids)});";
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
-        await connection.ExecuteNonQueryAsync(sql).ConfigureAwait(false);
+        await using var _ = connection;
+        await connection.ExecuteNonQueryAsync(sql).AnyContext();
     }
 
     public async Task ChangePublishStateAsync(MediumMessage message, StatusName state, object? transaction = null)
     {
-        await _ChangeMessageStateAsync(_pubName, message, state, transaction).ConfigureAwait(false);
+        await _ChangeMessageStateAsync(_pubName, message, state, transaction).AnyContext();
     }
 
     public async Task ChangeReceiveStateAsync(MediumMessage message, StatusName state)
     {
-        await _ChangeMessageStateAsync(_recName, message, state).ConfigureAwait(false);
+        await _ChangeMessageStateAsync(_recName, message, state).AnyContext();
     }
 
     public async Task<MediumMessage> StoreMessageAsync(string name, Message content, object? transaction = null)
@@ -123,8 +123,8 @@ public class SqlServerDataStorage(
         if (transaction == null)
         {
             var connection = new SqlConnection(options.Value.ConnectionString);
-            await using var _ = connection.ConfigureAwait(false);
-            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+            await using var _ = connection;
+            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
         }
         else
         {
@@ -135,7 +135,7 @@ public class SqlServerDataStorage(
             }
 
             var conn = dbTrans?.Connection;
-            await conn!.ExecuteNonQueryAsync(sql, dbTrans, sqlParams).ConfigureAwait(false);
+            await conn!.ExecuteNonQueryAsync(sql, dbTrans, sqlParams).AnyContext();
         }
 
         return message;
@@ -156,9 +156,11 @@ public class SqlServerDataStorage(
                 timeProvider.GetUtcNow().UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
             ),
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
+            new SqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
+            new SqlParameter("@Version", messagingOptions.Value.Version),
         ];
 
-        await _StoreReceivedMessage(sqlParams).ConfigureAwait(false);
+        await _StoreReceivedMessage(sqlParams).AnyContext();
     }
 
     public async Task<MediumMessage> StoreReceivedMessageAsync(string name, string group, Message message)
@@ -186,9 +188,11 @@ public class SqlServerDataStorage(
                 mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
             ),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
+            new SqlParameter("@MessageId", message.GetId()),
+            new SqlParameter("@Version", messagingOptions.Value.Version),
         ];
 
-        await _StoreReceivedMessage(sqlParams).ConfigureAwait(false);
+        await _StoreReceivedMessage(sqlParams).AnyContext();
 
         return mediumMessage;
     }
@@ -201,7 +205,7 @@ public class SqlServerDataStorage(
     )
     {
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
 
         return await connection
             .ExecuteNonQueryAsync(
@@ -216,7 +220,7 @@ public class SqlServerDataStorage(
                 new SqlParameter("@timeout", timeout),
                 new SqlParameter("@batchCount", batchCount)
             )
-            .ConfigureAwait(false);
+            .AnyContext();
     }
 
     public Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
@@ -234,8 +238,8 @@ public class SqlServerDataStorage(
         var sql = $"DELETE FROM {_recName} WHERE Id={id}";
 
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
-        var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).ConfigureAwait(false);
+        await using var _ = connection;
+        var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).AnyContext();
         return affectedRowCount;
     }
 
@@ -244,8 +248,8 @@ public class SqlServerDataStorage(
         var sql = $"DELETE FROM {_pubName} WHERE Id={id}";
 
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
-        var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).ConfigureAwait(false);
+        await using var _ = connection;
+        var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).AnyContext();
         return affectedRowCount;
     }
 
@@ -279,7 +283,7 @@ public class SqlServerDataStorage(
                 async reader =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    while (await reader.ReadAsync(token).AnyContext())
                     {
                         var content = reader.GetString(1);
 
@@ -301,7 +305,7 @@ public class SqlServerDataStorage(
                 transaction,
                 sqlParams
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         await scheduleTask(transaction, messageList);
 
@@ -335,25 +339,32 @@ public class SqlServerDataStorage(
         if (transaction is DbTransaction dbTransaction)
         {
             var connection = (SqlConnection)dbTransaction.Connection!;
-            await connection.ExecuteNonQueryAsync(sql, dbTransaction, sqlParams).ConfigureAwait(false);
+            await connection.ExecuteNonQueryAsync(sql, dbTransaction, sqlParams).AnyContext();
         }
         else
         {
             var connection = new SqlConnection(options.Value.ConnectionString);
-            await using var _ = connection.ConfigureAwait(false);
-            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+            await using var _ = connection;
+            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
         }
     }
 
     private async Task _StoreReceivedMessage(object[] sqlParams)
     {
-        var sql =
-            $"INSERT INTO {_recName}([Id],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName])"
-            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName);";
+        var sql = $"""
+            MERGE {_recName} AS target
+            USING (SELECT @MessageId AS MessageId, @Group AS [Group]) AS source
+            ON target.MessageId = source.MessageId AND target.[Group] = source.[Group]
+            WHEN MATCHED THEN
+                UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, Content = @Content
+            WHEN NOT MATCHED THEN
+                INSERT ([Id],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName],[MessageId])
+                VALUES (@Id,@Version,@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId);
+            """;
 
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).ConfigureAwait(false);
+        await using var _ = connection;
+        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
     }
 
     private async Task<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
@@ -375,14 +386,14 @@ public class SqlServerDataStorage(
         ];
 
         var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         var result = await connection
             .ExecuteReaderAsync(
                 sql,
                 async reader =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync().ConfigureAwait(false))
+                    while (await reader.ReadAsync().AnyContext())
                     {
                         var content = reader.GetString(1);
 
@@ -402,7 +413,7 @@ public class SqlServerDataStorage(
                 },
                 sqlParams: sqlParams
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return result;
     }

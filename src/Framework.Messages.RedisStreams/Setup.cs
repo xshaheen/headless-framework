@@ -4,7 +4,6 @@ using System.Net;
 using Framework.Checks;
 using Framework.Messages;
 using Framework.Messages.Configuration;
-using Framework.Messages.RedisStreams;
 using Framework.Messages.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -31,9 +30,9 @@ public static class MessagesRedisSetup
         }
 
         /// <summary>Use redis streams as the message transport.</summary>
-        /// <param name="configure">The CAP redis client options.</param>
+        /// <param name="configure">The redis client options.</param>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null"/>.</exception>
-        public MessagingOptions UseRedis(Action<CapRedisOptions> configure)
+        public MessagingOptions UseRedis(Action<MessagingRedisOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -43,9 +42,9 @@ public static class MessagesRedisSetup
         }
     }
 
-    private sealed class RedisOptionsExtension(Action<CapRedisOptions> configure) : IMessagesOptionsExtension
+    private sealed class RedisOptionsExtension(Action<MessagingRedisOptions> configure) : IMessagesOptionsExtension
     {
-        private readonly Action<CapRedisOptions> _configure =
+        private readonly Action<MessagingRedisOptions> _configure =
             configure ?? throw new ArgumentNullException(nameof(configure));
 
         public void AddServices(IServiceCollection services)
@@ -56,15 +55,15 @@ public static class MessagesRedisSetup
             services.AddSingleton<ITransport, RedisTransport>();
             services.AddSingleton<IRedisConnectionPool, RedisConnectionPool>();
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IPostConfigureOptions<CapRedisOptions>, CapRedisOptionsPostConfigure>()
+                ServiceDescriptor.Singleton<IPostConfigureOptions<MessagingRedisOptions>, MessagingRedisOptionsPostConfigure>()
             );
-            services.AddOptions<CapRedisOptions>().Configure(_configure);
+            services.AddOptions<MessagingRedisOptions>().Configure(_configure);
         }
     }
 
-    private sealed class CapRedisOptionsPostConfigure : IPostConfigureOptions<CapRedisOptions>
+    private sealed class MessagingRedisOptionsPostConfigure : IPostConfigureOptions<MessagingRedisOptions>
     {
-        public void PostConfigure(string? name, CapRedisOptions options)
+        public void PostConfigure(string? name, MessagingRedisOptions options)
         {
             options.Configuration ??= new ConfigurationOptions();
 

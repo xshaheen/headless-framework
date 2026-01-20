@@ -8,7 +8,6 @@
     <ProjectReference Include="..\..\src\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Messaging.Foundatio\Framework.Messaging.Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Framework.Messages.InMemoryQueue\Framework.Messages.InMemoryQueue.csproj" />
     <ProjectReference Include="..\..\src\Framework.Messages.InMemoryStorage\Framework.Messages.InMemoryStorage.csproj" />
     <ProjectReference Include="..\..\src\Framework.Permissions.Storage.EntityFramework\Framework.Permissions.Storage.EntityFramework.csproj" />

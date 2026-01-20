@@ -8,7 +8,7 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.PublishAsync("persistent://public/default/captesttopic", DateTime.Now);
+        await producer.PublishAsync("persistent://public/default/headlesstesttopic", DateTime.Now);
 
         return Ok();
     }

@@ -32,6 +32,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
     private readonly bool _isPublishConfirms;
     private readonly ILogger<ConnectionChannelPool> _logger;
     private readonly ConcurrentQueue<IChannel> _pool;
+    private readonly SemaphoreSlim _poolSemaphore;
     private IConnection? _connection;
 
     private int _count;
@@ -39,24 +40,25 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
 
     public ConnectionChannelPool(
         ILogger<ConnectionChannelPool> logger,
-        IOptions<MessagingOptions> capOptionsAccessor,
-        IOptions<RabbitMqOptions> optionsAccessor
+        IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
+        IOptions<RabbitMQOptions> optionsAccessor
     )
     {
         _logger = logger;
         _maxSize = _DefaultPoolSize;
         _pool = new ConcurrentQueue<IChannel>();
+        _poolSemaphore = new SemaphoreSlim(_DefaultPoolSize, _DefaultPoolSize);
 
-        var capOptions = capOptionsAccessor.Value;
+        var messagingOptions = messagingAccessorOptionsAccessor.Value;
         var options = optionsAccessor.Value;
 
         _connectionActivator = _CreateConnection(options);
         _isPublishConfirms = options.PublishConfirms;
 
         HostAddress = $"{options.HostName}:{options.Port}";
-        Exchange = string.Equals("v1", capOptions.Version, StringComparison.Ordinal)
+        Exchange = string.Equals("v1", messagingOptions.Version, StringComparison.Ordinal)
             ? options.ExchangeName
-            : $"{options.ExchangeName}.{capOptions.Version}";
+            : $"{options.ExchangeName}.{messagingOptions.Version}";
 
         _logger.LogDebug(
             "RabbitMQ configuration:'HostName:{OptionsHostName}, Port:{OptionsPort}, UserName:{OptionsUserName}, VirtualHost:{OptionsVirtualHost}, ExchangeName:{OptionsExchangeName}'",
@@ -68,22 +70,31 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
         );
     }
 
-    Task<IChannel> IConnectionChannelPool.Rent()
+    async Task<IChannel> IConnectionChannelPool.Rent()
     {
-        lock (_Lock)
-        {
-            while (_count > _maxSize)
-            {
-                Thread.SpinWait(1);
-            }
+        await _poolSemaphore.WaitAsync().AnyContext();
 
-            return Rent();
+        try
+        {
+            return await Rent().AnyContext();
+        }
+        catch
+        {
+            _poolSemaphore.Release();
+            throw;
         }
     }
 
     bool IConnectionChannelPool.Return(IChannel connection)
     {
-        return Return(connection);
+        try
+        {
+            return Return(connection);
+        }
+        finally
+        {
+            _poolSemaphore.Release();
+        }
     }
 
     public string HostAddress { get; }
@@ -115,9 +126,10 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
         }
 
         _connection?.Dispose();
+        _poolSemaphore.Dispose();
     }
 
-    private static Func<Task<IConnection>> _CreateConnection(RabbitMqOptions options)
+    private static Func<Task<IConnection>> _CreateConnection(RabbitMQOptions options)
     {
         var factory = new ConnectionFactory
         {
@@ -158,7 +170,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
         try
         {
             model = await GetConnection().CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false));
-            await model.ExchangeDeclareAsync(Exchange, RabbitMqOptions.ExchangeType, true);
+            await model.ExchangeDeclareAsync(Exchange, RabbitMQOptions.ExchangeType, true);
         }
         catch (Exception e)
         {

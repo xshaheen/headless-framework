@@ -128,8 +128,33 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
         // Resolve the consumer from the scope
         var consumer = scope.ServiceProvider.GetRequiredService<IConsume<TMessage>>();
 
-        // Invoke the compiled delegate
-        await invoker(consumer, context, cancellationToken).AnyContext();
+        // Call OnStartingAsync if consumer implements IConsumerLifecycle
+        if (consumer is IConsumerLifecycle lifecycle)
+        {
+            await lifecycle.OnStartingAsync(cancellationToken).AnyContext();
+        }
+
+        try
+        {
+            // Invoke the compiled delegate
+            await invoker(consumer, context, cancellationToken).AnyContext();
+        }
+        finally
+        {
+            // Call OnStoppingAsync if consumer implements IConsumerLifecycle
+            if (consumer is IConsumerLifecycle lifecycleCleanup)
+            {
+                try
+                {
+                    await lifecycleCleanup.OnStoppingAsync(cancellationToken).AnyContext();
+                }
+                catch
+                {
+                    // Suppress exceptions during cleanup to avoid masking original exceptions
+                    // Logging would happen in the consumer's OnStoppingAsync implementation
+                }
+            }
+        }
     }
 
     /// <summary>

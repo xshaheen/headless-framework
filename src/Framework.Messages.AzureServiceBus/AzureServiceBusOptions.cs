@@ -8,14 +8,14 @@ using Framework.Messages.Producer;
 namespace Framework.Messages;
 
 /// <summary>
-/// Provides programmatic configuration for the CAP Azure Service Bus project.
+/// Provides programmatic configuration for the messaging Azure Service Bus project.
 /// </summary>
 public class AzureServiceBusOptions
 {
     /// <summary>
-    /// TopicPath default value for CAP.
+    /// TopicPath default value for messaging.
     /// </summary>
-    public const string DefaultTopicPath = "cap";
+    public const string DefaultTopicPath = "messaging";
 
     /// <summary>
     /// Azure Service Bus Namespace connection string. Must not contain topic information.

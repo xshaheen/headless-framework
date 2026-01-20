@@ -16,7 +16,7 @@ builder.Services.AddMessages(x =>
 
     x.UseRedis(redis =>
     {
-        redis.Configuration = ConfigurationOptions.Parse("redis-node-0:6379,password=cap");
+        redis.Configuration = ConfigurationOptions.Parse("redis-node-0:6379,password=headless");
         redis.OnConsumeError = context => throw new InvalidOperationException("Redis consume error", context.Exception);
     });
 

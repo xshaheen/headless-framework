@@ -6,7 +6,7 @@
           <BBadge variant="warning" pill> {{ $t("SwitchedNode") }}: {{ nodeName }}</BBadge>
         </b-col>
         <b-col>
-          <BBadge variant="secondary" pill>{{ meta.cap?.name ?? "CAP" }}: {{ meta.cap?.version.substring(0, 5) }}</BBadge>
+          <BBadge variant="secondary" pill>{{ meta.messaging?.name ?? "Messaging" }}: {{ meta.messaging?.version.substring(0, 5) }}</BBadge>
         </b-col>
         <b-col>
           <BBadge variant="secondary" pill> {{ $t("Storage") }}: {{ meta.storage?.name }}</BBadge>
@@ -29,7 +29,7 @@ export default {
     };
   },
   async mounted() {
-    this.nodeName = this.getCookie("cap.node");
+    this.nodeName = this.getCookie("messaging.node");
     await axios.get("/meta").then(res => {
       this.meta = res.data;
     });

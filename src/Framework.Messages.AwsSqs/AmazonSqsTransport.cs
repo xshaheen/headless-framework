@@ -88,28 +88,7 @@ internal sealed class AmazonSqsTransport(ILogger<AmazonSqsTransport> logger, IOp
 
         try
         {
-            if (string.IsNullOrWhiteSpace(sqsOptions.Value.SnsServiceUrl))
-            {
-                _snsClient =
-                    sqsOptions.Value.Credentials != null
-                        ? new AmazonSimpleNotificationServiceClient(
-                            sqsOptions.Value.Credentials,
-                            sqsOptions.Value.Region
-                        )
-                        : new AmazonSimpleNotificationServiceClient(sqsOptions.Value.Region);
-            }
-            else
-            {
-                _snsClient =
-                    sqsOptions.Value.Credentials != null
-                        ? new AmazonSimpleNotificationServiceClient(
-                            sqsOptions.Value.Credentials,
-                            new AmazonSimpleNotificationServiceConfig { ServiceURL = sqsOptions.Value.SnsServiceUrl }
-                        )
-                        : new AmazonSimpleNotificationServiceClient(
-                            new AmazonSimpleNotificationServiceConfig { ServiceURL = sqsOptions.Value.SnsServiceUrl }
-                        );
-            }
+            _snsClient = AwsClientFactory.CreateSnsClient(sqsOptions.Value);
 
             if (_topicArnMaps == null)
             {

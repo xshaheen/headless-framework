@@ -6,14 +6,5 @@ namespace Framework.Domain;
 
 public interface IDistributedMessage
 {
-    Guid UniqueId { get; }
-
-    DateTimeOffset Timestamp { get; }
-
-    IDictionary<string, string> Headers { get; }
-}
-
-public interface IDistributedMessage<out T> : IDistributedMessage
-{
-    T Payload { get; }
+    string UniqueId { get; }
 }

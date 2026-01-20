@@ -97,7 +97,7 @@ services.AddPermissionsManagementCore(options =>
 ## Dependencies
 
 - `Framework.Permissions.Abstractions`
-- `Framework.Domains`
+- `Framework.Domain`
 - `Framework.Caching.Abstractions`
 - `Framework.ResourceLocks.Abstractions`
 

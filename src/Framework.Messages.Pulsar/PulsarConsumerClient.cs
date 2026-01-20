@@ -12,14 +12,14 @@ using Pulsar.Client.Common;
 namespace Framework.Messages;
 
 internal sealed class PulsarConsumerClient(
-    IOptions<PulsarOptions> options,
+    IOptions<MessagingPulsarOptions> options,
     PulsarClient client,
     string groupName,
     byte groupConcurrent
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private readonly PulsarOptions _pulsarOptions = options.Value;
+    private readonly MessagingPulsarOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -54,7 +54,7 @@ internal sealed class PulsarConsumerClient(
                 if (groupConcurrent > 0)
                 {
                     await _semaphore.WaitAsync(cancellationToken);
-                    _ = Task.Run(consumeAsync, cancellationToken).ConfigureAwait(false);
+                    _ = Task.Run(consumeAsync, cancellationToken).AnyContext();
                 }
                 else
                 {

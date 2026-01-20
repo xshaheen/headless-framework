@@ -13,7 +13,7 @@ public static class MessagesKafkaSetup
 {
     extension(MessagingOptions options)
     {
-        /// <summary>Configuration to use kafka in CAP.</summary>
+        /// <summary>Configuration for messaging.</summary>
         /// <param name="bootstrapServers">Kafka bootstrap server urls.</param>
         public MessagingOptions UseKafka(string bootstrapServers)
         {
@@ -23,9 +23,9 @@ public static class MessagesKafkaSetup
             });
         }
 
-        /// <summary>Configuration to use kafka in CAP.</summary>
+        /// <summary>Configuration for messaging.</summary>
         /// <param name="configure">Provides programmatic configuration for the kafka .</param>
-        public MessagingOptions UseKafka(Action<KafkaOptions> configure)
+        public MessagingOptions UseKafka(Action<MessagingKafkaOptions> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -35,7 +35,7 @@ public static class MessagesKafkaSetup
         }
     }
 
-    private sealed class KafkaMessagesOptionsExtension(Action<KafkaOptions> configure) : IMessagesOptionsExtension
+    private sealed class KafkaMessagesOptionsExtension(Action<MessagingKafkaOptions> configure) : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
@@ -45,7 +45,7 @@ public static class MessagesKafkaSetup
 
             services.AddSingleton<ITransport, KafkaTransport>();
             services.AddSingleton<IConsumerClientFactory, KafkaConsumerClientFactory>();
-            services.AddSingleton<IConnectionPool, ConnectionPool>();
+            services.AddSingleton<IKafkaConnectionPool, KafkaConnectionPool>();
         }
     }
 }

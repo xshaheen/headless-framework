@@ -4,9 +4,9 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
-public class AsyncLazyRedisConnection(CapRedisOptions redisOptions, ILogger<AsyncLazyRedisConnection> logger)
+public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogger<AsyncLazyRedisConnection> logger)
     : Lazy<Task<RedisConnection>>(() => _ConnectAsync(redisOptions, logger))
 {
     public RedisConnection? CreatedConnection => IsValueCreated ? Value.GetAwaiter().GetResult() : null;
@@ -17,7 +17,7 @@ public class AsyncLazyRedisConnection(CapRedisOptions redisOptions, ILogger<Asyn
     }
 
     private static async Task<RedisConnection> _ConnectAsync(
-        CapRedisOptions redisOptions,
+        MessagingRedisOptions redisOptions,
         ILogger<AsyncLazyRedisConnection> logger
     )
     {
@@ -31,7 +31,7 @@ public class AsyncLazyRedisConnection(CapRedisOptions redisOptions, ILogger<Asyn
         {
             connection = await ConnectionMultiplexer
                 .ConnectAsync(redisOptions.Configuration!, redisLogger)
-                .ConfigureAwait(false);
+                .AnyContext();
 
             connection.LogEvents(logger);
 
@@ -42,7 +42,7 @@ public class AsyncLazyRedisConnection(CapRedisOptions redisOptions, ILogger<Asyn
                     attempt
                 );
 
-                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(2)).AnyContext();
 
                 ++attempt;
             }

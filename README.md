@@ -56,7 +56,7 @@ dotnet add package Framework.Caching.Foundatio.Redis
 | [Framework.Base](src/Framework.Base/README.md) | Core primitives and utilities |
 | [Framework.BuildingBlocks](src/Framework.BuildingBlocks/README.md) | Domain-Driven Design building blocks |
 | [Framework.Checks](src/Framework.Checks/README.md) | Guard clauses and argument validation |
-| [Framework.Domains](src/Framework.Domains/README.md) | Domain entities and events |
+| [Framework.Domain](src/Framework.Domain/README.md) | Domain entities and events |
 | [Framework.Specifications](src/Framework.Specifications/README.md) | Specification pattern implementation |
 
 ### Blob Storage
@@ -129,9 +129,7 @@ dotnet add package Framework.Caching.Foundatio.Redis
 |---------|-------------|
 | [Framework.Messaging.Abstractions](src/Framework.Messaging.Abstractions/README.md) | Pub/sub messaging interfaces |
 | [Framework.Messaging.Foundatio](src/Framework.Messaging.Foundatio/README.md) | Foundatio messaging |
-| [Framework.Messaging.MassTransit](src/Framework.Messaging.MassTransit/README.md) | MassTransit messaging |
-| [Framework.Domains.DistributedMessagePublisher.Cap](src/Framework.Domains.DistributedMessagePublisher.Cap/README.md) | CAP distributed messaging |
-| [Framework.Domains.LocalMessagePublisher.DI](src/Framework.Domains.LocalMessagePublisher.DI/README.md) | In-process messaging |
+| [Framework.Domain.LocalPublisher](src/Framework.Domain.LocalPublisher/README.md) | In-process messaging |
 
 ### OpenAPI
 

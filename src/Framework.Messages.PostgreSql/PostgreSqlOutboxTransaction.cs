@@ -1,15 +1,13 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
-using Framework.Messages;
 using Framework.Messages.Transactions;
 using Framework.Messages.Transport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Framework.Messages;
 
@@ -39,14 +37,14 @@ public class PostgreSqlOutboxTransaction(IDispatcher dispatcher) : OutboxTransac
         switch (DbTransaction)
         {
             case DbTransaction dbTransaction:
-                await dbTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await dbTransaction.CommitAsync(cancellationToken).AnyContext();
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await dbContextTransaction.CommitAsync(cancellationToken).AnyContext();
                 break;
         }
 
-        await FlushAsync();
+        await FlushAsync(cancellationToken).AnyContext();
     }
 
     public override void Rollback()
@@ -71,19 +69,19 @@ public class PostgreSqlOutboxTransaction(IDispatcher dispatcher) : OutboxTransac
         switch (DbTransaction)
         {
             case DbTransaction dbTransaction:
-                await dbTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await dbTransaction.RollbackAsync(cancellationToken).AnyContext();
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await dbContextTransaction.RollbackAsync(cancellationToken).AnyContext();
                 break;
         }
     }
 }
 
-public static class CapTransactionExtensions
+public static class PostgreSqlTransactionExtensions
 {
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -94,11 +92,11 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        return dbConnection.BeginTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
+        return dbConnection.BeginOutboxTransaction<PostgreSqlOutboxTransaction>(publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -111,24 +109,11 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        if (dbConnection.State == ConnectionState.Closed)
-        {
-            dbConnection.Open();
-        }
-
-        var dbTransaction = dbConnection.BeginTransaction(isolationLevel);
-
-        publisher.Transaction = ActivatorUtilities.CreateInstance<PostgreSqlOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return publisher.Transaction;
+        return dbConnection.BeginOutboxTransaction<PostgreSqlOutboxTransaction>(isolationLevel, publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -141,18 +126,22 @@ public static class CapTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return dbConnection.BeginTransactionAsync(IsolationLevel.Unspecified, publisher, autoCommit, cancellationToken);
+        return dbConnection.BeginOutboxTransactionAsync<PostgreSqlOutboxTransaction>(
+            publisher,
+            autoCommit,
+            cancellationToken
+        );
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="isolationLevel"><see cref="IsolationLevel"/></param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
-    public static async ValueTask<IOutboxTransaction> BeginTransactionAsync(
+    public static ValueTask<IOutboxTransaction> BeginTransactionAsync(
         this IDbConnection dbConnection,
         IsolationLevel isolationLevel,
         IOutboxPublisher publisher,
@@ -160,24 +149,16 @@ public static class CapTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        if (dbConnection.State == ConnectionState.Closed)
-        {
-            await ((DbConnection)dbConnection).OpenAsync(cancellationToken);
-        }
-
-        var dbTransaction = await ((DbConnection)dbConnection).BeginTransactionAsync(isolationLevel, cancellationToken);
-
-        publisher.Transaction = ActivatorUtilities.CreateInstance<PostgreSqlOutboxTransaction>(
-            publisher.ServiceProvider
+        return dbConnection.BeginOutboxTransactionAsync<PostgreSqlOutboxTransaction>(
+            isolationLevel,
+            publisher,
+            autoCommit,
+            cancellationToken
         );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return publisher.Transaction;
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -189,11 +170,11 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        return database.BeginTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
+        return database.BeginEfOutboxTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction
+    /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -207,17 +188,11 @@ public static class CapTransactionExtensions
         bool autoCommit = false
     )
     {
-        var trans = database.BeginTransaction(isolationLevel);
-        publisher.Transaction = ActivatorUtilities.CreateInstance<PostgreSqlOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = trans;
-        publisher.Transaction.AutoCommit = autoCommit;
-        return new PostgreSqlEntityFrameworkDbTransaction(publisher.Transaction);
+        return database.BeginEfOutboxTransaction(isolationLevel, publisher, autoCommit);
     }
 
     /// <summary>
-    /// Start the CAP transaction async
+    /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -231,11 +206,16 @@ public static class CapTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return database.BeginTransactionAsync(IsolationLevel.Unspecified, publisher, autoCommit, cancellationToken);
+        return database.BeginEfOutboxTransactionAsync(
+            IsolationLevel.Unspecified,
+            publisher,
+            autoCommit,
+            cancellationToken
+        );
     }
 
     /// <summary>
-    /// Start the CAP transaction async
+    /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
     /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
@@ -243,7 +223,7 @@ public static class CapTransactionExtensions
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
-    public static async Task<IDbContextTransaction> BeginTransactionAsync(
+    public static Task<IDbContextTransaction> BeginTransactionAsync(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
         IOutboxPublisher publisher,
@@ -251,14 +231,6 @@ public static class CapTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var transaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken);
-
-        publisher.Transaction = ActivatorUtilities.CreateInstance<PostgreSqlOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = transaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return new PostgreSqlEntityFrameworkDbTransaction(publisher.Transaction);
+        return database.BeginEfOutboxTransactionAsync(isolationLevel, publisher, autoCommit, cancellationToken);
     }
 }

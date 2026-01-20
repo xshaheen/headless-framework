@@ -44,8 +44,52 @@ options.UseKafka(kafka =>
     kafka.Servers = "localhost:9092,localhost:9093";
     kafka.ConnectionPoolSize = 10;
     kafka.CustomHeaders = headers => headers.Add("app", "myapp");
+
+    // Kafka-specific producer settings for ordering
+    kafka.MainConfig["enable.idempotence"] = "true";
+    kafka.MainConfig["max.in.flight.requests.per.connection"] = "1"; // Strict ordering
 });
 ```
+
+## Message Ordering
+
+Kafka provides **strict FIFO ordering within partitions**:
+
+### Partition-Based Ordering
+
+Messages sent to the same partition are delivered in order. Use message keys to route related messages to the same partition:
+
+```csharp
+// Publish with partition key for ordered delivery
+await publisher.PublishAsync("orders.events", order,
+    headers: new Dictionary<string, string>
+    {
+        { "PartitionKey", order.CustomerId.ToString() }
+    });
+```
+
+### Configuration for Strict Ordering
+
+```csharp
+kafka.MainConfig["enable.idempotence"] = "true";
+kafka.MainConfig["max.in.flight.requests.per.connection"] = "1";
+kafka.MainConfig["acks"] = "all";
+```
+
+### Consumer Configuration
+
+Set `ConsumerThreadCount = 1` for sequential processing:
+
+```csharp
+options.ConsumerThreadCount = 1; // Sequential processing maintains partition order
+options.EnableSubscriberParallelExecute = false; // Disable parallel execution
+```
+
+### Ordering Guarantees
+
+- Messages with same partition key: Strictly ordered
+- Messages without partition key: Round-robin distribution, no ordering guarantee
+- Multiple consumer threads (`ConsumerThreadCount > 1`): May process out of order
 
 ## Dependencies
 

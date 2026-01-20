@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using DotNetCore.CAP.InMemoryStorage;
 using Framework.Messages;
 using Framework.Messages.Configuration;
 using Framework.Messages.Persistence;
@@ -25,7 +24,7 @@ public static class InMemoryStorageSetup
             services.AddSingleton(new MessageStorageMarkerService("InMemory"));
 
             services.AddTransient<IOutboxTransaction, InMemoryOutboxTransaction>();
-            services.AddSingleton<IDataStorage, InMemoryStorage>();
+            services.AddSingleton<IDataStorage, InMemoryDataStorage>();
             services.AddSingleton<IStorageInitializer, InMemoryStorageInitializer>();
         }
     }

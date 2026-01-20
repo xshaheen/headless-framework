@@ -9,6 +9,7 @@ using Framework.Messages.Exceptions;
 using Framework.Messages.Messages;
 using Framework.Messages.Monitoring;
 using Framework.Messages.Persistence;
+using Framework.Messages.Retry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,6 +30,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
     private readonly MessagingOptions _options;
     private readonly IServiceProvider _provider;
     private readonly TimeProvider _timeProvider;
+    private readonly IRetryBackoffStrategy _backoffStrategy;
 
     public SubscribeExecutor(
         ILogger<SubscribeExecutor> logger,
@@ -44,6 +46,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         Invoker = _provider.GetRequiredService<ISubscribeInvoker>();
         _timeProvider = _provider.GetRequiredService<TimeProvider>();
         _hostName = Helper.GetInstanceHostname();
+        _backoffStrategy = _options.RetryBackoffStrategy ?? new ExponentialBackoffStrategy();
     }
 
     private ISubscribeInvoker Invoker { get; }
@@ -61,7 +64,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
             {
                 var error =
                     $"Message (Name:{message.Origin.GetName()},Group:{message.Origin.GetGroup()}) can not be found subscriber."
-                    + $"{Environment.NewLine} see: https://github.com/dotnetcore/CAP/issues/63";
+                    + $"{Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
                 _logger.LogError(error);
 
                 _TracingError(
@@ -86,7 +89,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         do
         {
             var (shouldRetry, operateResult) = await _ExecuteWithoutRetryAsync(message, descriptor, cancellationToken)
-                .ConfigureAwait(false);
+                .AnyContext();
             result = operateResult;
             if (result.Equals(OperateResult.Success))
             {
@@ -115,11 +118,11 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
             var sp = Stopwatch.StartNew();
 
-            await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).ConfigureAwait(false);
+            await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).AnyContext();
 
             sp.Stop();
 
-            await _SetSuccessfulState(message).ConfigureAwait(false);
+            await _SetSuccessfulState(message).AnyContext();
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             _logger.ConsumerExecuted(
@@ -141,7 +144,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 ex
             );
 
-            return (await _SetFailedState(message, ex).ConfigureAwait(false), OperateResult.Failed(ex));
+            return (await _SetFailedState(message, ex).AnyContext(), OperateResult.Failed(ex));
         }
     }
 
@@ -159,18 +162,30 @@ internal class SubscribeExecutor : ISubscribeExecutor
             message.Retries = _options.FailedRetryCount; // not retry if SubscriberNotFoundException
         }
 
-        var needRetry = _UpdateMessageForRetry(message);
+        var needRetry = _UpdateMessageForRetry(message, ex);
 
         message.Origin.AddOrUpdateException(ex);
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
-        await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).ConfigureAwait(false);
+        await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).AnyContext();
 
         return needRetry;
     }
 
-    private bool _UpdateMessageForRetry(MediumMessage message)
+    private bool _UpdateMessageForRetry(MediumMessage message, Exception ex)
     {
+        // Check if exception is retryable
+        if (!_backoffStrategy.ShouldRetry(ex))
+        {
+            message.Retries = _options.FailedRetryCount; // Mark as exhausted
+            _logger.LogWarning(
+                "Message {MessageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
+                message.DbId,
+                ex.GetType().Name
+            );
+            return false;
+        }
+
         var retries = ++message.Retries;
 
         var retryCount = Math.Min(_options.FailedRetryCount, 3);
@@ -191,9 +206,9 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
                     _logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
                 }
-                catch (Exception ex)
+                catch (Exception callbackEx)
                 {
-                    _logger.ExecutedThresholdCallbackFailed(ex);
+                    _logger.ExecutedThresholdCallbackFailed(callbackEx);
                 }
             }
 
@@ -215,7 +230,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         var tracingTimestamp = _TracingBefore(message.Origin, descriptor.MethodInfo);
         try
         {
-            var ret = await Invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
+            var ret = await Invoker.InvokeAsync(consumerContext, cancellationToken).AnyContext();
 
             _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo);
 
@@ -235,7 +250,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 await _provider
                     .GetRequiredService<IOutboxPublisher>()
                     .PublishAsync(ret.CallbackName, ret.Result, ret.CallbackHeader, cancellationToken)
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
         }
         catch (OperationCanceledException)

@@ -8,7 +8,7 @@ using Headers = Framework.Messages.Messages.Headers;
 
 namespace Framework.Messages;
 
-public class RabbitMqBasicConsumer(
+public class RabbitMQBasicConsumer(
     IChannel channel,
     byte concurrent,
     string groupName,
@@ -38,15 +38,55 @@ public class RabbitMqBasicConsumer(
             // Copy of the body safe to use outside the RabbitMQ thread context
             ReadOnlyMemory<byte> safeBody = body.ToArray();
             _ = Task.Run(
-                    () => _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, safeBody),
+                    async () =>
+                    {
+                        try
+                        {
+                            await _Consume(
+                                    consumerTag,
+                                    deliveryTag,
+                                    redelivered,
+                                    exchange,
+                                    routingKey,
+                                    properties,
+                                    safeBody
+                                )
+                                .AnyContext();
+                        }
+                        catch (Exception ex)
+                        {
+                            var args = new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ConsumeError,
+                                Reason = $"Error consuming message: {ex.Message}",
+                            };
+
+                            logCallback(args);
+
+                            try
+                            {
+                                if (Channel.IsOpen)
+                                {
+                                    await Channel.BasicNackAsync(deliveryTag, false, requeue: true);
+                                }
+                            }
+                            catch
+                            {
+                                // Nack failure already logged via callback
+                            }
+                            finally
+                            {
+                                _semaphore.Release();
+                            }
+                        }
+                    },
                     cancellationToken
                 )
-                .ConfigureAwait(false);
+                .AnyContext();
         }
         else
         {
-            await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body)
-                .ConfigureAwait(false);
+            await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body).AnyContext();
         }
     }
 

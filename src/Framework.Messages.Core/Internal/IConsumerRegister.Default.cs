@@ -187,7 +187,7 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
                     if (!canFindSubscriber)
                     {
                         var error =
-                            $"Message can not be found subscriber. Name:{name}, Group:{group}. {Environment.NewLine} see: https://github.com/dotnetcore/CAP/issues/63";
+                            $"Message can not be found subscriber. Name:{name}, Group:{group}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
                         var ex = new SubscriberNotFoundException(error);
 
                         _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, ex);
@@ -195,7 +195,7 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
                         throw ex;
                     }
 
-                    var type = executor!.Parameters.FirstOrDefault(x => x.IsFromCap == false)?.ParameterType;
+                    var type = executor!.Parameters.FirstOrDefault(x => x.IsFromMessaging == false)?.ParameterType;
                     message = await _serializer.DeserializeAsync(transportMessage, type);
                     message.RemoveException();
                 }

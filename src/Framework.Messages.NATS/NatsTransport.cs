@@ -9,16 +9,15 @@ using NATS.Client.JetStream;
 
 namespace Framework.Messages;
 
-internal class NatsTransport(ILogger<NatsTransport> logger, IConnectionPool connectionPool) : ITransport
+internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool) : ITransport
 {
-    private readonly ILogger _logger = logger;
     private readonly JetStreamOptions _jetStreamOptions = JetStreamOptions
         .Builder()
         .WithPublishNoAck(false)
         .WithRequestTimeout(3000)
         .Build();
 
-    public BrokerAddress BrokerAddress => new BrokerAddress("NATS", connectionPool.ServersAddress);
+    public BrokerAddress BrokerAddress => new("NATS", connectionPool.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message)
     {
@@ -40,7 +39,7 @@ internal class NatsTransport(ILogger<NatsTransport> logger, IConnectionPool conn
 
             if (resp.Seq > 0)
             {
-                _logger.LogDebug($"NATS stream message [{message.GetName()}] has been published.");
+                logger.LogDebug("NATS stream message [{GetName}] has been published.", message.GetName());
 
                 return OperateResult.Success;
             }

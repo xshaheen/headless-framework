@@ -124,9 +124,7 @@ public class HelperTest
         var act = () => Helper.WildcardToRegex(longWildcard);
 
         // then
-        act.Should()
-            .Throw<ArgumentException>()
-            .WithMessage("Topic pattern exceeds maximum length of 200 characters*");
+        act.Should().Throw<ArgumentException>().WithMessage("Topic pattern exceeds maximum length of 200 characters*");
     }
 
     [Fact]
@@ -139,9 +137,7 @@ public class HelperTest
         var act = () => Helper.WildcardToRegex(manyWildcards);
 
         // then
-        act.Should()
-            .Throw<ArgumentException>()
-            .WithMessage("Topic pattern contains too many wildcards*");
+        act.Should().Throw<ArgumentException>().WithMessage("Topic pattern contains too many wildcards*");
     }
 
     [Theory]
@@ -149,14 +145,14 @@ public class HelperTest
     [InlineData("a#")]
     [InlineData("*")]
     [InlineData("#")]
-    public void should_use_non_greedy_quantifiers_to_prevent_redos(string wildcard)
+    public void should_use_possessive_quantifiers_to_prevent_redos(string wildcard)
     {
         // when
         var pattern = Helper.WildcardToRegex(wildcard);
 
         // then
-        // Non-greedy quantifiers end with '?' (e.g., +?, *?)
-        pattern.Should().Contain("+?", "non-greedy quantifiers prevent ReDoS attacks");
+        // Possessive quantifiers use atomic groups (?>...) which prevent backtracking entirely
+        pattern.Should().Contain("(?>", "possessive quantifiers (atomic groups) eliminate ReDoS attacks");
     }
 
     [Fact]
@@ -172,6 +168,27 @@ public class HelperTest
 
         // then - should not timeout
         act.Should().NotThrow<RegexMatchTimeoutException>();
+    }
+
+    [Fact]
+    public void should_handle_pathological_input_instantly_without_backtracking()
+    {
+        // given - pathological input designed to trigger catastrophic backtracking
+        // With non-greedy (+?), this would backtrack for seconds
+        // With possessive (?>+), this fails instantly (no backtracking)
+        var pattern = Helper.WildcardToRegex("foo.*.bar");
+        var pathologicalInput = "foo." + new string('a', 1000); // No 'bar' at end
+        var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
+
+        // when - measure time to ensure instant failure
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var matches = regex.IsMatch(pathologicalInput);
+        sw.Stop();
+
+        // then - possessive quantifier should fail instantly (< 100ms)
+        // Non-greedy would take ~1 second (timeout)
+        matches.Should().BeFalse();
+        sw.ElapsedMilliseconds.Should().BeLessThan(100, "possessive quantifiers prevent backtracking");
     }
 
     [Fact]

@@ -7,7 +7,7 @@ using RabbitMQ.Client.Events;
 namespace Framework.Messages;
 
 // ReSharper disable once InconsistentNaming
-public class RabbitMqOptions
+public class RabbitMQOptions
 {
     /// <summary>
     /// Default password (value: "guest").
@@ -28,9 +28,9 @@ public class RabbitMqOptions
     public const string DefaultVHost = "/";
 
     /// <summary>
-    /// Default exchange name (value: "cap.default.router").
+    /// Default exchange name (value: "messaging.default.router").
     /// </summary>
-    public const string DefaultExchangeName = "cap.default.router";
+    public const string DefaultExchangeName = "messaging.default.router";
 
     /// <summary> The topic exchange type. </summary>
     public const string ExchangeType = "topic";

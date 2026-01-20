@@ -8,7 +8,7 @@ export default {
     Dashboard: "Dashboard",
     Transport: "Transport",
     Storage: "Storage",
-    "CAP Dashboard": "CAP Dashboard",
+    "Messaging Dashboard": "Messaging Dashboard",
     Loading: "Loading",
     First: "First",
     Next: "Next",

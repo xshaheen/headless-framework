@@ -416,17 +416,15 @@ internal static class PrimitiveSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings(
-            [
-                data.Namespace,
-                "System",
-                "System.Text.Json",
-                "System.Text.Json.Serialization",
-                "System.Globalization",
-                "System.Text.Json.Serialization.Metadata",
-                AbstractionConstants.Namespace,
-            ]
-        );
+        builder.AppendUsings([
+            data.Namespace,
+            "System",
+            "System.Text.Json",
+            "System.Text.Json.Serialization",
+            "System.Globalization",
+            "System.Text.Json.Serialization.Metadata",
+            AbstractionConstants.Namespace,
+        ]);
 
         var converterName = data.UnderlyingType.ToString();
         var primitiveTypeIsValueType = data.PrimitiveTypeIsValueType;

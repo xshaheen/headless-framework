@@ -225,4 +225,143 @@ public class ConsumerRegistryTests
             return ValueTask.CompletedTask;
         }
     }
+
+    // Discovery API Tests
+
+    [Fact]
+    public void should_find_consumer_by_topic_without_group()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        var metadata = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", null, 2);
+        registry.Register(metadata);
+
+        // when
+        var found = registry.FindByTopic("test.topic");
+
+        // then
+        found.Should().NotBeNull();
+        found.Should().Be(metadata);
+    }
+
+    [Fact]
+    public void should_find_consumer_by_topic_and_group()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        var metadata1 = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", "group1", 2);
+        var metadata2 = new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "test.topic", "group2", 3);
+        registry.Register(metadata1);
+        registry.Register(metadata2);
+
+        // when
+        var found = registry.FindByTopic("test.topic", "group2");
+
+        // then
+        found.Should().NotBeNull();
+        found.Should().Be(metadata2);
+        found!.ConsumerType.Should().Be(typeof(OtherConsumer));
+    }
+
+    [Fact]
+    public void should_return_null_when_topic_not_found()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", null, 1));
+
+        // when
+        var found = registry.FindByTopic("nonexistent.topic");
+
+        // then
+        found.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_return_null_when_topic_found_but_group_not_found()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", "group1", 1));
+
+        // when
+        var found = registry.FindByTopic("test.topic", "group2");
+
+        // then
+        found.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_find_consumers_by_message_type_generic()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        var metadata1 = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1);
+        var metadata2 = new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "topic2", null, 2);
+        var metadata3 = new ConsumerMetadata(typeof(OtherMessage), typeof(OtherMessageConsumer), "topic3", null, 3);
+        registry.Register(metadata1);
+        registry.Register(metadata2);
+        registry.Register(metadata3);
+
+        // when
+        var found = registry.FindByMessageType<TestMessage>().ToList();
+
+        // then
+        found.Should().HaveCount(2);
+        found.Should().Contain(metadata1);
+        found.Should().Contain(metadata2);
+        found.Should().NotContain(metadata3);
+    }
+
+    [Fact]
+    public void should_find_consumers_by_message_type_non_generic()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        var metadata1 = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1);
+        var metadata2 = new ConsumerMetadata(typeof(OtherMessage), typeof(OtherMessageConsumer), "topic2", null, 2);
+        registry.Register(metadata1);
+        registry.Register(metadata2);
+
+        // when
+        var found = registry.FindByMessageType(typeof(OtherMessage)).ToList();
+
+        // then
+        found.Should().HaveCount(1);
+        found.Should().Contain(metadata2);
+    }
+
+    [Fact]
+    public void should_return_empty_when_message_type_not_found()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1));
+
+        // when
+        var found = registry.FindByMessageType<OtherMessage>().ToList();
+
+        // then
+        found.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_implement_iconsumer_registry()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+
+        // then
+        registry.Should().BeAssignableTo<IConsumerRegistry>();
+    }
+
+    private sealed class OtherMessage;
+
+    private sealed class OtherMessageConsumer : IConsume<OtherMessage>
+    {
+        public ValueTask Consume(ConsumeContext<OtherMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
 }

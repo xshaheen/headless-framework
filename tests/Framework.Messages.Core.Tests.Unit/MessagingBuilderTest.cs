@@ -20,12 +20,12 @@ public class MessagingBuilderTest
         count.Should().Be(1);
 
         var provider = services.BuildServiceProvider();
-        var capPublisher = provider.GetService<IOutboxPublisher>();
-        capPublisher.Should().NotBeNull();
+        var publisher = provider.GetService<IOutboxPublisher>();
+        publisher.Should().NotBeNull();
     }
 
     [Fact]
-    public void CanAddCapService()
+    public void CanAddMessagingService()
     {
         var services = new ServiceCollection();
         services.AddMessages(_ => { });
@@ -41,8 +41,8 @@ public class MessagingBuilderTest
         var services = new ServiceCollection();
         services.AddMessages(_ => { });
         var builder = services.BuildServiceProvider();
-        var capOptions = builder.GetRequiredService<IOptions<MessagingOptions>>().Value;
-        capOptions.Should().NotBeNull();
+        var messagingOptions = builder.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        messagingOptions.Should().NotBeNull();
     }
 
     private sealed class MyProducerService : IOutboxPublisher
@@ -109,6 +109,72 @@ public class MessagingBuilderTest
         }
 
         public void PublishDelay<T>(TimeSpan delayTime, string name, T? value, string? callbackName = null)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task PublishAsync<T>(
+            T? contentObj,
+            string? callbackName = null,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task PublishAsync<T>(
+            T? contentObj,
+            IDictionary<string, string?> headers,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Publish<T>(T? contentObj, string? callbackName = null)
+            where T : class
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Publish<T>(T? contentObj, IDictionary<string, string?> headers)
+            where T : class
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task PublishDelayAsync<T>(
+            TimeSpan delayTime,
+            T? contentObj,
+            IDictionary<string, string?> headers,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task PublishDelayAsync<T>(
+            TimeSpan delayTime,
+            T? contentObj,
+            string? callbackName = null,
+            CancellationToken cancellationToken = default
+        )
+            where T : class
+        {
+            throw new NotImplementedException();
+        }
+
+        public void PublishDelay<T>(TimeSpan delayTime, T? contentObj, IDictionary<string, string?> headers)
+            where T : class
+        {
+            throw new NotImplementedException();
+        }
+
+        public void PublishDelay<T>(TimeSpan delayTime, T? contentObj, string? callbackName = null)
+            where T : class
         {
             throw new NotImplementedException();
         }

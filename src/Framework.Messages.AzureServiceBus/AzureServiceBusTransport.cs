@@ -74,7 +74,7 @@ internal class AzureServiceBusTransport(
                 message.ApplicationProperties.Add(header.Key, header.Value);
             }
 
-            await sender.SendMessageAsync(message).ConfigureAwait(false);
+            await sender.SendMessageAsync(message).AnyContext();
 
             _logger.LogDebug("Azure Service Bus message [{GetName}] has been published.", transportMessage.GetName());
 

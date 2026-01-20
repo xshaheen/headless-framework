@@ -1,7 +1,7 @@
 ﻿using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
-using Framework.Messaging;
+using Framework.Messages;
 using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.Serializer;

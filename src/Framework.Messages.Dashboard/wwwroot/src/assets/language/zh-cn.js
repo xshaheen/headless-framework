@@ -6,7 +6,7 @@ export default {
     Subscriber: "订阅者",
     Nodes: "节点",
     Dashboard: "仪表板",
-    "CAP Dashboard": "CAP 仪表板",
+    "Messaging Dashboard": "Messaging 仪表板",
     Loading: "加载中",
     First: "首页",
     Next: "下一页",

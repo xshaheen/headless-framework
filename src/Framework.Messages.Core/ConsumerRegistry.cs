@@ -17,7 +17,7 @@ namespace Framework.Messages;
 /// This freeze-on-first-read pattern ensures zero-allocation reads at runtime.
 /// </para>
 /// </remarks>
-internal sealed class ConsumerRegistry
+public sealed class ConsumerRegistry : IConsumerRegistry
 {
     private List<ConsumerMetadata>? _consumers = [];
     private IReadOnlyList<ConsumerMetadata>? _frozen;
@@ -78,5 +78,46 @@ internal sealed class ConsumerRegistry
         }
 
         return _frozen;
+    }
+
+    /// <summary>
+    /// Finds a consumer by topic name and optional group.
+    /// </summary>
+    /// <param name="topic">The topic name to search for.</param>
+    /// <param name="group">Optional consumer group name. If null, returns first match by topic only.</param>
+    /// <returns>
+    /// The matching consumer metadata, or null if no consumer is registered for the topic/group combination.
+    /// </returns>
+    public ConsumerMetadata? FindByTopic(string topic, string? group = null)
+    {
+        var all = GetAll();
+
+        if (group is null)
+        {
+            return all.FirstOrDefault(m => m.Topic == topic);
+        }
+
+        return all.FirstOrDefault(m => m.Topic == topic && m.Group == group);
+    }
+
+    /// <summary>
+    /// Finds all consumers that handle a specific message type.
+    /// </summary>
+    /// <typeparam name="TMessage">The message type to search for.</typeparam>
+    /// <returns>An enumerable of consumer metadata for all consumers handling the specified message type.</returns>
+    public IEnumerable<ConsumerMetadata> FindByMessageType<TMessage>()
+    {
+        return FindByMessageType(typeof(TMessage));
+    }
+
+    /// <summary>
+    /// Finds all consumers that handle a specific message type.
+    /// </summary>
+    /// <param name="messageType">The message type to search for.</param>
+    /// <returns>An enumerable of consumer metadata for all consumers handling the specified message type.</returns>
+    public IEnumerable<ConsumerMetadata> FindByMessageType(Type messageType)
+    {
+        var all = GetAll();
+        return all.Where(m => m.MessageType == messageType);
     }
 }

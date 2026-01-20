@@ -58,6 +58,6 @@ options.UseDashboard(dashboard =>
 
 ## Side Effects
 
-- Exposes web endpoint at configured path (default: `/cap`)
+- Exposes web endpoint at configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
 - Requires authentication configuration for production use

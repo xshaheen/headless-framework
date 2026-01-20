@@ -64,7 +64,7 @@ No configuration required. Implementations are registered by `Framework.Api` or 
 
 - `Framework.Checks`
 - `Framework.Base`
-- `Framework.Domains`
+- `Framework.Domain`
 - `Framework.Serializer.Json`
 - `Framework.Generator.Primitives` (source generator)
 - `FluentValidation`

@@ -68,7 +68,7 @@ var allProducts = await dbContext.Products
 
 ## Dependencies
 
-- `Framework.Domains`
+- `Framework.Domain`
 - `Framework.BuildingBlocks`
 - `Microsoft.EntityFrameworkCore`
 

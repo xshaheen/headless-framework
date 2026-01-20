@@ -67,6 +67,7 @@ public static class Setup
         Argument.IsNotNull(configure);
 
         var registry = new ConsumerRegistry();
+        services.TryAddSingleton<IConsumerRegistry>(registry);
         services.TryAddSingleton(registry);
         var options = new MessagingOptions { Services = services, Registry = registry };
 

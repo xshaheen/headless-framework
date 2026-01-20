@@ -44,7 +44,7 @@ internal class SqlServerMonitoringApi(
             """;
 
         var connection = new SqlConnection(_options.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
 
         var statistics = await connection
             .ExecuteReaderAsync(
@@ -65,7 +65,7 @@ internal class SqlServerMonitoringApi(
                     return statisticsDto;
                 }
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return statistics;
     }
@@ -73,13 +73,13 @@ internal class SqlServerMonitoringApi(
     public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(MessageType type)
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).ConfigureAwait(false);
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).AnyContext();
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(MessageType type)
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).ConfigureAwait(false);
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).AnyContext();
     }
 
     public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(MessageQuery query)
@@ -123,7 +123,7 @@ internal class SqlServerMonitoringApi(
         ];
 
         var connection = new SqlConnection(_options.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
 
         var count = await connection
             .ExecuteScalarAsync<int>(
@@ -133,7 +133,7 @@ internal class SqlServerMonitoringApi(
                 new SqlParameter("@Name", query.Name ?? string.Empty),
                 new SqlParameter("@Content", $"%{query.Content}%")
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         var items = await connection
             .ExecuteReaderAsync(
@@ -142,7 +142,7 @@ internal class SqlServerMonitoringApi(
                 {
                     var messages = new List<MessageView>();
 
-                    while (await reader.ReadAsync().ConfigureAwait(false))
+                    while (await reader.ReadAsync().AnyContext())
                     {
                         var index = 0;
                         messages.Add(
@@ -165,7 +165,7 @@ internal class SqlServerMonitoringApi(
                 },
                 sqlParams: sqlParams
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return new(items, query.CurrentPage, query.PageSize, count);
     }
@@ -192,22 +192,22 @@ internal class SqlServerMonitoringApi(
 
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(long id)
     {
-        return await _GetMessageAsync(_pubName, id).ConfigureAwait(false);
+        return await _GetMessageAsync(_pubName, id).AnyContext();
     }
 
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(long id)
     {
-        return await _GetMessageAsync(_recName, id).ConfigureAwait(false);
+        return await _GetMessageAsync(_recName, id).AnyContext();
     }
 
     private async ValueTask<int> _GetNumberOfMessage(string tableName, string statusName)
     {
         var sqlQuery = $"SELECT COUNT(Id) FROM {tableName} WITH (NOLOCK) WHERE StatusName = @StatusName";
         var connection = new SqlConnection(_options.ConnectionString);
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
         return await connection
             .ExecuteScalarAsync<int>(sqlQuery, new SqlParameter("@StatusName", statusName))
-            .ConfigureAwait(false);
+            .AnyContext();
     }
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(string tableName, string statusName)
@@ -263,7 +263,7 @@ internal class SqlServerMonitoringApi(
 
         Dictionary<string, int> valuesMap;
         var connection = new SqlConnection(_options.ConnectionString);
-        await using (connection.ConfigureAwait(false))
+        await using (connection)
         {
             valuesMap = await connection
                 .ExecuteReaderAsync(
@@ -272,7 +272,7 @@ internal class SqlServerMonitoringApi(
                     {
                         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
 
-                        while (await reader.ReadAsync().ConfigureAwait(false))
+                        while (await reader.ReadAsync().AnyContext())
                         {
                             dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                         }
@@ -281,7 +281,7 @@ internal class SqlServerMonitoringApi(
                     },
                     sqlParams: sqlParams
                 )
-                .ConfigureAwait(false);
+                .AnyContext();
         }
 
         foreach (var key in keyMaps.Keys)
@@ -306,7 +306,7 @@ internal class SqlServerMonitoringApi(
 
         var connection = new SqlConnection(_options.ConnectionString);
 
-        await using var _ = connection.ConfigureAwait(false);
+        await using var _ = connection;
 
         var mediumMessage = await connection
             .ExecuteReaderAsync(
@@ -315,7 +315,7 @@ internal class SqlServerMonitoringApi(
                 {
                     MediumMessage? message = null;
 
-                    while (await reader.ReadAsync().ConfigureAwait(false))
+                    while (await reader.ReadAsync().AnyContext())
                     {
                         message = new MediumMessage
                         {
@@ -331,7 +331,7 @@ internal class SqlServerMonitoringApi(
                     return message;
                 }
             )
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return mediumMessage;
     }

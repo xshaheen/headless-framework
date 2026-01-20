@@ -44,10 +44,53 @@ options.UseAzureServiceBus(asb =>
 {
     asb.ConnectionString = "connection_string";
     asb.TopicPath = "myapp-topic";
-    asb.EnableSessions = true;
+    asb.EnableSessions = true; // Required for ordered delivery
     asb.ManagementTokenProvider = tokenProvider;
 });
 ```
+
+## Message Ordering
+
+Azure Service Bus provides **FIFO ordering when sessions are enabled**:
+
+### Session-Based Ordering
+
+Enable sessions for guaranteed message ordering within a session:
+
+```csharp
+options.UseAzureServiceBus(asb =>
+{
+    asb.EnableSessions = true;
+    asb.MaxConcurrentSessions = 8; // Concurrent sessions for throughput
+    asb.SessionIdleTimeout = TimeSpan.FromMinutes(5);
+});
+```
+
+### Publishing Ordered Messages
+
+All messages require a session ID when sessions are enabled:
+
+```csharp
+// Publish with session ID for ordered delivery
+await publisher.PublishAsync("orders.events", order,
+    headers: new Dictionary<string, string>
+    {
+        { AzureServiceBusHeaders.SessionId, order.CustomerId.ToString() }
+    });
+```
+
+### Consumer Configuration
+
+```csharp
+options.ConsumerThreadCount = 1; // Recommended for strict ordering
+options.EnableSubscriberParallelExecute = false;
+```
+
+### Ordering Guarantees
+
+- **Sessions enabled + same session ID**: Strict FIFO ordering
+- **Sessions disabled**: No ordering guarantees
+- **Multiple concurrent sessions**: Each session is ordered independently
 
 ## Dependencies
 

@@ -6,6 +6,7 @@ using Framework.Messages.Diagnostics;
 using Framework.Messages.Messages;
 using Framework.Messages.Monitoring;
 using Framework.Messages.Persistence;
+using Framework.Messages.Retry;
 using Framework.Messages.Serialization;
 using Framework.Messages.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,10 +24,15 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
     private readonly IDataStorage _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
     private readonly ILogger _logger = logger;
-    private readonly IOptions<MessagingOptions> _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>();
+    private readonly IOptions<MessagingOptions> _options = serviceProvider.GetRequiredService<
+        IOptions<MessagingOptions>
+    >();
     private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
     private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+    private readonly IRetryBackoffStrategy _backoffStrategy =
+        serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value.RetryBackoffStrategy
+        ?? new ExponentialBackoffStrategy();
 
     public async Task<OperateResult> SendAsync(MediumMessage message)
     {
@@ -34,7 +40,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
         OperateResult result;
         do
         {
-            (retry, result) = await _SendWithoutRetryAsync(message).ConfigureAwait(false);
+            (retry, result) = await _SendWithoutRetryAsync(message).AnyContext();
             if (result.Equals(OperateResult.Success))
             {
                 return result;
@@ -46,15 +52,15 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
     private async Task<(bool, OperateResult)> _SendWithoutRetryAsync(MediumMessage message)
     {
-        var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
+        var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).AnyContext();
 
         var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress);
 
-        var result = await _transport.SendAsync(transportMsg).ConfigureAwait(false);
+        var result = await _transport.SendAsync(transportMsg).AnyContext();
 
         if (result.Succeeded)
         {
-            await _SetSuccessfulState(message).ConfigureAwait(false);
+            await _SetSuccessfulState(message).AnyContext();
 
             _TracingAfter(tracingTimestamp, transportMsg, _transport.BrokerAddress);
 
@@ -63,7 +69,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
         _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result);
 
-        var needRetry = await _SetFailedState(message, result.Exception!).ConfigureAwait(false);
+        var needRetry = await _SetFailedState(message, result.Exception!).AnyContext();
 
         return (needRetry, OperateResult.Failed(result.Exception!));
     }
@@ -71,23 +77,35 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
     private async Task _SetSuccessfulState(MediumMessage message)
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.Value.SucceedMessageExpiredAfter);
-        await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
+        await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).AnyContext();
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
     {
-        var needRetry = _UpdateMessageForRetry(message);
+        var needRetry = _UpdateMessageForRetry(message, ex);
 
         message.Origin.AddOrUpdateException(ex);
         message.ExpiresAt = message.Added.AddSeconds(_options.Value.FailedMessageExpiredAfter);
 
-        await _dataStorage.ChangePublishStateAsync(message, StatusName.Failed).ConfigureAwait(false);
+        await _dataStorage.ChangePublishStateAsync(message, StatusName.Failed).AnyContext();
 
         return needRetry;
     }
 
-    private bool _UpdateMessageForRetry(MediumMessage message)
+    private bool _UpdateMessageForRetry(MediumMessage message, Exception ex)
     {
+        // Check if exception is retryable
+        if (!_backoffStrategy.ShouldRetry(ex))
+        {
+            message.Retries = _options.Value.FailedRetryCount; // Mark as exhausted
+            _logger.LogWarning(
+                "Message {MessageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
+                message.DbId,
+                ex.GetType().Name
+            );
+            return false;
+        }
+
         var retries = ++message.Retries;
         var retryCount = Math.Min(_options.Value.FailedRetryCount, 3);
         if (retries >= retryCount)
@@ -107,9 +125,9 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
                     _logger.SenderAfterThreshold(message.DbId, _options.Value.FailedRetryCount);
                 }
-                catch (Exception ex)
+                catch (Exception callbackEx)
                 {
-                    _logger.ExecutedThresholdCallbackFailed(ex);
+                    _logger.ExecutedThresholdCallbackFailed(callbackEx);
                 }
             }
 

@@ -2,7 +2,7 @@
 
 using StackExchange.Redis;
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
 internal interface IRedisConnectionPool
 {

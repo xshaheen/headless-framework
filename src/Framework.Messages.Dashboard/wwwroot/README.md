@@ -6,7 +6,7 @@ The dashboard project uses vue 2 to build with vite, and the UI uses bootstrap 4
 
 ### Install dependent packages
 
-> cd src\DotNetCore.CAP.Dashboard\wwwroot
+> cd src\Framework.Messaging.Dashboard\wwwroot
 
 ```sh
 npm install
@@ -19,7 +19,7 @@ Update the `target` in `vite.config.js` of development to specify the backend se
 ```
   server: {
     proxy: {
-      '^/cap/api': {
+      '^/messaging/api': {
         target: 'http://localhost:5000',  //backend
         changeOrigin: true
       }

@@ -1,10 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Messages.Internal;
 using Framework.Messages.Messages;
 using StackExchange.Redis;
 
-namespace Framework.Messages.RedisStreams;
+namespace Framework.Messages;
 
 internal static class RedisMessage
 {

@@ -9,7 +9,7 @@ namespace Framework.Settings.Values;
 public sealed class SettingValueCacheItemInvalidator(ICache<SettingValueCacheItem> cache)
     : ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>
 {
-    public async Task HandleAsync(
+    public async ValueTask HandleAsync(
         EntityChangedEventData<SettingValueRecord> message,
         CancellationToken cancellationToken = default
     )

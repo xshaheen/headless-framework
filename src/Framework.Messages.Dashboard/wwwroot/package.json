@@ -1,13 +1,13 @@
 {
   "name": "headless-dashboard",
   "version": "8.0.0",
-  "description": "Dashboard for CAP",
-  "author": "Savorboard, NCC",
-  "homepage": "https://github.com/dotnetcore/CAP",
+  "description": "Dashboard for Headless Messaging",
+  "author": "Mahmoud Shaheen",
+  "homepage": "https://github.com/xshaheen/headless-framework",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dotnetcore/CAP.git"
+    "url": "git+https://github.com/xshaheen/headless-framework.git"
   },
   "scripts": {
     "dev": "vite",

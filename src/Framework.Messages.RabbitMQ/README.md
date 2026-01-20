@@ -59,6 +59,33 @@ options.UseRabbitMQ(rmq =>
 });
 ```
 
+## Message Ordering
+
+RabbitMQ provides **limited ordering guarantees**:
+
+### Single Consumer Ordering
+
+Messages are delivered in FIFO order to a single consumer on a single channel:
+
+```csharp
+// Configure for sequential processing
+options.ConsumerThreadCount = 1; // Single consumer thread
+options.EnableSubscriberParallelExecute = false; // No parallel execution
+```
+
+### Ordering Guarantees
+
+- **Single consumer**: Messages arrive in publication order
+- **Multiple consumers (`ConsumerThreadCount > 1`)**: No ordering guarantee; concurrent processing
+- **Priority queues**: Higher priority messages delivered first, breaking FIFO order
+- **Redelivery after failure**: Failed messages may be redelivered out of order
+
+### Recommendations
+
+- For strict ordering: Use `ConsumerThreadCount = 1`
+- For high throughput: Design consumers to handle out-of-order messages
+- Consider Kafka or Azure Service Bus with sessions for stronger ordering guarantees
+
 ## Dependencies
 
 - `Framework.Messages.Core`

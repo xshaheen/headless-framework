@@ -3,7 +3,7 @@
 namespace Framework.Messages.Messages;
 
 /// <summary>
-/// Specifies the type of message in the CAP system.
+/// Specifies the type of message in the messaging system.
 /// </summary>
 public enum MessageType
 {

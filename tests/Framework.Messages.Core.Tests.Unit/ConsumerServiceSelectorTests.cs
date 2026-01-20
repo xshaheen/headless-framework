@@ -269,10 +269,8 @@ public class ConsumerServiceSelectorTests
         descriptor.Parameters.Should().HaveCount(2);
         descriptor
             .Parameters.Should()
-            .Contain(p => p.ParameterType == typeof(ConsumeContext<SelectorTestMessage>) && p.IsFromCap == false);
-        descriptor
-            .Parameters.Should()
-            .Contain(p => p.ParameterType == typeof(CancellationToken) && p.IsFromCap == true);
+            .Contain(p => p.ParameterType == typeof(ConsumeContext<SelectorTestMessage>) && !p.IsFromMessaging);
+        descriptor.Parameters.Should().Contain(p => p.ParameterType == typeof(CancellationToken) && p.IsFromMessaging);
     }
 
     [Fact]

@@ -9,15 +9,21 @@ using Framework.Checks;
 using Framework.Messages.Internal;
 using Framework.Messages.Messages;
 using Framework.Messages.Transport;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Framework.Messages;
 
-internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurrent, IOptions<AmazonSqsOptions> options)
-    : IConsumerClient
+internal sealed class AmazonSqsConsumerClient(
+    string groupId,
+    byte groupConcurrent,
+    IOptions<AmazonSqsOptions> options,
+    ILogger<AmazonSqsConsumerClient> logger
+) : IConsumerClient
 {
     private static readonly Lock _ConnectionLock = new();
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
+    private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private string _queueUrl = string.Empty;
 
@@ -34,19 +40,19 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
     {
         Argument.IsNotNull(topicNames);
 
-        await _ConnectAsync(true, false).ConfigureAwait(false);
+        await _ConnectAsync(true, false).AnyContext();
 
         var topicArns = new List<string>();
         foreach (var topic in topicNames)
         {
             var createTopicRequest = new CreateTopicRequest(topic.NormalizeForAws());
 
-            var createTopicResponse = await _snsClient!.CreateTopicAsync(createTopicRequest).ConfigureAwait(false);
+            var createTopicResponse = await _snsClient!.CreateTopicAsync(createTopicRequest).AnyContext();
 
             topicArns.Add(createTopicResponse.TopicArn);
         }
 
-        await _GenerateSqsAccessPolicyAsync(topicArns).ConfigureAwait(false);
+        await _GenerateSqsAccessPolicyAsync(topicArns).AnyContext();
 
         return topicArns;
     }
@@ -55,50 +61,97 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
     {
         Argument.IsNotNull(topics);
 
-        await _ConnectAsync().ConfigureAwait(false);
+        await _ConnectAsync().AnyContext();
 
-        await _SubscribeToTopics(topics).ConfigureAwait(false);
+        await _SubscribeToTopics(topics).AnyContext();
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await _ConnectAsync().ConfigureAwait(false);
+        await _ConnectAsync().AnyContext();
 
         var request = new ReceiveMessageRequest(_queueUrl) { WaitTimeSeconds = 5, MaxNumberOfMessages = 1 };
 
         while (true)
         {
-            var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
+            var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).AnyContext();
 
             if (response.Messages.Count == 1)
             {
                 if (groupConcurrent > 0)
                 {
-                    await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    _ = Task.Run(consumeAsync, cancellationToken).ConfigureAwait(false);
+                    await _semaphore.WaitAsync(cancellationToken).AnyContext();
+                    _ = Task.Run(
+                            async () =>
+                            {
+                                try
+                                {
+                                    await consumeAsync().AnyContext();
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
+                                    _semaphore.Release();
+
+                                    try
+                                    {
+                                        await RejectAsync(response.Messages[0].ReceiptHandle).AnyContext();
+                                    }
+                                    catch (Exception rejectEx)
+                                    {
+                                        _logger.LogError(
+                                            rejectEx,
+                                            "Failed to reject message after consume error for group {GroupId}",
+                                            groupId
+                                        );
+                                    }
+                                }
+                            },
+                            cancellationToken
+                        )
+                        .AnyContext();
                 }
                 else
                 {
-                    await consumeAsync().ConfigureAwait(false);
+                    await consumeAsync().AnyContext();
                 }
 
-                Task consumeAsync()
+                async Task consumeAsync()
                 {
-                    var messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(response.Messages[0].Body);
+                    var receiptHandle = response.Messages[0].ReceiptHandle;
 
-                    var header = messageObj!.MessageAttributes.ToDictionary(
-                        x => x.Key,
-                        x => x.Value.Value,
-                        StringComparer.Ordinal
-                    );
-                    var body = messageObj.Message;
-
-                    var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
+                    try
                     {
-                        Headers = { [Headers.Group] = groupId },
-                    };
+                        var messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(response.Messages[0].Body);
 
-                    return OnMessageCallback!(message, response.Messages[0].ReceiptHandle);
+                        if (messageObj?.MessageAttributes == null)
+                        {
+                            _logger.LogError(
+                                "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
+                            );
+                            await RejectAsync(receiptHandle).AnyContext();
+                            return;
+                        }
+
+                        var header = messageObj.MessageAttributes.ToDictionary<
+                            KeyValuePair<string, SqsReceivedMessageAttributes>,
+                            string,
+                            string?
+                        >(x => x.Key, x => x.Value?.Value ?? string.Empty, StringComparer.Ordinal);
+                        var body = messageObj.Message;
+
+                        var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
+                        {
+                            Headers = { [Headers.Group] = groupId },
+                        };
+
+                        await OnMessageCallback!(message, receiptHandle).AnyContext();
+                    }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
+                        await RejectAsync(receiptHandle).AnyContext();
+                    }
                 }
             }
             else
@@ -113,7 +166,7 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
     {
         try
         {
-            await _sqsClient!.DeleteMessageAsync(_queueUrl, (string)sender!).ConfigureAwait(false);
+            await _sqsClient!.DeleteMessageAsync(_queueUrl, (string)sender!).AnyContext();
             _semaphore.Release();
         }
         catch (ReceiptHandleIsInvalidException ex)
@@ -126,7 +179,7 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
     {
         try
         {
-            await _sqsClient!.ChangeMessageVisibilityAsync(_queueUrl, (string)sender!, 3).ConfigureAwait(false);
+            await _sqsClient!.ChangeMessageVisibilityAsync(_queueUrl, (string)sender!, 3).AnyContext();
             _semaphore.Release();
         }
         catch (MessageNotInflightException ex)
@@ -156,34 +209,7 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
                     if (_sqsClient == null)
 #pragma warning restore CA1508
                     {
-                        if (string.IsNullOrWhiteSpace(_amazonSqsOptions.SnsServiceUrl))
-                        {
-                            _snsClient =
-                                _amazonSqsOptions.Credentials != null
-                                    ? new AmazonSimpleNotificationServiceClient(
-                                        _amazonSqsOptions.Credentials,
-                                        _amazonSqsOptions.Region
-                                    )
-                                    : new AmazonSimpleNotificationServiceClient(_amazonSqsOptions.Region);
-                        }
-                        else
-                        {
-                            _snsClient =
-                                _amazonSqsOptions.Credentials != null
-                                    ? new AmazonSimpleNotificationServiceClient(
-                                        _amazonSqsOptions.Credentials,
-                                        new AmazonSimpleNotificationServiceConfig
-                                        {
-                                            ServiceURL = _amazonSqsOptions.SnsServiceUrl,
-                                        }
-                                    )
-                                    : new AmazonSimpleNotificationServiceClient(
-                                        new AmazonSimpleNotificationServiceConfig
-                                        {
-                                            ServiceURL = _amazonSqsOptions.SnsServiceUrl,
-                                        }
-                                    );
-                        }
+                        _snsClient = AwsClientFactory.CreateSnsClient(_amazonSqsOptions);
                     }
                 }
             }
@@ -196,34 +222,14 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
                     if (_sqsClient == null)
 #pragma warning restore CA1508
                     {
-                        if (string.IsNullOrWhiteSpace(_amazonSqsOptions.SqsServiceUrl))
-                        {
-                            _sqsClient =
-                                _amazonSqsOptions.Credentials != null
-                                    ? new AmazonSQSClient(_amazonSqsOptions.Credentials, _amazonSqsOptions.Region)
-                                    : new AmazonSQSClient(_amazonSqsOptions.Region);
-                        }
-                        else
-                        {
-                            _sqsClient =
-                                _amazonSqsOptions.Credentials != null
-                                    ? new AmazonSQSClient(
-                                        _amazonSqsOptions.Credentials,
-                                        new AmazonSQSConfig { ServiceURL = _amazonSqsOptions.SqsServiceUrl }
-                                    )
-                                    : new AmazonSQSClient(
-                                        new AmazonSQSConfig { ServiceURL = _amazonSqsOptions.SqsServiceUrl }
-                                    );
-                        }
+                        _sqsClient = AwsClientFactory.CreateSqsClient(_amazonSqsOptions);
                     }
                 }
 
                 if (string.IsNullOrWhiteSpace(_queueUrl))
                 {
                     // Create or get existing queue URL asynchronously
-                    var queueResponse = await _sqsClient!
-                        .CreateQueueAsync(groupId.NormalizeForAws())
-                        .ConfigureAwait(false);
+                    var queueResponse = await _sqsClient!.CreateQueueAsync(groupId.NormalizeForAws()).AnyContext();
                     _queueUrl = queueResponse.QueueUrl;
                 }
             }
@@ -248,9 +254,9 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
 
     private async Task _GenerateSqsAccessPolicyAsync(IEnumerable<string> topicArns)
     {
-        await _ConnectAsync(false, true).ConfigureAwait(false);
+        await _ConnectAsync(false, true).AnyContext();
 
-        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
+        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).AnyContext();
 
         var sqsQueueArn = queueAttributes["QueueArn"];
 
@@ -267,15 +273,14 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
         }
 
         policy.AddSqsPermissions(topicArnsToAllow, sqsQueueArn);
-        policy.CompactSqsPermissions(sqsQueueArn);
 
         var setAttributes = new Dictionary<string, string>(StringComparer.Ordinal) { { "Policy", policy.ToJson() } };
-        await _sqsClient.SetAttributesAsync(_queueUrl, setAttributes).ConfigureAwait(false);
+        await _sqsClient.SetAttributesAsync(_queueUrl, setAttributes).AnyContext();
     }
 
     private async Task _SubscribeToTopics(IEnumerable<string> topics)
     {
-        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
+        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).AnyContext();
 
         var sqsQueueArn = queueAttributes["QueueArn"];
         foreach (var topicArn in topics)
@@ -289,7 +294,7 @@ internal sealed class AmazonSqsConsumerClient(string groupId, byte groupConcurre
                         Endpoint = sqsQueueArn,
                     }
                 )
-                .ConfigureAwait(false);
+                .AnyContext();
         }
     }
 

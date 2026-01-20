@@ -40,7 +40,9 @@ public static class MessagingOptionsExtensions
             return options.UseEntityFramework<TContext>(opt => { });
         }
 
-        public MessagingOptions UseEntityFramework<TContext>(Action<PostgreSqlEntityFrameworkMessagingOptions> configure)
+        public MessagingOptions UseEntityFramework<TContext>(
+            Action<PostgreSqlEntityFrameworkMessagingOptions> configure
+        )
             where TContext : DbContext
         {
             Argument.IsNotNull(configure);

@@ -10,7 +10,7 @@ builder.Services.AddDbContext<AppDbContext>(
     (_, opt) =>
     {
         opt.UseNpgsql(AppConstants.DbConnectionString)
-            .ReplaceService<IRelationalConnection, CapNpgsqlRelationalConnection>();
+            .ReplaceService<IRelationalConnection, MessagingNpgsqlRelationalConnection>();
     }
 );
 

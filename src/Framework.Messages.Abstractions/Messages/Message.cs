@@ -3,8 +3,8 @@
 namespace Framework.Messages.Messages;
 
 /// <summary>
-/// Represents a message in the CAP system, containing metadata headers and the message content value.
-/// Messages are the fundamental unit of communication in CAP's publish-subscribe model.
+/// Represents a message in the messaging system, containing metadata headers and the message content value.
+/// Messages are the fundamental unit of communication in the publish-subscribe model.
 /// </summary>
 /// <remarks>
 /// A message consists of:

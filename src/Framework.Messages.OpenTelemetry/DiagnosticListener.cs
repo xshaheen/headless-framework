@@ -9,13 +9,20 @@ namespace Framework.Messages;
 
 internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
 {
-    public const string SourceName = "Headless.Messaging.OpenTelemetry";
+    public const string SourceName = "Framework.Messages.OpenTelemetry";
 
-    private const string _OperateNamePrefix = "Headless/";
+    private const string _OperateNamePrefix = "Framework.Messages/";
     private const string _ProducerOperateNameSuffix = "/Publisher";
     private const string _ConsumerOperateNameSuffix = "/Subscriber";
     private static readonly ActivitySource _ActivitySource = new(SourceName, "1.0.0");
     private static readonly TextMapPropagator _Propagator = Propagators.DefaultTextMapPropagator;
+
+    private readonly MessagingMetrics? _metrics;
+
+    public DiagnosticListener(MessagingMetrics? metrics = null)
+    {
+        _metrics = metrics;
+    }
 
     public void OnCompleted() { }
 
@@ -59,7 +66,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         activity.SetTag("messaging.destination.name", eventData.Operation);
                         activity.AddEvent(
                             new ActivityEvent(
-                                "CAP message persistence start...",
+                                "Message persistence start...",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
@@ -84,11 +91,23 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
 
                     Activity.Current?.AddEvent(
                         new ActivityEvent(
-                            "CAP message persistence succeeded!",
+                            "Message persistence succeeded!",
                             DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                            new ActivityTagsCollection { new("cap.persistence.duration", eventData.ElapsedTimeMs) }
+                            new ActivityTagsCollection
+                            {
+                                new("messaging.persistence.duration", eventData.ElapsedTimeMs),
+                            }
                         )
                     );
+
+                    if (eventData.ElapsedTimeMs.HasValue)
+                    {
+                        _metrics?.RecordPersistence(
+                            eventData.Operation,
+                            eventData.ElapsedTimeMs.Value,
+                            isPublish: true
+                        );
+                    }
 
                     Activity.Current?.Stop();
                 }
@@ -137,6 +156,8 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                             eventData.TransportMessage.GetCorrelationId()
                         );
                         activity.SetTag("messaging.destination.name", eventData.Operation);
+
+                        _metrics?.RecordMessageSize(eventData.TransportMessage.Body.Length, eventData.Operation);
                         if (eventData.BrokerAddress.Endpoint is { } endpoint)
                         {
                             var parts = endpoint.Split(':');
@@ -176,9 +197,16 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                             new ActivityEvent(
                                 "Message publishing succeeded!",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection { new("cap.send.duration", eventData.ElapsedTimeMs) }
+                                new ActivityTagsCollection { new("messaging.send.duration", eventData.ElapsedTimeMs) }
                             )
                         );
+
+                        _metrics?.RecordPublish(
+                            eventData.Operation,
+                            eventData.BrokerAddress.Name,
+                            eventData.ElapsedTimeMs
+                        );
+
                         activity.Stop();
                     }
                 }
@@ -191,6 +219,13 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         var exception = eventData.Exception!;
                         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
                         activity.AddException(exception);
+
+                        _metrics?.RecordPublishError(
+                            eventData.Operation,
+                            eventData.BrokerAddress.Name,
+                            exception.GetType().Name
+                        );
+
                         activity.Stop();
                     }
                 }
@@ -242,7 +277,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         }
                         activity.AddEvent(
                             new ActivityEvent(
-                                "CAP message persistence start...",
+                                "Message persistence start...",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
@@ -256,11 +291,30 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     {
                         activity.AddEvent(
                             new ActivityEvent(
-                                "CAP message persistence succeeded!",
+                                "Message persistence succeeded!",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection { new("cap.receive.duration", eventData.ElapsedTimeMs) }
+                                new ActivityTagsCollection
+                                {
+                                    new("messaging.receive.duration", eventData.ElapsedTimeMs),
+                                }
                             )
                         );
+
+                        _metrics?.RecordConsume(
+                            eventData.Operation,
+                            eventData.BrokerAddress.Name,
+                            eventData.TransportMessage.GetGroup(),
+                            eventData.ElapsedTimeMs
+                        );
+
+                        if (eventData.ElapsedTimeMs.HasValue)
+                        {
+                            _metrics?.RecordPersistence(
+                                eventData.Operation,
+                                eventData.ElapsedTimeMs.Value,
+                                isPublish: false
+                            );
+                        }
 
                         activity.Stop();
                     }
@@ -274,6 +328,14 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         var exception = eventData.Exception!;
                         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
                         activity.AddException(exception);
+
+                        _metrics?.RecordConsumeError(
+                            eventData.Operation,
+                            eventData.BrokerAddress.Name,
+                            exception.GetType().Name,
+                            eventData.TransportMessage.GetGroup()
+                        );
+
                         activity.Stop();
                     }
                 }
@@ -330,8 +392,14 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                             new ActivityEvent(
                                 "Subscriber invoke succeeded!",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection { new("cap.invoke.duration", eventData.ElapsedTimeMs) }
+                                new ActivityTagsCollection { new("messaging.invoke.duration", eventData.ElapsedTimeMs) }
                             )
+                        );
+
+                        _metrics?.RecordSubscriberInvocation(
+                            eventData.MethodInfo!.Name,
+                            eventData.Operation,
+                            eventData.ElapsedTimeMs
                         );
 
                         activity.Stop();
@@ -346,6 +414,13 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         var exception = eventData.Exception!;
                         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
                         activity.AddException(exception);
+
+                        _metrics?.RecordSubscriberError(
+                            eventData.MethodInfo!.Name,
+                            eventData.Operation,
+                            exception.GetType().Name
+                        );
+
                         activity.Stop();
                     }
                 }

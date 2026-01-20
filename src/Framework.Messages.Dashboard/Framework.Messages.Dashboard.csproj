@@ -17,9 +17,5 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="wwwroot/dist/**/*" Exclude="**/*/*.map" />
-    <Compile
-      Include="..\DotNetCore.CAP\Internal\ObjectMethodExecutor\*.cs"
-      Link="ObjectMethodExecutor\%(Filename)%(Extension)"
-    />
   </ItemGroup>
 </Project>
