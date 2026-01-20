@@ -3,6 +3,8 @@
 using System.Reflection;
 using Framework.Checks;
 using Framework.Messages.Messages;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Framework.Messages.Configuration;
 
@@ -12,8 +14,11 @@ namespace Framework.Messages.Configuration;
 /// messaging behavior to better align with specific application requirements, such as adjusting threading models for
 /// subscriber message processing, setting message expiry times, and customizing serialization settings.
 /// </summary>
-public class MessagingOptions
+public class MessagingOptions : IMessagingBuilder
 {
+    internal IServiceCollection? Services { get; set; }
+    internal ConsumerRegistry? Registry { get; set; }
+    internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
 
     /// <summary>
@@ -22,7 +27,7 @@ public class MessagingOptions
     /// Default value is "cap.queue." followed by the entry assembly name in lowercase.
     /// </summary>
     public string DefaultGroupName { get; set; } =
-        "cap.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower();
+        "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Gets or sets an optional prefix to be prepended to all consumer group names.
@@ -87,7 +92,7 @@ public class MessagingOptions
     /// Use <see cref="SubscriberParallelExecuteThreadCount"/> to configure the number of parallel threads.
     /// Default is false.
     /// </summary>
-    public bool EnableSubscriberParallelExecute { get; set; } = false;
+    public bool EnableSubscriberParallelExecute { get; set; }
 
     /// <summary>
     /// Gets or sets the number of parallel worker threads for subscriber message execution when <see cref="EnableSubscriberParallelExecute"/> is enabled.
@@ -109,7 +114,7 @@ public class MessagingOptions
     /// When enabled, message publishing tasks are dispatched to the thread pool for concurrent execution, improving throughput for high-volume publishing scenarios.
     /// Default is false.
     /// </summary>
-    public bool EnablePublishParallelSend { get; set; } = false;
+    public bool EnablePublishParallelSend { get; set; }
 
     /// <summary>
     /// Gets or sets the lookback time window (in seconds) for the retry processor to pick up scheduled or failed status messages.
@@ -157,5 +162,143 @@ public class MessagingOptions
         Argument.IsNotNull(extension);
 
         Extensions.Add(extension);
+    }
+
+    /// <inheritdoc />
+    public IMessagingBuilder ScanConsumers(Assembly assembly)
+    {
+        Argument.IsNotNull(assembly);
+        Argument.IsNotNull(Services, "Services must be initialized before calling ScanConsumers");
+        Argument.IsNotNull(Registry, "Registry must be initialized before calling ScanConsumers");
+
+        // Find all types implementing IConsume<T>
+        var consumerTypes = assembly
+            .GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
+            .Where(t =>
+                t.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
+            )
+            .ToList();
+
+        foreach (var consumerType in consumerTypes)
+        {
+            // Get all IConsume<T> interfaces (supports multi-message handlers)
+            var consumeInterfaces = consumerType
+                .GetInterfaces()
+                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
+                .ToList();
+
+            foreach (var consumeInterface in consumeInterfaces)
+            {
+                var messageType = consumeInterface.GetGenericArguments()[0];
+
+                // Register consumer with default configuration
+                RegisterConsumer(consumerType, messageType, topic: null, group: null, concurrency: 1);
+            }
+        }
+
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> Consumer<TConsumer>()
+        where TConsumer : class
+    {
+        Argument.IsNotNull(Registry, "Registry must be initialized before calling Consumer");
+
+        // Find IConsume<T> interface
+        var consumeInterface = typeof(TConsumer)
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>));
+
+        if (consumeInterface == null)
+        {
+            throw new InvalidOperationException($"{typeof(TConsumer).Name} does not implement IConsume<T>");
+        }
+
+        var messageType = consumeInterface.GetGenericArguments()[0];
+
+        return new ConsumerBuilder<TConsumer>(this, Registry, messageType);
+    }
+
+    /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> Consumer<TConsumer>(string topic)
+        where TConsumer : class
+    {
+        Argument.IsNotNullOrWhiteSpace(topic);
+        Argument.IsNotNull(Registry, "Registry must be initialized before calling Consumer");
+
+        // Find IConsume<T> interface
+        var consumeInterface = typeof(TConsumer)
+            .GetInterfaces()
+            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>));
+
+        if (consumeInterface == null)
+        {
+            throw new InvalidOperationException($"{typeof(TConsumer).Name} does not implement IConsume<T>");
+        }
+
+        var messageType = consumeInterface.GetGenericArguments()[0];
+
+        // Automatically create topic mapping
+        _WithTopicMapping(messageType, topic);
+
+        // Immediately register with default settings (concurrency=1, group=null)
+        RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
+
+        // Return builder that can update the registration if further configuration is needed
+        return new ConsumerBuilder<TConsumer>(this, Registry, messageType, topic, autoRegistered: true);
+    }
+
+    /// <inheritdoc />
+    public IMessagingBuilder WithTopicMapping<TMessage>(string topic)
+        where TMessage : class
+    {
+        Argument.IsNotNullOrWhiteSpace(topic);
+
+        _WithTopicMapping(typeof(TMessage), topic);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a topic mapping for a message type (non-generic version for internal use).
+    /// </summary>
+    internal void _WithTopicMapping(Type messageType, string topic)
+    {
+        Argument.IsNotNullOrWhiteSpace(topic);
+
+        if (TopicMappings.TryGetValue(messageType, out var existingTopic) && existingTopic != topic)
+        {
+            throw new InvalidOperationException(
+                $"Message type {messageType.Name} is already mapped to topic '{existingTopic}'. Cannot map to '{topic}'."
+            );
+        }
+
+        TopicMappings[messageType] = topic;
+    }
+
+    /// <summary>
+    /// Registers a consumer with the specified metadata.
+    /// </summary>
+    internal void RegisterConsumer(Type consumerType, Type messageType, string? topic, string? group, byte concurrency)
+    {
+        Argument.IsNotNull(Services, "Services must be initialized before calling _RegisterConsumer");
+        Argument.IsNotNull(Registry, "Registry must be initialized before calling _RegisterConsumer");
+
+        // Determine the topic name
+        var finalTopic =
+            topic
+            ?? (TopicMappings.TryGetValue(messageType, out var mappedTopic) ? mappedTopic : null)
+            ?? messageType.Name; // Default to message type name
+
+        // Create metadata
+        var metadata = new ConsumerMetadata(messageType, consumerType, finalTopic, group, concurrency);
+
+        // Register in registry
+        Registry.Register(metadata);
+
+        // Register consumer in DI as scoped service
+        var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
+        Services.TryAddScoped(serviceType, consumerType);
     }
 }
