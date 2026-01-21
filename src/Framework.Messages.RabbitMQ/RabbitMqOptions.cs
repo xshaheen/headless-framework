@@ -9,7 +9,6 @@ namespace Framework.Messages;
 // ReSharper disable once InconsistentNaming
 public class RabbitMQOptions
 {
-
     /// <summary>
     /// Default virtual host (value: "/").
     /// </summary>

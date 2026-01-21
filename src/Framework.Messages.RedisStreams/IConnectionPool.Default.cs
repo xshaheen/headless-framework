@@ -124,7 +124,9 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
     {
         if (!_isDisposed)
         {
-            System.Diagnostics.Debug.Fail("RedisConnectionPool was not disposed. Call Dispose() to release SemaphoreSlim.");
+            System.Diagnostics.Debug.Fail(
+                "RedisConnectionPool was not disposed. Call Dispose() to release SemaphoreSlim."
+            );
         }
     }
 }

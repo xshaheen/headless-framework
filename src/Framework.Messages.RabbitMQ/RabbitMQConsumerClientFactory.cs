@@ -15,7 +15,8 @@ internal sealed class RabbitMqConsumerClientFactory : IConsumerClientFactory
     public RabbitMqConsumerClientFactory(
         IOptions<RabbitMQOptions> rabbitMqOptions,
         IConnectionChannelPool channelPool,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider
+    )
     {
         _rabbitMqOptions = rabbitMqOptions;
         _channelPool = channelPool;
@@ -26,7 +27,13 @@ internal sealed class RabbitMqConsumerClientFactory : IConsumerClientFactory
     {
         try
         {
-            var client = new RabbitMqConsumerClient(groupId, concurrent, _channelPool, _rabbitMqOptions, _serviceProvider);
+            var client = new RabbitMqConsumerClient(
+                groupId,
+                concurrent,
+                _channelPool,
+                _rabbitMqOptions,
+                _serviceProvider
+            );
 
             await client.ConnectAsync().AnyContext();
 

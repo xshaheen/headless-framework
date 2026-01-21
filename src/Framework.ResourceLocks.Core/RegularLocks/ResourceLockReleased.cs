@@ -2,9 +2,4 @@
 
 namespace Framework.ResourceLocks.RegularLocks;
 
-public sealed class ResourceLockReleased
-{
-    public required string Resource { get; init; }
-
-    public required string LockId { get; init; }
-}
+public sealed record ResourceLockReleased(string Resource, string LockId);

@@ -127,8 +127,6 @@ dotnet add package Framework.Caching.Foundatio.Redis
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Messaging.Abstractions](src/Framework.Messaging.Abstractions/README.md) | Pub/sub messaging interfaces |
-| [Framework.Messaging.Foundatio](src/Framework.Messaging.Foundatio/README.md) | Foundatio messaging |
 | [Framework.Domain.LocalPublisher](src/Framework.Domain.LocalPublisher/README.md) | In-process messaging |
 
 ### OpenAPI

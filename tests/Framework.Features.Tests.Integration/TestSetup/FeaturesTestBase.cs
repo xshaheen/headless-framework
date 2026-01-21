@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Foundatio.Messaging;
 using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Domain;
@@ -15,7 +14,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
-using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
 
 namespace Tests.TestSetup;
 
@@ -53,11 +51,12 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
         services.AddServiceProviderLocalMessagePublisher();
 
-        // MessageBus
-        services.AddSingleton<IFoundatioMessageBus>(_ => new RedisMessageBus(o =>
-            o.Subscriber(Fixture.Multiplexer.GetSubscriber()).Topic("test-lock")
-        ));
-        services.AddMessageBusFoundatioAdapter();
+        // Messages
+        services.AddMessages(options =>
+        {
+            options.UseInMemoryMessageQueue();
+            options.UseInMemoryStorage();
+        });
         // Cache
         services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
         // Lock Storage

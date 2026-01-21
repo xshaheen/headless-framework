@@ -22,6 +22,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Redis\Framework.Caching.Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Domain.LocalPublisher\Framework.Domain.LocalPublisher.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Messages.InMemoryQueue\Framework.Messages.InMemoryQueue.csproj" />
+    <ProjectReference Include="..\..\src\Framework.Messages.InMemoryStorage\Framework.Messages.InMemoryStorage.csproj" />
     <ProjectReference Include="..\..\src\Framework.Permissions.Storage.EntityFramework\Framework.Permissions.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Redis\Framework.ResourceLocks.Redis.csproj" />
     <ProjectReference Include="..\..\src\Framework.Testing\Framework.Testing.csproj" />

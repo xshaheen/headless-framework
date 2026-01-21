@@ -18,7 +18,7 @@ namespace Framework.ResourceLocks;
 
 public sealed class ResourceLockProvider(
     IResourceLockStorage storage,
-    IMessageBus messageBus,
+    IOutboxPublisher outboxPublisher,
     ResourceLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
@@ -123,11 +123,6 @@ public sealed class ResourceLockProvider(
                 }
 
                 autoResetEvent ??= _IncrementResetEvent(resource);
-
-                if (!_isSubscribed)
-                {
-                    await _EnsureTopicSubscriptionAsync().AnyContext();
-                }
 
                 // Use exponential backoff instead of storage call
                 var delayAmount = _GetBackoffDelay(retryAttempt++);
@@ -281,8 +276,8 @@ public sealed class ResourceLockProvider(
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
         if (removed)
         {
-            var resourceLockReleased = new ResourceLockReleased { Resource = resource, LockId = lockId };
-            await messageBus.PublishAsync(resourceLockReleased, cancellationToken).AnyContext();
+            var resourceLockReleased = new ResourceLockReleased(resource, lockId);
+            await outboxPublisher.PublishAsync(resourceLockReleased, cancellationToken: cancellationToken).AnyContext();
         }
 
         logger.LogReleaseReleased(resource, lockId);
@@ -456,46 +451,45 @@ public sealed class ResourceLockProvider(
 
     #endregion
 
-    #region Ensure Lock Released Subscription
+    #region Message Consumer
 
-    private volatile bool _isSubscribed;
-    private readonly AsyncLock _subscribeLock = new();
-
-    private async Task _EnsureTopicSubscriptionAsync()
+    internal void _OnLockReleased(ResourceLockReleased message)
     {
-        if (_isSubscribed)
-        {
-            return;
-        }
-
-        using (await _subscribeLock.LockAsync().AnyContext())
-        {
-            if (_isSubscribed)
-            {
-                return;
-            }
-
-            logger.LogSubscribingToLockReleased();
-            await messageBus.SubscribeAsync<ResourceLockReleased>(_OnLockReleasedAsync).AnyContext();
-            _isSubscribed = true;
-            logger.LogSubscribedToLockReleased();
-        }
-    }
-
-    private Task _OnLockReleasedAsync(ResourceLockReleased released, CancellationToken cancellationToken = default)
-    {
-        logger.LogGotLockReleasedMessage(released.Resource, released.LockId);
+        logger.LogGotLockReleasedMessage(message.Resource, message.LockId);
 
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
         // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
         // Uses ref-counted events per resource to avoid memory leaks—events removed when no waiters.
         // ReSharper disable once InconsistentlySynchronizedField
-        if (_autoResetEvents.TryGetValue(released.Resource, out var autoResetEvent))
+        if (_autoResetEvents.TryGetValue(message.Resource, out var autoResetEvent))
         {
             autoResetEvent.Target.Set();
         }
+    }
 
-        return Task.CompletedTask;
+    internal sealed class LockReleasedConsumer(IResourceLockProvider provider, ILogger<LockReleasedConsumer> logger)
+        : IConsume<ResourceLockReleased>
+    {
+        public ValueTask Consume(ConsumeContext<ResourceLockReleased> context, CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return ValueTask.FromCanceled(cancellationToken);
+            }
+
+            logger.LogDebug(
+                "Processing lock released {MessageId} for {Resource}",
+                context.MessageId,
+                context.Message.Resource
+            );
+
+            if (provider is ResourceLockProvider impl)
+            {
+                impl._OnLockReleased(context.Message);
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     #endregion

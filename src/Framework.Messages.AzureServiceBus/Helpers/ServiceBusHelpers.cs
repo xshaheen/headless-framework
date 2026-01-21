@@ -10,7 +10,8 @@ public static class ServiceBusHelpers
         {
             _ when string.IsNullOrWhiteSpace(@namespace) && string.IsNullOrWhiteSpace(connectionString) =>
                 throw new ArgumentException("Either connection string or namespace are required."),
-            _ when string.IsNullOrWhiteSpace(connectionString)
+            _
+                when string.IsNullOrWhiteSpace(connectionString)
                     || (!string.IsNullOrWhiteSpace(@namespace) && !string.IsNullOrWhiteSpace(connectionString)) =>
                 @namespace!,
             _ when string.IsNullOrWhiteSpace(@namespace) => _TryGetEndpointFromConnectionString(

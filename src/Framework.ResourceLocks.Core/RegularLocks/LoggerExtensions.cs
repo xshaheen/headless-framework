@@ -32,22 +32,6 @@ public static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 4,
-        EventName = "SubscribingToLockReleased",
-        Level = LogLevel.Trace,
-        Message = "Subscribing to cache lock released"
-    )]
-    public static partial void LogSubscribingToLockReleased(this ILogger logger);
-
-    [LoggerMessage(
-        EventId = 5,
-        EventName = "SubscribedToLockReleased",
-        Level = LogLevel.Trace,
-        Message = "Subscribed to cache lock released"
-    )]
-    public static partial void LogSubscribedToLockReleased(this ILogger logger);
-
-    [LoggerMessage(
-        EventId = 6,
         EventName = "GotLockReleasedMessage",
         Level = LogLevel.Trace,
         Message = "Got lock released message: R={Resource} Id={LockId}"
@@ -55,7 +39,7 @@ public static partial class LoggerExtensions
     public static partial void LogGotLockReleasedMessage(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
-        EventId = 7,
+        EventId = 5,
         EventName = "AttemptingToAcquireLock",
         Level = LogLevel.Debug,
         Message = "Attempting to acquire lock: R={Resource} Id={LockId}"
@@ -63,7 +47,7 @@ public static partial class LoggerExtensions
     public static partial void LogAttemptingToAcquireLock(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
-        EventId = 8,
+        EventId = 6,
         EventName = "ErrorAcquiringLock",
         Level = LogLevel.Trace,
         Message = "Error acquiring lock: R={Resource} Id={LockId} after {Duration:g}"
@@ -77,7 +61,7 @@ public static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 9,
+        EventId = 7,
         EventName = "FailedToAcquireLock",
         Level = LogLevel.Debug,
         Message = "Failed to acquire lock: {Resource} Id={LockId}"
@@ -85,7 +69,7 @@ public static partial class LoggerExtensions
     public static partial void LogFailedToAcquireLock(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
-        EventId = 10,
+        EventId = 8,
         EventName = "CancellationRequested",
         Level = LogLevel.Trace,
         Message = "Cancellation requested while acquiring lock: R={Resource} Id={LockId}"
@@ -93,7 +77,7 @@ public static partial class LoggerExtensions
     public static partial void LogCancellationRequested(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
-        EventId = 11,
+        EventId = 9,
         EventName = "CancellationRequestedForLock",
         Level = LogLevel.Trace,
         Message = "Cancellation requested for lock R={Resource} Id={LockId} after {Duration:g}"
@@ -106,7 +90,7 @@ public static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 12,
+        EventId = 10,
         EventName = "DelayBeforeRetry",
         Level = LogLevel.Trace,
         Message = "Will wait {Delay:g} before retrying to acquire lock: R={Resource} Id={LockId}"
@@ -114,7 +98,7 @@ public static partial class LoggerExtensions
     public static partial void LogDelayBeforeRetry(this ILogger logger, string resource, string lockId, TimeSpan delay);
 
     [LoggerMessage(
-        EventId = 13,
+        EventId = 11,
         EventName = "LongLockAcquired",
         Level = LogLevel.Warning,
         Message = "Acquired lock in long duration R={Resource} Id={LockId} after {Duration:g}"
@@ -127,7 +111,7 @@ public static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 14,
+        EventId = 12,
         EventName = "AcquiredLock",
         Level = LogLevel.Debug,
         Message = "Acquired lock: R={Resource} Id={LockId} after {Duration:g}"
@@ -135,7 +119,7 @@ public static partial class LoggerExtensions
     public static partial void LogAcquiredLock(this ILogger logger, string resource, string lockId, TimeSpan duration);
 
     [LoggerMessage(
-        EventId = 15,
+        EventId = 13,
         EventName = "FailedToAcquireLockAfter",
         Level = LogLevel.Warning,
         Message = "Failed to acquire lock: R={Resource} Id={LockId} after {Duration:g}"

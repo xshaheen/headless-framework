@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Foundatio.Messaging;
 using Framework.Api;
 using Framework.Caching;
 using Framework.Domain;
@@ -13,8 +12,6 @@ using Framework.ResourceLocks.Cache;
 using Framework.ResourceLocks.RegularLocks;
 using Framework.Settings;
 using Microsoft.EntityFrameworkCore;
-using IFoundatioMessageBus = Foundatio.Messaging.IMessageBus;
-using IMessageBus = Framework.Messages.IMessageBus;
 
 // To add a migration use:
 // dotnet ef migrations add InitialMigration -p .\demo\Framework.EntityFramework.Migrations.Startup --context FeaturesDbContext
@@ -83,12 +80,12 @@ static void addInMemoryResourceLock(IServiceCollection services)
     // Cache
     services.AddInMemoryCache();
     services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
-    // MessageBus
-    services.AddSingleton<IFoundatioMessageBus>(_ => new InMemoryMessageBus(o => o.Topic("test-lock")));
-    services.AddMessageBusFoundatioAdapter();
+    // Messages
+    services.AddMessages(options =>
+    {
+        options.UseInMemoryMessageQueue();
+        options.UseInMemoryStorage();
+    });
 
-    services.AddResourceLock(
-        provider => provider.GetRequiredService<IResourceLockStorage>(),
-        provider => provider.GetRequiredService<IMessageBus>()
-    );
+    services.AddResourceLock();
 }

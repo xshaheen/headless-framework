@@ -112,7 +112,7 @@ public sealed class SqlServerStorageInitializer(
             CREATE NONCLUSTERED INDEX [IX_{GetPublishedTableName()}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC)
 
             END;
-
+            
             """;
 
         if (messagingOptions.Value.UseStorageLock)
