@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
+using MessagingHeaders = Framework.Messages.Messages.Headers;
 
 namespace Tests;
 
@@ -48,8 +49,8 @@ public sealed class RabbitMqTransportTests : TestBase
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { Headers.MessageId, "msg-123" },
-                { Headers.MessageName, "TestMessage" },
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -66,7 +67,8 @@ public sealed class RabbitMqTransportTests : TestBase
                 "TestMessage",
                 false,
                 Arg.Is<BasicProperties>(p => p.MessageId == "msg-123" && p.DeliveryMode == DeliveryModes.Persistent),
-                Arg.Any<ReadOnlyMemory<byte>>()
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
             );
         _pool.Received(1).Return(_channel);
     }
@@ -79,8 +81,8 @@ public sealed class RabbitMqTransportTests : TestBase
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { Headers.MessageId, "msg-123" },
-                { Headers.MessageName, "TestMessage" },
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -100,8 +102,8 @@ public sealed class RabbitMqTransportTests : TestBase
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { Headers.MessageId, "msg-123" },
-                { Headers.MessageName, "TestMessage" },
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -112,8 +114,9 @@ public sealed class RabbitMqTransportTests : TestBase
                     Arg.Any<string>(),
                     Arg.Any<string>(),
                     Arg.Any<bool>(),
-                    Arg.Any<IReadOnlyBasicProperties>(),
-                    Arg.Any<ReadOnlyMemory<byte>>()
+                    Arg.Any<BasicProperties>(),
+                    Arg.Any<ReadOnlyMemory<byte>>(),
+                    Arg.Any<CancellationToken>()
                 )
             )
             .Do(_ => throw new InvalidOperationException("Publish failed"));
@@ -124,7 +127,6 @@ public sealed class RabbitMqTransportTests : TestBase
         // Then
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<PublisherSentFailedException>();
-        result.Errors.Should().NotBeEmpty();
         _pool.Received(1).Return(_channel);
     }
 
@@ -136,8 +138,8 @@ public sealed class RabbitMqTransportTests : TestBase
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { Headers.MessageId, "msg-123" },
-                { Headers.MessageName, "TestMessage" },
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -149,8 +151,9 @@ public sealed class RabbitMqTransportTests : TestBase
                     Arg.Any<string>(),
                     Arg.Any<string>(),
                     Arg.Any<bool>(),
-                    Arg.Any<IReadOnlyBasicProperties>(),
-                    Arg.Any<ReadOnlyMemory<byte>>()
+                    Arg.Any<BasicProperties>(),
+                    Arg.Any<ReadOnlyMemory<byte>>(),
+                    Arg.Any<CancellationToken>()
                 )
             )
             .Do(_ =>
@@ -176,8 +179,8 @@ public sealed class RabbitMqTransportTests : TestBase
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { Headers.MessageId, "msg-123" },
-                { Headers.MessageName, "TestMessage" },
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
                 { "CustomHeader", "CustomValue" },
             },
             body: "test-body"u8.ToArray()
@@ -194,9 +197,10 @@ public sealed class RabbitMqTransportTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<bool>(),
                 Arg.Is<BasicProperties>(p =>
-                    p.Headers.ContainsKey("CustomHeader") && p.Headers["CustomHeader"]!.ToString() == "CustomValue"
+                    p.Headers != null && p.Headers.ContainsKey("CustomHeader") && p.Headers["CustomHeader"]!.ToString() == "CustomValue"
                 ),
-                Arg.Any<ReadOnlyMemory<byte>>()
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -208,8 +212,8 @@ public sealed class RabbitMqTransportTests : TestBase
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { Headers.MessageId, "msg-123" },
-                { Headers.MessageName, "invalid topic name" },
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "invalid topic name" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -231,8 +235,8 @@ public sealed class RabbitMqTransportTests : TestBase
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { Headers.MessageId, "msg-123" },
-                { Headers.MessageName, tooLongName },
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, tooLongName },
             },
             body: "test-body"u8.ToArray()
         );

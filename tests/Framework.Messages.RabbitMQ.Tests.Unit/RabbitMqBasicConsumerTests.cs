@@ -6,10 +6,11 @@ using Framework.Messages.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using MessagingHeaders = Framework.Messages.Messages.Headers;
 
 namespace Tests;
 
-public sealed class RabbitMQBasicConsumerTests
+public sealed class RabbitMqBasicConsumerTests
 {
     private readonly IChannel _channel = Substitute.For<IChannel>();
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
@@ -33,7 +34,7 @@ public sealed class RabbitMQBasicConsumerTests
 
         _channel.IsOpen.Returns(true);
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -82,7 +83,7 @@ public sealed class RabbitMQBasicConsumerTests
 
         _channel.IsOpen.Returns(true);
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -126,7 +127,7 @@ public sealed class RabbitMQBasicConsumerTests
 
         _channel.IsOpen.Returns(false);
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -174,7 +175,7 @@ public sealed class RabbitMQBasicConsumerTests
             return Task.CompletedTask;
         };
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -222,7 +223,7 @@ public sealed class RabbitMQBasicConsumerTests
             return Task.CompletedTask;
         };
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -261,7 +262,7 @@ public sealed class RabbitMQBasicConsumerTests
         Func<TransportMessage, object?, Task> msgCallback = (_, _) =>
             throw new InvalidOperationException("Simulated consumption error");
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -297,7 +298,7 @@ public sealed class RabbitMQBasicConsumerTests
         TransportMessage? receivedMessage = null;
         object? receivedSender = null;
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -342,7 +343,7 @@ public sealed class RabbitMQBasicConsumerTests
         // Given
         TransportMessage? receivedMessage = null;
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -383,7 +384,7 @@ public sealed class RabbitMQBasicConsumerTests
         // Given
         TransportMessage? receivedMessage = null;
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -425,7 +426,7 @@ public sealed class RabbitMQBasicConsumerTests
         Func<BasicDeliverEventArgs, IServiceProvider, List<KeyValuePair<string, string>>> customBuilder = (_, _) =>
             [new KeyValuePair<string, string>("CustomHeader", "CustomValue")];
 
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -462,7 +463,7 @@ public sealed class RabbitMQBasicConsumerTests
     {
         // Given
         _channel.IsOpen.Returns(true);
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -484,7 +485,7 @@ public sealed class RabbitMQBasicConsumerTests
     {
         // Given
         _channel.IsOpen.Returns(false);
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -506,7 +507,7 @@ public sealed class RabbitMQBasicConsumerTests
     {
         // Given
         _channel.IsOpen.Returns(true);
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -528,7 +529,7 @@ public sealed class RabbitMQBasicConsumerTests
     {
         // Given
         _channel.IsOpen.Returns(false);
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -552,7 +553,7 @@ public sealed class RabbitMQBasicConsumerTests
     {
         // Given
         LogMessageEventArgs? loggedEvent = null;
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -576,7 +577,7 @@ public sealed class RabbitMQBasicConsumerTests
     {
         // Given
         LogMessageEventArgs? loggedEvent = null;
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -600,7 +601,7 @@ public sealed class RabbitMQBasicConsumerTests
     {
         // Given
         LogMessageEventArgs? loggedEvent = null;
-        var consumer = new RabbitMQBasicConsumer(
+        var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",

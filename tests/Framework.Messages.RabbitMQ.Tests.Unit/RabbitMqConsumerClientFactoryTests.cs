@@ -9,27 +9,23 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class RabbitMQConsumerClientFactoryTests : TestBase
+public sealed class RabbitMqConsumerClientFactoryTests : TestBase
 {
     [Fact]
-    public void should_create_consumer_client()
+    public async Task should_create_consumer_client()
     {
         // Given
-        var services = new ServiceCollection();
-        services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
-        services.AddSingleton<IOptions<MessagingOptions>>(Options.Create(new MessagingOptions { Version = "v1" }));
-        services.AddSingleton<IOptions<RabbitMQOptions>>(
-            Options.Create(new RabbitMQOptions { HostName = "localhost", Port = 5672 })
-        );
+        var pool = Substitute.For<IConnectionChannelPool>();
+        var options = Options.Create(new RabbitMQOptions { HostName = "localhost", Port = 5672 });
+        var serviceProvider = Substitute.For<IServiceProvider>();
 
-        var serviceProvider = services.BuildServiceProvider();
-        var factory = new RabbitMQConsumerClientFactory(serviceProvider);
+        var factory = new RabbitMqConsumerClientFactory(options, pool, serviceProvider);
 
         // When
-        var client = factory.Create("test-group", 5);
+        var client = await factory.CreateAsync("test-group", 5);
 
         // Then
         client.Should().NotBeNull();
-        client.Should().BeOfType<RabbitMQConsumerClient>();
+        client.Should().BeOfType<RabbitMqConsumerClient>();
     }
 }
