@@ -8,7 +8,7 @@ using Headers = Framework.Messages.Messages.Headers;
 
 namespace Framework.Messages;
 
-public sealed class RabbitMqBasicConsumer(
+public class RabbitMQBasicConsumer(
     IChannel channel,
     byte concurrent,
     string groupName,
