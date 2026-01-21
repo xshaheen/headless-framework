@@ -71,7 +71,7 @@ public static partial class QueryableExtensions
                 Month = new DateTimeOffset(date.Year, date.Month, 1, 0, 0, 0, start.Offset),
             });
 
-        var lookup = await query.ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token);
+        var lookup = await query.ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token).AnyContext();
 
         return from n in Enumerable.Range(1, months)
             let month = first.AddMonths(n)

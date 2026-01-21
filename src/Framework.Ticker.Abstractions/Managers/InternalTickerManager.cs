@@ -34,10 +34,10 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         var minCronGroupTask = _GetEarliestCronTickerGroupAsync(cancellationToken);
         var minTimeTickersTask = _persistenceProvider.GetEarliestTimeTickers(cancellationToken);
 
-        await Task.WhenAll(minCronGroupTask, minTimeTickersTask).ConfigureAwait(false);
+        await Task.WhenAll(minCronGroupTask, minTimeTickersTask).AnyContext();
 
-        var minCronGroup = await minCronGroupTask.ConfigureAwait(false);
-        var minTimeTickers = await minTimeTickersTask.ConfigureAwait(false);
+        var minCronGroup = await minCronGroupTask.AnyContext();
+        var minTimeTickers = await minTimeTickersTask.AnyContext();
 
         var cronTime = minCronGroup?.Key;
         var timeTickerTime = minTimeTickers.Length > 0 ? minTimeTickers[0].ExecutionTime : null;
@@ -109,13 +109,12 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
 
         if (includeCron && minCronGroup is not null)
         {
-            cronFunctions = await _QueueNextCronTickersAsync(minCronGroup.Value, cancellationToken)
-                .ConfigureAwait(false);
+            cronFunctions = await _QueueNextCronTickersAsync(minCronGroup.Value, cancellationToken).AnyContext();
         }
 
         if (includeTimeTickers && minTimeTickers.Length > 0)
         {
-            timeFunctions = await _QueueNextTimeTickersAsync(minTimeTickers, cancellationToken).ConfigureAwait(false);
+            timeFunctions = await _QueueNextTimeTickersAsync(minTimeTickers, cancellationToken).AnyContext();
         }
 
         if (cronFunctions.Length == 0 && timeFunctions.Length == 0)
@@ -210,7 +209,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         await foreach (
             var occurrence in _persistenceProvider
                 .QueueCronTickerOccurrences(minCronTicker, cancellationToken)
-                .ConfigureAwait(false)
+                .AnyContext()
         )
         {
             results.Add(
@@ -228,15 +227,13 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
 
             if (occurrence.CreatedAt == occurrence.UpdatedAt && _notificationHubSender != null)
             {
-                await _notificationHubSender
-                    .AddCronOccurrenceAsync(occurrence.CronTickerId, occurrence)
-                    .ConfigureAwait(false);
+                await _notificationHubSender.AddCronOccurrenceAsync(occurrence.CronTickerId, occurrence).AnyContext();
             }
             else if (_notificationHubSender != null)
             {
                 await _notificationHubSender
                     .UpdateCronOccurrenceAsync(occurrence.CronTickerId, occurrence)
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
         }
 
@@ -249,15 +246,13 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
     {
         var now = _clock.UtcNow;
 
-        var cronTickers = await _persistenceProvider
-            .GetAllCronTickerExpressions(cancellationToken)
-            .ConfigureAwait(false);
+        var cronTickers = await _persistenceProvider.GetAllCronTickerExpressions(cancellationToken).AnyContext();
 
         var cronTickerIds = cronTickers.Select(x => x.Id).ToArray();
 
         var earliestAvailableCronOccurrence = await _persistenceProvider
             .GetEarliestAvailableCronOccurrence(cronTickerIds, cancellationToken)
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return _EarliestCronTickerGroup(cronTickers, now, earliestAvailableCronOccurrence);
     }
@@ -392,7 +387,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                 unifiedFunctionContext,
                 cancellationToken
             );
-            await Task.WhenAll(updateCronTickerOccurrencesTask, updateTimeTickersTask).ConfigureAwait(false);
+            await Task.WhenAll(updateCronTickerOccurrencesTask, updateTimeTickersTask).AnyContext();
         }
         else
         {
@@ -404,14 +399,14 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                         unifiedFunctionContext,
                         cancellationToken
                     )
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
 
             if (timeTickerIds.Length != 0)
             {
                 await _persistenceProvider
                     .UpdateTimeTickersWithUnifiedContext(timeTickerIds, unifiedFunctionContext, cancellationToken)
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
         }
 
@@ -423,13 +418,13 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             {
                 await _notificationHubSender
                     .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(resource)
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
             else
             {
                 await _notificationHubSender
                     .UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(resource)
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
         }
     }
@@ -457,7 +452,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         {
             await _persistenceProvider
                 .ReleaseAcquiredCronTickerOccurrences(cronTickerIds, cancellationToken)
-                .ConfigureAwait(false);
+                .AnyContext();
         }
 
         var timeTickerIds =
@@ -467,9 +462,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
 
         if (timeTickerIds.Length != 0)
         {
-            await _persistenceProvider
-                .ReleaseAcquiredTimeTickers(timeTickerIds, cancellationToken)
-                .ConfigureAwait(false);
+            await _persistenceProvider.ReleaseAcquiredTimeTickers(timeTickerIds, cancellationToken).AnyContext();
         }
     }
 
@@ -480,19 +473,17 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
     {
         if (functionContext.Type == TickerType.CronTickerOccurrence)
         {
-            await _persistenceProvider
-                .UpdateCronTickerOccurrence(functionContext, cancellationToken)
-                .ConfigureAwait(false);
+            await _persistenceProvider.UpdateCronTickerOccurrence(functionContext, cancellationToken).AnyContext();
             await _notificationHubSender
                 .UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(functionContext)
-                .ConfigureAwait(false);
+                .AnyContext();
         }
         else
         {
-            await _persistenceProvider.UpdateTimeTicker(functionContext, cancellationToken).ConfigureAwait(false);
+            await _persistenceProvider.UpdateTimeTicker(functionContext, cancellationToken).AnyContext();
             await _notificationHubSender
                 .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(functionContext)
-                .ConfigureAwait(false);
+                .AnyContext();
         }
     }
 
@@ -514,7 +505,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                     unifiedFunctionContext,
                     cancellationToken
                 )
-                .ConfigureAwait(false);
+                .AnyContext();
         }
 
         foreach (var resource in resources)
@@ -526,13 +517,13 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             {
                 await _notificationHubSender
                     .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(resource)
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
             else
             {
                 await _notificationHubSender
                     .UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(resource)
-                    .ConfigureAwait(false);
+                    .AnyContext();
             }
         }
     }
@@ -547,10 +538,10 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             type == TickerType.CronTickerOccurrence
                 ? await _persistenceProvider
                     .GetCronTickerOccurrenceRequest(tickerId, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false)
+                    .AnyContext()
                 : await _persistenceProvider
                     .GetTimeTickerRequest(tickerId, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
+                    .AnyContext();
 
         return request == null ? default : TickerHelper.ReadTickerRequest<T>(request);
     }
@@ -560,9 +551,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         var results = new List<InternalFunctionContext>();
 
         await foreach (
-            var timedOutTimeTicker in _persistenceProvider
-                .QueueTimedOutTimeTickers(cancellationToken)
-                .ConfigureAwait(false)
+            var timedOutTimeTicker in _persistenceProvider.QueueTimedOutTimeTickers(cancellationToken).AnyContext()
         )
         {
             results.Add(
@@ -602,13 +591,13 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
                 }
             );
 
-            await _notificationHubSender.UpdateTimeTickerNotifyAsync(timedOutTimeTicker).ConfigureAwait(false);
+            await _notificationHubSender.UpdateTimeTickerNotifyAsync(timedOutTimeTicker).AnyContext();
         }
 
         await foreach (
             var timedOutCronTicker in _persistenceProvider
                 .QueueTimedOutCronTickerOccurrences(cancellationToken)
-                .ConfigureAwait(false)
+                .AnyContext()
         )
         {
             var functionContext = new InternalFunctionContext
@@ -625,7 +614,7 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             results.Add(functionContext);
             await _notificationHubSender
                 .UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(functionContext)
-                .ConfigureAwait(false);
+                .AnyContext();
         }
 
         return results.ToArray();
@@ -634,17 +623,17 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
     public async Task MigrateDefinedCronTickers(
         (string, string)[] cronExpressions,
         CancellationToken cancellationToken = default
-    ) => await _persistenceProvider.MigrateDefinedCronTickers(cronExpressions, cancellationToken).ConfigureAwait(false);
+    ) => await _persistenceProvider.MigrateDefinedCronTickers(cronExpressions, cancellationToken).AnyContext();
 
     public async Task DeleteTicker(Guid tickerId, TickerType type, CancellationToken cancellationToken = default)
     {
         if (type == TickerType.CronTickerOccurrence)
         {
-            await _persistenceProvider.RemoveCronTickers([tickerId], cancellationToken).ConfigureAwait(false);
+            await _persistenceProvider.RemoveCronTickers([tickerId], cancellationToken).AnyContext();
         }
         else
         {
-            await _persistenceProvider.RemoveTimeTickers([tickerId], cancellationToken).ConfigureAwait(false);
+            await _persistenceProvider.RemoveTimeTickers([tickerId], cancellationToken).AnyContext();
         }
     }
 
@@ -660,6 +649,6 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
             cancellationToken
         );
 
-        await Task.WhenAll(cronOccurrence, timeTickers).ConfigureAwait(false);
+        await Task.WhenAll(cronOccurrence, timeTickers).AnyContext();
     }
 }

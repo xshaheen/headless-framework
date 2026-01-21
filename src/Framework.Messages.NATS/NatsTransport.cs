@@ -35,7 +35,7 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
 
             var builder = PublishOptions.Builder().WithMessageId(message.GetId());
 
-            var resp = await js.PublishAsync(msg, builder.Build());
+            var resp = await js.PublishAsync(msg, builder.Build()).AnyContext();
 
             if (resp.Seq > 0)
             {

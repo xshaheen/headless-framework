@@ -2,9 +2,9 @@
 
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using Framework.Messages.Messages;
+using AwesomeAssertions;
 using Framework.Messages.Transport;
-using Framework.Testing;
+using Framework.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -43,7 +43,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         {
             Messages =
             [
-                new Message
+                new Amazon.SQS.Model.Message
                 {
                     Body = """
                         {
@@ -70,7 +70,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // Mock GetAttributes
         sqsClient
             .GetAttributesAsync(Arg.Any<string>())
-            .Returns(new GetQueueAttributesResponse { Attributes = { ["QueueArn"] = "arn:aws:sqs:test" } });
+            .Returns(
+                Task.FromResult(
+                    new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:test" }
+                )
+            );
 
         // Use reflection to set the private _sqsClient field
         var sqsClientField = typeof(AmazonSqsConsumerClient).GetField(
@@ -144,7 +148,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         {
             Messages =
             [
-                new Message
+                new Amazon.SQS.Model.Message
                 {
                     Body = """
                         {
@@ -175,7 +179,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         sqsClient
             .GetAttributesAsync(Arg.Any<string>())
-            .Returns(new GetQueueAttributesResponse { Attributes = { ["QueueArn"] = "arn:aws:sqs:test" } });
+            .Returns(
+                Task.FromResult(
+                    new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:test" }
+                )
+            );
 
         // Use reflection to set the private fields
         var sqsClientField = typeof(AmazonSqsConsumerClient).GetField(
@@ -265,7 +273,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         sqsClient
             .GetAttributesAsync(Arg.Any<string>())
-            .Returns(new GetQueueAttributesResponse { Attributes = { ["QueueArn"] = "arn:aws:sqs:test" } });
+            .Returns(
+                Task.FromResult(
+                    new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:test" }
+                )
+            );
 
         var sqsClientField = typeof(AmazonSqsConsumerClient).GetField(
             "_sqsClient",
@@ -341,7 +353,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         {
             Messages =
             [
-                new Message
+                new Amazon.SQS.Model.Message
                 {
                     Body = """
                         {
@@ -366,7 +378,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         sqsClient
             .GetAttributesAsync(Arg.Any<string>())
-            .Returns(new GetQueueAttributesResponse { Attributes = { ["QueueArn"] = "arn:aws:sqs:test" } });
+            .Returns(
+                Task.FromResult(
+                    new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:test" }
+                )
+            );
 
         var sqsClientField = typeof(AmazonSqsConsumerClient).GetField(
             "_sqsClient",

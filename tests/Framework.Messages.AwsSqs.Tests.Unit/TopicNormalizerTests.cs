@@ -9,105 +9,137 @@ namespace Tests;
 
 public sealed class TopicNormalizerTests
 {
-    // NOTE: TopicNormalizer has a bug (todo #050) where validation logic is inverted.
-    // It currently throws when length <= 256 instead of when length > 256.
-    // These tests document the CURRENT (buggy) behavior until todo #050 is resolved.
-
     [Fact]
     public void should_replace_dots_with_dashes()
     {
-        // Arrange - Must be > 256 chars to pass validation (due to bug)
-        var input = new string('a', 257) + ".topic.name";
+        // Arrange
+        var input = "my.topic.name";
 
         // Act
         var result = TopicNormalizer.NormalizeForAws(input);
 
         // Assert
-        result.Should().Contain("-topic-name");
+        result.Should().Be("my-topic-name");
     }
 
     [Fact]
     public void should_replace_colons_with_underscores()
     {
-        // Arrange - Must be > 256 chars to pass validation (due to bug)
-        var input = new string('a', 257) + ":topic:name";
+        // Arrange
+        var input = "my:topic:name";
 
         // Act
         var result = TopicNormalizer.NormalizeForAws(input);
 
         // Assert
-        result.Should().Contain("_topic_name");
+        result.Should().Be("my_topic_name");
     }
 
     [Fact]
     public void should_replace_both_dots_and_colons()
     {
-        // Arrange - Must be > 256 chars to pass validation (due to bug)
-        var input = new string('a', 257) + ".topic:name.test";
+        // Arrange
+        var input = "my.topic:name.test";
 
         // Act
         var result = TopicNormalizer.NormalizeForAws(input);
 
         // Assert
-        result.Should().Contain("-topic_name-test");
+        result.Should().Be("my-topic_name-test");
     }
 
     [Fact]
-    public void should_throw_when_length_is_256_or_less()
+    public void should_accept_256_character_topic_name()
     {
-        // Arrange - Bug causes this to throw when it shouldn't
+        // Arrange - AWS SNS max is 256 chars
         var input = new string('a', 256);
 
-        // Act & Assert
-        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => TopicNormalizer.NormalizeForAws(input));
-        exception.Should().NotBeNull();
+        // Act
+        var result = TopicNormalizer.NormalizeForAws(input);
+
+        // Assert
+        result.Should().HaveLength(256);
     }
 
     [Fact]
-    public void should_throw_when_length_is_less_than_256()
+    public void should_accept_valid_length_topic_name()
     {
-        // Arrange - Bug causes this to throw when it shouldn't
+        // Arrange
         var input = "short-string";
 
-        // Act & Assert
-        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => TopicNormalizer.NormalizeForAws(input));
-        exception.Should().NotBeNull();
+        // Act
+        var result = TopicNormalizer.NormalizeForAws(input);
+
+        // Assert
+        result.Should().Be("short-string");
     }
 
     [Fact]
-    public void should_accept_string_longer_than_256_chars()
+    public void should_throw_when_length_exceeds_256_chars()
+    {
+        // Arrange
+        var input = new string('a', 257);
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => TopicNormalizer.NormalizeForAws(input));
+        exception.Should().NotBeNull();
+        exception.Message.Should().Contain("AWS SNS topic names must be 256 characters or less");
+    }
+
+    [Fact]
+    public void should_throw_when_much_longer_than_256_chars()
     {
         // Arrange
         var input = new string('a', 300);
 
-        // Act
-        var result = TopicNormalizer.NormalizeForAws(input);
-
-        // Assert
-        result.Should().HaveLength(300);
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => TopicNormalizer.NormalizeForAws(input));
+        exception.Should().NotBeNull();
     }
 
     [Fact]
     public void should_throw_on_empty_string()
     {
-        // Arrange - Bug causes this to throw
+        // Arrange
         var input = string.Empty;
 
         // Act & Assert
-        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => TopicNormalizer.NormalizeForAws(input));
+        var exception = Assert.Throws<ArgumentException>(() => TopicNormalizer.NormalizeForAws(input));
+        exception.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_throw_on_null_string()
+    {
+        // Arrange
+        string input = null!;
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() => TopicNormalizer.NormalizeForAws(input));
+        exception.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_throw_on_whitespace_only_string()
+    {
+        // Arrange
+        var input = "   ";
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() => TopicNormalizer.NormalizeForAws(input));
         exception.Should().NotBeNull();
     }
 
     [Fact]
     public void should_preserve_other_special_characters()
     {
-        // Arrange - Must be > 256 chars to pass validation (due to bug)
-        var input = new string('a', 257) + "-my_topic";
+        // Arrange
+        var input = "-my_topic";
 
         // Act
         var result = TopicNormalizer.NormalizeForAws(input);
 
         // Assert
-        result.Should().Contain("-my_topic");
+        result.Should().Be("-my_topic");
     }
 }

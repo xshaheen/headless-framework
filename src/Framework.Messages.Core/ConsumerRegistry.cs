@@ -19,6 +19,7 @@ namespace Framework.Messages;
 /// </remarks>
 public sealed class ConsumerRegistry : IConsumerRegistry
 {
+    private readonly Lock _lock = new();
     private List<ConsumerMetadata>? _consumers = [];
     private IReadOnlyList<ConsumerMetadata>? _frozen;
 
@@ -31,15 +32,18 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     /// </exception>
     public void Register(ConsumerMetadata metadata)
     {
-        if (_frozen != null)
+        lock (_lock)
         {
-            throw new InvalidOperationException(
-                "Cannot register consumers after the registry has been frozen. "
-                    + "Ensure all consumers are registered during configuration before the application starts."
-            );
-        }
+            if (_frozen != null)
+            {
+                throw new InvalidOperationException(
+                    "Cannot register consumers after the registry has been frozen. "
+                        + "Ensure all consumers are registered during configuration before the application starts."
+                );
+            }
 
-        _consumers!.Add(metadata);
+            _consumers!.Add(metadata);
+        }
     }
 
     /// <summary>
@@ -52,15 +56,18 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     /// </exception>
     public void Update(Func<ConsumerMetadata, bool> predicate, ConsumerMetadata newMetadata)
     {
-        if (_frozen != null)
+        lock (_lock)
         {
-            throw new InvalidOperationException("Cannot update consumers after the registry has been frozen.");
-        }
+            if (_frozen != null)
+            {
+                throw new InvalidOperationException("Cannot update consumers after the registry has been frozen.");
+            }
 
-        var index = _consumers!.FindIndex(m => predicate(m));
-        if (index >= 0)
-        {
-            _consumers[index] = newMetadata;
+            var index = _consumers!.FindIndex(m => predicate(m));
+            if (index >= 0)
+            {
+                _consumers[index] = newMetadata;
+            }
         }
     }
 
@@ -73,8 +80,14 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     {
         if (_frozen == null)
         {
-            _frozen = _consumers!.AsReadOnly();
-            _consumers = null; // Release for GC
+            lock (_lock)
+            {
+                if (_frozen == null)
+                {
+                    _frozen = _consumers!.AsReadOnly();
+                    _consumers = null; // Release for GC
+                }
+            }
         }
 
         return _frozen;

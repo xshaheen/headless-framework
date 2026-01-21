@@ -17,6 +17,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = 5672,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = "test-exchange",
         };
@@ -36,6 +38,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = -1,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = "test-exchange",
         };
@@ -58,6 +62,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = hostName!,
             Port = 5672,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = "test-exchange",
         };
@@ -82,6 +88,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = port,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = "test-exchange",
         };
@@ -105,6 +113,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = port,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = "test-exchange",
         };
@@ -127,6 +137,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = 5672,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = virtualHost!,
             ExchangeName = "test-exchange",
         };
@@ -150,6 +162,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = 5672,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = exchangeName!,
         };
@@ -170,6 +184,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = 5672,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = "invalid exchange name",
         };
@@ -190,6 +206,8 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         {
             HostName = "localhost",
             Port = 5672,
+            UserName = "myapp_user",
+            Password = "secure_password",
             VirtualHost = "/",
             ExchangeName = new string('a', 256),
         };
@@ -200,5 +218,105 @@ public sealed class RabbitMQOptionsValidatorTests : TestBase
         // Then
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("Invalid ExchangeName");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_fail_validation_when_username_is_null_or_whitespace(string? userName)
+    {
+        // Given
+        var options = new RabbitMQOptions
+        {
+            HostName = "localhost",
+            Port = 5672,
+            UserName = userName!,
+            Password = "secure_password",
+            VirtualHost = "/",
+            ExchangeName = "test-exchange",
+        };
+
+        // When
+        var result = _validator.Validate(null, options);
+
+        // Then
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("UserName is required");
+    }
+
+    [Theory]
+    [InlineData("guest")]
+    [InlineData("GUEST")]
+    [InlineData("Guest")]
+    public void should_fail_validation_when_username_is_guest(string userName)
+    {
+        // Given
+        var options = new RabbitMQOptions
+        {
+            HostName = "localhost",
+            Port = 5672,
+            UserName = userName,
+            Password = "secure_password",
+            VirtualHost = "/",
+            ExchangeName = "test-exchange",
+        };
+
+        // When
+        var result = _validator.Validate(null, options);
+
+        // Then
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("UserName cannot be 'guest'");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_fail_validation_when_password_is_null_or_whitespace(string? password)
+    {
+        // Given
+        var options = new RabbitMQOptions
+        {
+            HostName = "localhost",
+            Port = 5672,
+            UserName = "myapp_user",
+            Password = password!,
+            VirtualHost = "/",
+            ExchangeName = "test-exchange",
+        };
+
+        // When
+        var result = _validator.Validate(null, options);
+
+        // Then
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("Password is required");
+    }
+
+    [Theory]
+    [InlineData("guest")]
+    [InlineData("GUEST")]
+    [InlineData("Guest")]
+    public void should_fail_validation_when_password_is_guest(string password)
+    {
+        // Given
+        var options = new RabbitMQOptions
+        {
+            HostName = "localhost",
+            Port = 5672,
+            UserName = "myapp_user",
+            Password = password,
+            VirtualHost = "/",
+            ExchangeName = "test-exchange",
+        };
+
+        // When
+        var result = _validator.Validate(null, options);
+
+        // Then
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("Password cannot be 'guest'");
     }
 }

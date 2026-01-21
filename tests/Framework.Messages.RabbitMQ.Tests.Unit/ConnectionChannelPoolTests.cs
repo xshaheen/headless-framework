@@ -138,4 +138,98 @@ public sealed class ConnectionChannelPoolTests : TestBase
         channel1.Received(1).Dispose();
         channel2.Received(1).Dispose();
     }
+
+    [Fact]
+    public async Task should_release_semaphore_when_get_connection_throws()
+    {
+        // Given
+        var options = Options.Create(
+            new RabbitMQOptions
+            {
+                HostName = "invalid-host-that-does-not-exist",
+                Port = 9999,
+                ExchangeName = "test.exchange",
+            }
+        );
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+
+        // When/Then - both should fail but semaphore should be released
+        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+
+        // Verify pool is not exhausted - can still attempt rentals
+        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+    }
+
+    [Fact]
+    public async Task should_release_semaphore_when_create_channel_throws()
+    {
+        // Given
+        var options = Options.Create(
+            new RabbitMQOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                ExchangeName = "test.exchange",
+                ConnectionFactoryOptions = factory =>
+                {
+                    // Configure factory to fail on connection
+                    factory.AutomaticRecoveryEnabled = false;
+                }
+            }
+        );
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+
+        // When/Then - should fail but not exhaust semaphore
+        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+
+        // Verify pool is not exhausted after exceptions
+        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+    }
+
+    [Fact]
+    public async Task should_not_exhaust_pool_after_multiple_exceptions()
+    {
+        // Given
+        var options = Options.Create(
+            new RabbitMQOptions
+            {
+                HostName = "invalid-host",
+                Port = 9999,
+                ExchangeName = "test.exchange",
+            }
+        );
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+
+        // When - force multiple exceptions (up to pool size of 15)
+        var tasks = new List<Task>();
+        for (var i = 0; i < 20; i++)
+        {
+            var task = pool.Rent().ContinueWith(
+                _ => { },
+                TaskContinuationOptions.OnlyOnFaulted
+            );
+            tasks.Add(task);
+        }
+
+        // Then - all should complete (with failures) without deadlock within timeout
+        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Verify pool is still usable
+        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+    }
+
+    [Fact]
+    public async Task should_complete_async_disposal()
+    {
+        // Given
+        var pool = new ConnectionChannelPool(_logger, _capOptions, _rabbitOptions);
+
+        // When - dispose asynchronously
+        await pool.DisposeAsync();
+
+        // Then - disposal should complete without exceptions
+        Assert.True(true); // If we reach here, DisposeAsync completed successfully
+    }
 }

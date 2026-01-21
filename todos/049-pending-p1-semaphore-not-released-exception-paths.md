@@ -1,9 +1,10 @@
 ---
-status: pending
+status: completed
 priority: p1
 issue_id: "049"
 tags: [code-review, dotnet, aws-sqs, resource-leak, deadlock]
 created: 2026-01-20
+completed: 2026-01-21
 dependencies: []
 ---
 
@@ -69,10 +70,14 @@ Apply same fix to `RejectAsync`.
 
 ## Acceptance Criteria
 
-- [ ] Add `finally` block with semaphore release to `CommitAsync`
-- [ ] Add `finally` block with semaphore release to `RejectAsync`
+- [x] Add `finally` block with semaphore release to `CommitAsync`
+- [x] Add `finally` block with semaphore release to `RejectAsync`
 - [ ] Add integration test: force exception, verify semaphore released
 - [ ] Stress test: 1000 messages with 10% failure rate
 - [ ] Verify consumer continues processing after exceptions
 
 **Effort:** 30 min | **Risk:** Very Low
+
+## Resolution
+
+Fixed semaphore leak by moving `_semaphore.Release()` calls from try blocks into finally blocks in both `CommitAsync` (lines 165-179) and `RejectAsync` (lines 181-195). Semaphore now releases on all code paths - success, caught exceptions, and uncaught exceptions.

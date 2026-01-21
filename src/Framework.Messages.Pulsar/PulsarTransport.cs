@@ -16,14 +16,14 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
 
     public async Task<OperateResult> SendAsync(TransportMessage message)
     {
-        var producer = await connectionFactory.CreateProducerAsync(message.GetName());
+        var producer = await connectionFactory.CreateProducerAsync(message.GetName()).AnyContext();
 
         try
         {
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
             headerDic.TryGetValue(PulsarHeaders.PulsarKey, out var key);
             var pulsarMessage = producer.NewMessage(message.Body.ToArray()!, key, headerDic);
-            var messageId = await producer.SendAsync(pulsarMessage);
+            var messageId = await producer.SendAsync(pulsarMessage).AnyContext();
 
             if (messageId != null)
             {

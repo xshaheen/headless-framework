@@ -20,14 +20,14 @@ public static class PaginationExtensions
         pageSize = Math.Clamp(pageSize, 1, 1000); // Max 1000 items per page
 
         // Get total count efficiently
-        var count = await source.CountAsync(cancellationToken).ConfigureAwait(false);
+        var count = await source.CountAsync(cancellationToken).AnyContext();
 
         // Apply pagination
         var items = await source
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+            .AnyContext();
 
         return new PaginationResult<T>(items, count, pageNumber, pageSize);
     }
@@ -48,14 +48,14 @@ public static class PaginationExtensions
         pageSize = Math.Clamp(pageSize, 1, 1000); // Max 1000 items per page
 
         // Get total count from the source query
-        var count = await source.CountAsync(cancellationToken).ConfigureAwait(false);
+        var count = await source.CountAsync(cancellationToken).AnyContext();
 
         // Apply pagination to the source
         var paginatedSource = source.Skip((pageNumber - 1) * pageSize).Take(pageSize);
 
         // Apply the projection
         var projectedQuery = projection(paginatedSource);
-        var items = await projectedQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
+        var items = await projectedQuery.ToListAsync(cancellationToken).AnyContext();
 
         return new PaginationResult<TResult>(items, count, pageNumber, pageSize);
     }
@@ -69,7 +69,7 @@ public static class PaginationExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var items = await source.ToListAsync(cancellationToken).ConfigureAwait(false);
+        var items = await source.ToListAsync(cancellationToken).AnyContext();
         var count = items.Count;
 
         return new PaginationResult<T>(items, count, 1, count > 0 ? count : 1);

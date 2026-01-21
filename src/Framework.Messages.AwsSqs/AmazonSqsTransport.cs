@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -17,7 +18,7 @@ internal sealed class AmazonSqsTransport(ILogger<AmazonSqsTransport> logger, IOp
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private IAmazonSimpleNotificationService? _snsClient;
-    private IDictionary<string, string>? _topicArnMaps;
+    private ConcurrentDictionary<string, string>? _topicArnMaps;
 
     public BrokerAddress BrokerAddress => new("AmazonSQS", string.Empty);
 
@@ -27,7 +28,9 @@ internal sealed class AmazonSqsTransport(ILogger<AmazonSqsTransport> logger, IOp
         {
             await _FetchExistingTopicArns();
 
-            if (_TryGetOrCreateTopicArn(message.GetName().NormalizeForAws(), out var arn))
+            var (success, arn) = await _TryGetOrCreateTopicArnAsync(message.GetName().NormalizeForAws());
+
+            if (success)
             {
                 string? bodyJson = null;
                 if (message.Body.Length > 0)
@@ -92,7 +95,7 @@ internal sealed class AmazonSqsTransport(ILogger<AmazonSqsTransport> logger, IOp
 
             if (_topicArnMaps == null)
             {
-                _topicArnMaps = new Dictionary<string, string>(StringComparer.Ordinal);
+                _topicArnMaps = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
 
                 string? nextToken = null;
                 do
@@ -104,7 +107,7 @@ internal sealed class AmazonSqsTransport(ILogger<AmazonSqsTransport> logger, IOp
                     topics.Topics.ForEach(x =>
                     {
                         var name = x.TopicArn.Split(':').Last();
-                        _topicArnMaps.Add(name, x.TopicArn);
+                        _topicArnMaps[name] = x.TopicArn;
                     });
                     nextToken = topics.NextToken;
                 } while (!string.IsNullOrEmpty(nextToken));
@@ -120,24 +123,25 @@ internal sealed class AmazonSqsTransport(ILogger<AmazonSqsTransport> logger, IOp
         }
     }
 
-    private bool _TryGetOrCreateTopicArn(string topicName, [NotNullWhen(true)] out string? topicArn)
+    private async Task<(bool success, string? topicArn)> _TryGetOrCreateTopicArnAsync(string topicName)
     {
-        topicArn = null;
-        if (_topicArnMaps!.TryGetValue(topicName, out topicArn))
+        if (_topicArnMaps!.TryGetValue(topicName, out var topicArn))
         {
-            return true;
+            return (true, topicArn);
         }
 
-        var response = _snsClient!.CreateTopicAsync(topicName).GetAwaiter().GetResult();
+        var response = await _snsClient!.CreateTopicAsync(topicName).AnyContext();
 
         if (string.IsNullOrEmpty(response.TopicArn))
         {
-            return false;
+            return (false, null);
         }
 
-        topicArn = response.TopicArn;
+        // TryAdd is thread-safe and returns false if key exists (handles race condition)
+        _topicArnMaps.TryAdd(topicName, response.TopicArn);
 
-        _topicArnMaps.Add(topicName, topicArn);
-        return true;
+        // Get the actual value from dict in case another thread won the race
+        topicArn = _topicArnMaps[topicName];
+        return (true, topicArn);
     }
 }

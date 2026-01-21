@@ -286,7 +286,7 @@ public static class TaskExtensions
 
         await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
         {
-            if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(false))
+            if (task != await Task.WhenAny(task, tcs.Task).AnyContext())
             {
                 cancellationToken.ThrowIfCancellationRequested();
             }
@@ -295,7 +295,7 @@ public static class TaskExtensions
         // Rethrow any fault/cancellation exception, even if we awaited above.
         // But if we skipped the above if branched, this will actually yield
         // on an incompleted task.
-        return await task.ConfigureAwait(false);
+        return await task.AnyContext();
     }
 
     /// <summary>

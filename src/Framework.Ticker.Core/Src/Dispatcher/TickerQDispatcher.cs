@@ -26,11 +26,11 @@ internal class TickerQDispatcher(TickerQTaskScheduler taskScheduler, TickerExecu
         {
             await _taskScheduler
                 .QueueAsync(
-                    async ct => await _taskHandler.ExecuteTaskAsync(context, false, ct).ConfigureAwait(false),
+                    async ct => await _taskHandler.ExecuteTaskAsync(context, false, ct).AnyContext(),
                     context.CachedPriority,
                     cancellationToken
                 )
-                .ConfigureAwait(false);
+                .AnyContext();
         }
     }
 }

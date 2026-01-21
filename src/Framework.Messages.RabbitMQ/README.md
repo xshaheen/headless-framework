@@ -31,14 +31,16 @@ builder.Services.AddMessages(options =>
     {
         rmq.HostName = "localhost";
         rmq.Port = 5672;
-        rmq.UserName = "guest";
-        rmq.Password = "guest";
+        rmq.UserName = "myapp_user"; // Required - cannot use 'guest'
+        rmq.Password = "secure_password"; // Required - cannot use 'guest'
         rmq.VirtualHost = "/";
     });
 
     options.ScanConsumers(typeof(Program).Assembly);
 });
 ```
+
+> **Security Note:** Username and password must be configured explicitly. The default RabbitMQ credentials (`guest`/`guest`) are rejected to prevent accidental production deployments with insecure settings.
 
 ## Configuration
 
@@ -47,8 +49,8 @@ options.UseRabbitMQ(rmq =>
 {
     rmq.HostName = "localhost";
     rmq.Port = 5672;
-    rmq.UserName = "guest";
-    rmq.Password = "guest";
+    rmq.UserName = builder.Configuration["RabbitMq:UserName"]!; // From config
+    rmq.Password = builder.Configuration["RabbitMq:Password"]!; // From config
     rmq.VirtualHost = "/";
     rmq.ExchangeName = "myapp.events";
     rmq.ConnectionFactoryOptions = factory =>
@@ -58,6 +60,14 @@ options.UseRabbitMQ(rmq =>
     };
 });
 ```
+
+### Security Best Practices
+
+- **Never hardcode credentials** - use environment variables, configuration files, or secret management services
+- **Avoid default credentials** - the framework rejects `guest`/`guest` to prevent security issues
+- **Use strong passwords** - RabbitMQ passwords should be complex and unique
+- **Restrict permissions** - create application-specific users with minimal required permissions
+- **Enable TLS** - use encrypted connections in production environments
 
 ## Message Ordering
 

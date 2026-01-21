@@ -4,7 +4,7 @@ using Framework.Messages.Monitoring;
 
 namespace Framework.Messages.Internal;
 
-public class ScheduledMediumMessageQueue(TimeProvider timeProvider)
+public class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
 {
     private readonly SortedSet<(long, MediumMessage)> _queue = new(
         Comparer<(long, MediumMessage)>.Create(
@@ -18,6 +18,7 @@ public class ScheduledMediumMessageQueue(TimeProvider timeProvider)
 
     private readonly SemaphoreSlim _semaphore = new(0);
     private readonly object _lock = new();
+    private bool _isDisposed;
 
     public void Enqueue(MediumMessage message, long sendTime)
     {
@@ -85,6 +86,35 @@ public class ScheduledMediumMessageQueue(TimeProvider timeProvider)
                 _semaphore.Release();
                 await Task.Delay(50, cancellationToken);
             }
+        }
+    }
+
+    public void Dispose()
+    {
+        _Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    private void _Dispose(bool disposing)
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            _semaphore.Dispose();
+        }
+
+        _isDisposed = true;
+    }
+
+    ~ScheduledMediumMessageQueue()
+    {
+        if (!_isDisposed)
+        {
+            System.Diagnostics.Debug.Fail("ScheduledMediumMessageQueue was not disposed. Call Dispose() to release SemaphoreSlim.");
         }
     }
 }

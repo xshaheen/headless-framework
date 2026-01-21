@@ -166,6 +166,7 @@ public class Dispatcher : IDispatcher
 
         _disposed = true;
         _tasksCts?.Dispose();
+        _schedulerQueue.Dispose();
     }
 
     #endregion

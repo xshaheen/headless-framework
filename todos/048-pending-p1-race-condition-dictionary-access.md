@@ -1,9 +1,10 @@
 ---
-status: pending
+status: resolved
 priority: p1
 issue_id: "048"
 tags: [code-review, dotnet, aws-sqs, thread-safety, concurrency]
 created: 2026-01-20
+resolved: 2026-01-21
 dependencies: []
 ---
 
@@ -171,6 +172,16 @@ private async Task<string> GetOrCreateTopicArnAsync(string topicName)
 - [ ] Pass existing integration tests
 
 ## Work Log
+
+### 2026-01-21
+- Implemented Option 1: ConcurrentDictionary replacement
+- Changed `IDictionary<string,string>` to `ConcurrentDictionary<string,string>` at line 21
+- Updated initialization at line 96 to use ConcurrentDictionary constructor
+- Changed `.Add()` to indexer `[]=` at line 108 (thread-safe)
+- Changed `_TryGetOrCreateTopicArn` to use `TryAdd()` at line 140 with proper race handling
+- Added comment explaining thread safety at lines 139-142
+- Build successful with 0 warnings/errors
+- Method signature also updated to async (from todo #046)
 
 ### 2026-01-20
 - Identified by strict-dotnet-reviewer (thread safety)

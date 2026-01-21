@@ -29,7 +29,7 @@ public sealed class SshBlobStorage(
         cancellationToken.ThrowIfCancellationRequested();
         logger.LogTrace("Ensuring {Directory} directory exists", (object)container);
 
-        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
         try
         {
             var currentDirectory = string.Empty;
@@ -49,7 +49,7 @@ public sealed class SshBlobStorage(
         }
         finally
         {
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            await pool.ReleaseAsync(client).AnyContext();
         }
     }
 
@@ -85,7 +85,7 @@ public sealed class SshBlobStorage(
             stream.Seek(0, SeekOrigin.Begin);
         }
 
-        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
         try
         {
             try
@@ -110,7 +110,7 @@ public sealed class SshBlobStorage(
         }
         finally
         {
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            await pool.ReleaseAsync(client).AnyContext();
         }
     }
 
@@ -169,14 +169,14 @@ public sealed class SshBlobStorage(
 
         logger.LogTrace("Deleting {Path}", blobPath);
 
-        var client = await pool.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        var client = await pool.AcquireAsync(cancellationToken).AnyContext();
         try
         {
             return await _DeleteWithClientAsync(client, blobPath, cancellationToken).AnyContext();
         }
         finally
         {
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            await pool.ReleaseAsync(client).AnyContext();
         }
     }
 
@@ -892,7 +892,7 @@ public sealed class SshBlobStorage(
 
                 try
                 {
-                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                    hasNext = await enumerator.MoveNextAsync().AnyContext();
                 }
                 catch (SftpPathNotFoundException)
                 {
@@ -1185,11 +1185,11 @@ file sealed class PooledClientStream(Stream innerStream, SftpClient client, Sftp
     {
         if (!_disposed)
         {
-            await innerStream.DisposeAsync().ConfigureAwait(false);
-            await pool.ReleaseAsync(client).ConfigureAwait(false);
+            await innerStream.DisposeAsync().AnyContext();
+            await pool.ReleaseAsync(client).AnyContext();
             _disposed = true;
         }
 
-        await base.DisposeAsync().ConfigureAwait(false);
+        await base.DisposeAsync().AnyContext();
     }
 }
