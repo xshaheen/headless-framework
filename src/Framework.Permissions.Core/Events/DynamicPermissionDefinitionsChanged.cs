@@ -4,10 +4,9 @@ using Framework.Domain;
 
 namespace Framework.Permissions.Events;
 
-[Message(EventName)]
-public sealed class DynamicPermissionDefinitionsChanged : DistributedMessage
+public sealed class DynamicPermissionDefinitionsChanged : IDistributedMessage
 {
-    public const string EventName = "permissions:dynamic-permission-definitions-changed";
+    public required string UniqueId { get; init; }
 
     public required HashSet<string> Permissions { get; init; }
 }
