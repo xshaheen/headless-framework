@@ -6,11 +6,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Framework.Orm.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "AccountId"/></summary>
-public sealed class AccountIdValueConverter : ValueConverter<AccountId, string>
+public sealed class AccountIdValueConverter : PrimitiveValueConverter<AccountId, string>
 {
     public AccountIdValueConverter()
-        : base(v => v, v => v) { }
+        : base() { }
 
-    public AccountIdValueConverter(ConverterMappingHints? mappingHints = null)
-        : base(v => v, v => v, mappingHints) { }
+    public AccountIdValueConverter(ConverterMappingHints? mappingHints)
+        : base(mappingHints) { }
 }
