@@ -8,8 +8,8 @@
     <ProjectReference Include="..\..\src\Framework.Api\Framework.Api.csproj" />
     <ProjectReference Include="..\..\src\Framework.Caching.Foundatio.Memory\Framework.Caching.Foundatio.Memory.csproj" />
     <ProjectReference Include="..\..\src\Framework.Features.Storage.EntityFramework\Framework.Features.Storage.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Messages.InMemoryQueue\Framework.Messages.InMemoryQueue.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Messages.InMemoryStorage\Framework.Messages.InMemoryStorage.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryQueue\Headless.Messaging.InMemoryQueue.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
     <ProjectReference Include="..\..\src\Framework.Permissions.Storage.EntityFramework\Framework.Permissions.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Framework.ResourceLocks.Cache\Framework.ResourceLocks.Cache.csproj" />
     <ProjectReference Include="..\..\src\Framework.Settings.Storage.EntityFramework\Framework.Settings.Storage.EntityFramework.csproj" />

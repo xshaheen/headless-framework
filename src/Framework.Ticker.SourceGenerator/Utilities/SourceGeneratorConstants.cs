@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Framework.Ticker.SourceGenerator.Utilities;
 
 /// <summary>
@@ -37,7 +39,7 @@ internal static class SourceGeneratorConstants
     };
 
     // Pre-computed common variable names for performance (static readonly for better memory usage)
-    public static readonly HashSet<string> CommonVariableNames = new HashSet<string>(StringComparer.Ordinal)
+    public static readonly HashSet<string> CommonVariableNames = new(StringComparer.Ordinal)
     {
         "context",
         "service",
@@ -57,40 +59,41 @@ internal static class SourceGeneratorConstants
 
     #region Regex Patterns
 
+
     // Pre-compiled regex patterns for optimal performance
-    public static readonly System.Text.RegularExpressions.Regex[] CompiledPatterns =
-    {
+    public static readonly Regex[] CompiledPatterns =
+    [
         // Generic type parameters: typeof(Namespace.Type)
-        new System.Text.RegularExpressions.Regex(
+        new(
             @"typeof\s*\(\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*\)",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-                | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+            TimeSpan.FromMilliseconds(100)
         ),
         // Type declarations: new Namespace.Type()
-        new System.Text.RegularExpressions.Regex(
+        new(
             @"new\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*\(",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-                | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+            TimeSpan.FromMilliseconds(100)
         ),
         // Type casts: (Namespace.Type)
-        new System.Text.RegularExpressions.Regex(
+        new(
             @"\(\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*\)",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-                | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+            TimeSpan.FromMilliseconds(100)
         ),
         // Generic type arguments: <Namespace.Type>
-        new System.Text.RegularExpressions.Regex(
+        new(
             @"<\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*>",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-                | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+            TimeSpan.FromMilliseconds(100)
         ),
         // Static method calls: Namespace.Type.Method
-        new System.Text.RegularExpressions.Regex(
+        new(
             @"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\.[A-Za-z_][A-Za-z0-9_]*\s*\(",
-            System.Text.RegularExpressions.RegexOptions.Compiled
-                | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+            TimeSpan.FromMilliseconds(100)
         ),
-    };
+    ];
 
     #endregion
 }

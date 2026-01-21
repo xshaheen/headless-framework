@@ -1,5 +1,4 @@
 using Framework.Ticker.Base;
-using Framework.Ticker.Utilities;
 
 namespace Framework.Ticker.Api.Demo;
 

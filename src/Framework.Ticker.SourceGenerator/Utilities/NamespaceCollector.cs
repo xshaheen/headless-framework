@@ -81,8 +81,7 @@ internal static class NamespaceCollector
             _AddTypeNamespace(semanticModel.GetDeclaredSymbol(classDeclaration)?.ContainingNamespace, namespaces);
 
             // Collect namespaces from method return type
-            var methodSymbol = semanticModel.GetDeclaredSymbol(methodDeclaration) as IMethodSymbol;
-            if (methodSymbol != null)
+            if (semanticModel.GetDeclaredSymbol(methodDeclaration) is IMethodSymbol methodSymbol)
             {
                 _AddTypeNamespace(methodSymbol.ReturnType, namespaces);
 

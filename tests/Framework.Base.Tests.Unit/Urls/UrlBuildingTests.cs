@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 // Adapted from Flurl (https://github.com/tmenier/Flurl) under MIT License.
 
-using System.Globalization;
 using Framework.Urls;
 
 namespace Tests.Urls;

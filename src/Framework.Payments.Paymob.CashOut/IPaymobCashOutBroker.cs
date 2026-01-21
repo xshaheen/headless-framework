@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
-using System.Text.Encodings.Web;
 using Framework.Checks;
 using Framework.Payments.Paymob.CashOut.Internals;
 using Framework.Payments.Paymob.CashOut.Models;

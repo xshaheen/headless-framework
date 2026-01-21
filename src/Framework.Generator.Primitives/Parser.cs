@@ -2,7 +2,6 @@
 
 using System.Collections.Immutable;
 using Framework.Generator.Primitives.Extensions;
-using Framework.Generator.Primitives.Helpers;
 using Framework.Generator.Primitives.Models;
 using Framework.Generator.Primitives.Shared;
 using Microsoft.CodeAnalysis;

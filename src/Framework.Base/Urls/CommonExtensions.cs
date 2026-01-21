@@ -124,11 +124,11 @@ public static class CommonExtensions
 
             if (!_IsTuple2(item, out var name, out var val) && !_LooksLikeKV(item, out name, out val))
             {
-                yield return (item.ToInvariantString()!, null);
+                yield return (item.ToInvariantString(), null);
             }
             else if (name is not null)
             {
-                yield return (name.ToInvariantString()!, val);
+                yield return (name.ToInvariantString(), val);
             }
         }
     }

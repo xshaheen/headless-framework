@@ -46,7 +46,7 @@ public class SnappyCompressorTests
 
         // then
         decompressedObject.Should().NotBeNull();
-        decompressedObject!.Id.Should().Be(1);
+        decompressedObject.Id.Should().Be(1);
         decompressedObject.Name.Should().Be("Framework");
         decompressedObject.DateCreated.Should().Be(_clock.UtcNow);
     }

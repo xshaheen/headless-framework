@@ -73,11 +73,13 @@ internal static class SourceGeneratorUtilities
             var formatted = root.NormalizeWhitespace();
             return formatted.ToFullString();
         }
+#pragma warning disable ERP022
         catch
         {
             // If formatting fails, return the original code
             return code;
         }
+#pragma warning restore ERP022
     }
 
     /// <summary>

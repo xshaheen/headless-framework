@@ -239,7 +239,7 @@ public class DependencyInjectionExtensionsTests
 
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
-        resolvedService!.Greet().Should().Be("replace");
+        resolvedService.Greet().Should().Be("replace");
     }
 
     [Fact]
@@ -257,7 +257,7 @@ public class DependencyInjectionExtensionsTests
 
         // then
         myService.Should().NotBeNull();
-        myService!.Greet().Should().Be("replacement");
+        myService.Greet().Should().Be("replacement");
     }
 
     [Fact]
@@ -279,7 +279,7 @@ public class DependencyInjectionExtensionsTests
 
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
-        resolvedService!.Greet().Should().Be("replace");
+        resolvedService.Greet().Should().Be("replace");
     }
 
     [Fact]
@@ -305,7 +305,7 @@ public class DependencyInjectionExtensionsTests
 
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
-        resolvedService!.Greet().Should().Be("replace");
+        resolvedService.Greet().Should().Be("replace");
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public class DependencyInjectionExtensionsTests
 
         // then
         myService.Should().NotBeNull();
-        myService!.Greet().Should().Be("replacement");
+        myService.Greet().Should().Be("replacement");
     }
 
     [Fact]
@@ -349,7 +349,7 @@ public class DependencyInjectionExtensionsTests
 
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
-        resolvedService!.Greet().Should().Be("replace");
+        resolvedService.Greet().Should().Be("replace");
     }
 
     [Fact]
@@ -371,7 +371,7 @@ public class DependencyInjectionExtensionsTests
 
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
-        resolvedService!.Greet().Should().Be("replace");
+        resolvedService.Greet().Should().Be("replace");
     }
 
     [Fact]
@@ -397,7 +397,7 @@ public class DependencyInjectionExtensionsTests
 
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
-        resolvedService!.Greet().Should().Be("replace");
+        resolvedService.Greet().Should().Be("replace");
     }
 
     [Fact]
@@ -415,7 +415,7 @@ public class DependencyInjectionExtensionsTests
 
         // then
         myService.Should().NotBeNull();
-        myService!.Greet().Should().Be("replacement");
+        myService.Greet().Should().Be("replacement");
     }
 
     [Fact]
@@ -437,7 +437,7 @@ public class DependencyInjectionExtensionsTests
 
         resolvedService.Should().NotBeNull();
         resolvedService.Should().Be(newServiceMock);
-        resolvedService!.Greet().Should().Be("replace");
+        resolvedService.Greet().Should().Be("replace");
     }
 
     [Fact]
@@ -457,7 +457,7 @@ public class DependencyInjectionExtensionsTests
         var descriptor = services.Single(d => d.ServiceType == typeof(IMyService));
         descriptor.ImplementationFactory.Should().NotBeNull();
         replacementService.Should().NotBeNull();
-        replacementService!.Greet().Should().Be("replacement");
+        replacementService.Greet().Should().Be("replacement");
     }
 
     [Fact]
@@ -501,7 +501,7 @@ public class DependencyInjectionExtensionsTests
 
         // then
         myService.Should().NotBeNull();
-        myService!.Greet().Should().Be("original");
+        myService.Greet().Should().Be("original");
     }
 
     [Fact]
@@ -534,7 +534,7 @@ public class DependencyInjectionExtensionsTests
 
         // then
         myService.Should().NotBeNull();
-        myService!.Greet().Should().Be("original");
+        myService.Greet().Should().Be("original");
     }
 
     [Fact]

@@ -1,7 +1,6 @@
 ﻿using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Domain;
-using Framework.Messages;
 using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Redis;

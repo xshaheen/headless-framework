@@ -602,11 +602,11 @@ internal class InternalTickerManager<TTimeTicker, TCronTicker> : IInternalTicker
         {
             var functionContext = new InternalFunctionContext
             {
-                FunctionName = timedOutCronTicker.CronTicker!.Function,
+                FunctionName = timedOutCronTicker.CronTicker.Function,
                 TickerId = timedOutCronTicker.Id,
                 Type = TickerType.CronTickerOccurrence,
-                Retries = timedOutCronTicker.CronTicker!.Retries,
-                RetryIntervals = timedOutCronTicker.CronTicker!.RetryIntervals,
+                Retries = timedOutCronTicker.CronTicker.Retries,
+                RetryIntervals = timedOutCronTicker.CronTicker.RetryIntervals,
                 ParentId = timedOutCronTicker.CronTickerId,
                 ExecutionTime = timedOutCronTicker.ExecutionTime,
             };

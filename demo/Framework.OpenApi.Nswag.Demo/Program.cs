@@ -2,7 +2,6 @@
 
 using Framework.Api;
 using Framework.Constants;
-using Framework.OpenApi.Nswag;
 using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 

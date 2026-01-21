@@ -90,7 +90,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
         // Ensure delete files can remove all files including fake folders
         await storage.DeleteAllAsync(container, "*", AbortToken);
 
-        // Assert folder was removed by Delete Files
+        // then folder was removed by Delete Files
         (await storage.ExistsAsync(container, directory, AbortToken))
             .Should()
             .BeFalse();

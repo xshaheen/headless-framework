@@ -45,7 +45,7 @@ public class TickerOptionsBuilderTests
                 .GetValue(builder) as JsonSerializerOptions;
 
         jsonOptions.Should().NotBeNull();
-        jsonOptions!.PropertyNameCaseInsensitive.Should().BeTrue();
+        jsonOptions.PropertyNameCaseInsensitive.Should().BeTrue();
         jsonOptions.DefaultIgnoreCondition.Should().Be(JsonIgnoreCondition.WhenWritingNull);
     }
 

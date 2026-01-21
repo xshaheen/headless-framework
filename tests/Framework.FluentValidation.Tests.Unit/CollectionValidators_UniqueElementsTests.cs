@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using FluentValidation.TestHelper;
-using Framework.FluentValidation;
 
 namespace Tests;
 

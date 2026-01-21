@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs.Models;

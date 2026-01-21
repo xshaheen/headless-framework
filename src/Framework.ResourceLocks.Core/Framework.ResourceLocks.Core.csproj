@@ -6,7 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
-    <ProjectReference Include="..\Framework.Messages.Abstractions\Framework.Messages.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.ResourceLocks.Abstractions\Framework.ResourceLocks.Abstractions.csproj" />
   </ItemGroup>
 </Project>

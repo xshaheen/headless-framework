@@ -4,8 +4,6 @@ using Bogus;
 using Framework.Testing.Helpers;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Sdk;
-using Xunit.v3;
 
 [assembly: CaptureConsole]
 

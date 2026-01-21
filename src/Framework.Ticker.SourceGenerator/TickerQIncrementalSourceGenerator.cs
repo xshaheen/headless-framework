@@ -21,7 +21,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
     {
         var tickerMethods = context
             .SyntaxProvider.CreateSyntaxProvider(
-                predicate: (node, _) => node is MethodDeclarationSyntax m && m.AttributeLists.Count > 0,
+                predicate: (node, _) => node is MethodDeclarationSyntax { AttributeLists.Count: > 0 },
                 transform: (ctx, _) => _GetTickerMethodIfAny(ctx)
             )
             .Where(pair => pair is not null)
@@ -105,7 +105,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         }
 
         var semanticModel = ctx.SemanticModel;
-        if (semanticModel.GetDeclaredSymbol(methodSyntax) is not IMethodSymbol methodSymbol)
+        if (semanticModel.GetDeclaredSymbol(methodSyntax) is not { } methodSymbol)
         {
             return null;
         }
@@ -257,7 +257,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         var sb = new StringBuilder(SourceGeneratorConstants.InitialStringBuilderCapacity);
 
         // Check if ToGenericContextWithRequest is used (if any request types exist)
-        bool includeBaseUtilities = requestTypes.Any(rt => !string.IsNullOrEmpty(rt.GenericTypeName));
+        var includeBaseUtilities = requestTypes.Any(rt => !string.IsNullOrEmpty(rt.GenericTypeName));
 
         _GenerateFileHeaderWithTickerQUsings(sb, includeBaseUtilities, assemblyName);
         _GenerateClassDeclarationWithFullNamespaces(sb, assemblyName);
@@ -331,8 +331,8 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         }
 
         // Extract the return type (class name) between "private static " and " Create"
-        var startIndex = methodLine.IndexOf("private static ") + "private static ".Length;
-        var endIndex = methodLine.IndexOf(" Create");
+        var startIndex = methodLine.IndexOf("private static ", StringComparison.Ordinal) + "private static ".Length;
+        var endIndex = methodLine.IndexOf(" Create", StringComparison.Ordinal);
         if (startIndex >= 0 && endIndex > startIndex)
         {
             return methodLine.Substring(startIndex, endIndex - startIndex).Trim();
@@ -722,9 +722,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
     )
     {
         // Check if class is static - static classes cannot be instantiated
-        var isStaticClass = classDeclaration.Modifiers.Any(m =>
-            m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword)
-        );
+        var isStaticClass = classDeclaration.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
         if (isStaticClass)
         {
             return null; // Skip constructor generation for static classes
@@ -836,10 +834,21 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
             {
                 var name = attr.AttributeClass?.Name;
                 var fullName = attr.AttributeClass?.ToDisplayString();
-                return name == SourceGeneratorConstants.FromKeyedServicesAttributeName
-                    || name == "FromKeyedServices"
-                    || fullName == "Microsoft.Extensions.DependencyInjection.FromKeyedServicesAttribute"
-                    || fullName?.EndsWith(SourceGeneratorConstants.FromKeyedServicesAttributeName) == true;
+                return string.Equals(
+                        name,
+                        SourceGeneratorConstants.FromKeyedServicesAttributeName,
+                        StringComparison.Ordinal
+                    )
+                    || string.Equals(name, "FromKeyedServices", StringComparison.Ordinal)
+                    || string.Equals(
+                        fullName,
+                        "Microsoft.Extensions.DependencyInjection.FromKeyedServicesAttribute",
+                        StringComparison.Ordinal
+                    )
+                    || fullName?.EndsWith(
+                        SourceGeneratorConstants.FromKeyedServicesAttributeName,
+                        StringComparison.Ordinal
+                    ) == true;
             });
 
         if (keyedServiceAttribute != null)
@@ -864,7 +873,8 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         SemanticModel semanticModel
     )
     {
-        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration) as INamedTypeSymbol;
+        var classSymbol = semanticModel.GetDeclaredSymbol(classDeclaration);
+
         if (classSymbol?.Constructors.Length > 0)
         {
             var primaryConstructor = classSymbol.Constructors.FirstOrDefault(c => c.Parameters.Length > 0);

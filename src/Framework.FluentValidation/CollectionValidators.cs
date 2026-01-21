@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Resources;
-using Framework.FluentValidation.Resources;
 using MoreLinq.Extensions;
 
 namespace FluentValidation;

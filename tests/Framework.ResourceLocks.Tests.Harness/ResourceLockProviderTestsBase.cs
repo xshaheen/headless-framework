@@ -2,7 +2,6 @@
 
 using Framework.Abstractions;
 using Framework.ResourceLocks;
-using Framework.Testing.Helpers;
 using Framework.Testing.Tests;
 using Humanizer;
 using Microsoft.Extensions.Logging;
@@ -375,7 +374,7 @@ public abstract class ResourceLockProviderTestsBase : TestBase
 
         info.Should().NotBeNull();
         info.Resource.Should().Be(resource);
-        info.LockId.Should().Be(handle!.LockId);
+        info.LockId.Should().Be(handle.LockId);
         info.TimeToLive.Should().NotBeNull();
         info.TimeToLive!.Value.Should().BeCloseTo(ttl, TimeSpan.FromSeconds(5));
     }

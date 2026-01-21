@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Framework.FluentValidation;
 
 namespace Framework.Sms.VictoryLink;
 

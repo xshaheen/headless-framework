@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Results;
-using Framework.FluentValidation;
 using Framework.Primitives;
 
 namespace FluentValidation;

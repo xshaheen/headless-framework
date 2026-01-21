@@ -31,7 +31,7 @@ public static class CronValidator
         ReadOnlySpan<int> minSpan = _MinValues;
         ReadOnlySpan<int> maxSpan = _MaxValues;
 
-        for (int i = 0; i < _RequiredPartsCount; i++)
+        for (var i = 0; i < _RequiredPartsCount; i++)
         {
             if (!_ValidatePart(parts[i], minSpan[i], maxSpan[i]))
             {
@@ -50,7 +50,7 @@ public static class CronValidator
         var partIndex = 0;
         var start = 0;
 
-        for (int i = 0; i < input.Length && partIndex < output.Length; i++)
+        for (var i = 0; i < input.Length && partIndex < output.Length; i++)
         {
             if (input[i] == ' ')
             {
@@ -81,13 +81,13 @@ public static class CronValidator
 
         var span = part.AsSpan();
         var values = new HashSet<int>();
-        int i = 0;
+        var i = 0;
 
         while (i < span.Length)
         {
             int num1;
-            int num2 = -1;
-            int step = 1;
+            var num2 = -1;
+            var step = 1;
 
             // first number or '*'
             if (span[i] == '*')
@@ -96,7 +96,7 @@ public static class CronValidator
                 num2 = max;
                 i++;
             }
-            else if (span[i] >= '0' && span[i] <= '9')
+            else if (span[i] is >= '0' and <= '9')
             {
                 num1 = _ReadNumber(span, ref i);
                 if (num1 == -1)
@@ -157,8 +157,10 @@ public static class CronValidator
             }
 
             // collect values
-            for (int v = num1; v <= num2; v += step)
+            for (var v = num1; v <= num2; v += step)
+            {
                 values.Add(v);
+            }
 
             // skip comma
             if (i < span.Length && span[i] == ',')
@@ -176,7 +178,7 @@ public static class CronValidator
     /// </summary>
     private static int _ReadNumber(ReadOnlySpan<char> span, ref int index)
     {
-        int num = 0;
+        var num = 0;
         var startIndex = index;
 
         // Use direct ASCII range check instead of char.IsDigit() for better performance

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Abstractions;
-using Framework.Messages;
 using Framework.ResourceLocks.RegularLocks;
+using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;

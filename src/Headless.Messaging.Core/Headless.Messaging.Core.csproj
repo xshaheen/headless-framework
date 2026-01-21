@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Messaging</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.AmazonSQS" />
+    <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
+    <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FastExpressionCompiler" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="Internal\LegacyAttributes.cs" />
+    <Compile Remove="Internal\IConsumeFilter.cs" />
+    <Compile Remove="Internal\ConsumerContext.cs" />
+  </ItemGroup>
+</Project>

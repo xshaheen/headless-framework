@@ -1,5 +1,4 @@
 using FluentValidation;
-using FluentValidation.Results;
 using Framework.Api.Controllers;
 using Framework.Exceptions;
 using Framework.Primitives;
