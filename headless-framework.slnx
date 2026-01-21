@@ -233,7 +233,6 @@
         <File Path="nuget.config" />
         <File Path="README.md" />
     </Folder>
-    <Folder Name="/src/" />
     <Folder Name="/tests/">
         <Project Path="tests/Framework.Messages.SqlServer.Tests.Integration/Framework.Messages.SqlServer.Tests.Integration.csproj" />
     </Folder>

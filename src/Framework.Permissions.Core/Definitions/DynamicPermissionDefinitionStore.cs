@@ -335,8 +335,7 @@ public sealed class DynamicPermissionDefinitionStore(
         {
             var message = new DynamicPermissionDefinitionsChanged
             {
-                UniqueId = guidGenerator.Create(),
-                Timestamp = timeProvider.GetUtcNow(),
+                UniqueId = guidGenerator.Create().ToString(),
                 Permissions = [.. newPermissions.Select(x => x.Name), .. updatedPermissions.Select(x => x.Name)],
             };
 
