@@ -42,7 +42,7 @@ public static class MessagesRabbitMqSetup
             services.Configure(configure);
             services.AddSingleton<IValidateOptions<RabbitMQOptions>, RabbitMQOptionsValidator>();
             services.AddSingleton<ITransport, RabbitMqTransport>();
-            services.AddSingleton<IConsumerClientFactory, RabbitMQConsumerClientFactory>();
+            services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
         }
     }

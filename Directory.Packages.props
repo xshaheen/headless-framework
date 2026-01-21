@@ -116,6 +116,7 @@
     <PackageVersion Include="Microsoft.Sbom.Tool" Version="4.1.5" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
+    <PackageVersion Include="MimeTypesMap" Version="1.0.9" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
     <PackageVersion Include="morelinq" Version="4.4.0" />
     <PackageVersion Include="NameGenerator" Version="2.0.4" />
