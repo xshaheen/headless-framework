@@ -113,8 +113,18 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
 
                 connection.CreatedConnection!.Dispose();
             }
+
+            _poolLock.Dispose();
         }
 
         _isDisposed = true;
+    }
+
+    ~RedisConnectionPool()
+    {
+        if (!_isDisposed)
+        {
+            System.Diagnostics.Debug.Fail("RedisConnectionPool was not disposed. Call Dispose() to release SemaphoreSlim.");
+        }
     }
 }

@@ -85,7 +85,7 @@ public sealed class RabbitMQConsumerClientValidationTests : TestBase
         var channel = Substitute.For<IChannel>();
         var connection = Substitute.For<IConnection>();
         connection.CreateChannelAsync(Arg.Any<CancellationToken>()).Returns(channel);
-        _pool.GetConnection().Returns(connection);
+        _pool.GetConnectionAsync().Returns(connection);
 
         var invalidTopics = new[] { "invalid topic name" };
 
@@ -105,7 +105,7 @@ public sealed class RabbitMQConsumerClientValidationTests : TestBase
         var channel = Substitute.For<IChannel>();
         var connection = Substitute.For<IConnection>();
         connection.CreateChannelAsync(Arg.Any<CancellationToken>()).Returns(channel);
-        _pool.GetConnection().Returns(connection);
+        _pool.GetConnectionAsync().Returns(connection);
 
         var validTopics = new[] { "valid-topic.name_123" };
 

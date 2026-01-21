@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Framework.Messages;
 
 namespace Tests;
@@ -206,6 +207,133 @@ public class ConsumerRegistryTests
         all.Should().ContainSingle("only one consumer registered");
         all[0].Topic.Should().Be("topic.50", "last update should win");
         all[0].Concurrency.Should().Be(1, "50 % 10 + 1 = 1");
+    }
+
+    [Fact]
+    public async Task should_handle_concurrent_registration_and_freeze_without_race()
+    {
+        // given
+        const int iterations = 100;
+        const int registrationsPerIteration = 10;
+        var exceptions = new ConcurrentBag<Exception>();
+
+        // when - stress test the race condition
+        for (var iter = 0; iter < iterations; iter++)
+        {
+            var registry = new ConsumerRegistry();
+            var barrier = new Barrier(registrationsPerIteration + 1);
+
+            var tasks = new List<Task>();
+
+            // Spawn registration tasks
+            for (var i = 0; i < registrationsPerIteration; i++)
+            {
+                var index = i;
+                tasks.Add(
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            barrier.SignalAndWait();
+                            registry.Register(
+                                new ConsumerMetadata(
+                                    typeof(TestMessage),
+                                    typeof(TestConsumer),
+                                    $"topic.{index}",
+                                    $"group.{index}",
+                                    1
+                                )
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            exceptions.Add(ex);
+                        }
+                    })
+                );
+            }
+
+            // Spawn freeze task
+            tasks.Add(
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        barrier.SignalAndWait();
+                        _ = registry.GetAll();
+                    }
+                    catch (Exception ex)
+                    {
+                        exceptions.Add(ex);
+                    }
+                })
+            );
+
+            await Task.WhenAll(tasks);
+        }
+
+        // then - no NullReferenceException should occur
+        var nullRefExceptions = exceptions.Where(e => e is NullReferenceException).ToList();
+        nullRefExceptions.Should().BeEmpty("race condition should be prevented by lock");
+
+        // InvalidOperationException is expected when registration happens after freeze
+        var invalidOpExceptions = exceptions.Where(e => e is InvalidOperationException).ToList();
+        invalidOpExceptions.Should().AllSatisfy(e => e.Message.Should().Contain("frozen"));
+    }
+
+    [Fact]
+    public async Task should_handle_concurrent_update_and_freeze_without_race()
+    {
+        // given
+        const int iterations = 100;
+        var exceptions = new ConcurrentBag<Exception>();
+
+        // when - stress test the race condition in Update
+        for (var iter = 0; iter < iterations; iter++)
+        {
+            var registry = new ConsumerRegistry();
+            registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "original", null, 1));
+            var barrier = new Barrier(2);
+
+            var updateTask = Task.Run(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    registry.Update(
+                        m => m.ConsumerType == typeof(TestConsumer),
+                        new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "updated", "group1", 5)
+                    );
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            });
+
+            var freezeTask = Task.Run(() =>
+            {
+                try
+                {
+                    barrier.SignalAndWait();
+                    _ = registry.GetAll();
+                }
+                catch (Exception ex)
+                {
+                    exceptions.Add(ex);
+                }
+            });
+
+            await Task.WhenAll(updateTask, freezeTask);
+        }
+
+        // then - no NullReferenceException should occur
+        var nullRefExceptions = exceptions.Where(e => e is NullReferenceException).ToList();
+        nullRefExceptions.Should().BeEmpty("race condition should be prevented by lock");
+
+        // InvalidOperationException is expected when update happens after freeze
+        var invalidOpExceptions = exceptions.Where(e => e is InvalidOperationException).ToList();
+        invalidOpExceptions.Should().AllSatisfy(e => e.Message.Should().Contain("frozen"));
     }
 
     private sealed class TestMessage;

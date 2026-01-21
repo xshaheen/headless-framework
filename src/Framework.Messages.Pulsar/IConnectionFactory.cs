@@ -39,7 +39,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
     {
         foreach (var value in _topicProducers.Values)
         {
-            _ = (await value).DisposeAsync();
+            _ = (await value.AnyContext()).DisposeAsync();
         }
     }
 
@@ -51,11 +51,11 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 
         async Task<IProducer<byte[]>> valueFactory(string top)
         {
-            return await _client.NewProducer().Topic(top).CreateAsync();
+            return await _client.NewProducer().Topic(top).CreateAsync().AnyContext();
         }
 
         //connection may lost
-        return await _topicProducers.GetOrAdd(topic, valueFactory);
+        return await _topicProducers.GetOrAdd(topic, valueFactory).AnyContext();
     }
 
     public PulsarClient RentClient()

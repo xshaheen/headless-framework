@@ -167,11 +167,14 @@ internal sealed class AmazonSqsConsumerClient(
         try
         {
             await _sqsClient!.DeleteMessageAsync(_queueUrl, (string)sender!).AnyContext();
-            _semaphore.Release();
         }
         catch (ReceiptHandleIsInvalidException ex)
         {
             _InvalidIdFormatLog(ex.Message);
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 
@@ -180,11 +183,14 @@ internal sealed class AmazonSqsConsumerClient(
         try
         {
             await _sqsClient!.ChangeMessageVisibilityAsync(_queueUrl, (string)sender!, 3).AnyContext();
-            _semaphore.Release();
         }
         catch (MessageNotInflightException ex)
         {
             _MessageNotInflightLog(ex.Message);
+        }
+        finally
+        {
+            _semaphore.Release();
         }
     }
 

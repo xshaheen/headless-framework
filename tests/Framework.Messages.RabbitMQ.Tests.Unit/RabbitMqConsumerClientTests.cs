@@ -30,7 +30,7 @@ public sealed class RabbitMQConsumerClientTests : TestBase
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
         _pool.Exchange.Returns("test.exchange");
-        _pool.GetConnection().Returns(_connection);
+        _pool.GetConnectionAsync().Returns(_connection);
         _connection.CreateChannelAsync(Arg.Any<CancellationToken>()).Returns(_channel);
     }
 
@@ -218,7 +218,7 @@ public sealed class RabbitMQConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_subscribing_with_null_topics()
+    public async Task should_throw_when_subscribing_with_null_topics()
     {
         // Given
         using var client = new RabbitMQConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
@@ -227,6 +227,6 @@ public sealed class RabbitMQConsumerClientTests : TestBase
         var act = async () => await client.SubscribeAsync(null!);
 
         // Then
-        act.Should().ThrowAsync<ArgumentNullException>();
+        await act.Should().ThrowAsync<ArgumentNullException>();
     }
 }

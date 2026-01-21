@@ -26,10 +26,12 @@ internal sealed class RabbitMqTransport : ITransport
 
     public async Task<OperateResult> SendAsync(TransportMessage message)
     {
+        RabbitMqValidation.ValidateTopicName(message.GetName());
+
         IChannel? channel = null;
         try
         {
-            channel = await _connectionChannelPool.Rent();
+            channel = await _connectionChannelPool.Rent().AnyContext();
 
             var props = new BasicProperties
             {
@@ -38,7 +40,7 @@ internal sealed class RabbitMqTransport : ITransport
                 Headers = message.Headers.ToDictionary(x => x.Key, object? (x) => x.Value, StringComparer.Ordinal),
             };
 
-            await channel.BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body);
+            await channel.BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body).AnyContext();
 
             _logger.LogInformation(
                 "Headless message '{Name}' published, internal id '{Id}'",
@@ -59,7 +61,7 @@ internal sealed class RabbitMqTransport : ITransport
                     "Channel state inconsistency detected: channel is reported as open, but its underlying connection is closed. Forcing channel closure."
                 );
 
-                await channel.DisposeAsync();
+                await channel.DisposeAsync().AnyContext();
             }
 
             var wrapperEx = new PublisherSentFailedException(ex.Message, ex);

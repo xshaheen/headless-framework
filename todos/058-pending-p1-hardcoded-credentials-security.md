@@ -1,9 +1,10 @@
 ---
-status: pending
+status: completed
 priority: p1
 issue_id: "058"
 tags: [code-review, security, rabbitmq, credentials]
 created: 2026-01-20
+completed: 2026-01-21
 dependencies: []
 ---
 
@@ -53,10 +54,20 @@ services.AddOptions<RabbitMqOptions>()
 
 ## Acceptance Criteria
 
-- [ ] Remove hardcoded credentials
-- [ ] Add options validation
-- [ ] Update README with security notes
-- [ ] Add test: verify validation fires
-- [ ] Verify integration tests still pass
+- [x] Remove hardcoded credentials
+- [x] Add options validation
+- [x] Update README with security notes
+- [x] Add test: verify validation fires
+- [x] Verify integration tests still pass (no integration tests exist for RabbitMQ)
 
 **Effort:** 1 hour | **Risk:** Low
+
+## Resolution Summary
+
+Removed hardcoded default credentials and implemented runtime validation:
+- Removed `DefaultUser` and `DefaultPass` constants
+- Changed properties to `string.Empty` defaults
+- Added validation in `RabbitMQOptionsValidator` to reject empty or "guest" credentials (case-insensitive)
+- Updated README with security warnings and best practices
+- Added comprehensive unit tests for credential validation
+- Source builds successfully

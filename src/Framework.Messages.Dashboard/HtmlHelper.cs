@@ -62,9 +62,9 @@ public static class HtmlHelper
             return string.Empty;
         }
 
-        if (type.Name == "Void")
+        if (string.Equals(type.Name, "Void", StringComparison.Ordinal))
         {
-            return _WrapKeyword(type.Name.ToLower());
+            return _WrapKeyword(type.Name.ToLowerInvariant());
         }
 
         if (Helper.IsComplexType(type))
@@ -74,7 +74,7 @@ public static class HtmlHelper
 
         if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal))
         {
-            return _WrapKeyword(type.Name.ToLower());
+            return _WrapKeyword(type.Name.ToLowerInvariant());
         }
 
         return _WrapType(type.Name);

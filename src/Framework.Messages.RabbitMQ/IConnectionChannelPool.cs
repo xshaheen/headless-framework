@@ -16,17 +16,17 @@ public interface IConnectionChannelPool
 
     string Exchange { get; }
 
-    IConnection GetConnection();
+    Task<IConnection> GetConnectionAsync();
 
     Task<IChannel> Rent();
 
     bool Return(IChannel context);
 }
 
-public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
+public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
 {
     private const int _DefaultPoolSize = 15;
-    private static readonly Lock _Lock = new();
+    private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
     private readonly Func<Task<IConnection>> _connectionActivator;
     private readonly bool _isPublishConfirms;
@@ -101,9 +101,15 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
 
     public string Exchange { get; }
 
-    public IConnection GetConnection()
+    public async Task<IConnection> GetConnectionAsync()
     {
-        lock (_Lock)
+        if (_connection is { IsOpen: true })
+        {
+            return _connection;
+        }
+
+        await _connectionLock.WaitAsync().AnyContext();
+        try
         {
             if (_connection is { IsOpen: true })
             {
@@ -111,8 +117,12 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
             }
 
             _connection?.Dispose();
-            _connection = _connectionActivator().GetAwaiter().GetResult();
+            _connection = await _connectionActivator().AnyContext();
             return _connection;
+        }
+        finally
+        {
+            _connectionLock.Release();
         }
     }
 
@@ -127,6 +137,27 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
 
         _connection?.Dispose();
         _poolSemaphore.Dispose();
+        _connectionLock.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _maxSize = 0;
+
+        while (_pool.TryDequeue(out var channel))
+        {
+            await channel.DisposeAsync().AnyContext();
+        }
+
+        if (_connection != null)
+        {
+            await _connection.DisposeAsync().AnyContext();
+        }
+
+        _poolSemaphore.Dispose();
+        _connectionLock.Dispose();
+
+        GC.SuppressFinalize(this);
     }
 
     private static Func<Task<IConnection>> _CreateConnection(RabbitMQOptions options)
@@ -169,13 +200,13 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable
 
         try
         {
-            model = await GetConnection().CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false));
+            var connection = await GetConnectionAsync().AnyContext();
+            model = await connection.CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false));
             await model.ExchangeDeclareAsync(Exchange, RabbitMQOptions.ExchangeType, true);
         }
         catch (Exception e)
         {
             _logger.LogError(e, "RabbitMQ channel model create failed!");
-            Console.WriteLine(e);
             throw;
         }
 

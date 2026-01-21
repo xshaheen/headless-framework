@@ -32,19 +32,21 @@ internal class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConnectionPo
                 );
             }
 
-            var result = await producer.ProduceAsync(
-                message.GetName(),
-                new Message<string, byte[]>
-                {
-                    Headers = headers,
-                    Key =
-                        message.Headers.TryGetValue(KafkaHeaders.KafkaKey, out var kafkaMessageKey)
-                        && !string.IsNullOrEmpty(kafkaMessageKey)
-                            ? kafkaMessageKey
-                            : message.GetId(),
-                    Value = message.Body.ToArray()!,
-                }
-            );
+            var result = await producer
+                .ProduceAsync(
+                    message.GetName(),
+                    new Message<string, byte[]>
+                    {
+                        Headers = headers,
+                        Key =
+                            message.Headers.TryGetValue(KafkaHeaders.KafkaKey, out var kafkaMessageKey)
+                            && !string.IsNullOrEmpty(kafkaMessageKey)
+                                ? kafkaMessageKey
+                                : message.GetId(),
+                        Value = message.Body.ToArray()!,
+                    }
+                )
+                .AnyContext();
 
             if (result.Status is PersistenceStatus.Persisted or PersistenceStatus.PossiblyPersisted)
             {

@@ -14,7 +14,7 @@ public static partial class QueryableExtensions
         CancellationToken cancellationToken = default
     )
     {
-        var list = await source.ToListAsync(cancellationToken);
+        var list = await source.ToListAsync(cancellationToken).AnyContext();
 
         return list.ToLookup(keySelector, elementSelector, comparer);
     }
