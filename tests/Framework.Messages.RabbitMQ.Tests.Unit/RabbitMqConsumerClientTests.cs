@@ -56,9 +56,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         // Then
         await _connection.Received(1).CreateChannelAsync(Arg.Any<CreateChannelOptions?>());
-        await _channel
-            .Received(1)
-            .ExchangeDeclareAsync("test.exchange", RabbitMQOptions.ExchangeType, true);
+        await _channel.Received(1).ExchangeDeclareAsync("test.exchange", RabbitMQOptions.ExchangeType, true);
     }
 
     [Fact]
@@ -122,27 +120,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.SubscribeAsync(topics);
 
         // Then
-        await _channel
-            .Received(1)
-            .QueueBindAsync(
-                "test-group",
-                "test.exchange",
-                "topic1"
-            );
-        await _channel
-            .Received(1)
-            .QueueBindAsync(
-                "test-group",
-                "test.exchange",
-                "topic2"
-            );
-        await _channel
-            .Received(1)
-            .QueueBindAsync(
-                "test-group",
-                "test.exchange",
-                "topic3"
-            );
+        await _channel.Received(1).QueueBindAsync("test-group", "test.exchange", "topic1");
+        await _channel.Received(1).QueueBindAsync("test-group", "test.exchange", "topic2");
+        await _channel.Received(1).QueueBindAsync("test-group", "test.exchange", "topic3");
     }
 
     [Fact]

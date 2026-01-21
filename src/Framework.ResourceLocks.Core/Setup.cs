@@ -23,14 +23,14 @@ public static class AddResourceLockExtensions
 
             return services.AddResourceLock(
                 provider => provider.GetRequiredService<IResourceLockStorage>(),
-                provider => provider.GetRequiredService<IMessageBus>(),
+                provider => provider.GetRequiredService<IOutboxPublisher>(),
                 optionSetupAction
             );
         }
 
         public IServiceCollection AddResourceLock(
             Func<IServiceProvider, IResourceLockStorage> storageSetupAction,
-            Func<IServiceProvider, IMessageBus> busSetupAction,
+            Func<IServiceProvider, IOutboxPublisher> publisherSetupAction,
             Action<ResourceLockOptions, IServiceProvider>? optionSetupAction = null
         )
         {
@@ -41,12 +41,18 @@ public static class AddResourceLockExtensions
 
             services.AddSingleton<IResourceLockProvider>(provider => new ResourceLockProvider(
                 storageSetupAction(provider),
-                busSetupAction(provider),
+                publisherSetupAction(provider),
                 provider.GetRequiredService<ResourceLockOptions>(),
                 provider.GetRequiredService<ILongIdGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<ILogger<ResourceLockProvider>>()
             ));
+
+            services
+                .AddConsumer<ResourceLockProvider.LockReleasedConsumer, ResourceLockReleased>(
+                    "framework.locks.released"
+                )
+                .WithConcurrency(1);
 
             return services;
         }

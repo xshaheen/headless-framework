@@ -197,7 +197,9 @@ public sealed class RabbitMqTransportTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<bool>(),
                 Arg.Is<BasicProperties>(p =>
-                    p.Headers != null && p.Headers.ContainsKey("CustomHeader") && p.Headers["CustomHeader"]!.ToString() == "CustomValue"
+                    p.Headers != null
+                    && p.Headers.ContainsKey("CustomHeader")
+                    && p.Headers["CustomHeader"]!.ToString() == "CustomValue"
                 ),
                 Arg.Any<ReadOnlyMemory<byte>>(),
                 Arg.Any<CancellationToken>()

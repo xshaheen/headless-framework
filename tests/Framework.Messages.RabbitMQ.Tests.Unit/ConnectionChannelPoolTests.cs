@@ -175,7 +175,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
                 {
                     // Configure factory to fail on connection
                     factory.AutomaticRecoveryEnabled = false;
-                }
+                },
             }
         );
         using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
@@ -206,10 +206,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         var tasks = new List<Task>();
         for (var i = 0; i < 20; i++)
         {
-            var task = pool.Rent().ContinueWith(
-                _ => { },
-                TaskContinuationOptions.OnlyOnFaulted
-            );
+            var task = pool.Rent().ContinueWith(_ => { }, TaskContinuationOptions.OnlyOnFaulted);
             tasks.Add(task);
         }
 

@@ -73,6 +73,9 @@ public static class Setup
 
         configure(options);
 
+        // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
+        _DiscoverConsumersFromDI(services, registry);
+
         return _RegisterCoreMessagingServices(services, options, configure);
     }
 
@@ -138,5 +141,28 @@ public static class Setup
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
         return new MessagingBuilder(services);
+    }
+
+    /// <summary>
+    /// Discovers and registers consumer metadata instances added via AddConsumer extension method.
+    /// </summary>
+    private static void _DiscoverConsumersFromDI(IServiceCollection services, ConsumerRegistry registry)
+    {
+        // Find all ConsumerMetadata instances registered in the service collection
+        var metadataDescriptors = services
+            .Where(d => d.ServiceType == typeof(ConsumerMetadata) && d.Lifetime == ServiceLifetime.Singleton)
+            .ToList();
+
+        foreach (var descriptor in metadataDescriptors)
+        {
+            if (descriptor.ImplementationInstance is ConsumerMetadata metadata)
+            {
+                // Skip if already registered (avoid duplicates)
+                if (!registry.IsRegistered(metadata.MessageType))
+                {
+                    registry.Register(metadata);
+                }
+            }
+        }
     }
 }

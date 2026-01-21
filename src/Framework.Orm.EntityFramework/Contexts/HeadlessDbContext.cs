@@ -50,9 +50,11 @@ public abstract class HeadlessDbContext : DbContext
         // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
-            await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken).AnyContext();
+            await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken)
+                .AnyContext();
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).AnyContext();
-            await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken).AnyContext();
+            await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken)
+                .AnyContext();
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
             report.ClearEmitterMessages();
 
@@ -72,9 +74,15 @@ public abstract class HeadlessDbContext : DbContext
                         cancellationToken
                     );
 
-                    await context.PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken).AnyContext();
-                    var result = await context._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).AnyContext();
-                    await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken).AnyContext();
+                    await context
+                        .PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken)
+                        .AnyContext();
+                    var result = await context
+                        ._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
+                        .AnyContext();
+                    await context
+                        .PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken)
+                        .AnyContext();
 
                     await transaction.CommitAsync(cancellationToken).AnyContext();
 

@@ -40,13 +40,15 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings([
-            data.Namespace,
-            data.PrimitiveTypeNamespace,
-            AbstractionConstants.Namespace,
-            "Microsoft.EntityFrameworkCore",
-            "Microsoft.EntityFrameworkCore.Storage.ValueConversion",
-        ]);
+        builder.AppendUsings(
+            [
+                data.Namespace,
+                data.PrimitiveTypeNamespace,
+                AbstractionConstants.Namespace,
+                "Microsoft.EntityFrameworkCore",
+                "Microsoft.EntityFrameworkCore.Storage.ValueConversion",
+            ]
+        );
 
         builder.AppendNamespace(_CreateConverterNamespaceName(data.Namespace));
 
@@ -84,11 +86,13 @@ internal static class EntityFrameworkValueConverterSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings([
-            .. types.ConvertAll(x => x.Namespace),
-            .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
-            "Microsoft.EntityFrameworkCore",
-        ]);
+        builder.AppendUsings(
+            [
+                .. types.ConvertAll(x => x.Namespace),
+                .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
+                "Microsoft.EntityFrameworkCore",
+            ]
+        );
 
         if (addAssemblyAttribute)
         {

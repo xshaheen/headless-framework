@@ -133,4 +133,24 @@ public sealed class ConsumerRegistry : IConsumerRegistry
         var all = GetAll();
         return all.Where(m => m.MessageType == messageType);
     }
+
+    /// <summary>
+    /// Checks if a consumer is already registered for the specified message type.
+    /// </summary>
+    /// <param name="messageType">The message type to check.</param>
+    /// <returns><c>true</c> if a consumer is registered for the message type; otherwise, <c>false</c>.</returns>
+    public bool IsRegistered(Type messageType)
+    {
+        // If frozen, check the frozen list
+        if (_frozen != null)
+        {
+            return _frozen.Any(m => m.MessageType == messageType);
+        }
+
+        // Otherwise check the mutable list
+        lock (_lock)
+        {
+            return _consumers?.Any(m => m.MessageType == messageType) ?? false;
+        }
+    }
 }

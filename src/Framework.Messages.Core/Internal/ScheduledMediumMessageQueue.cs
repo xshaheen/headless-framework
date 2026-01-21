@@ -114,7 +114,9 @@ public class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposabl
     {
         if (!_isDisposed)
         {
-            System.Diagnostics.Debug.Fail("ScheduledMediumMessageQueue was not disposed. Call Dispose() to release SemaphoreSlim.");
+            System.Diagnostics.Debug.Fail(
+                "ScheduledMediumMessageQueue was not disposed. Call Dispose() to release SemaphoreSlim."
+            );
         }
     }
 }

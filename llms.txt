@@ -98,11 +98,6 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Framework.Messages.SqlServer](./src/Framework.Messages.SqlServer/README.md): SQL Server storage for durable message persistence in Windows environments.
 - [Framework.Messages.InMemoryStorage](./src/Framework.Messages.InMemoryStorage/README.md): Ephemeral message storage for development and testing.
 
-### Messaging (Simple Pub/Sub)
-
-- [Framework.Messaging.Abstractions](./src/Framework.Messaging.Abstractions/README.md): Defines the unified interface for message bus operations (publish/subscribe).
-- [Framework.Messaging.Foundatio](./src/Framework.Messaging.Foundatio/README.md): Foundatio-based message bus implementation with in-memory and Redis support.
-- [Framework.Messaging.MassTransit](./src/Framework.Messaging.MassTransit/README.md): MassTransit integration for enterprise messaging with RabbitMQ, Azure Service Bus, and more.
 
 ### OpenAPI
 
