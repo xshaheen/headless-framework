@@ -5,7 +5,6 @@ using Framework.Caching;
 using Framework.Domain;
 using Framework.Features;
 using Framework.Features.Seeders;
-using Framework.Messages;
 using Framework.Redis;
 using Framework.ResourceLocks;
 using Framework.ResourceLocks.Redis;

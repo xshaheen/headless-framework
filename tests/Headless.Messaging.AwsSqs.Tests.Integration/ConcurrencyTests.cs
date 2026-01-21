@@ -1,0 +1,191 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Amazon.SimpleNotificationService;
+using AwesomeAssertions;
+using Framework.Testing.Tests;
+using Headless.Messaging.AwsSqs;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Xunit;
+using StringComparer = System.StringComparer;
+
+namespace Tests;
+
+[Collection<LocalStackTestFixture>]
+public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
+{
+    [Fact]
+    public async Task should_handle_parallel_sends_without_race_conditions()
+    {
+        // given
+        const string topicName = "concurrent-test-topic";
+        var transport = await _CreateTransportAsync();
+        await _CreateTopicAsync(topicName);
+
+        const int parallelCount = 100;
+        var tasks = new List<Task<OperateResult>>(parallelCount);
+
+        // when
+        for (var i = 0; i < parallelCount; i++)
+        {
+            var messageId = i;
+            var message = new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["Name"] = topicName,
+                    ["MessageId"] = messageId.ToString(CultureInfo.InvariantCulture),
+                },
+                Encoding.UTF8.GetBytes($"{{\"id\":{messageId}}}")
+            );
+
+            tasks.Add(Task.Run(async () => await transport.SendAsync(message), AbortToken));
+        }
+
+        var results = await Task.WhenAll(tasks);
+
+        // then
+        results.Should().HaveCount(parallelCount);
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+    }
+
+    [Fact]
+    public async Task should_initialize_connection_only_once_with_concurrent_requests()
+    {
+        // given
+        const string topicName = "init-test-topic";
+        var transport = await _CreateTransportAsync();
+        await _CreateTopicAsync(topicName);
+
+        const int parallelCount = 50;
+        var tasks = new List<Task<OperateResult>>(parallelCount);
+
+        // when - Send multiple messages immediately to test initialization race condition
+        for (var i = 0; i < parallelCount; i++)
+        {
+            var message = new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                "{\"data\":\"init-test\"}"u8.ToArray()
+            );
+
+            tasks.Add(transport.SendAsync(message));
+        }
+
+        var results = await Task.WhenAll(tasks);
+
+        // then
+        results.Should().HaveCount(parallelCount);
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+    }
+
+    [Fact]
+    public async Task should_handle_concurrent_sends_to_different_topics()
+    {
+        // given
+        var transport = await _CreateTransportAsync();
+        var topicNames = new[] { "topic-1", "topic-2", "topic-3", "topic-4", "topic-5" };
+
+        foreach (var topicName in topicNames)
+        {
+            await _CreateTopicAsync(topicName);
+        }
+
+        const int parallelCount = 100;
+        var tasks = new List<Task<OperateResult>>(parallelCount);
+
+        // when
+        for (var i = 0; i < parallelCount; i++)
+        {
+            var topicName = topicNames[i % topicNames.Length];
+            var message = new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                Encoding.UTF8.GetBytes($"{{\"topic\":\"{topicName}\",\"index\":{i}}}")
+            );
+
+            tasks.Add(Task.Run(async () => await transport.SendAsync(message), AbortToken));
+        }
+
+        var results = await Task.WhenAll(tasks);
+
+        // then
+        results.Should().HaveCount(parallelCount);
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+    }
+
+    [Fact]
+    public async Task should_handle_mixed_success_and_failure_scenarios()
+    {
+        // given
+        var transport = await _CreateTransportAsync();
+        const string existingTopic = "existing-topic";
+        await _CreateTopicAsync(existingTopic);
+
+        const int parallelCount = 50;
+        var tasks = new List<Task<OperateResult>>(parallelCount);
+
+        // when - Mix successful and failing requests
+        for (var i = 0; i < parallelCount; i++)
+        {
+            var topicName = i % 2 == 0 ? existingTopic : $"non-existent-{i}";
+            var message = new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                Encoding.UTF8.GetBytes($"{{\"index\":{i}}}")
+            );
+
+            tasks.Add(Task.Run(async () => await transport.SendAsync(message), AbortToken));
+        }
+
+        var results = await Task.WhenAll(tasks);
+
+        // then
+        results.Should().HaveCount(parallelCount);
+        var successCount = results.Count(r => r.Succeeded);
+        var failureCount = results.Count(r => !r.Succeeded);
+
+        successCount.Should().BeGreaterThan(0);
+        failureCount.Should().BeGreaterThan(0);
+        (successCount + failureCount).Should().Be(parallelCount);
+    }
+
+    private async Task<ITransport> _CreateTransportAsync()
+    {
+        var container = fixture.Container;
+
+        var options = Options.Create(
+            new AmazonSqsOptions
+            {
+                Region = Amazon.RegionEndpoint.USEast1,
+                SnsServiceUrl = container.GetConnectionString(),
+                SqsServiceUrl = container.GetConnectionString(),
+            }
+        );
+
+        var logger = new ServiceCollection()
+            .AddLogging(builder => builder.AddConsole())
+            .BuildServiceProvider()
+            .GetRequiredService<ILogger<AmazonSqsTransport>>();
+
+        var transport = new AmazonSqsTransport(logger, options);
+
+        await Task.Delay(100, AbortToken); // Allow container to stabilize
+
+        return transport;
+    }
+
+    private async Task _CreateTopicAsync(string topicName)
+    {
+        using var snsClient = new AmazonSimpleNotificationServiceClient(
+            new Amazon.Runtime.BasicAWSCredentials("test", "test"),
+            new AmazonSimpleNotificationServiceConfig { ServiceURL = fixture.Container.GetConnectionString() }
+        );
+
+        await snsClient.CreateTopicAsync(topicName.NormalizeForAws(), AbortToken);
+    }
+}

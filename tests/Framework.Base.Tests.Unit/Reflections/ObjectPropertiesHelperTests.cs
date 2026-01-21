@@ -1,4 +1,3 @@
-using System.Linq.Expressions;
 using Framework.Reflection;
 
 namespace Tests.Reflections;
@@ -34,10 +33,10 @@ public sealed class ObjectPropertiesHelperTests
         // given
         var obj = new TestClass();
 
-        // When
+        // when
         ObjectPropertiesHelper.TrySetProperty(obj, x => x.Name, () => "John");
 
-        // Then
+        // then
         obj.Name.Should().Be("John");
     }
 
@@ -47,10 +46,10 @@ public sealed class ObjectPropertiesHelperTests
         // given
         var obj = new TestClass();
 
-        // When
+        // when
         ObjectPropertiesHelper.TrySetProperty(obj, x => x.Age, _ => 42);
 
-        // Then
+        // then
         obj.Age.Should().Be(42);
     }
 
@@ -60,7 +59,7 @@ public sealed class ObjectPropertiesHelperTests
         // given
         var obj = new TestClass();
 
-        // When
+        // when
         ObjectPropertiesHelper.TrySetProperty(
             obj,
             x => x.IgnoredProperty,
@@ -68,7 +67,7 @@ public sealed class ObjectPropertiesHelperTests
             typeof(IgnoreMeAttribute)
         );
 
-        // Then
+        // then
         obj.IgnoredProperty.Should().BeNull();
     }
 
@@ -78,10 +77,10 @@ public sealed class ObjectPropertiesHelperTests
         // given
         var obj = new TestClass { Name = "Initial" };
 
-        // When
+        // when
         ObjectPropertiesHelper.TrySetPropertyToNull(obj, nameof(TestClass.Name));
 
-        // Then
+        // then
         obj.Name.Should().BeNull();
     }
 
@@ -91,10 +90,10 @@ public sealed class ObjectPropertiesHelperTests
         // given
         var obj = new TestClass();
 
-        // When
+        // when
         Action act = () => ObjectPropertiesHelper.TrySetPropertyToNull(obj, nameof(TestClass.Name));
 
-        // Then
+        // then
         act.Should().NotThrow();
         obj.Name.Should().BeNull();
     }
@@ -105,10 +104,10 @@ public sealed class ObjectPropertiesHelperTests
         // given
         var obj = new TestClass();
 
-        // When
+        // when
         ObjectPropertiesHelper.TrySetPropertyToNull(obj, "Age");
 
-        // Then
+        // then
         obj.Age.Should().Be(0); // unchanged
     }
 

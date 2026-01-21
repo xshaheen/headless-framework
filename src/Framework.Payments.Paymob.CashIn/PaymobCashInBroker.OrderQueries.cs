@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Payments.Paymob.CashIn.Internals;
-using Framework.Payments.Paymob.CashIn.Models;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 using Framework.Urls;
 

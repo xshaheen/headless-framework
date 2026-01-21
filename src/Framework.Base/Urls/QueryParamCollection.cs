@@ -277,7 +277,7 @@ internal readonly struct QueryParamValue
                 ?? (
                     Value is string s
                         ? Url.Encode(s, encodeSpaceAsPlus)
-                        : Url.Encode(Value.ToInvariantString()!, encodeSpaceAsPlus)
+                        : Url.Encode(Value.ToInvariantString(), encodeSpaceAsPlus)
                 );
     }
 }

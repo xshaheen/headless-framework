@@ -76,7 +76,7 @@ public class InternalFunctionContextTests
         );
 
         parametersProperty.Should().NotBeNull();
-        parametersProperty!.SetValue(context, null);
+        parametersProperty.SetValue(context, null);
 
         context.SetProperty(c => c.Status, TickerStatus.InProgress);
 

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Reflection;
 using Serilog;
 
 namespace Framework.Logging;

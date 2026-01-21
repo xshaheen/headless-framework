@@ -571,7 +571,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
 
         // then
         releaser.Should().NotBeNull();
-        releaser!.Dispose();
+        releaser.Dispose();
     }
 
     [Fact]

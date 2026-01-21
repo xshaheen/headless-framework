@@ -1,5 +1,5 @@
 <Project>
-  <Import Sdk="Framework.Defaults" Project="Sdk.props" Version="0.0.90" />
+  <Import Sdk="Framework.Defaults" Project="Sdk.props" Version="0.0.100" />
   <PropertyGroup>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <LangVersion>latest</LangVersion>

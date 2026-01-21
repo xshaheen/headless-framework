@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Immutable;
-using Framework.Generator.Primitives.Extensions;
 using Framework.Generator.Primitives.Helpers;
 using Framework.Generator.Primitives.Models;
 using Framework.Generator.Primitives.Shared;

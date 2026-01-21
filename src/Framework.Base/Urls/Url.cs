@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
 using System.Text.RegularExpressions;
 using Framework.Checks;
 
@@ -327,7 +326,7 @@ public sealed partial class Url
         }
         else
         {
-            var subpath = segment.ToInvariantString()!;
+            var subpath = segment.ToInvariantString();
             foreach (var s in ParsePathSegments(subpath))
             {
                 _pathSegments.Add(s);

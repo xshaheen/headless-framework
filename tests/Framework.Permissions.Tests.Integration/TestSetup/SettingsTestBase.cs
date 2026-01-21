@@ -1,7 +1,6 @@
 ﻿using Framework.Abstractions;
 using Framework.Caching;
 using Framework.Domain;
-using Framework.Messages;
 using Framework.Permissions;
 using Framework.Permissions.Seeders;
 using Framework.Redis;

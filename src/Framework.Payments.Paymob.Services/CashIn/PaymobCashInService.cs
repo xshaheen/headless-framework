@@ -7,7 +7,6 @@ using Framework.Payments.Paymob.CashIn.Models.Callback;
 using Framework.Payments.Paymob.CashIn.Models.Intentions;
 using Framework.Payments.Paymob.CashIn.Models.Orders;
 using Framework.Payments.Paymob.CashIn.Models.Payment;
-using Framework.Payments.Paymob.CashIn.Models.Refunds;
 using Framework.Payments.Paymob.Services.CashIn.Requests;
 using Framework.Payments.Paymob.Services.CashIn.Responses;
 using Framework.Payments.Paymob.Services.Resources;

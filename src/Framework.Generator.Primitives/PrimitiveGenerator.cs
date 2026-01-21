@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
 
 namespace Framework.Generator.Primitives;

@@ -37,7 +37,7 @@ internal static class AttributeValidator
         else
         {
             // Check for duplicate function names
-            if (usedFunctionNames.Contains(attributeValues.functionName!))
+            if (!usedFunctionNames.Add(attributeValues.functionName!))
             {
                 context.ReportDiagnostic(
                     Diagnostic.Create(
@@ -46,10 +46,6 @@ internal static class AttributeValidator
                         attributeValues.functionName
                     )
                 );
-            }
-            else
-            {
-                usedFunctionNames.Add(attributeValues.functionName!);
             }
         }
 

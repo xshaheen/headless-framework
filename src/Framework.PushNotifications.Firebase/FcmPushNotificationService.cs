@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Buffers;
 using FirebaseAdmin.Messaging;
 using Framework.Checks;
 using Framework.PushNotifications.Firebase.Internals;

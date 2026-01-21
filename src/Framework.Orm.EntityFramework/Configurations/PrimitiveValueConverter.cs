@@ -13,8 +13,8 @@ public class PrimitiveValueConverter<TPrimitive, TValue> : ValueConverter<TPrimi
     where TValue : IEquatable<TValue>, IComparable, IComparable<TValue>
 {
     public PrimitiveValueConverter()
-        : base(v => v.GetUnderlyingPrimitiveValue(), v => (TPrimitive)(object)v!) { }
+        : base(v => v.GetUnderlyingPrimitiveValue(), v => (TPrimitive)(object)v) { }
 
     public PrimitiveValueConverter(ConverterMappingHints? mappingHints)
-        : base(v => v.GetUnderlyingPrimitiveValue(), v => (TPrimitive)(object)v!, mappingHints) { }
+        : base(v => v.GetUnderlyingPrimitiveValue(), v => (TPrimitive)(object)v, mappingHints) { }
 }
