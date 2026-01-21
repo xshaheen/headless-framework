@@ -1,8 +1,8 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Framework.Messages.Internal;
-using Framework.Messages.Internal.ObjectMethodExecutor;
 
 namespace Framework.Messages;
 
@@ -14,18 +14,17 @@ public static class HtmlHelper
         var async = string.Empty;
         string @return;
 
-        var isAwaitable = CoercedAwaitableInfo.IsTypeAwaitable(method.ReturnType, out var coercedAwaitableInfo);
+        var isAwaitable = _IsTypeAwaitable(method.ReturnType, out var resultType);
         if (isAwaitable)
         {
             async = _WrapKeyword("async");
-            var asyncResultType = coercedAwaitableInfo.AwaitableInfo.ResultType;
-            if (asyncResultType.Name == "Void")
+            if (resultType == typeof(void))
             {
                 @return = _WrapType("Task");
             }
             else
             {
-                @return = _WrapType("Task") + _WrapIdentifier("<") + _WrapType(asyncResultType) + _WrapIdentifier(">");
+                @return = _WrapType("Task") + _WrapIdentifier("<") + _WrapType(resultType) + _WrapIdentifier(">");
             }
         }
         else
@@ -55,7 +54,51 @@ public static class HtmlHelper
         return outputString;
     }
 
-    private static string _WrapType(Type type)
+    /// <summary>
+    /// Checks if a type is awaitable and returns its result type.
+    /// Based on Roslyn's awaitable pattern detection.
+    /// </summary>
+    private static bool _IsTypeAwaitable(Type type, out Type resultType)
+    {
+        // Check for GetAwaiter method
+        var getAwaiterMethod = type.GetRuntimeMethods()
+            .FirstOrDefault(m =>
+                m.Name.Equals("GetAwaiter", StringComparison.OrdinalIgnoreCase)
+                && m.GetParameters().Length == 0
+                && m.ReturnType != null
+            );
+
+        if (getAwaiterMethod == null)
+        {
+            resultType = typeof(void);
+            return false;
+        }
+
+        var awaiterType = getAwaiterMethod.ReturnType;
+
+        // Awaiter must implement INotifyCompletion
+        if (awaiterType.GetInterfaces().All(t => t != typeof(INotifyCompletion)))
+        {
+            resultType = typeof(void);
+            return false;
+        }
+
+        // Awaiter must have GetResult method
+        var getResultMethod = awaiterType
+            .GetRuntimeMethods()
+            .FirstOrDefault(m => m.Name.Equals("GetResult", StringComparison.Ordinal) && m.GetParameters().Length == 0);
+
+        if (getResultMethod == null)
+        {
+            resultType = typeof(void);
+            return false;
+        }
+
+        resultType = getResultMethod.ReturnType;
+        return true;
+    }
+
+    private static string _WrapType(Type? type)
     {
         if (type == null)
         {
