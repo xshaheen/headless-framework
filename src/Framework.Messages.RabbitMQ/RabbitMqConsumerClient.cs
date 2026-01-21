@@ -9,34 +9,19 @@ using RabbitMQ.Client.Events;
 
 namespace Framework.Messages;
 
-internal sealed class RabbitMqConsumerClient : IConsumerClient
+internal sealed class RabbitMQConsumerClient(
+    string groupName,
+    byte groupConcurrent,
+    IConnectionChannelPool connectionChannelPool,
+    IOptions<RabbitMQOptions> options,
+    IServiceProvider serviceProvider
+) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(1, 1);
-    private readonly string _groupName;
-    private readonly byte _groupConcurrent;
-    private readonly IConnectionChannelPool _connectionChannelPool;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly string _exchangeName;
-    private readonly RabbitMQOptions _rabbitMqOptions;
-    private RabbitMqBasicConsumer? _consumer;
+    private readonly string _exchangeName = connectionChannelPool.Exchange;
+    private readonly RabbitMQOptions _rabbitMqOptions = options.Value;
+    private RabbitMQBasicConsumer? _consumer;
     private IChannel? _channel;
-
-    public RabbitMqConsumerClient(
-        string groupName,
-        byte groupConcurrent,
-        IConnectionChannelPool connectionChannelPool,
-        IOptions<RabbitMQOptions> options,
-        IServiceProvider serviceProvider)
-    {
-        RabbitMqValidation.ValidateQueueName(groupName);
-
-        _groupName = groupName;
-        _groupConcurrent = groupConcurrent;
-        _connectionChannelPool = connectionChannelPool;
-        _serviceProvider = serviceProvider;
-        _exchangeName = connectionChannelPool.Exchange;
-        _rabbitMqOptions = options.Value;
-    }
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -52,8 +37,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         foreach (var topic in topics)
         {
-            RabbitMqValidation.ValidateTopicName(topic);
-            await _channel!.QueueBindAsync(_groupName, _exchangeName, topic);
+            await _channel!.QueueBindAsync(groupName, _exchangeName, topic);
         }
     }
 
@@ -72,23 +56,23 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
         else
         {
-            ushort prefetch = _groupConcurrent > 0 ? _groupConcurrent : (ushort)1;
+            ushort prefetch = groupConcurrent > 0 ? groupConcurrent : (ushort)1;
             await _channel!.BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken);
         }
 
-        _consumer = new RabbitMqBasicConsumer(
+        _consumer = new RabbitMQBasicConsumer(
             _channel!,
-            _groupConcurrent,
-            _groupName,
+            groupConcurrent,
+            groupName,
             OnMessageCallback!,
             OnLogCallback!,
             _rabbitMqOptions.CustomHeadersBuilder,
-            _serviceProvider
+            serviceProvider
         );
 
         try
         {
-            await _channel!.BasicConsumeAsync(_groupName, false, _consumer, cancellationToken);
+            await _channel!.BasicConsumeAsync(groupName, false, _consumer, cancellationToken);
         }
         catch (TimeoutException ex)
         {
@@ -129,7 +113,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async Task ConnectAsync()
     {
-        var connection = await _connectionChannelPool.GetConnectionAsync().AnyContext();
+        var connection = connectionChannelPool.GetConnection();
 
         await _semaphore.WaitAsync();
 
@@ -157,7 +141,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             try
             {
                 await _channel.QueueDeclareAsync(
-                    _groupName,
+                    groupName,
                     _rabbitMqOptions.QueueOptions.Durable,
                     _rabbitMqOptions.QueueOptions.Exclusive,
                     _rabbitMqOptions.QueueOptions.AutoDelete,
