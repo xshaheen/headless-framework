@@ -8,16 +8,16 @@ namespace Framework.Messages;
 internal static partial class RabbitMqValidation
 {
     // RabbitMQ naming rules: alphanumeric, dash, underscore, period
-    // Max length 255 chars
-    [GeneratedRegex(@"^[a-zA-Z0-9._-]+$", RegexOptions.Compiled)]
+    [GeneratedRegex(@"^[a-zA-Z0-9._-]+$", RegexOptions.Compiled, 100)]
     private static partial Regex _NamePattern();
 
-    private const int MaxNameLength = 255;
+    // RabbitMQ Max length 255 chars
+    private const int _MaxNameLength = 255;
 
     internal static void ValidateQueueName(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, MaxNameLength, "Queue name must not exceed 255 characters");
+        Argument.IsLessThanOrEqualTo(name.Length, _MaxNameLength, "Queue name must not exceed 255 characters");
         Argument.Matches(
             name,
             _NamePattern(),
@@ -28,7 +28,7 @@ internal static partial class RabbitMqValidation
     internal static void ValidateExchangeName(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, MaxNameLength, "Exchange name must not exceed 255 characters");
+        Argument.IsLessThanOrEqualTo(name.Length, _MaxNameLength, "Exchange name must not exceed 255 characters");
         Argument.Matches(
             name,
             _NamePattern(),
@@ -39,7 +39,7 @@ internal static partial class RabbitMqValidation
     internal static void ValidateTopicName(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, MaxNameLength, "Topic name must not exceed 255 characters");
+        Argument.IsLessThanOrEqualTo(name.Length, _MaxNameLength, "Topic name must not exceed 255 characters");
         // Topics can contain wildcards (* and #) in addition to regular name chars
         // But for safety, we validate the same as queue/exchange names for now
         Argument.Matches(

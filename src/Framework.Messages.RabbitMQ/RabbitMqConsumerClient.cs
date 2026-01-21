@@ -9,7 +9,7 @@ using RabbitMQ.Client.Events;
 
 namespace Framework.Messages;
 
-internal sealed class RabbitMQConsumerClient(
+internal sealed class RabbitMqConsumerClient(
     string groupName,
     byte groupConcurrent,
     IConnectionChannelPool connectionChannelPool,
@@ -113,7 +113,7 @@ internal sealed class RabbitMQConsumerClient(
 
     public async Task ConnectAsync()
     {
-        var connection = connectionChannelPool.GetConnection();
+        var connection = await connectionChannelPool.GetConnectionAsync();
 
         await _semaphore.WaitAsync();
 

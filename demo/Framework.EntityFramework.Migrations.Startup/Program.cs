@@ -79,7 +79,7 @@ static void addInMemoryResourceLock(IServiceCollection services)
 {
     // Cache
     services.AddInMemoryCache();
-    services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
+
     // Messages
     services.AddMessages(options =>
     {
@@ -87,5 +87,6 @@ static void addInMemoryResourceLock(IServiceCollection services)
         options.UseInMemoryStorage();
     });
 
-    services.AddResourceLock();
+    // Resource Locks
+    services.AddResourceLock<CacheResourceLockStorage>();
 }
