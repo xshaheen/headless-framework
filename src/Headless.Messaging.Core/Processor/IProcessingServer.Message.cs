@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-public class MessageProcessingServer(
+public sealed class MessageProcessingServer(
     ILogger<MessageProcessingServer> logger,
     ILoggerFactory loggerFactory,
     IServiceProvider provider
@@ -60,7 +60,7 @@ public class MessageProcessingServer(
         catch (AggregateException ex)
         {
             var innerEx = ex.InnerExceptions[0];
-            if (!(innerEx is OperationCanceledException))
+            if (innerEx is not OperationCanceledException)
             {
                 _logger.ExpectedOperationCanceledException(innerEx);
             }
@@ -72,7 +72,6 @@ public class MessageProcessingServer(
         finally
         {
             _logger.LogInformation("### Messaging system shutdown!");
-            GC.SuppressFinalize(this);
         }
     }
 
@@ -83,14 +82,12 @@ public class MessageProcessingServer(
 
     private IProcessor[] _GetProcessors()
     {
-        var returnedProcessors = new List<IProcessor>
-        {
+        return
+        [
             provider.GetRequiredService<TransportCheckProcessor>(),
             provider.GetRequiredService<MessageNeedToRetryProcessor>(),
             provider.GetRequiredService<MessageDelayedProcessor>(),
             provider.GetRequiredService<CollectorProcessor>(),
-        };
-
-        return returnedProcessors.ToArray();
+        ];
     }
 }

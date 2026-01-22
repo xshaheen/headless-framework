@@ -8,44 +8,79 @@ namespace Headless.Messaging.Persistence;
 
 public interface IDataStorage
 {
-    Task<bool> AcquireLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default);
+    // Dashboard api
+    IMonitoringApi GetMonitoringApi();
 
-    Task ReleaseLockAsync(string key, string instance, CancellationToken token = default);
+    ValueTask<bool> AcquireLockAsync(
+        string key,
+        TimeSpan ttl,
+        string instance,
+        CancellationToken cancellationToken = default
+    );
 
-    Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default);
+    ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default);
 
-    Task ChangePublishStateToDelayedAsync(string[] ids);
+    ValueTask RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken cancellationToken = default);
 
-    Task ChangePublishStateAsync(MediumMessage message, StatusName state, object? transaction = null);
+    ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default);
 
-    Task ChangeReceiveStateAsync(MediumMessage message, StatusName state);
+    ValueTask ChangePublishStateAsync(
+        MediumMessage message,
+        StatusName state,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<MediumMessage> StoreMessageAsync(string name, Message content, object? transaction = null);
+    ValueTask ChangeReceiveStateAsync(
+        MediumMessage message,
+        StatusName state,
+        CancellationToken cancellationToken = default
+    );
 
-    Task StoreReceivedExceptionMessageAsync(string name, string group, string content);
+    ValueTask<MediumMessage> StoreMessageAsync(
+        string name,
+        Message content,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<MediumMessage> StoreReceivedMessageAsync(string name, string group, Message content);
+    ValueTask StoreReceivedExceptionMessageAsync(
+        string name,
+        string group,
+        string content,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<int> DeleteExpiresAsync(
+    ValueTask<MediumMessage> StoreReceivedMessageAsync(
+        string name,
+        string group,
+        Message content,
+        CancellationToken cancellationToken = default
+    );
+
+    ValueTask<int> DeleteExpiresAsync(
         string table,
         DateTime timeout,
         int batchCount = 1000,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     );
 
-    Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds);
-
-    Task ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, Task> scheduleTask,
-        CancellationToken token = default
+    ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
     );
 
-    Task<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(TimeSpan lookbackSeconds);
+    ValueTask ScheduleMessagesOfDelayedAsync(
+        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<int> DeleteReceivedMessageAsync(long id);
+    ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
+    );
 
-    Task<int> DeletePublishedMessageAsync(long id);
+    ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
 
-    //dashboard api
-    IMonitoringApi GetMonitoringApi();
+    ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default);
 }

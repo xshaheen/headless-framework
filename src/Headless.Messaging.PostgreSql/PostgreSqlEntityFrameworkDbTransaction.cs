@@ -45,9 +45,16 @@ internal class PostgreSqlEntityFrameworkDbTransaction : IDbContextTransaction, I
 
     public Guid TransactionId { get; }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        return new ValueTask(Task.Run(() => _transaction.Dispose()));
+        if (_transaction is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync().AnyContext();
+        }
+        else
+        {
+            _transaction.Dispose();
+        }
     }
 
     public DbTransaction Instance

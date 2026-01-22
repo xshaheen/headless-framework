@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Framework.Checks;
 using Framework.Primitives;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -11,28 +12,34 @@ using Npgsql;
 
 namespace Headless.Messaging.PostgreSql;
 
-public class PostgreSqlMonitoringApi(
+public sealed class PostgreSqlMonitoringApi(
     IOptions<PostgreSqlOptions> options,
     IStorageInitializer initializer,
     ISerializer serializer,
     TimeProvider timeProvider
 ) : IMonitoringApi
 {
-    private readonly PostgreSqlOptions _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly PostgreSqlOptions _options = Argument.IsNotNull(options.Value);
     private readonly string _pubName = initializer.GetPublishedTableName();
     private readonly string _recName = initializer.GetReceivedTableName();
 
-    public async ValueTask<MediumMessage?> GetPublishedMessageAsync(long id)
+    public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
+        long id,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await _GetMessageAsync(_pubName, id).AnyContext();
+        return await _GetMessageAsync(_pubName, id, cancellationToken).AnyContext();
     }
 
-    public async ValueTask<MediumMessage?> GetReceivedMessageAsync(long id)
+    public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
+        long id,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await _GetMessageAsync(_recName, id).AnyContext();
+        return await _GetMessageAsync(_recName, id, cancellationToken).AnyContext();
     }
 
-    public async ValueTask<StatisticsView> GetStatisticsAsync()
+    public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
             SELECT
@@ -53,16 +60,16 @@ public class PostgreSqlMonitoringApi(
             ) AS "PublishedDelayed";
             """;
 
-        var connection = _options.CreateConnection();
-        await using var _ = connection;
+        await using var connection = _options.CreateConnection();
+
         var statistics = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                static async (reader, cancellationToken) =>
                 {
                     var statisticsDto = new StatisticsView();
 
-                    while (await reader.ReadAsync().AnyContext())
+                    while (await reader.ReadAsync(cancellationToken).AnyContext())
                     {
                         statisticsDto.PublishedSucceeded = reader.GetInt32(0);
                         statisticsDto.ReceivedSucceeded = reader.GetInt32(1);
@@ -72,14 +79,18 @@ public class PostgreSqlMonitoringApi(
                     }
 
                     return statisticsDto;
-                }
+                },
+                cancellationToken: cancellationToken
             )
             .AnyContext();
 
         return statistics;
     }
 
-    public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(MessageQuery query)
+    public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
+        MessageQuery query,
+        CancellationToken cancellationToken = default
+    )
     {
         var tableName = query.MessageType == MessageType.Publish ? _pubName : _recName;
         var where = string.Empty;
@@ -107,12 +118,12 @@ public class PostgreSqlMonitoringApi(
         var sqlQuery =
             $"SELECT * FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
 
-        var connection = _options.CreateConnection();
-        await using var _ = connection;
+        await using var connection = _options.CreateConnection();
 
         var count = await connection
-            .ExecuteScalarAsync<int>(
+            .ExecuteScalarAsync(
                 $"SELECT COUNT(1) FROM {tableName} WHERE 1=1 {where}",
+                cancellationToken: cancellationToken,
                 new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
                 new NpgsqlParameter("@Group", query.Group ?? string.Empty),
                 new NpgsqlParameter("@Name", query.Name ?? string.Empty),
@@ -133,11 +144,11 @@ public class PostgreSqlMonitoringApi(
         var items = await connection
             .ExecuteReaderAsync(
                 sqlQuery,
-                async reader =>
+                async (reader, token) =>
                 {
                     var messages = new List<MessageView>();
 
-                    while (await reader.ReadAsync().AnyContext())
+                    while (await reader.ReadAsync(token).AnyContext())
                     {
                         var index = 0;
                         messages.Add(
@@ -155,9 +166,9 @@ public class PostgreSqlMonitoringApi(
                             }
                         );
                     }
-
                     return messages;
                 },
+                cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
             .AnyContext();
@@ -165,50 +176,64 @@ public class PostgreSqlMonitoringApi(
         return new(items, query.CurrentPage, query.PageSize, count);
     }
 
-    public ValueTask<int> PublishedFailedCount()
+    public ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_pubName, nameof(StatusName.Failed));
     }
 
-    public ValueTask<int> PublishedSucceededCount()
+    public ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded));
     }
 
-    public ValueTask<int> ReceivedFailedCount()
+    public ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_recName, nameof(StatusName.Failed));
     }
 
-    public ValueTask<int> ReceivedSucceededCount()
+    public ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_recName, nameof(StatusName.Succeeded));
     }
 
-    public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(MessageType type)
+    public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
         return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).AnyContext();
     }
 
-    public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(MessageType type)
+    public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
         return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).AnyContext();
     }
 
-    private async ValueTask<int> _GetNumberOfMessage(string tableName, string statusName)
+    private async ValueTask<int> _GetNumberOfMessage(
+        string tableName,
+        string statusName,
+        CancellationToken cancellationToken = default
+    )
     {
         var sqlQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE Lower(\"StatusName\") = Lower(@State)";
 
-        var connection = _options.CreateConnection();
-        await using var _ = connection;
+        await using var connection = _options.CreateConnection();
+
         return await connection
-            .ExecuteScalarAsync<int>(sqlQuery, new NpgsqlParameter("@State", statusName))
+            .ExecuteScalarAsync(sqlQuery, cancellationToken, new NpgsqlParameter("@State", statusName))
             .AnyContext();
     }
 
-    private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(string tableName, string statusName)
+    private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
+        string tableName,
+        string statusName,
+        CancellationToken cancellationToken = default
+    )
     {
         var endDate = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
@@ -224,13 +249,14 @@ public class PostgreSqlMonitoringApi(
             StringComparer.Ordinal
         );
 
-        return _GetTimelineStats(tableName, statusName, keyMaps);
+        return _GetTimelineStats(tableName, statusName, keyMaps, cancellationToken);
     }
 
     private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
         string tableName,
         string statusName,
-        IDictionary<string, DateTime> keyMaps
+        Dictionary<string, DateTime> keyMaps,
+        CancellationToken cancellationToken = default
     )
     {
         var sqlQuery = $"""
@@ -253,57 +279,59 @@ public class PostgreSqlMonitoringApi(
 
         Dictionary<string, int> valuesMap;
         var connection = _options.CreateConnection();
+
         await using (connection)
         {
             valuesMap = await connection
                 .ExecuteReaderAsync(
                     sqlQuery,
-                    async reader =>
+                    static async (reader, token) =>
                     {
                         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
 
-                        while (await reader.ReadAsync().AnyContext())
+                        while (await reader.ReadAsync(token).AnyContext())
                         {
                             dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                         }
 
                         return dictionary;
                     },
+                    cancellationToken: cancellationToken,
                     sqlParams: sqlParams
                 )
                 .AnyContext();
         }
 
-        foreach (var key in keyMaps.Keys)
-        {
-            valuesMap.TryAdd(key, 0);
-        }
-
         var result = new Dictionary<DateTime, int>();
-        for (var i = 0; i < keyMaps.Count; i++)
+
+        foreach (var (key, dateTime) in keyMaps)
         {
-            var value = valuesMap[keyMaps.ElementAt(i).Key];
-            result.Add(keyMaps.ElementAt(i).Value, value);
+            var value = valuesMap.GetValueOrDefault(key, 0);
+            result.Add(dateTime, value);
         }
 
         return result;
     }
 
-    private async Task<MediumMessage?> _GetMessageAsync(string tableName, long id)
+    private async Task<MediumMessage?> _GetMessageAsync(
+        string tableName,
+        long id,
+        CancellationToken cancellationToken = default
+    )
     {
         var sql =
-            $@"SELECT ""Id"" AS ""DbId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"" FROM {tableName} WHERE ""Id""={id} FOR UPDATE SKIP LOCKED";
+            $@"SELECT ""Id"" AS ""DbId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"" FROM {tableName} WHERE ""Id""=@Id";
 
-        var connection = _options.CreateConnection();
-        await using var _ = connection;
+        await using var connection = _options.CreateConnection();
+
         var mediumMessage = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                async (reader, token) =>
                 {
                     MediumMessage? message = null;
 
-                    while (await reader.ReadAsync().AnyContext())
+                    while (await reader.ReadAsync(token).AnyContext())
                     {
                         message = new MediumMessage
                         {
@@ -317,7 +345,9 @@ public class PostgreSqlMonitoringApi(
                     }
 
                     return message;
-                }
+                },
+                cancellationToken: cancellationToken,
+                sqlParams: new NpgsqlParameter("@Id", id)
             )
             .AnyContext();
 

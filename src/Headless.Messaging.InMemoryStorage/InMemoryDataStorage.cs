@@ -12,63 +12,88 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-#pragma warning disable MA0049
 internal class InMemoryDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     ISerializer serializer,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider
-)
-#pragma warning restore MA0049
-    : IDataStorage
+) : IDataStorage
 {
     public static ConcurrentDictionary<string, MemoryMessage> PublishedMessages { get; } = new(StringComparer.Ordinal);
 
     public static ConcurrentDictionary<string, MemoryMessage> ReceivedMessages { get; } = new(StringComparer.Ordinal);
 
-    public Task<bool> AcquireLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
+    public ValueTask<bool> AcquireLockAsync(
+        string key,
+        TimeSpan ttl,
+        string instance,
+        CancellationToken cancellationToken = default
+    )
     {
-        return Task.FromResult(true);
+        return ValueTask.FromResult(true);
     }
 
-    public Task ReleaseLockAsync(string key, string instance, CancellationToken token = default)
+    public ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
+    public ValueTask RenewLockAsync(
+        string key,
+        TimeSpan ttl,
+        string instance,
+        CancellationToken cancellationToken = default
+    )
     {
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task ChangePublishStateToDelayedAsync(string[] ids)
+    public ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
     {
         foreach (var id in ids)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             PublishedMessages[id].StatusName = StatusName.Delayed;
         }
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task ChangePublishStateAsync(MediumMessage message, StatusName state, object? dbTransaction = null)
+    public ValueTask ChangePublishStateAsync(
+        MediumMessage message,
+        StatusName state,
+        object? dbTransaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         PublishedMessages[message.DbId].StatusName = state;
         PublishedMessages[message.DbId].ExpiresAt = message.ExpiresAt;
         PublishedMessages[message.DbId].Content = serializer.Serialize(message.Origin);
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task ChangeReceiveStateAsync(MediumMessage message, StatusName state)
+    public ValueTask ChangeReceiveStateAsync(
+        MediumMessage message,
+        StatusName state,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ReceivedMessages[message.DbId].StatusName = state;
         ReceivedMessages[message.DbId].ExpiresAt = message.ExpiresAt;
         ReceivedMessages[message.DbId].Content = serializer.Serialize(message.Origin);
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task<MediumMessage> StoreMessageAsync(string name, Message content, object? dbTransaction = null)
+    public ValueTask<MediumMessage> StoreMessageAsync(
+        string name,
+        Message content,
+        object? dbTransaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var message = new MediumMessage
         {
             DbId = content.GetId(),
@@ -91,11 +116,17 @@ internal class InMemoryDataStorage(
             StatusName = StatusName.Scheduled,
         };
 
-        return Task.FromResult(message);
+        return ValueTask.FromResult(message);
     }
 
-    public Task StoreReceivedExceptionMessageAsync(string name, string group, string content)
+    public ValueTask StoreReceivedExceptionMessageAsync(
+        string name,
+        string group,
+        string content,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var id = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         ReceivedMessages[id] = new MemoryMessage
@@ -113,11 +144,17 @@ internal class InMemoryDataStorage(
             StatusName = StatusName.Failed,
         };
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public Task<MediumMessage> StoreReceivedMessageAsync(string name, string group, Message message)
+    public ValueTask<MediumMessage> StoreReceivedMessageAsync(
+        string name,
+        string group,
+        Message message,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var mdMessage = new MediumMessage
         {
             DbId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
@@ -141,16 +178,17 @@ internal class InMemoryDataStorage(
             StatusName = StatusName.Scheduled,
         };
 
-        return Task.FromResult(mdMessage);
+        return ValueTask.FromResult(mdMessage);
     }
 
-    public Task<int> DeleteExpiresAsync(
+    public ValueTask<int> DeleteExpiresAsync(
         string table,
         DateTime timeout,
         int batchCount = 1000,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var removed = 0;
         if (string.Equals(table, nameof(PublishedMessages), StringComparison.Ordinal))
         {
@@ -165,11 +203,15 @@ internal class InMemoryDataStorage(
             removed += ids.Count(id => ReceivedMessages.TryRemove(id, out _));
         }
 
-        return Task.FromResult(removed);
+        return ValueTask.FromResult(removed);
     }
 
-    public Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+    public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         IEnumerable<MediumMessage> result = PublishedMessages
             .Values.Where(x =>
                 x.Retries < messagingOptions.Value.FailedRetryCount
@@ -185,11 +227,15 @@ internal class InMemoryDataStorage(
         //    message.Origin = _serializer.DeserializeAsync(message.Content)!;
         //}
 
-        return Task.FromResult(result);
+        return ValueTask.FromResult(result);
     }
 
-    public Task<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+    public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         IEnumerable<MediumMessage> result = ReceivedMessages
             .Values.Where(x =>
                 x.Retries < messagingOptions.Value.FailedRetryCount
@@ -200,26 +246,29 @@ internal class InMemoryDataStorage(
             .Select(x => (MediumMessage)x)
             .ToList();
 
-        return Task.FromResult(result);
+        return ValueTask.FromResult(result);
     }
 
-    public Task<int> DeleteReceivedMessageAsync(long id)
+    public ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var deleteResult = ReceivedMessages.TryRemove(id.ToString(CultureInfo.InvariantCulture), out _);
-        return Task.FromResult(deleteResult ? 1 : 0);
+        return ValueTask.FromResult(deleteResult ? 1 : 0);
     }
 
-    public Task<int> DeletePublishedMessageAsync(long id)
+    public ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var deleteResult = PublishedMessages.TryRemove(id.ToString(CultureInfo.InvariantCulture), out _);
-        return Task.FromResult(deleteResult ? 1 : 0);
+        return ValueTask.FromResult(deleteResult ? 1 : 0);
     }
 
-    public Task ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, Task> scheduleTask,
-        CancellationToken token = default
+    public ValueTask ScheduleMessagesOfDelayedAsync(
+        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = PublishedMessages
             .Values.Where(x =>
                 (x.StatusName == StatusName.Delayed && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2))

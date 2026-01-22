@@ -21,6 +21,7 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="AwesomeAssertions.Json" />
     <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
   </ItemGroup>
   <ItemGroup Label="Global Analyzers">
     <PackageReference Include="AwesomeAssertions.Analyzers">

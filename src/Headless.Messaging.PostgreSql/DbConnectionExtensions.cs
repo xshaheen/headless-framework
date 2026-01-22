@@ -6,106 +6,90 @@ using System.Data.Common;
 
 namespace Headless.Messaging.PostgreSql;
 
+#pragma warning disable CA2100 // This is wrapper
 internal static class DbConnectionExtensions
 {
-    public static async Task<int> ExecuteNonQueryAsync(
-        this DbConnection connection,
-        string sql,
-        DbTransaction? transaction = null,
-        params object[] sqlParams
-    )
+    extension(DbConnection connection)
     {
-        if (connection.State == ConnectionState.Closed)
+        public async Task<int> ExecuteNonQueryAsync(
+            string sql,
+            DbTransaction? transaction = null,
+            CancellationToken cancellationToken = default,
+            params object[] sqlParams
+        )
         {
-            await connection.OpenAsync().AnyContext();
-        }
-
-        var command = connection.CreateCommand();
-        await using var _ = command;
-        command.CommandType = CommandType.Text;
-        command.CommandText = sql;
-        command.Parameters.AddRange(sqlParams);
-
-        if (transaction != null)
-        {
-            command.Transaction = transaction;
-        }
-
-        return await command.ExecuteNonQueryAsync().AnyContext();
-    }
-
-    public static async Task<T> ExecuteReaderAsync<T>(
-        this DbConnection connection,
-        string sql,
-        Func<DbDataReader, Task<T>>? readerFunc,
-        DbTransaction? transaction = null,
-        params object[] sqlParams
-    )
-    {
-        if (connection.State == ConnectionState.Closed)
-        {
-            await connection.OpenAsync().AnyContext();
-        }
-
-        var command = connection.CreateCommand();
-        await using var _ = command;
-        command.CommandType = CommandType.Text;
-        command.CommandText = sql;
-        command.Parameters.AddRange(sqlParams);
-
-        if (transaction != null)
-        {
-            command.Transaction = transaction;
-        }
-
-        await using var reader = await command.ExecuteReaderAsync().AnyContext();
-
-        T result = default!;
-        if (readerFunc != null)
-        {
-            result = await readerFunc(reader).AnyContext();
-        }
-
-        return result;
-    }
-
-    public static async Task<T> ExecuteScalarAsync<T>(
-        this DbConnection connection,
-        string sql,
-        params object[] sqlParams
-    )
-    {
-        if (connection.State == ConnectionState.Closed)
-        {
-            await connection.OpenAsync().AnyContext();
-        }
-
-        var command = connection.CreateCommand();
-        await using var _ = command;
-        command.CommandType = CommandType.Text;
-        command.CommandText = sql;
-        foreach (var param in sqlParams)
-        {
-            command.Parameters.Add(param);
-        }
-
-        var objValue = await command.ExecuteScalarAsync().AnyContext();
-
-        T result = default!;
-        if (objValue != null)
-        {
-            var returnType = typeof(T);
-            var converter = TypeDescriptor.GetConverter(returnType);
-            if (converter.CanConvertFrom(objValue.GetType()))
+            if (connection.State == ConnectionState.Closed)
             {
-                result = (T)converter.ConvertFrom(objValue)!;
+                await connection.OpenAsync(cancellationToken).AnyContext();
             }
-            else
+
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandText = sql;
+            command.Parameters.AddRange(sqlParams);
+
+            if (transaction is not null)
             {
-                result = (T)Convert.ChangeType(objValue, returnType);
+                command.Transaction = transaction;
             }
+
+            return await command.ExecuteNonQueryAsync(cancellationToken).AnyContext();
         }
 
-        return result;
+        public async Task<T> ExecuteReaderAsync<T>(
+            string sql,
+            Func<DbDataReader, CancellationToken, Task<T>>? readerFunc,
+            DbTransaction? transaction = null,
+            CancellationToken cancellationToken = default,
+            params object[] sqlParams
+        )
+        {
+            if (connection.State == ConnectionState.Closed)
+            {
+                await connection.OpenAsync(cancellationToken).AnyContext();
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandText = sql;
+            command.Parameters.AddRange(sqlParams);
+
+            if (transaction != null)
+            {
+                command.Transaction = transaction;
+            }
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).AnyContext();
+
+            T result = default!;
+
+            if (readerFunc is not null)
+            {
+                result = await readerFunc(reader, cancellationToken).AnyContext();
+            }
+
+            return result;
+        }
+
+        public async Task<int> ExecuteScalarAsync(
+            string sql,
+            CancellationToken cancellationToken = default,
+            params object[] sqlParams
+        )
+        {
+            if (connection.State == ConnectionState.Closed)
+            {
+                await connection.OpenAsync(cancellationToken).AnyContext();
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandText = sql;
+            command.Parameters.AddRange(sqlParams);
+
+            var objValue = await command.ExecuteScalarAsync(cancellationToken).AnyContext();
+
+            return Convert.ToInt32(objValue, CultureInfo.InvariantCulture);
+        }
     }
 }

@@ -7,23 +7,32 @@ namespace Headless.Messaging.Monitoring;
 
 public interface IMonitoringApi
 {
-    ValueTask<MediumMessage?> GetPublishedMessageAsync(long id);
+    ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default);
 
-    ValueTask<MediumMessage?> GetReceivedMessageAsync(long id);
+    ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
 
-    ValueTask<StatisticsView> GetStatisticsAsync();
+    ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default);
 
-    ValueTask<IndexPage<MessageView>> GetMessagesAsync(MessageQuery query);
+    ValueTask<IndexPage<MessageView>> GetMessagesAsync(
+        MessageQuery query,
+        CancellationToken cancellationToken = default
+    );
 
-    ValueTask<int> PublishedFailedCount();
+    ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> PublishedSucceededCount();
+    ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> ReceivedFailedCount();
+    ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> ReceivedSucceededCount();
+    ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default);
 
-    ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(MessageType type);
+    ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    );
 
-    ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(MessageType type);
+    ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    );
 }

@@ -115,6 +115,7 @@
     <PackageVersion Include="Microsoft.OpenApi" Version="2.3.3" />
     <PackageVersion Include="Microsoft.Sbom.Tool" Version="4.1.5" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="2.0.2" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MimeTypesMap" Version="1.0.9" />
     <PackageVersion Include="MinVer" Version="6.0.0" />
