@@ -45,7 +45,13 @@ public sealed class MessagingKafkaOptions
     /// New retriable error code (refer to
     /// https://docs.confluent.io/platform/current/clients/librdkafka/html/rdkafkacpp_8h.html#a4c6b7af48c215724c323c60ea4080dbf)
     /// </summary>
-    public List<ErrorCode> RetriableErrorCodes { get; set; } =
+    public List<ErrorCode> RetriableErrorCodes { get; set; } = GetDefaultRetriableErrorCodes();
+
+    public KafkaTopicOptions TopicOptions { get; set; } = new();
+
+    public static List<ErrorCode> GetDefaultRetriableErrorCodes()
+    {
+        return
         [
             ErrorCode.GroupLoadInProgress,
             ErrorCode.Local_Retry,
@@ -58,8 +64,7 @@ public sealed class MessagingKafkaOptions
             ErrorCode.NetworkException,
             ErrorCode.GroupCoordinatorNotAvailable,
         ];
-
-    public KafkaTopicOptions TopicOptions { get; set; } = new();
+    }
 }
 
 public sealed class KafkaTopicOptions

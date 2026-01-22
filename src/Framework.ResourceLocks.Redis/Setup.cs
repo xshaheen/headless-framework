@@ -28,7 +28,7 @@ public static class RedisResourceLockSetup
         /// Prerequisites:
         /// <list type="bullet">
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
-        ///   <item>IMessageBus must be registered (e.g., via Redis pub/sub)</item>
+        ///   <item>Messaging must be configured via <c>AddMessages()</c> for lock release notifications</item>
         /// </list>
         /// This registers:
         /// <list type="bullet">
