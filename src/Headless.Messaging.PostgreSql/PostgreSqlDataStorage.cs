@@ -266,6 +266,12 @@ public sealed class PostgreSqlDataStorage(
     {
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@timeout", timeout),
+            new NpgsqlParameter("@batchCount", batchCount),
+        ];
+
         return await connection
             .ExecuteNonQueryAsync(
                 $"""
@@ -280,8 +286,7 @@ public sealed class PostgreSqlDataStorage(
                 """,
                 transaction: null,
                 cancellationToken,
-                new NpgsqlParameter("@timeout", timeout),
-                new NpgsqlParameter("@batchCount", batchCount)
+                sqlParams
             )
             .AnyContext();
     }

@@ -94,10 +94,12 @@ public static class TickerCancellationTokenManager
             {
                 kvp.Value.CancellationSource?.Dispose();
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 // Ignore disposal errors during cleanup
             }
+#pragma warning restore ERP022
         }
 
         _TickerCancellationTokens.Clear();

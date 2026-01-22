@@ -120,14 +120,19 @@ public sealed class PostgreSqlMonitoringApi(
 
         await using var connection = _options.CreateConnection();
 
+        object[] countParams =
+        [
+            new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
+            new NpgsqlParameter("@Group", query.Group ?? string.Empty),
+            new NpgsqlParameter("@Name", query.Name ?? string.Empty),
+            new NpgsqlParameter("@Content", $"%{query.Content}%"),
+        ];
+
         var count = await connection
             .ExecuteScalarAsync(
                 $"SELECT COUNT(1) FROM {tableName} WHERE 1=1 {where}",
                 cancellationToken: cancellationToken,
-                new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
-                new NpgsqlParameter("@Group", query.Group ?? string.Empty),
-                new NpgsqlParameter("@Name", query.Name ?? string.Empty),
-                new NpgsqlParameter("@Content", $"%{query.Content}%")
+                sqlParams: countParams
             )
             .AnyContext();
 
@@ -224,8 +229,10 @@ public sealed class PostgreSqlMonitoringApi(
 
         await using var connection = _options.CreateConnection();
 
+        object[] sqlParams = [new NpgsqlParameter("@State", statusName)];
+
         return await connection
-            .ExecuteScalarAsync(sqlQuery, cancellationToken, new NpgsqlParameter("@State", statusName))
+            .ExecuteScalarAsync(sqlQuery, cancellationToken, sqlParams)
             .AnyContext();
     }
 

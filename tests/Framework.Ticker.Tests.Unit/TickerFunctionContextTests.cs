@@ -34,13 +34,13 @@ public class TickerFunctionContextTests
         };
 
         // then
-        Assert.Equal(baseContext.Id, genericContext.Id);
-        Assert.Equal(baseContext.Type, genericContext.Type);
-        Assert.Equal(baseContext.RetryCount, genericContext.RetryCount);
-        Assert.Equal(baseContext.IsDue, genericContext.IsDue);
+        genericContext.Id.Should().Be(baseContext.Id);
+        genericContext.Type.Should().Be(baseContext.Type);
+        genericContext.RetryCount.Should().Be(baseContext.RetryCount);
+        genericContext.IsDue.Should().Be(baseContext.IsDue);
         genericContext.ScheduledFor.Should().Be(baseContext.ScheduledFor);
         genericContext.FunctionName.Should().Be(baseContext.FunctionName);
-        Assert.Equal(request, genericContext.Request);
+        genericContext.Request.Should().Be(request);
     }
 
     [Fact]

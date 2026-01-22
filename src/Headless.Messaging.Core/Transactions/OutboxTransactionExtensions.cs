@@ -25,7 +25,7 @@ public static class OutboxTransactionExtensions
         IOutboxPublisher publisher,
         bool autoCommit = false
     )
-        where TTransaction : OutboxTransactionBase
+        where TTransaction : OutboxTransaction
     {
         return dbConnection.BeginOutboxTransaction<TTransaction>(IsolationLevel.Unspecified, publisher, autoCommit);
     }
@@ -45,7 +45,7 @@ public static class OutboxTransactionExtensions
         IOutboxPublisher publisher,
         bool autoCommit = false
     )
-        where TTransaction : OutboxTransactionBase
+        where TTransaction : OutboxTransaction
     {
         if (dbConnection.State == ConnectionState.Closed)
         {
@@ -76,7 +76,7 @@ public static class OutboxTransactionExtensions
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
-        where TTransaction : OutboxTransactionBase
+        where TTransaction : OutboxTransaction
     {
         return dbConnection.BeginOutboxTransactionAsync<TTransaction>(
             IsolationLevel.Unspecified,
@@ -103,7 +103,7 @@ public static class OutboxTransactionExtensions
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
-        where TTransaction : OutboxTransactionBase
+        where TTransaction : OutboxTransaction
     {
         if (dbConnection.State == ConnectionState.Closed)
         {

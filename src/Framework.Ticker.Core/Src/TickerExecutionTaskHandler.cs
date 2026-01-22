@@ -275,7 +275,7 @@ internal class TickerExecutionTaskHandler(
                 await internalTickerManager.UpdateTickerAsync(context, cancellationToken);
 
                 // Clean up and exit early on termination
-                cancellationTokenSource?.Dispose();
+                cancellationTokenSource.Dispose();
                 TickerCancellationTokenManager.RemoveTickerCancellationToken(context.TickerId);
                 return;
             }

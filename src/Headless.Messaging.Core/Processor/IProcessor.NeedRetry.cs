@@ -150,13 +150,14 @@ public class MessageNeedToRetryProcessor : IProcessor
     }
 
     private async Task<IEnumerable<T>> _GetSafelyAsync<T>(
-        Func<TimeSpan, Task<IEnumerable<T>>> getMessagesAsync,
-        TimeSpan lookbackSeconds
+        Func<TimeSpan, CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
     )
     {
         try
         {
-            return await getMessagesAsync(lookbackSeconds).AnyContext();
+            return await getMessagesAsync(lookbackSeconds, cancellationToken).AnyContext();
         }
         catch (Exception ex)
         {
@@ -171,7 +172,7 @@ public class MessageNeedToRetryProcessor : IProcessor
         if (_lookbackSeconds < TimeSpan.FromSeconds(_MinSuggestedValueForFallbackWindowLookbackSeconds))
         {
             _logger.LogWarning(
-                "The provided FallbackWindowLookbackSeconds of {currentSetFallbackWindowLookbackSeconds} is set to a value lower than {minSuggestedSeconds} seconds. This might cause unwanted unsafe behavior if the consumer takes more than the provided FallbackWindowLookbackSeconds to execute. ",
+                "The provided FallbackWindowLookbackSeconds of {CurrentSetFallbackWindowLookbackSeconds} is set to a value lower than {MinSuggestedSeconds} seconds. This might cause unwanted unsafe behavior if the consumer takes more than the provided FallbackWindowLookbackSeconds to execute. ",
                 _options.Value.FallbackWindowLookbackSeconds,
                 _MinSuggestedValueForFallbackWindowLookbackSeconds
             );

@@ -37,13 +37,13 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
     }
 
-    public async Task<TTimeTicker[]> GetTimeTickersAsync(CancellationToken cancellationToken) =>
+    public async Task<TTimeTicker[]> GetTimeTickersAsync(CancellationToken cancellationToken = default) =>
         await _persistenceProvider.GetTimeTickers(null, cancellationToken);
 
     public async Task<PaginationResult<TTimeTicker>> GetTimeTickersPaginatedAsync(
         int pageNumber,
         int pageSize,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     ) => await _persistenceProvider.GetTimeTickersPaginated(null, pageNumber, pageSize, cancellationToken);
 
     public async Task<IList<Tuple<TickerStatus, int>>> GetTimeTickerFullDataAsync(CancellationToken cancellationToken)
@@ -87,7 +87,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         );
 
         // Get all possible statuses once
-        var allStatuses = Enum.GetValues(typeof(TickerStatus)).Cast<TickerStatus>().ToArray();
+        var allStatuses = Enum.GetValues<TickerStatus>();
 
         var rawData = timeTickers
             .GroupBy(x => new { x.ExecutionTime!.Value.Date, x.Status })
@@ -142,7 +142,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
             cancellationToken
         );
 
-        var allStatuses = Enum.GetValues(typeof(TickerStatus)).Cast<TickerStatus>().ToArray();
+        var allStatuses = Enum.GetValues<TickerStatus>();
 
         var rawData = cronTickerOccurrences
             .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
@@ -218,7 +218,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
             cancellationToken: cancellationToken
         );
 
-        var allStatuses = Enum.GetValues(typeof(TickerStatus)).Cast<TickerStatus>().ToArray();
+        var allStatuses = Enum.GetValues<TickerStatus>();
 
         var rawData = cronTickerOccurrences
             .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
@@ -257,7 +257,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         return finalData;
     }
 
-    public async Task<IList<(int, int)>> GetLastWeekJobStatusesAsync(CancellationToken cancellationToken)
+    public async Task<IList<(int, int)>> GetLastWeekJobStatusesAsync(CancellationToken cancellationToken = default)
     {
         var endDate = DateTime.UtcNow.Date;
         var startDate = endDate.AddDays(-7);
@@ -289,7 +289,9 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         return new List<(int, int)> { (0, doneOrDueDoneCount), (1, failedCount), (2, totalCount) };
     }
 
-    public async Task<IList<(TickerStatus, int)>> GetOverallJobStatusesAsync(CancellationToken cancellationToken)
+    public async Task<IList<(TickerStatus, int)>> GetOverallJobStatusesAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         var timeTickers = await _persistenceProvider.GetTimeTickers(null, cancellationToken);
         var timeStatusCounts = timeTickers
@@ -334,7 +336,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         return combined.Select(kvp => (kvp.Key, kvp.Value)).ToList();
     }
 
-    public async Task<IList<(string, int)>> GetMachineJobsAsync(CancellationToken cancellationToken)
+    public async Task<IList<(string, int)>> GetMachineJobsAsync(CancellationToken cancellationToken = default)
     {
         var timeTickers = await _persistenceProvider.GetTimeTickers(x => x.LockedAt != null, cancellationToken);
 
@@ -395,13 +397,13 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
             .ToList();
     }
 
-    public async Task<CronTickerEntity[]> GetCronTickersAsync(CancellationToken cancellationToken) =>
+    public async Task<CronTickerEntity[]> GetCronTickersAsync(CancellationToken cancellationToken = default) =>
         await _persistenceProvider.GetCronTickers(null, cancellationToken);
 
     public async Task<PaginationResult<CronTickerEntity>> GetCronTickersPaginatedAsync(
         int pageNumber,
         int pageSize,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         // We need to cast TCronTicker[] to CronTickerEntity[] for the pagination result
@@ -414,7 +416,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         );
     }
 
-    public async Task AddOnDemandCronTickerOccurrenceAsync(Guid id, CancellationToken cancellationToken)
+    public async Task AddOnDemandCronTickerOccurrenceAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
         var onDemandOccurrence = new CronTickerOccurrenceEntity<TCronTicker>
@@ -469,7 +471,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
 
     public async Task<CronTickerOccurrenceEntity<TCronTicker>[]> GetCronTickersOccurrencesAsync(
         Guid cronTickerId,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         return await _persistenceProvider.GetAllCronTickerOccurrences(
@@ -484,7 +486,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         Guid cronTickerId,
         int pageNumber,
         int pageSize,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         return await _persistenceProvider.GetAllCronTickerOccurrencesPaginated(
@@ -497,7 +499,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
 
     public async Task<IList<CronOccurrenceTickerGraphData>> GetCronTickersOccurrencesGraphDataAsync(
         Guid guid,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         var maxTotalDays = 14;
@@ -613,7 +615,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
     public bool CancelTickerById(Guid tickerId) =>
         TickerCancellationTokenManager.RequestTickerCancellationById(tickerId);
 
-    public async Task DeleteCronTickerOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken)
+    public async Task DeleteCronTickerOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await _persistenceProvider.RemoveCronTickerOccurrences([id], cancellationToken);
 
@@ -626,7 +628,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
     public async Task<(string, int)> GetTickerRequestByIdAsync(
         Guid tickerId,
         TickerType tickerType,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         byte[]? jsonRequestBytes;
@@ -674,10 +676,12 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
             JsonSerializer.Deserialize(jsonRequest, functionTypeContext.Item2, _dashboardOptions.DashboardJsonOptions);
             return (jsonRequest, 1);
         }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
         catch
         {
             return (jsonRequest, 2);
         }
+#pragma warning restore ERP022
     }
 
     public IEnumerable<(string, (string, string, TickerTaskPriority))> GetTickerFunctions()

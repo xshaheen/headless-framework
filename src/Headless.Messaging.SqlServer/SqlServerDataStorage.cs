@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.SqlServer;
 
-public class SqlServerDataStorage(
+public sealed class SqlServerDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
@@ -28,7 +28,7 @@ public class SqlServerDataStorage(
     private readonly string _pubName = initializer.GetPublishedTableName();
     private readonly string _recName = initializer.GetReceivedTableName();
 
-    public async Task<bool> AcquireLockAsync(
+    public async ValueTask<bool> AcquireLockAsync(
         string key,
         TimeSpan ttl,
         string instance,
@@ -51,7 +51,7 @@ public class SqlServerDataStorage(
         return opResult > 0;
     }
 
-    public async Task ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default)
+    public async ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default)
     {
         var sql =
             $"UPDATE {_lockName} SET [Instance]='',[LastLockTime]=@LastLockTime WHERE [Key]=@Key AND [Instance]=@Instance;";
@@ -67,7 +67,7 @@ public class SqlServerDataStorage(
             .AnyContext();
     }
 
-    public async Task RenewLockAsync(
+    public async ValueTask RenewLockAsync(
         string key,
         TimeSpan ttl,
         string instance,
@@ -83,7 +83,7 @@ public class SqlServerDataStorage(
             .AnyContext();
     }
 
-    public async Task ChangePublishStateToDelayedAsync(string[] ids)
+    public async ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
     {
         if (ids.Length == 0)
         {
@@ -104,20 +104,36 @@ public class SqlServerDataStorage(
         var sql = $"UPDATE {_pubName} SET [StatusName]=@StatusName WHERE [Id] IN ({string.Join(',', paramNames)});";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: parameters).AnyContext();
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters)
+            .AnyContext();
     }
 
-    public async Task ChangePublishStateAsync(MediumMessage message, StatusName state, object? transaction = null)
+    public ValueTask ChangePublishStateAsync(
+        MediumMessage message,
+        StatusName state,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ChangeMessageStateAsync(_pubName, message, state, transaction).AnyContext();
+        return _ChangeMessageStateAsync(_pubName, message, state, transaction, cancellationToken);
     }
 
-    public async Task ChangeReceiveStateAsync(MediumMessage message, StatusName state)
+    public ValueTask ChangeReceiveStateAsync(
+        MediumMessage message,
+        StatusName state,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ChangeMessageStateAsync(_recName, message, state).AnyContext();
+        return _ChangeMessageStateAsync(_recName, message, state, cancellationToken: cancellationToken);
     }
 
-    public async Task<MediumMessage> StoreMessageAsync(string name, Message content, object? transaction = null)
+    public async ValueTask<MediumMessage> StoreMessageAsync(
+        string name,
+        Message content,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
         var sql =
             $"INSERT INTO {_pubName} ([Id],[Version],[Name],[Content],[Retries],[Added],[ExpiresAt],[StatusName])"
@@ -147,7 +163,9 @@ public class SqlServerDataStorage(
         if (transaction == null)
         {
             await using var connection = new SqlConnection(options.Value.ConnectionString);
-            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+            await connection
+                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .AnyContext();
         }
         else
         {
@@ -158,13 +176,18 @@ public class SqlServerDataStorage(
             }
 
             var conn = dbTrans?.Connection;
-            await conn!.ExecuteNonQueryAsync(sql, dbTrans, sqlParams: sqlParams).AnyContext();
+            await conn!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).AnyContext();
         }
 
         return message;
     }
 
-    public async Task StoreReceivedExceptionMessageAsync(string name, string group, string content)
+    public async ValueTask StoreReceivedExceptionMessageAsync(
+        string name,
+        string group,
+        string content,
+        CancellationToken cancellationToken = default
+    )
     {
         object[] sqlParams =
         [
@@ -183,10 +206,15 @@ public class SqlServerDataStorage(
             new SqlParameter("@Version", messagingOptions.Value.Version),
         ];
 
-        await _StoreReceivedMessage(sqlParams).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
     }
 
-    public async Task<MediumMessage> StoreReceivedMessageAsync(string name, string group, Message message)
+    public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
+        string name,
+        string group,
+        Message message,
+        CancellationToken cancellationToken = default
+    )
     {
         var mediumMessage = new MediumMessage
         {
@@ -215,12 +243,12 @@ public class SqlServerDataStorage(
             new SqlParameter("@Version", messagingOptions.Value.Version),
         ];
 
-        await _StoreReceivedMessage(sqlParams).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
 
         return mediumMessage;
     }
 
-    public async Task<int> DeleteExpiresAsync(
+    public async ValueTask<int> DeleteExpiresAsync(
         string table,
         DateTime timeout,
         int batchCount = 1000,
@@ -246,36 +274,46 @@ public class SqlServerDataStorage(
             .AnyContext();
     }
 
-    public Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+    public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
+    )
     {
-        return _GetMessagesOfNeedRetryAsync(_pubName, lookbackSeconds);
+        return _GetMessagesOfNeedRetryAsync(_pubName, lookbackSeconds, cancellationToken);
     }
 
-    public Task<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+    public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
+    )
     {
-        return _GetMessagesOfNeedRetryAsync(_recName, lookbackSeconds);
+        return _GetMessagesOfNeedRetryAsync(_recName, lookbackSeconds, cancellationToken);
     }
 
-    public async Task<int> DeleteReceivedMessageAsync(long id)
+    public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_recName} WHERE Id={id}";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).AnyContext();
+        var affectedRowCount = await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken)
+            .AnyContext();
         return affectedRowCount;
     }
 
-    public async Task<int> DeletePublishedMessageAsync(long id)
+    public async ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_pubName} WHERE Id={id}";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).AnyContext();
+        var affectedRowCount = await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken)
+            .AnyContext();
         return affectedRowCount;
     }
 
-    public async Task ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, Task> scheduleTask,
+    public async ValueTask ScheduleMessagesOfDelayedAsync(
+        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     )
     {
@@ -339,11 +377,12 @@ public class SqlServerDataStorage(
         return new SqlServerMonitoringApi(options, initializer, serializer, timeProvider);
     }
 
-    private async Task _ChangeMessageStateAsync(
+    private async ValueTask _ChangeMessageStateAsync(
         string tableName,
         MediumMessage message,
         StatusName state,
-        object? transaction = null
+        object? transaction = null,
+        CancellationToken cancellationToken = default
     )
     {
         var sql =
@@ -361,16 +400,18 @@ public class SqlServerDataStorage(
         if (transaction is DbTransaction dbTransaction)
         {
             var connection = (SqlConnection)dbTransaction.Connection!;
-            await connection.ExecuteNonQueryAsync(sql, dbTransaction, sqlParams: sqlParams).AnyContext();
+            await connection.ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams).AnyContext();
         }
         else
         {
             await using var connection = new SqlConnection(options.Value.ConnectionString);
-            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+            await connection
+                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .AnyContext();
         }
     }
 
-    private async Task _StoreReceivedMessage(object[] sqlParams)
+    private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
     {
         var sql = $"""
             MERGE {_recName} WITH (HOLDLOCK) AS target
@@ -384,12 +425,15 @@ public class SqlServerDataStorage(
             """;
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
     }
 
-    private async Task<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
+    private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
-        TimeSpan lookbackSeconds
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
     )
     {
         var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
@@ -430,6 +474,7 @@ public class SqlServerDataStorage(
 
                     return messages;
                 },
+                cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
             .AnyContext();

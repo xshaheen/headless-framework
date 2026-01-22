@@ -26,11 +26,11 @@ public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOption
     /// </summary>
     internal NpgsqlConnection CreateConnection()
     {
-        return DataSource != null ? DataSource.CreateConnection() : new NpgsqlConnection(ConnectionString);
+        return DataSource != null ? DataSource.CreateConnection() : new(ConnectionString);
     }
 }
 
-internal class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceScopeFactory)
+internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceScopeFactory)
     : IConfigureOptions<PostgreSqlOptions>
 {
     public void Configure(PostgreSqlOptions options)
@@ -53,6 +53,8 @@ internal class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceScopeFacto
 
         var coreOptions = dbContext.GetService<IDbContextOptions>();
         var extension = coreOptions.Extensions.First(x => x.Info.IsDatabaseProvider);
+#pragma warning disable REFL003 // The member does not exist
+#pragma warning disable REFL017 // Don't use name of wrong member
         options.DataSource =
             extension.GetType().GetProperty(nameof(options.DataSource))?.GetValue(extension) as NpgsqlDataSource;
         if (options.DataSource == null)
@@ -60,5 +62,7 @@ internal class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceScopeFacto
             options.ConnectionString =
                 extension.GetType().GetProperty(nameof(options.ConnectionString))?.GetValue(extension) as string;
         }
+#pragma warning restore REFL017 // Don't use name of wrong member
+#pragma warning restore REFL003 // The member does not exist
     }
 }

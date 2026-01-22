@@ -140,7 +140,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
 
     #region tracing
 
-    private long? _TracingBefore(TransportMessage message, BrokerAddress broker)
+    private static long? _TracingBefore(TransportMessage message, BrokerAddress broker)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 

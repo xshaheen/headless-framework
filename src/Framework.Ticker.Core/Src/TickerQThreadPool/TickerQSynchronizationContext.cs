@@ -21,10 +21,12 @@ internal sealed class TickerQSynchronizationContext(TickerQTaskScheduler schedul
             {
                 d(state);
             }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
             catch
             {
                 /* swallow continuation exceptions */
             }
+#pragma warning restore ERP022
         }
         else
         {

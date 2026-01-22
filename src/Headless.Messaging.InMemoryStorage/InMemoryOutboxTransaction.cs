@@ -5,7 +5,7 @@ using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-internal class InMemoryOutboxTransaction(IDispatcher dispatcher) : OutboxTransactionBase(dispatcher)
+internal class InMemoryOutboxTransaction(IDispatcher dispatcher) : OutboxTransaction(dispatcher)
 {
     public override void Commit()
     {

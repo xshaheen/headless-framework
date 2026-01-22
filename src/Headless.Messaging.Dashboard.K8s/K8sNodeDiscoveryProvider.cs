@@ -254,14 +254,15 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
         return new TagFilterResult(isNodeHidden, filteredPortIndex, filteredPortName);
     }
 
-    private int? _CheckFilterPortIndex(KeyValuePair<string, string> tag, string messagingTagScope)
+    private static int? _CheckFilterPortIndex(KeyValuePair<string, string> tag, string messagingTagScope)
     {
         if (!messagingTagScope.Equals("portIndex", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var hasPort = int.TryParse(tag.Value, out int filterPort);
+        var hasPort = int.TryParse(tag.Value, CultureInfo.InvariantCulture, out var filterPort);
+
         if (!hasPort)
         {
             return null;

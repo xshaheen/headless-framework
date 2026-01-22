@@ -37,7 +37,7 @@ internal static class JsonExampleGenerator
             var elementType = type.GetGenericArguments()[0];
             var listType = typeof(List<>).MakeGenericType(elementType);
             var list = Activator.CreateInstance(listType);
-            list!.GetType().GetMethod("Add")!.Invoke(list, new[] { _Generate(elementType) });
+            list!.GetType().GetMethod("Add")!.Invoke(list, [_Generate(elementType)]);
             return list;
         }
 
@@ -98,10 +98,12 @@ internal static class JsonExampleGenerator
             json = _GenerateExampleJson(type);
             return true;
         }
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
         catch (Exception)
         {
             json = string.Empty;
             return false;
         }
+#pragma warning restore ERP022
     }
 }

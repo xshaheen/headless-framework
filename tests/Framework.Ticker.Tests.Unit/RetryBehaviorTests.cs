@@ -8,7 +8,7 @@ using TickerQ;
 
 namespace Tests;
 
-public class RetryBehaviorTests
+public sealed class RetryBehaviorTests
 {
     // End-to-end unit tests that call the public ExecuteTaskAsync with a CronTickerOccurrence
     // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
