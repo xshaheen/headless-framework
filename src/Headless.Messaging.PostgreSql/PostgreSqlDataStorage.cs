@@ -27,17 +27,22 @@ public sealed class PostgreSqlDataStorage(
     private readonly string _pubName = initializer.GetPublishedTableName();
     private readonly string _recName = initializer.GetReceivedTableName();
 
-    public async Task<bool> AcquireLockAsync(
+    public IMonitoringApi GetMonitoringApi()
+    {
+        return new PostgreSqlMonitoringApi(postgreSqlOptions, initializer, serializer, timeProvider);
+    }
+
+    public async ValueTask<bool> AcquireLockAsync(
         string key,
         TimeSpan ttl,
         string instance,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         var sql =
             $"UPDATE {_lockName} SET \"Instance\"=@Instance,\"LastLockTime\"=@LastLockTime WHERE \"Key\"=@Key AND \"LastLockTime\" < @TTL;";
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
         object[] sqlParams =
         [
             new NpgsqlParameter("@Instance", instance),
@@ -45,55 +50,102 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Key", key),
             new NpgsqlParameter("@TTL", timeProvider.GetUtcNow().UtcDateTime.Subtract(ttl)),
         ];
-        var opResult = await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+
+        var opResult = await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
+
         return opResult > 0;
     }
 
-    public async Task ReleaseLockAsync(string key, string instance, CancellationToken token = default)
+    public async ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default)
     {
         var sql =
             $"UPDATE {_lockName} SET \"Instance\"='',\"LastLockTime\"=@LastLockTime WHERE \"Key\"=@Key AND \"Instance\"=@Instance;";
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
         object[] sqlParams =
         [
             new NpgsqlParameter("@Instance", instance),
             new NpgsqlParameter("@LastLockTime", DateTime.MinValue),
             new NpgsqlParameter("@Key", key),
         ];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
     }
 
-    public async Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
+    public async ValueTask RenewLockAsync(
+        string key,
+        TimeSpan ttl,
+        string instance,
+        CancellationToken cancellationToken = default
+    )
     {
         var sql =
             $"UPDATE {_lockName} SET \"LastLockTime\"=\"LastLockTime\"+interval '{ttl.TotalSeconds}' second WHERE \"Key\"=@Key AND \"Instance\"=@Instance;";
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
         object[] sqlParams = [new NpgsqlParameter("@Instance", instance), new NpgsqlParameter("@Key", key)];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
     }
 
-    public async Task ChangePublishStateToDelayedAsync(string[] ids)
+    public async ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
     {
-        var sql =
-            $"UPDATE {_pubName} SET \"StatusName\"='{StatusName.Delayed}' WHERE \"Id\" IN ({string.Join(',', ids)});";
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
-        await connection.ExecuteNonQueryAsync(sql).AnyContext();
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        var parameters = new object[ids.Length + 1];
+        var paramNames = new string[ids.Length];
+
+        for (var i = 0; i < ids.Length; i++)
+        {
+            paramNames[i] = $"@Id{i}";
+            parameters[i] = new NpgsqlParameter($"@Id{i}", long.Parse(ids[i], CultureInfo.InvariantCulture));
+        }
+
+        parameters[^1] = new NpgsqlParameter("@StatusName", nameof(StatusName.Delayed));
+
+        var sql = $"UPDATE {_pubName} SET \"StatusName\"=@StatusName WHERE \"Id\" IN ({string.Join(',', paramNames)});";
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
+        await connection.ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters).AnyContext();
     }
 
-    public async Task ChangePublishStateAsync(MediumMessage message, StatusName state, object? transaction = null)
+    public ValueTask ChangePublishStateAsync(
+        MediumMessage message,
+        StatusName state,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ChangeMessageStateAsync(_pubName, message, state, transaction).AnyContext();
+        return _ChangeMessageStateAsync(_pubName, message, state, transaction, cancellationToken);
     }
 
-    public async Task ChangeReceiveStateAsync(MediumMessage message, StatusName state)
+    public ValueTask ChangeReceiveStateAsync(
+        MediumMessage message,
+        StatusName state,
+        CancellationToken cancellationToken = default
+    )
     {
-        await _ChangeMessageStateAsync(_recName, message, state).AnyContext();
+        return _ChangeMessageStateAsync(_recName, message, state, cancellationToken: cancellationToken);
     }
 
-    public async Task<MediumMessage> StoreMessageAsync(string name, Message content, object? transaction = null)
+    public async ValueTask<MediumMessage> StoreMessageAsync(
+        string name,
+        Message content,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
         var sql =
             $"INSERT INTO {_pubName} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"StatusName\")"
@@ -122,9 +174,10 @@ public sealed class PostgreSqlDataStorage(
 
         if (transaction == null)
         {
-            var connection = postgreSqlOptions.Value.CreateConnection();
-            await using var _ = connection;
-            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+            await using var connection = postgreSqlOptions.Value.CreateConnection();
+            await connection
+                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .AnyContext();
         }
         else
         {
@@ -135,13 +188,18 @@ public sealed class PostgreSqlDataStorage(
             }
 
             var conn = dbTrans?.Connection!;
-            await conn.ExecuteNonQueryAsync(sql, dbTrans, sqlParams).AnyContext();
+            await conn.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).AnyContext();
         }
 
         return message;
     }
 
-    public async Task StoreReceivedExceptionMessageAsync(string name, string group, string content)
+    public async ValueTask StoreReceivedExceptionMessageAsync(
+        string name,
+        string group,
+        string content,
+        CancellationToken cancellationToken = default
+    )
     {
         object[] sqlParams =
         [
@@ -159,10 +217,15 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
         ];
 
-        await _StoreReceivedMessage(sqlParams).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
     }
 
-    public async Task<MediumMessage> StoreReceivedMessageAsync(string name, string group, Message message)
+    public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
+        string name,
+        string group,
+        Message message,
+        CancellationToken cancellationToken = default
+    )
     {
         var mediumMessage = new MediumMessage
         {
@@ -189,20 +252,19 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
         ];
 
-        await _StoreReceivedMessage(sqlParams).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
 
         return mediumMessage;
     }
 
-    public async Task<int> DeleteExpiresAsync(
+    public async ValueTask<int> DeleteExpiresAsync(
         string table,
         DateTime timeout,
         int batchCount = 1000,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
 
         return await connection
             .ExecuteNonQueryAsync(
@@ -216,46 +278,51 @@ public sealed class PostgreSqlDataStorage(
                     LIMIT @batchCount
                 )
                 """,
-                null,
+                transaction: null,
+                cancellationToken,
                 new NpgsqlParameter("@timeout", timeout),
                 new NpgsqlParameter("@batchCount", batchCount)
             )
             .AnyContext();
     }
 
-    public async Task<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+    public async ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await _GetMessagesOfNeedRetryAsync(_pubName, lookbackSeconds).AnyContext();
+        return await _GetMessagesOfNeedRetryAsync(_pubName, lookbackSeconds, cancellationToken).AnyContext();
     }
 
-    public async Task<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(TimeSpan lookbackSeconds)
+    public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await _GetMessagesOfNeedRetryAsync(_recName, lookbackSeconds).AnyContext();
+        return await _GetMessagesOfNeedRetryAsync(_recName, lookbackSeconds, cancellationToken).AnyContext();
     }
 
-    public async Task<int> DeleteReceivedMessageAsync(long id)
+    public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         var sql = $"""DELETE FROM {_recName} WHERE "Id"={id.ToString(CultureInfo.InvariantCulture)}""";
 
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
-        var result = await connection.ExecuteNonQueryAsync(sql);
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var result = await connection.ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken);
         return result;
     }
 
-    public async Task<int> DeletePublishedMessageAsync(long id)
+    public async ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         var sql = $"""DELETE FROM {_pubName} WHERE "Id"={id.ToString(CultureInfo.InvariantCulture)}""";
 
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
-        var result = await connection.ExecuteNonQueryAsync(sql);
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var result = await connection.ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken);
         return result;
     }
 
-    public async Task ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, Task> scheduleTask,
-        CancellationToken token = default
+    public async ValueTask ScheduleMessagesOfDelayedAsync(
+        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        CancellationToken cancellationToken = default
     )
     {
         var sql =
@@ -271,47 +338,43 @@ public sealed class PostgreSqlDataStorage(
         };
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(token);
-        await using var transaction = await connection.BeginTransactionAsync(token);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var messageList = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                async (reader, token) =>
                 {
                     var messages = new List<MediumMessage>();
                     while (await reader.ReadAsync(token).AnyContext())
                     {
                         var content = reader.GetString(1);
 
-                        messages.Add(
-                            new MediumMessage
-                            {
-                                DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
-                                Origin = serializer.Deserialize(content)!,
-                                Content = content,
-                                Retries = reader.GetInt32(2),
-                                Added = reader.GetDateTime(3),
-                                ExpiresAt = reader.GetDateTime(4),
-                            }
-                        );
+                        var mediumMessage = new MediumMessage
+                        {
+                            DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                            Origin = serializer.Deserialize(content)!,
+                            Content = content,
+                            Retries = reader.GetInt32(2),
+                            Added = reader.GetDateTime(3),
+                            ExpiresAt = reader.GetDateTime(4),
+                        };
+
+                        messages.Add(mediumMessage);
                     }
 
                     return messages;
                 },
                 transaction,
+                cancellationToken,
                 sqlParams
             )
             .AnyContext();
 
         await scheduleTask(transaction, messageList);
 
-        await transaction.CommitAsync(token);
-    }
-
-    public IMonitoringApi GetMonitoringApi()
-    {
-        return new PostgreSqlMonitoringApi(postgreSqlOptions, initializer, serializer, timeProvider);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private DateTime _QueuedMessageFetchTime()
@@ -319,11 +382,12 @@ public sealed class PostgreSqlDataStorage(
         return timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1);
     }
 
-    private async Task _ChangeMessageStateAsync(
+    private async ValueTask _ChangeMessageStateAsync(
         string tableName,
         MediumMessage message,
         StatusName state,
-        object? transaction = null
+        object? transaction = null,
+        CancellationToken cancellationToken = default
     )
     {
         var sql =
@@ -331,7 +395,7 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", long.Parse(message.DbId)),
+            new NpgsqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
@@ -341,30 +405,35 @@ public sealed class PostgreSqlDataStorage(
         if (transaction is DbTransaction dbTransaction)
         {
             var connection = (NpgsqlConnection)dbTransaction.Connection!;
-            await connection.ExecuteNonQueryAsync(sql, dbTransaction, sqlParams).AnyContext();
+            await connection.ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams).AnyContext();
         }
         else
         {
             await using var connection = postgreSqlOptions.Value.CreateConnection();
-            await using var _ = connection;
-            await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+
+            await connection
+                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .AnyContext();
         }
     }
 
-    private async Task _StoreReceivedMessage(object[] sqlParams)
+    private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
     {
         var sql =
             $"INSERT INTO {_recName}(\"Id\",\"Version\",\"Name\",\"Group\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"StatusName\")"
             + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName) RETURNING \"Id\";";
 
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
     }
 
-    private async Task<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
+    private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
-        TimeSpan lookbackSeconds
+        TimeSpan lookbackSeconds,
+        CancellationToken cancellationToken = default
     )
     {
         var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
@@ -379,32 +448,33 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Added", fourMinAgo),
         ];
 
-        var connection = postgreSqlOptions.Value.CreateConnection();
-        await using var _ = connection;
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
         var result = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                async (reader, token) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync().AnyContext())
+                    while (await reader.ReadAsync(token).AnyContext())
                     {
                         var content = reader.GetString(1);
 
-                        messages.Add(
-                            new MediumMessage
-                            {
-                                DbId = reader.GetInt64(0).ToString(),
-                                Origin = serializer.Deserialize(content)!,
-                                Content = content,
-                                Retries = reader.GetInt32(2),
-                                Added = reader.GetDateTime(3),
-                            }
-                        );
+                        var mediumMessage = new MediumMessage
+                        {
+                            DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                            Origin = serializer.Deserialize(content)!,
+                            Content = content,
+                            Retries = reader.GetInt32(2),
+                            Added = reader.GetDateTime(3),
+                        };
+
+                        messages.Add(mediumMessage);
                     }
 
                     return messages;
                 },
+                cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
             .AnyContext();

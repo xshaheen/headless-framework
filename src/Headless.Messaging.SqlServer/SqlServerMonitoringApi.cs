@@ -22,7 +22,7 @@ internal class SqlServerMonitoringApi(
     private readonly string _pubName = initializer.GetPublishedTableName();
     private readonly string _recName = initializer.GetReceivedTableName();
 
-    public async ValueTask<StatisticsView> GetStatisticsAsync()
+    public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
             SELECT
@@ -43,17 +43,16 @@ internal class SqlServerMonitoringApi(
             ) AS PublishedDelayed;
             """;
 
-        var connection = new SqlConnection(_options.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(_options.ConnectionString);
 
         var statistics = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                async (reader, ct) =>
                 {
                     var statisticsDto = new StatisticsView();
 
-                    while (await reader.ReadAsync())
+                    while (await reader.ReadAsync(ct))
                     {
                         statisticsDto.PublishedSucceeded = reader.GetInt32(0);
                         statisticsDto.ReceivedSucceeded = reader.GetInt32(1);
@@ -63,26 +62,36 @@ internal class SqlServerMonitoringApi(
                     }
 
                     return statisticsDto;
-                }
+                },
+                cancellationToken: cancellationToken
             )
             .AnyContext();
 
         return statistics;
     }
 
-    public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(MessageType type)
+    public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).AnyContext();
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken).AnyContext();
     }
 
-    public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(MessageType type)
+    public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).AnyContext();
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken).AnyContext();
     }
 
-    public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(MessageQuery query)
+    public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
+        MessageQuery query,
+        CancellationToken cancellationToken = default
+    )
     {
         var tableName = query.MessageType == MessageType.Publish ? _pubName : _recName;
         var where = string.Empty;
@@ -122,27 +131,30 @@ internal class SqlServerMonitoringApi(
             new SqlParameter("@Limit", query.PageSize),
         ];
 
-        var connection = new SqlConnection(_options.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(_options.ConnectionString);
 
         var count = await connection
-            .ExecuteScalarAsync<int>(
+            .ExecuteScalarAsync(
                 $"SELECT COUNT(1) FROM {tableName} WHERE 1=1 {where}",
-                new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
-                new SqlParameter("@Group", query.Group ?? string.Empty),
-                new SqlParameter("@Name", query.Name ?? string.Empty),
-                new SqlParameter("@Content", $"%{query.Content}%")
+                cancellationToken: cancellationToken,
+                sqlParams:
+                [
+                    new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
+                    new SqlParameter("@Group", query.Group ?? string.Empty),
+                    new SqlParameter("@Name", query.Name ?? string.Empty),
+                    new SqlParameter("@Content", $"%{query.Content}%"),
+                ]
             )
             .AnyContext();
 
         var items = await connection
             .ExecuteReaderAsync(
                 _options.IsSqlServer2008 ? sqlQuery2008 : sqlQuery,
-                async reader =>
+                async (reader, ct) =>
                 {
                     var messages = new List<MessageView>();
 
-                    while (await reader.ReadAsync().AnyContext())
+                    while (await reader.ReadAsync(ct).AnyContext())
                     {
                         var index = 0;
                         messages.Add(
@@ -163,6 +175,7 @@ internal class SqlServerMonitoringApi(
 
                     return messages;
                 },
+                cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
             .AnyContext();
@@ -170,47 +183,65 @@ internal class SqlServerMonitoringApi(
         return new(items, query.CurrentPage, query.PageSize, count);
     }
 
-    public ValueTask<int> PublishedFailedCount()
+    public ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_pubName, nameof(StatusName.Failed));
+        return _GetNumberOfMessage(_pubName, nameof(StatusName.Failed), cancellationToken);
     }
 
-    public ValueTask<int> PublishedSucceededCount()
+    public ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded));
+        return _GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded), cancellationToken);
     }
 
-    public ValueTask<int> ReceivedFailedCount()
+    public ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_recName, nameof(StatusName.Failed));
+        return _GetNumberOfMessage(_recName, nameof(StatusName.Failed), cancellationToken);
     }
 
-    public ValueTask<int> ReceivedSucceededCount()
+    public ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_recName, nameof(StatusName.Succeeded));
+        return _GetNumberOfMessage(_recName, nameof(StatusName.Succeeded), cancellationToken);
     }
 
-    public async ValueTask<MediumMessage?> GetPublishedMessageAsync(long id)
+    public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
+        long id,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await _GetMessageAsync(_pubName, id).AnyContext();
+        return await _GetMessageAsync(_pubName, id, cancellationToken).AnyContext();
     }
 
-    public async ValueTask<MediumMessage?> GetReceivedMessageAsync(long id)
+    public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
+        long id,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await _GetMessageAsync(_recName, id).AnyContext();
+        return await _GetMessageAsync(_recName, id, cancellationToken).AnyContext();
     }
 
-    private async ValueTask<int> _GetNumberOfMessage(string tableName, string statusName)
+    private async ValueTask<int> _GetNumberOfMessage(
+        string tableName,
+        string statusName,
+        CancellationToken cancellationToken = default
+    )
     {
         var sqlQuery = $"SELECT COUNT(Id) FROM {tableName} WITH (NOLOCK) WHERE StatusName = @StatusName";
-        var connection = new SqlConnection(_options.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(_options.ConnectionString);
+
         return await connection
-            .ExecuteScalarAsync<int>(sqlQuery, new SqlParameter("@StatusName", statusName))
+            .ExecuteScalarAsync(
+                sqlQuery,
+                cancellationToken: cancellationToken,
+                sqlParams: new SqlParameter("@StatusName", statusName)
+            )
             .AnyContext();
     }
 
-    private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(string tableName, string statusName)
+    private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
+        string tableName,
+        string statusName,
+        CancellationToken cancellationToken = default
+    )
     {
         var endDate = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
@@ -220,15 +251,20 @@ internal class SqlServerMonitoringApi(
             endDate = endDate.AddHours(-1);
         }
 
-        var keyMaps = dates.ToDictionary(x => x.ToString("yyyy-MM-dd-HH"), x => x, StringComparer.Ordinal);
+        var keyMaps = dates.ToDictionary(
+            x => x.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
+            x => x,
+            StringComparer.Ordinal
+        );
 
-        return _GetTimelineStats(tableName, statusName, keyMaps);
+        return _GetTimelineStats(tableName, statusName, keyMaps, cancellationToken);
     }
 
     private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
         string tableName,
         string statusName,
-        IDictionary<string, DateTime> keyMaps
+        Dictionary<string, DateTime> keyMaps,
+        CancellationToken cancellationToken = default
     )
     {
         var sqlQuery2008 = $"""
@@ -262,23 +298,26 @@ internal class SqlServerMonitoringApi(
         ];
 
         Dictionary<string, int> valuesMap;
+
         var connection = new SqlConnection(_options.ConnectionString);
+
         await using (connection)
         {
             valuesMap = await connection
                 .ExecuteReaderAsync(
                     _options.IsSqlServer2008 ? sqlQuery2008 : sqlQuery,
-                    async reader =>
+                    async (reader, ct) =>
                     {
                         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
 
-                        while (await reader.ReadAsync().AnyContext())
+                        while (await reader.ReadAsync(ct).AnyContext())
                         {
                             dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                         }
 
                         return dictionary;
                     },
+                    cancellationToken: cancellationToken,
                     sqlParams: sqlParams
                 )
                 .AnyContext();
@@ -299,23 +338,25 @@ internal class SqlServerMonitoringApi(
         return result;
     }
 
-    private async Task<MediumMessage?> _GetMessageAsync(string tableName, long id)
+    private async Task<MediumMessage?> _GetMessageAsync(
+        string tableName,
+        long id,
+        CancellationToken cancellationToken = default
+    )
     {
         var sql =
-            $"SELECT TOP 1 Id AS DbId, Content, Added, ExpiresAt, Retries FROM {tableName} WITH (READPAST) WHERE Id={id}";
+            $"SELECT TOP(1) Id AS DbId, Content, Added, ExpiresAt, Retries FROM {tableName} WITH (READPAST) WHERE Id={id}";
 
-        var connection = new SqlConnection(_options.ConnectionString);
-
-        await using var _ = connection;
+        await using var connection = new SqlConnection(_options.ConnectionString);
 
         var mediumMessage = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                async (reader, ct) =>
                 {
                     MediumMessage? message = null;
 
-                    while (await reader.ReadAsync().AnyContext())
+                    while (await reader.ReadAsync(ct).AnyContext())
                     {
                         message = new MediumMessage
                         {
@@ -329,7 +370,8 @@ internal class SqlServerMonitoringApi(
                     }
 
                     return message;
-                }
+                },
+                cancellationToken: cancellationToken
             )
             .AnyContext();
 

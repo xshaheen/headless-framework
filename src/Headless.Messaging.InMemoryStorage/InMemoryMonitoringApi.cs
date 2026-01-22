@@ -9,8 +9,10 @@ namespace Headless.Messaging.InMemoryStorage;
 
 internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
 {
-    public ValueTask<MediumMessage?> GetPublishedMessageAsync(long id)
+    public ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var idString = id.ToString(CultureInfo.InvariantCulture);
 
         return ValueTask.FromResult<MediumMessage?>(
@@ -20,8 +22,10 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
         );
     }
 
-    public ValueTask<MediumMessage?> GetReceivedMessageAsync(long id)
+    public ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var idString = id.ToString(CultureInfo.InvariantCulture);
 
         return ValueTask.FromResult<MediumMessage?>(
@@ -31,8 +35,10 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
         );
     }
 
-    public ValueTask<StatisticsView> GetStatisticsAsync()
+    public ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var stats = new StatisticsView
         {
             PublishedSucceeded = InMemoryDataStorage.PublishedMessages.Values.Count(x =>
@@ -53,18 +59,31 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
         return ValueTask.FromResult(stats);
     }
 
-    public ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(MessageType type)
+    public ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return _GetHourlyTimelineStats(type, nameof(StatusName.Failed));
     }
 
-    public ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(MessageType type)
+    public ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return _GetHourlyTimelineStats(type, nameof(StatusName.Succeeded));
     }
 
-    public ValueTask<IndexPage<MessageView>> GetMessagesAsync(MessageQuery query)
+    public ValueTask<IndexPage<MessageView>> GetMessagesAsync(
+        MessageQuery query,
+        CancellationToken cancellationToken = default
+    )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (query.MessageType == MessageType.Publish)
         {
             var expression = InMemoryDataStorage.PublishedMessages.Values.Where(x => true);
@@ -169,29 +188,33 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
         }
     }
 
-    public ValueTask<int> PublishedFailedCount()
+    public ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<int>(
             InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
         );
     }
 
-    public ValueTask<int> PublishedSucceededCount()
+    public ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<int>(
             InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
         );
     }
 
-    public ValueTask<int> ReceivedFailedCount()
+    public ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<int>(
             InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
         );
     }
 
-    public ValueTask<int> ReceivedSucceededCount()
+    public ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return new ValueTask<int>(
             InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
         );

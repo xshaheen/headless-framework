@@ -40,15 +40,18 @@ public sealed class SqlServerStorageInitializer(
         }
 
         var sql = _CreateDbTablesScript(options.Value.Schema);
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         object[] sqlParams =
         [
             new SqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
             new SqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
             new SqlParameter("@LastLockTime", DateTime.MinValue) { SqlDbType = SqlDbType.DateTime2 },
         ];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
 
         _logger.LogDebug("Ensuring all create database tables script are applied.");
     }

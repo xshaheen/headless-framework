@@ -32,13 +32,12 @@ public class SqlServerDataStorage(
         string key,
         TimeSpan ttl,
         string instance,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         var sql =
             $"UPDATE {_lockName} SET [Instance]=@Instance,[LastLockTime]=@LastLockTime WHERE [Key]=@Key AND [LastLockTime] < @TTL;";
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
@@ -46,7 +45,9 @@ public class SqlServerDataStorage(
             new SqlParameter("@Key", key),
             new SqlParameter("@TTL", timeProvider.GetUtcNow().UtcDateTime.Subtract(ttl)),
         ];
-        var opResult = await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+        var opResult = await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
         return opResult > 0;
     }
 
@@ -54,33 +55,56 @@ public class SqlServerDataStorage(
     {
         var sql =
             $"UPDATE {_lockName} SET [Instance]='',[LastLockTime]=@LastLockTime WHERE [Key]=@Key AND [Instance]=@Instance;";
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
             new SqlParameter("@LastLockTime", DateTime.MinValue) { SqlDbType = SqlDbType.DateTime2 },
             new SqlParameter("@Key", key),
         ];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
     }
 
-    public async Task RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken token = default)
+    public async Task RenewLockAsync(
+        string key,
+        TimeSpan ttl,
+        string instance,
+        CancellationToken cancellationToken = default
+    )
     {
         var sql =
             $"UPDATE {_lockName} SET [LastLockTime]=DATEADD(s,{ttl.TotalSeconds},[LastLockTime]) WHERE [Key]=@Key AND [Instance]=@Instance;";
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
         object[] sqlParams = [new SqlParameter("@Key", key), new SqlParameter("@Instance", instance)];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
     }
 
     public async Task ChangePublishStateToDelayedAsync(string[] ids)
     {
-        var sql = $"UPDATE {_pubName} SET [StatusName]='{StatusName.Delayed}' WHERE [Id] IN ({string.Join(',', ids)});";
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
-        await connection.ExecuteNonQueryAsync(sql).AnyContext();
+        if (ids.Length == 0)
+        {
+            return;
+        }
+
+        var parameters = new object[ids.Length + 1];
+        var paramNames = new string[ids.Length];
+
+        for (var i = 0; i < ids.Length; i++)
+        {
+            paramNames[i] = $"@Id{i}";
+            parameters[i] = new SqlParameter($"@Id{i}", long.Parse(ids[i], CultureInfo.InvariantCulture));
+        }
+
+        parameters[^1] = new SqlParameter("@StatusName", StatusName.Delayed.ToString("G"));
+
+        var sql = $"UPDATE {_pubName} SET [StatusName]=@StatusName WHERE [Id] IN ({string.Join(',', paramNames)});";
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        await connection.ExecuteNonQueryAsync(sql, sqlParams: parameters).AnyContext();
     }
 
     public async Task ChangePublishStateAsync(MediumMessage message, StatusName state, object? transaction = null)
@@ -122,8 +146,7 @@ public class SqlServerDataStorage(
 
         if (transaction == null)
         {
-            var connection = new SqlConnection(options.Value.ConnectionString);
-            await using var _ = connection;
+            await using var connection = new SqlConnection(options.Value.ConnectionString);
             await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
         }
         else
@@ -135,7 +158,7 @@ public class SqlServerDataStorage(
             }
 
             var conn = dbTrans?.Connection;
-            await conn!.ExecuteNonQueryAsync(sql, dbTrans, sqlParams).AnyContext();
+            await conn!.ExecuteNonQueryAsync(sql, dbTrans, sqlParams: sqlParams).AnyContext();
         }
 
         return message;
@@ -201,11 +224,10 @@ public class SqlServerDataStorage(
         string table,
         DateTime timeout,
         int batchCount = 1000,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
 
         return await connection
             .ExecuteNonQueryAsync(
@@ -217,6 +239,7 @@ public class SqlServerDataStorage(
                    AND StatusName IN('{StatusName.Succeeded}','{StatusName.Failed}')
                );",
                 null,
+                cancellationToken,
                 new SqlParameter("@timeout", timeout),
                 new SqlParameter("@batchCount", batchCount)
             )
@@ -237,8 +260,7 @@ public class SqlServerDataStorage(
     {
         var sql = $"DELETE FROM {_recName} WHERE Id={id}";
 
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).AnyContext();
         return affectedRowCount;
     }
@@ -247,15 +269,14 @@ public class SqlServerDataStorage(
     {
         var sql = $"DELETE FROM {_pubName} WHERE Id={id}";
 
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affectedRowCount = await connection.ExecuteNonQueryAsync(sql).AnyContext();
         return affectedRowCount;
     }
 
     public async Task ScheduleMessagesOfDelayedAsync(
         Func<object, IEnumerable<MediumMessage>, Task> scheduleTask,
-        CancellationToken token = default
+        CancellationToken cancellationToken = default
     )
     {
         var sql =
@@ -275,15 +296,15 @@ public class SqlServerDataStorage(
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.OpenAsync(token);
-        await using var transaction = await connection.BeginTransactionAsync(token);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var messageList = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                async (reader, ct) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).AnyContext())
+                    while (await reader.ReadAsync(ct).AnyContext())
                     {
                         var content = reader.GetString(1);
 
@@ -303,13 +324,14 @@ public class SqlServerDataStorage(
                     return messages;
                 },
                 transaction,
+                cancellationToken,
                 sqlParams
             )
             .AnyContext();
 
         await scheduleTask(transaction, messageList);
 
-        await transaction.CommitAsync(token);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public IMonitoringApi GetMonitoringApi()
@@ -339,12 +361,11 @@ public class SqlServerDataStorage(
         if (transaction is DbTransaction dbTransaction)
         {
             var connection = (SqlConnection)dbTransaction.Connection!;
-            await connection.ExecuteNonQueryAsync(sql, dbTransaction, sqlParams).AnyContext();
+            await connection.ExecuteNonQueryAsync(sql, dbTransaction, sqlParams: sqlParams).AnyContext();
         }
         else
         {
-            var connection = new SqlConnection(options.Value.ConnectionString);
-            await using var _ = connection;
+            await using var connection = new SqlConnection(options.Value.ConnectionString);
             await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
         }
     }
@@ -352,9 +373,9 @@ public class SqlServerDataStorage(
     private async Task _StoreReceivedMessage(object[] sqlParams)
     {
         var sql = $"""
-            MERGE {_recName} AS target
+            MERGE {_recName} WITH (HOLDLOCK) AS target
             USING (SELECT @MessageId AS MessageId, @Group AS [Group]) AS source
-            ON target.MessageId = source.MessageId AND target.[Group] = source.[Group]
+            ON target.MessageId = source.MessageId AND (target.[Group] = source.[Group] OR (target.[Group] IS NULL AND source.[Group] IS NULL))
             WHEN MATCHED THEN
                 UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, Content = @Content
             WHEN NOT MATCHED THEN
@@ -362,8 +383,7 @@ public class SqlServerDataStorage(
                 VALUES (@Id,@Version,@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId);
             """;
 
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
     }
 
@@ -385,15 +405,14 @@ public class SqlServerDataStorage(
             new SqlParameter("@Added", fourMinAgo),
         ];
 
-        var connection = new SqlConnection(options.Value.ConnectionString);
-        await using var _ = connection;
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
         var result = await connection
             .ExecuteReaderAsync(
                 sql,
-                async reader =>
+                async (reader, ct) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync().AnyContext())
+                    while (await reader.ReadAsync(ct).AnyContext())
                     {
                         var content = reader.GetString(1);
 

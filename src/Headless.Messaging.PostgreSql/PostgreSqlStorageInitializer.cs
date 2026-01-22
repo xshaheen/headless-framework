@@ -10,7 +10,7 @@ namespace Headless.Messaging.PostgreSql;
 
 public sealed class PostgreSqlStorageInitializer(
     ILogger<PostgreSqlStorageInitializer> logger,
-    IOptions<PostgreSqlOptions> options,
+    IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
@@ -18,17 +18,17 @@ public sealed class PostgreSqlStorageInitializer(
 
     public string GetPublishedTableName()
     {
-        return $"\"{options.Value.Schema}\".\"published\"";
+        return $"\"{postgreSqlOptions.Value.Schema}\".\"published\"";
     }
 
     public string GetReceivedTableName()
     {
-        return $"\"{options.Value.Schema}\".\"received\"";
+        return $"\"{postgreSqlOptions.Value.Schema}\".\"received\"";
     }
 
     public string GetLockTableName()
     {
-        return $"\"{options.Value.Schema}\".\"lock\"";
+        return $"\"{postgreSqlOptions.Value.Schema}\".\"lock\"";
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -38,16 +38,19 @@ public sealed class PostgreSqlStorageInitializer(
             return;
         }
 
-        var sql = _CreateDbTablesScript(options.Value.Schema);
-        var connection = options.Value.CreateConnection();
-        await using var _ = connection;
+        var sql = _CreateDbTablesScript(postgreSqlOptions.Value.Schema);
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
         object[] sqlParams =
         [
             new NpgsqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
             new NpgsqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
             new NpgsqlParameter("@LastLockTime", DateTime.MinValue),
         ];
-        await connection.ExecuteNonQueryAsync(sql, sqlParams: sqlParams).AnyContext();
+
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .AnyContext();
 
         _logger.LogDebug("Ensuring all create database tables script are applied.");
     }

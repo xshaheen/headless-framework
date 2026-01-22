@@ -5,17 +5,19 @@ using Headless.Messaging.Internal;
 
 namespace Headless.Messaging.SqlServer.Diagnostics;
 
-public class DiagnosticRegister(DiagnosticProcessorObserver diagnosticProcessorObserver) : IProcessingServer
+public sealed class DiagnosticRegister(DiagnosticProcessorObserver observer) : IProcessingServer
 {
-    public void Dispose()
-    {
-        GC.SuppressFinalize(this);
-    }
+    private IDisposable? _subscription;
 
     public ValueTask StartAsync(CancellationToken stoppingToken)
     {
-        DiagnosticListener.AllListeners.Subscribe(diagnosticProcessorObserver);
+        _subscription = DiagnosticListener.AllListeners.Subscribe(observer);
 
         return ValueTask.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _subscription?.Dispose();
     }
 }
