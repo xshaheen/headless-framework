@@ -192,7 +192,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         return result;
     }
 
-    public async Task<int> UpdateCronTickers(TCronTicker[] cronTickers, CancellationToken cancellationToken = default)
+    public async Task<int> UpdateCronTickers(TCronTicker[] cronTickers, CancellationToken cancellationToken)
     {
         await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
 

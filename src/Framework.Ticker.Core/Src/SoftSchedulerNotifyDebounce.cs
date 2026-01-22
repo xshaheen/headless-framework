@@ -74,8 +74,11 @@ public sealed class SoftSchedulerNotifyDebounce : IDisposable
             _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
         catch
-        { /* ignore */
+#pragma warning disable ERP022 // Unobserved exception in generic exception handler
+        {
+            /* ignore */
         }
+#pragma warning restore ERP022
         _timer.Dispose();
     }
 }

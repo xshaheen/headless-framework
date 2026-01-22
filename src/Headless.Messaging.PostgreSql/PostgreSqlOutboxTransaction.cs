@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.Messaging.PostgreSql;
 
-public class PostgreSqlOutboxTransaction(IDispatcher dispatcher) : OutboxTransactionBase(dispatcher)
+public class PostgreSqlOutboxTransaction(IDispatcher dispatcher) : OutboxTransaction(dispatcher)
 {
     public override void Commit()
     {

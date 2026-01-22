@@ -276,7 +276,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
             }
             else
             {
-                var transaction = (OutboxTransactionBase)Transaction;
+                var transaction = (OutboxTransaction)Transaction;
 
                 var mediumMessage = await _storage
                     .StoreMessageAsync(name, message, transaction.DbTransaction)

@@ -224,11 +224,8 @@ internal sealed class AmazonSqsConsumerClient(
                 lock (_ConnectionLock)
                 {
 #pragma warning disable CA1508 // False positive: Dead code analysis - the field is initialized inside the lock
-                    if (_sqsClient == null)
+                    _sqsClient ??= AwsClientFactory.CreateSqsClient(_amazonSqsOptions);
 #pragma warning restore CA1508
-                    {
-                        _sqsClient = AwsClientFactory.CreateSqsClient(_amazonSqsOptions);
-                    }
                 }
 
                 if (string.IsNullOrWhiteSpace(_queueUrl))

@@ -88,7 +88,7 @@ public static class Helper
                 return hostName;
             }
 
-            return hostName.Substring(0, 50);
+            return hostName[..50];
         }
         catch
         {

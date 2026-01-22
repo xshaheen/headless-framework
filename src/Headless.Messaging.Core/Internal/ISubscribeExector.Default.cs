@@ -147,7 +147,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         }
     }
 
-    private Task _SetSuccessfulState(MediumMessage message)
+    private ValueTask _SetSuccessfulState(MediumMessage message)
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
 
@@ -239,7 +239,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 ret.CallbackHeader[Headers.CorrelationId] = message.Origin.GetId();
                 ret.CallbackHeader[Headers.CorrelationSequence] = (
                     message.Origin.GetCorrelationSequence() + 1
-                ).ToString();
+                ).ToString(CultureInfo.InvariantCulture);
 
                 if (message.Origin.Headers.TryGetValue(Headers.TraceParent, out var traceparent))
                 {
@@ -288,7 +288,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         return null;
     }
 
-    private void _TracingAfter(long? tracingTimestamp, Message message, MethodInfo method)
+    private static void _TracingAfter(long? tracingTimestamp, Message message, MethodInfo method)
     {
         MessageEventCounterSource.Log.WriteInvokeMetrics();
         if (

@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace Headless.Messaging.SqlServer;
 
 public class SqlServerOutboxTransaction(IDispatcher dispatcher, DiagnosticProcessorObserver diagnosticProcessor)
-    : OutboxTransactionBase(dispatcher)
+    : OutboxTransaction(dispatcher)
 {
     protected override void AddToSent(MediumMessage msg)
     {

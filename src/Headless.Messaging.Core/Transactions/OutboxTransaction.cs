@@ -33,10 +33,10 @@ internal sealed class OutboxTransactionHolder
 /// Derived classes must implement the transaction-specific Commit/Rollback operations.
 /// </remarks>
 /// <remarks>
-/// Initializes a new instance of the <see cref="OutboxTransactionBase"/> class with a dispatcher.
+/// Initializes a new instance of the <see cref="OutboxTransaction"/> class with a dispatcher.
 /// </remarks>
 /// <param name="dispatcher">The dispatcher used to enqueue messages for publishing and execution.</param>
-public abstract class OutboxTransactionBase(IDispatcher dispatcher) : IOutboxTransaction
+public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransaction
 {
     private readonly ConcurrentQueue<MediumMessage> _bufferList = new();
 
@@ -114,7 +114,7 @@ public abstract class OutboxTransactionBase(IDispatcher dispatcher) : IOutboxTra
                         .EnqueueToScheduler(
                             message,
                             DateTime.Parse(message.Origin.Headers[Headers.SentTime]!, CultureInfo.InvariantCulture),
-                            null,
+                            transaction: null,
                             cancellationToken
                         )
                         .AnyContext();
