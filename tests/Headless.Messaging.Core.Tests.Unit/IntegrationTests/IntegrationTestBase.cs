@@ -9,15 +9,25 @@ namespace Tests.IntegrationTests;
 
 public abstract class IntegrationTestBase : TestBase
 {
+    private readonly ITestOutputHelper _testOutput;
     protected CancellationTokenSource CancellationTokenSource { get; } = new(TimeSpan.FromSeconds(10));
-    protected ServiceProvider Container { get; }
+    protected ServiceProvider Container { get; private set; } = null!;
     protected ObservableCollection<object> HandledMessages { get; } = [];
-    protected IOutboxPublisher Publisher { get; }
+    protected IOutboxPublisher Publisher { get; private set; } = null!;
 
     protected IntegrationTestBase(ITestOutputHelper testOutput)
     {
+        _testOutput = testOutput;
+    }
+
+    protected IServiceScope Scope { get; private set; } = null!;
+
+    protected CancellationToken CancellationToken => CancellationTokenSource.Token;
+
+    public override ValueTask InitializeAsync()
+    {
         var services = new ServiceCollection();
-        services.AddTestSetup(testOutput);
+        services.AddTestSetup(_testOutput);
         services.AddSingleton(new MessageQueueMarkerService("Broker"));
         services.AddSingleton(new MessageStorageMarkerService("Storage"));
         services.AddSingleton(_ => new TestMessageCollector(HandledMessages));
@@ -27,11 +37,9 @@ public abstract class IntegrationTestBase : TestBase
         Container = services.BuildTestContainer(CancellationToken);
         Scope = Container.CreateScope();
         Publisher = Scope.ServiceProvider.GetRequiredService<IOutboxPublisher>();
+
+        return base.InitializeAsync();
     }
-
-    protected IServiceScope Scope { get; }
-
-    protected CancellationToken CancellationToken => CancellationTokenSource.Token;
 
     protected override async ValueTask DisposeAsyncCore()
     {

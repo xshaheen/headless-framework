@@ -23,7 +23,7 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
     {
         var attempt = 1;
 
-        var redisLogger = new RedisLogger(logger);
+        await using var redisLogger = new RedisLogger(logger);
 
         ConnectionMultiplexer? connection = null;
 
@@ -38,7 +38,7 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
             if (!connection.IsConnected)
             {
                 logger.LogWarning(
-                    "Can't establish redis connection,trying to establish connection [attempt {attempt}].",
+                    "Can't establish redis connection,trying to establish connection [attempt {Attempt}].",
                     attempt
                 );
 
@@ -54,14 +54,14 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
 
         if (connection == null)
         {
-            throw new Exception($"Can't establish redis connection,after [{attempt}] attempts.");
+            throw new InvalidOperationException($"Can't establish redis connection,after [{attempt}] attempts.");
         }
 
         return new RedisConnection(connection);
     }
 }
 
-public class RedisConnection(IConnectionMultiplexer connection) : IDisposable
+public sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
 {
     private bool _isDisposed;
     public IConnectionMultiplexer Connection { get; } =
@@ -70,7 +70,7 @@ public class RedisConnection(IConnectionMultiplexer connection) : IDisposable
 
     public void Dispose()
     {
-        _Dispose(true);
+        _Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 

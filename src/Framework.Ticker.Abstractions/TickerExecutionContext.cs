@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Threading;
 using Framework.Ticker.Utilities.Enums;
 using Framework.Ticker.Utilities.Models;
 
@@ -20,7 +21,8 @@ internal class TickerExecutionContext
     public string? LastHostExceptionMessage { get; set; }
     internal ITickerOptionsSeeding? OptionsSeeding { get; set; }
 
-    internal volatile InternalFunctionContext[] Functions = [];
+    private InternalFunctionContext[] _functions = [];
+    internal InternalFunctionContext[] Functions => Volatile.Read(ref _functions);
 
     public void SetNextPlannedOccurrence(DateTime? dt) =>
         Interlocked.Exchange(ref _nextOccurrenceTicks, dt?.Ticks ?? -1);
@@ -37,7 +39,7 @@ internal class TickerExecutionContext
         functions.CopyTo(copy.AsSpan());
 
         _CacheFunctionReferences(copy.AsSpan());
-        Functions = copy;
+        Volatile.Write(ref _functions, copy);
     }
 
     private static void _CacheFunctionReferences(Span<InternalFunctionContext> functions)

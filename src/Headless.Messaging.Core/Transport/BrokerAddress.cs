@@ -9,7 +9,7 @@ namespace Headless.Messaging.Transport;
 /// This struct encapsulates the broker identification and connection information.
 /// The <c>ToString()</c> method formats the address as "Name$Endpoint", which can be parsed back using the string constructor.
 /// </remarks>
-public struct BrokerAddress
+public struct BrokerAddress : IEquatable<BrokerAddress>
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="BrokerAddress"/> struct by parsing a combined address string.
@@ -69,4 +69,30 @@ public struct BrokerAddress
     /// </summary>
     /// <returns>A string combining the broker name and endpoint separated by "$".</returns>
     public override readonly string ToString() => Name + "$" + Endpoint;
+
+    public readonly bool Equals(BrokerAddress other)
+    {
+        return string.Equals(Name, other.Name, StringComparison.Ordinal)
+            && string.Equals(Endpoint, other.Endpoint, StringComparison.Ordinal);
+    }
+
+    public override readonly bool Equals(object? obj)
+    {
+        return obj is BrokerAddress other && Equals(other);
+    }
+
+    public override readonly int GetHashCode()
+    {
+        return HashCode.Combine(Name, Endpoint);
+    }
+
+    public static bool operator ==(BrokerAddress left, BrokerAddress right)
+    {
+        return left.Equals(right);
+    }
+
+    public static bool operator !=(BrokerAddress left, BrokerAddress right)
+    {
+        return !(left == right);
+    }
 }

@@ -106,6 +106,7 @@ internal sealed class RabbitMqConsumerClient(
     public ValueTask DisposeAsync()
     {
         _channel?.Dispose();
+        _semaphore.Dispose();
         return ValueTask.CompletedTask;
         //The connection should not be closed here, because the connection is still in use elsewhere.
         //_connection?.Dispose();

@@ -201,6 +201,7 @@ internal sealed class NatsConsumerClient(
     public ValueTask DisposeAsync()
     {
         _consumerClient?.Dispose();
+        _semaphore.Dispose();
         return ValueTask.CompletedTask;
     }
 
@@ -213,7 +214,9 @@ internal sealed class NatsConsumerClient(
 
         lock (_ConnectionLock)
         {
+#pragma warning disable CA1508 // It maybe initialized in another thread
             if (_consumerClient is null)
+#pragma warning restore CA1508
             {
                 var opts = _natsOptions.Options ?? ConnectionFactory.GetDefaultOptions();
                 opts.Url ??= _natsOptions.Servers;
