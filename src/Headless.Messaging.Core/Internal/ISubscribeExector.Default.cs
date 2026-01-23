@@ -268,7 +268,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
     #region tracing
 
-    private long? _TracingBefore(Message message, MethodInfo method)
+    private static long? _TracingBefore(Message message, MethodInfo method)
     {
         if (s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeSubscriberInvoke))
         {
@@ -310,7 +310,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         }
     }
 
-    private void _TracingError(long? tracingTimestamp, Message message, MethodInfo? method, Exception ex)
+    private static void _TracingError(long? tracingTimestamp, Message message, MethodInfo? method, Exception ex)
     {
         if (
             tracingTimestamp != null

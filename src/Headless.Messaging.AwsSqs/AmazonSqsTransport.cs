@@ -104,13 +104,11 @@ internal sealed class AmazonSqsTransport(
                         nextToken == null
                             ? await _snsClient.ListTopicsAsync()
                             : await _snsClient.ListTopicsAsync(nextToken);
-
                     topics.Topics.ForEach(x =>
                     {
                         var name = x.TopicArn.Split(':')[^1];
                         _topicArnMaps[name] = x.TopicArn;
                     });
-
                     nextToken = topics.NextToken;
                 } while (!string.IsNullOrEmpty(nextToken));
             }
@@ -145,5 +143,30 @@ internal sealed class AmazonSqsTransport(
         // Get the actual value from dict in case another thread won the race
         topicArn = _topicArnMaps[topicName];
         return (true, topicArn);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await castAndDispose(_semaphore);
+
+        if (_snsClient is not null)
+        {
+            await castAndDispose(_snsClient);
+        }
+
+        _topicArnMaps = null;
+
+        return;
+
+        static ValueTask castAndDispose(IDisposable resource)
+        {
+            if (resource is IAsyncDisposable resourceAsyncDisposable)
+            {
+                return resourceAsyncDisposable.DisposeAsync();
+            }
+
+            resource.Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 }

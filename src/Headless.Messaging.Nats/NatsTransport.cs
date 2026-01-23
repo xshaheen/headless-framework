@@ -57,4 +57,6 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
             connectionPool.Return(connection);
         }
     }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

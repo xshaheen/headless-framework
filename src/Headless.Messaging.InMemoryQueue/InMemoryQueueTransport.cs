@@ -36,4 +36,6 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
             return Task.FromResult(OperateResult.Failed(wrapperEx));
         }
     }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

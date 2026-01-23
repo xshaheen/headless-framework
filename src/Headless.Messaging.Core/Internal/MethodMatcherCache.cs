@@ -79,7 +79,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     {
         if (Entries == null)
         {
-            throw new ArgumentNullException(nameof(Entries));
+            throw new InvalidOperationException("MethodMatcherCache is not initialized.");
         }
 
         matchTopic = null;

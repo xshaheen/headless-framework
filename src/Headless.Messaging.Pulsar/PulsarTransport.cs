@@ -41,4 +41,6 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
             return OperateResult.Failed(wrapperEx);
         }
     }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
