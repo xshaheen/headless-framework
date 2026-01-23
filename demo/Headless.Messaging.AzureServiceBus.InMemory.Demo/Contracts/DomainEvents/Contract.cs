@@ -1,5 +1,5 @@
 namespace Demo.Contracts.DomainEvents;
 
-public record EntityCreated(Guid Id);
+public sealed record EntityCreated(Guid Id);
 
-public record EntityDeleted(Guid Id);
+public sealed record EntityDeleted(Guid Id);

@@ -1,5 +1,5 @@
 namespace Demo.Contracts.IntegrationEvents;
 
-public record EntityCreatedForIntegration(Guid Id);
+public sealed record EntityCreatedForIntegration(Guid Id);
 
-public record EntityDeletedForIntegration(Guid Id);
+public sealed record EntityDeletedForIntegration(Guid Id);

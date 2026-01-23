@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryQueue\Headless.Messaging.InMemoryQueue.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
   </ItemGroup>
 </Project>
