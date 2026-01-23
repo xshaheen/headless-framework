@@ -82,4 +82,6 @@ internal sealed class RabbitMqTransport : ITransport
             }
         }
     }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.RedisStreams;
 
-internal class RedisTransport(
+internal sealed class RedisTransport(
     IRedisStreamManager redis,
     IOptions<MessagingRedisOptions> options,
     ILogger<RedisTransport> logger
@@ -24,7 +24,7 @@ internal class RedisTransport(
         {
             await redis.PublishAsync(message.GetName(), message.AsStreamEntries()).AnyContext();
 
-            logger.LogDebug("Redis message [{message}] has been published.", message.GetName());
+            logger.LogDebug("Redis message [{Message}] has been published.", message.GetName());
 
             return OperateResult.Success;
         }
@@ -35,4 +35,6 @@ internal class RedisTransport(
             return OperateResult.Failed(wrapperEx);
         }
     }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

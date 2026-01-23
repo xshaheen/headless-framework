@@ -9,7 +9,7 @@ using Headers = Confluent.Kafka.Headers;
 
 namespace Headless.Messaging.Kafka;
 
-internal class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConnectionPool connectionPool) : ITransport
+internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConnectionPool connectionPool) : ITransport
 {
     private readonly ILogger _logger = logger;
 
@@ -66,4 +66,6 @@ internal class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConnectionPo
             connectionPool.Return(producer);
         }
     }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

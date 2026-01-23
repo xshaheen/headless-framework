@@ -4,7 +4,7 @@ using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Transport;
 
-public interface ITransport
+public interface ITransport : IAsyncDisposable
 {
     BrokerAddress BrokerAddress { get; }
 

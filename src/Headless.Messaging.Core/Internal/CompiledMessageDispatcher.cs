@@ -148,11 +148,13 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
                 {
                     await lifecycleCleanup.OnStoppingAsync(cancellationToken).AnyContext();
                 }
+#pragma warning disable ERP022
                 catch
                 {
                     // Suppress exceptions during cleanup to avoid masking original exceptions
                     // Logging would happen in the consumer's OnStoppingAsync implementation
                 }
+#pragma warning restore ERP022
             }
         }
     }

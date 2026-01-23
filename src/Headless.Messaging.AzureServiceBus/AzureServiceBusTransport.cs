@@ -14,14 +14,12 @@ namespace Headless.Messaging.AzureServiceBus;
 
 internal class AzureServiceBusTransport(
     ILogger<AzureServiceBusTransport> logger,
-    IOptions<AzureServiceBusOptions> asbOptions
+    IOptions<AzureServiceBusOptions> busOptions
 ) : ITransport, IServiceBusProducerDescriptorFactory
 {
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
-
     private readonly ILogger _logger = logger;
     private readonly ConcurrentDictionary<string, ServiceBusSender?> _senders = new(StringComparer.Ordinal);
-
     private ServiceBusClient? _client;
 
     /// <summary>
@@ -32,12 +30,12 @@ internal class AzureServiceBusTransport(
     /// <returns></returns>
     public IServiceBusProducerDescriptor CreateProducerForMessage(TransportMessage transportMessage)
     {
-        return asbOptions.Value.CustomProducers.SingleOrDefault(p => p.MessageTypeName == transportMessage.GetName())
-            ?? new ServiceBusProducerDescriptor(transportMessage.GetName(), asbOptions.Value.TopicPath);
+        return busOptions.Value.CustomProducers.SingleOrDefault(p => p.MessageTypeName == transportMessage.GetName())
+            ?? new ServiceBusProducerDescriptor(transportMessage.GetName(), busOptions.Value.TopicPath);
     }
 
     public BrokerAddress BrokerAddress =>
-        ServiceBusHelpers.GetBrokerAddress(asbOptions.Value.ConnectionString, asbOptions.Value.Namespace);
+        ServiceBusHelpers.GetBrokerAddress(busOptions.Value.ConnectionString, busOptions.Value.Namespace);
 
     public async Task<OperateResult> SendAsync(TransportMessage transportMessage)
     {
@@ -53,7 +51,7 @@ internal class AzureServiceBusTransport(
                 CorrelationId = transportMessage.GetCorrelationId(),
             };
 
-            if (asbOptions.Value.EnableSessions)
+            if (busOptions.Value.EnableSessions)
             {
                 transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.SessionId, out var sessionId);
                 message.SessionId = string.IsNullOrEmpty(sessionId) ? transportMessage.GetId() : sessionId;
@@ -63,10 +61,15 @@ internal class AzureServiceBusTransport(
                 transportMessage.Headers.TryGetValue(
                     AzureServiceBusHeaders.ScheduledEnqueueTimeUtc,
                     out var scheduledEnqueueTimeUtcString
-                ) && DateTimeOffset.TryParse(scheduledEnqueueTimeUtcString, out var scheduledEnqueueTimeUtc)
+                )
+                && DateTimeOffset.TryParse(
+                    scheduledEnqueueTimeUtcString,
+                    CultureInfo.InvariantCulture,
+                    out var scheduledEnqueueTimeUtc
+                )
             )
             {
-                message.ScheduledEnqueueTime = scheduledEnqueueTimeUtc.UtcDateTime;
+                message.ScheduledEnqueueTime = scheduledEnqueueTimeUtc;
             }
 
             foreach (var header in transportMessage.Headers)
@@ -112,9 +115,9 @@ internal class AzureServiceBusTransport(
 
         try
         {
-            _client ??= asbOptions.Value.TokenCredential is null
-                ? new ServiceBusClient(asbOptions.Value.ConnectionString)
-                : new ServiceBusClient(asbOptions.Value.Namespace, asbOptions.Value.TokenCredential);
+            _client ??= busOptions.Value.TokenCredential is null
+                ? new ServiceBusClient(busOptions.Value.ConnectionString)
+                : new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential);
 
             var newSender = _client.CreateSender(producerDescriptor.TopicPath);
             _senders.AddOrUpdate(producerDescriptor.TopicPath, newSender, (_, _) => newSender);
@@ -124,6 +127,16 @@ internal class AzureServiceBusTransport(
         finally
         {
             _connectionLock.Release();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _connectionLock.Dispose();
+
+        if (_client is not null)
+        {
+            await _client.DisposeAsync();
         }
     }
 }

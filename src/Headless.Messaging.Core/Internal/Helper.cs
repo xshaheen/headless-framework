@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 
 namespace Headless.Messaging.Internal;
 
-public static class Helper
+public static partial class Helper
 {
     public static bool IsController(TypeInfo typeInfo)
     {
@@ -43,22 +43,22 @@ public static class Helper
 
     public static string WildcardToRegex(string wildcard)
     {
-        const int MaxWildcardLength = 200;
-        const int MaxWildcardCount = 10;
+        const int maxWildcardLength = 200;
+        const int maxWildcardCount = 10;
 
-        if (wildcard.Length > MaxWildcardLength)
+        if (wildcard.Length > maxWildcardLength)
         {
             throw new ArgumentException(
-                $"Topic pattern exceeds maximum length of {MaxWildcardLength} characters",
+                $@"Topic pattern exceeds maximum length of {maxWildcardLength} characters",
                 nameof(wildcard)
             );
         }
 
-        var wildcardCount = wildcard.Count(c => c == '*' || c == '#');
-        if (wildcardCount > MaxWildcardCount)
+        var wildcardCount = wildcard.Count(c => c is '*' or '#');
+        if (wildcardCount > maxWildcardCount)
         {
             throw new ArgumentException(
-                $"Topic pattern contains too many wildcards (max: {MaxWildcardCount})",
+                $@"Topic pattern contains too many wildcards (max: {maxWildcardCount})",
                 nameof(wildcard)
             );
         }
@@ -90,11 +90,16 @@ public static class Helper
 
             return hostName[..50];
         }
+#pragma warning disable ERP022
         catch
         {
             return null;
         }
+#pragma warning restore ERP022
     }
+
+    [GeneratedRegex("[\\>\\.\\ \\*]", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, 100)]
+    private static partial Regex NormalizedRegex { get; }
 
     public static string Normalized(string name)
     {
@@ -103,8 +108,7 @@ public static class Helper
             return name;
         }
 
-        const string pattern = "[\\>\\.\\ \\*]";
-        return Regex.IsMatch(name, pattern) ? Regex.Replace(name, pattern, "_") : name;
+        return NormalizedRegex.IsMatch(name) ? NormalizedRegex.Replace(name, "_") : name;
     }
 
     public static bool IsUsingType<T>(in Type type)
