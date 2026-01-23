@@ -4,7 +4,7 @@ using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class CollectionItemJsonConverterTests
+public sealed class CollectionItemJsonConverterTests
 {
     private readonly JsonSerializerOptions _options;
 

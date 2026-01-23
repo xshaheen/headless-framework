@@ -27,7 +27,7 @@ namespace Framework.Primitives;
 [TypeConverter(typeof(StringPrimitiveTypeConverter))]
 [UnderlyingPrimitiveType(typeof(string))]
 [DebuggerDisplay("{" + nameof(_value) + "}")]
-public partial class StringPrimitive : IEquatable<StringPrimitive>
+public sealed partial class StringPrimitive : IEquatable<StringPrimitive>
         , IComparable
         , IComparable<StringPrimitive>
         , ISpanParsable<StringPrimitive>

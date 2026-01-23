@@ -3,20 +3,20 @@ using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Internal;
 
-public class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
+public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDisposable
 {
     private readonly SortedSet<(long, MediumMessage)> _queue = new(
         Comparer<(long, MediumMessage)>.Create(
             (a, b) =>
             {
-                int result = a.Item1.CompareTo(b.Item1);
-                return result == 0 ? string.Compare(a.Item2.DbId, b.Item2.DbId, StringComparison.Ordinal) : result;
+                var result = a.Item1.CompareTo(b.Item1);
+                return result == 0 ? string.CompareOrdinal(a.Item2.DbId, b.Item2.DbId) : result;
             }
         )
     );
 
     private readonly SemaphoreSlim _semaphore = new(0);
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private bool _isDisposed;
 
     public void Enqueue(MediumMessage message, long sendTime)

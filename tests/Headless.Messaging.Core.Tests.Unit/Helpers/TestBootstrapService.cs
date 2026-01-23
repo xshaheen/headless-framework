@@ -3,7 +3,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests.Helpers;
 
-public class TestBootstrapService(IBootstrapper bootstrapper) : IHostedService
+public sealed class TestBootstrapService(IBootstrapper bootstrapper) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {

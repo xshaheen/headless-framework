@@ -4,7 +4,7 @@ using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class StringToGuidJsonConverterTests
+public sealed class StringToGuidJsonConverterTests
 {
     private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToGuidJsonConverter() } };
 

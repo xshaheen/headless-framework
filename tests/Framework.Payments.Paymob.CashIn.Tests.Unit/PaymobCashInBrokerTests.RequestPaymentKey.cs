@@ -8,7 +8,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInBrokerTests
+public sealed partial class PaymobCashInBrokerTests
 {
     public static Fixture AutoFixture { get; } = new();
 

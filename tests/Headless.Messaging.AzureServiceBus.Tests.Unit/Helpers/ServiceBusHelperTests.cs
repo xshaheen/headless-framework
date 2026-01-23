@@ -2,7 +2,7 @@ using Headless.Messaging.AzureServiceBus.Helpers;
 
 namespace Tests.Helpers;
 
-public class ServiceBusHelpersTests
+public sealed class ServiceBusHelpersTests
 {
     [Fact]
     public void GetBrokerAddress_ShouldThrowArgumentException_WhenBothInputsAreNull()

@@ -31,7 +31,7 @@ public sealed class PrimitiveGeneratorTests
 
             namespace Framework.Primitives
 
-            public partial class StringPrimitive : IPrimitive<string>
+            public sealed partial class StringPrimitive : IPrimitive<string>
             {
                 public static PrimitiveValidationResult Validate(string value)
                 {
@@ -561,7 +561,7 @@ public sealed class PrimitiveGeneratorTests
             namespace Framework.Primitives
 
             /// <inheritdoc/>
-            public partial class StringPrimitive : IPrimitive<string>
+            public sealed partial class StringPrimitive : IPrimitive<string>
             {
                 /// <inheritdoc/>
                 public static PrimitiveValidationResult Validate(string value)
@@ -571,7 +571,7 @@ public sealed class PrimitiveGeneratorTests
             }
 
             /// <inheritdoc/>
-            public partial class StringOfStringPrimitive : IPrimitive<StringPrimitive>
+            public sealed partial class StringOfStringPrimitive : IPrimitive<StringPrimitive>
             {
                 /// <inheritdoc/>
                 public static PrimitiveValidationResult Validate(StringValue value)

@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class FloatingPointSpecialValuesTests
+public sealed class FloatingPointSpecialValuesTests
 {
     // IsPositive with special values
 

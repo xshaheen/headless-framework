@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Tests;
 
-public class ConsumerServiceSelectorTests
+public sealed class ConsumerServiceSelectorTests
 {
     [Fact]
     public void should_select_candidates_from_registry()
@@ -37,7 +37,7 @@ public class ConsumerServiceSelectorTests
         var descriptor = candidates[0];
         descriptor.ServiceTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
         descriptor.ImplTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
-        descriptor.MethodInfo.Name.Should().Be(nameof(IConsume<object>.Consume));
+        descriptor.MethodInfo.Name.Should().Be(nameof(IConsume<>.Consume));
         descriptor.TopicName.Should().Be("test.topic");
     }
 

@@ -7,7 +7,7 @@ using Framework.Ticker.Utilities.Interfaces.Managers;
 
 namespace Tests;
 
-public class TickerOptionsBuilderTests
+public sealed class TickerOptionsBuilderTests
 {
     private sealed class FakeTimeTicker : TimeTickerEntity<FakeTimeTicker>;
 

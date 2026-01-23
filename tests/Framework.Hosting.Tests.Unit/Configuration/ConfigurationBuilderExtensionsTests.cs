@@ -2,7 +2,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Tests.Configuration;
 
-public class ConfigurationBuilderExtensionsTests
+public sealed class ConfigurationBuilderExtensionsTests
 {
     [Fact]
     public void configuration_builder_add_if_should_add_configuration_if_condition_is_true()

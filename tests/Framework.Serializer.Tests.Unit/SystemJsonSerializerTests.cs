@@ -5,7 +5,7 @@ using Framework.Serializer.Converters;
 
 namespace Tests;
 
-public class SystemJsonSerializerTests
+public sealed class SystemJsonSerializerTests
 {
     private readonly SystemJsonSerializer _serializer = new();
 

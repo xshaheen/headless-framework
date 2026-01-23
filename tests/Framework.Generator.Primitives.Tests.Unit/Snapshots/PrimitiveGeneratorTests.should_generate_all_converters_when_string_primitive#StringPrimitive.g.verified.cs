@@ -27,7 +27,7 @@ namespace Framework.Primitives;
 [global::System.Diagnostics.DebuggerDisplay("{_value}")]
 [global::System.Text.Json.Serialization.JsonConverter(typeof(StringPrimitiveJsonConverter))]
 [global::System.ComponentModel.TypeConverter(typeof(StringPrimitiveTypeConverter))]
-public partial class StringPrimitive : global::System.IEquatable<StringPrimitive>
+public sealed partial class StringPrimitive : global::System.IEquatable<StringPrimitive>
         , global::System.IComparable
         , global::System.IComparable<StringPrimitive>
         , global::System.ISpanParsable<StringPrimitive>

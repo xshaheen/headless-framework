@@ -4,7 +4,7 @@ using Headless.Messaging.Internal;
 
 namespace Tests;
 
-public class HelperTest
+public sealed class HelperTest
 {
     [Fact]
     public void IsControllerTest()
@@ -207,6 +207,6 @@ public class HelperTest
     }
 }
 
-public class HomeController;
+public sealed class HomeController;
 
 public abstract class AbstractController;

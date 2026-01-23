@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class NullableOverloadTests
+public sealed class NullableOverloadTests
 {
     // TimeSpan nullable tests
 

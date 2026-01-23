@@ -9,7 +9,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInAuthenticatorTests : TestBase
+public sealed partial class PaymobCashInAuthenticatorTests : TestBase
 {
     [Fact]
     public async Task should_make_single_api_call_when_concurrent_requests_with_expired_token()

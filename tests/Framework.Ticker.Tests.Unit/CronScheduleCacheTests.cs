@@ -2,7 +2,7 @@ using Framework.Ticker.Utilities;
 
 namespace Tests;
 
-public class CronScheduleCacheTests
+public sealed class CronScheduleCacheTests
 {
     [Fact]
     public void GetNextOccurrenceOrDefault_Returns_Null_For_Invalid_Expression()

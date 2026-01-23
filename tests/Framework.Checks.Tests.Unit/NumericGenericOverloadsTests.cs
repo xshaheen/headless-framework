@@ -5,7 +5,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class NumericGenericOverloadsTests
+public sealed class NumericGenericOverloadsTests
 {
     // IsPositive tests for generic INumber<T> overloads
 

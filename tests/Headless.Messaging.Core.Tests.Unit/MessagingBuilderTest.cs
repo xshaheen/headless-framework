@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public class MessagingBuilderTest
+public sealed class MessagingBuilderTest
 {
     [Fact]
     public void CanCreateInstanceAndGetService()

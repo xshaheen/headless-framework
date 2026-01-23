@@ -5,18 +5,18 @@ using MessagePackSerializer = Framework.Serializer.MessagePackSerializer;
 
 namespace Tests;
 
-public class MessagePackSerializerTests
+public sealed class MessagePackSerializerTests
 {
     private readonly MessagePackSerializer _serializer = new();
 
-    public class Person
+    public sealed class Person
     {
         public required string Name { get; init; }
 
         public int Age { get; init; }
     }
 
-    public class NonSerializable
+    public sealed class NonSerializable
     {
         public required Action Action { get; init; }
     }

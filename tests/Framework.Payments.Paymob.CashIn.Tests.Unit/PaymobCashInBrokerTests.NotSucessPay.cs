@@ -8,7 +8,7 @@ using WireMock.ResponseBuilders;
 namespace Tests;
 
 #pragma warning disable xUnit1046 // Avoid using TheoryDataRow arguments that are not serializable
-public partial class PaymobCashInBrokerTests
+public sealed partial class PaymobCashInBrokerTests
 {
     public static readonly TheoryData<Func<PaymobCashInBroker, Task<object>>> PayRequests =
     [

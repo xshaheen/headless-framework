@@ -29,7 +29,8 @@ internal sealed class AmazonSqsTransport(
         {
             await _FetchExistingTopicArns();
 
-            var (success, arn) = await _TryGetOrCreateTopicArnAsync(message.GetName().NormalizeForAws());
+            var normalizeForAws = message.GetName().NormalizeForAws();
+            var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws);
 
             if (success)
             {
@@ -51,20 +52,16 @@ internal sealed class AmazonSqsTransport(
 
                 await _snsClient!.PublishAsync(request);
 
-                _logger.LogDebug($"SNS topic message [{message.GetName().NormalizeForAws()}] has been published.");
+                _logger.LogDebug("SNS topic message [{NormalizeForAws}] has been published.", normalizeForAws);
+
                 return OperateResult.Success;
             }
 
-            var errorMessage = $"Can't be found SNS topics for [{message.GetName().NormalizeForAws()}]";
-            _logger.LogWarning(errorMessage);
+            _logger.LogWarning("Can't be found SNS topics for [{NormalizeForAws}]", normalizeForAws);
 
             return OperateResult.Failed(
-                new PublisherSentFailedException(errorMessage),
-                new OperateError
-                {
-                    Code = "SNS",
-                    Description = $"Can't be found SNS topics for [{message.GetName().NormalizeForAws()}]",
-                }
+                new PublisherSentFailedException($"Can't be found SNS topics for [{normalizeForAws}]"),
+                new OperateError { Code = "SNS", Description = $"Can't be found SNS topics for [{normalizeForAws}]" }
             );
         }
         catch (Exception ex)
@@ -94,7 +91,9 @@ internal sealed class AmazonSqsTransport(
         {
             _snsClient = AwsClientFactory.CreateSnsClient(sqsOptionsAccessor.Value);
 
+#pragma warning disable CA1508 // May be change to null by another thread
             if (_topicArnMaps == null)
+#pragma warning restore CA1508
             {
                 _topicArnMaps = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
 
@@ -105,11 +104,13 @@ internal sealed class AmazonSqsTransport(
                         nextToken == null
                             ? await _snsClient.ListTopicsAsync()
                             : await _snsClient.ListTopicsAsync(nextToken);
+
                     topics.Topics.ForEach(x =>
                     {
-                        var name = x.TopicArn.Split(':').Last();
+                        var name = x.TopicArn.Split(':')[^1];
                         _topicArnMaps[name] = x.TopicArn;
                     });
+
                     nextToken = topics.NextToken;
                 } while (!string.IsNullOrEmpty(nextToken));
             }

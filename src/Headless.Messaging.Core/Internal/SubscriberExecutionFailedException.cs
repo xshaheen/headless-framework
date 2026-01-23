@@ -2,7 +2,7 @@
 
 namespace Headless.Messaging.Internal;
 
-internal class SubscriberExecutionFailedException(string message, Exception ex) : Exception(message, ex)
+public sealed class SubscriberExecutionFailedException(string message, Exception ex) : Exception(message, ex)
 {
     private readonly Exception _originException = ex;
 

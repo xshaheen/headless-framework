@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public class ServiceBusTransportTests
+public sealed class ServiceBusTransportTests
 {
     private readonly IOptions<AzureServiceBusOptions> _options;
 

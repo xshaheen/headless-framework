@@ -6,7 +6,7 @@ using Framework.Payments.Paymob.CashIn.Models;
 
 namespace Tests;
 
-public partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture) : IClassFixture<PaymobCashInFixture>
+public sealed partial class PaymobCashInBrokerTests(PaymobCashInFixture fixture) : IClassFixture<PaymobCashInFixture>
 {
     private static readonly Faker _Faker = new();
 

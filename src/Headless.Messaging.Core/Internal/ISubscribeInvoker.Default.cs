@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Reflection;
 using FastExpressionCompiler;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
@@ -187,15 +188,18 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
         var headersProperty = Expression.Property(originProperty, nameof(Message.Headers));
 
         // Build property bindings for ConsumeContext<T> initialization
-        var messageProperty = consumeContextType.GetProperty(nameof(ConsumeContext<object>.Message))!;
-        var messageIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<object>.MessageId))!;
-        var correlationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<object>.CorrelationId))!;
-        var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<object>.Headers))!;
-        var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<object>.Timestamp))!;
-        var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<object>.Topic))!;
+        var messageProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Message))!;
+        var messageIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.MessageId))!;
+        var correlationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.CorrelationId))!;
+        var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Headers))!;
+        var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Timestamp))!;
+        var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Topic))!;
 
         // Indexer for IDictionary<string, string?>["key"]
-        var dictionaryIndexer = typeof(IDictionary<string, string?>).GetProperty("Item")!;
+        var dictionaryIndexer = typeof(IDictionary<string, string?>).GetProperty(
+            "Item",
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        )!;
 
         // Message = (TMessage)message
         var messageBinding = Expression.Bind(messageProperty, Expression.Convert(messageParam, messageType));
@@ -216,7 +220,7 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
         var correlationIdVar = Expression.Variable(typeof(string), "correlationIdStr");
 
         var tryGetValueMethod = typeof(IDictionary<string, string?>).GetMethod(
-            nameof(IDictionary<string, string?>.TryGetValue),
+            nameof(IDictionary<,>.TryGetValue),
             [typeof(string), typeof(string).MakeByRefType()]
         )!;
 
@@ -288,7 +292,10 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
     {
         // Call IMessageDispatcher.DispatchAsync<T>(ConsumeContext<T>, CancellationToken)
         var dispatchMethod = typeof(IMessageDispatcher)
-            .GetMethod(nameof(IMessageDispatcher.DispatchAsync))!
+            .GetMethod(
+                nameof(IMessageDispatcher.DispatchAsync),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
             .MakeGenericMethod(messageType);
 
         var task = (Task)dispatchMethod.Invoke(dispatcher, [consumeContext, cancellationToken])!;

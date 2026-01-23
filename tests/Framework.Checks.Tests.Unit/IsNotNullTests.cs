@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class IsNotNullTests
+public sealed class IsNotNullTests
 {
     [Fact]
     public void is_not_null_collection_with_items_does_not_null()

@@ -4,7 +4,7 @@ using Framework.Core;
 
 namespace Tests.Reflections;
 
-public class StringHelperTests
+public sealed class StringHelperTests
 {
     [Fact]
     public void convert_from_bytes_without_bom_should_return_string_without_bom()

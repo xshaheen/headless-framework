@@ -1,4 +1,5 @@
 using Framework.Abstractions;
+using Framework.Testing.Tests;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
@@ -9,11 +10,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 [Collection<PostgreSqlTestFixture>]
-public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) : IAsyncLifetime
+public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) : TestBase
 {
     private IDataStorage _storage = null!;
 
-    public async ValueTask InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         var services = new ServiceCollection();
         services.AddOptions();
@@ -31,19 +32,16 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
 
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
-    }
-
-    public ValueTask DisposeAsync()
-    {
-        return ValueTask.CompletedTask;
+        await base.InitializeAsync();
     }
 
     [Fact]
     public async Task should_prevent_duplicate_messages_with_same_message_id_and_group()
     {
+        var cancellationToken = AbortToken;
         var messageId = Guid.NewGuid().ToString();
-        var group = "test-consumer-group";
-        var name = "test.topic";
+        const string group = "test-consumer-group";
+        const string name = "test.topic";
 
         var message1 = new Message(
             new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -64,11 +62,11 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         );
 
         // Store first message
-        var stored1 = await _storage.StoreReceivedMessageAsync(name, group, message1);
+        var stored1 = await _storage.StoreReceivedMessageAsync(name, group, message1, cancellationToken);
         stored1.Should().NotBeNull();
 
         // Store duplicate message - should update, not insert
-        var stored2 = await _storage.StoreReceivedMessageAsync(name, group, message2);
+        var stored2 = await _storage.StoreReceivedMessageAsync(name, group, message2, cancellationToken);
         stored2.Should().NotBeNull();
 
         // ON CONFLICT should update existing row, verifying deduplication works
@@ -79,6 +77,7 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
     [Fact]
     public async Task should_allow_same_message_id_with_different_groups()
     {
+        var cancellationToken = AbortToken;
         var messageId = Guid.NewGuid().ToString();
         var group1 = "consumer-group-1";
         var group2 = "consumer-group-2";
@@ -103,8 +102,8 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         );
 
         // Store same message ID to different groups
-        var stored1 = await _storage.StoreReceivedMessageAsync(name, group1, message1);
-        var stored2 = await _storage.StoreReceivedMessageAsync(name, group2, message2);
+        var stored1 = await _storage.StoreReceivedMessageAsync(name, group1, message1, cancellationToken);
+        var stored2 = await _storage.StoreReceivedMessageAsync(name, group2, message2, cancellationToken);
 
         // Should create two separate records
         stored1.Should().NotBeNull();

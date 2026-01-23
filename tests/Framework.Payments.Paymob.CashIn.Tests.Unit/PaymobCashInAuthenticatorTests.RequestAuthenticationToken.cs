@@ -9,7 +9,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInAuthenticatorTests
+public sealed partial class PaymobCashInAuthenticatorTests
 {
     [Fact]
     public async Task should_make_call_and_return_response_when_send_request()
