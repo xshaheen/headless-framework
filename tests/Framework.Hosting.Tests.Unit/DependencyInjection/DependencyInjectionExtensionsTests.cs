@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.DependencyInjection;
 
-public class DependencyInjectionExtensionsTests
+public sealed class DependencyInjectionExtensionsTests
 {
     [Fact]
     public void add_if_should_execute_the_action_if_the_condition_to_add_is_true()
@@ -559,12 +559,12 @@ public interface IMyService
     string Greet();
 }
 
-public class MyService : IMyService
+public sealed class MyService : IMyService
 {
     public string Greet() => "original";
 }
 
-public class ReplacementService : IMyService
+public sealed class ReplacementService : IMyService
 {
     public string Greet() => "replacement";
 }

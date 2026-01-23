@@ -4,7 +4,7 @@ using Headless.Messaging.Messages;
 
 namespace Tests.Helpers;
 
-public class TestThreadSafeMessageSender : IMessageSender
+public sealed class TestThreadSafeMessageSender : IMessageSender
 {
     private readonly ConcurrentQueue<MediumMessage> _messagesInOrder = [];
 

@@ -2,7 +2,7 @@
 
 namespace Tests;
 
-public class MessageExtensionTest
+public sealed class MessageExtensionTest
 {
     [Fact]
     public void GetIdTest()

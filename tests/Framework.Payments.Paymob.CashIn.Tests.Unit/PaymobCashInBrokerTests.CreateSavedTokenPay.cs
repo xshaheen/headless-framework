@@ -7,7 +7,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInBrokerTests
+public sealed partial class PaymobCashInBrokerTests
 {
     [Fact]
     public async Task should_make_call_and_return_response_when_create_saved_token_pay_request()

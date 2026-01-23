@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class IsNotDefault
+public sealed class IsNotDefault
 {
     [Fact]
     public void is_default_should_not_throw_if_argument_is_default()

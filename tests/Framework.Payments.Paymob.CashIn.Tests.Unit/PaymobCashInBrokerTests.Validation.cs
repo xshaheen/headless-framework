@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public partial class PaymobCashInBrokerTests
+public sealed partial class PaymobCashInBrokerTests
 {
     public static readonly TheoryData<string, string, string, bool> TransactionData = new()
     {

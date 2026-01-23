@@ -5,7 +5,7 @@ using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class IpAddressJsonConverterTests
+public sealed class IpAddressJsonConverterTests
 {
     private readonly JsonSerializerOptions _options = new() { Converters = { new IpAddressJsonConverter() } };
 

@@ -2,7 +2,7 @@
 
 namespace Tests.Reflections;
 
-public class MethodInfoExtensionsTests
+public sealed class MethodInfoExtensionsTests
 {
     [Fact]
     public void is_async_should_return_true_for_async_methods()

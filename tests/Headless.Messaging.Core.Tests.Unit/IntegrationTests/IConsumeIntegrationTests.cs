@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.IntegrationTests;
 
-public class IConsumeIntegrationTests
+public sealed class IConsumeIntegrationTests
 {
     [Fact]
     public void should_register_and_discover_consumers_end_to_end()

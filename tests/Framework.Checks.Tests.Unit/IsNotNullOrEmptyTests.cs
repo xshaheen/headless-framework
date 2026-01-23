@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class IsNotNullOrEmptyTests
+public sealed class IsNotNullOrEmptyTests
 {
     [Fact]
     public void is_not_null_or_empty_throws_for_null_string_or_empty_string()

@@ -162,7 +162,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
         return null;
     }
 
-    private void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
+    private static void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
     {
         if (tracingTimestamp != null && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
         {
@@ -180,7 +180,7 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
         }
     }
 
-    private void _TracingError(
+    private static void _TracingError(
         long? tracingTimestamp,
         TransportMessage message,
         BrokerAddress broker,

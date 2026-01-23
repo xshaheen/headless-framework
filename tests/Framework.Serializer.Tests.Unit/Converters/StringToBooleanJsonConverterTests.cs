@@ -4,7 +4,7 @@ using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class StringToBooleanJsonConverterTests
+public sealed class StringToBooleanJsonConverterTests
 {
     private readonly JsonSerializerOptions _jsonOptions = new() { Converters = { new StringToBooleanJsonConverter() } };
 

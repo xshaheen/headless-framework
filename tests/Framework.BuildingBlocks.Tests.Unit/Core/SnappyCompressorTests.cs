@@ -5,7 +5,7 @@ using Framework.Core;
 
 namespace Tests.Core;
 
-public class SnappyCompressorTests
+public sealed class SnappyCompressorTests
 {
     private sealed record SnappyCompressorEntityTest(int Id, string Name, DateTimeOffset DateCreated);
 

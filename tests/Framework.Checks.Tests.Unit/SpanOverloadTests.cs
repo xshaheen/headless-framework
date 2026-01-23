@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class SpanOverloadTests
+public sealed class SpanOverloadTests
 {
     // IsNotEmpty Span<T> tests
 

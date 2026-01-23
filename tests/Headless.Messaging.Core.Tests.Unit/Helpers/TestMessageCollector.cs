@@ -1,6 +1,6 @@
 ﻿namespace Tests.Helpers;
 
-public class TestMessageCollector(ICollection<object> handledMessages)
+public sealed class TestMessageCollector(ICollection<object> handledMessages)
 {
     public void Add(object data)
     {

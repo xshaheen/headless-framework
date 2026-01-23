@@ -39,7 +39,7 @@ public sealed class CollectorProcessor : IProcessor
     {
         foreach (var table in _tableNames)
         {
-            _logger.LogDebug($"Collecting expired data from table: {table}");
+            _logger.LogDebug("Collecting expired data from table: {Table}", table);
 
             int deletedCount;
             var time = _timeProvider.GetUtcNow().UtcDateTime;
@@ -54,7 +54,11 @@ public sealed class CollectorProcessor : IProcessor
 
                     if (deletedCount != 0)
                     {
-                        _logger.LogDebug($"Successfully deleted {deletedCount} expired items from table '{table}'.");
+                        _logger.LogDebug(
+                            "Successfully deleted {DeletedCount} expired items from table '{Table}'.",
+                            deletedCount,
+                            table
+                        );
 
                         await context.WaitAsync(_delay).AnyContext();
                         context.ThrowIfStopping();
@@ -64,7 +68,9 @@ public sealed class CollectorProcessor : IProcessor
                 {
                     _logger.LogError(
                         ex,
-                        $"An error occurred while attempting to delete expired data from table '{table}':{ex.Message}"
+                        "An error occurred while attempting to delete expired data from table '{Table}':{ExMessage}",
+                        table,
+                        ex.Message
                     );
                     throw;
                 }

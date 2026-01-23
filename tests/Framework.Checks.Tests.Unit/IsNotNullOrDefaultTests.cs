@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class IsNotNullOrDefaultTests
+public sealed class IsNotNullOrDefaultTests
 {
     [Fact]
     public void is_not_null_or_default_with_value_returns_unwrapped_value()

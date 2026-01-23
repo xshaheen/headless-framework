@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public class MessagingBuilderTests
+public sealed class MessagingBuilderTests
 {
     [Fact]
     public void should_register_consumers_via_scan()

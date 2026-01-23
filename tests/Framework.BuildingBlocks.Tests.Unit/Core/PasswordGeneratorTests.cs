@@ -4,7 +4,7 @@ using Framework.Abstractions;
 
 namespace Tests.Core;
 
-public class PasswordGeneratorTests
+public sealed class PasswordGeneratorTests
 {
     private readonly PasswordGenerator _passwordGenerator = new();
 

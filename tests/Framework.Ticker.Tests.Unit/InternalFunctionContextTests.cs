@@ -5,7 +5,7 @@ using Framework.Ticker.Utilities.Models;
 
 namespace Tests;
 
-public class InternalFunctionContextTests
+public sealed class InternalFunctionContextTests
 {
     [Fact]
     public void SetProperty_Tracks_Updated_Properties()

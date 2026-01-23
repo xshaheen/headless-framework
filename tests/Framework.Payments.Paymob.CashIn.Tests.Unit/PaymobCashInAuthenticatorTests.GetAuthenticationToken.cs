@@ -9,7 +9,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInAuthenticatorTests
+public sealed partial class PaymobCashInAuthenticatorTests
 {
     [Fact]
     public async Task should_request_new_token_when_cache_token_expired()

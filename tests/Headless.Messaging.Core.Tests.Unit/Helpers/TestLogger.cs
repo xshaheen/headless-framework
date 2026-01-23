@@ -2,7 +2,7 @@
 
 namespace Tests.Helpers;
 
-public class TestLogger(ITestOutputHelper outputHelper, string categoryName) : ILogger
+public sealed class TestLogger(ITestOutputHelper outputHelper, string categoryName) : ILogger
 {
     public string CategoryName { get; } = categoryName;
 

@@ -4,7 +4,7 @@ using Framework.Serializer.Converters;
 
 namespace Tests.Converters;
 
-public class UnixTimeJsonConverterTests
+public sealed class UnixTimeJsonConverterTests
 {
     private readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {

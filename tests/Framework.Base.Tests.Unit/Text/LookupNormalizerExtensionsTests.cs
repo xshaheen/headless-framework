@@ -4,7 +4,7 @@ using Framework.Text;
 
 namespace Tests.Text;
 
-public class LookupNormalizerExtensionsTests
+public sealed class LookupNormalizerExtensionsTests
 {
     private readonly Faker _faker = new();
 

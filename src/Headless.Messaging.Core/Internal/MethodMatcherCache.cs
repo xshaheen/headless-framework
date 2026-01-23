@@ -44,7 +44,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     public byte GetGroupConcurrentLimit(string group)
     {
-        return GroupConcurrent.TryGetValue(group, out byte value) ? value : (byte)1;
+        return GroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
     }
 
     public List<string> GetAllTopics()

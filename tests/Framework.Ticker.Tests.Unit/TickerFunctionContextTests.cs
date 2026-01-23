@@ -3,7 +3,7 @@ using Framework.Ticker.Utilities.Enums;
 
 namespace Tests;
 
-public class TickerFunctionContextTests
+public sealed class TickerFunctionContextTests
 {
     [Fact]
     public void GenericContext_Preserves_ScheduledFor_From_Base_Context()

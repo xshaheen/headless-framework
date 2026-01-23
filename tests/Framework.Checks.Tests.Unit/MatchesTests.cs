@@ -6,7 +6,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class MatchesTests
+public sealed class MatchesTests
 {
     [Fact]
     public void matches_should_return_argument_when_valid_pattern()

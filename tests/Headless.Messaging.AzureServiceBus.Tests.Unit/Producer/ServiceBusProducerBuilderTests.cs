@@ -4,7 +4,7 @@ namespace Tests.Producer;
 
 public record MessagePublished;
 
-public class ServiceBusProducerBuilderTests
+public sealed class ServiceBusProducerBuilderTests
 {
     [Fact]
     public void Should_HavePropertiesCorrectlySet_When_Obsolete_BuildMethodIsExecuted()

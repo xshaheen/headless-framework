@@ -5,7 +5,7 @@ using Framework.Linq;
 
 namespace Tests.Linq;
 
-public class PredicateBuilderTests
+public sealed class PredicateBuilderTests
 {
     [Fact]
     public void true_predicate_should_always_return_true_or_false_based_on_case_predicate()

@@ -9,7 +9,7 @@ using WireMock.ResponseBuilders;
 
 namespace Tests;
 
-public partial class PaymobCashInBrokerTests : TestBase
+public sealed partial class PaymobCashInBrokerTests : TestBase
 {
     private static readonly JsonSerializerOptions _IgnoreNullOptions = new(JsonSerializerDefaults.Web)
     {

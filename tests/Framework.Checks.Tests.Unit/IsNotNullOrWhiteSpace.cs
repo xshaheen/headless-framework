@@ -4,7 +4,7 @@ using Framework.Checks;
 
 namespace Tests;
 
-public class IsNotNullOrWhiteSpace
+public sealed class IsNotNullOrWhiteSpace
 {
     [Fact]
     public void is_not_null_or_white_space_should_throw_argument_null_exception_if_argument_is_null_or_empty()

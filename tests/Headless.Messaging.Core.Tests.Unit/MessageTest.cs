@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public class MessageTest
+public sealed class MessageTest
 {
     private readonly IServiceProvider _provider;
 
@@ -48,7 +48,7 @@ public class MessageTest
     }
 }
 
-public class MessageValue(string email, string name)
+public sealed class MessageValue(string email, string name)
 {
     public string Email { get; } = email;
 
