@@ -39,7 +39,7 @@ public static class MessagingOptionsExtensions
     {
         public MessagingOptions UseDashboard()
         {
-            return messagingOptions.UseDashboard(opt => { });
+            return messagingOptions.UseDashboard(_ => { });
         }
 
         public MessagingOptions UseDashboard(Action<DashboardOptions> options)
