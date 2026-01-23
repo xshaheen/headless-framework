@@ -17,6 +17,12 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
     private readonly List<LogMessageEventArgs> _loggedEvents = [];
 
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await _channel.DisposeAsync();
+        await base.DisposeAsyncCore();
+    }
+
     [Fact]
     public async Task should_log_exception_when_consume_fails_with_concurrent_processing()
     {

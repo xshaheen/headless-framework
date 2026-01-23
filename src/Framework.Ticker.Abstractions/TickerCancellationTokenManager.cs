@@ -198,10 +198,11 @@ public class TickerCancellationTokenDetails
 /// <summary>
 /// Thread-safe HashSet implementation for concurrent operations
 /// </summary>
-public class ConcurrentHashSet<T> : IDisposable
+public sealed class ConcurrentHashSet<T> : IDisposable
 {
     private readonly HashSet<T> _set = new();
     private readonly ReaderWriterLockSlim _lock = new();
+    private bool _disposed;
 
     public bool Add(T item)
     {
@@ -276,6 +277,22 @@ public class ConcurrentHashSet<T> : IDisposable
 
     public void Dispose()
     {
-        _lock?.Dispose();
+        _Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    private void _Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            _lock.Dispose();
+        }
+
+        _disposed = true;
     }
 }

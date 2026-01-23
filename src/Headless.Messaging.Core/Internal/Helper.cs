@@ -103,18 +103,19 @@ public static class Helper
             return name;
         }
 
-        var pattern = "[\\>\\.\\ \\*]";
+        const string pattern = "[\\>\\.\\ \\*]";
         return Regex.IsMatch(name, pattern) ? Regex.Replace(name, pattern, "_") : name;
     }
 
     public static bool IsUsingType<T>(in Type type)
     {
-        var flags =
+        const BindingFlags flags =
             BindingFlags.Public
             | BindingFlags.NonPublic
             | BindingFlags.Static
             | BindingFlags.Instance
             | BindingFlags.DeclaredOnly;
+
         return type.GetFields(flags).Any(x => x.FieldType == typeof(T));
     }
 
@@ -156,7 +157,7 @@ public static class Helper
         }
 
         // Class B: 172.16.0.0/12
-        if (first == 172 && second >= 16 && second <= 31)
+        if (first == 172 && second is >= 16 and <= 31)
         {
             return true;
         }
@@ -187,10 +188,5 @@ public static class Helper
             || type == typeof(DateTimeOffset)
             || type == typeof(TimeSpan)
             || type == typeof(Uri);
-    }
-
-    internal static void ReThrow(this Exception exception)
-    {
-        ExceptionDispatchInfo.Capture(exception).Throw();
     }
 }

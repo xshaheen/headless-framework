@@ -130,9 +130,18 @@ public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransac
     /// <summary>
     /// Disposes the transaction, releasing the underlying database transaction if it implements <see cref="IDisposable"/>.
     /// </summary>
-    public virtual void Dispose()
+    public void Dispose()
     {
-        (DbTransaction as IDisposable)?.Dispose();
-        DbTransaction = null;
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            (DbTransaction as IDisposable)?.Dispose();
+            DbTransaction = null;
+        }
     }
 }

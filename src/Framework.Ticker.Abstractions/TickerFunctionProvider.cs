@@ -29,12 +29,11 @@ public static class TickerFunctionProvider
     public static FrozenDictionary<
         string,
         (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)
-    > TickerFunctions = FrozenDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate)>.Empty;
+    > TickerFunctions { get; private set; } =
+        FrozenDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate)>.Empty;
 
-    public static FrozenDictionary<string, (string, Type)> TickerFunctionRequestTypes = FrozenDictionary<
-        string,
-        (string, Type)
-    >.Empty;
+    public static FrozenDictionary<string, (string, Type)> TickerFunctionRequestTypes { get; private set; } =
+        FrozenDictionary<string, (string, Type)>.Empty;
 
     /// <summary>
     /// Registers ticker functions during application startup by adding to the callback chain.

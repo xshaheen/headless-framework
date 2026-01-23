@@ -16,7 +16,7 @@ public sealed class MessageProcessingServer(
     private readonly ILogger _logger = logger;
 
     private Task? _compositeTask;
-    private ProcessingContext _context = default!;
+    private ProcessingContext? _context;
     private bool _disposed;
 
     public ValueTask StartAsync(CancellationToken stoppingToken)
@@ -71,6 +71,9 @@ public sealed class MessageProcessingServer(
         }
         finally
         {
+            _context?.Dispose();
+            _context = null;
+            _cts.Dispose();
             _logger.LogInformation("### Messaging system shutdown!");
         }
     }

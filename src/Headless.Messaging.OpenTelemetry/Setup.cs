@@ -24,9 +24,10 @@ public static class MessagingOpenTelemetryTracingSetup
 
         builder.AddSource(DiagnosticListener.SourceName);
 
-        var metrics = enableMetrics ? new MessagingMetrics() : null;
-        var instrumentation = new MessagingInstrumentation(new DiagnosticListener(metrics), metrics);
-
-        return builder.AddInstrumentation(() => instrumentation);
+        return builder.AddInstrumentation(() =>
+        {
+            var metrics = enableMetrics ? new MessagingMetrics() : null;
+            return new MessagingInstrumentation(new DiagnosticListener(metrics), metrics);
+        });
     }
 }

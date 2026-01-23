@@ -10,9 +10,9 @@
       "rollForward": true
     },
     "csharpier": {
-      "version": "0.30.6",
+      "version": "1.2.5",
       "commands": [
-        "dotnet-csharpier"
+        "csharpier"
       ],
       "rollForward": true
     },

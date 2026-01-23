@@ -69,4 +69,10 @@ internal class NodeHeartBeatBackgroundService : BackgroundService
         Interlocked.Exchange(ref _started, 0);
         await base.StopAsync(cancellationToken);
     }
+
+    public override void Dispose()
+    {
+        _tickerHeartBeatPeriodicTimer.Dispose();
+        base.Dispose();
+    }
 }

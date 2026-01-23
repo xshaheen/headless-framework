@@ -197,6 +197,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
+        _semaphore.Dispose();
         return ValueTask.CompletedTask;
     }
 

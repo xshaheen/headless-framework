@@ -92,6 +92,10 @@ internal class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvid
                 _logger.ExpectedOperationCanceledException(innerEx);
             }
         }
+        finally
+        {
+            (_dispatcher as IDisposable)?.Dispose();
+        }
     }
 
     public void Pulse()

@@ -274,6 +274,8 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public TTimeTicker Build() => _mainBuilder.Build();
 
         public static implicit operator TTimeTicker(FirstChildBuilder builder) => builder.Build();
+
+        public TTimeTicker ToTTimeTicker() => Build();
     }
 
     public class SecondChildBuilder
@@ -380,6 +382,8 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public TTimeTicker Build() => _mainBuilder.Build();
 
         public static implicit operator TTimeTicker(SecondChildBuilder builder) => builder.Build();
+
+        public TTimeTicker ToTTimeTicker() => Build();
     }
 
     public class ThirdChildBuilder
@@ -479,6 +483,8 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public TTimeTicker Build() => _mainBuilder.Build();
 
         public static implicit operator TTimeTicker(ThirdChildBuilder builder) => builder.Build();
+
+        public TTimeTicker ToTTimeTicker() => Build();
     }
 
     public class FourthChildBuilder
@@ -579,6 +585,8 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public TTimeTicker Build() => _mainBuilder.Build();
 
         public static implicit operator TTimeTicker(FourthChildBuilder builder) => builder.Build();
+
+        public TTimeTicker ToTTimeTicker() => Build();
     }
 
     public class FifthChildBuilder
@@ -672,7 +680,11 @@ public class FluentChainTickerBuilder<TTimeTicker>
         public TTimeTicker Build() => _mainBuilder.Build();
 
         public static implicit operator TTimeTicker(FifthChildBuilder builder) => builder.Build();
+
+        public TTimeTicker ToTTimeTicker() => Build();
     }
+
+    public TTimeTicker ToTTimeTicker() => Build();
 }
 
 /// <summary>

@@ -12,9 +12,7 @@ namespace Headless.Messaging;
 /// <param name="Concurrency">The maximum number of messages to process concurrently.</param>
 /// <remarks>
 /// This record stores the configuration metadata for a consumer registered via
-/// <see cref="IMessagingBuilder.Consumer{TConsumer}"/> or <see cref="IMessagingBuilder.ScanConsumers"/>.
-/// The metadata is used by <see cref="IConsumerServiceSelector"/> to build consumer descriptors
-/// that the messaging system uses for message routing and execution.
+/// <see cref="IMessagingBuilder.ScanConsumers"/> or <see cref="IMessagingBuilder.Consumer{T}(string)"/>.
 /// </remarks>
 public sealed record ConsumerMetadata(
     Type MessageType,

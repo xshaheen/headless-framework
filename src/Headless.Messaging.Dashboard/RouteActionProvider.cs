@@ -496,7 +496,7 @@ public class RouteActionProvider
     {
         var endpoint = httpContext.Request.Query["endpoint"];
 
-        var httpClient = new HttpClient();
+        using var httpClient = new HttpClient();
         var sw = new Stopwatch();
         try
         {
@@ -507,7 +507,7 @@ public class RouteActionProvider
 
             if (response == "OK")
             {
-                await httpContext.Response.WriteAsync(sw.ElapsedMilliseconds.ToString());
+                await httpContext.Response.WriteAsync(sw.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture));
             }
             else
             {
@@ -555,6 +555,6 @@ public static class IntExtension
 {
     public static int ToInt32OrDefault(this StringValues value, int defaultValue = 0)
     {
-        return int.TryParse(value, out var result) ? result : defaultValue;
+        return int.TryParse(value, CultureInfo.InvariantCulture, out var result) ? result : defaultValue;
     }
 }

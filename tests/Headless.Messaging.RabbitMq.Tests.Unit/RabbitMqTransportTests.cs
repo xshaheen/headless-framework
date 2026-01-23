@@ -31,6 +31,12 @@ public sealed class RabbitMqTransportTests : TestBase
         _pool.Rent().Returns(_channel);
     }
 
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await _channel.DisposeAsync();
+        await base.DisposeAsyncCore();
+    }
+
     [Fact]
     public void should_have_correct_broker_address()
     {
@@ -112,13 +118,14 @@ public sealed class RabbitMqTransportTests : TestBase
         _channel
             .When(x =>
                 _ = x.BasicPublishAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<string>(),
-                    Arg.Any<bool>(),
-                    Arg.Any<BasicProperties>(),
-                    Arg.Any<ReadOnlyMemory<byte>>(),
-                    Arg.Any<CancellationToken>()
-                )
+                        Arg.Any<string>(),
+                        Arg.Any<string>(),
+                        Arg.Any<bool>(),
+                        Arg.Any<BasicProperties>(),
+                        Arg.Any<ReadOnlyMemory<byte>>(),
+                        Arg.Any<CancellationToken>()
+                    )
+                    .AsTask()
             )
             .Do(_ => throw new InvalidOperationException("Publish failed"));
 
@@ -149,13 +156,14 @@ public sealed class RabbitMqTransportTests : TestBase
         _channel
             .When(x =>
                 _ = x.BasicPublishAsync(
-                    Arg.Any<string>(),
-                    Arg.Any<string>(),
-                    Arg.Any<bool>(),
-                    Arg.Any<BasicProperties>(),
-                    Arg.Any<ReadOnlyMemory<byte>>(),
-                    Arg.Any<CancellationToken>()
-                )
+                        Arg.Any<string>(),
+                        Arg.Any<string>(),
+                        Arg.Any<bool>(),
+                        Arg.Any<BasicProperties>(),
+                        Arg.Any<ReadOnlyMemory<byte>>(),
+                        Arg.Any<CancellationToken>()
+                    )
+                    .AsTask()
             )
             .Do(_ =>
                 throw new AlreadyClosedException(
