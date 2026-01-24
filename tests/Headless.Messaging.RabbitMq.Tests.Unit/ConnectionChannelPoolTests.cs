@@ -199,17 +199,22 @@ public sealed class ConnectionChannelPoolTests : TestBase
         await using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
 
         // when - force multiple exceptions (up to pool size of 15)
-        var rentTasks = Enumerable.Range(0, 20).Select(async _ =>
-        {
-            try
+        var rentTasks = Enumerable
+            .Range(0, 20)
+            .Select(async _ =>
             {
-                await pool.Rent();
-            }
-            catch
-            {
-                // expected: all calls should fail due to invalid host
-            }
-        }).ToList();
+                try
+                {
+                    await pool.Rent();
+                }
+#pragma warning disable ERP022
+                catch
+                {
+                    // expected: all calls should fail due to invalid host
+                }
+#pragma warning restore ERP022
+            })
+            .ToList();
 
         // then - all should complete (with failures) without deadlock within timeout
         await Task.WhenAll(rentTasks).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);

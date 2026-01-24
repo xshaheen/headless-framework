@@ -15,40 +15,41 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
-internal class SubscribeExecutor : ISubscribeExecutor
+internal sealed class SubscribeExecutor : ISubscribeExecutor
 {
-    // diagnostics listener
-    // ReSharper disable once InconsistentNaming
-    private static readonly DiagnosticListener s_diagnosticListener = new(
+    // Diagnostics listener
+    private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    private readonly IDataStorage _dataStorage;
     private readonly string? _hostName;
-    private readonly ILogger _logger;
-    private readonly MessagingOptions _options;
     private readonly IServiceProvider _provider;
-    private readonly TimeProvider _timeProvider;
+    private readonly IDataStorage _dataStorage;
+    private readonly ISubscribeInvoker _invoker;
     private readonly IRetryBackoffStrategy _backoffStrategy;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger<SubscribeExecutor> _logger;
+    private readonly MessagingOptions _options;
 
     public SubscribeExecutor(
+        IServiceProvider provider,
+        IDataStorage dataStorage,
+        ISubscribeInvoker invoker,
+        TimeProvider timeProvider,
         ILogger<SubscribeExecutor> logger,
-        IOptions<MessagingOptions> options,
-        IServiceProvider provider
+        IOptions<MessagingOptions> options
     )
     {
         _provider = provider;
         _logger = logger;
         _options = options.Value;
 
-        _dataStorage = _provider.GetRequiredService<IDataStorage>();
-        Invoker = _provider.GetRequiredService<ISubscribeInvoker>();
-        _timeProvider = _provider.GetRequiredService<TimeProvider>();
+        _dataStorage = dataStorage;
+        _invoker = invoker;
+        _timeProvider = timeProvider;
         _hostName = Helper.GetInstanceHostname();
-        _backoffStrategy = _options.RetryBackoffStrategy ?? new ExponentialBackoffStrategy();
+        _backoffStrategy = _options.RetryBackoffStrategy;
     }
-
-    private ISubscribeInvoker Invoker { get; }
 
     public async Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -61,21 +62,26 @@ internal class SubscribeExecutor : ISubscribeExecutor
             var selector = _provider.GetRequiredService<MethodMatcherCache>();
             if (!selector.TryGetTopicExecutor(message.Origin.GetName(), message.Origin.GetGroup()!, out descriptor))
             {
-                var error =
-                    $"Message (Name:{message.Origin.GetName()},Group:{message.Origin.GetGroup()}) can not be found subscriber."
-                    + $"{Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
-                _logger.LogError(error);
-
-                _TracingError(
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    message.Origin,
-                    null,
-                    new Exception(error)
+                _logger.LogError(
+                    "Message (Name:{GetName},Group:{GetGroup}) can not be found subscriber. Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.",
+                    message.Origin.GetName(),
+                    message.Origin.GetGroup()
                 );
 
-                var ex = new SubscriberNotFoundException(error);
-                await _SetFailedState(message, ex);
-                return OperateResult.Failed(ex);
+                var exception = new SubscriberNotFoundException(
+                    $"Message (Name:{message.Origin.GetName()},Group:{message.Origin.GetGroup()}) can not be found subscriber."
+                        + $"{Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches."
+                );
+
+                _TracingError(
+                    _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                    message.Origin,
+                    method: null,
+                    exception
+                );
+
+                await _SetFailedState(message, exception);
+                return OperateResult.Failed(exception);
             }
         }
 
@@ -229,7 +235,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         var tracingTimestamp = _TracingBefore(message.Origin, descriptor.MethodInfo);
         try
         {
-            var ret = await Invoker.InvokeAsync(consumerContext, cancellationToken).AnyContext();
+            var ret = await _invoker.InvokeAsync(consumerContext, cancellationToken).AnyContext();
 
             _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo);
 
@@ -241,9 +247,9 @@ internal class SubscribeExecutor : ISubscribeExecutor
                     message.Origin.GetCorrelationSequence() + 1
                 ).ToString(CultureInfo.InvariantCulture);
 
-                if (message.Origin.Headers.TryGetValue(Headers.TraceParent, out var traceparent))
+                if (message.Origin.Headers.TryGetValue(Headers.TraceParent, out var traceParent))
                 {
-                    ret.CallbackHeader[Headers.TraceParent] = traceparent;
+                    ret.CallbackHeader[Headers.TraceParent] = traceParent;
                 }
 
                 await _provider
@@ -270,7 +276,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
 
     private static long? _TracingBefore(Message message, MethodInfo method)
     {
-        if (s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeSubscriberInvoke))
+        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeSubscriberInvoke))
         {
             var eventData = new MessageEventDataSubExecute
             {
@@ -280,7 +286,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 MethodInfo = method,
             };
 
-            s_diagnosticListener.Write(MessageDiagnosticListenerNames.BeforeSubscriberInvoke, eventData);
+            _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforeSubscriberInvoke, eventData);
 
             return eventData.OperationTimestamp;
         }
@@ -293,7 +299,7 @@ internal class SubscribeExecutor : ISubscribeExecutor
         MessageEventCounterSource.Log.WriteInvokeMetrics();
         if (
             tracingTimestamp != null
-            && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterSubscriberInvoke)
+            && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterSubscriberInvoke)
         )
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -306,30 +312,30 @@ internal class SubscribeExecutor : ISubscribeExecutor
                 ElapsedTimeMs = now - tracingTimestamp.Value,
             };
 
-            s_diagnosticListener.Write(MessageDiagnosticListenerNames.AfterSubscriberInvoke, eventData);
+            _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterSubscriberInvoke, eventData);
         }
     }
 
-    private static void _TracingError(long? tracingTimestamp, Message message, MethodInfo? method, Exception ex)
+    private void _TracingError(long? tracingTimestamp, Message message, MethodInfo? method, Exception ex)
     {
-        if (
-            tracingTimestamp != null
-            && s_diagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorSubscriberInvoke)
-        )
+        if (!_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorSubscriberInvoke))
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventData = new MessageEventDataSubExecute
-            {
-                OperationTimestamp = now,
-                Operation = message.GetName(),
-                Message = message,
-                MethodInfo = method,
-                ElapsedTimeMs = now - tracingTimestamp.Value,
-                Exception = ex,
-            };
-
-            s_diagnosticListener.Write(MessageDiagnosticListenerNames.ErrorSubscriberInvoke, eventData);
+            return;
         }
+
+        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+
+        var eventData = new MessageEventDataSubExecute
+        {
+            OperationTimestamp = now,
+            Operation = message.GetName(),
+            Message = message,
+            MethodInfo = method,
+            ElapsedTimeMs = now - tracingTimestamp,
+            Exception = ex,
+        };
+
+        _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorSubscriberInvoke, eventData);
     }
 
     #endregion

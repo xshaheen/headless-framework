@@ -11,6 +11,7 @@ using Headers = Headless.Messaging.Messages.Headers;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqBasicConsumerTests : TestBase
 {
     private readonly IChannel _channel = Substitute.For<IChannel>();
@@ -42,7 +43,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         _channel.IsOpen.Returns(true);
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -52,7 +53,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var deliveryTag = 123ul;
+        const ulong deliveryTag = 123ul;
         var body = "test message"u8.ToArray();
 
         // when
@@ -91,7 +92,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         _channel.IsOpen.Returns(true);
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -101,7 +102,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var deliveryTag = 456ul;
+        const ulong deliveryTag = 456ul;
         var body = "test message"u8.ToArray();
 
         // when
@@ -135,7 +136,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         _channel.IsOpen.Returns(false);
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -145,7 +146,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             _serviceProvider
         );
 
-        var deliveryTag = 789ul;
+        const ulong deliveryTag = 789ul;
         var body = "test message"u8.ToArray();
 
         // when
@@ -187,7 +188,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             return Task.CompletedTask;
         }
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -236,7 +237,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             return Task.CompletedTask;
         }
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -275,7 +276,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         static Task callback(TransportMessage transportMessage, object? o) =>
             throw new InvalidOperationException("Simulated consumption error");
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             concurrent,
             groupName,
@@ -311,7 +312,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         TransportMessage? receivedMessage = null;
         object? receivedSender = null;
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -356,7 +357,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         TransportMessage? receivedMessage = null;
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -397,7 +398,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // given
         TransportMessage? receivedMessage = null;
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -441,7 +442,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
             IServiceProvider serviceProvider
         ) => [new("CustomHeader", "CustomValue")];
 
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -478,7 +479,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         _channel.IsOpen.Returns(true);
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -500,7 +501,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         _channel.IsOpen.Returns(false);
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -522,7 +523,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         _channel.IsOpen.Returns(true);
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -544,7 +545,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         _channel.IsOpen.Returns(false);
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             1,
             "test-group",
@@ -568,7 +569,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         LogMessageEventArgs? loggedEvent = null;
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -592,7 +593,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         LogMessageEventArgs? loggedEvent = null;
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",
@@ -616,7 +617,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     {
         // given
         LogMessageEventArgs? loggedEvent = null;
-        var consumer = new RabbitMqBasicConsumer(
+        using var consumer = new RabbitMqBasicConsumer(
             _channel,
             0,
             "test-group",

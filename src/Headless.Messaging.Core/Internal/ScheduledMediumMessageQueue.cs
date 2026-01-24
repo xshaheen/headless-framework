@@ -90,7 +90,7 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
 
     public void Dispose()
     {
-        _Dispose(true);
+        _Dispose(disposing: true);
         GC.SuppressFinalize(this);
     }
 
@@ -109,7 +109,9 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
         _isDisposed = true;
     }
 
+#pragma warning disable MA0055 // Dispose methods should call SuppressFinalize
     ~ScheduledMediumMessageQueue()
+#pragma warning restore MA0055
     {
         if (!_isDisposed)
         {

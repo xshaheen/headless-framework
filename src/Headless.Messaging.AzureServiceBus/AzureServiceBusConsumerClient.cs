@@ -41,20 +41,38 @@ internal sealed class AzureServiceBusConsumerClient(
 
         await ConnectAsync();
 
-        topics = topics.Concat(_asbOptions.SqlFilters?.Select(o => o.Key) ?? []);
-
-        var allRules = _administrationClient!.GetRulesAsync(_asbOptions.TopicPath, subscriptionName).ToEnumerable();
-        var allRuleNames = allRules.Select(o => o.Name);
-
-        foreach (var newRule in topics.Except(allRuleNames, StringComparer.Ordinal))
+        if (_administrationClient is null)
         {
-            var isSqlRule = _asbOptions.SqlFilters?.FirstOrDefault(o => o.Key == newRule).Value is not null;
+            throw new InvalidOperationException("Azure Service Bus administration client is not initialized.");
+        }
+
+        // Get existing rules
+
+        var allRuleNames = new List<string>();
+        var allRules = _administrationClient.GetRulesAsync(_asbOptions.TopicPath, subscriptionName);
+
+        await foreach (var rule in allRules)
+        {
+            allRuleNames.Add(rule.Name);
+        }
+
+        var topicsList = topics.Concat(_asbOptions.SqlFilters?.Select(o => o.Key) ?? []).ToList();
+
+        foreach (var newRule in topicsList.Except(allRuleNames, StringComparer.Ordinal))
+        {
+            var isSqlRule =
+                _asbOptions
+                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .Value
+                is not null;
 
             RuleFilter? currentRuleToAdd;
 
             if (isSqlRule)
             {
-                var sqlExpression = _asbOptions.SqlFilters?.FirstOrDefault(o => o.Key == newRule).Value;
+                var sqlExpression = _asbOptions
+                    .SqlFilters?.FirstOrDefault(o => string.Equals(o.Key, newRule, StringComparison.Ordinal))
+                    .Value;
                 currentRuleToAdd = new SqlRuleFilter(sqlExpression);
             }
             else
@@ -78,7 +96,7 @@ internal sealed class AzureServiceBusConsumerClient(
             logger.LogInformation("Azure Service Bus add rule: {NewRule}", newRule);
         }
 
-        foreach (var oldRule in allRuleNames.Except(topics, StringComparer.Ordinal))
+        foreach (var oldRule in allRuleNames.Except(topicsList, StringComparer.Ordinal))
         {
             await _administrationClient.DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule);
 
@@ -124,10 +142,18 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask DisposeAsync()
     {
-        if (!_serviceBusProcessor!.IsProcessing)
+        if (_serviceBusProcessor is not null && !_serviceBusProcessor.IsProcessing)
         {
             await _serviceBusProcessor.DisposeAsync();
         }
+
+        if (_serviceBusClient is not null)
+        {
+            await _serviceBusClient.DisposeAsync();
+        }
+
+        _connectionLock.Dispose();
+        _semaphore.Dispose();
     }
 
     private Task _serviceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
@@ -181,7 +207,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
         try
         {
+#pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_serviceBusProcessor == null)
+#pragma warning restore CA1508
             {
                 if (_asbOptions.TokenCredential != null)
                 {

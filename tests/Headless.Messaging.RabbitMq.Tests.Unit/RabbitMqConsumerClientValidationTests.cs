@@ -8,6 +8,7 @@ using RabbitMQ.Client;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class RabbitMqConsumerClientValidationTests : TestBase
 {
     private readonly IConnectionChannelPool _pool;
@@ -28,7 +29,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     public void should_accept_valid_group_name()
     {
         // given
-        var validGroupName = "valid-queue_name.123";
+        const string validGroupName = "valid-queue_name.123";
 
         // when
         var action = () => new RabbitMqConsumerClient(validGroupName, 1, _pool, _options, _serviceProvider);
@@ -54,7 +55,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
     public void should_reject_group_name_with_invalid_characters()
     {
         // given
-        var invalidGroupName = "invalid queue name";
+        const string invalidGroupName = "invalid queue name";
 
         // when
         var action = () => new RabbitMqConsumerClient(invalidGroupName, 1, _pool, _options, _serviceProvider);
@@ -84,7 +85,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
 
         var channel = Substitute.For<IChannel>();
         var connection = Substitute.For<IConnection>();
-        connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>()).Returns(channel);
+        connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
         _pool.GetConnectionAsync().Returns(connection);
 
         var invalidTopics = new[] { "invalid topic name" };

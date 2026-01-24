@@ -168,7 +168,7 @@ public class MessagingOptions : IMessagingBuilder
     /// When null, defaults to <see cref="ExponentialBackoffStrategy"/> with 1s initial delay, 5min max delay, and 2x multiplier.
     /// For fixed interval retries, use <see cref="FixedIntervalBackoffStrategy"/>.
     /// </summary>
-    public IRetryBackoffStrategy? RetryBackoffStrategy { get; set; }
+    public IRetryBackoffStrategy RetryBackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
 
     /// <summary>
     /// Registers a messaging options extension that will be executed when configuring messaging services.

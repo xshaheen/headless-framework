@@ -169,7 +169,7 @@ public sealed class KafkaConsumerClient(
 
         lock (_Lock)
         {
-#pragma warning disable CA1508 // Justification: other thread can make it null
+#pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_consumerClient == null)
 #pragma warning restore CA1508
             {

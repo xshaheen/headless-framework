@@ -29,9 +29,9 @@ internal class MessageSender(ILogger<MessageSender> logger, IServiceProvider ser
     private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
     private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
-    private readonly IRetryBackoffStrategy _backoffStrategy =
-        serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value.RetryBackoffStrategy
-        ?? new ExponentialBackoffStrategy();
+    private readonly IRetryBackoffStrategy _backoffStrategy = serviceProvider
+        .GetRequiredService<IOptions<MessagingOptions>>()
+        .Value.RetryBackoffStrategy;
 
     public async Task<OperateResult> SendAsync(MediumMessage message)
     {

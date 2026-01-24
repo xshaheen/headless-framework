@@ -27,20 +27,26 @@ public sealed class ServiceBusTransportTests
     }
 
     [Fact]
-    public void Transport_ShouldHaveCorrectBrokerAddress()
+    public async Task Transport_ShouldHaveCorrectBrokerAddress()
     {
         // given, When
-        var transport = new AzureServiceBusTransport(NullLogger<AzureServiceBusTransport>.Instance, _options);
+        await using var transport = new AzureServiceBusTransport(
+            NullLogger<AzureServiceBusTransport>.Instance,
+            _options
+        );
 
         // then
         transport.BrokerAddress.Endpoint.Should().Be("sb://mynamespace.servicebus.windows.net/");
     }
 
     [Fact]
-    public void CustomProducer_ShouldHaveCustomTopic()
+    public async Task CustomProducer_ShouldHaveCustomTopic()
     {
         // given
-        var transport = new AzureServiceBusTransport(NullLogger<AzureServiceBusTransport>.Instance, _options);
+        await using var transport = new AzureServiceBusTransport(
+            NullLogger<AzureServiceBusTransport>.Instance,
+            _options
+        );
 
         var transportMessage = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -59,10 +65,13 @@ public sealed class ServiceBusTransportTests
     }
 
     [Fact]
-    public void DefaultProducer_ShouldHaveDefaultTopic()
+    public async Task DefaultProducer_ShouldHaveDefaultTopic()
     {
         // given
-        var transport = new AzureServiceBusTransport(NullLogger<AzureServiceBusTransport>.Instance, _options);
+        await using var transport = new AzureServiceBusTransport(
+            NullLogger<AzureServiceBusTransport>.Instance,
+            _options
+        );
 
         var transportMessage = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)

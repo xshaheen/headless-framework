@@ -24,7 +24,7 @@ public sealed class AmazonSqsTransportTests(LocalStackTestFixture fixture) : Tes
     {
         // given
         const string topicName = "test-topic";
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
         await _CreateTopicAsync(topicName);
 
         var message = new TransportMessage(
@@ -44,7 +44,7 @@ public sealed class AmazonSqsTransportTests(LocalStackTestFixture fixture) : Tes
     {
         // given
         const string topicName = "non-existent-topic";
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
 
         var message = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
@@ -64,7 +64,7 @@ public sealed class AmazonSqsTransportTests(LocalStackTestFixture fixture) : Tes
     {
         // given
         const string topicName = "test-attributes-topic";
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
         await _CreateTopicAsync(topicName);
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -88,7 +88,7 @@ public sealed class AmazonSqsTransportTests(LocalStackTestFixture fixture) : Tes
     {
         // given
         const string topicName = "test-empty-body-topic";
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
         await _CreateTopicAsync(topicName);
 
         var message = new TransportMessage(

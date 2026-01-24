@@ -91,7 +91,7 @@ internal sealed class AmazonSqsTransport(
         {
             _snsClient = AwsClientFactory.CreateSnsClient(sqsOptionsAccessor.Value);
 
-#pragma warning disable CA1508 // May be change to null by another thread
+#pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_topicArnMaps == null)
 #pragma warning restore CA1508
             {
