@@ -17,7 +17,7 @@ namespace Headless.Messaging;
 /// Applications typically obtain an instance of this interface through dependency injection and associate it
 /// with a database transaction before publishing messages within that transaction.
 /// </remarks>
-public interface IOutboxTransaction : IDisposable
+public interface IOutboxTransaction : IDisposable, IAsyncDisposable
 {
     /// <summary>
     /// Gets or sets a value indicating whether the transaction is automatically committed after a message is published.

@@ -51,16 +51,16 @@ public interface IConsumerRegistry
     /// Multiple consumers can handle the same message type if they subscribe to different topics
     /// or belong to different consumer groups.
     /// </remarks>
-    IEnumerable<ConsumerMetadata> FindByMessageType<TMessage>();
+    IReadOnlyList<ConsumerMetadata> FindByMessageType<TMessage>();
 
     /// <summary>
     /// Finds all consumers that handle a specific message type.
     /// </summary>
     /// <param name="messageType">The message type to search for.</param>
-    /// <returns>An enumerable of consumer metadata for all consumers handling the specified message type.</returns>
+    /// <returns>A read-only list of consumer metadata for all consumers handling the specified message type.</returns>
     /// <remarks>
     /// Multiple consumers can handle the same message type if they subscribe to different topics
     /// or belong to different consumer groups.
     /// </remarks>
-    IEnumerable<ConsumerMetadata> FindByMessageType(Type messageType);
+    IReadOnlyList<ConsumerMetadata> FindByMessageType(Type messageType);
 }

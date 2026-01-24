@@ -123,8 +123,8 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     /// Finds all consumers that handle a specific message type.
     /// </summary>
     /// <typeparam name="TMessage">The message type to search for.</typeparam>
-    /// <returns>An enumerable of consumer metadata for all consumers handling the specified message type.</returns>
-    public IEnumerable<ConsumerMetadata> FindByMessageType<TMessage>()
+    /// <returns>A read-only list of consumer metadata for all consumers handling the specified message type.</returns>
+    public IReadOnlyList<ConsumerMetadata> FindByMessageType<TMessage>()
     {
         return FindByMessageType(typeof(TMessage));
     }
@@ -133,11 +133,11 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     /// Finds all consumers that handle a specific message type.
     /// </summary>
     /// <param name="messageType">The message type to search for.</param>
-    /// <returns>An enumerable of consumer metadata for all consumers handling the specified message type.</returns>
-    public IEnumerable<ConsumerMetadata> FindByMessageType(Type messageType)
+    /// <returns>A read-only list of consumer metadata for all consumers handling the specified message type.</returns>
+    public IReadOnlyList<ConsumerMetadata> FindByMessageType(Type messageType)
     {
         var all = GetAll();
-        return all.Where(m => m.MessageType == messageType);
+        return all.Where(m => m.MessageType == messageType).ToList().AsReadOnly();
     }
 
     /// <summary>

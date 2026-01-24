@@ -18,16 +18,6 @@ public static class MessagingConventionsExtensions
     }
 
     /// <summary>
-    /// Configures the messaging conventions to use PascalCase for topic names.
-    /// Example: "OrderCreated" remains "OrderCreated".
-    /// </summary>
-    public static MessagingConventions UsePascalCaseTopics(this MessagingConventions conventions)
-    {
-        conventions.TopicNaming = TopicNamingConvention.PascalCase;
-        return conventions;
-    }
-
-    /// <summary>
     /// Sets a prefix to prepend to all generated topic names.
     /// </summary>
     /// <param name="conventions">The conventions to configure.</param>
