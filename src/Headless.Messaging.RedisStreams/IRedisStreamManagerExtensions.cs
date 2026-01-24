@@ -29,7 +29,7 @@ internal static class RedisStreamManagerExtensions
                 {
                     logger?.LogError(
                         ex,
-                        "Redis error while creating consumer group [{consumerGroup}] of stream [{position}]",
+                        "Redis error while creating consumer group [{ConsumerGroup}] of stream [{Position}]",
                         consumerGroup,
                         position.Key
                     );
@@ -92,7 +92,7 @@ internal static class RedisStreamManagerExtensions
         }
         catch (Exception ex)
         {
-            if (ex.GetRedisErrorType() is var type && type == RedisErrorTypes.NoGroupInfoExists)
+            if (ex.GetRedisErrorType() is RedisErrorTypes.NoGroupInfoExists)
             {
                 await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).AnyContext();
                 return;
