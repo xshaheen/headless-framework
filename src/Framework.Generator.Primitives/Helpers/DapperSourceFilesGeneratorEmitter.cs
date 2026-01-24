@@ -40,15 +40,13 @@ internal static class DapperSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings(
-            [
-                "System",
-                "System.Globalization",
-                data.Namespace,
-                data.PrimitiveTypeNamespace,
-                AbstractionConstants.Namespace,
-            ]
-        );
+        builder.AppendUsings([
+            "System",
+            "System.Globalization",
+            data.Namespace,
+            data.PrimitiveTypeNamespace,
+            AbstractionConstants.Namespace,
+        ]);
 
         builder.AppendNamespace(_CreateConverterNamespaceName(data.Namespace));
         builder.AppendSummary($"Dapper TypeHandler for <see cref = \"{data.ClassName}\"/>");
@@ -215,12 +213,10 @@ internal static class DapperSourceFilesGeneratorEmitter
 
         builder.AppendSourceHeader("Primitives Generator");
 
-        builder.AppendUsings(
-            [
-                .. types.ConvertAll(x => x.Namespace),
-                .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
-            ]
-        );
+        builder.AppendUsings([
+            .. types.ConvertAll(x => x.Namespace),
+            .. types.ConvertAll(x => _CreateConverterNamespaceName(x.Namespace)),
+        ]);
 
         if (addAssemblyAttribute)
         {

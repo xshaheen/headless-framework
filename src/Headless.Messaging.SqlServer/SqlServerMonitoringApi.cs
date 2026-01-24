@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Framework.Primitives;
 using Headless.Messaging.Internal;
@@ -115,9 +115,6 @@ internal class SqlServerMonitoringApi(
             where += " AND [Content] LIKE @Content";
         }
 
-        var sqlQuery2008 =
-            $"SELECT * FROM (SELECT p.*, ROW_NUMBER() OVER(ORDER BY p.Added DESC) AS RowNum FROM {tableName} AS p WHERE 1=1 {where}) as tbl WHERE tbl.RowNum BETWEEN @Offset AND @Offset + @Limit";
-
         var sqlQuery =
             $"SELECT * FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
 
@@ -149,7 +146,7 @@ internal class SqlServerMonitoringApi(
 
         var items = await connection
             .ExecuteReaderAsync(
-                _options.IsSqlServer2008 ? sqlQuery2008 : sqlQuery,
+                sqlQuery,
                 async (reader, ct) =>
                 {
                     var messages = new List<MessageView>();
@@ -267,18 +264,6 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sqlQuery2008 = $"""
-            WITH Aggr AS (
-            SELECT REPLACE(CONVERT(varchar, Added, 111), '/','-') + '-' + CONVERT(varchar, DATEPART(hh, Added)) AS [Key],
-                COUNT(Id) [Count]
-            FROM  {tableName}
-            WHERE StatusName = @StatusName
-            GROUP BY REPLACE(CONVERT(varchar, Added, 111), '/','-') + '-' + CONVERT(varchar, DATEPART(hh, Added))
-            )
-            SELECT [Key], [Count] FROM Aggr WITH (NOLOCK) WHERE [Key] >= @MinKey AND [Key] <= @MaxKey;
-            """;
-
-        //SQL Server 2012+
         var sqlQuery = $"""
             WITH Aggr AS (
             SELECT FORMAT(Added,'yyyy-MM-dd-HH') AS [Key],
@@ -305,7 +290,7 @@ internal class SqlServerMonitoringApi(
         {
             valuesMap = await connection
                 .ExecuteReaderAsync(
-                    _options.IsSqlServer2008 ? sqlQuery2008 : sqlQuery,
+                    sqlQuery,
                     async (reader, ct) =>
                     {
                         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -323,16 +308,10 @@ internal class SqlServerMonitoringApi(
                 .AnyContext();
         }
 
-        foreach (var key in keyMaps.Keys)
+        var result = new Dictionary<DateTime, int>(keyMaps.Count);
+        foreach (var (key, dateTime) in keyMaps)
         {
-            valuesMap.TryAdd(key, 0);
-        }
-
-        var result = new Dictionary<DateTime, int>();
-        for (var i = 0; i < keyMaps.Count; i++)
-        {
-            var value = valuesMap[keyMaps.ElementAt(i).Key];
-            result.Add(keyMaps.ElementAt(i).Value, value);
+            result[dateTime] = valuesMap.TryGetValue(key, out var count) ? count : 0;
         }
 
         return result;

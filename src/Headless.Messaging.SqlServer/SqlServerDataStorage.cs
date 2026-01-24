@@ -15,6 +15,10 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.SqlServer;
 
+/// <summary>
+/// SQL Server implementation of <see cref="IDataStorage"/> for message persistence.
+/// Handles storage, retrieval, and state transitions for published and received messages.
+/// </summary>
 public sealed class SqlServerDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IOptions<SqlServerOptions> options,
@@ -24,6 +28,24 @@ public sealed class SqlServerDataStorage(
     TimeProvider timeProvider
 ) : IDataStorage
 {
+    /// <summary>
+    /// Maximum messages to fetch in a single retry batch.
+    /// Higher values process more but increase memory and lock contention.
+    /// </summary>
+    private const int _RetryBatchSize = 200;
+
+    /// <summary>
+    /// Lookahead window for delayed messages.
+    /// Messages expiring within this window are pre-fetched for scheduling.
+    /// </summary>
+    private static readonly TimeSpan _DelayedMessageLookahead = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Lookback window for queued messages that may have been lost.
+    /// Messages queued longer than this are re-scheduled.
+    /// </summary>
+    private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
+
     private readonly string _lockName = initializer.GetLockTableName();
     private readonly string _pubName = initializer.GetPublishedTableName();
     private readonly string _recName = initializer.GetReceivedTableName();
@@ -99,7 +121,7 @@ public sealed class SqlServerDataStorage(
             parameters[i] = new SqlParameter($"@Id{i}", long.Parse(ids[i], CultureInfo.InvariantCulture));
         }
 
-        parameters[^1] = new SqlParameter("@StatusName", StatusName.Delayed.ToString("G"));
+        parameters[^1] = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
 
         var sql = $"UPDATE {_pubName} SET [StatusName]=@StatusName WHERE [Id] IN ({string.Join(',', paramNames)});";
 
@@ -264,7 +286,7 @@ public sealed class SqlServerDataStorage(
                    SELECT TOP (@batchCount) Id
                    FROM {table} WITH (READPAST)
                    WHERE ExpiresAt < @timeout
-                   AND StatusName IN('{StatusName.Succeeded}','{StatusName.Failed}')
+                   AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
                );",
                 null,
                 cancellationToken,
@@ -320,16 +342,16 @@ public sealed class SqlServerDataStorage(
         var sql =
             $@"
             SELECT TOP (@BatchSize) Id, Content, Retries, Added, ExpiresAt FROM {_pubName} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = '{StatusName.Delayed}' AND ExpiresAt < @TwoMinutesLater
+                WHERE Version = @Version AND StatusName = '{nameof(StatusName.Delayed)}' AND ExpiresAt < @TwoMinutesLater
             UNION ALL
             SELECT TOP (@BatchSize) Id, Content, Retries, Added, ExpiresAt FROM {_pubName} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = '{StatusName.Queued}' AND ExpiresAt < @OneMinutesAgo;";
+                WHERE Version = @Version AND StatusName = '{nameof(StatusName.Queued)}' AND ExpiresAt < @OneMinutesAgo;";
 
         object[] sqlParams =
         [
             new SqlParameter("@Version", messagingOptions.Value.Version),
-            new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2)),
-            new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1)),
+            new SqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.Add(_DelayedMessageLookahead)),
+            new SqlParameter("@OneMinutesAgo", timeProvider.GetUtcNow().UtcDateTime.Subtract(_QueuedMessageLookback)),
             new SqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
         ];
 
@@ -439,8 +461,8 @@ public sealed class SqlServerDataStorage(
         var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
 
         var sql =
-            $"SELECT TOP (200) Id, Content, Retries, Added FROM {tableName} WITH (READPAST) "
-            + $"WHERE Retries < @Retries AND Version = @Version AND Added < @Added AND StatusName IN ('{StatusName.Failed}', '{StatusName.Scheduled}');";
+            $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added FROM {tableName} WITH (READPAST) "
+            + $"WHERE Retries < @Retries AND Version = @Version AND Added < @Added AND StatusName IN ('{nameof(StatusName.Failed)}', '{nameof(StatusName.Scheduled)}');";
 
         object[] sqlParams =
         [

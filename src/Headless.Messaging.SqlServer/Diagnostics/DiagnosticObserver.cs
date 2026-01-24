@@ -8,9 +8,11 @@ using Microsoft.Data.SqlClient;
 
 namespace Headless.Messaging.SqlServer.Diagnostics;
 
-internal class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOutboxTransaction> bufferTrans)
+internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOutboxTransaction> bufferTrans)
     : IObserver<KeyValuePair<string, object?>>
 {
+    private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> _PropertyCache = new();
+
     public const string SqlAfterCommitTransactionMicrosoft = "Microsoft.Data.SqlClient.WriteTransactionCommitAfter";
     public const string SqlErrorCommitTransactionMicrosoft = "Microsoft.Data.SqlClient.WriteTransactionCommitError";
     public const string SqlAfterRollbackTransactionMicrosoft = "Microsoft.Data.SqlClient.WriteTransactionRollbackAfter";
@@ -83,6 +85,17 @@ internal class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOutboxTran
 
     private static object? _GetProperty(object? @this, string propertyName)
     {
-        return @this?.GetType().GetTypeInfo().GetDeclaredProperty(propertyName)?.GetValue(@this);
+        if (@this is null)
+        {
+            return null;
+        }
+
+        var type = @this.GetType();
+        var prop = _PropertyCache.GetOrAdd(
+            (type, propertyName),
+            key => key.Item1.GetTypeInfo().GetDeclaredProperty(key.Item2)
+        );
+
+        return prop?.GetValue(@this);
     }
 }

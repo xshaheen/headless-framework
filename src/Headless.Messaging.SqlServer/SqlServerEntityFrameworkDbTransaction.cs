@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore.Storage;
 
-internal class SqlServerEntityFrameworkDbTransaction : IDbContextTransaction, IInfrastructure<DbTransaction>
+internal sealed class SqlServerEntityFrameworkDbTransaction : IDbContextTransaction, IInfrastructure<DbTransaction>
 {
     private readonly IOutboxTransaction _transaction;
 

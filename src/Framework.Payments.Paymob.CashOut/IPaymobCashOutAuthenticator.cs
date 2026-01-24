@@ -87,9 +87,11 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
 
         request.Method = HttpMethod.Post;
         request.RequestUri = new Uri(Url.Combine(options.ApiBaseUrl, "o/token/"), UriKind.Absolute);
-        request.Content = new FormUrlEncodedContent(
-            [new("grant_type", "password"), new("username", options.UserName), new("password", options.Password)]
-        );
+        request.Content = new FormUrlEncodedContent([
+            new("grant_type", "password"),
+            new("username", options.UserName),
+            new("password", options.Password),
+        ]);
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
 
         var response = await httpClient.SendAsync(request, cancellationToken).AnyContext();
@@ -128,9 +130,10 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
         request.Method = HttpMethod.Post;
         request.RequestUri = new Uri(requestUrl, UriKind.Absolute);
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
-        request.Content = new FormUrlEncodedContent(
-            [new("grant_type", "refresh_token"), new("refresh_token", refreshToken)]
-        );
+        request.Content = new FormUrlEncodedContent([
+            new("grant_type", "refresh_token"),
+            new("refresh_token", refreshToken),
+        ]);
 
         var response = await httpClient.SendAsync(request, cancellationToken).AnyContext();
 

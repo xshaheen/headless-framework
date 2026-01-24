@@ -72,17 +72,16 @@ public sealed partial class PaymobCashInBrokerTests
     {
         return AutoFixture
             .Build<CashInPaymentKeyRequest>()
-            .FromFactory(
-                () =>
-                    new CashInPaymentKeyRequest(
-                        integrationId: AutoFixture.Create<int>(),
-                        orderId: AutoFixture.Create<int>(),
-                        billingData: AutoFixture.Create<CashInBillingData>(),
-                        amountCents: AutoFixture.Create<int>(),
-                        currency: AutoFixture.Create<string>(),
-                        lockOrderWhenPaid: AutoFixture.Create<bool>(),
-                        expiration: expiration
-                    )
+            .FromFactory(() =>
+                new CashInPaymentKeyRequest(
+                    integrationId: AutoFixture.Create<int>(),
+                    orderId: AutoFixture.Create<int>(),
+                    billingData: AutoFixture.Create<CashInBillingData>(),
+                    amountCents: AutoFixture.Create<int>(),
+                    currency: AutoFixture.Create<string>(),
+                    lockOrderWhenPaid: AutoFixture.Create<bool>(),
+                    expiration: expiration
+                )
             )
             .Create();
     }

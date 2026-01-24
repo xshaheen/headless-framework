@@ -1,0 +1,86 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Testing.Tests;
+using Headless.Messaging.SqlServer;
+
+namespace Tests;
+
+public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
+{
+    [Fact]
+    public void should_have_default_schema_set()
+    {
+        // when
+        var options = new SqlServerEntityFrameworkMessagingOptions();
+
+        // then
+        options.Schema.Should().Be(SqlServerEntityFrameworkMessagingOptions.DefaultSchema);
+    }
+
+    [Fact]
+    public void should_accept_valid_schema_name()
+    {
+        // given
+        var options = new SqlServerEntityFrameworkMessagingOptions();
+        const string validSchema = "my_custom_schema";
+
+        // when
+        options.Schema = validSchema;
+
+        // then
+        options.Schema.Should().Be(validSchema);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_throw_when_schema_is_null_or_whitespace(string? schema)
+    {
+        // given
+        var options = new SqlServerEntityFrameworkMessagingOptions();
+
+        // when
+        var act = () => options.Schema = schema!;
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_schema_exceeds_max_length()
+    {
+        // given
+        var options = new SqlServerEntityFrameworkMessagingOptions();
+        var longSchema = new string('a', SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength + 1);
+
+        // when
+        var act = () => options.Schema = longSchema;
+
+        // then
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage($"*{SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength}*");
+    }
+
+    [Fact]
+    public void should_accept_schema_at_max_length()
+    {
+        // given
+        var options = new SqlServerEntityFrameworkMessagingOptions();
+        var maxLengthSchema = new string('a', SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength);
+
+        // when
+        options.Schema = maxLengthSchema;
+
+        // then
+        options.Schema.Should().Be(maxLengthSchema);
+    }
+
+    [Fact]
+    public void should_have_max_schema_length_of_128()
+    {
+        // SQL Server identifier limit
+        SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength.Should().Be(128);
+    }
+}

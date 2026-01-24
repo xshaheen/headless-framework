@@ -2,4 +2,5 @@
 
 namespace Tests;
 
-public sealed partial class PaymobCashInAuthenticatorTests(PaymobCashInFixture fixture) : IClassFixture<PaymobCashInFixture>;
+public sealed partial class PaymobCashInAuthenticatorTests(PaymobCashInFixture fixture)
+    : IClassFixture<PaymobCashInFixture>;

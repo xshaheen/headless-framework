@@ -37,7 +37,9 @@ internal class ConfigureSqlServerOptions(IServiceScopeFactory serviceScopeFactor
         var connectionString = dbContext.Database.GetConnectionString();
         if (string.IsNullOrEmpty(connectionString))
         {
-            throw new ArgumentNullException(connectionString);
+            throw new InvalidOperationException(
+                "DbContext returned null or empty connection string. Ensure the DbContext is properly configured."
+            );
         }
 
         options.ConnectionString = connectionString;

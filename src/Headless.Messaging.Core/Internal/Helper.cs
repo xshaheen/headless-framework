@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Net;
 using System.Reflection;
@@ -10,6 +11,8 @@ namespace Headless.Messaging.Internal;
 
 public static partial class Helper
 {
+    private static readonly ConcurrentDictionary<Type, TypeConverter> _ConverterCache = new();
+
     public static bool IsController(TypeInfo typeInfo)
     {
         if (!typeInfo.IsClass)
@@ -178,8 +181,13 @@ public static partial class Helper
     private static bool _CanConvertFromString(Type destinationType)
     {
         destinationType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
-        return _IsSimpleType(destinationType)
-            || TypeDescriptor.GetConverter(destinationType).CanConvertFrom(typeof(string));
+        if (_IsSimpleType(destinationType))
+        {
+            return true;
+        }
+
+        var converter = _ConverterCache.GetOrAdd(destinationType, TypeDescriptor.GetConverter);
+        return converter.CanConvertFrom(typeof(string));
     }
 
     private static bool _IsSimpleType(Type type)
