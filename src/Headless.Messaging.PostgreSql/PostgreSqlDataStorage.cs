@@ -14,6 +14,10 @@ using Npgsql;
 
 namespace Headless.Messaging.PostgreSql;
 
+/// <summary>
+/// PostgreSQL implementation of <see cref="IDataStorage"/> for outbox pattern message persistence.
+/// Handles storage, retrieval, and state management of published and received messages.
+/// </summary>
 public sealed class PostgreSqlDataStorage(
     IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingOptions> messagingOptions,
@@ -23,6 +27,24 @@ public sealed class PostgreSqlDataStorage(
     TimeProvider timeProvider
 ) : IDataStorage
 {
+    /// <summary>
+    /// Maximum messages to fetch in a single retry batch.
+    /// Higher values process more but increase memory and lock contention.
+    /// </summary>
+    private const int _RetryBatchSize = 200;
+
+    /// <summary>
+    /// Lookahead window for delayed messages.
+    /// Messages expiring within this window are pre-fetched for scheduling.
+    /// </summary>
+    private static readonly TimeSpan _DelayedMessageLookahead = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Lookback window for queued messages that may have been lost.
+    /// Messages queued longer than this are re-scheduled.
+    /// </summary>
+    private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
+
     private readonly string _lockName = initializer.GetLockTableName();
     private readonly string _pubName = initializer.GetPublishedTableName();
     private readonly string _recName = initializer.GetReceivedTableName();
@@ -118,7 +140,9 @@ public sealed class PostgreSqlDataStorage(
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
-        await connection.ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters).AnyContext();
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters)
+            .AnyContext();
     }
 
     public ValueTask ChangePublishStateAsync(
@@ -266,11 +290,7 @@ public sealed class PostgreSqlDataStorage(
     {
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
-        object[] sqlParams =
-        [
-            new NpgsqlParameter("@timeout", timeout),
-            new NpgsqlParameter("@batchCount", batchCount),
-        ];
+        object[] sqlParams = [new NpgsqlParameter("@timeout", timeout), new NpgsqlParameter("@batchCount", batchCount)];
 
         return await connection
             .ExecuteNonQueryAsync(
@@ -332,13 +352,16 @@ public sealed class PostgreSqlDataStorage(
     {
         var sql =
             $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\" FROM {_pubName} WHERE \"Version\"=@Version "
-            + $"AND ((\"ExpiresAt\"< @TwoMinutesLater AND \"StatusName\" = '{StatusName.Delayed}') OR (\"ExpiresAt\"< @OneMinutesAgo AND \"StatusName\" = '{StatusName.Queued}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
+            + $"AND ((\"ExpiresAt\"< @TwoMinutesLater AND \"StatusName\" = '{nameof(StatusName.Delayed)}') OR (\"ExpiresAt\"< @OneMinutesAgo AND \"StatusName\" = '{nameof(StatusName.Queued)}')) FOR UPDATE SKIP LOCKED LIMIT @BatchSize;";
 
         var sqlParams = new object[]
         {
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2)),
-            new NpgsqlParameter("@OneMinutesAgo", _QueuedMessageFetchTime()),
+            new NpgsqlParameter("@TwoMinutesLater", timeProvider.GetUtcNow().UtcDateTime.Add(_DelayedMessageLookahead)),
+            new NpgsqlParameter(
+                "@OneMinutesAgo",
+                timeProvider.GetUtcNow().UtcDateTime.Subtract(_QueuedMessageLookback)
+            ),
             new NpgsqlParameter("@BatchSize", messagingOptions.Value.SchedulerBatchSize),
         };
 
@@ -380,11 +403,6 @@ public sealed class PostgreSqlDataStorage(
         await scheduleTask(transaction, messageList);
 
         await transaction.CommitAsync(cancellationToken);
-    }
-
-    private DateTime _QueuedMessageFetchTime()
-    {
-        return timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1);
     }
 
     private async ValueTask _ChangeMessageStateAsync(
@@ -444,7 +462,7 @@ public sealed class PostgreSqlDataStorage(
         var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
         var sql =
             $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\" FROM {tableName} WHERE \"Retries\"<@Retries "
-            + $"AND \"Version\"=@Version AND \"Added\"<@Added AND \"StatusName\" IN ('{StatusName.Failed}','{StatusName.Scheduled}') LIMIT 200;";
+            + $"AND \"Version\"=@Version AND \"Added\"<@Added AND \"StatusName\" IN ('{nameof(StatusName.Failed)}','{nameof(StatusName.Scheduled)}') LIMIT {_RetryBatchSize};";
 
         object[] sqlParams =
         [

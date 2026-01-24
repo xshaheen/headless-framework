@@ -20,6 +20,8 @@ public static class MessagesSqlServerSetup
     {
         public MessagingOptions UseSqlServer(string connectionString)
         {
+            Argument.IsNotNullOrWhiteSpace(connectionString);
+
             return options.UseSqlServer(opt =>
             {
                 opt.ConnectionString = connectionString;

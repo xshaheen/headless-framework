@@ -35,7 +35,8 @@ public static class MessagesKafkaSetup
         }
     }
 
-    private sealed class KafkaMessagesOptionsExtension(Action<MessagingKafkaOptions> configure) : IMessagesOptionsExtension
+    private sealed class KafkaMessagesOptionsExtension(Action<MessagingKafkaOptions> configure)
+        : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

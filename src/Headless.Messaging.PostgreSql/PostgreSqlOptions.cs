@@ -26,7 +26,20 @@ public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOption
     /// </summary>
     internal NpgsqlConnection CreateConnection()
     {
-        return DataSource != null ? DataSource.CreateConnection() : new(ConnectionString);
+        if (DataSource is not null)
+        {
+            return DataSource.CreateConnection();
+        }
+
+        if (string.IsNullOrWhiteSpace(ConnectionString))
+        {
+            throw new InvalidOperationException(
+                "PostgreSQL messaging storage requires either a DataSource or ConnectionString. "
+                    + "Configure via UsePostgreSql(connectionString) or UsePostgreSql(options => options.ConnectionString = ...)"
+            );
+        }
+
+        return new NpgsqlConnection(ConnectionString);
     }
 }
 

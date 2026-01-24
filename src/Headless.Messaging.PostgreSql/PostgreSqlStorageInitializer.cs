@@ -8,14 +8,16 @@ using Npgsql;
 
 namespace Headless.Messaging.PostgreSql;
 
+/// <summary>
+/// PostgreSQL implementation of <see cref="IStorageInitializer"/> for database schema setup.
+/// Creates required tables (published, received, lock) and indexes on first run.
+/// </summary>
 public sealed class PostgreSqlStorageInitializer(
     ILogger<PostgreSqlStorageInitializer> logger,
     IOptions<PostgreSqlOptions> postgreSqlOptions,
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
-    private readonly ILogger _logger = logger;
-
     public string GetPublishedTableName()
     {
         return $"\"{postgreSqlOptions.Value.Schema}\".\"published\"";
@@ -52,7 +54,7 @@ public sealed class PostgreSqlStorageInitializer(
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .AnyContext();
 
-        _logger.LogDebug("Ensuring all create database tables script are applied.");
+        logger.LogDebug("Ensuring all create database tables script are applied.");
     }
 
     private string _CreateDbTablesScript(string schema)

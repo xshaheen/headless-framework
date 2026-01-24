@@ -727,11 +727,8 @@ public abstract class BlobStorageTestsBase : TestBase
         await using var stream = new MemoryStream("test"u8.ToArray());
 
         // when
-        var act = FluentActions.Awaiting(
-            () =>
-                storage
-                    .UploadAsync(Container, "../../.ssh/authorized_keys", stream, cancellationToken: AbortToken)
-                    .AsTask()
+        var act = FluentActions.Awaiting(() =>
+            storage.UploadAsync(Container, "../../.ssh/authorized_keys", stream, cancellationToken: AbortToken).AsTask()
         );
 
         // then
@@ -744,8 +741,8 @@ public abstract class BlobStorageTestsBase : TestBase
         await using var storage = GetStorage();
 
         // when
-        var act = FluentActions.Awaiting(
-            () => storage.OpenReadStreamAsync(Container, "../../../etc/passwd", AbortToken).AsTask()
+        var act = FluentActions.Awaiting(() =>
+            storage.OpenReadStreamAsync(Container, "../../../etc/passwd", AbortToken).AsTask()
         );
 
         // then
@@ -758,8 +755,8 @@ public abstract class BlobStorageTestsBase : TestBase
         await using var storage = GetStorage();
 
         // when
-        var act = FluentActions.Awaiting(
-            () => storage.DeleteAsync(Container, "../../../../important/file.txt", AbortToken).AsTask()
+        var act = FluentActions.Awaiting(() =>
+            storage.DeleteAsync(Container, "../../../../important/file.txt", AbortToken).AsTask()
         );
 
         // then
@@ -772,8 +769,8 @@ public abstract class BlobStorageTestsBase : TestBase
         await using var storage = GetStorage();
 
         // when
-        var act = FluentActions.Awaiting(
-            () => storage.RenameAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        var act = FluentActions.Awaiting(() =>
+            storage.RenameAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
         );
 
         // then
@@ -786,8 +783,8 @@ public abstract class BlobStorageTestsBase : TestBase
         await using var storage = GetStorage();
 
         // when
-        var act = FluentActions.Awaiting(
-            () => storage.CopyAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
+        var act = FluentActions.Awaiting(() =>
+            storage.CopyAsync(Container, "../secret", Container, "newname", AbortToken).AsTask()
         );
 
         // then

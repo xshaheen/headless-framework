@@ -66,7 +66,8 @@ public sealed class SnowflakeIdLongIdGenerator : ILongIdGenerator
                     !x.Description.Contains("Virtual", StringComparison.Ordinal)
                     && x.NetworkInterfaceType != NetworkInterfaceType.Loopback
                     && x.OperationalStatus == OperationalStatus.Up
-                ) ?? throw new InvalidOperationException("no available mac found");
+                )
+            ?? throw new InvalidOperationException("no available mac found");
 
         var address = firstUpInterface.GetPhysicalAddress();
         var mac = address.GetAddressBytes();

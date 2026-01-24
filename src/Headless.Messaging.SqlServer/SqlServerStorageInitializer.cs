@@ -9,14 +9,16 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.SqlServer;
 
+/// <summary>
+/// SQL Server implementation of <see cref="IStorageInitializer"/> for database schema setup.
+/// Creates required tables (published, received, lock) and indexes on first run.
+/// </summary>
 public sealed class SqlServerStorageInitializer(
     ILogger<SqlServerStorageInitializer> logger,
     IOptions<SqlServerOptions> options,
     IOptions<MessagingOptions> messagingOptions
 ) : IStorageInitializer
 {
-    private readonly ILogger _logger = logger;
-
     public string GetPublishedTableName()
     {
         return $"{options.Value.Schema}.Published";
@@ -53,7 +55,7 @@ public sealed class SqlServerStorageInitializer(
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .AnyContext();
 
-        _logger.LogDebug("Ensuring all create database tables script are applied.");
+        logger.LogDebug("Ensuring all create database tables script are applied.");
     }
 
     private string _CreateDbTablesScript(string schema)
@@ -90,6 +92,9 @@ public sealed class SqlServerStorageInitializer(
 
             CREATE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC)
 
+            CREATE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_RetryQuery] ON {GetReceivedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC)
+            INCLUDE ([Id], [Content])
+
             END;
 
             IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
@@ -113,6 +118,9 @@ public sealed class SqlServerStorageInitializer(
             INCLUDE ([Id], [Content], [Retries], [Added])
 
             CREATE NONCLUSTERED INDEX [IX_{GetPublishedTableName()}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC)
+
+            CREATE NONCLUSTERED INDEX [IX_{GetPublishedTableName()}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC)
+            INCLUDE ([Id], [Content])
 
             END;
 

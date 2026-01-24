@@ -12,6 +12,10 @@ using Npgsql;
 
 namespace Headless.Messaging.PostgreSql;
 
+/// <summary>
+/// PostgreSQL implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
+/// Provides dashboard data including message counts, status breakdowns, and hourly metrics.
+/// </summary>
 public sealed class PostgreSqlMonitoringApi(
     IOptions<PostgreSqlOptions> options,
     IStorageInitializer initializer,
@@ -231,9 +235,7 @@ public sealed class PostgreSqlMonitoringApi(
 
         object[] sqlParams = [new NpgsqlParameter("@State", statusName)];
 
-        return await connection
-            .ExecuteScalarAsync(sqlQuery, cancellationToken, sqlParams)
-            .AnyContext();
+        return await connection.ExecuteScalarAsync(sqlQuery, cancellationToken, sqlParams).AnyContext();
     }
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
@@ -284,30 +286,26 @@ public sealed class PostgreSqlMonitoringApi(
             new NpgsqlParameter("@MaxKey", keyMaps.Keys.Max()),
         ];
 
-        Dictionary<string, int> valuesMap;
-        var connection = _options.CreateConnection();
+        await using var connection = _options.CreateConnection();
 
-        await using (connection)
-        {
-            valuesMap = await connection
-                .ExecuteReaderAsync(
-                    sqlQuery,
-                    static async (reader, token) =>
+        var valuesMap = await connection
+            .ExecuteReaderAsync(
+                sqlQuery,
+                static async (reader, token) =>
+                {
+                    var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
+
+                    while (await reader.ReadAsync(token).AnyContext())
                     {
-                        var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
+                        dictionary.Add(reader.GetString(0), reader.GetInt32(1));
+                    }
 
-                        while (await reader.ReadAsync(token).AnyContext())
-                        {
-                            dictionary.Add(reader.GetString(0), reader.GetInt32(1));
-                        }
-
-                        return dictionary;
-                    },
-                    cancellationToken: cancellationToken,
-                    sqlParams: sqlParams
-                )
-                .AnyContext();
-        }
+                    return dictionary;
+                },
+                cancellationToken: cancellationToken,
+                sqlParams: sqlParams
+            )
+            .AnyContext();
 
         var result = new Dictionary<DateTime, int>();
 

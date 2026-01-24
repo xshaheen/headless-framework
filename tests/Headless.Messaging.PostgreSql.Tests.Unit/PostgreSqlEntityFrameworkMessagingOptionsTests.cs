@@ -1,0 +1,124 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Framework.Testing.Tests;
+using Headless.Messaging.PostgreSql;
+
+namespace Tests;
+
+public sealed class PostgreSqlEntityFrameworkMessagingOptionsTests : TestBase
+{
+    [Fact]
+    public void should_have_default_schema_set()
+    {
+        // when
+        var options = new PostgreSqlEntityFrameworkMessagingOptions();
+
+        // then
+        options.Schema.Should().Be(PostgreSqlEntityFrameworkMessagingOptions.DefaultSchema);
+    }
+
+    [Fact]
+    public void should_accept_valid_schema_name()
+    {
+        // given
+        var options = new PostgreSqlEntityFrameworkMessagingOptions();
+        const string validSchema = "my_custom_schema";
+
+        // when
+        options.Schema = validSchema;
+
+        // then
+        options.Schema.Should().Be(validSchema);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_throw_when_schema_is_null_or_whitespace(string? schema)
+    {
+        // given
+        var options = new PostgreSqlEntityFrameworkMessagingOptions();
+
+        // when
+        var act = () => options.Schema = schema!;
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_schema_exceeds_max_length()
+    {
+        // given
+        var options = new PostgreSqlEntityFrameworkMessagingOptions();
+        var longSchema = new string('a', PostgreSqlEntityFrameworkMessagingOptions.MaxSchemaLength + 1);
+
+        // when
+        var act = () => options.Schema = longSchema;
+
+        // then
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage($"*{PostgreSqlEntityFrameworkMessagingOptions.MaxSchemaLength}*");
+    }
+
+    [Fact]
+    public void should_accept_schema_at_max_length()
+    {
+        // given
+        var options = new PostgreSqlEntityFrameworkMessagingOptions();
+        var maxLengthSchema = new string('a', PostgreSqlEntityFrameworkMessagingOptions.MaxSchemaLength);
+
+        // when
+        options.Schema = maxLengthSchema;
+
+        // then
+        options.Schema.Should().Be(maxLengthSchema);
+    }
+
+    [Fact]
+    public void should_have_max_schema_length_of_63()
+    {
+        // PostgreSQL identifier limit
+        PostgreSqlEntityFrameworkMessagingOptions.MaxSchemaLength.Should().Be(63);
+    }
+
+    [Theory]
+    [InlineData("_valid_schema")]
+    [InlineData("Valid123")]
+    [InlineData("_")]
+    [InlineData("a")]
+    [InlineData("schema_with_underscores_123")]
+    public void should_accept_valid_identifier_patterns(string schema)
+    {
+        // given
+        var options = new PostgreSqlEntityFrameworkMessagingOptions();
+
+        // when
+        options.Schema = schema;
+
+        // then
+        options.Schema.Should().Be(schema);
+    }
+
+    [Theory]
+    [InlineData("1starts_with_digit")]
+    [InlineData("has-hyphen")]
+    [InlineData("has.dot")]
+    [InlineData("has space")]
+    [InlineData("has\"quote")]
+    [InlineData("has;semicolon")]
+    [InlineData("schema\";\n DROP TABLE users; --")]
+    public void should_throw_for_invalid_identifier_patterns(string schema)
+    {
+        // given
+        var options = new PostgreSqlEntityFrameworkMessagingOptions();
+
+        // when
+        var act = () => options.Schema = schema;
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*start with a letter or underscore*");
+    }
+}

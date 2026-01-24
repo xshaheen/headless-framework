@@ -55,7 +55,10 @@ public static class MessagesRedisSetup
             services.AddSingleton<ITransport, RedisTransport>();
             services.AddSingleton<IRedisConnectionPool, RedisConnectionPool>();
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IPostConfigureOptions<MessagingRedisOptions>, MessagingRedisOptionsPostConfigure>()
+                ServiceDescriptor.Singleton<
+                    IPostConfigureOptions<MessagingRedisOptions>,
+                    MessagingRedisOptionsPostConfigure
+                >()
             );
             services.AddOptions<MessagingRedisOptions>().Configure(_configure);
         }

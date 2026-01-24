@@ -40,7 +40,8 @@ public static class MessagingOptionsExtensions
         }
     }
 
-    private sealed class PulsarMessagesOptionsExtension(Action<MessagingPulsarOptions> configure) : IMessagesOptionsExtension
+    private sealed class PulsarMessagesOptionsExtension(Action<MessagingPulsarOptions> configure)
+        : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

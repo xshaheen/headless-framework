@@ -38,7 +38,8 @@ public static class MessagesNatsSetup
         }
     }
 
-    private sealed class NatsMessagesOptionsExtension(Action<MessagingNatsOptions> configure) : IMessagesOptionsExtension
+    private sealed class NatsMessagesOptionsExtension(Action<MessagingNatsOptions> configure)
+        : IMessagesOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

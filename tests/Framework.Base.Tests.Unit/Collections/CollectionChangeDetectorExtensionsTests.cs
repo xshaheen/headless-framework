@@ -61,12 +61,10 @@ public sealed class CollectionChangeDetectorExtensionsTests
 
         existItems
             .Should()
-            .BeEquivalentTo(
-                [
-                    (new KeyValue(2, "Bob"), new KeyValue(2, "Bob")),
-                    (new KeyValue(3, "Charlie"), new KeyValue(3, "Charlie")),
-                ]
-            );
+            .BeEquivalentTo([
+                (new KeyValue(2, "Bob"), new KeyValue(2, "Bob")),
+                (new KeyValue(3, "Charlie"), new KeyValue(3, "Charlie")),
+            ]);
     }
 
     private sealed record KeyValue(int Id, string Value, string[]? Skills = null);

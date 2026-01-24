@@ -7,10 +7,17 @@ using System.Data.Common;
 namespace Headless.Messaging.PostgreSql;
 
 #pragma warning disable CA2100 // This is wrapper
+
+/// <summary>
+/// Internal extension methods for <see cref="DbConnection"/> to simplify ADO.NET operations.
+/// </summary>
 internal static class DbConnectionExtensions
 {
     extension(DbConnection connection)
     {
+        /// <summary>
+        /// Executes a non-query SQL command and returns the number of affected rows.
+        /// </summary>
         public async Task<int> ExecuteNonQueryAsync(
             string sql,
             DbTransaction? transaction = null,
@@ -36,6 +43,9 @@ internal static class DbConnectionExtensions
             return await command.ExecuteNonQueryAsync(cancellationToken).AnyContext();
         }
 
+        /// <summary>
+        /// Executes a SQL query and processes results through the provided reader function.
+        /// </summary>
         public async Task<T> ExecuteReaderAsync<T>(
             string sql,
             Func<DbDataReader, CancellationToken, Task<T>>? readerFunc,
@@ -71,6 +81,9 @@ internal static class DbConnectionExtensions
             return result;
         }
 
+        /// <summary>
+        /// Executes a SQL query and returns a single integer result.
+        /// </summary>
         public async Task<int> ExecuteScalarAsync(
             string sql,
             CancellationToken cancellationToken = default,
