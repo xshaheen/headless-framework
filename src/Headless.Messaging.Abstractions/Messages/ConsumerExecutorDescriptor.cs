@@ -7,7 +7,7 @@ namespace Headless.Messaging.Messages;
 /// <summary>
 /// A descriptor of user definition method.
 /// </summary>
-public class ConsumerExecutorDescriptor
+public sealed class ConsumerExecutorDescriptor
 {
     public TypeInfo? ServiceTypeInfo { get; init; }
 
@@ -15,7 +15,7 @@ public class ConsumerExecutorDescriptor
 
     public required TypeInfo ImplTypeInfo { get; init; }
 
-    public List<ParameterDescriptor> Parameters { get; init; } = [];
+    public IReadOnlyList<ParameterDescriptor> Parameters { get; init; } = [];
 
     public string? TopicNamePrefix { get; init; }
 

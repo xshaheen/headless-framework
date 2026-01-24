@@ -14,7 +14,7 @@ namespace Headless.Messaging.Messages;
 /// </list>
 /// The class requires a parameterless constructor and public property setters for System.Text.Json serialization support.
 /// </remarks>
-public class Message
+public sealed class Message
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="Message"/> class with an empty headers dictionary.
@@ -46,13 +46,13 @@ public class Message
     /// Gets or sets the message metadata headers as a dictionary of string key-value pairs.
     /// Headers contain system information (MessageId, MessageName, etc.) and custom application data.
     /// </summary>
-    public IDictionary<string, string?> Headers { get; set; }
+    public IDictionary<string, string?> Headers { get; init; }
 
     /// <summary>
     /// Gets or sets the message payload or content.
     /// This is the actual data being transmitted and may be serialized as JSON or other formats.
     /// </summary>
-    public object? Value { get; set; }
+    public object? Value { get; init; }
 }
 
 /// <summary>

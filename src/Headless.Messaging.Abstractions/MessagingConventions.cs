@@ -40,7 +40,6 @@ public sealed partial class MessagingConventions
         var baseName = TopicNaming switch
         {
             TopicNamingConvention.KebabCase => _ToKebabCase(messageType.Name),
-            TopicNamingConvention.PascalCase => messageType.Name,
             TopicNamingConvention.TypeName => messageType.Name,
             _ => messageType.Name,
         };
@@ -71,9 +70,4 @@ public enum TopicNamingConvention
     /// Convert to kebab-case (e.g., "order-created").
     /// </summary>
     KebabCase,
-
-    /// <summary>
-    /// Use PascalCase (same as TypeName).
-    /// </summary>
-    PascalCase,
 }

@@ -136,6 +136,31 @@ public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransac
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Asynchronously disposes the transaction, releasing the underlying database transaction.
+    /// </summary>
+    /// <returns>A ValueTask representing the asynchronous dispose operation.</returns>
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().AnyContext();
+        Dispose(false);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual async ValueTask DisposeAsyncCore()
+    {
+        if (DbTransaction is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync().AnyContext();
+        }
+        else if (DbTransaction is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
+        DbTransaction = null;
+    }
+
     protected virtual void Dispose(bool disposing)
     {
         if (disposing)
