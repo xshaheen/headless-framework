@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-public class MessageNeedToRetryProcessor : IProcessor
+public sealed class MessageNeedToRetryProcessor : IProcessor
 {
     private const int _MinSuggestedValueForFallbackWindowLookbackSeconds = 30;
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
@@ -45,13 +45,20 @@ public class MessageNeedToRetryProcessor : IProcessor
         _CheckSafeOptionsSet();
     }
 
-    public virtual async Task ProcessAsync(ProcessingContext context)
+    public async Task ProcessAsync(ProcessingContext context)
     {
         Argument.IsNotNull(context);
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
 
-        _ = Task.Run(() => _ProcessPublishedAsync(storage, context));
+        _ = Task
+            .Factory.StartNew(
+                () => _ProcessPublishedAsync(storage, context),
+                CancellationToken.None,
+                TaskCreationOptions.DenyChildAttach,
+                TaskScheduler.Default
+            )
+            .Unwrap();
 
         if (_options.Value.UseStorageLock && _failedRetryConsumeTask is { IsCompleted: false })
         {
@@ -67,12 +74,21 @@ public class MessageNeedToRetryProcessor : IProcessor
             return;
         }
 
-        _failedRetryConsumeTask = Task.Run(() => _ProcessReceivedAsync(storage, context));
+        _failedRetryConsumeTask = Task
+            .Factory.StartNew(
+                () => _ProcessReceivedAsync(storage, context),
+                CancellationToken.None,
+                TaskCreationOptions.DenyChildAttach,
+                TaskScheduler.Default
+            )
+            .Unwrap();
 
-        _ = _failedRetryConsumeTask.ContinueWith(_ =>
-        {
-            _failedRetryConsumeTask = null;
-        });
+        _ = _failedRetryConsumeTask.ContinueWith(
+            _ => _failedRetryConsumeTask = null,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
 
         await context.WaitAsync(_waitingInterval).AnyContext();
     }

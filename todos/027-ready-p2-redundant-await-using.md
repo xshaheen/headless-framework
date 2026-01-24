@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "027"
 tags: [code-review, dotnet, code-smell]
@@ -98,3 +98,9 @@ Standardize on Pattern B (`await using var connection = ...`) throughout all fil
 **Learnings:**
 - Consistency in disposal patterns aids code review
 - Double await using is harmless but confusing
+
+### 2026-01-24 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

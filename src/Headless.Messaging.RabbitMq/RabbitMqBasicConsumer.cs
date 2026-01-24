@@ -16,7 +16,7 @@ public sealed class RabbitMqBasicConsumer(
     Action<LogMessageEventArgs> logCallback,
     Func<BasicDeliverEventArgs, IServiceProvider, List<KeyValuePair<string, string>>>? customHeadersBuilder,
     IServiceProvider serviceProvider
-) : AsyncDefaultBasicConsumer(channel)
+) : AsyncDefaultBasicConsumer(channel), IDisposable
 {
     private readonly SemaphoreSlim _semaphore = new(concurrent);
     private readonly bool _usingTaskRun = concurrent > 0;
@@ -67,13 +67,15 @@ public sealed class RabbitMqBasicConsumer(
                             {
                                 if (Channel.IsOpen)
                                 {
-                                    await Channel.BasicNackAsync(deliveryTag, false, requeue: true);
+                                    await Channel.BasicNackAsync(deliveryTag, multiple: false, requeue: true);
                                 }
                             }
+#pragma warning disable ERP022
                             catch
                             {
                                 // Nack failure already logged via callback
                             }
+#pragma warning restore ERP022
                             finally
                             {
                                 _semaphore.Release();
@@ -206,5 +208,10 @@ public sealed class RabbitMqBasicConsumer(
         var args = new LogMessageEventArgs { LogType = MqLogType.ConsumerShutdown, Reason = reason.ReplyText };
 
         logCallback(args);
+    }
+
+    public void Dispose()
+    {
+        _semaphore.Dispose();
     }
 }

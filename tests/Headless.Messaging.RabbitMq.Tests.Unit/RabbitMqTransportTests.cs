@@ -38,10 +38,10 @@ public sealed class RabbitMqTransportTests : TestBase
     }
 
     [Fact]
-    public void should_have_correct_broker_address()
+    public async Task should_have_correct_broker_address()
     {
         // given, When
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
 
         // then
         transport.BrokerAddress.Name.Should().Be("RabbitMQ");
@@ -52,7 +52,7 @@ public sealed class RabbitMqTransportTests : TestBase
     public async Task should_publish_message_successfully()
     {
         // given
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -84,7 +84,7 @@ public sealed class RabbitMqTransportTests : TestBase
     public async Task should_return_channel_to_pool_after_publish()
     {
         // given
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -105,7 +105,7 @@ public sealed class RabbitMqTransportTests : TestBase
     public async Task should_return_failed_result_on_exception()
     {
         // given
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -142,7 +142,7 @@ public sealed class RabbitMqTransportTests : TestBase
     public async Task should_dispose_channel_when_already_closed_exception()
     {
         // given
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -184,7 +184,7 @@ public sealed class RabbitMqTransportTests : TestBase
     public async Task should_include_headers_in_published_message()
     {
         // given
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -219,7 +219,7 @@ public sealed class RabbitMqTransportTests : TestBase
     public async Task should_reject_invalid_topic_name()
     {
         // given
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -241,7 +241,7 @@ public sealed class RabbitMqTransportTests : TestBase
     public async Task should_reject_topic_name_exceeding_max_length()
     {
         // given
-        var transport = new RabbitMqTransport(_logger, _pool);
+        await using var transport = new RabbitMqTransport(_logger, _pool);
         var tooLongName = new string('a', 256);
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)

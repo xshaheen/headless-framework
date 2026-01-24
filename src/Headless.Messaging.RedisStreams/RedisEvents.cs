@@ -24,7 +24,7 @@ internal class RedisEvents
     {
         _logger.LogError(
             e.Exception,
-            "Connection failed!, {message}, for endpoint:{endPoint}, failure type:{failureType}, connection type:{connectionType}",
+            "Connection failed!, {Message}, for endpoint:{Endpoint}, failure type:{FailureType}, connection type:{ConnectionType}",
             e.Exception?.Message,
             e.EndPoint,
             e.FailureType,
@@ -35,7 +35,7 @@ internal class RedisEvents
     private void Connection_ConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
         _logger.LogWarning(
-            "Connection restored back!, {message}, for endpoint:{endPoint}, failure type:{failureType}, connection type:{connectionType}",
+            "Connection restored back!, {Message}, for endpoint:{Endpoint}, failure type:{FailureType}, connection type:{ConnectionType}",
             e.Exception?.Message,
             e.EndPoint,
             e.FailureType,
@@ -47,7 +47,7 @@ internal class RedisEvents
     {
         if (e.Message.GetRedisErrorType() == RedisErrorTypes.Unknown)
         {
-            _logger.LogError("Server replied with error, {message}, for endpoint:{endPoint}", e.Message, e.EndPoint);
+            _logger.LogError("Server replied with error, {Message}, for endpoint:{Endpoint}", e.Message, e.EndPoint);
         }
     }
 }

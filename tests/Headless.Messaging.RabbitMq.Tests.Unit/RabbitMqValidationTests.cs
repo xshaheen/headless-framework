@@ -11,7 +11,7 @@ public sealed class RabbitMqValidationTests : TestBase
     public void should_accept_valid_queue_name()
     {
         // given
-        var validName = "my-queue.name_123";
+        const string validName = "my-queue.name_123";
 
         // when
         var action = () => RabbitMqValidation.ValidateQueueName(validName);
@@ -65,7 +65,7 @@ public sealed class RabbitMqValidationTests : TestBase
     public void should_accept_valid_exchange_name()
     {
         // given
-        var validName = "my-exchange.name_123";
+        const string validName = "my-exchange.name_123";
 
         // when
         var action = () => RabbitMqValidation.ValidateExchangeName(validName);
@@ -117,7 +117,7 @@ public sealed class RabbitMqValidationTests : TestBase
     public void should_accept_valid_topic_name()
     {
         // given
-        var validName = "my-topic.name_123";
+        const string validName = "my-topic.name_123";
 
         // when
         var action = () => RabbitMqValidation.ValidateTopicName(validName);

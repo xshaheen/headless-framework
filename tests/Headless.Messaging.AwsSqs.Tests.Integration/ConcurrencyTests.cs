@@ -1,12 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Amazon.SimpleNotificationService;
-using AwesomeAssertions;
 using Framework.Testing.Tests;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Messages;
@@ -14,11 +8,11 @@ using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Xunit;
 using StringComparer = System.StringComparer;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 [Collection<LocalStackTestFixture>]
 public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
 {
@@ -27,7 +21,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     {
         // given
         const string topicName = "concurrent-test-topic";
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
         await _CreateTopicAsync(topicName);
 
         const int parallelCount = 100;
@@ -61,7 +55,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     {
         // given
         const string topicName = "init-test-topic";
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
         await _CreateTopicAsync(topicName);
 
         const int parallelCount = 50;
@@ -89,7 +83,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     public async Task should_handle_concurrent_sends_to_different_topics()
     {
         // given
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
         var topicNames = new[] { "topic-1", "topic-2", "topic-3", "topic-4", "topic-5" };
 
         foreach (var topicName in topicNames)
@@ -123,7 +117,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     public async Task should_handle_mixed_success_and_failure_scenarios()
     {
         // given
-        var transport = await _CreateTransportAsync();
+        await using var transport = await _CreateTransportAsync();
         const string existingTopic = "existing-topic";
         await _CreateTopicAsync(existingTopic);
 

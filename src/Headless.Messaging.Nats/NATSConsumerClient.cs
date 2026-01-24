@@ -66,10 +66,12 @@ internal sealed class NatsConsumerClient(
                     {
                         jsm.AddStream(builder.Build());
                     }
+#pragma warning disable ERP022
                     catch
                     {
                         // ignored
                     }
+#pragma warning restore ERP022
                 }
             }
         }
@@ -113,6 +115,7 @@ internal sealed class NatsConsumerClient(
 
                         js.PushSubscribeAsync(subject, groupName, _SubscriptionMessageHandler, false, pso);
                     }
+#pragma warning disable ERP022
                     catch (Exception e)
                     {
                         OnLogCallback!(
@@ -125,6 +128,7 @@ internal sealed class NatsConsumerClient(
                             }
                         );
                     }
+#pragma warning restore ERP022
                 }
             }
         }
@@ -214,7 +218,7 @@ internal sealed class NatsConsumerClient(
 
         lock (_ConnectionLock)
         {
-#pragma warning disable CA1508 // It maybe initialized in another thread
+#pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_consumerClient is null)
 #pragma warning restore CA1508
             {

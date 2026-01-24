@@ -165,7 +165,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                             {
                                 activity.SetTag("server.address", parts[0]);
                             }
-                            if (parts.Length > 1 && int.TryParse(parts[1], out var port))
+                            if (parts.Length > 1 && int.TryParse(parts[1], CultureInfo.InvariantCulture, out var port))
                             {
                                 activity.SetTag("server.port", port);
                             }
@@ -270,7 +270,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                             {
                                 activity.SetTag("server.address", parts[0]);
                             }
-                            if (parts.Length > 1 && int.TryParse(parts[1], out var port))
+                            if (parts.Length > 1 && int.TryParse(parts[1], CultureInfo.InvariantCulture, out var port))
                             {
                                 activity.SetTag("server.port", port);
                             }
