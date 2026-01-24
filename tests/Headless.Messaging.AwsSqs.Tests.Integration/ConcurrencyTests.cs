@@ -25,25 +25,26 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
         await _CreateTopicAsync(topicName);
 
         const int parallelCount = 100;
-        var tasks = new List<Task<OperateResult>>(parallelCount);
+        var results = new OperateResult[parallelCount];
 
         // when
-        for (var i = 0; i < parallelCount; i++)
-        {
-            var messageId = i;
-            var message = new TransportMessage(
-                new Dictionary<string, string?>(StringComparer.Ordinal)
-                {
-                    ["Name"] = topicName,
-                    ["MessageId"] = messageId.ToString(CultureInfo.InvariantCulture),
-                },
-                Encoding.UTF8.GetBytes($"{{\"id\":{messageId}}}")
-            );
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, parallelCount),
+            AbortToken,
+            async (messageId, _) =>
+            {
+                var message = new TransportMessage(
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        ["Name"] = topicName,
+                        ["MessageId"] = messageId.ToString(CultureInfo.InvariantCulture),
+                    },
+                    Encoding.UTF8.GetBytes($"{{\"id\":{messageId}}}")
+                );
 
-            tasks.Add(Task.Run(async () => await transport.SendAsync(message), AbortToken));
-        }
-
-        var results = await Task.WhenAll(tasks);
+                results[messageId] = await transport.SendAsync(message);
+            }
+        );
 
         // then
         results.Should().HaveCount(parallelCount);
@@ -59,20 +60,22 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
         await _CreateTopicAsync(topicName);
 
         const int parallelCount = 50;
-        var tasks = new List<Task<OperateResult>>(parallelCount);
+        var results = new OperateResult[parallelCount];
 
         // when - Send multiple messages immediately to test initialization race condition
-        for (var i = 0; i < parallelCount; i++)
-        {
-            var message = new TransportMessage(
-                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
-                "{\"data\":\"init-test\"}"u8.ToArray()
-            );
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, parallelCount),
+            AbortToken,
+            async (messageId, _) =>
+            {
+                var message = new TransportMessage(
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                    "{\"data\":\"init-test\"}"u8.ToArray()
+                );
 
-            tasks.Add(transport.SendAsync(message));
-        }
-
-        var results = await Task.WhenAll(tasks);
+                results[messageId] = await transport.SendAsync(message);
+            }
+        );
 
         // then
         results.Should().HaveCount(parallelCount);
@@ -92,21 +95,23 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
         }
 
         const int parallelCount = 100;
-        var tasks = new List<Task<OperateResult>>(parallelCount);
+        var results = new OperateResult[parallelCount];
 
         // when
-        for (var i = 0; i < parallelCount; i++)
-        {
-            var topicName = topicNames[i % topicNames.Length];
-            var message = new TransportMessage(
-                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
-                Encoding.UTF8.GetBytes($"{{\"topic\":\"{topicName}\",\"index\":{i}}}")
-            );
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, parallelCount),
+            AbortToken,
+            async (messageId, _) =>
+            {
+                var topicName = topicNames[messageId % topicNames.Length];
+                var message = new TransportMessage(
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                    Encoding.UTF8.GetBytes($"{{\"topic\":\"{topicName}\",\"index\":{messageId}}}")
+                );
 
-            tasks.Add(Task.Run(async () => await transport.SendAsync(message), AbortToken));
-        }
-
-        var results = await Task.WhenAll(tasks);
+                results[messageId] = await transport.SendAsync(message);
+            }
+        );
 
         // then
         results.Should().HaveCount(parallelCount);
@@ -122,21 +127,23 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
         await _CreateTopicAsync(existingTopic);
 
         const int parallelCount = 50;
-        var tasks = new List<Task<OperateResult>>(parallelCount);
+        var results = new OperateResult[parallelCount];
 
         // when - Mix successful and failing requests
-        for (var i = 0; i < parallelCount; i++)
-        {
-            var topicName = i % 2 == 0 ? existingTopic : $"non-existent-{i}";
-            var message = new TransportMessage(
-                new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
-                Encoding.UTF8.GetBytes($"{{\"index\":{i}}}")
-            );
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, parallelCount),
+            AbortToken,
+            async (messageId, _) =>
+            {
+                var topicName = messageId % 2 == 0 ? existingTopic : $"non-existent-{messageId}";
+                var message = new TransportMessage(
+                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                    Encoding.UTF8.GetBytes($"{{\"index\":{messageId}}}")
+                );
 
-            tasks.Add(Task.Run(async () => await transport.SendAsync(message), AbortToken));
-        }
-
-        var results = await Task.WhenAll(tasks);
+                results[messageId] = await transport.SendAsync(message);
+            }
+        );
 
         // then
         results.Should().HaveCount(parallelCount);
