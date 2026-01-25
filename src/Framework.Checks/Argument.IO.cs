@@ -86,4 +86,60 @@ public static partial class Argument
 
         throw new ArgumentException(format.ToString(CultureInfo.InvariantCulture), paramName);
     }
+
+    /// <summary>Throws an <see cref="ArgumentException" /> if the file at <paramref name="path" /> does not exist.</summary>
+    /// <param name="path">The file path to check.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <returns><paramref name="path" /> if the file exists.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="path"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="path"/> is empty or the file does not exist.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static string FileExists(
+        [SystemNotNull] string? path,
+        string? message = null,
+        [CallerArgumentExpression(nameof(path))] string? paramName = null
+    )
+    {
+        IsNotNullOrEmpty(path, message, paramName);
+
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        throw new ArgumentException(
+            message ?? $"The file {paramName.ToAssertString()} at path \"{path}\" does not exist.",
+            paramName
+        );
+    }
+
+    /// <summary>Throws an <see cref="ArgumentException" /> if the directory at <paramref name="path" /> does not exist.</summary>
+    /// <param name="path">The directory path to check.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <returns><paramref name="path" /> if the directory exists.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="path"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="path"/> is empty or the directory does not exist.</exception>
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static string DirectoryExists(
+        [SystemNotNull] string? path,
+        string? message = null,
+        [CallerArgumentExpression(nameof(path))] string? paramName = null
+    )
+    {
+        IsNotNullOrEmpty(path, message, paramName);
+
+        if (Directory.Exists(path))
+        {
+            return path;
+        }
+
+        throw new ArgumentException(
+            message ?? $"The directory {paramName.ToAssertString()} at path \"{path}\" does not exist.",
+            paramName
+        );
+    }
 }

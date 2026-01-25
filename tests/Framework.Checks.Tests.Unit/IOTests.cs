@@ -78,6 +78,148 @@ public sealed class IoTests
         action.Should().ThrowExactly<ArgumentException>();
     }
 
+    // FileExists tests
+
+    [Fact]
+    public void file_exists_should_return_path_when_file_exists()
+    {
+        // given - use a file that always exists
+        var path = typeof(IoTests).Assembly.Location;
+
+        // when
+        var result = Argument.FileExists(path);
+
+        // then
+        result.Should().Be(path);
+    }
+
+    [Fact]
+    public void file_exists_should_throw_when_file_does_not_exist()
+    {
+        // given
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString(), "nonexistent.txt");
+
+        // when
+        var action = () => Argument.FileExists(path);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"The file \"path\" at path \"{path}\" does not exist. (Parameter 'path')");
+    }
+
+    [Fact]
+    public void file_exists_should_throw_for_null_path()
+    {
+        // given
+        string? path = null;
+
+        // when
+        var action = () => Argument.FileExists(path);
+
+        // then
+        action.Should().ThrowExactly<ArgumentNullException>().WithParameterName("path");
+    }
+
+    [Fact]
+    public void file_exists_should_throw_for_empty_path()
+    {
+        // given
+        var path = "";
+
+        // when
+        var action = () => Argument.FileExists(path);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>().WithParameterName("path");
+    }
+
+    [Fact]
+    public void file_exists_should_use_custom_message()
+    {
+        // given
+        var path = "/nonexistent/file.txt";
+        const string customMessage = "Custom file not found message";
+
+        // when
+        var action = () => Argument.FileExists(path, customMessage);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>().WithMessage($"{customMessage} (Parameter 'path')");
+    }
+
+    // DirectoryExists tests
+
+    [Fact]
+    public void directory_exists_should_return_path_when_directory_exists()
+    {
+        // given - use temp directory that always exists
+        var path = Path.GetTempPath();
+
+        // when
+        var result = Argument.DirectoryExists(path);
+
+        // then
+        result.Should().Be(path);
+    }
+
+    [Fact]
+    public void directory_exists_should_throw_when_directory_does_not_exist()
+    {
+        // given
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString(), "nonexistent");
+
+        // when
+        var action = () => Argument.DirectoryExists(path);
+
+        // then
+        action
+            .Should()
+            .ThrowExactly<ArgumentException>()
+            .WithMessage($"The directory \"path\" at path \"{path}\" does not exist. (Parameter 'path')");
+    }
+
+    [Fact]
+    public void directory_exists_should_throw_for_null_path()
+    {
+        // given
+        string? path = null;
+
+        // when
+        var action = () => Argument.DirectoryExists(path);
+
+        // then
+        action.Should().ThrowExactly<ArgumentNullException>().WithParameterName("path");
+    }
+
+    [Fact]
+    public void directory_exists_should_throw_for_empty_path()
+    {
+        // given
+        var path = "";
+
+        // when
+        var action = () => Argument.DirectoryExists(path);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>().WithParameterName("path");
+    }
+
+    [Fact]
+    public void directory_exists_should_use_custom_message()
+    {
+        // given
+        var path = "/nonexistent/directory";
+        const string customMessage = "Custom directory not found message";
+
+        // when
+        var action = () => Argument.DirectoryExists(path, customMessage);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>().WithMessage($"{customMessage} (Parameter 'path')");
+    }
+
     // Helper classes for testing
 
     private sealed class NonReadableStream : MemoryStream

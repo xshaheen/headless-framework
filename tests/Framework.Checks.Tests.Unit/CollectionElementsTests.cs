@@ -139,4 +139,43 @@ public sealed class CollectionElementsTests
             .ThrowExactly<ArgumentException>()
             .WithMessage($"{customMessage} (Parameter 'argument')");
     }
+
+    [Fact]
+    public void should_throw_has_no_nulls_when_array_contains_null()
+    {
+        // given - test array overload specifically
+        string?[] argument = ["value1", null, "value3"];
+
+        // when
+        Action action = () => Argument.HasNoNulls(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_accept_has_no_nulls_when_empty_collection()
+    {
+        // given - empty collection has no nulls by definition
+        IReadOnlyCollection<string?> argument = [];
+
+        // when
+        var result = Argument.HasNoNulls(argument);
+
+        // then
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_throw_has_no_null_or_empty_elements_when_string_collection_contains_empty()
+    {
+        // given
+        IReadOnlyCollection<string?> argument = ["valid", "", "also valid"];
+
+        // when
+        Action action = () => Argument.HasNoNullOrEmptyElements(argument);
+
+        // then
+        action.Should().ThrowExactly<ArgumentException>().WithMessage("*cannot contains empty elements*");
+    }
 }
