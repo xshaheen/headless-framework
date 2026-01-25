@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using FileSignatures;
 using FluentValidation;
 using FluentValidation.TestHelper;
@@ -12,6 +13,8 @@ public sealed class FileValidatorsTests : TestBase
 {
     private const int _MinimalFileSize = 512;
     private const int _MaximalFileSize = 2048;
+    private const int _OneMegabyte = 1024 * 1024;
+    private const int _FiveMegabytes = 5 * _OneMegabyte;
 
     private static readonly byte[] _FileSignatureBytes =
     [
@@ -289,6 +292,284 @@ public sealed class FileValidatorsTests : TestBase
         result.ShouldHaveValidationErrorFor(x => x.UploadedFile);
     }
 
+    #region Null File Handling Tests
+
+    [Fact]
+    public void file_not_empty_should_pass_when_file_null()
+    {
+        // given
+        FileNotEmptyValidator validator = new();
+        var model = new FileUploadTestModel { UploadedFile = null };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void greater_than_or_equal_to_should_pass_when_file_null()
+    {
+        // given
+        FileNotEmptyWithSpecificMinimumSizeValidator validator = new();
+        var model = new FileUploadTestModel { UploadedFile = null };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void less_than_or_equal_to_should_pass_when_file_null()
+    {
+        // given
+        FileNotEmptyWithSpecificMaximumSizeValidator validator = new();
+        var model = new FileUploadTestModel { UploadedFile = null };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task have_signatures_should_pass_when_file_null()
+    {
+        // given
+        var fileInspectorMock = Substitute.For<IFileFormatInspector>();
+        FileSignatureUploadValidator validator = new(fileInspectorMock);
+        var model = new FileUploadTestModel { UploadedFile = null };
+
+        // when
+        var result = await validator.TestValidateAsync(model, cancellationToken: AbortToken);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region FileNotEmpty Edge Cases
+
+    [Fact]
+    public void file_not_empty_should_pass_when_file_length_one()
+    {
+        // given
+        FileNotEmptyValidator validator = new();
+        var file = Substitute.For<IFormFile>();
+        file.Length.Returns(1);
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void file_not_empty_should_fail_with_correct_error_descriptor()
+    {
+        // given
+        FileNotEmptyValidator validator = new();
+        var file = Substitute.For<IFormFile>();
+        file.Length.Returns(0);
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        result.Errors.Should().ContainSingle().Which.ErrorCode.Should().Be("file:not_empty");
+    }
+
+    #endregion
+
+    #region GreaterThanOrEqualTo Message Formatting Tests
+
+    [Fact]
+    public void greater_than_or_equal_to_should_format_message_in_megabytes()
+    {
+        // given
+        FileSizeMinimumValidator validator = new(_FiveMegabytes);
+        var file = Substitute.For<IFormFile>();
+        file.Length.Returns(_OneMegabyte);
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.FormattedMessagePlaceholderValues.Should().ContainKey("MinSize");
+        error.FormattedMessagePlaceholderValues.Should().ContainKey("TotalLength");
+    }
+
+    [Fact]
+    public void greater_than_or_equal_to_should_format_values_correctly()
+    {
+        // given
+        using var _ = new CultureScope(CultureInfo.InvariantCulture);
+        FileSizeMinimumValidator validator = new(_FiveMegabytes);
+        var file = Substitute.For<IFormFile>();
+        file.Length.Returns(_OneMegabyte);
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.FormattedMessagePlaceholderValues["MinSize"].Should().Be("5.0");
+        error.FormattedMessagePlaceholderValues["TotalLength"].Should().Be("1.0");
+    }
+
+    #endregion
+
+    #region LessThanOrEqualTo Message Formatting Tests
+
+    [Fact]
+    public void less_than_or_equal_to_should_format_message_in_megabytes()
+    {
+        // given
+        using var _ = new CultureScope(CultureInfo.InvariantCulture);
+        FileSizeMaximumValidator validator = new(_OneMegabyte);
+        var file = Substitute.For<IFormFile>();
+        file.Length.Returns(_FiveMegabytes);
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.FormattedMessagePlaceholderValues["MaxSize"].Should().Be("1.0");
+        error.FormattedMessagePlaceholderValues["TotalLength"].Should().Be("5.0");
+    }
+
+    #endregion
+
+    #region ContentTypes Edge Cases
+
+    [Theory]
+    [InlineData("image/jpeg")]
+    [InlineData("IMAGE/JPEG")]
+    [InlineData("Image/Jpeg")]
+    public void content_types_should_be_case_insensitive(string contentType)
+    {
+        // given
+        var validator = new FileContentUploadValidator();
+        var file = Substitute.For<IFormFile>();
+        file.ContentType.Returns(contentType);
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void content_types_should_work_with_single_content_type()
+    {
+        // given
+        var validator = new SingleContentTypeValidator();
+        var file = Substitute.For<IFormFile>();
+        file.ContentType.Returns("application/pdf");
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void content_types_should_format_error_message_with_all_types()
+    {
+        // given
+        var validator = new FileContentUploadValidator();
+        var file = Substitute.For<IFormFile>();
+        file.ContentType.Returns("application/pdf");
+
+        var model = new FileUploadTestModel { UploadedFile = file };
+
+        // when
+        var result = validator.TestValidate(model);
+
+        // then
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.FormattedMessagePlaceholderValues.Should().ContainKey("ContentTypes");
+    }
+
+    #endregion
+
+    #region HaveSignatures Edge Cases
+
+    [Fact]
+    public async Task have_signatures_should_pass_when_predicate_returns_true_for_null_format()
+    {
+        // given
+        var fileInspectorMock = Substitute.For<IFileFormatInspector>();
+        // Inspector returns null for unknown file
+        fileInspectorMock.DetermineFileFormat(Arg.Any<Stream>()).Returns((FileFormat?)null);
+
+        // Validator accepts null format (unknown files allowed)
+        FileSignatureAcceptNullValidator validator = new(fileInspectorMock);
+
+        var fileStream = new MemoryStream([0x00, 0x01, 0x02]);
+        var mockFile = Substitute.For<IFormFile>();
+        mockFile.OpenReadStream().Returns(fileStream);
+
+        var model = new FileUploadTestModel { UploadedFile = mockFile };
+
+        // when
+        var result = await validator.TestValidateAsync(model, cancellationToken: AbortToken);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task have_signatures_should_fail_when_predicate_returns_false_for_null_format()
+    {
+        // given
+        var fileInspectorMock = Substitute.For<IFileFormatInspector>();
+        // Inspector returns null for unknown file
+        fileInspectorMock.DetermineFileFormat(Arg.Any<Stream>()).Returns((FileFormat?)null);
+
+        // Validator rejects null format (unknown files not allowed)
+        FileSignatureRejectNullValidator validator = new(fileInspectorMock);
+
+        var fileStream = new MemoryStream([0x00, 0x01, 0x02]);
+        var mockFile = Substitute.For<IFormFile>();
+        mockFile.OpenReadStream().Returns(fileStream);
+
+        var model = new FileUploadTestModel { UploadedFile = mockFile };
+
+        // when
+        var result = await validator.TestValidateAsync(model, cancellationToken: AbortToken);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.ShouldHaveValidationErrorFor(x => x.UploadedFile);
+    }
+
+    #endregion
+
     #region Helper Classes
 
     private sealed class FileUploadTestModel
@@ -298,9 +579,40 @@ public sealed class FileValidatorsTests : TestBase
 
     private sealed class TestFileFormat(byte[] signature) : FileFormat(signature, "application/test", ".test");
 
+    /// <summary>
+    /// Sets the current culture temporarily for testing culture-sensitive formatting.
+    /// </summary>
+    private sealed class CultureScope : IDisposable
+    {
+        private readonly CultureInfo _originalCulture;
+        private readonly CultureInfo _originalUiCulture;
+
+        public CultureScope(CultureInfo culture)
+        {
+            _originalCulture = CultureInfo.CurrentCulture;
+            _originalUiCulture = CultureInfo.CurrentUICulture;
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+        }
+
+        public void Dispose()
+        {
+            CultureInfo.CurrentCulture = _originalCulture;
+            CultureInfo.CurrentUICulture = _originalUiCulture;
+        }
+    }
+
     #endregion
 
     #region Helper Validator Classes
+
+    private sealed class FileNotEmptyValidator : AbstractValidator<FileUploadTestModel>
+    {
+        public FileNotEmptyValidator()
+        {
+            RuleFor(x => x.UploadedFile).FileNotEmpty();
+        }
+    }
 
     private sealed class FileNotEmptyWithSpecificMinimumSizeValidator : AbstractValidator<FileUploadTestModel>
     {
@@ -318,11 +630,35 @@ public sealed class FileValidatorsTests : TestBase
         }
     }
 
+    private sealed class FileSizeMinimumValidator : AbstractValidator<FileUploadTestModel>
+    {
+        public FileSizeMinimumValidator(int minBytes)
+        {
+            RuleFor(x => x.UploadedFile).GreaterThanOrEqualTo(minBytes);
+        }
+    }
+
+    private sealed class FileSizeMaximumValidator : AbstractValidator<FileUploadTestModel>
+    {
+        public FileSizeMaximumValidator(int maxBytes)
+        {
+            RuleFor(x => x.UploadedFile).LessThanOrEqualTo(maxBytes);
+        }
+    }
+
     private sealed class FileContentUploadValidator : AbstractValidator<FileUploadTestModel>
     {
         public FileContentUploadValidator()
         {
             RuleFor(x => x.UploadedFile).ContentTypes(["image/jpeg", "image/png"]);
+        }
+    }
+
+    private sealed class SingleContentTypeValidator : AbstractValidator<FileUploadTestModel>
+    {
+        public SingleContentTypeValidator()
+        {
+            RuleFor(x => x.UploadedFile).ContentTypes(["application/pdf"]);
         }
     }
 
@@ -335,6 +671,24 @@ public sealed class FileValidatorsTests : TestBase
                     inspector,
                     format => format?.Signature.ToList().SequenceEqual(_FileSignatureBytes) == true
                 );
+        }
+    }
+
+    private sealed class FileSignatureAcceptNullValidator : AbstractValidator<FileUploadTestModel>
+    {
+        public FileSignatureAcceptNullValidator(IFileFormatInspector inspector)
+        {
+            // Accept null format (unknown files allowed)
+            RuleFor(x => x.UploadedFile).HaveSignatures(inspector, _ => true);
+        }
+    }
+
+    private sealed class FileSignatureRejectNullValidator : AbstractValidator<FileUploadTestModel>
+    {
+        public FileSignatureRejectNullValidator(IFileFormatInspector inspector)
+        {
+            // Reject null format (require known file types)
+            RuleFor(x => x.UploadedFile).HaveSignatures(inspector, format => format is not null);
         }
     }
 

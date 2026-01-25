@@ -99,6 +99,7 @@
         <Project Path="tests/Framework.BuildingBlocks.Tests.Unit/Framework.BuildingBlocks.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Checks.Tests.Unit/Framework.Checks.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Hosting.Tests.Unit/Framework.Hosting.Tests.Unit.csproj" />
+        <Project Path="tests/Framework.Domain.LocalPublisher.Tests.Unit/Framework.Domain.LocalPublisher.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Domain.Tests.Unit/Framework.Domain.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Locks/">
