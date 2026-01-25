@@ -163,9 +163,15 @@
     </Folder>
     <Folder Name="/Messaging/Tests/">
         <Project Path="tests/Framework.Ticker.Tests.Unit/Framework.Ticker.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AwsSqs.Tests.Integration/Headless.Messaging.AwsSqs.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.AwsSqs.Tests.Unit/Headless.Messaging.AwsSqs.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.InMemoryQueue.Tests.Unit/Headless.Messaging.InMemoryQueue.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Nats.Tests.Unit/Headless.Messaging.Nats.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Unit/Headless.Messaging.PostgreSql.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Pulsar.Tests.Unit/Headless.Messaging.Pulsar.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Unit/Headless.Messaging.RabbitMq.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.SqlServer.Tests.Unit/Headless.Messaging.SqlServer.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Messaging.AzureServiceBus.Tests.Unit\Headless.Messaging.AzureServiceBus.Tests.Unit.csproj" />
@@ -173,6 +179,7 @@
         <Project Path="tests\Headless.Messaging.Core.Tests.Unit\Headless.Messaging.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Messaging.PostgreSql.Tests.Integration\Headless.Messaging.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Messaging.SqlServer.Tests.Integration\Headless.Messaging.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Messaging.RedisStreams.Tests.Unit\Headless.Messaging.RedisStreams.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Observability/">
         <Project Path="src/Framework.Logging.Serilog/Framework.Logging.Serilog.csproj" />
@@ -243,6 +250,11 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
+    </Folder>
+    <Folder Name="/src/" />
+    <Folder Name="/tests/">
+        <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />

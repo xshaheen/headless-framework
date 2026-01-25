@@ -84,7 +84,7 @@ public sealed class TopicNormalizerTests
         testCode
             .Should()
             .ThrowExactly<ArgumentOutOfRangeException>()
-            .WithMessage("AWS SNS topic names must be 256 characters or less");
+            .WithMessage("*AWS SNS topic names must be 256 characters or less*");
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public sealed class TopicNormalizerTests
         var testCode = () => input.NormalizeForAws();
 
         // then
-        testCode.Should().ThrowExactly<ArgumentException>();
+        testCode.Should().ThrowExactly<ArgumentNullException>();
     }
 
     [Fact]

@@ -77,6 +77,7 @@ public static class MessagesSqlServerSetup
 
             services.Configure(configure);
             services.AddSingleton<IConfigureOptions<SqlServerOptions>, ConfigureSqlServerOptions>();
+            services.AddSingleton<IValidateOptions<SqlServerOptions>, SqlServerOptionsValidator>();
         }
     }
 }

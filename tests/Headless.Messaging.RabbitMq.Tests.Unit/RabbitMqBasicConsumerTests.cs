@@ -638,4 +638,156 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         loggedEvent!.LogType.Should().Be(MqLogType.ConsumerShutdown);
         loggedEvent.Reason.Should().Be("Connection closed");
     }
+
+    [Fact]
+    public async Task should_handle_null_headers_in_properties()
+    {
+        // given
+        TransportMessage? receivedMessage = null;
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            "test-group",
+            (msg, _) =>
+            {
+                receivedMessage = msg;
+                return Task.CompletedTask;
+            },
+            _ => { },
+            null,
+            _serviceProvider
+        );
+
+        var properties = Substitute.For<IReadOnlyBasicProperties>();
+        properties.Headers.Returns((IDictionary<string, object?>?)null);
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumer-tag",
+            1UL,
+            false,
+            "test-exchange",
+            "test-routing-key",
+            properties,
+            "test-body"u8.ToArray(),
+            CancellationToken.None
+        );
+
+        // then
+        receivedMessage.Should().NotBeNull();
+        receivedMessage!.Value.Headers.Should().ContainKey(Headers.Group);
+        receivedMessage.Value.Headers[Headers.Group].Should().Be("test-group");
+    }
+
+    [Fact]
+    public void should_dispose_semaphore_on_dispose()
+    {
+        // given
+        var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            1,
+            "test-group",
+            (_, _) => Task.CompletedTask,
+            _ => { },
+            null,
+            _serviceProvider
+        );
+
+        // when
+        consumer.Dispose();
+
+        // then - should not throw on second dispose
+        var act = () => consumer.Dispose();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task should_handle_null_header_value()
+    {
+        // given
+        TransportMessage? receivedMessage = null;
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            "test-group",
+            (msg, _) =>
+            {
+                receivedMessage = msg;
+                return Task.CompletedTask;
+            },
+            _ => { },
+            null,
+            _serviceProvider
+        );
+
+        var properties = Substitute.For<IReadOnlyBasicProperties>();
+        properties.Headers.Returns(
+            new Dictionary<string, object?>(StringComparer.Ordinal) { { "NullHeader", null } }
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumer-tag",
+            1UL,
+            false,
+            "test-exchange",
+            "test-routing-key",
+            properties,
+            "test-body"u8.ToArray(),
+            CancellationToken.None
+        );
+
+        // then
+        receivedMessage!.Value.Headers["NullHeader"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_release_semaphore_on_successful_ack()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            2,
+            "test-group",
+            (_, _) => Task.CompletedTask,
+            _ => { },
+            null,
+            _serviceProvider
+        );
+
+        // when - multiple acks should not block if semaphore is released properly
+        await consumer.BasicAck(1UL);
+        await consumer.BasicAck(2UL);
+        await consumer.BasicAck(3UL);
+
+        // then - should complete without deadlock
+        await _channel.Received(3).BasicAckAsync(Arg.Any<ulong>(), false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_release_semaphore_on_successful_reject()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            2,
+            "test-group",
+            (_, _) => Task.CompletedTask,
+            _ => { },
+            null,
+            _serviceProvider
+        );
+
+        // when - multiple rejects should not block if semaphore is released properly
+        await consumer.BasicReject(1UL);
+        await consumer.BasicReject(2UL);
+        await consumer.BasicReject(3UL);
+
+        // then - should complete without deadlock
+        await _channel.Received(3).BasicRejectAsync(Arg.Any<ulong>(), true, Arg.Any<CancellationToken>());
+    }
 }

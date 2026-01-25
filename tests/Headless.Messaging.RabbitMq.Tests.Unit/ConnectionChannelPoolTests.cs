@@ -232,4 +232,80 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // when & then - dispose asynchronously, then verify no exceptions
         await pool.DisposeAsync();
     }
+
+    [Fact]
+    public async Task should_dispose_channels_on_async_disposal()
+    {
+        // given
+        await using var pool = new ConnectionChannelPool(_logger, _capOptions, _rabbitOptions);
+        var channel1 = Substitute.For<IChannel>();
+        var channel2 = Substitute.For<IChannel>();
+        channel1.IsOpen.Returns(true);
+        channel2.IsOpen.Returns(true);
+
+        pool.Return(channel1);
+        pool.Return(channel2);
+
+        // when
+        await pool.DisposeAsync();
+
+        // then
+        await channel1.Received(1).DisposeAsync();
+        await channel2.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public void should_not_return_channel_to_pool_when_max_size_exceeded()
+    {
+        // given
+        var pool = new ConnectionChannelPool(_logger, _capOptions, _rabbitOptions);
+
+        // Dispose sets _maxSize to 0
+        pool.Dispose();
+
+        var channel = Substitute.For<IChannel>();
+        channel.IsOpen.Returns(true);
+
+        // when
+        var result = pool.Return(channel);
+
+        // then
+        result.Should().BeFalse();
+        channel.Received(1).Dispose();
+    }
+
+    [Fact]
+    public void should_not_enqueue_closed_channel_on_return()
+    {
+        // given
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, _rabbitOptions);
+        var channel = Substitute.For<IChannel>();
+        channel.IsOpen.Returns(false);
+
+        // when
+        var result = pool.Return(channel);
+
+        // then - closed channel should not be returned to pool
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_expose_correct_exchange_name()
+    {
+        // given
+        var options = Options.Create(
+            new RabbitMqOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                ExchangeName = "custom.exchange",
+            }
+        );
+
+        // when
+        using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+
+        // then
+        pool.Exchange.Should().Be("custom.exchange");
+    }
 }

@@ -92,11 +92,8 @@ public sealed class PostgreSqlEntityFrameworkMessagingOptionsTests : TestBase
     [InlineData("schema_with_underscores_123")]
     public void should_accept_valid_identifier_patterns(string schema)
     {
-        // given
-        var options = new PostgreSqlEntityFrameworkMessagingOptions();
-
         // when
-        options.Schema = schema;
+        var options = new PostgreSqlEntityFrameworkMessagingOptions { Schema = schema };
 
         // then
         options.Schema.Should().Be(schema);

@@ -10,4 +10,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.RedisStreams.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
 </Project>
