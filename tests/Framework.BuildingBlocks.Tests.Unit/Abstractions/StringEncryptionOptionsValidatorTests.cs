@@ -90,4 +90,90 @@ public sealed class StringEncryptionOptionsValidatorTests
         settings.InitVectorBytes.Should().HaveCount(20);
         result.IsValid.Should().BeTrue();
     }
+
+    [Fact]
+    public void should_fail_when_key_size_is_negative()
+    {
+        // given
+        var settings = new StringEncryptionOptions
+        {
+            KeySize = -1,
+            DefaultPassPhrase = "TestPassPhrase123456",
+            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
+            DefaultSalt = "TestSalt"u8.ToArray(),
+        };
+
+        var validator = new StringEncryptionOptionsValidator();
+
+        // when
+        var result = validator.Validate(settings);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.KeySize));
+    }
+
+    [Fact]
+    public void should_fail_when_init_vector_is_empty()
+    {
+        // given
+        var settings = new StringEncryptionOptions
+        {
+            DefaultPassPhrase = "TestPassPhrase123456",
+            InitVectorBytes = [],
+            DefaultSalt = "TestSalt"u8.ToArray(),
+        };
+
+        var validator = new StringEncryptionOptionsValidator();
+
+        // when
+        var result = validator.Validate(settings);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.InitVectorBytes));
+    }
+
+    [Fact]
+    public void should_fail_when_init_vector_length_mismatch()
+    {
+        // given
+        var settings = new StringEncryptionOptions
+        {
+            KeySize = 256,
+            DefaultPassPhrase = "TestPassPhrase123456",
+            InitVectorBytes = "TooShort"u8.ToArray(), // 8 bytes, should be 16 (256/16)
+            DefaultSalt = "TestSalt"u8.ToArray(),
+        };
+
+        var validator = new StringEncryptionOptionsValidator();
+
+        // when
+        var result = validator.Validate(settings);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.InitVectorBytes));
+    }
+
+    [Fact]
+    public void should_fail_when_salt_is_empty()
+    {
+        // given
+        var settings = new StringEncryptionOptions
+        {
+            DefaultPassPhrase = "TestPassPhrase123456",
+            InitVectorBytes = "TestIV0123456789"u8.ToArray(),
+            DefaultSalt = [],
+        };
+
+        var validator = new StringEncryptionOptionsValidator();
+
+        // when
+        var result = validator.Validate(settings);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(StringEncryptionOptions.DefaultSalt));
+    }
 }
