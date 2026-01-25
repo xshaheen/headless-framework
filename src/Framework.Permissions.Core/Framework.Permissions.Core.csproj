@@ -4,6 +4,9 @@
     <RootNamespace>Framework.Permissions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Framework.Permissions.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authorization" />
   </ItemGroup>
   <ItemGroup>
