@@ -48,4 +48,30 @@ public sealed class IsNotNullTests
         // when & then
         Argument.IsNotNull(str).Should().NotBeNull(str);
     }
+
+    [Fact]
+    public void should_return_same_instance_when_not_null()
+    {
+        // given
+        var obj = new object();
+
+        // when
+        var result = Argument.IsNotNull(obj);
+
+        // then
+        result.Should().BeSameAs(obj);
+    }
+
+    [Fact]
+    public void should_include_param_name_in_exception()
+    {
+        // given
+        object? myParameter = null;
+
+        // when
+        var action = () => Argument.IsNotNull(myParameter);
+
+        // then
+        action.Should().ThrowExactly<ArgumentNullException>().WithParameterName("myParameter");
+    }
 }

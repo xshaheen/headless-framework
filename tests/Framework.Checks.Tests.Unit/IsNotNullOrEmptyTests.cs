@@ -161,4 +161,17 @@ public sealed class IsNotNullOrEmptyTests
         // when & then
         Argument.IsNotNullOrEmpty(input).Should().Equal(input);
     }
+
+    [Fact]
+    public void should_accept_whitespace_only_string()
+    {
+        // given - whitespace is NOT empty (use IsNotNullOrWhiteSpace for that)
+        const string whitespace = "   ";
+
+        // when
+        var result = Argument.IsNotNullOrEmpty(whitespace);
+
+        // then
+        result.Should().Be(whitespace);
+    }
 }

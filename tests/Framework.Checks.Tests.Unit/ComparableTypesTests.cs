@@ -256,4 +256,74 @@ public sealed class ComparableTypesTests
             .ThrowExactly<ArgumentOutOfRangeException>()
             .WithMessage($"{customMessage} (Parameter 'argument')");
     }
+
+    [Fact]
+    public void should_throw_is_exclusive_between_when_value_equals_lower_bound()
+    {
+        // given - exclusive means boundary values are NOT allowed
+        const int argument = 3;
+        const int minimumValue = 3;
+        const int maximumValue = 10;
+
+        // when
+        Action action = () => Argument.IsExclusiveBetween(argument, minimumValue, maximumValue);
+
+        // then
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_throw_is_exclusive_between_when_value_equals_upper_bound()
+    {
+        // given - exclusive means boundary values are NOT allowed
+        const int argument = 10;
+        const int minimumValue = 3;
+        const int maximumValue = 10;
+
+        // when
+        Action action = () => Argument.IsExclusiveBetween(argument, minimumValue, maximumValue);
+
+        // then
+        action.Should().ThrowExactly<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_accept_is_inclusive_between_when_value_equals_bounds()
+    {
+        // given - inclusive means boundary values ARE allowed
+        const int lowerBound = 3;
+        const int upperBound = 10;
+
+        // when & then
+        Argument.IsInclusiveBetween(lowerBound, lowerBound, upperBound).Should().Be(lowerBound);
+        Argument.IsInclusiveBetween(upperBound, lowerBound, upperBound).Should().Be(upperBound);
+    }
+
+    [Fact]
+    public void should_work_with_datetime()
+    {
+        // given
+        var now = DateTime.UtcNow;
+        var past = now.AddDays(-1);
+        var future = now.AddDays(1);
+
+        // when & then
+        Argument.IsInclusiveBetween(now, past, future).Should().Be(now);
+        Argument.IsGreaterThan(now, past).Should().Be(now);
+        Argument.IsLessThan(now, future).Should().Be(now);
+    }
+
+    [Fact]
+    public void should_work_with_timespan()
+    {
+        // given
+        var oneHour = TimeSpan.FromHours(1);
+        var thirtyMinutes = TimeSpan.FromMinutes(30);
+        var twoHours = TimeSpan.FromHours(2);
+
+        // when & then
+        Argument.IsInclusiveBetween(oneHour, thirtyMinutes, twoHours).Should().Be(oneHour);
+        Argument.IsGreaterThan(oneHour, thirtyMinutes).Should().Be(oneHour);
+        Argument.IsLessThan(oneHour, twoHours).Should().Be(oneHour);
+    }
 }
