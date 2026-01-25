@@ -259,4 +259,136 @@ public sealed class RabbitMqTransportTests : TestBase
         result.Succeeded.Should().BeFalse();
         result.Exception.Should().BeOfType<PublisherSentFailedException>();
     }
+
+    [Fact]
+    public async Task should_dispose_async_without_exception()
+    {
+        // given
+        var transport = new RabbitMqTransport(_logger, _pool);
+
+        // when & then - dispose should complete without exception
+        await transport.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_throw_on_validation_failure_before_channel_rent()
+    {
+        // given
+        await using var transport = new RabbitMqTransport(_logger, _pool);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "" }, // empty topic name - validation fails before rent
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        var act = () => transport.SendAsync(message);
+
+        // then - validation fails before channel rent, so exception is thrown
+        await act.Should().ThrowAsync<ArgumentException>();
+        await _pool.DidNotReceive().Rent();
+    }
+
+    [Fact]
+    public async Task should_use_correct_exchange_from_pool()
+    {
+        // given
+        _pool.Exchange.Returns("custom.exchange");
+        await using var transport = new RabbitMqTransport(_logger, _pool);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        await transport.SendAsync(message);
+
+        // then
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                "custom.exchange",
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<BasicProperties>(),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_include_message_body_in_publish()
+    {
+        // given
+        await using var transport = new RabbitMqTransport(_logger, _pool);
+        var expectedBody = "test-message-body"u8.ToArray();
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+            },
+            body: expectedBody
+        );
+
+        // when
+        await transport.SendAsync(message);
+
+        // then
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<BasicProperties>(),
+                Arg.Is<ReadOnlyMemory<byte>>(b => b.ToArray().SequenceEqual(expectedBody)),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_return_exception_details_in_failed_result()
+    {
+        // given
+        await using var transport = new RabbitMqTransport(_logger, _pool);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        var expectedException = new InvalidOperationException("Publish failed");
+        _channel
+            .When(x =>
+                _ = x.BasicPublishAsync(
+                        Arg.Any<string>(),
+                        Arg.Any<string>(),
+                        Arg.Any<bool>(),
+                        Arg.Any<BasicProperties>(),
+                        Arg.Any<ReadOnlyMemory<byte>>(),
+                        Arg.Any<CancellationToken>()
+                    )
+                    .AsTask()
+            )
+            .Do(_ => throw expectedException);
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().NotBeNull();
+        result.Exception!.InnerException.Should().BeSameAs(expectedException);
+    }
 }

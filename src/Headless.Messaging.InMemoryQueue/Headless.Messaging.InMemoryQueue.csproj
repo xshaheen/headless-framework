@@ -2,7 +2,10 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
-
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Messaging.InMemoryQueue.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
   </ItemGroup>

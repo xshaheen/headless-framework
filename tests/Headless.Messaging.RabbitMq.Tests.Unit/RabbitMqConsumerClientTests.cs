@@ -237,4 +237,119 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // then
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
+
+    [Fact]
+    public async Task should_declare_queue_with_queue_mode_when_specified()
+    {
+        // given
+        var options = Options.Create(
+            new RabbitMqOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { QueueMode = "lazy" },
+            }
+        );
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
+
+        // when
+        await client.ConnectAsync();
+
+        // then
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Is<Dictionary<string, object?>>(d => d.ContainsKey("x-queue-mode") && (string)d["x-queue-mode"]! == "lazy"),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_declare_queue_with_queue_type_when_specified()
+    {
+        // given
+        var options = Options.Create(
+            new RabbitMqOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                QueueArguments = new RabbitMqOptions.QueueArgumentsOptions { QueueType = "quorum" },
+            }
+        );
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
+
+        // when
+        await client.ConnectAsync();
+
+        // then
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Is<Dictionary<string, object?>>(d => d.ContainsKey("x-queue-type") && (string)d["x-queue-type"]! == "quorum"),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_use_custom_queue_options()
+    {
+        // given
+        var options = Options.Create(
+            new RabbitMqOptions
+            {
+                HostName = "localhost",
+                Port = 5672,
+                QueueOptions = new RabbitMqOptions.QueueRabbitOptions
+                {
+                    Durable = false,
+                    Exclusive = true,
+                    AutoDelete = true,
+                },
+            }
+        );
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, options, _serviceProvider);
+
+        // when
+        await client.ConnectAsync();
+
+        // then
+        await _channel
+            .Received(1)
+            .QueueDeclareAsync(
+                "test-group",
+                false, // durable
+                true, // exclusive
+                true, // autoDelete
+                Arg.Any<Dictionary<string, object?>>(),
+                false,
+                false,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_dispose_channel_and_semaphore()
+    {
+        // given
+        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.ConnectAsync();
+
+        // when
+        await client.DisposeAsync();
+
+        // then - should be idempotent (calling dispose again should not throw)
+        await client.DisposeAsync();
+    }
 }
