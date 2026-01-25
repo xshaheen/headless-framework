@@ -4,6 +4,7 @@ using Framework.Sitemaps;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 #pragma warning disable xUnit1045 // Avoid using TheoryData type arguments that might not be serializable
 public sealed class SitemapIndexBuilderTests : SitemapTestBase
 {
@@ -74,6 +75,44 @@ public sealed class SitemapIndexBuilderTests : SitemapTestBase
     [MemberData(nameof(TestData))]
     public async Task write_sitemap_references_to_stream_test(List<SitemapReference> references, string expected)
     {
+        string result;
+
+        await using (var stream = new MemoryStream())
+        {
+            await references.WriteToAsync(stream, AbortToken);
+            result = Encoding.UTF8.GetString(stream.ToArray());
+        }
+
+        AssertEquivalentXml(result, expected);
+    }
+
+    [Fact]
+    public async Task should_respect_cancellation_token()
+    {
+        var references = Enumerable
+            .Range(0, 100)
+            .Select(i => new SitemapReference { Location = new Uri($"https://example.com/sitemap{i}.xml") })
+            .ToList();
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await using var stream = new MemoryStream();
+
+        var act = async () => await references.WriteToAsync(stream, cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_handle_empty_references_collection()
+    {
+        // ReSharper disable once CollectionNeverUpdated.Local
+        var references = new List<SitemapReference>();
+
+        // Empty sitemapindex produces self-closing tag
+        const string expected = "<sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" />";
+
         string result;
 
         await using (var stream = new MemoryStream())
