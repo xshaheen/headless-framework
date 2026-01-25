@@ -6,55 +6,16 @@ using System.Runtime.CompilerServices;
 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
+/// <summary>
+/// Extension methods for <see cref="IAsyncEnumerable{T}"/>.
+/// </summary>
+/// <remarks>
+/// Methods like ToListAsync, AnyAsync, CountAsync, FirstAsync, LastAsync, ContainsAsync, LongCountAsync
+/// are now provided by .NET's System.Linq.AsyncEnumerable and have been removed from this class.
+/// </remarks>
 [PublicAPI]
 public static class AsyncEnumerableExtensions
 {
-    [MustUseReturnValue]
-    public static async ValueTask<List<T>> ToListAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var list = new List<T>();
-
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            list.Add(item);
-        }
-
-        return list;
-    }
-
-    public static async ValueTask<bool> AnyAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await foreach (var _ in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    public static async ValueTask<bool> AnyAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        Func<T, bool> predicate,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (predicate(item))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     public static async IAsyncEnumerable<T> ConcatAsync<T>(
         this IAsyncEnumerable<T> first,
         IAsyncEnumerable<T> second,
@@ -70,69 +31,6 @@ public static class AsyncEnumerableExtensions
         {
             yield return item;
         }
-    }
-
-    public static ValueTask<bool> ContainsAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        T value,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return ContainsAsync(enumerable, value, comparer: null, cancellationToken);
-    }
-
-    public static async ValueTask<bool> ContainsAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        T value,
-        IEqualityComparer<T>? comparer,
-        CancellationToken cancellationToken = default
-    )
-    {
-        comparer ??= EqualityComparer<T>.Default;
-
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (comparer.Equals(item, value))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    public static async ValueTask<int> CountAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var result = 0;
-
-        await foreach (var _ in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            result++;
-        }
-
-        return result;
-    }
-
-    public static async ValueTask<int> CountAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        Func<T, bool> predicate,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var result = 0;
-
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (predicate(item))
-            {
-                result++;
-            }
-        }
-
-        return result;
     }
 
     public static IAsyncEnumerable<T> DistinctAsync<T>(
@@ -187,151 +85,6 @@ public static class AsyncEnumerableExtensions
                 yield return item;
             }
         }
-    }
-
-    public static ValueTask<T> FirstAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return FirstAsync(enumerable, _ => true, cancellationToken);
-    }
-
-    public static async ValueTask<T> FirstAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        Func<T, bool> predicate,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (predicate(item))
-            {
-                return item;
-            }
-        }
-
-        throw new InvalidOperationException("The source sequence is empty");
-    }
-
-    public static ValueTask<T?> FirstOrDefaultAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return FirstOrDefaultAsync(enumerable, _ => true, cancellationToken);
-    }
-
-    public static async ValueTask<T?> FirstOrDefaultAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        Func<T, bool> predicate,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (predicate(item))
-            {
-                return item;
-            }
-        }
-
-        return default;
-    }
-
-    public static ValueTask<T> LastAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return LastAsync(enumerable, _ => true, cancellationToken);
-    }
-
-    public static async ValueTask<T> LastAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        Func<T, bool> predicate,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var hasValue = false;
-        T result = default!;
-
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (predicate(item))
-            {
-                hasValue = true;
-                result = item;
-            }
-        }
-
-        if (hasValue)
-        {
-            return result!;
-        }
-
-        throw new InvalidOperationException("The source sequence is empty");
-    }
-
-    public static ValueTask<T?> LastOrDefaultAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return LastOrDefaultAsync(enumerable, _ => true, cancellationToken);
-    }
-
-    public static async ValueTask<T?> LastOrDefaultAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        Func<T, bool> predicate,
-        CancellationToken cancellationToken = default
-    )
-    {
-        T? result = default;
-
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (predicate(item))
-            {
-                result = item;
-            }
-        }
-
-        return result;
-    }
-
-    public static async ValueTask<long> LongCountAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var result = 0L;
-
-        await foreach (var _ in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            result++;
-        }
-
-        return result;
-    }
-
-    public static async ValueTask<long> LongCountAsync<T>(
-        this IAsyncEnumerable<T> enumerable,
-        Func<T, bool> predicate,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var result = 0L;
-
-        await foreach (var item in enumerable.WithCancellation(cancellationToken).AnyContext())
-        {
-            if (predicate(item))
-            {
-                result++;
-            }
-        }
-
-        return result;
     }
 
     public static async IAsyncEnumerable<TResult> OfTypeAsync<T, TResult>(
