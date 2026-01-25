@@ -29,11 +29,17 @@
         <Project Path="src/Framework.Tus.ResourceLock/Framework.Tus.ResourceLock.csproj" />
         <Project Path="src/Framework.Tus/Framework.Tus.csproj" />
         <Project Path="src\Framework.Blobs.Abstractions\Framework.Blobs.Abstractions.csproj" />
+        <Project Path="tests/Framework.Blobs.Abstractions.Tests.Unit/Framework.Blobs.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Blobs.Aws.Tests.Integration/Framework.Blobs.Aws.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.Aws.Tests.Unit/Framework.Blobs.Aws.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Blobs.Azure.Tests.Integration/Framework.Blobs.Azure.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.Azure.Tests.Unit/Framework.Blobs.Azure.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Blobs.FileSystem.Tests.Integration/Framework.Blobs.FileSystem.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.FileSystem.Tests.Unit/Framework.Blobs.FileSystem.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Blobs.Redis.Tests.Integration/Framework.Blobs.Redis.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.Redis.Tests.Unit/Framework.Blobs.Redis.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Blobs.SshNet.Tests.Integration/Framework.Blobs.SshNet.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Blobs.SshNet.Tests.Unit/Framework.Blobs.SshNet.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Blobs.Tests.Harness/Framework.Blobs.Tests.Harness.csproj" />
         <Project Path="tests/Framework.Tus.Azure.Tests.Integration/Framework.Tus.Azure.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Tus.Tests.Unit/Framework.Tus.Tests.Unit.csproj" />
@@ -193,6 +199,11 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
+    </Folder>
+    <Folder Name="/src/" />
+    <Folder Name="/tests/">
+        <Project Path="tests/Framework.Redis.Tests.Integration/Framework.Redis.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Redis.Tests.Unit/Framework.Redis.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
