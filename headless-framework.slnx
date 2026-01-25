@@ -200,6 +200,11 @@
         <File Path="nuget.config" />
         <File Path="README.md" />
     </Folder>
+    <Folder Name="/src/" />
+    <Folder Name="/tests/">
+        <Project Path="tests/Framework.Redis.Tests.Integration/Framework.Redis.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Redis.Tests.Unit/Framework.Redis.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
         <Project Path="tests/Framework.FluentValidation.Tests.Unit/Framework.FluentValidation.Tests.Unit.csproj" />
