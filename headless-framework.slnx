@@ -175,6 +175,7 @@
         <Project Path="src/Framework.Settings.Storage.EntityFramework/Framework.Settings.Storage.EntityFramework.csproj" />
         <Project Path="src\Framework.Settings.Abstractions\Framework.Settings.Abstractions.csproj" />
         <Project Path="tests/Framework.Settings.Tests.Integration/Framework.Settings.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Settings.Tests.Unit/Framework.Settings.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Sms/">
         <Project Path="src/Framework.Sms.Aws/Framework.Sms.Aws.csproj" />
