@@ -8,5 +8,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Framework.Permissions.Core" />
+    <InternalsVisibleTo Include="Framework.Permissions.Tests.Unit" />
   </ItemGroup>
 </Project>
