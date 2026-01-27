@@ -123,11 +123,7 @@ public sealed class UserPermissionGrantProviderTests : TestBase
         result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Undefined);
     }
 
-    private static PermissionDefinition CreatePermission(string name)
-    {
-        var group = new PermissionGroupDefinition("TestGroup");
-        return group.AddChild(name);
-    }
+    private static PermissionDefinition CreatePermission(string name) => new(name);
 
     private static ICurrentUser CreateCurrentUser(UserId? userId)
     {

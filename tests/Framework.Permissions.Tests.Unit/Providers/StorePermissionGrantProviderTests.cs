@@ -68,11 +68,7 @@ public sealed class StorePermissionGrantProviderTests : TestBase
         await _grantStore.Received(1).RevokeAsync("Users.Create", "TestProvider", providerKey, AbortToken);
     }
 
-    private static PermissionDefinition CreatePermission(string name)
-    {
-        var group = new PermissionGroupDefinition("TestGroup");
-        return group.AddChild(name);
-    }
+    private static PermissionDefinition CreatePermission(string name) => new(name);
 
     /// <summary>Test implementation to verify base class behavior.</summary>
     private sealed class TestStorePermissionGrantProvider(

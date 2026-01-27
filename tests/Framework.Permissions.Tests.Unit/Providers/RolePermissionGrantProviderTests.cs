@@ -197,11 +197,7 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
-    private static PermissionDefinition CreatePermission(string name)
-    {
-        var group = new PermissionGroupDefinition("TestGroup");
-        return group.AddChild(name);
-    }
+    private static PermissionDefinition CreatePermission(string name) => new(name);
 
     private static ICurrentUser CreateCurrentUser(HashSet<string>? roles = null)
     {
