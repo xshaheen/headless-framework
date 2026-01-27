@@ -111,7 +111,7 @@ public sealed class PermissionDefinitionSerializerTests : TestBase
 
     #endregion
 
-    #region Test 116: should_deserialize_record_to_permission
+    #region Test 116: should_serialize_permission_with_parent_name
 
     [Fact]
     public void should_serialize_permission_with_parent_name()
@@ -133,7 +133,7 @@ public sealed class PermissionDefinitionSerializerTests : TestBase
 
     #endregion
 
-    #region Test 117: should_deserialize_record_to_group
+    #region Test 117: should_serialize_all_groups_and_permissions
 
     [Fact]
     public void should_serialize_all_groups_and_permissions()

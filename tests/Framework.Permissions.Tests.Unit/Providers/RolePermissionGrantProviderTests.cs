@@ -199,14 +199,8 @@ public sealed class RolePermissionGrantProviderTests : TestBase
 
     private static PermissionDefinition CreatePermission(string name)
     {
-        return (PermissionDefinition)
-            Activator.CreateInstance(
-                typeof(PermissionDefinition),
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
-                null,
-                [name, null, true],
-                null
-            )!;
+        var group = new PermissionGroupDefinition("TestGroup");
+        return group.AddChild(name);
     }
 
     private static ICurrentUser CreateCurrentUser(HashSet<string>? roles = null)

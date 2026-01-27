@@ -43,7 +43,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         // when
         await sut.StartAsync(AbortToken);
 
-        // Allow some time for background task to potentially start
+        // Allow brief time since no background task should start
         await Task.Delay(50, AbortToken);
 
         // then - store should never be touched
@@ -65,13 +65,18 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
             IsDynamicPermissionStoreEnabled = false,
         };
 
+        var saveCalled = new TaskCompletionSource();
+        _store.SaveAsync(Arg.Any<CancellationToken>()).Returns(callInfo =>
+        {
+            saveCalled.TrySetResult();
+            return Task.CompletedTask;
+        });
+
         var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
-
-        // Allow background task to execute
-        await Task.Delay(100, AbortToken);
+        await saveCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         await _store.Received(1).SaveAsync(Arg.Any<CancellationToken>());
@@ -91,13 +96,18 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
             IsDynamicPermissionStoreEnabled = true,
         };
 
+        var preCacheCalled = new TaskCompletionSource();
+        _store.GetGroupsAsync(Arg.Any<CancellationToken>()).Returns(callInfo =>
+        {
+            preCacheCalled.TrySetResult();
+            return Task.FromResult<IReadOnlyList<PermissionGroupDefinition>>([]);
+        });
+
         var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
-
-        // Allow background task to execute
-        await Task.Delay(100, AbortToken);
+        await preCacheCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then - GetGroupsAsync is used to pre-cache
         await _store.Received(1).GetGroupsAsync(Arg.Any<CancellationToken>());
@@ -195,7 +205,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     #region Cancellation
 
     [Fact]
-    public async Task should_cancel_on_stop_requested()
+    public async Task should_cancel_on_start_token_cancellation()
     {
         // given - test that cancellation via input token works
         var options = new PermissionManagementOptions
@@ -280,7 +290,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     #region Error Logging
 
     [Fact]
-    public async Task should_log_error_on_pre_cache_failure()
+    public async Task should_call_get_groups_on_pre_cache_failure()
     {
         // given
         var options = new PermissionManagementOptions
@@ -289,24 +299,23 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
             IsDynamicPermissionStoreEnabled = true,
         };
 
-        var expectedException = new InvalidOperationException("Pre-cache failed");
+        var getGroupsCalled = new TaskCompletionSource();
 
         _store
             .GetGroupsAsync(Arg.Any<CancellationToken>())
-            .Returns<IReadOnlyList<PermissionGroupDefinition>>(_ => throw expectedException);
+            .Returns<IReadOnlyList<PermissionGroupDefinition>>(_ =>
+            {
+                getGroupsCalled.TrySetResult();
+                throw new InvalidOperationException("Pre-cache failed");
+            });
 
         var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(CancellationToken.None);
+        await getGroupsCalled.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Allow background task to execute and fail
-        await Task.Delay(100);
-
-        // then - the error should be logged
-        // Since we use the real LoggerFactory from TestBase, we can verify via the logger
-        // The service logs: "Failed to pre-cache dynamic permissions"
-        // In unit tests, we verify the exception was thrown and re-thrown
+        // then
         await _store.Received(1).GetGroupsAsync(Arg.Any<CancellationToken>());
     }
 

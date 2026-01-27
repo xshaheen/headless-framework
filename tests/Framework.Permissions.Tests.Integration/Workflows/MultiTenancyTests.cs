@@ -22,7 +22,7 @@ public sealed class MultiTenancyTests(PermissionsTestFixture fixture) : Permissi
     private const string _TenantB = "tenant-b";
 
     [Fact]
-    public async Task should_isolate_permissions_by_tenant()
+    public async Task should_persist_tenant_id_on_grant()
     {
         // given
         await Fixture.ResetAsync();

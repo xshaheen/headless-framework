@@ -70,14 +70,8 @@ public sealed class StorePermissionGrantProviderTests : TestBase
 
     private static PermissionDefinition CreatePermission(string name)
     {
-        return (PermissionDefinition)
-            Activator.CreateInstance(
-                typeof(PermissionDefinition),
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
-                null,
-                [name, null, true],
-                null
-            )!;
+        var group = new PermissionGroupDefinition("TestGroup");
+        return group.AddChild(name);
     }
 
     /// <summary>Test implementation to verify base class behavior.</summary>
