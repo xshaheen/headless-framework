@@ -219,11 +219,11 @@ public sealed class SettingManagerTests : TestBase
     {
         // given
         var settings = new HashSet<string> { "Setting1", "Setting2" };
-        var definitions = new List<SettingDefinition>
-        {
+        List<SettingDefinition> definitions =
+        [
             new("Setting1", defaultValue: "default1"),
             new("Setting2", defaultValue: "default2"),
-        };
+        ];
 
         var provider = new FakeSettingValueProvider { Name = "Provider1" };
         provider.SetValue("Setting1", "value1");
@@ -250,11 +250,7 @@ public sealed class SettingManagerTests : TestBase
     {
         // given
         var providerName = "Provider1";
-        var definitions = new List<SettingDefinition>
-        {
-            new("Setting1", isInherited: true),
-            new("Setting2", isInherited: true),
-        };
+        List<SettingDefinition> definitions = [new("Setting1", isInherited: true), new("Setting2", isInherited: true)];
 
         var provider = new FakeSettingValueProvider { Name = providerName };
         provider.SetValue("Setting1", "value1");
@@ -396,7 +392,7 @@ public sealed class SettingManagerTests : TestBase
         // given
         var providerName = "Provider1";
         var providerKey = "tenant-123";
-        var settingValues = new List<SettingValue> { new("Setting1", "value1"), new("Setting2", "value2") };
+        List<SettingValue> settingValues = [new("Setting1", "value1"), new("Setting2", "value2")];
 
         _valueStore.GetAllProviderValuesAsync(providerName, providerKey, AbortToken).Returns(settingValues);
 

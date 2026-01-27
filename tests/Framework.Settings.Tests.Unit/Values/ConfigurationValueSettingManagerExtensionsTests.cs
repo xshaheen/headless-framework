@@ -207,7 +207,7 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_get_all_from_configuration_provider()
     {
         // given
-        var expectedValues = new List<SettingValue> { new("Setting1", "value1"), new("Setting2", "value2") };
+        List<SettingValue> expectedValues = [new("Setting1", "value1"), new("Setting2", "value2")];
 
         _settingManager
             .GetAllAsync(SettingValueProviderNames.Configuration, null, true, AbortToken)

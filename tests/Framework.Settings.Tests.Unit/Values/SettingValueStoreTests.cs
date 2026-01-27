@@ -65,13 +65,10 @@ public sealed class SettingValueStoreTests : TestBase
 
         _cache.GetAsync(cacheKey, AbortToken).Returns(CacheValue<SettingValueCacheItem>.NoValue);
 
-        var definitions = new List<SettingDefinition> { new(name) };
+        List<SettingDefinition> definitions = [new(name)];
         _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
 
-        var records = new List<SettingValueRecord>
-        {
-            new(Guid.NewGuid(), name, expectedValue, providerName, providerKey),
-        };
+        List<SettingValueRecord> records = [new(Guid.NewGuid(), name, expectedValue, providerName, providerKey)];
         _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(records);
 
         // when
@@ -93,13 +90,10 @@ public sealed class SettingValueStoreTests : TestBase
 
         _cache.GetAsync(cacheKey, AbortToken).Returns(CacheValue<SettingValueCacheItem>.NoValue);
 
-        var definitions = new List<SettingDefinition> { new(name) };
+        List<SettingDefinition> definitions = [new(name)];
         _definitionManager.GetAllAsync(AbortToken).Returns(definitions);
 
-        var records = new List<SettingValueRecord>
-        {
-            new(Guid.NewGuid(), name, expectedValue, providerName, providerKey),
-        };
+        List<SettingValueRecord> records = [new(Guid.NewGuid(), name, expectedValue, providerName, providerKey)];
         _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(records);
 
         // when
@@ -129,7 +123,7 @@ public sealed class SettingValueStoreTests : TestBase
         var providerName = "TestProvider";
         string? providerKey = null;
         var recordId = Guid.NewGuid();
-        var records = new List<SettingValueRecord> { new(recordId, name, "value", providerName, providerKey) };
+        List<SettingValueRecord> records = [new(recordId, name, "value", providerName, providerKey)];
 
         _repository.FindAllAsync(name, providerName, providerKey, AbortToken).Returns(records);
 
@@ -148,7 +142,7 @@ public sealed class SettingValueStoreTests : TestBase
         var providerName = "TestProvider";
         string? providerKey = null;
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-        var records = new List<SettingValueRecord> { new(Guid.NewGuid(), name, "value", providerName, providerKey) };
+        List<SettingValueRecord> records = [new(Guid.NewGuid(), name, "value", providerName, providerKey)];
 
         _repository.FindAllAsync(name, providerName, providerKey, AbortToken).Returns(records);
 
@@ -189,11 +183,11 @@ public sealed class SettingValueStoreTests : TestBase
         // given
         var providerName = "TestProvider";
         string? providerKey = "tenant-123";
-        var records = new List<SettingValueRecord>
-        {
+        List<SettingValueRecord> records =
+        [
             new(Guid.NewGuid(), "Setting1", "value1", providerName, providerKey),
             new(Guid.NewGuid(), "Setting2", "value2", providerName, providerKey),
-        };
+        ];
 
         _repository.GetListAsync(providerName, providerKey, AbortToken).Returns(records);
 

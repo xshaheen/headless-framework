@@ -238,7 +238,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     {
         // given
         var tenantId = "tenant-123";
-        var expectedValues = new List<SettingValue> { new("Setting1", "value1"), new("Setting2", "value2") };
+        List<SettingValue> expectedValues = [new("Setting1", "value1"), new("Setting2", "value2")];
 
         _settingManager
             .GetAllAsync(SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
@@ -259,7 +259,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_get_all_from_current_tenant()
     {
         // given
-        var expectedValues = new List<SettingValue> { new("Setting1", "value1") };
+        List<SettingValue> expectedValues = [new("Setting1", "value1")];
 
         _settingManager.GetAllAsync(SettingValueProviderNames.Tenant, null, true, AbortToken).Returns(expectedValues);
 

@@ -232,7 +232,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     {
         // given
         var userId = "user-123";
-        var expectedValues = new List<SettingValue> { new("Setting1", "value1"), new("Setting2", "value2") };
+        List<SettingValue> expectedValues = [new("Setting1", "value1"), new("Setting2", "value2")];
 
         _settingManager.GetAllAsync(SettingValueProviderNames.User, userId, true, AbortToken).Returns(expectedValues);
 
@@ -251,7 +251,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_get_all_from_current_user()
     {
         // given
-        var expectedValues = new List<SettingValue> { new("Setting1", "value1") };
+        List<SettingValue> expectedValues = [new("Setting1", "value1")];
 
         _settingManager.GetAllAsync(SettingValueProviderNames.User, null, true, AbortToken).Returns(expectedValues);
 
