@@ -115,10 +115,7 @@ public sealed class MessagingConventionsTests : TestBase
         var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
 
         // then
-        // Note: The regex uses ExplicitCapture which doesn't capture unnamed groups,
-        // causing $1 to be output literally. This is a bug in the source code.
-        // Expected: "order-placed-event", Actual: contains literal "$1"
-        topicName.ToLowerInvariant().Should().StartWith("order");
+        topicName.ToLowerInvariant().Should().Be("order-placed-event");
     }
 
     [Fact]
