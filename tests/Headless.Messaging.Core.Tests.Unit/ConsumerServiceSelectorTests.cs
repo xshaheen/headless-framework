@@ -267,6 +267,54 @@ public sealed class ConsumerServiceSelectorTests
         // then
         candidates.Should().BeEmpty();
     }
+
+    [Fact]
+    public void should_propagate_concurrency_setting()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMessages(messaging =>
+        {
+            messaging.DefaultGroupName = "default";
+            messaging.Version = "v1";
+            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").WithConcurrency(5).Build();
+        });
+
+        var provider = services.BuildServiceProvider();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+
+        // when
+        var candidates = selector.SelectCandidates();
+
+        // then
+        candidates.Should().HaveCount(1);
+        candidates[0].Concurrency.Should().Be(5);
+    }
+
+    [Fact]
+    public void should_default_concurrency_to_one()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMessages(messaging =>
+        {
+            messaging.DefaultGroupName = "default";
+            messaging.Version = "v1";
+            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
+        });
+
+        var provider = services.BuildServiceProvider();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+
+        // when
+        var candidates = selector.SelectCandidates();
+
+        // then
+        candidates.Should().HaveCount(1);
+        candidates[0].Concurrency.Should().Be(1);
+    }
 }
 
 // Test message and consumer

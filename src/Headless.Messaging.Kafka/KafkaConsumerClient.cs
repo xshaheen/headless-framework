@@ -18,7 +18,7 @@ public sealed class KafkaConsumerClient(
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
-    private static readonly Lock _Lock = new();
+    private readonly Lock _lock = new();
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly MessagingKafkaOptions _kafkaOptions = Argument.IsNotNull(options.Value);
     private IConsumer<string, byte[]>? _consumerClient;
@@ -167,7 +167,7 @@ public sealed class KafkaConsumerClient(
             return;
         }
 
-        lock (_Lock)
+        lock (_lock)
         {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_consumerClient == null)

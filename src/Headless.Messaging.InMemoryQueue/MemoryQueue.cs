@@ -8,7 +8,7 @@ namespace Headless.Messaging.InMemoryQueue;
 /// </summary>
 internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 {
-    private static readonly Lock _Lock = new();
+    private readonly Lock _lock = new();
 
     private readonly Dictionary<string, List<string>> _topicGroups = [];
     private readonly Dictionary<string, InMemoryConsumerClient> _consumerClients = [];
@@ -20,7 +20,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// <param name="consumerClient">The consumer client to register</param>
     public void RegisterConsumerClient(string groupId, InMemoryConsumerClient consumerClient)
     {
-        lock (_Lock)
+        lock (_lock)
         {
             _consumerClients[groupId] = consumerClient;
         }
@@ -33,7 +33,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// <param name="topics">The topics to subscribe to</param>
     public void Subscribe(string groupId, IEnumerable<string> topics)
     {
-        lock (_Lock)
+        lock (_lock)
         {
             foreach (var topic in topics)
             {
@@ -70,7 +70,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     public void Send(TransportMessage message)
     {
         var name = message.GetName();
-        lock (_Lock)
+        lock (_lock)
         {
             if (_topicGroups.TryGetValue(name, out var groupList))
             {

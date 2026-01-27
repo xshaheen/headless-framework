@@ -24,7 +24,7 @@ public sealed class MessageProcessingServer(
         // If already disposed and restarting, recreate the CancellationTokenSource
         if (_disposed || _cts.IsCancellationRequested)
         {
-            _cts?.Dispose();
+            _cts.Dispose();
             _cts = new CancellationTokenSource();
             _disposed = false;
         }
@@ -41,43 +41,6 @@ public sealed class MessageProcessingServer(
         return ValueTask.CompletedTask;
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        try
-        {
-            _disposed = true;
-
-            _logger.ServerShuttingDown();
-            _cts.Cancel();
-
-            _compositeTask?.Wait((int)TimeSpan.FromSeconds(10).TotalMilliseconds);
-        }
-        catch (AggregateException ex)
-        {
-            var innerEx = ex.InnerExceptions[0];
-            if (innerEx is not OperationCanceledException)
-            {
-                _logger.ExpectedOperationCanceledException(innerEx);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "An exception was occurred when disposing.");
-        }
-        finally
-        {
-            _context?.Dispose();
-            _context = null;
-            _cts.Dispose();
-            _logger.LogInformation("### Messaging system shutdown!");
-        }
-    }
-
     private IProcessor _InfiniteRetry(IProcessor inner)
     {
         return new InfiniteRetryProcessor(inner, loggerFactory);
@@ -92,5 +55,45 @@ public sealed class MessageProcessingServer(
             provider.GetRequiredService<MessageDelayedProcessor>(),
             provider.GetRequiredService<CollectorProcessor>(),
         ];
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            _disposed = true;
+
+            _logger.ServerShuttingDown();
+            await _cts.CancelAsync();
+
+            if (_compositeTask is not null)
+            {
+                await _compositeTask.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
+        catch (AggregateException e)
+        {
+            var inner = e.InnerExceptions[0];
+            if (inner is not OperationCanceledException)
+            {
+                _logger.ExpectedOperationCanceledException(inner);
+            }
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "An exception was occurred when disposing.");
+        }
+        finally
+        {
+            _context?.Dispose();
+            _context = null;
+            _cts.Dispose();
+            _logger.LogInformation("### Messaging system shutdown!");
+        }
     }
 }

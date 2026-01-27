@@ -314,22 +314,22 @@ public sealed class SqlServerDataStorage(
 
     public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
-        var sql = $"DELETE FROM {_recName} WHERE Id={id}";
+        var sql = $"DELETE FROM {_recName} WHERE Id=@Id";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affectedRowCount = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken)
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
             .AnyContext();
         return affectedRowCount;
     }
 
     public async ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
-        var sql = $"DELETE FROM {_pubName} WHERE Id={id}";
+        var sql = $"DELETE FROM {_pubName} WHERE Id=@Id";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affectedRowCount = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken)
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
             .AnyContext();
         return affectedRowCount;
     }
@@ -461,7 +461,7 @@ public sealed class SqlServerDataStorage(
         var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
 
         var sql =
-            $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added FROM {tableName} WITH (READPAST) "
+            $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added FROM {tableName} WITH (UPDLOCK, READPAST) "
             + $"WHERE Retries < @Retries AND Version = @Version AND Added < @Added AND StatusName IN ('{nameof(StatusName.Failed)}', '{nameof(StatusName.Scheduled)}');";
 
         object[] sqlParams =

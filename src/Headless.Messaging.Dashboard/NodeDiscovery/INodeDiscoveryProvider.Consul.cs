@@ -35,9 +35,9 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
                     .FirstOrDefault();
             }
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            _logger.LogError(ex, $"Get consul nodes raised an exception. Exception:{ex.Message}");
+            _logger.LogError(e, "Get consul nodes raised an exception. Exception:{Message}", e.Message);
         }
 
         return null;
@@ -84,7 +84,9 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
             MessagingCache.Global.AddOrUpdate("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
             _logger.LogError(
-                $"Get consul nodes raised an exception. Exception:{ex.Message},{ex.InnerException?.Message}"
+                "Get consul nodes raised an exception. Exception:{Message},{InnerExceptionMessage}",
+                ex.Message,
+                ex.InnerException?.Message
             );
             return [];
         }
@@ -141,10 +143,12 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
                 _logger.LogInformation("Consul node register success!");
             }
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
             _logger.LogError(
-                $"Get consul nodes raised an exception. Exception:{ex.Message},{ex.InnerException?.Message}"
+                "Get consul nodes raised an exception. Exception:{Message},{InnerExceptionMessage}",
+                e.Message,
+                e.InnerException?.Message
             );
         }
     }

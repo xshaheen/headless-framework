@@ -4,15 +4,15 @@ namespace Headless.Messaging.Dashboard.GatewayProxy.Requester;
 
 internal class HttpClientBuilder : IHttpClientBuilder
 {
-    private readonly Dictionary<int, Func<DelegatingHandler>> _handlers = new();
+    private readonly Dictionary<int, Func<DelegatingHandler>> _handlers = [];
 
     public IHttpClient Create()
     {
+#pragma warning disable CA2000 // Dispose HttpClientHandler is handled by HttpClient
         var httpclientHandler = new HttpClientHandler();
-
         var client = new HttpClient(_CreateHttpMessageHandler(httpclientHandler));
-
         return new HttpClientWrapper(client);
+#pragma warning restore CA2000
     }
 
     private HttpMessageHandler _CreateHttpMessageHandler(HttpMessageHandler httpMessageHandler)

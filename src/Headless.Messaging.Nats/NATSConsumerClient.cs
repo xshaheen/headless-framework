@@ -17,7 +17,7 @@ internal sealed class NatsConsumerClient(
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
-    private static readonly Lock _ConnectionLock = new();
+    private readonly Lock _connectionLock = new();
 
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
@@ -88,7 +88,7 @@ internal sealed class NatsConsumerClient(
         var js = _consumerClient!.CreateJetStreamContext();
         var streamGroup = topics.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
-        lock (_ConnectionLock)
+        lock (_connectionLock)
         {
             foreach (var subjectStream in streamGroup)
             {
@@ -148,37 +148,63 @@ internal sealed class NatsConsumerClient(
     private async void _SubscriptionMessageHandler(object? sender, MsgHandlerEventArgs e)
 #pragma warning restore VSTHRD100
     {
-        if (groupConcurrent > 0)
+        try
         {
-            await _semaphore.WaitAsync();
-            _ = Task.Run(consumeAsync).AnyContext();
-        }
-        else
-        {
-            await consumeAsync();
-        }
-
-        Task consumeAsync()
-        {
-            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-            foreach (string h in e.Message.Header.Keys)
+            if (groupConcurrent > 0)
             {
-                headers.Add(h, e.Message.Header[h]);
+                await _semaphore.WaitAsync();
+                _ = Task.Run(consumeAsync).AnyContext();
             }
-
-            headers[Headers.Group] = name;
-
-            if (_natsOptions.CustomHeadersBuilder != null)
+            else
             {
-                var customHeaders = _natsOptions.CustomHeadersBuilder(e, serviceProvider);
-                foreach (var customHeader in customHeaders)
+                await consumeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
                 {
-                    headers[customHeader.Key] = customHeader.Value;
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Unhandled exception in message handler: {ex}",
                 }
-            }
+            );
+        }
 
-            return OnMessageCallback!(new TransportMessage(headers, e.Message.Data), e.Message);
+        async Task consumeAsync()
+        {
+            try
+            {
+                var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+                foreach (string h in e.Message.Header.Keys)
+                {
+                    headers.Add(h, e.Message.Header[h]);
+                }
+
+                headers[Headers.Group] = name;
+
+                if (_natsOptions.CustomHeadersBuilder != null)
+                {
+                    var customHeaders = _natsOptions.CustomHeadersBuilder(e, serviceProvider);
+                    foreach (var customHeader in customHeaders)
+                    {
+                        headers[customHeader.Key] = customHeader.Value;
+                    }
+                }
+
+                await OnMessageCallback!(new TransportMessage(headers, e.Message.Data), e.Message);
+            }
+            catch (Exception ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ExceptionReceived,
+                        Reason = $"Unhandled exception processing message: {ex}",
+                    }
+                );
+            }
         }
     }
 
@@ -216,7 +242,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        lock (_ConnectionLock)
+        lock (_connectionLock)
         {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_consumerClient is null)
