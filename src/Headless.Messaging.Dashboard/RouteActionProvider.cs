@@ -188,7 +188,7 @@ public class RouteActionProvider
         await httpContext.Response.WriteAsJsonAsync(result);
     }
 
-    public async Task Health(HttpContext httpContext)
+    public static async Task Health(HttpContext httpContext)
     {
         await httpContext.Response.WriteAsync("OK");
     }
@@ -200,7 +200,13 @@ public class RouteActionProvider
             return;
         }
 
-        if (long.TryParse(httpContext.GetRouteData().Values["id"]?.ToString() ?? string.Empty, out var id))
+        if (
+            long.TryParse(
+                httpContext.GetRouteData().Values["id"]?.ToString() ?? string.Empty,
+                CultureInfo.InvariantCulture,
+                out var id
+            )
+        )
         {
             var message = await MonitoringApi.GetPublishedMessageAsync(id);
             if (message == null)
@@ -224,7 +230,13 @@ public class RouteActionProvider
             return;
         }
 
-        if (long.TryParse(httpContext.GetRouteData().Values["id"]?.ToString() ?? string.Empty, out var id))
+        if (
+            long.TryParse(
+                httpContext.GetRouteData().Values["id"]?.ToString() ?? string.Empty,
+                CultureInfo.InvariantCulture,
+                out var id
+            )
+        )
         {
             var message = await MonitoringApi.GetReceivedMessageAsync(id);
             if (message == null)
@@ -517,7 +529,7 @@ public class RouteActionProvider
         }
         catch (HttpRequestException e)
         {
-            httpContext.Response.StatusCode = (int)e.StatusCode.GetValueOrDefault(HttpStatusCode.BadGateway);
+            httpContext.Response.StatusCode = (int)(e.StatusCode ?? HttpStatusCode.BadGateway);
             await httpContext.Response.WriteAsync(e.Message);
         }
         catch (Exception e)
@@ -527,7 +539,7 @@ public class RouteActionProvider
         }
     }
 
-    private void _BadRequest(HttpContext httpContext)
+    private static void _BadRequest(HttpContext httpContext)
     {
         httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
     }

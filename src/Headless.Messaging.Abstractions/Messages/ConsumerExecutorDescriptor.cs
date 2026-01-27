@@ -28,6 +28,11 @@ public sealed class ConsumerExecutorDescriptor
     /// Group name for the consumer.
     /// </summary>
     public required string GroupName { get; init; }
+
+    /// <summary>
+    /// Maximum number of messages to process concurrently for this consumer.
+    /// </summary>
+    public byte Concurrency { get; init; } = 1;
 }
 
 public sealed class ParameterDescriptor

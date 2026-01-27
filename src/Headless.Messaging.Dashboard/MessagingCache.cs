@@ -75,7 +75,12 @@ public class Cache<TKey, T> : IDisposable
                     t.Dispose();
                 }
             }
-            catch { }
+#pragma warning disable ERP022
+            catch
+            {
+                // ignored
+            }
+#pragma warning restore ERP022
 
             _timers.Clear();
             _cache.Clear();
@@ -149,11 +154,7 @@ public class Cache<TKey, T> : IDisposable
             _locker.EnterWriteLock();
             _CheckTimer(key, cacheTimeout, restartTimerIfExists);
 
-            if (!_cache.ContainsKey(key))
-            {
-                _cache.Add(key, cacheObject);
-            }
-            else
+            if (!_cache.TryAdd(key, cacheObject))
             {
                 _cache[key] = cacheObject;
             }
@@ -206,7 +207,7 @@ public class Cache<TKey, T> : IDisposable
     }
 
     /// <summary>
-    /// Tries to gets the cache entry with the specified key.
+    /// Tries to get the cache entry with the specified key.
     /// </summary>
     /// <param name="key">The key.</param>
     /// <param name="value">(out) The value, if found, or <c>default(T)</c>, if not.</param>
@@ -253,7 +254,12 @@ public class Cache<TKey, T> : IDisposable
                 {
                     _timers[workKey].Dispose();
                 }
-                catch { }
+#pragma warning disable ERP022
+                catch
+                {
+                    // ignored
+                }
+#pragma warning restore ERP022
 
                 _timers.Remove(workKey);
                 _cache.Remove(workKey);
@@ -287,7 +293,12 @@ public class Cache<TKey, T> : IDisposable
                 {
                     _timers[key].Dispose();
                 }
-                catch { }
+#pragma warning disable ERP022
+                catch
+                {
+                    // ignored
+                }
+#pragma warning restore ERP022
 
                 _timers.Remove(key);
                 _cache.Remove(key);
@@ -339,10 +350,10 @@ public class Cache<TKey, T> : IDisposable
 /// <see cref="ThreadPool" /> threads).
 /// </summary>
 /// <summary>
-/// The non-generic Cache class instanciates a Cache{object} that can be used with any type of (mixed) contents.
+/// The non-generic Cache class instantiates a Cache{object} that can be used with any type of (mixed) contents.
 /// It also publishes a static <c>.Global</c> member, so a cache can be used even without creating a dedicated
 /// instance.
-/// The <c>.Global</c> member is lazy instanciated.
+/// The <c>.Global</c> member is lazy instantiated.
 /// </summary>
 public class MessagingCache : Cache<string, object>
 {

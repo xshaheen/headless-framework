@@ -6,11 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-public class TransportCheckProcessor(ILogger<TransportCheckProcessor> logger, IConsumerRegister register) : IProcessor
+public sealed class TransportCheckProcessor(ILogger<TransportCheckProcessor> logger, IConsumerRegister register)
+    : IProcessor
 {
     private readonly TimeSpan _waitingInterval = TimeSpan.FromSeconds(30);
 
-    public virtual async Task ProcessAsync(ProcessingContext context)
+    public async Task ProcessAsync(ProcessingContext context)
     {
         Argument.IsNotNull(context);
 

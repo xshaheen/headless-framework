@@ -16,8 +16,15 @@ public sealed class DiagnosticRegister(DiagnosticProcessorObserver observer) : I
         return ValueTask.CompletedTask;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        _subscription?.Dispose();
+        if (_subscription is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync();
+        }
+        else
+        {
+            _subscription?.Dispose();
+        }
     }
 }
