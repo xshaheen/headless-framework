@@ -63,6 +63,7 @@
         <Project Path="tests/Framework.Sql.Sqlite.Tests.Integration/Framework.Sql.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Sql.SqlServer.Tests.Integration/Framework.Sql.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Sql.Tests.Harness/Framework.Sql.Tests.Harness.csproj" />
+        <Project Path="tests/Framework.Sql.Tests.Unit/Framework.Sql.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Emails/">
         <Project Path="src/Framework.Emails.Aws/Framework.Emails.Aws.csproj" />
@@ -201,9 +202,7 @@
         <File Path="README.md" />
     </Folder>
     <Folder Name="/src/" />
-    <Folder Name="/tests/">
-        <Project Path="tests/Framework.Sql.Tests.Unit/Framework.Sql.Tests.Unit.csproj" />
-    </Folder>
+    <Folder Name="/tests/" />
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
         <Project Path="tests/Framework.FluentValidation.Tests.Unit/Framework.FluentValidation.Tests.Unit.csproj" />
