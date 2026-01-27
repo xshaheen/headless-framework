@@ -10,9 +10,8 @@ public static class JwtTokenHelper
 
     private static JsonWebTokenHandler _CreateHandler()
     {
-        JsonWebTokenHandler.DefaultMapInboundClaims = false;
-        JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
-
+        // Static defaults (DefaultMapInboundClaims, DefaultInboundClaimTypeMap)
+        // are configured once in Setup.ConfigureGlobalSettings().
         return new JsonWebTokenHandler
         {
             MapInboundClaims = false,

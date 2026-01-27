@@ -38,7 +38,8 @@ public interface IJwtTokenFactory
         string issuer,
         string audience,
         bool validateIssuer = true,
-        bool validateAudience = true
+        bool validateAudience = true,
+        CancellationToken cancellationToken = default
     );
 }
 
@@ -95,7 +96,8 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
         string issuer,
         string audience,
         bool validateIssuer = true,
-        bool validateAudience = true
+        bool validateAudience = true,
+        CancellationToken cancellationToken = default
     )
     {
         var tokenValidationParameters = new TokenValidationParameters
@@ -116,7 +118,11 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
             TokenDecryptionKey = encryptingKey is null ? null : _CreateSecurityKey(encryptingKey),
         };
 
-        var result = await JwtTokenHelper.TokenHandler.ValidateTokenAsync(token, tokenValidationParameters);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var result = await JwtTokenHelper
+            .TokenHandler.ValidateTokenAsync(token, tokenValidationParameters)
+            .AnyContext();
 
         return result.IsValid ? new(result.ClaimsIdentity) : null;
     }
@@ -125,7 +131,17 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
 
     private static SigningCredentials _GetSigningCredentials(string key)
     {
-        return new(_CreateSecurityKey(key), algorithm: SecurityAlgorithms.HmacSha256);
+        var keyBytes = Encoding.UTF8.GetBytes(key);
+
+        if (keyBytes.Length < 32)
+        {
+            throw new ArgumentException(
+                "JWT signing key must be at least 256 bits (32 bytes) for HMAC-SHA256.",
+                nameof(key)
+            );
+        }
+
+        return new(new SymmetricSecurityKey(keyBytes), algorithm: SecurityAlgorithms.HmacSha256);
     }
 
     private static EncryptingCredentials _GetEncryptingCredentials(string key)

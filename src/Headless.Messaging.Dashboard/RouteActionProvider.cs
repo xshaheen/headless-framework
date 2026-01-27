@@ -20,6 +20,8 @@ namespace Headless.Messaging.Dashboard;
 
 public class RouteActionProvider
 {
+    private const int _MaxPageSize = 200;
+
     private readonly GatewayProxyAgent? _agent;
     private readonly IEndpointRouteBuilder _builder;
     private readonly DashboardOptions _options;
@@ -361,7 +363,7 @@ public class RouteActionProvider
         }
 
         var routeValue = httpContext.GetRouteData().Values;
-        var pageSize = httpContext.Request.Query["perPage"].ToInt32OrDefault(20);
+        var pageSize = Math.Clamp(httpContext.Request.Query["perPage"].ToInt32OrDefault(20), 1, _MaxPageSize);
         var pageIndex = httpContext.Request.Query["currentPage"].ToInt32OrDefault(1);
         var name = httpContext.Request.Query["name"].ToString();
         var content = httpContext.Request.Query["content"].ToString();
@@ -390,7 +392,7 @@ public class RouteActionProvider
         }
 
         var routeValue = httpContext.GetRouteData().Values;
-        var pageSize = httpContext.Request.Query["perPage"].ToInt32OrDefault(20);
+        var pageSize = Math.Clamp(httpContext.Request.Query["perPage"].ToInt32OrDefault(20), 1, _MaxPageSize);
         var pageIndex = httpContext.Request.Query["currentPage"].ToInt32OrDefault(1);
         var name = httpContext.Request.Query["name"].ToString();
         var group = httpContext.Request.Query["group"].ToString();
@@ -506,7 +508,36 @@ public class RouteActionProvider
 
     public async Task PingServices(HttpContext httpContext)
     {
-        var endpoint = httpContext.Request.Query["endpoint"];
+        var endpoint = httpContext.Request.Query["endpoint"].ToString();
+
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync("Missing endpoint parameter.");
+            return;
+        }
+
+        // Validate the endpoint is a registered service node to prevent SSRF.
+        var discoveryProvider = _serviceProvider.GetService<INodeDiscoveryProvider>();
+        if (discoveryProvider == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync("Node discovery is not configured.");
+            return;
+        }
+
+        var nodes = await discoveryProvider.GetNodes();
+        var isRegistered = nodes.Any(n =>
+            endpoint.StartsWith($"http://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
+            || endpoint.StartsWith($"https://{n.Address}:{n.Port}", StringComparison.OrdinalIgnoreCase)
+        );
+
+        if (!isRegistered)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await httpContext.Response.WriteAsync("Endpoint is not a registered service node.");
+            return;
+        }
 
         using var httpClient = new HttpClient();
         var sw = new Stopwatch();

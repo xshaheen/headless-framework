@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using System.Security.Principal;
 using Framework.Constants;
 using Framework.Primitives;
@@ -11,6 +12,8 @@ namespace System.Security.Claims;
 [PublicAPI]
 public static class ClaimsPrincipalExtensions
 {
+    private static readonly ConditionalWeakTable<ClaimsPrincipal, ImmutableHashSet<string>> _RolesCache = new();
+
     public static UserId? GetUserId(this ClaimsPrincipal? principal)
     {
         var id = principal?.FindFirst(UserClaimTypes.UserId)?.Value;
@@ -116,11 +119,17 @@ public static class ClaimsPrincipalExtensions
 
     public static ImmutableHashSet<string> GetRoles(this ClaimsPrincipal? principal)
     {
-        var roles = principal
-            ?.Claims.Where(claim => string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.Ordinal))
-            .Select(claim => claim.Value)
-            .ToImmutableHashSet(StringComparer.Ordinal);
+        if (principal is null)
+        {
+            return [];
+        }
 
-        return roles ?? [];
+        return _RolesCache.GetValue(
+            principal,
+            static p =>
+                p.Claims.Where(claim => string.Equals(claim.Type, UserClaimTypes.Roles, StringComparison.Ordinal))
+                    .Select(claim => claim.Value)
+                    .ToImmutableHashSet(StringComparer.Ordinal)
+        );
     }
 }
