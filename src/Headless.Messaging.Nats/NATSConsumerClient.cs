@@ -153,7 +153,23 @@ internal sealed class NatsConsumerClient(
             if (groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync();
-                _ = Task.Run(consumeAsync).AnyContext();
+                _ = Task.Run(consumeAsync)
+                    .ContinueWith(
+                        static (t, state) =>
+                        {
+                            ((Action<LogMessageEventArgs>?)state)?.Invoke(
+                                new LogMessageEventArgs
+                                {
+                                    LogType = MqLogType.ExceptionReceived,
+                                    Reason = $"Unhandled exception in message handler: {t.Exception}",
+                                }
+                            );
+                        },
+                        OnLogCallback,
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnFaulted,
+                        TaskScheduler.Default
+                    );
             }
             else
             {
