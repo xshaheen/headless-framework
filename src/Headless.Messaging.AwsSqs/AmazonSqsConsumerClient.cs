@@ -92,19 +92,6 @@ internal sealed class AmazonSqsConsumerClient(
                                     catch (Exception ex)
                                     {
                                         _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
-
-                                        try
-                                        {
-                                            await RejectAsync(sqsMessage.ReceiptHandle).AnyContext();
-                                        }
-                                        catch (Exception rejectEx)
-                                        {
-                                            _logger.LogError(
-                                                rejectEx,
-                                                "Failed to reject message after consume error for group {GroupId}",
-                                                groupId
-                                            );
-                                        }
                                     }
                                 },
                                 cancellationToken
