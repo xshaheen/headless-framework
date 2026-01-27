@@ -1,16 +1,16 @@
 ---
-status: pending
+status: done
 priority: p3
-issue_id: "031"
+issue_id: "028"
 tags: []
 dependencies: []
 ---
 
-# Replace inefficient foreach-return-first with FirstOrDefault
+# Remove unused Primitives envelope types (YAGNI)
 
 ## Problem Statement
 
-HttpContextExtensions.GetUserAgent uses foreach that returns on first iteration. Same pattern in GetCorrelationId. Unusual and less readable. File: src/Framework.Api/Extensions/Http/HttpContextExtensions.cs lines 140-150
+ValueEnvelop, OperationDescriptor, OperationsDataEnvelop, OperationsCollectionEnvelop have no consumers. Built for HATEOAS patterns never used. ~40 LOC of dead code. Files: src/Framework.Api/Primitives/
 
 ## Findings
 
@@ -30,7 +30,10 @@ HttpContextExtensions.GetUserAgent uses foreach that returns on first iteration.
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Use .FirstOrDefault() instead of foreach
+- [ ] Delete ValueEnvelop.cs
+- [ ] Delete OperationDescriptor.cs
+- [ ] Delete OperationsDataEnvelop.cs
+- [ ] Delete OperationsCollectionEnvelop.cs
 
 ## Notes
 
