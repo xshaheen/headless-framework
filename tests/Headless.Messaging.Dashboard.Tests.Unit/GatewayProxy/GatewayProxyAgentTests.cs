@@ -152,10 +152,13 @@ public sealed class GatewayProxyAgentTests : TestBase
         result.Should().BeFalse();
     }
 
-    // NOTE: K8s mode tests are skipped because GatewayProxyAgent uses GetRequiredService<ConsulDiscoveryOptions>()
-    // in a field initializer, which throws if the service isn't registered. The k8s mode code path
-    // checks if _consulDiscoveryOptions == null, but this can never be null due to GetRequiredService.
-    // This is a design issue in the source code that should be addressed.
+    // NOTE: K8s mode tests are not implemented because GatewayProxyAgent uses
+    // GetRequiredService<ConsulDiscoveryOptions>() in a field initializer, which throws if the
+    // service isn't registered. The K8s mode code path expects _consulDiscoveryOptions to be
+    // null when Consul options are not configured, but this can never happen with the current
+    // initialization approach.
+    // TODO: Update GatewayProxyAgent initialization (e.g. avoid GetRequiredService in field initializers)
+    //       so that K8s mode (no ConsulDiscoveryOptions registered) can be exercised and tested.
 
     [Fact]
     public void CookieNodeName_should_be_defined()
