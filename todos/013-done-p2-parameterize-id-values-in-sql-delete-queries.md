@@ -1,16 +1,16 @@
 ---
-status: ready
+status: done
 priority: p2
-issue_id: "017"
+issue_id: "013"
 tags: []
 dependencies: []
 ---
 
-# Remove unused Microsoft.Data.SqlClient from Core
+# Parameterize ID values in SQL DELETE queries
 
 ## Problem Statement
 
-Headless.Messaging.Core.csproj:13 has SqlClient dependency but Core should be transport/storage agnostic.
+PostgreSqlDataStorage.cs:332 and SqlServerDataStorage.cs:317,328 interpolate IDs directly into SQL strings instead of parameters.
 
 ## Findings
 
@@ -30,7 +30,7 @@ Headless.Messaging.Core.csproj:13 has SqlClient dependency but Core should be tr
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Remove <PackageReference Include="Microsoft.Data.SqlClient" /> from Core csproj
+- [ ] Use @Id parameter instead of string interpolation for consistency and safety
 
 ## Notes
 
@@ -49,3 +49,9 @@ Source: Workflow automation
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-27 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

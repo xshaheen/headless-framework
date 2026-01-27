@@ -1,21 +1,21 @@
 ---
-status: ready
-priority: p2
-issue_id: "009"
+status: done
+priority: p1
+issue_id: "005"
 tags: []
 dependencies: []
 ---
 
-# Increase SQS MaxNumberOfMessages from 1 to 10
+# Change dashboard AllowAnonymousExplicit default to false
 
 ## Problem Statement
 
-AmazonSqsConsumerClient.cs:72 only fetches 1 message per request. AWS SQS supports up to 10, reducing API calls 10x.
+DashboardOptions.cs:28 defaults AllowAnonymousExplicit=true allowing anyone to view/delete messages without auth.
 
 ## Findings
 
 - **Status:** Identified during workflow execution
-- **Priority:** p2
+- **Priority:** p1
 
 ## Proposed Solutions
 
@@ -30,7 +30,7 @@ AmazonSqsConsumerClient.cs:72 only fetches 1 message per request. AWS SQS suppor
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Change MaxNumberOfMessages = 1 to MaxNumberOfMessages = 10 and process batch
+- [ ] Change default to false and require explicit opt-in for anonymous access
 
 ## Notes
 
@@ -44,8 +44,14 @@ Source: Workflow automation
 **Actions:**
 - Created via todo.sh create
 
-### 2026-01-25 - Approved
+### 2026-01-24 - Approved
 
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-27 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
