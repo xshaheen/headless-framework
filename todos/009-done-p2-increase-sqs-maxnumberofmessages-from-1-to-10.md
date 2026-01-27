@@ -1,16 +1,16 @@
 ---
-status: pending
+status: done
 priority: p2
-issue_id: "025"
+issue_id: "009"
 tags: []
 dependencies: []
 ---
 
-# Cache roles in HttpCurrentUser to avoid repeated LINQ allocations
+# Increase SQS MaxNumberOfMessages from 1 to 10
 
 ## Problem Statement
 
-HttpCurrentUser.Roles creates new ImmutableHashSet via LINQ on every access. Multiple role checks per request create unnecessary allocations. File: Framework.BuildingBlocks/Core/ClaimsPrincipalExtensions.cs lines 117-125
+AmazonSqsConsumerClient.cs:72 only fetches 1 message per request. AWS SQS supports up to 10, reducing API calls 10x.
 
 ## Findings
 
@@ -30,8 +30,7 @@ HttpCurrentUser.Roles creates new ImmutableHashSet via LINQ on every access. Mul
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Use Lazy<ImmutableHashSet<string>> for caching
-- [ ] Or cache in HttpContext.Items per request
+- [ ] Change MaxNumberOfMessages = 1 to MaxNumberOfMessages = 10 and process batch
 
 ## Notes
 
@@ -39,8 +38,20 @@ Source: Workflow automation
 
 ## Work Log
 
-### 2026-01-25 - Created
+### 2026-01-24 - Created
 
 **By:** Agent
 **Actions:**
 - Created via todo.sh create
+
+### 2026-01-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-01-27 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

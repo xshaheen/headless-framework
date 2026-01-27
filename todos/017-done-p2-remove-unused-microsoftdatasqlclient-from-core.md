@@ -1,21 +1,21 @@
 ---
-status: ready
-priority: p1
-issue_id: "004"
+status: done
+priority: p2
+issue_id: "017"
 tags: []
 dependencies: []
 ---
 
-# Add PostgreSQL message deduplication with ON CONFLICT
+# Remove unused Microsoft.Data.SqlClient from Core
 
 ## Problem Statement
 
-PostgreSqlDataStorage.cs uses plain INSERT that throws on duplicate instead of UPSERT like SQL Server MERGE. Causes infinite retry on redelivery.
+Headless.Messaging.Core.csproj:13 has SqlClient dependency but Core should be transport/storage agnostic.
 
 ## Findings
 
 - **Status:** Identified during workflow execution
-- **Priority:** p1
+- **Priority:** p2
 
 ## Proposed Solutions
 
@@ -30,7 +30,7 @@ PostgreSqlDataStorage.cs uses plain INSERT that throws on duplicate instead of U
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Use ON CONFLICT DO UPDATE for StoreReceivedMessageAsync like SQL Server's MERGE pattern
+- [ ] Remove <PackageReference Include="Microsoft.Data.SqlClient" /> from Core csproj
 
 ## Notes
 
@@ -44,8 +44,14 @@ Source: Workflow automation
 **Actions:**
 - Created via todo.sh create
 
-### 2026-01-24 - Approved
+### 2026-01-25 - Approved
 
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-27 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

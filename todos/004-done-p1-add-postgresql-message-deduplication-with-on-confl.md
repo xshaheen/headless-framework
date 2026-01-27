@@ -1,21 +1,21 @@
 ---
-status: ready
-priority: p2
-issue_id: "016"
+status: done
+priority: p1
+issue_id: "004"
 tags: []
 dependencies: []
 ---
 
-# Remove unused NATS.Client from Kafka project
+# Add PostgreSQL message deduplication with ON CONFLICT
 
 ## Problem Statement
 
-Headless.Messaging.Kafka.csproj:7 has PackageReference to NATS.Client which is never used - likely copy-paste error inflating package.
+PostgreSqlDataStorage.cs uses plain INSERT that throws on duplicate instead of UPSERT like SQL Server MERGE. Causes infinite retry on redelivery.
 
 ## Findings
 
 - **Status:** Identified during workflow execution
-- **Priority:** p2
+- **Priority:** p1
 
 ## Proposed Solutions
 
@@ -30,7 +30,7 @@ Headless.Messaging.Kafka.csproj:7 has PackageReference to NATS.Client which is n
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Remove <PackageReference Include="NATS.Client" /> from Kafka csproj
+- [ ] Use ON CONFLICT DO UPDATE for StoreReceivedMessageAsync like SQL Server's MERGE pattern
 
 ## Notes
 
@@ -44,8 +44,14 @@ Source: Workflow automation
 **Actions:**
 - Created via todo.sh create
 
-### 2026-01-25 - Approved
+### 2026-01-24 - Approved
 
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-27 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

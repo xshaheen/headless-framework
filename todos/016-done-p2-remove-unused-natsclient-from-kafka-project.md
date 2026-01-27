@@ -1,16 +1,16 @@
 ---
-status: ready
+status: done
 priority: p2
-issue_id: "013"
+issue_id: "016"
 tags: []
 dependencies: []
 ---
 
-# Parameterize ID values in SQL DELETE queries
+# Remove unused NATS.Client from Kafka project
 
 ## Problem Statement
 
-PostgreSqlDataStorage.cs:332 and SqlServerDataStorage.cs:317,328 interpolate IDs directly into SQL strings instead of parameters.
+Headless.Messaging.Kafka.csproj:7 has PackageReference to NATS.Client which is never used - likely copy-paste error inflating package.
 
 ## Findings
 
@@ -30,7 +30,7 @@ PostgreSqlDataStorage.cs:332 and SqlServerDataStorage.cs:317,328 interpolate IDs
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Use @Id parameter instead of string interpolation for consistency and safety
+- [ ] Remove <PackageReference Include="NATS.Client" /> from Kafka csproj
 
 ## Notes
 
@@ -49,3 +49,9 @@ Source: Workflow automation
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-27 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

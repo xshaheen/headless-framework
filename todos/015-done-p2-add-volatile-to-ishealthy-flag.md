@@ -1,21 +1,21 @@
 ---
-status: ready
-priority: p1
-issue_id: "005"
+status: done
+priority: p2
+issue_id: "015"
 tags: []
 dependencies: []
 ---
 
-# Change dashboard AllowAnonymousExplicit default to false
+# Add volatile to _isHealthy flag
 
 ## Problem Statement
 
-DashboardOptions.cs:28 defaults AllowAnonymousExplicit=true allowing anyone to view/delete messages without auth.
+IConsumerRegister.Default.cs:33 bool _isHealthy read/written from multiple threads without synchronization, causing visibility issues.
 
 ## Findings
 
 - **Status:** Identified during workflow execution
-- **Priority:** p1
+- **Priority:** p2
 
 ## Proposed Solutions
 
@@ -30,7 +30,7 @@ DashboardOptions.cs:28 defaults AllowAnonymousExplicit=true allowing anyone to v
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Change default to false and require explicit opt-in for anonymous access
+- [ ] Add volatile keyword or use Interlocked for proper thread visibility
 
 ## Notes
 
@@ -44,8 +44,14 @@ Source: Workflow automation
 **Actions:**
 - Created via todo.sh create
 
-### 2026-01-24 - Approved
+### 2026-01-25 - Approved
 
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-01-27 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

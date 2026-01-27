@@ -1,16 +1,16 @@
 ---
-status: ready
+status: done
 priority: p2
-issue_id: "015"
+issue_id: "025"
 tags: []
 dependencies: []
 ---
 
-# Add volatile to _isHealthy flag
+# Cache roles in HttpCurrentUser to avoid repeated LINQ allocations
 
 ## Problem Statement
 
-IConsumerRegister.Default.cs:33 bool _isHealthy read/written from multiple threads without synchronization, causing visibility issues.
+HttpCurrentUser.Roles creates new ImmutableHashSet via LINQ on every access. Multiple role checks per request create unnecessary allocations. File: Framework.BuildingBlocks/Core/ClaimsPrincipalExtensions.cs lines 117-125
 
 ## Findings
 
@@ -30,7 +30,8 @@ IConsumerRegister.Default.cs:33 bool _isHealthy read/written from multiple threa
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Add volatile keyword or use Interlocked for proper thread visibility
+- [ ] Use Lazy<ImmutableHashSet<string>> for caching
+- [ ] Or cache in HttpContext.Items per request
 
 ## Notes
 
@@ -38,14 +39,14 @@ Source: Workflow automation
 
 ## Work Log
 
-### 2026-01-24 - Created
+### 2026-01-25 - Created
 
 **By:** Agent
 **Actions:**
 - Created via todo.sh create
 
-### 2026-01-25 - Approved
+### 2026-01-27 - Completed
 
-**By:** Triage Agent
+**By:** Agent
 **Actions:**
-- Status changed: pending → ready
+- Status changed: pending → done
