@@ -41,7 +41,7 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     }
 
     [Route("~/adonet/transaction")]
-    public IActionResult AdonetWithTransaction()
+    public async Task<IActionResult> AdonetWithTransaction()
     {
         using (var connection = new NpgsqlConnection(AppConstants.DbConnectionString))
         {
@@ -53,18 +53,18 @@ public class ValuesController(IOutboxPublisher producer) : Controller
                 transaction: (IDbTransaction?)transaction.DbTransaction
             );
 
-            producer.Publish("sample.kafka.postgrsql", DateTime.Now);
+            await producer.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
 
             transaction.Commit();
         }
 
-        producer.Publish("sample.kafka.postgrsql", DateTime.Now);
+        await producer.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
 
         return Ok();
     }
 
     [Route("~/ef/transaction")]
-    public IActionResult EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
+    public async Task<IActionResult> EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
     {
         using (dbContext.Database.BeginTransaction(producer, autoCommit: false))
         {
@@ -72,7 +72,7 @@ public class ValuesController(IOutboxPublisher producer) : Controller
 
             dbContext.SaveChanges();
 
-            producer.Publish("sample.kafka.postgrsql", DateTime.UtcNow);
+            await producer.PublishAsync("sample.kafka.postgrsql", DateTime.UtcNow);
 
             dbContext.Database.CommitTransaction();
         }

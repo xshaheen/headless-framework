@@ -14,7 +14,7 @@ public static class ConfigureApplicationCookiesExtensions
         {
             options.Events.OnRedirectToLogin = context =>
             {
-                context.Response.Headers[HttpHeaderNames.Locale] = context.RedirectUri;
+                context.Response.Headers[HttpHeaderNames.Location] = context.RedirectUri;
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
 
                 return Task.CompletedTask;
@@ -22,7 +22,7 @@ public static class ConfigureApplicationCookiesExtensions
 
             options.Events.OnRedirectToAccessDenied = context =>
             {
-                context.Response.Headers[HttpHeaderNames.Locale] = context.RedirectUri;
+                context.Response.Headers[HttpHeaderNames.Location] = context.RedirectUri;
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
 
                 return Task.CompletedTask;

@@ -100,13 +100,13 @@ public class ValuesController(IOutboxPublisher publisher) : Controller
     }
 
     [Route("~/ef/transaction")]
-    public IActionResult EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
+    public async Task<IActionResult> EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
     {
         using (dbContext.Database.BeginTransaction(publisher, autoCommit: true))
         {
             dbContext.Persons.Add(new Person { Name = "ef.transaction" });
             dbContext.SaveChanges();
-            publisher.Publish("sample.rabbitmq.sqlserver", new Person { Id = 123, Name = "Bar" });
+            await publisher.PublishAsync("sample.rabbitmq.sqlserver", new Person { Id = 123, Name = "Bar" });
         }
         return Ok();
     }

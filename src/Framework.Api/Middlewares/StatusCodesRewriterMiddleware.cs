@@ -10,7 +10,7 @@ public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problem
     /// <summary>Executes the middleware.</summary>
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
-        await next(context);
+        await next(context).AnyContext();
 
         var isNonError = context.Response.StatusCode is < 400 or >= 600;
 
@@ -29,21 +29,21 @@ public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problem
             case StatusCodes.Status401Unauthorized:
             {
                 var problemDetails = problemDetailsCreator.Unauthorized();
-                await Results.Problem(problemDetails).ExecuteAsync(context);
+                await Results.Problem(problemDetails).ExecuteAsync(context).AnyContext();
 
                 break;
             }
             case StatusCodes.Status403Forbidden:
             {
                 var problemDetails = problemDetailsCreator.Forbidden();
-                await Results.Problem(problemDetails).ExecuteAsync(context);
+                await Results.Problem(problemDetails).ExecuteAsync(context).AnyContext();
 
                 break;
             }
             case StatusCodes.Status404NotFound:
             {
                 var problemDetails = problemDetailsCreator.EndpointNotFound();
-                await Results.Problem(problemDetails).ExecuteAsync(context);
+                await Results.Problem(problemDetails).ExecuteAsync(context).AnyContext();
 
                 break;
             }
