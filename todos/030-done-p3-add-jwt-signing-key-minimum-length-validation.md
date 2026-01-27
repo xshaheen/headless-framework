@@ -1,16 +1,16 @@
 ---
-status: pending
+status: done
 priority: p3
-issue_id: "028"
+issue_id: "030"
 tags: []
 dependencies: []
 ---
 
-# Remove unused Primitives envelope types (YAGNI)
+# Add JWT signing key minimum length validation
 
 ## Problem Statement
 
-ValueEnvelop, OperationDescriptor, OperationsDataEnvelop, OperationsCollectionEnvelop have no consumers. Built for HATEOAS patterns never used. ~40 LOC of dead code. Files: src/Framework.Api/Primitives/
+JwtTokenFactory doesn't validate minimum key length. HMAC-SHA256 requires at least 256-bit (32 byte) keys for security. File: src/Framework.Api/Security/Jwt/IJwtTokenFactory.cs line 136
 
 ## Findings
 
@@ -30,10 +30,8 @@ ValueEnvelop, OperationDescriptor, OperationsDataEnvelop, OperationsCollectionEn
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Delete ValueEnvelop.cs
-- [ ] Delete OperationDescriptor.cs
-- [ ] Delete OperationsDataEnvelop.cs
-- [ ] Delete OperationsCollectionEnvelop.cs
+- [ ] Add key length validation in _CreateSecurityKey
+- [ ] Throw ArgumentException for keys under 32 bytes
 
 ## Notes
 

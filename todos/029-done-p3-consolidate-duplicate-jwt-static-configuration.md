@@ -1,16 +1,16 @@
 ---
-status: pending
+status: done
 priority: p3
-issue_id: "032"
+issue_id: "029"
 tags: []
 dependencies: []
 ---
 
-# Add missing CancellationToken to ParseJwtTokenAsync
+# Consolidate duplicate JWT static configuration
 
 ## Problem Statement
 
-ParseJwtTokenAsync doesn't accept CancellationToken. Token validation can involve crypto operations and should respect cancellation under load. File: src/Framework.Api/Security/Jwt/IJwtTokenFactory.cs lines 91-122
+JsonWebTokenHandler.DefaultMapInboundClaims and DefaultInboundClaimTypeMap.Clear() are set in both Setup.cs ConfigureGlobalSettings() and JwtTokenHelper._CreateHandler(). Risk of mismatch if accessed in different order. Files: Setup.cs lines 39-42, JwtTokenHelper.cs lines 13-14
 
 ## Findings
 
@@ -30,8 +30,8 @@ ParseJwtTokenAsync doesn't accept CancellationToken. Token validation can involv
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Add CancellationToken cancellationToken = default parameter
-- [ ] Pass token to ValidateTokenAsync
+- [ ] Consolidate to single initialization point
+- [ ] Document expected initialization order
 
 ## Notes
 

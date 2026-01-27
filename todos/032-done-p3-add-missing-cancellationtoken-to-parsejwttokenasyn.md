@@ -1,16 +1,16 @@
 ---
-status: pending
+status: done
 priority: p3
-issue_id: "030"
+issue_id: "032"
 tags: []
 dependencies: []
 ---
 
-# Add JWT signing key minimum length validation
+# Add missing CancellationToken to ParseJwtTokenAsync
 
 ## Problem Statement
 
-JwtTokenFactory doesn't validate minimum key length. HMAC-SHA256 requires at least 256-bit (32 byte) keys for security. File: src/Framework.Api/Security/Jwt/IJwtTokenFactory.cs line 136
+ParseJwtTokenAsync doesn't accept CancellationToken. Token validation can involve crypto operations and should respect cancellation under load. File: src/Framework.Api/Security/Jwt/IJwtTokenFactory.cs lines 91-122
 
 ## Findings
 
@@ -30,8 +30,8 @@ JwtTokenFactory doesn't validate minimum key length. HMAC-SHA256 requires at lea
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Add key length validation in _CreateSecurityKey
-- [ ] Throw ArgumentException for keys under 32 bytes
+- [ ] Add CancellationToken cancellationToken = default parameter
+- [ ] Pass token to ValidateTokenAsync
 
 ## Notes
 

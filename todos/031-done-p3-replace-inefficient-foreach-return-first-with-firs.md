@@ -1,16 +1,16 @@
 ---
-status: pending
+status: done
 priority: p3
-issue_id: "029"
+issue_id: "031"
 tags: []
 dependencies: []
 ---
 
-# Consolidate duplicate JWT static configuration
+# Replace inefficient foreach-return-first with FirstOrDefault
 
 ## Problem Statement
 
-JsonWebTokenHandler.DefaultMapInboundClaims and DefaultInboundClaimTypeMap.Clear() are set in both Setup.cs ConfigureGlobalSettings() and JwtTokenHelper._CreateHandler(). Risk of mismatch if accessed in different order. Files: Setup.cs lines 39-42, JwtTokenHelper.cs lines 13-14
+HttpContextExtensions.GetUserAgent uses foreach that returns on first iteration. Same pattern in GetCorrelationId. Unusual and less readable. File: src/Framework.Api/Extensions/Http/HttpContextExtensions.cs lines 140-150
 
 ## Findings
 
@@ -30,8 +30,7 @@ JsonWebTokenHandler.DefaultMapInboundClaims and DefaultInboundClaimTypeMap.Clear
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [ ] Consolidate to single initialization point
-- [ ] Document expected initialization order
+- [ ] Use .FirstOrDefault() instead of foreach
 
 ## Notes
 

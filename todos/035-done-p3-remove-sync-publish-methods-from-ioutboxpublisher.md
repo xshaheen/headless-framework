@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p3
 issue_id: "035"
 tags: [yagni, api-surface, breaking-change]
