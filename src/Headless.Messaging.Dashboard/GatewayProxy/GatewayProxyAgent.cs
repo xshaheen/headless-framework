@@ -95,7 +95,7 @@ public class GatewayProxyAgent(
 
                 var response = await requester.GetResponse(DownstreamRequest);
 
-                await SetResponseOnHttpContext(context, response);
+                await _SetResponseOnHttpContext(context, response);
 
                 return true;
             }
@@ -112,7 +112,7 @@ public class GatewayProxyAgent(
         return false;
     }
 
-    private async Task SetResponseOnHttpContext(HttpContext context, HttpResponseMessage response)
+    private static async Task _SetResponseOnHttpContext(HttpContext context, HttpResponseMessage response)
     {
         foreach (var httpResponseHeader in response.Content.Headers)
         {
@@ -123,7 +123,10 @@ public class GatewayProxyAgent(
 
         _AddHeaderIfDoesntExist(
             context,
-            new KeyValuePair<string, IEnumerable<string>>("Content-Length", [content.Length.ToString()])
+            new KeyValuePair<string, IEnumerable<string>>(
+                "Content-Length",
+                [content.Length.ToString(CultureInfo.InvariantCulture)]
+            )
         );
 
         context.Response.OnStarting(

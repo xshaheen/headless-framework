@@ -34,9 +34,11 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
         foreach (var item in groupedCandidates)
         {
-            Entries.TryAdd(item.Key, item.ToList());
-            // Note: GroupConcurrent is no longer tracked per consumer, defaults to 1
-            GroupConcurrent.TryAdd(item.Key, 1);
+            var candidates = item.ToList();
+            Entries.TryAdd(item.Key, candidates);
+            // Use the maximum concurrency among all consumers in the same group
+            var maxConcurrency = candidates.Max(c => c.Concurrency);
+            GroupConcurrent.TryAdd(item.Key, maxConcurrency);
         }
 
         return Entries;

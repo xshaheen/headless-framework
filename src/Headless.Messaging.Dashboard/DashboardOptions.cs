@@ -25,7 +25,7 @@ public class DashboardOptions
     /// <summary>
     /// Explicitly allows anonymous access for the messaging dashboard API, passing AllowAnonymous to the ASP.NET Core global authorization filter.
     /// </summary>
-    public bool AllowAnonymousExplicit { get; set; } = true;
+    public bool AllowAnonymousExplicit { get; set; } = false;
 
     /// <summary>
     /// Authorization policy for the Dashboard. Required if <see cref="AllowAnonymousExplicit"/> is false.

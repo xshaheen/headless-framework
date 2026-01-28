@@ -93,26 +93,6 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
         await PublishDelayAsync(delayTime, name, value, header, cancellationToken).AnyContext();
     }
 
-    public void Publish<T>(string name, T? value, string? callbackName = null)
-    {
-        PublishAsync(name, value, callbackName).AnyContext().GetAwaiter().GetResult();
-    }
-
-    public void Publish<T>(string name, T? value, IDictionary<string, string?> headers)
-    {
-        PublishAsync(name, value, headers).AnyContext().GetAwaiter().GetResult();
-    }
-
-    public void PublishDelay<T>(TimeSpan delayTime, string name, T? value, IDictionary<string, string?> headers)
-    {
-        PublishDelayAsync(delayTime, name, value, headers).AnyContext().GetAwaiter().GetResult();
-    }
-
-    public void PublishDelay<T>(TimeSpan delayTime, string name, T? value, string? callbackName = null)
-    {
-        PublishDelayAsync(delayTime, name, value, callbackName).AnyContext().GetAwaiter().GetResult();
-    }
-
     public Task PublishAsync<T>(
         T? contentObj,
         string? callbackName = null,
@@ -133,20 +113,6 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     {
         var topicName = _GetTopicNameFromMapping<T>();
         return PublishAsync(topicName, contentObj, headers, cancellationToken);
-    }
-
-    public void Publish<T>(T? contentObj, string? callbackName = null)
-        where T : class
-    {
-        var topicName = _GetTopicNameFromMapping<T>();
-        Publish(topicName, contentObj, callbackName);
-    }
-
-    public void Publish<T>(T? contentObj, IDictionary<string, string?> headers)
-        where T : class
-    {
-        var topicName = _GetTopicNameFromMapping<T>();
-        Publish(topicName, contentObj, headers);
     }
 
     public Task PublishDelayAsync<T>(
@@ -171,20 +137,6 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     {
         var topicName = _GetTopicNameFromMapping<T>();
         return PublishDelayAsync(delayTime, topicName, contentObj, callbackName, cancellationToken);
-    }
-
-    public void PublishDelay<T>(TimeSpan delayTime, T? contentObj, IDictionary<string, string?> headers)
-        where T : class
-    {
-        var topicName = _GetTopicNameFromMapping<T>();
-        PublishDelay(delayTime, topicName, contentObj, headers);
-    }
-
-    public void PublishDelay<T>(TimeSpan delayTime, T? contentObj, string? callbackName = null)
-        where T : class
-    {
-        var topicName = _GetTopicNameFromMapping<T>();
-        PublishDelay(delayTime, topicName, contentObj, callbackName);
     }
 
     private string _GetTopicNameFromMapping<T>()

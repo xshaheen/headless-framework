@@ -52,6 +52,15 @@ public sealed class HttpAbsoluteUrlFactory(IHttpContextAccessor accessor) : IAbs
             }
 
             var split = value.Split(_Separator, StringSplitOptions.RemoveEmptyEntries);
+
+            if (split.Length < 2)
+            {
+                throw new ArgumentException(
+                    "Origin must contain a scheme and host separated by '://' (e.g., 'https://example.com').",
+                    nameof(value)
+                );
+            }
+
             var request = accessor.HttpContext.Request;
             request.Scheme = split[0];
             request.Host = new HostString(split[^1]);

@@ -10,11 +10,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-public class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> logger, IDispatcher dispatcher) : IProcessor
+public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> logger, IDispatcher dispatcher)
+    : IProcessor
 {
     private readonly TimeSpan _waitingInterval = TimeSpan.FromSeconds(60);
 
-    public virtual async Task ProcessAsync(ProcessingContext context)
+    public async Task ProcessAsync(ProcessingContext context)
     {
         Argument.IsNotNull(context);
 

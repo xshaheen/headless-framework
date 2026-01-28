@@ -12,7 +12,6 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
     private readonly TimeSpan _initialDelay;
     private readonly TimeSpan _maxDelay;
     private readonly double _backoffMultiplier;
-    private readonly Random _random = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ExponentialBackoffStrategy"/> class.
@@ -46,7 +45,7 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
         var delayMs = Math.Min(exponentialDelay, _maxDelay.TotalMilliseconds);
 
         // Add jitter (±25% randomization to prevent thundering herd)
-        var jitter = ((_random.NextDouble() * 0.5) - 0.25) * delayMs;
+        var jitter = ((Random.Shared.NextDouble() * 0.5) - 0.25) * delayMs;
         var finalDelayMs = Math.Max(0, delayMs + jitter);
 
         return TimeSpan.FromMilliseconds(finalDelayMs);

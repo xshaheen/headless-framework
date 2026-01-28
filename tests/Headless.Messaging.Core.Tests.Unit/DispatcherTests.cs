@@ -32,7 +32,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
 
         using var cts = new CancellationTokenSource();
         const string messageId = "testId";
@@ -62,7 +62,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -99,7 +99,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -146,7 +146,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -184,7 +184,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -232,7 +232,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -262,7 +262,7 @@ public sealed class DispatcherTests : TestBase
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = true, PublishBatchSize = 50 });
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable
@@ -294,7 +294,7 @@ public sealed class DispatcherTests : TestBase
             new MessagingOptions { EnablePublishParallelSend = true } // Auto-calculate batch size
         );
 
-        using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable

@@ -274,6 +274,7 @@ public sealed class PostgreSqlDataStorage(
                 mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
             ),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
+            new NpgsqlParameter("@MessageId", message.GetId()),
         ];
 
         await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
@@ -329,19 +330,23 @@ public sealed class PostgreSqlDataStorage(
 
     public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
-        var sql = $"""DELETE FROM {_recName} WHERE "Id"={id.ToString(CultureInfo.InvariantCulture)}""";
+        var sql = $"""DELETE FROM {_recName} WHERE "Id"=@Id""";
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var result = await connection.ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken);
+        var result = await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new NpgsqlParameter("@Id", id))
+            .AnyContext();
         return result;
     }
 
     public async ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
-        var sql = $"""DELETE FROM {_pubName} WHERE "Id"={id.ToString(CultureInfo.InvariantCulture)}""";
+        var sql = $"""DELETE FROM {_pubName} WHERE "Id"=@Id""";
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        var result = await connection.ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken);
+        var result = await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new NpgsqlParameter("@Id", id))
+            .AnyContext();
         return result;
     }
 
@@ -442,9 +447,15 @@ public sealed class PostgreSqlDataStorage(
 
     private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
     {
-        var sql =
-            $"INSERT INTO {_recName}(\"Id\",\"Version\",\"Name\",\"Group\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"StatusName\")"
-            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName) RETURNING \"Id\";";
+        var sql = $"""
+            INSERT INTO {_recName}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
+            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId)
+            ON CONFLICT ("MessageId","Group") DO UPDATE SET
+                "StatusName"=EXCLUDED."StatusName",
+                "Retries"=EXCLUDED."Retries",
+                "ExpiresAt"=EXCLUDED."ExpiresAt",
+                "Content"=EXCLUDED."Content";
+            """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
@@ -462,7 +473,7 @@ public sealed class PostgreSqlDataStorage(
         var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
         var sql =
             $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\" FROM {tableName} WHERE \"Retries\"<@Retries "
-            + $"AND \"Version\"=@Version AND \"Added\"<@Added AND \"StatusName\" IN ('{nameof(StatusName.Failed)}','{nameof(StatusName.Scheduled)}') LIMIT {_RetryBatchSize};";
+            + $"AND \"Version\"=@Version AND \"Added\"<@Added AND \"StatusName\" IN ('{nameof(StatusName.Failed)}','{nameof(StatusName.Scheduled)}') LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
 
         object[] sqlParams =
         [

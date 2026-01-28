@@ -165,15 +165,14 @@ internal class CircularBuffer<T> : ICollection<T>
     public void CopyTo(T[] array, int arrayIndex)
     {
         Argument.IsNotNull(array);
-
-        if (arrayIndex < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(arrayIndex));
-        }
+        Argument.IsPositiveOrZero(arrayIndex);
 
         if (Count > array.Length - arrayIndex)
         {
-            throw new ArgumentException("arrayIndex");
+            throw new ArgumentException(
+                @"The number of elements in the source CircularBuffer<T> is greater than the available space from arrayIndex to the end of the destination array.",
+                nameof(arrayIndex)
+            );
         }
 
         // Iterate through the buffer in correct order.

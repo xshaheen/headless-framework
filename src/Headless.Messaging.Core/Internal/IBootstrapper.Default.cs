@@ -52,7 +52,7 @@ internal sealed class Bootstrapper(
             {
                 try
                 {
-                    item.Dispose();
+                    item.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
                 catch (OperationCanceledException ex)
                 {

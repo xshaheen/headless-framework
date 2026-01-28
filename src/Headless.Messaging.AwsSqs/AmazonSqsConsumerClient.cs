@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Amazon.Auth.AccessControlPolicy;
 using Amazon.SimpleNotificationService;
@@ -20,7 +20,7 @@ internal sealed class AmazonSqsConsumerClient(
     ILogger<AmazonSqsConsumerClient> logger
 ) : IConsumerClient
 {
-    private static readonly Lock _ConnectionLock = new();
+    private readonly Lock _connectionLock = new();
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
@@ -69,87 +69,38 @@ internal sealed class AmazonSqsConsumerClient(
     {
         await _ConnectAsync().AnyContext();
 
-        var request = new ReceiveMessageRequest(_queueUrl) { WaitTimeSeconds = 5, MaxNumberOfMessages = 1 };
+        var request = new ReceiveMessageRequest(_queueUrl) { WaitTimeSeconds = 5, MaxNumberOfMessages = 10 };
 
         while (true)
         {
             var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).AnyContext();
 
-            if (response.Messages.Count == 1)
+            if (response.Messages.Count > 0)
             {
-                if (groupConcurrent > 0)
+                foreach (var sqsMessage in response.Messages)
                 {
-                    await _semaphore.WaitAsync(cancellationToken).AnyContext();
-                    _ = Task.Run(
-                            async () =>
-                            {
-                                try
+                    if (groupConcurrent > 0)
+                    {
+                        await _semaphore.WaitAsync(cancellationToken).AnyContext();
+                        _ = Task.Run(
+                                async () =>
                                 {
-                                    await consumeAsync().AnyContext();
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
-                                    _semaphore.Release();
-
                                     try
                                     {
-                                        await RejectAsync(response.Messages[0].ReceiptHandle).AnyContext();
+                                        await consumeAsync(sqsMessage).AnyContext();
                                     }
-                                    catch (Exception rejectEx)
+                                    catch (Exception ex)
                                     {
-                                        _logger.LogError(
-                                            rejectEx,
-                                            "Failed to reject message after consume error for group {GroupId}",
-                                            groupId
-                                        );
+                                        _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
                                     }
-                                }
-                            },
-                            cancellationToken
-                        )
-                        .AnyContext();
-                }
-                else
-                {
-                    await consumeAsync().AnyContext();
-                }
-
-                async Task consumeAsync()
-                {
-                    var receiptHandle = response.Messages[0].ReceiptHandle;
-
-                    try
-                    {
-                        var messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(response.Messages[0].Body);
-
-                        if (messageObj?.MessageAttributes == null)
-                        {
-                            _logger.LogError(
-                                "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
-                            );
-                            await RejectAsync(receiptHandle).AnyContext();
-                            return;
-                        }
-
-                        var header = messageObj.MessageAttributes.ToDictionary<
-                            KeyValuePair<string, SqsReceivedMessageAttributes>,
-                            string,
-                            string?
-                        >(x => x.Key, x => x.Value?.Value ?? string.Empty, StringComparer.Ordinal);
-                        var body = messageObj.Message;
-
-                        var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
-                        {
-                            Headers = { [Headers.Group] = groupId },
-                        };
-
-                        await OnMessageCallback!(message, receiptHandle).AnyContext();
+                                },
+                                cancellationToken
+                            )
+                            .AnyContext();
                     }
-                    catch (JsonException ex)
+                    else
                     {
-                        _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
-                        await RejectAsync(receiptHandle).AnyContext();
+                        await consumeAsync(sqsMessage).AnyContext();
                     }
                 }
             }
@@ -157,6 +108,44 @@ internal sealed class AmazonSqsConsumerClient(
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 cancellationToken.WaitHandle.WaitOne(timeout);
+            }
+        }
+
+        async Task consumeAsync(Amazon.SQS.Model.Message sqsMessage)
+        {
+            var receiptHandle = sqsMessage.ReceiptHandle;
+
+            try
+            {
+                var messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(sqsMessage.Body);
+
+                if (messageObj?.MessageAttributes == null)
+                {
+                    _logger.LogError(
+                        "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
+                    );
+                    await RejectAsync(receiptHandle).AnyContext();
+                    return;
+                }
+
+                var header = messageObj.MessageAttributes.ToDictionary<
+                    KeyValuePair<string, SqsReceivedMessageAttributes>,
+                    string,
+                    string?
+                >(x => x.Key, x => x.Value?.Value ?? string.Empty, StringComparer.Ordinal);
+                var body = messageObj.Message;
+
+                var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
+                {
+                    Headers = { [Headers.Group] = groupId },
+                };
+
+                await OnMessageCallback!(message, receiptHandle).AnyContext();
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
+                await RejectAsync(receiptHandle).AnyContext();
             }
         }
     }
@@ -209,7 +198,7 @@ internal sealed class AmazonSqsConsumerClient(
         {
             if (_snsClient == null && initSns)
             {
-                lock (_ConnectionLock)
+                lock (_connectionLock)
                 {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
                     if (_sqsClient == null)
@@ -222,7 +211,7 @@ internal sealed class AmazonSqsConsumerClient(
 
             if (_sqsClient == null && initSqs)
             {
-                lock (_ConnectionLock)
+                lock (_connectionLock)
                 {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
                     _sqsClient ??= AwsClientFactory.CreateSqsClient(_amazonSqsOptions);
