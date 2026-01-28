@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Sitemaps;
 using Framework.Testing.Tests;
+using Headless.Sitemaps;
 
 namespace Tests;
 

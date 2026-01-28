@@ -2,7 +2,7 @@
 
 using System.Text.Unicode;
 
-namespace Framework.Slugs;
+namespace Headless.Slugs;
 
 public sealed class SlugOptions
 {

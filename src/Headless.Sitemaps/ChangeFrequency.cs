@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Sitemaps;
+namespace Headless.Sitemaps;
 
 /// <summary>Represents a sitemap update frequency</summary>
 public enum ChangeFrequency

@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace Framework.Slugs;
+namespace Headless.Slugs;
 
 public static class Slug
 {

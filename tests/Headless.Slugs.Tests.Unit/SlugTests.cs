@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Unicode;
-using Framework.Slugs;
+using Headless.Slugs;
 
 namespace Tests;
 
