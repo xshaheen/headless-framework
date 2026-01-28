@@ -46,10 +46,18 @@ internal static class ConstructorValidator
                         var attributeName = attributeClass.Name;
                         var fullName = attributeClass.ToDisplayString();
 
-                        return attributeName == "TickerQConstructorAttribute"
-                            || attributeName == "TickerQConstructor"
-                            || fullName == "Headless.Ticker.Utilities.TickerQConstructorAttribute"
-                            || fullName == "Headless.Ticker.Utilities.TickerQConstructor";
+                        return string.Equals(attributeName, "TickerQConstructorAttribute", StringComparison.Ordinal)
+                            || string.Equals(attributeName, "TickerQConstructor", StringComparison.Ordinal)
+                            || string.Equals(
+                                fullName,
+                                "Headless.Ticker.Base.TickerQConstructorAttribute",
+                                StringComparison.Ordinal
+                            )
+                            || string.Equals(
+                                fullName,
+                                "Headless.Ticker.Base.TickerQConstructor",
+                                StringComparison.Ordinal
+                            );
                     });
 
                 if (hasTickerQAttribute)

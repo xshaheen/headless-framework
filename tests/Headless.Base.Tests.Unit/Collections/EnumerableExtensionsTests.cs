@@ -288,7 +288,11 @@ public sealed class EnumerableExtensionsTests
     public void as_dictionary_should_convert_idictionary_to_dictionary()
     {
         // given
-        IDictionary<string, int> source = new SortedDictionary<string, int>(StringComparer.Ordinal) { { "a", 1 }, { "b", 2 } };
+        IDictionary<string, int> source = new SortedDictionary<string, int>(StringComparer.Ordinal)
+        {
+            { "a", 1 },
+            { "b", 2 },
+        };
 
         // when
         var result = source.AsDictionary();
@@ -521,7 +525,6 @@ public sealed class EnumerableExtensionsTests
         var act = () => once.ToList(); // second enumeration
 
         // then
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*already enumerated*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already enumerated*");
     }
 }

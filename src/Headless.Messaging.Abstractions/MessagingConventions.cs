@@ -52,7 +52,11 @@ public sealed partial class MessagingConventions
         return string.IsNullOrEmpty(value) ? value : _KebabCaseRegex().Replace(value, "-${m}").ToLowerInvariant();
     }
 
-    [GeneratedRegex("(?<!^)(?<m>[A-Z][a-z]|(?<=[a-z])[A-Z])", RegexOptions.Compiled | RegexOptions.ExplicitCapture, 100)]
+    [GeneratedRegex(
+        "(?<!^)(?<m>[A-Z][a-z]|(?<=[a-z])[A-Z])",
+        RegexOptions.Compiled | RegexOptions.ExplicitCapture,
+        100
+    )]
     private static partial Regex _KebabCaseRegex();
 }
 

@@ -54,9 +54,7 @@ public sealed class AzureServiceBusConsumerClientTests
     public async Task should_have_correct_broker_address_from_namespace()
     {
         // given
-        var options = Options.Create(
-            new AzureServiceBusOptions { Namespace = "sb://custom.servicebus.windows.net/" }
-        );
+        var options = Options.Create(new AzureServiceBusOptions { Namespace = "sb://custom.servicebus.windows.net/" });
 
         // when
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, options, _serviceProvider);

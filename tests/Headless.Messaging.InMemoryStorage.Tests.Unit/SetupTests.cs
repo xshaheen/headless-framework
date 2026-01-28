@@ -20,7 +20,10 @@ public sealed class SetupTests : TestBase
         services.AddOptions<MessagingOptions>();
 
         // when
-        services.AddMessages(options => { options.UseInMemoryStorage(); });
+        services.AddMessages(options =>
+        {
+            options.UseInMemoryStorage();
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -37,7 +40,10 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options => { options.UseInMemoryStorage(); });
+        services.AddMessages(options =>
+        {
+            options.UseInMemoryStorage();
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -68,7 +74,10 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options => { options.UseInMemoryStorage(); });
+        services.AddMessages(options =>
+        {
+            options.UseInMemoryStorage();
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -87,7 +96,10 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options => { options.UseInMemoryStorage(); });
+        services.AddMessages(options =>
+        {
+            options.UseInMemoryStorage();
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -106,7 +118,10 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options => { options.UseInMemoryStorage(); });
+        services.AddMessages(options =>
+        {
+            options.UseInMemoryStorage();
+        });
 
         var provider = services.BuildServiceProvider();
 

@@ -200,7 +200,7 @@ internal static class TickerFunctionValidator
                 var typeName = namedType2.Name;
 
                 if (
-                    (namespaceName == "Headless.Ticker.Utilities" || namespaceName == "Headless.Ticker.Utilities.Base")
+                    (namespaceName == "Headless.Ticker" || namespaceName == "Headless.Ticker.Base")
                     && typeName == "TickerFunctionContext"
                 )
                 {

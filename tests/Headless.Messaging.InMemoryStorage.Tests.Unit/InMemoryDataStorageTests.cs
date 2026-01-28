@@ -18,7 +18,9 @@ public sealed class InMemoryDataStorageTests : TestBase
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly ISerializer _serializer = Substitute.For<ISerializer>();
     private readonly ILongIdGenerator _idGenerator = Substitute.For<ILongIdGenerator>();
-    private readonly IOptions<MessagingOptions> _options = Options.Create(new MessagingOptions { FailedRetryCount = 3 });
+    private readonly IOptions<MessagingOptions> _options = Options.Create(
+        new MessagingOptions { FailedRetryCount = 3 }
+    );
     private readonly InMemoryDataStorage _sut;
     private long _idCounter = 1000;
 
@@ -234,8 +236,12 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.StoreMessageAsync("topic", _CreateMessage("expired-1"), cancellationToken: AbortToken);
         await _sut.StoreMessageAsync("topic", _CreateMessage("not-expired"), cancellationToken: AbortToken);
 
-        InMemoryDataStorage.PublishedMessages["expired-1"].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
-        InMemoryDataStorage.PublishedMessages["not-expired"].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        InMemoryDataStorage.PublishedMessages["expired-1"].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddHours(-1);
+        InMemoryDataStorage.PublishedMessages["not-expired"].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddHours(1);
 
         // when
         var deleted = await _sut.DeleteExpiresAsync(
@@ -256,7 +262,12 @@ public sealed class InMemoryDataStorageTests : TestBase
     {
         // given
         var msg1 = await _sut.StoreReceivedMessageAsync("topic", "group", _CreateMessage("recv-expired"), AbortToken);
-        var msg2 = await _sut.StoreReceivedMessageAsync("topic", "group", _CreateMessage("recv-not-expired"), AbortToken);
+        var msg2 = await _sut.StoreReceivedMessageAsync(
+            "topic",
+            "group",
+            _CreateMessage("recv-not-expired"),
+            AbortToken
+        );
 
         InMemoryDataStorage.ReceivedMessages[msg1.DbId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
         InMemoryDataStorage.ReceivedMessages[msg2.DbId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
@@ -281,8 +292,14 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         for (var i = 0; i < 10; i++)
         {
-            var msg = await _sut.StoreMessageAsync("topic", _CreateMessage($"batch-{i}"), cancellationToken: AbortToken);
-            InMemoryDataStorage.PublishedMessages[msg.DbId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
+            var msg = await _sut.StoreMessageAsync(
+                "topic",
+                _CreateMessage($"batch-{i}"),
+                cancellationToken: AbortToken
+            );
+            InMemoryDataStorage.PublishedMessages[msg.DbId].ExpiresAt = _timeProvider
+                .GetUtcNow()
+                .UtcDateTime.AddHours(-1);
         }
 
         // when
@@ -345,7 +362,9 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var msg = await _sut.StoreMessageAsync("topic", _CreateMessage("delayed-msg"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(msg, StatusName.Delayed, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["delayed-msg"].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1);
+        InMemoryDataStorage.PublishedMessages["delayed-msg"].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddMinutes(1);
 
         var scheduledMessages = new List<MediumMessage>();
 
@@ -369,7 +388,9 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var msg = await _sut.StoreMessageAsync("topic", _CreateMessage("queued-msg"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(msg, StatusName.Queued, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["queued-msg"].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-2);
+        InMemoryDataStorage.PublishedMessages["queued-msg"].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddMinutes(-2);
 
         var scheduledMessages = new List<MediumMessage>();
 
@@ -403,15 +424,16 @@ public sealed class InMemoryDataStorageTests : TestBase
     {
         // given
         var messageCount = 100;
-        var messages = Enumerable.Range(0, messageCount)
-            .Select(i => _CreateMessage($"concurrent-{i}"))
-            .ToList();
+        var messages = Enumerable.Range(0, messageCount).Select(i => _CreateMessage($"concurrent-{i}")).ToList();
 
         // when
         await Parallel.ForEachAsync(
             messages,
             new ParallelOptions { MaxDegreeOfParallelism = 10 },
-            async (msg, _) => { await _sut.StoreMessageAsync("topic", msg, cancellationToken: AbortToken); }
+            async (msg, _) =>
+            {
+                await _sut.StoreMessageAsync("topic", msg, cancellationToken: AbortToken);
+            }
         );
 
         // then

@@ -1,4 +1,6 @@
+using Headless.Ticker;
 using Headless.Ticker.DbContextFactory;
+using Headless.Ticker.DependencyInjection;
 using Headless.Ticker.Entities;
 using Headless.Ticker.Interfaces.Managers;
 using Microsoft.EntityFrameworkCore;

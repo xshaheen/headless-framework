@@ -1,7 +1,8 @@
-using Demo;
 using Headless.Ticker;
 using Headless.Ticker.Base;
+using Headless.Ticker.Console.Demo;
 using Headless.Ticker.DbContextFactory;
+using Headless.Ticker.DependencyInjection;
 using Headless.Ticker.Entities;
 using Headless.Ticker.Interfaces.Managers;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Hosting;
 
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureServices(
-        (context, services) =>
+        (_, services) =>
         {
             // Configure TickerQ with SQLite operational store (file-based)
             services.AddTickerQ(options =>
@@ -19,8 +20,7 @@ var host = Host.CreateDefaultBuilder(args)
                 {
                     efOptions.UseTickerQDbContext<TickerQDbContext>(dbOptions =>
                     {
-                        SqliteDbContextOptionsBuilderExtensions.UseSqlite(
-                            dbOptions,
+                        dbOptions.UseSqlite(
                             "Data Source=tickerq-console.db",
                             b => b.MigrationsAssembly("Headless.Ticker.Sample.Console")
                         );
@@ -45,32 +45,27 @@ TickerFunctionProvider.Build();
 
 await host.RunAsync();
 
-namespace Demo
+namespace Headless.Ticker.Console.Demo
 {
     // Simple sample job
-    public class ConsoleSampleJobs
+    public static class ConsoleSampleJobs
     {
         [TickerFunction("ConsoleSample_HelloWorld")]
-        public Task HelloWorldAsync(TickerFunctionContext context, CancellationToken cancellationToken)
+        public static Task HelloWorldAsync(TickerFunctionContext context, CancellationToken cancellationToken)
         {
-            Console.WriteLine($"[Console] Hello from TickerQ! Id={context.Id}, ScheduledFor={context.ScheduledFor:O}");
+            System.Console.WriteLine(
+                $"[Console] Hello from TickerQ! Id={context.Id}, ScheduledFor={context.ScheduledFor:O}"
+            );
             return Task.CompletedTask;
         }
     }
 
     // Hosted service that schedules a single job on startup
-    public class SampleScheduler : IHostedService
+    public class SampleScheduler(ITimeTickerManager<TimeTickerEntity> timeTickerManager) : IHostedService
     {
-        private readonly ITimeTickerManager<TimeTickerEntity> _timeTickerManager;
-
-        public SampleScheduler(ITimeTickerManager<TimeTickerEntity> timeTickerManager)
-        {
-            _timeTickerManager = timeTickerManager;
-        }
-
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            var result = await _timeTickerManager.AddAsync(
+            var result = await timeTickerManager.AddAsync(
                 new TimeTickerEntity
                 {
                     Function = "ConsoleSample_HelloWorld",
@@ -81,11 +76,11 @@ namespace Demo
 
             if (!result.IsSucceeded)
             {
-                Console.WriteLine($"Failed to schedule console sample job. Exception: {result.Exception}");
+                System.Console.WriteLine($"Failed to schedule console sample job. Exception: {result.Exception}");
                 return;
             }
 
-            Console.WriteLine(
+            System.Console.WriteLine(
                 $"Scheduled console sample job with Id={result.Result.Id}, ScheduledFor={result.Result.ExecutionTime:O}"
             );
         }

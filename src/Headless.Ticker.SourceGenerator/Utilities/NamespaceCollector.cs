@@ -40,8 +40,8 @@ internal static class NamespaceCollector
         }
 
         // Always include TickerQ core namespaces
-        namespaces.Add("Headless.Ticker.Utilities");
-        namespaces.Add("Headless.Ticker.Utilities.Enums");
+        namespaces.Add("Headless.Ticker");
+        namespaces.Add("Headless.Ticker.Enums");
 
         // Add additional namespaces if provided
         if (additionalNamespaces != null)
