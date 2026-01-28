@@ -11,6 +11,6 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.FluentValidation\Framework.FluentValidation.csproj" />
+    <ProjectReference Include="..\..\src\Headless.FluentValidation\Headless.FluentValidation.csproj" />
   </ItemGroup>
 </Project>

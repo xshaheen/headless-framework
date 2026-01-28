@@ -8,7 +8,7 @@
     <PackageReference Include="FileSignatures" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
+    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\FluentValidatorErrors.resx">

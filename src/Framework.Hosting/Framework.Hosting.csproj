@@ -11,6 +11,6 @@
     <PackageReference Include="Scrutor" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
+    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
   </ItemGroup>
 </Project>
