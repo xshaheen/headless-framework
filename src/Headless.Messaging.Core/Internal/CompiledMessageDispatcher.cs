@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using FastExpressionCompiler;
-using Framework.Checks;
+using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Internal;

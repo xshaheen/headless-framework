@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
-using Framework.Testing.Tests;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using MessagingHeaders = Headless.Messaging.Messages.Headers;
@@ -59,11 +59,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -94,11 +90,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -123,15 +115,13 @@ public sealed class KafkaTransportTests : TestBase
         );
 
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns<DeliveryResult<string, byte[]>>(_ => throw new ProduceException<string, byte[]>(
-                new Error(ErrorCode.Local_MsgTimedOut, "Timed out"),
-                new DeliveryResult<string, byte[]>()
-            ));
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
+            .Returns<DeliveryResult<string, byte[]>>(_ =>
+                throw new ProduceException<string, byte[]>(
+                    new Error(ErrorCode.Local_MsgTimedOut, "Timed out"),
+                    new DeliveryResult<string, byte[]>()
+                )
+            );
 
         // when
         var result = await transport.SendAsync(message);
@@ -162,11 +152,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -203,11 +189,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -244,11 +226,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -285,11 +263,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -300,10 +274,7 @@ public sealed class KafkaTransportTests : TestBase
             .Received(1)
             .ProduceAsync(
                 Arg.Any<string>(),
-                Arg.Is<Message<string, byte[]>>(m =>
-                    m.Headers != null
-                    && m.Headers.Count == 3
-                ),
+                Arg.Is<Message<string, byte[]>>(m => m.Headers != null && m.Headers.Count == 3),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -329,11 +300,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -363,11 +330,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -397,11 +360,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when
@@ -433,11 +392,7 @@ public sealed class KafkaTransportTests : TestBase
             Topic = "TestTopic",
         };
         _producer
-            .ProduceAsync(
-                Arg.Any<string>(),
-                Arg.Any<Message<string, byte[]>>(),
-                Arg.Any<CancellationToken>()
-            )
+            .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(deliveryResult);
 
         // when

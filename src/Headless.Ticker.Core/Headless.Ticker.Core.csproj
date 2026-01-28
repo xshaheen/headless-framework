@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Ticker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Ticker.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Ticker.Abstractions\Headless.Ticker.Abstractions.csproj" />
+  </ItemGroup>
+  <Target Name="CopyAnalyzer" AfterTargets="Build">
+    <MakeDir Directories="$(OutputPath)analyzers/dotnet/cs" />
+  </Target>
+  <ItemGroup>
+    <None
+      Include="..\Headless.Ticker.SourceGenerator\bin\$(Configuration)\netstandard2.0\Headless.Ticker.SourceGenerator.dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+    />
+  </ItemGroup>
+</Project>

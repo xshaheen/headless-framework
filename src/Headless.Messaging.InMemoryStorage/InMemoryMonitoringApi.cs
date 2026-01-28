@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Primitives;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Primitives;
 
 namespace Headless.Messaging.InMemoryStorage;
 

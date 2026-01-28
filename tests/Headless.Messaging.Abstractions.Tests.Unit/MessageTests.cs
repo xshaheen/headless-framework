@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -45,8 +45,7 @@ public sealed class MessageTests : TestBase
         var act = () => new Message(null!, new { Name = "Test" });
 
         // then
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("headers");
+        act.Should().Throw<ArgumentNullException>().WithParameterName("headers");
     }
 
     [Fact]
@@ -71,10 +70,7 @@ public sealed class MessageTests : TestBase
     {
         // given
         var messageId = Faker.Random.Guid().ToString();
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.MessageId] = messageId,
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = messageId };
         var message = new Message(headers, null);
 
         // when
@@ -89,10 +85,7 @@ public sealed class MessageTests : TestBase
     {
         // given
         var messageName = "orders.placed";
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.MessageName] = messageName,
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = messageName };
         var message = new Message(headers, null);
 
         // when
@@ -107,10 +100,7 @@ public sealed class MessageTests : TestBase
     {
         // given
         var group = "order-service";
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.Group] = group,
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Group] = group };
         var message = new Message(headers, null);
 
         // when
@@ -139,10 +129,7 @@ public sealed class MessageTests : TestBase
     {
         // given
         var callbackName = "response-handler";
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.CallbackName] = callbackName,
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.CallbackName] = callbackName };
         var message = new Message(headers, null);
 
         // when
@@ -170,10 +157,7 @@ public sealed class MessageTests : TestBase
     public void should_get_correlation_sequence_from_headers()
     {
         // given
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.CorrelationSequence] = "42",
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.CorrelationSequence] = "42" };
         var message = new Message(headers, null);
 
         // when

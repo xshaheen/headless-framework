@@ -2,11 +2,11 @@
 
 using System.Text.Encodings.Web;
 using System.Text.RegularExpressions;
-using Headless.Recaptcha.Contracts;
+using Headless.ReCaptcha.Contracts;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Recaptcha.V3.TagHelpers;
+namespace Headless.ReCaptcha.V3.TagHelpers;
 
 [PublicAPI]
 [HtmlTargetElement("recaptcha-script-v3-js", TagStructure = TagStructure.WithoutEndTag)]

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -67,10 +67,11 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        var act = () => services.AddMessages(options =>
-        {
-            options.UseKafka((Action<MessagingKafkaOptions>)null!);
-        });
+        var act = () =>
+            services.AddMessages(options =>
+            {
+                options.UseKafka((Action<MessagingKafkaOptions>)null!);
+            });
 
         // then
         act.Should().Throw<ArgumentNullException>();

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Pulsar;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -59,8 +59,7 @@ public sealed class SetupTests : TestBase
         var options = new MessagingOptions();
 
         // when - verify fluent chaining works
-        var result = options
-            .UsePulsar("pulsar://localhost:6650");
+        var result = options.UsePulsar("pulsar://localhost:6650");
 
         // then
         result.Should().BeSameAs(options);

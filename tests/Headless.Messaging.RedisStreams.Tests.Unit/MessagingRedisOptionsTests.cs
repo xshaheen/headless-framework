@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.RedisStreams;
+using Headless.Testing.Tests;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -68,7 +68,10 @@ public sealed class MessagingRedisOptionsTests : TestBase
     public void should_return_endpoint_from_configuration()
     {
         // given
-        var options = new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("redis.example.com:6380") };
+        var options = new MessagingRedisOptions
+        {
+            Configuration = ConfigurationOptions.Parse("redis.example.com:6380"),
+        };
 
         // when
         var endpoint = _GetEndpoint(options);

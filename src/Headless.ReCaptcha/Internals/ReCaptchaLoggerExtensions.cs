@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Recaptcha.Contracts;
+using Headless.ReCaptcha.Contracts;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Recaptcha.Internals;
+namespace Headless.ReCaptcha.Internals;
 
 internal static partial class ReCaptchaLoggerExtensions
 {

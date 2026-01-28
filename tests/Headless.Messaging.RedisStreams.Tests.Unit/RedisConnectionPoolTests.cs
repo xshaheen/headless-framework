@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Framework.Testing.Tests;
 using Headless.Messaging.RedisStreams;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -41,7 +41,9 @@ public sealed class RedisConnectionPoolTests : TestBase
 
         // then - constructor should complete within 100ms
         // If this fails, it indicates the sync-over-async bug is present
-        stopwatch.ElapsedMilliseconds.Should().BeLessThan(100, "constructor should not block waiting for Redis connections");
+        stopwatch
+            .ElapsedMilliseconds.Should()
+            .BeLessThan(100, "constructor should not block waiting for Redis connections");
     }
 
     [Fact]

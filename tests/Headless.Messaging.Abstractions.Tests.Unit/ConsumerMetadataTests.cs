@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -57,7 +57,10 @@ public sealed class ConsumerMetadataTests : TestBase
         );
 
         // when
-        var updated = original with { Topic = "new.topic" };
+        var updated = original with
+        {
+            Topic = "new.topic",
+        };
 
         // then
         updated.Topic.Should().Be("new.topic");
@@ -80,7 +83,10 @@ public sealed class ConsumerMetadataTests : TestBase
         );
 
         // when
-        var updated = original with { Group = "new-group" };
+        var updated = original with
+        {
+            Group = "new-group",
+        };
 
         // then
         updated.Group.Should().Be("new-group");
@@ -100,7 +106,10 @@ public sealed class ConsumerMetadataTests : TestBase
         );
 
         // when
-        var updated = original with { Concurrency = 10 };
+        var updated = original with
+        {
+            Concurrency = 10,
+        };
 
         // then
         updated.Concurrency.Should().Be(10);

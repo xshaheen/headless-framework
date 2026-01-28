@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
-using Framework.Testing.Tests;
 using Headless.Messaging.Kafka;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -136,18 +136,9 @@ public sealed class KafkaConsumerClientTests : TestBase
         // given
         var customHeaders = new List<KeyValuePair<string, string>> { new("custom-key", "custom-value") };
         var optionsWithCustomHeaders = Options.Create(
-            new MessagingKafkaOptions
-            {
-                Servers = "localhost:9092",
-                CustomHeadersBuilder = (_, _) => customHeaders,
-            }
+            new MessagingKafkaOptions { Servers = "localhost:9092", CustomHeadersBuilder = (_, _) => customHeaders }
         );
-        await using var client = new KafkaConsumerClient(
-            "test-group",
-            1,
-            optionsWithCustomHeaders,
-            _serviceProvider
-        );
+        await using var client = new KafkaConsumerClient("test-group", 1, optionsWithCustomHeaders, _serviceProvider);
 
         // then
         client.Should().NotBeNull();
@@ -158,11 +149,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     {
         // given
         var options = Options.Create(
-            new MessagingKafkaOptions
-            {
-                Servers = "localhost:9092",
-                RetriableErrorCodes = [ErrorCode.Local_TimedOut],
-            }
+            new MessagingKafkaOptions { Servers = "localhost:9092", RetriableErrorCodes = [ErrorCode.Local_TimedOut] }
         );
         await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
 

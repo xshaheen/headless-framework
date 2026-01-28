@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -135,9 +135,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
                 {
                     await client1.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
                 }
-                catch (OperationCanceledException)
-                {
-                }
+                catch (OperationCanceledException) { }
             },
             AbortToken
         );
@@ -148,9 +146,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
                 {
                     await client2.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
                 }
-                catch (OperationCanceledException)
-                {
-                }
+                catch (OperationCanceledException) { }
             },
             AbortToken
         );

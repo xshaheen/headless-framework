@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
-using Microsoft.AspNetCore.Http;
+using Headless.Testing.Tests;
 
 namespace Tests.Security;
 

@@ -2,11 +2,10 @@
 
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using AwesomeAssertions;
-using Framework.Testing.Tests;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Meziantou.Extensions.Logging.Xunit.v3;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

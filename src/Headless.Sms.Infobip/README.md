@@ -1,4 +1,4 @@
-# Framework.Sms.Infobip
+# Headless.Sms.Infobip
 
 Infobip SMS gateway implementation.
 
@@ -16,7 +16,7 @@ Provides SMS sending via Infobip's global messaging platform with comprehensive 
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Infobip
+dotnet add package Headless.Sms.Infobip
 ```
 
 ## Quick Start
@@ -50,7 +50,7 @@ builder.Services.AddInfobipSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 

@@ -1,18 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Amazon.SimpleNotificationService;
-using AwesomeAssertions;
-using Framework.Testing.Tests;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Xunit;
 
 namespace Tests;
 

@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -17,10 +17,9 @@ public sealed class ConsumeContextTests : TestBase
         var correlationId = Faker.Random.Guid().ToString();
         var timestamp = DateTimeOffset.UtcNow;
         var topic = "test.topic";
-        var headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["custom-header"] = "custom-value",
-        });
+        var headers = new MessageHeader(
+            new Dictionary<string, string?>(StringComparer.Ordinal) { ["custom-header"] = "custom-value" }
+        );
 
         // when
         var context = new ConsumeContext<TestMessage>
@@ -49,19 +48,19 @@ public sealed class ConsumeContextTests : TestBase
         var message = new TestMessage("order-123", 99.99m);
 
         // when
-        var act = () => new ConsumeContext<TestMessage>
-        {
-            Message = message,
-            MessageId = null!,
-            CorrelationId = null,
-            Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-        };
+        var act = () =>
+            new ConsumeContext<TestMessage>
+            {
+                Message = message,
+                MessageId = null!,
+                CorrelationId = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Topic = "test.topic",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            };
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*MessageId cannot be null or whitespace*");
+        act.Should().Throw<ArgumentException>().WithMessage("*MessageId cannot be null or whitespace*");
     }
 
     [Fact]
@@ -71,19 +70,19 @@ public sealed class ConsumeContextTests : TestBase
         var message = new TestMessage("order-123", 99.99m);
 
         // when
-        var act = () => new ConsumeContext<TestMessage>
-        {
-            Message = message,
-            MessageId = "",
-            CorrelationId = null,
-            Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-        };
+        var act = () =>
+            new ConsumeContext<TestMessage>
+            {
+                Message = message,
+                MessageId = "",
+                CorrelationId = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Topic = "test.topic",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            };
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*MessageId cannot be null or whitespace*");
+        act.Should().Throw<ArgumentException>().WithMessage("*MessageId cannot be null or whitespace*");
     }
 
     [Fact]
@@ -93,19 +92,19 @@ public sealed class ConsumeContextTests : TestBase
         var message = new TestMessage("order-123", 99.99m);
 
         // when
-        var act = () => new ConsumeContext<TestMessage>
-        {
-            Message = message,
-            MessageId = "   ",
-            CorrelationId = null,
-            Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-        };
+        var act = () =>
+            new ConsumeContext<TestMessage>
+            {
+                Message = message,
+                MessageId = "   ",
+                CorrelationId = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Topic = "test.topic",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            };
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*MessageId cannot be null or whitespace*");
+        act.Should().Throw<ArgumentException>().WithMessage("*MessageId cannot be null or whitespace*");
     }
 
     [Fact]
@@ -136,19 +135,19 @@ public sealed class ConsumeContextTests : TestBase
         var message = new TestMessage("order-123", 99.99m);
 
         // when
-        var act = () => new ConsumeContext<TestMessage>
-        {
-            Message = message,
-            MessageId = Faker.Random.Guid().ToString(),
-            CorrelationId = "",
-            Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-        };
+        var act = () =>
+            new ConsumeContext<TestMessage>
+            {
+                Message = message,
+                MessageId = Faker.Random.Guid().ToString(),
+                CorrelationId = "",
+                Timestamp = DateTimeOffset.UtcNow,
+                Topic = "test.topic",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            };
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*CorrelationId cannot be an empty string*");
+        act.Should().Throw<ArgumentException>().WithMessage("*CorrelationId cannot be an empty string*");
     }
 
     [Fact]
@@ -158,19 +157,19 @@ public sealed class ConsumeContextTests : TestBase
         var message = new TestMessage("order-123", 99.99m);
 
         // when
-        var act = () => new ConsumeContext<TestMessage>
-        {
-            Message = message,
-            MessageId = Faker.Random.Guid().ToString(),
-            CorrelationId = "   ",
-            Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-        };
+        var act = () =>
+            new ConsumeContext<TestMessage>
+            {
+                Message = message,
+                MessageId = Faker.Random.Guid().ToString(),
+                CorrelationId = "   ",
+                Timestamp = DateTimeOffset.UtcNow,
+                Topic = "test.topic",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            };
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*CorrelationId cannot be an empty string*");
+        act.Should().Throw<ArgumentException>().WithMessage("*CorrelationId cannot be an empty string*");
     }
 
     [Fact]
@@ -193,11 +192,13 @@ public sealed class ConsumeContextTests : TestBase
     public void should_expose_headers()
     {
         // given
-        var headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["custom-header"] = "custom-value",
-            ["another-header"] = "another-value",
-        });
+        var headers = new MessageHeader(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["custom-header"] = "custom-value",
+                ["another-header"] = "another-value",
+            }
+        );
 
         // when
         var context = new ConsumeContext<TestMessage>

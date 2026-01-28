@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.K8s;
-using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -68,4 +67,3 @@ public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
         extensions.Should().ContainSingle(x => x.GetType().Name == "K8sDiscoveryOptionsExtension");
     }
 }
-

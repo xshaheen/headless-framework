@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Pulsar;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
@@ -63,11 +62,9 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     public void should_enable_client_logging_when_option_enabled()
     {
         // given
-        var options = Options.Create(new MessagingPulsarOptions
-        {
-            ServiceUrl = "pulsar://localhost:6650",
-            EnableClientLog = true,
-        });
+        var options = Options.Create(
+            new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true }
+        );
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(NullLogger.Instance);
 
@@ -82,11 +79,9 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
     public void should_not_enable_client_logging_when_option_disabled()
     {
         // given
-        var options = Options.Create(new MessagingPulsarOptions
-        {
-            ServiceUrl = "pulsar://localhost:6650",
-            EnableClientLog = false,
-        });
+        var options = Options.Create(
+            new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = false }
+        );
         var loggerFactory = Substitute.For<ILoggerFactory>();
 
         // when

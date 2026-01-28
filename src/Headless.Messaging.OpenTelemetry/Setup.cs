@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Checks;
+using Headless.Checks;
 using Headless.Messaging.OpenTelemetry;
 
 #pragma warning disable IDE0130

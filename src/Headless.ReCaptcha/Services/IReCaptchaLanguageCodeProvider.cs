@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Recaptcha.Services;
+namespace Headless.ReCaptcha.Services;
 
 public interface IReCaptchaLanguageCodeProvider
 {

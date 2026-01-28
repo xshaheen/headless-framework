@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Recaptcha.Contracts;
+namespace Headless.ReCaptcha.Contracts;
 
 public enum ReCaptchaError
 {

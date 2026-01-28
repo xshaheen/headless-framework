@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -93,11 +93,7 @@ public sealed class DashboardOptionsTests : TestBase
     public void should_allow_disabling_anonymous_access()
     {
         // given & when
-        var options = new DashboardOptions
-        {
-            AllowAnonymousExplicit = false,
-            AuthorizationPolicy = "AdminOnly",
-        };
+        var options = new DashboardOptions { AllowAnonymousExplicit = false, AuthorizationPolicy = "AdminOnly" };
 
         // then
         options.AllowAnonymousExplicit.Should().BeFalse();

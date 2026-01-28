@@ -4,9 +4,9 @@
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException - test code is verifying exception type handling
 
 using System.Collections.Concurrent;
-using Framework.Testing.Tests;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Retry;
+using Headless.Testing.Tests;
 
 namespace Tests.Retry;
 

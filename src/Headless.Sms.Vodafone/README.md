@@ -1,4 +1,4 @@
-# Framework.Sms.Vodafone
+# Headless.Sms.Vodafone
 
 Vodafone SMS gateway implementation.
 
@@ -16,7 +16,7 @@ Provides SMS sending via Vodafone's enterprise messaging API with OAuth2 authent
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Vodafone
+dotnet add package Headless.Sms.Vodafone
 ```
 
 ## Quick Start
@@ -52,7 +52,7 @@ builder.Services.AddVodafoneSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 

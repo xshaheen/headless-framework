@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -30,9 +30,7 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
         // but it verifies the factory attempts to create and connect
         var act = async () => await factory.CreateAsync("test-group", 1);
 
-        await act.Should()
-            .ThrowAsync<BrokerConnectionException>()
-            .WithMessage("*"); // Any message is fine, we just verify it wraps the exception
+        await act.Should().ThrowAsync<BrokerConnectionException>().WithMessage("*"); // Any message is fine, we just verify it wraps the exception
     }
 
     [Fact]

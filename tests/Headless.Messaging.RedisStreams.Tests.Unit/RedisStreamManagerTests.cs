@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.RedisStreams;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -47,7 +47,14 @@ public sealed class RedisStreamManagerTests : TestBase
         var entries = new NameValueEntry[] { new("key", "value") };
 
         _mockDatabase
-            .StreamAddAsync(Arg.Any<RedisKey>(), Arg.Any<NameValueEntry[]>(), Arg.Any<RedisValue?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<CommandFlags>())
+            .StreamAddAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<NameValueEntry[]>(),
+                Arg.Any<RedisValue?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CommandFlags>()
+            )
             .Returns(new RedisValue("1234567-0"));
 
         // when
@@ -64,7 +71,14 @@ public sealed class RedisStreamManagerTests : TestBase
         var entries = new NameValueEntry[] { new("headers", "{}"), new("body", "[]") };
 
         _mockDatabase
-            .StreamAddAsync(Arg.Any<RedisKey>(), Arg.Any<NameValueEntry[]>(), Arg.Any<RedisValue?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<CommandFlags>())
+            .StreamAddAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<NameValueEntry[]>(),
+                Arg.Any<RedisValue?>(),
+                Arg.Any<int?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CommandFlags>()
+            )
             .Returns(new RedisValue("1234567-0"));
 
         // when
@@ -79,19 +93,21 @@ public sealed class RedisStreamManagerTests : TestBase
     {
         // given
         _mockDatabase
-            .StreamAcknowledgeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .StreamAcknowledgeAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<CommandFlags>()
+            )
             .Returns(1L);
 
         // when
         await _sut.Ack("test-stream", "my-group", "1234567-0");
 
         // then
-        await _mockDatabase.Received(1).StreamAcknowledgeAsync(
-            "test-stream",
-            "my-group",
-            "1234567-0",
-            Arg.Any<CommandFlags>()
-        );
+        await _mockDatabase
+            .Received(1)
+            .StreamAcknowledgeAsync("test-stream", "my-group", "1234567-0", Arg.Any<CommandFlags>());
     }
 
     [Fact]
@@ -99,7 +115,12 @@ public sealed class RedisStreamManagerTests : TestBase
     {
         // given
         _mockDatabase
-            .StreamAcknowledgeAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
+            .StreamAcknowledgeAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<CommandFlags>()
+            )
             .Returns(1L);
 
         // when

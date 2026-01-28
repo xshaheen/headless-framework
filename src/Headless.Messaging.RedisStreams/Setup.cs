@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Framework.Checks;
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RedisStreams;
 using Headless.Messaging.Transport;

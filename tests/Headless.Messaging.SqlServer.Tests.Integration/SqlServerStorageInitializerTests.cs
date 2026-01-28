@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Dapper;
-using Framework.Testing.Tests;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.SqlServer;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -33,7 +33,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         schemaExists.Should().Be(1);
 
         // cleanup
-        await connection.ExecuteAsync($"DROP TABLE IF EXISTS [{customSchema}].Published; DROP TABLE IF EXISTS [{customSchema}].Received; DROP SCHEMA IF EXISTS [{customSchema}]");
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{customSchema}].Published; DROP TABLE IF EXISTS [{customSchema}].Received; DROP SCHEMA IF EXISTS [{customSchema}]"
+        );
     }
 
     [Fact]
@@ -61,7 +63,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         columns.Should().Contain(["Id", "Version", "Name", "Content", "Retries", "Added", "ExpiresAt", "StatusName"]);
 
         // cleanup
-        await connection.ExecuteAsync($"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]");
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+        );
     }
 
     [Fact]
@@ -86,10 +90,25 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             new { Schema = schema }
         );
 
-        columns.Should().Contain(["Id", "Version", "Name", "Group", "Content", "Retries", "Added", "ExpiresAt", "StatusName", "MessageId"]);
+        columns
+            .Should()
+            .Contain([
+                "Id",
+                "Version",
+                "Name",
+                "Group",
+                "Content",
+                "Retries",
+                "Added",
+                "ExpiresAt",
+                "StatusName",
+                "MessageId",
+            ]);
 
         // cleanup
-        await connection.ExecuteAsync($"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]");
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+        );
     }
 
     [Fact]
@@ -117,7 +136,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         tableExists.Should().Be(1);
 
         // cleanup
-        await connection.ExecuteAsync($"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TABLE IF EXISTS [{schema}].Lock; DROP SCHEMA IF EXISTS [{schema}]");
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TABLE IF EXISTS [{schema}].Lock; DROP SCHEMA IF EXISTS [{schema}]"
+        );
     }
 
     [Fact]
@@ -145,7 +166,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         tableExists.Should().BeNull();
 
         // cleanup
-        await connection.ExecuteAsync($"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]");
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+        );
     }
 
     [Fact]
@@ -176,7 +199,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         indexes.Should().HaveCountGreaterThanOrEqualTo(2); // At least PK + some indexes
 
         // cleanup
-        await connection.ExecuteAsync($"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]");
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+        );
     }
 
     [Fact]
@@ -205,7 +230,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         tableCount.Should().Be(2);
 
         // cleanup
-        await connection.ExecuteAsync($"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]");
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+        );
     }
 
     [Fact]

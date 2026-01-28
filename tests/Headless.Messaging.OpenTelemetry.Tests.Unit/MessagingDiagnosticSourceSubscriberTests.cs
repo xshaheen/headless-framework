@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.OpenTelemetry;
+using Headless.Testing.Tests;
 using DiagnosticListener = Headless.Messaging.OpenTelemetry.DiagnosticListener;
 
 namespace Tests;
@@ -131,11 +131,8 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
         Func<System.Diagnostics.DiagnosticListener, bool> diagnosticSourceFilter = _ => true;
 
         // when
-        var act = () => new MessagingDiagnosticSourceSubscriber(
-            handlerFactory,
-            diagnosticSourceFilter,
-            isEnabledFilter: null
-        );
+        var act = () =>
+            new MessagingDiagnosticSourceSubscriber(handlerFactory, diagnosticSourceFilter, isEnabledFilter: null);
 
         // then
         act.Should().Throw<ArgumentNullException>();

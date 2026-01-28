@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
+using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Routing;
 
 namespace Tests.Security;
 
@@ -17,11 +16,7 @@ public sealed class AuthorizationTests : TestBase
     public void should_require_auth_when_AllowAnonymous_is_false()
     {
         // given
-        var options = new DashboardOptions
-        {
-            AllowAnonymousExplicit = false,
-            AuthorizationPolicy = "AdminOnly",
-        };
+        var options = new DashboardOptions { AllowAnonymousExplicit = false, AuthorizationPolicy = "AdminOnly" };
 
         // then - options should require authorization
         options.AllowAnonymousExplicit.Should().BeFalse();
@@ -52,26 +47,22 @@ public sealed class AuthorizationTests : TestBase
         // The AllowAnonymousIf extension method should throw
         // when anonymous is not allowed but no policy is provided
         var mockBuilder = Substitute.For<IEndpointConventionBuilder>();
-        var act = () => MessagingBuilderExtension.AllowAnonymousIf(
-            mockBuilder,
-            options.AllowAnonymousExplicit,
-            options.AuthorizationPolicy
-        );
+        var act = () =>
+            MessagingBuilderExtension.AllowAnonymousIf(
+                mockBuilder,
+                options.AllowAnonymousExplicit,
+                options.AuthorizationPolicy
+            );
 
         // then
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Authorization Policy must be configured*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Authorization Policy must be configured*");
     }
 
     [Fact]
     public void should_apply_authorization_policy()
     {
         // given
-        var options = new DashboardOptions
-        {
-            AllowAnonymousExplicit = false,
-            AuthorizationPolicy = "DashboardAdmin",
-        };
+        var options = new DashboardOptions { AllowAnonymousExplicit = false, AuthorizationPolicy = "DashboardAdmin" };
 
         // then - policy should be set
         options.AuthorizationPolicy.Should().Be("DashboardAdmin");
@@ -113,8 +104,7 @@ public sealed class AuthorizationTests : TestBase
 
         var options = new DashboardOptions();
 
-        options.AllowAnonymousExplicit.Should().BeTrue(
-            "Default allows anonymous - this is a security concern");
+        options.AllowAnonymousExplicit.Should().BeTrue("Default allows anonymous - this is a security concern");
 
         // Data endpoints that are exposed:
         // - /api/published/{status} - lists published messages
@@ -138,7 +128,9 @@ public sealed class AuthorizationTests : TestBase
         // Document that the extension method signature exists with correct parameters
         var method = typeof(MessagingBuilderExtension).GetMethod(
             "AllowAnonymousIf",
-            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public
+            System.Reflection.BindingFlags.Static
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Public
         );
 
         method.Should().NotBeNull("AllowAnonymousIf extension method should exist");
@@ -161,7 +153,6 @@ public sealed class AuthorizationTests : TestBase
         // 3. Potentially cause denial of service via mass requeue
 
         var options = new DashboardOptions();
-        options.AllowAnonymousExplicit.Should().BeTrue(
-            "DANGER: Data modification endpoints are anonymous by default");
+        options.AllowAnonymousExplicit.Should().BeTrue("DANGER: Data modification endpoints are anonymous by default");
     }
 }

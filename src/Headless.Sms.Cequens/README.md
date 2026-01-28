@@ -1,4 +1,4 @@
-# Framework.Sms.Cequens
+# Headless.Sms.Cequens
 
 Cequens SMS gateway implementation.
 
@@ -16,7 +16,7 @@ Provides SMS sending via Cequens API, a regional SMS provider popular in the Mid
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Cequens
+dotnet add package Headless.Sms.Cequens
 ```
 
 ## Quick Start
@@ -50,7 +50,7 @@ builder.Services.AddCequensSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 

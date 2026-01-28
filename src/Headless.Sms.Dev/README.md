@@ -1,4 +1,4 @@
-# Framework.Sms.Dev
+# Headless.Sms.Dev
 
 Development SMS implementations for testing.
 
@@ -15,7 +15,7 @@ Provides development-only SMS senders that either log messages to a file or sile
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Dev
+dotnet add package Headless.Sms.Dev
 ```
 
 ## Quick Start
@@ -48,7 +48,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 

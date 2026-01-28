@@ -1,4 +1,4 @@
-# Framework.Sms.Abstractions
+# Headless.Sms.Abstractions
 
 Defines the unified interface for SMS sending.
 
@@ -15,7 +15,7 @@ Provides a provider-agnostic SMS sending API, enabling consistent SMS functional
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Abstractions
+dotnet add package Headless.Sms.Abstractions
 ```
 
 ## Usage

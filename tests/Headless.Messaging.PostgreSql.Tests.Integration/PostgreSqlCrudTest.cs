@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Dapper;
-using Framework.Abstractions;
-using Framework.Testing.Tests;
+using Headless.Abstractions;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.PostgreSql;
 using Headless.Messaging.Serialization;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -157,7 +157,12 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName")
             VALUES (@Id,'v1','test.topic','{}',0,@Added,@ExpiresAt,'Succeeded')
             """,
-            new { Id = id, Added = expiredTime, ExpiresAt = expiredTime }
+            new
+            {
+                Id = id,
+                Added = expiredTime,
+                ExpiresAt = expiredTime,
+            }
         );
 
         // when
@@ -212,14 +217,18 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
         var id = _longIdGenerator.Create();
-        var content =
-            "{\"Headers\":{\"msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
+        var content = "{\"Headers\":{\"msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
             INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName")
             VALUES (@Id,'v1','test.topic',@Content,0,@Added,NULL,'Failed')
             """,
-            new { Id = id, Content = content, Added = addedTime }
+            new
+            {
+                Id = id,
+                Content = content,
+                Added = addedTime,
+            }
         );
 
         // when
@@ -272,14 +281,18 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
         var id = _longIdGenerator.Create();
-        var content =
-            "{\"Headers\":{\"msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
+        var content = "{\"Headers\":{\"msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
             INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName")
             VALUES (@Id,'v1','test.topic',@Content,10,@Added,NULL,'Failed')
             """,
-            new { Id = id, Content = content, Added = addedTime }
+            new
+            {
+                Id = id,
+                Content = content,
+                Added = addedTime,
+            }
         );
 
         // when

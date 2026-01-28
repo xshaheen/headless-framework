@@ -2,7 +2,7 @@
 
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
-using Framework.Checks;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;

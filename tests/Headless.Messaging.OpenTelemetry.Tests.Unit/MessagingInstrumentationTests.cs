@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.OpenTelemetry;
+using Headless.Testing.Tests;
 using DiagnosticListener = Headless.Messaging.OpenTelemetry.DiagnosticListener;
 
 namespace Tests;

@@ -1,12 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Framework.Testing.Tests;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using NATS.Client;
 using MsOptions = Microsoft.Extensions.Options;
 
@@ -213,16 +210,20 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // CRITICAL BUG: This test documents that the handler is async void (which is bad)
         // The return type should be Task, not void, to properly handle exceptions
-        var isAsyncVoid = method!.ReturnType == typeof(void)
-            && method.GetCustomAttributes(typeof(System.Runtime.CompilerServices.AsyncStateMachineAttribute), false)
+        var isAsyncVoid =
+            method!.ReturnType == typeof(void)
+            && method
+                .GetCustomAttributes(typeof(System.Runtime.CompilerServices.AsyncStateMachineAttribute), false)
                 .Length > 0;
 
         // This assertion documents the bug - it PASSES when the bug exists
         // When the bug is fixed (method returns Task instead of void), this test should be updated
-        isAsyncVoid.Should().BeTrue(
-            "BUG DETECTED: _SubscriptionMessageHandler is async void which can crash the process on unhandled exceptions. "
-            + "This should be changed to return Task and exceptions should be handled properly."
-        );
+        isAsyncVoid
+            .Should()
+            .BeTrue(
+                "BUG DETECTED: _SubscriptionMessageHandler is async void which can crash the process on unhandled exceptions. "
+                    + "This should be changed to return Task and exceptions should be handled properly."
+            );
     }
 
     /// <summary>
@@ -240,10 +241,12 @@ public sealed class NatsConsumerClientTests : TestBase
         // then
         // CRITICAL BUG: This test documents that the lock is static (which is bad)
         // The lock should be an instance field to prevent cross-instance contention
-        lockField.Should().NotBeNull(
-            "BUG DETECTED: _ConnectionLock is static, causing cross-instance contention. "
-            + "This should be an instance field instead."
-        );
+        lockField
+            .Should()
+            .NotBeNull(
+                "BUG DETECTED: _ConnectionLock is static, causing cross-instance contention. "
+                    + "This should be an instance field instead."
+            );
 
         // Verify it's actually static
         lockField!.IsStatic.Should().BeTrue("The lock field is currently static - this is the documented bug");

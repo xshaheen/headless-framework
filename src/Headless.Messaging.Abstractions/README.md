@@ -73,8 +73,8 @@ No configuration required. This is an abstractions package. Implementations are 
 
 ## Dependencies
 
-- `Framework.Base`
-- `Framework.Checks`
+- `Headless.Base`
+- `Headless.Checks`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 

@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Recaptcha.Contracts;
-using Headless.Recaptcha.Internals;
+using Headless.ReCaptcha.Contracts;
+using Headless.ReCaptcha.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Recaptcha.V3;
+namespace Headless.ReCaptcha.V3;
 
 /// <summary>
 /// reCAPTCHA v3 returns a score for each request without user friction. The score is based

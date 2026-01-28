@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +31,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             ),
         };
 
-        _monitoringApi.GetReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
+        _monitoringApi
+            .GetReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<MediumMessage?>(message));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
@@ -56,7 +57,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     {
         // given
         const long messageId = 888;
-        _monitoringApi.GetReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
+        _monitoringApi
+            .GetReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<MediumMessage?>(null));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
@@ -152,7 +154,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         // given
         const long messageId = 789;
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
-        _dataStorage.DeleteReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
+        _dataStorage
+            .DeleteReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(1));
 
         var context = _CreateHttpContext(_dataStorage);
@@ -175,10 +178,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
     private static DefaultHttpContext _CreateHttpContext(IDataStorage dataStorage)
     {
-        var services = new ServiceCollection()
-            .AddLogging()
-            .AddSingleton(dataStorage)
-            .BuildServiceProvider();
+        var services = new ServiceCollection().AddLogging().AddSingleton(dataStorage).BuildServiceProvider();
 
         var context = new DefaultHttpContext { RequestServices = services };
         context.Response.Body = new MemoryStream();

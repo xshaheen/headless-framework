@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Net;
 using System.Reflection;
-using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
 
 namespace Headless.Messaging.Internal;

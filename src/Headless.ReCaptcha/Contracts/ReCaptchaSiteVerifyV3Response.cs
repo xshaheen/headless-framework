@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using Headless.Recaptcha.Internals;
+using Headless.ReCaptcha.Internals;
 
-namespace Headless.Recaptcha.Contracts;
+namespace Headless.ReCaptcha.Contracts;
 
 public sealed class ReCaptchaSiteVerifyV3Response
 {

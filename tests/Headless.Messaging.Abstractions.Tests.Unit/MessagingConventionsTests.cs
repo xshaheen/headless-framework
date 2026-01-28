@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -51,10 +51,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_allow_custom_prefix()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicPrefix = "my-service.",
-        };
+        var conventions = new MessagingConventions { TopicPrefix = "my-service." };
 
         // then
         conventions.TopicPrefix.Should().Be("my-service.");
@@ -64,10 +61,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_allow_custom_suffix()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicSuffix = ".v1",
-        };
+        var conventions = new MessagingConventions { TopicSuffix = ".v1" };
 
         // then
         conventions.TopicSuffix.Should().Be(".v1");
@@ -77,10 +71,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_allow_custom_default_group()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            DefaultGroup = "my-consumer-group",
-        };
+        var conventions = new MessagingConventions { DefaultGroup = "my-consumer-group" };
 
         // then
         conventions.DefaultGroup.Should().Be("my-consumer-group");
@@ -90,10 +81,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_generate_topic_name_using_type_name_convention()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicNaming = TopicNamingConvention.TypeName,
-        };
+        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.TypeName };
 
         // when
         var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
@@ -106,10 +94,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_generate_topic_name_using_kebab_case_convention()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicNaming = TopicNamingConvention.KebabCase,
-        };
+        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
 
         // when
         var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
@@ -194,10 +179,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_handle_single_word_type_name_in_kebab_case()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicNaming = TopicNamingConvention.KebabCase,
-        };
+        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
 
         // when
         var topicName = conventions.GetTopicName(typeof(Order));
@@ -210,10 +192,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_handle_consecutive_uppercase_in_kebab_case()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicNaming = TopicNamingConvention.KebabCase,
-        };
+        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
 
         // when
         var topicName = conventions.GetTopicName(typeof(XMLParser));
@@ -228,10 +207,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_handle_numbers_in_type_name()
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicNaming = TopicNamingConvention.KebabCase,
-        };
+        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
 
         // when
         var topicName = conventions.GetTopicName(typeof(Order123Event));
@@ -248,10 +224,7 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_set_topic_naming_convention(TopicNamingConvention convention)
     {
         // given
-        var conventions = new MessagingConventions
-        {
-            TopicNaming = convention,
-        };
+        var conventions = new MessagingConventions { TopicNaming = convention };
 
         // then
         conventions.TopicNaming.Should().Be(convention);

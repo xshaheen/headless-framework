@@ -12,7 +12,7 @@
     <PackageReference Include="FastExpressionCompiler" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>

@@ -2,7 +2,7 @@
 
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Framework.Checks;
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

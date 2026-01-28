@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Recaptcha.Internals;
+namespace Headless.ReCaptcha.Internals;
 
 internal static class StringExtensions
 {

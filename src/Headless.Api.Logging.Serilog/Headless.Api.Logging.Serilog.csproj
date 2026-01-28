@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Logging</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Serilog.Enrichers.ClientInfo" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
+  </ItemGroup>
+</Project>

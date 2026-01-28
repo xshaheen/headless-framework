@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
-using Framework.Checks;
+using Headless.Checks;
 
 namespace Headless.Messaging.RabbitMq;
 

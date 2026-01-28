@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OData" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
+  </ItemGroup>
+</Project>

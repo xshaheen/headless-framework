@@ -3,14 +3,14 @@
 using System.Reflection;
 using Amazon.SQS;
 using Amazon.SQS.Model;
-using Framework.Testing.Tests;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
-using SqsMessage = Amazon.SQS.Model.Message;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
+using SqsMessage = Amazon.SQS.Model.Message;
 
 namespace Tests;
 
@@ -518,15 +518,13 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(
-                _ =>
-                {
-                    Interlocked.Increment(ref receiveCallCount);
-                    return receiveCallCount <= 1
-                        ? Task.FromResult(receiveResponse)
-                        : Task.FromResult(new ReceiveMessageResponse { Messages = [] });
-                }
-            );
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref receiveCallCount);
+                return receiveCallCount <= 1
+                    ? Task.FromResult(receiveResponse)
+                    : Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
@@ -605,7 +603,9 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await client.CommitAsync(receiptHandle);
 
         // then
-        await sqsClient.Received(1).DeleteMessageAsync("http://test-queue", receiptHandle, Arg.Any<CancellationToken>());
+        await sqsClient
+            .Received(1)
+            .DeleteMessageAsync("http://test-queue", receiptHandle, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -635,7 +635,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         const int concurrencyLimit = 2;
-        await using var client = new AmazonSqsConsumerClient("test-group", (byte)concurrencyLimit, _CreateOptions(), logger);
+        await using var client = new AmazonSqsConsumerClient(
+            "test-group",
+            (byte)concurrencyLimit,
+            _CreateOptions(),
+            logger
+        );
 
         var semaphore = _GetSemaphore(client);
         var activeTasks = 0;
@@ -674,34 +679,32 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var receiveCount = 0;
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(
-                _ =>
+            .Returns(_ =>
+            {
+                var count = Interlocked.Increment(ref receiveCount);
+                if (count <= 4)
                 {
-                    var count = Interlocked.Increment(ref receiveCount);
-                    if (count <= 4)
-                    {
-                        return Task.FromResult(
-                            new ReceiveMessageResponse
-                            {
-                                Messages =
-                                [
-                                    new SqsMessage
+                    return Task.FromResult(
+                        new ReceiveMessageResponse
+                        {
+                            Messages =
+                            [
+                                new SqsMessage
+                                {
+                                    Body = """
                                     {
-                                        Body = """
-                                            {
-                                                "Message": "test",
-                                                "MessageAttributes": { "key": { "Value": "value" } }
-                                            }
-                                            """,
-                                        ReceiptHandle = $"receipt-{count}",
-                                    },
-                                ],
-                            }
-                        );
-                    }
-                    return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+                                        "Message": "test",
+                                        "MessageAttributes": { "key": { "Value": "value" } }
+                                    }
+                                    """,
+                                    ReceiptHandle = $"receipt-{count}",
+                                },
+                            ],
+                        }
+                    );
                 }
-            );
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
@@ -759,7 +762,10 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // then - verify long polling is configured with WaitTimeSeconds = 5
         await sqsClient
             .Received()
-            .ReceiveMessageAsync(Arg.Is<ReceiveMessageRequest>(r => r.WaitTimeSeconds == 5), Arg.Any<CancellationToken>());
+            .ReceiveMessageAsync(
+                Arg.Is<ReceiveMessageRequest>(r => r.WaitTimeSeconds == 5),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -817,14 +823,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(
-                callInfo =>
-                {
-                    var ct = callInfo.ArgAt<CancellationToken>(1);
-                    ct.ThrowIfCancellationRequested();
-                    return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
-                }
-            );
+            .Returns(callInfo =>
+            {
+                var ct = callInfo.ArgAt<CancellationToken>(1);
+                ct.ThrowIfCancellationRequested();
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
@@ -945,24 +949,22 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var receiveCount = 0;
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(
-                _ =>
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
                 {
-                    if (Interlocked.Increment(ref receiveCount) == 1)
-                    {
-                        return Task.FromResult(
-                            new ReceiveMessageResponse
-                            {
-                                Messages =
-                                [
-                                    new SqsMessage { Body = "not valid json {{{", ReceiptHandle = "receipt-json-error" },
-                                ],
-                            }
-                        );
-                    }
-                    return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+                    return Task.FromResult(
+                        new ReceiveMessageResponse
+                        {
+                            Messages =
+                            [
+                                new SqsMessage { Body = "not valid json {{{", ReceiptHandle = "receipt-json-error" },
+                            ],
+                        }
+                    );
                 }
-            );
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
@@ -1016,36 +1018,34 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var receiveCount = 0;
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(
-                _ =>
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
                 {
-                    if (Interlocked.Increment(ref receiveCount) == 1)
-                    {
-                        return Task.FromResult(
-                            new ReceiveMessageResponse
-                            {
-                                Messages =
-                                [
-                                    new SqsMessage
+                    return Task.FromResult(
+                        new ReceiveMessageResponse
+                        {
+                            Messages =
+                            [
+                                new SqsMessage
+                                {
+                                    Body = """
                                     {
-                                        Body = """
-                                            {
-                                                "Message": "test body content",
-                                                "MessageAttributes": {
-                                                    "headless-msg-id": { "Value": "msg-123" },
-                                                    "headless-msg-name": { "Value": "TestEvent" }
-                                                }
-                                            }
-                                            """,
-                                        ReceiptHandle = "receipt-header-test",
-                                    },
-                                ],
-                            }
-                        );
-                    }
-                    return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+                                        "Message": "test body content",
+                                        "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-123" },
+                                            "headless-msg-name": { "Value": "TestEvent" }
+                                        }
+                                    }
+                                    """,
+                                    ReceiptHandle = "receipt-header-test",
+                                },
+                            ],
+                        }
+                    );
                 }
-            );
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 

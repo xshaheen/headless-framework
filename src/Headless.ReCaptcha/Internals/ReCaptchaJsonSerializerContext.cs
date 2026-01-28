@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Recaptcha.Contracts;
+using Headless.ReCaptcha.Contracts;
 
-namespace Headless.Recaptcha.Internals;
+namespace Headless.ReCaptcha.Internals;
 
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(ReCaptchaSiteVerifyV2Response))]

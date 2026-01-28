@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 using System.Reflection;
-using Framework.Checks;
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;

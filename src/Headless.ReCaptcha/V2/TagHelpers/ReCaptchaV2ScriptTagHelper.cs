@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Recaptcha.Contracts;
-using Headless.Recaptcha.Internals;
-using Headless.Recaptcha.Services;
+using Headless.ReCaptcha.Contracts;
+using Headless.ReCaptcha.Internals;
+using Headless.ReCaptcha.Services;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Recaptcha.V2.TagHelpers;
+namespace Headless.ReCaptcha.V2.TagHelpers;
 
 [PublicAPI]
 [HtmlTargetElement("recaptcha-script-v2", TagStructure = TagStructure.WithoutEndTag)]

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Primitives;
 using Headless.Messaging.Messages;
+using Headless.Primitives;
 
 namespace Headless.Messaging.Monitoring;
 

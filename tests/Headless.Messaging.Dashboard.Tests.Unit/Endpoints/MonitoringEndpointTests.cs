@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,8 +29,7 @@ public sealed class MonitoringEndpointTests : TestBase
             Servers = 0,
         };
 
-        _monitoringApi.GetStatisticsAsync(Arg.Any<CancellationToken>())
-            .Returns(ValueTask.FromResult(stats));
+        _monitoringApi.GetStatisticsAsync(Arg.Any<CancellationToken>()).Returns(ValueTask.FromResult(stats));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         var context = _CreateHttpContext(_dataStorage);
@@ -84,8 +83,22 @@ public sealed class MonitoringEndpointTests : TestBase
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
         var nodes = new List<Node>
         {
-            new() { Id = "1", Name = "node1", Address = "10.0.0.1", Port = 8080, Tags = "web" },
-            new() { Id = "2", Name = "node2", Address = "10.0.0.2", Port = 8080, Tags = "api" },
+            new()
+            {
+                Id = "1",
+                Name = "node1",
+                Address = "10.0.0.1",
+                Port = 8080,
+                Tags = "web",
+            },
+            new()
+            {
+                Id = "2",
+                Name = "node2",
+                Address = "10.0.0.2",
+                Port = 8080,
+                Tags = "api",
+            },
         };
         discoveryProvider.GetNodes().Returns(Task.FromResult<IList<Node>>(nodes));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
@@ -138,8 +151,7 @@ public sealed class MonitoringEndpointTests : TestBase
     {
         // given
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
-        discoveryProvider.GetNamespaces(Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<List<string>>(null!));
+        discoveryProvider.GetNamespaces(Arg.Any<CancellationToken>()).Returns(Task.FromResult<List<string>>(null!));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         var context = _CreateHttpContext(_dataStorage, discoveryProvider);
@@ -184,11 +196,10 @@ public sealed class MonitoringEndpointTests : TestBase
 
     private static DefaultHttpContext _CreateHttpContext(
         IDataStorage dataStorage,
-        INodeDiscoveryProvider? discoveryProvider = null)
+        INodeDiscoveryProvider? discoveryProvider = null
+    )
     {
-        var services = new ServiceCollection()
-            .AddLogging()
-            .AddSingleton(dataStorage);
+        var services = new ServiceCollection().AddLogging().AddSingleton(dataStorage);
 
         if (discoveryProvider != null)
         {

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -16,9 +16,24 @@ public sealed class WarpResultTests : TestBase
             Group = "test-group",
             Values =
             [
-                new WarpResult.SubInfo { Topic = "topic1", ImplName = "Impl1", MethodEscaped = "Method1" },
-                new WarpResult.SubInfo { Topic = "topic2", ImplName = "Impl2", MethodEscaped = "Method2" },
-                new WarpResult.SubInfo { Topic = "topic3", ImplName = "Impl3", MethodEscaped = "Method3" },
+                new WarpResult.SubInfo
+                {
+                    Topic = "topic1",
+                    ImplName = "Impl1",
+                    MethodEscaped = "Method1",
+                },
+                new WarpResult.SubInfo
+                {
+                    Topic = "topic2",
+                    ImplName = "Impl2",
+                    MethodEscaped = "Method2",
+                },
+                new WarpResult.SubInfo
+                {
+                    Topic = "topic3",
+                    ImplName = "Impl3",
+                    MethodEscaped = "Method3",
+                },
             ],
         };
 

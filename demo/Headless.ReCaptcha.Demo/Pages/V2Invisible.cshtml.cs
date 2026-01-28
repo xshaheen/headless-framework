@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Serializer;
-using Headless.Recaptcha.Contracts;
-using Headless.Recaptcha.V2;
+using Headless.ReCaptcha.Contracts;
+using Headless.ReCaptcha.V2;
+using Headless.Serializer;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Demo.Pages;

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard.K8s;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Testing.Tests;
 using k8s.Models;
 
 namespace Tests;
@@ -25,10 +25,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_hide_node_when_visibility_is_hide()
     {
         // given
-        var tags = new Dictionary<string, string>
-        {
-            ["headless.messaging.visibility"] = "hide",
-        };
+        var tags = new Dictionary<string, string> { ["headless.messaging.visibility"] = "hide" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -41,10 +38,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_show_node_when_visibility_is_show()
     {
         // given
-        var tags = new Dictionary<string, string>
-        {
-            ["headless.messaging.visibility"] = "show",
-        };
+        var tags = new Dictionary<string, string> { ["headless.messaging.visibility"] = "show" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -58,10 +52,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     {
         // given
         _options.ShowOnlyExplicitVisibleNodes = true;
-        var tags = new Dictionary<string, string>
-        {
-            ["some-other-tag"] = "value",
-        };
+        var tags = new Dictionary<string, string> { ["some-other-tag"] = "value" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -76,10 +67,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
         // given
         _options.ShowOnlyExplicitVisibleNodes = false;
         var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _options);
-        var tags = new Dictionary<string, string>
-        {
-            ["headless.messaging.something"] = "value",
-        };
+        var tags = new Dictionary<string, string> { ["headless.messaging.something"] = "value" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags, provider);
@@ -138,10 +126,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_be_case_insensitive_for_tag_prefix()
     {
         // given
-        var tags = new Dictionary<string, string>
-        {
-            ["HEADLESS.MESSAGING.visibility"] = "show",
-        };
+        var tags = new Dictionary<string, string> { ["HEADLESS.MESSAGING.visibility"] = "show" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -154,10 +139,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_be_case_insensitive_for_visibility_value()
     {
         // given
-        var tags = new Dictionary<string, string>
-        {
-            ["headless.messaging.visibility"] = "HIDE",
-        };
+        var tags = new Dictionary<string, string> { ["headless.messaging.visibility"] = "HIDE" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -170,11 +152,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_ignore_non_headless_tags()
     {
         // given
-        var tags = new Dictionary<string, string>
-        {
-            ["app"] = "my-app",
-            ["version"] = "1.0",
-        };
+        var tags = new Dictionary<string, string> { ["app"] = "my-app", ["version"] = "1.0" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -304,10 +282,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
         var service = new V1Service
         {
             Metadata = new V1ObjectMeta { Name = "test-service" },
-            Spec = new V1ServiceSpec
-            {
-                Ports = [new V1ServicePort { Name = "http", Port = 8080 }],
-            },
+            Spec = new V1ServiceSpec { Ports = [new V1ServicePort { Name = "http", Port = 8080 }] },
         };
 
         // when
@@ -364,7 +339,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 
     private sealed record TagFilterResult(bool HideNode, int FilteredPortIndex, string FilteredPortName);
 
-    #pragma warning disable REFL009 // Expected reflection usage
+#pragma warning disable REFL009 // Expected reflection usage
     private TagFilterResult _InvokeFilterNodesByTags(
         IDictionary<string, string> tags,
         K8sNodeDiscoveryProvider? provider = null
@@ -385,7 +360,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
             (string)resultType.GetProperty("FilteredPortName")!.GetValue(result)!
         );
     }
-    #pragma warning restore REFL009
+#pragma warning restore REFL009
 
     private static int _InvokeGetPortByNameOrIndex(V1Service? service, string filterPortName, int filterPortIndex)
     {

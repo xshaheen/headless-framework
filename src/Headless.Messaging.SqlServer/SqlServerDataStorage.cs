@@ -2,7 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
-using Framework.Abstractions;
+using Headless.Abstractions;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -212,13 +212,17 @@ public sealed class MessagingCacheTests : TestBase
         const int operationCount = 1000;
 
         // when
-        Parallel.For(0, operationCount, i =>
-        {
-            var key = $"key-{i}";
-            cache.AddOrUpdate(key, i);
-            cache.TryGet(key, out _);
-            cache.Exists(key);
-        });
+        Parallel.For(
+            0,
+            operationCount,
+            i =>
+            {
+                var key = $"key-{i}";
+                cache.AddOrUpdate(key, i);
+                cache.TryGet(key, out _);
+                cache.Exists(key);
+            }
+        );
 
         // then - no exceptions thrown, basic consistency check
         cache.Exists("key-0").Should().BeTrue();
