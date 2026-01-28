@@ -3,9 +3,9 @@
 using System.Reflection;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Framework.Testing.Tests;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -78,8 +78,7 @@ public sealed class AmazonSqsTransportTests : TestBase
             .Received(1)
             .PublishAsync(
                 Arg.Is<PublishRequest>(r =>
-                    r.TopicArn == "arn:aws:sns:us-east-1:123456789:TestEvent"
-                    && r.Message == """{"data": "test"}"""
+                    r.TopicArn == "arn:aws:sns:us-east-1:123456789:TestEvent" && r.Message == """{"data": "test"}"""
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -251,7 +250,10 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         // Topic name with dots and colons should be normalized
         var message = new TransportMessage(
-            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "my.topic:name" },
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "my.topic:name",
+            },
             body: "test"u8.ToArray()
         );
 

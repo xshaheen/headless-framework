@@ -94,7 +94,7 @@ jobs:
 
     environment:
       name: "GitHub Packages"
-      url: https://github.com/xshaheen/cs-framework/packages
+      url: https://github.com/xshaheen/headless-framework/packages
 
     steps:
       - name: "Download Artifacts"

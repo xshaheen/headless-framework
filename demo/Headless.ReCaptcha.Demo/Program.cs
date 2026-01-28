@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Recaptcha;
+using Headless.ReCaptcha;
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -1,4 +1,4 @@
-# Framework.Sms.Aws
+# Headless.Sms.Aws
 
 AWS SNS SMS implementation.
 
@@ -16,7 +16,7 @@ Provides SMS sending via Amazon Simple Notification Service (SNS), supporting tr
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Aws
+dotnet add package Headless.Sms.Aws
 ```
 
 ## Quick Start
@@ -59,7 +59,7 @@ builder.Services.AddAwsSnsSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 - `AWSSDK.SimpleNotificationService`
 - `AWSSDK.Extensions.NETCore.Setup`
 

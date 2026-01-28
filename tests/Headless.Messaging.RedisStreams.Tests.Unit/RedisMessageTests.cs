@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
-using Framework.Testing.Tests;
 using Headless.Messaging.Messages;
 using Headless.Messaging.RedisStreams;
+using Headless.Testing.Tests;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -79,11 +78,7 @@ public sealed class RedisMessageTests : TestBase
     {
         // given
         var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?>
-            {
-                [Headers.MessageId] = "msg-789",
-                [Headers.MessageName] = "users.updated",
-            }
+            new Dictionary<string, string?> { [Headers.MessageId] = "msg-789", [Headers.MessageName] = "users.updated" }
         );
         var bodyJson = JsonSerializer.Serialize(new byte[] { 10, 20, 30 });
 

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Messages;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -723,9 +723,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         );
 
         var properties = Substitute.For<IReadOnlyBasicProperties>();
-        properties.Headers.Returns(
-            new Dictionary<string, object?>(StringComparer.Ordinal) { { "NullHeader", null } }
-        );
+        properties.Headers.Returns(new Dictionary<string, object?>(StringComparer.Ordinal) { { "NullHeader", null } });
 
         // when
         await consumer.HandleBasicDeliverAsync(

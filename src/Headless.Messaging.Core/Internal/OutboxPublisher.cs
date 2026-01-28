@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Framework.Abstractions;
-using Framework.Checks;
+using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;

@@ -1,4 +1,4 @@
-# Framework.Sitemaps
+# Headless.Sitemaps
 
 XML sitemap generation utilities for SEO.
 
@@ -18,7 +18,7 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 ## Installation
 
 ```bash
-dotnet add package Framework.Sitemaps
+dotnet add package Headless.Sitemaps
 ```
 
 ## Usage

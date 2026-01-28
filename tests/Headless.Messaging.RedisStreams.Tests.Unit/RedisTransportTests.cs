@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Messages;
 using Headless.Messaging.RedisStreams;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -74,9 +74,7 @@ public sealed class RedisTransportTests : TestBase
         var message = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
 
         var expectedException = new RedisException("Connection failed");
-        _mockStreamManager
-            .PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>())
-            .ThrowsAsync(expectedException);
+        _mockStreamManager.PublishAsync(Arg.Any<string>(), Arg.Any<NameValueEntry[]>()).ThrowsAsync(expectedException);
 
         // when
         var result = await _sut.SendAsync(message);

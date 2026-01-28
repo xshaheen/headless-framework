@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "Framework.Recaptcha.Demo": {
+    "Headless.Recaptcha.Demo": {
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {

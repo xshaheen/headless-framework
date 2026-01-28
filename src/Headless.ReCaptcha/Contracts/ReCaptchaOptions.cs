@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Recaptcha.Contracts;
+namespace Headless.ReCaptcha.Contracts;
 
 public sealed class ReCaptchaOptions
 {

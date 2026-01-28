@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
-using Framework.Testing.Tests;
 using Headless.Messaging.Kafka;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -103,11 +103,7 @@ public sealed class KafkaConnectionPoolTests : TestBase
     {
         // given - pool with invalid servers to test creation path
         var invalidOptions = Options.Create(
-            new MessagingKafkaOptions
-            {
-                Servers = "invalid-host:9092",
-                MainConfig = { ["socket.timeout.ms"] = "100" },
-            }
+            new MessagingKafkaOptions { Servers = "invalid-host:9092", MainConfig = { ["socket.timeout.ms"] = "100" } }
         );
         using var pool = new KafkaConnectionPool(_logger, invalidOptions);
 

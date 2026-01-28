@@ -1,4 +1,4 @@
-# Framework.Sms.Twilio
+# Headless.Sms.Twilio
 
 Twilio SMS implementation.
 
@@ -16,7 +16,7 @@ Provides SMS sending via Twilio's messaging API with support for sender numbers 
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Twilio
+dotnet add package Headless.Sms.Twilio
 ```
 
 ## Quick Start
@@ -63,7 +63,7 @@ builder.Services.AddTwilioSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 - `Twilio`
 
 ## Side Effects

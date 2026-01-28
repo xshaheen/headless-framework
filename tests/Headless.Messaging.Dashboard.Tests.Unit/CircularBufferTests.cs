@@ -1,16 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Framework.Testing.Tests;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
 public sealed class CircularBufferTests : TestBase
 {
     // CircularBuffer is internal, so we need to use reflection to create and test it
-    private static readonly Type _CircularBufferType = typeof(Headless.Messaging.Dashboard.DashboardOptions)
-        .Assembly
-        .GetType("Headless.Messaging.Dashboard.CircularBuffer`1")!;
+    private static readonly Type _CircularBufferType =
+        typeof(Headless.Messaging.Dashboard.DashboardOptions).Assembly.GetType(
+            "Headless.Messaging.Dashboard.CircularBuffer`1"
+        )!;
 
     private static object _CreateBuffer(int capacity)
     {
@@ -186,8 +187,7 @@ public sealed class CircularBufferTests : TestBase
         var act = () => _CreateBuffer(-1);
 
         // then
-        act.Should().Throw<TargetInvocationException>()
-            .WithInnerException<ArgumentOutOfRangeException>();
+        act.Should().Throw<TargetInvocationException>().WithInnerException<ArgumentOutOfRangeException>();
     }
 
     [Fact]
@@ -203,8 +203,7 @@ public sealed class CircularBufferTests : TestBase
         var act = () => _GetItem(buffer, 5);
 
         // then
-        act.Should().Throw<TargetInvocationException>()
-            .WithInnerException<ArgumentOutOfRangeException>();
+        act.Should().Throw<TargetInvocationException>().WithInnerException<ArgumentOutOfRangeException>();
     }
 
     [Fact]

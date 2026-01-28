@@ -1,14 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Dapper;
-using Framework.Abstractions;
-using Framework.Testing.Tests;
+using Headless.Abstractions;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.SqlServer;
+using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -236,7 +236,10 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
 
         // when
-        var deleted = await _storage.DeletePublishedMessageAsync(long.Parse(stored.DbId, CultureInfo.InvariantCulture), AbortToken);
+        var deleted = await _storage.DeletePublishedMessageAsync(
+            long.Parse(stored.DbId, CultureInfo.InvariantCulture),
+            AbortToken
+        );
 
         // then
         deleted.Should().Be(1);
@@ -262,7 +265,10 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
 
         // when
-        var deleted = await _storage.DeleteReceivedMessageAsync(long.Parse(stored.DbId, CultureInfo.InvariantCulture), AbortToken);
+        var deleted = await _storage.DeleteReceivedMessageAsync(
+            long.Parse(stored.DbId, CultureInfo.InvariantCulture),
+            AbortToken
+        );
 
         // then
         deleted.Should().Be(1);

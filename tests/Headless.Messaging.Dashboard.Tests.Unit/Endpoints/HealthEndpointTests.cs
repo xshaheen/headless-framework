@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
+using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,14 +15,11 @@ public sealed class HealthEndpointTests : TestBase
     {
         // given
         var context = _CreateHttpContext();
-        var options = new DashboardOptions();
         var builder = Substitute.For<IEndpointRouteBuilder>();
         builder.ServiceProvider.Returns(context.RequestServices);
 
-        var provider = new RouteActionProvider(builder, options);
-
         // when
-        await provider.Health(context);
+        await RouteActionProvider.Health(context);
 
         // then
         context.Response.Body.Position = 0;
@@ -38,14 +35,11 @@ public sealed class HealthEndpointTests : TestBase
         var context = _CreateHttpContext();
         // No user/identity set - simulating anonymous request
 
-        var options = new DashboardOptions { AllowAnonymousExplicit = false, AuthorizationPolicy = "Admin" };
         var builder = Substitute.For<IEndpointRouteBuilder>();
         builder.ServiceProvider.Returns(context.RequestServices);
 
-        var provider = new RouteActionProvider(builder, options);
-
         // when - health endpoint works without auth
-        await provider.Health(context);
+        await RouteActionProvider.Health(context);
 
         // then
         context.Response.Body.Position = 0;
@@ -56,12 +50,9 @@ public sealed class HealthEndpointTests : TestBase
 
     private static DefaultHttpContext _CreateHttpContext()
     {
-        var services = new ServiceCollection()
-            .AddLogging()
-            .BuildServiceProvider();
+        var services = new ServiceCollection().AddLogging().BuildServiceProvider();
 
-        var context = new DefaultHttpContext { RequestServices = services };
-        context.Response.Body = new MemoryStream();
+        var context = new DefaultHttpContext { RequestServices = services, Response = { Body = new MemoryStream() } };
 
         return context;
     }

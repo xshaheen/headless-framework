@@ -1,0 +1,50 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Diagnostics.CodeAnalysis;
+using Headless.Checks;
+using Headless.Domain;
+
+namespace Headless.Permissions.Entities;
+
+public sealed class PermissionGrantRecord : AggregateRoot<Guid>, IMultiTenant
+{
+    public string Name { get; private init; }
+
+    public string ProviderName { get; private init; }
+
+    public string ProviderKey { get; private init; }
+
+    public string? TenantId { get; private init; }
+
+    /// <summary>
+    /// Indicates whether this record represents a grant (true) or explicit denial (false).
+    /// Absence of record = undefined, record with IsGranted=false = explicit deny (AWS IAM-style).
+    /// </summary>
+    public bool IsGranted { get; private init; }
+
+    [UsedImplicitly]
+    private PermissionGrantRecord()
+    {
+        Name = null!;
+        ProviderName = null!;
+        ProviderKey = null!;
+    }
+
+    [SetsRequiredMembers]
+    public PermissionGrantRecord(
+        Guid id,
+        string name,
+        string providerName,
+        string providerKey,
+        bool isGranted,
+        string? tenantId = null
+    )
+    {
+        Id = id;
+        Name = Argument.IsNotNullOrWhiteSpace(name);
+        ProviderName = Argument.IsNotNullOrWhiteSpace(providerName);
+        ProviderKey = Argument.IsNotNullOrWhiteSpace(providerKey);
+        IsGranted = isGranted;
+        TenantId = tenantId;
+    }
+}

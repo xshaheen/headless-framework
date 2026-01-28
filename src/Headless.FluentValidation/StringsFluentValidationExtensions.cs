@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Resources;
-using Framework.Constants;
+using Headless.Constants;
 
 namespace FluentValidation;
 

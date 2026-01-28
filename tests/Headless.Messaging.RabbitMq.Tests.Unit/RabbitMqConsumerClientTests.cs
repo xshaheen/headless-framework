@@ -1,14 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
 
 namespace Tests;
 
@@ -263,7 +260,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<bool>(),
-                Arg.Is<Dictionary<string, object?>>(d => d.ContainsKey("x-queue-mode") && (string)d["x-queue-mode"]! == "lazy"),
+                Arg.Is<Dictionary<string, object?>>(d =>
+                    d.ContainsKey("x-queue-mode") && (string)d["x-queue-mode"]! == "lazy"
+                ),
                 false,
                 false,
                 Arg.Any<CancellationToken>()
@@ -295,7 +294,9 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<bool>(),
-                Arg.Is<Dictionary<string, object?>>(d => d.ContainsKey("x-queue-type") && (string)d["x-queue-type"]! == "quorum"),
+                Arg.Is<Dictionary<string, object?>>(d =>
+                    d.ContainsKey("x-queue-type") && (string)d["x-queue-type"]! == "quorum"
+                ),
                 false,
                 false,
                 Arg.Any<CancellationToken>()

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -30,10 +30,7 @@ public sealed class MessageHeaderTests : TestBase
     public void should_be_readonly()
     {
         // given
-        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["key1"] = "value1",
-        };
+        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal) { ["key1"] = "value1" };
         var header = new MessageHeader(dictionary);
 
         // when/then - MessageHeader inherits from ReadOnlyDictionary so it doesn't have Add method
@@ -44,10 +41,7 @@ public sealed class MessageHeaderTests : TestBase
     public void should_support_containskey_operation()
     {
         // given
-        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["existing-key"] = "value",
-        };
+        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal) { ["existing-key"] = "value" };
         var header = new MessageHeader(dictionary);
 
         // when/then
@@ -59,10 +53,7 @@ public sealed class MessageHeaderTests : TestBase
     public void should_support_trygetvalue_operation()
     {
         // given
-        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["existing-key"] = "test-value",
-        };
+        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal) { ["existing-key"] = "test-value" };
         var header = new MessageHeader(dictionary);
 
         // when
@@ -216,10 +207,7 @@ public sealed class MessageHeaderTests : TestBase
     public void should_not_throw_when_removing_nonexistent_callback()
     {
         // given
-        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["some-key"] = "some-value",
-        };
+        var dictionary = new Dictionary<string, string?>(StringComparer.Ordinal) { ["some-key"] = "some-value" };
         var header = new MessageHeader(dictionary);
 
         // when

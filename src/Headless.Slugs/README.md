@@ -1,4 +1,4 @@
-# Framework.Slugs
+# Headless.Slugs
 
 URL-friendly slug generation from text.
 
@@ -19,7 +19,7 @@ Converts arbitrary text into URL-safe slugs with proper Unicode normalization, c
 ## Installation
 
 ```bash
-dotnet add package Framework.Slugs
+dotnet add package Headless.Slugs
 ```
 
 ## Usage

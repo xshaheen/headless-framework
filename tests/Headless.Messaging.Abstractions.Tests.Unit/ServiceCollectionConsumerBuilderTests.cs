@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -33,8 +33,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
-            .Group("order-service");
+        services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed").Group("order-service");
         var provider = services.BuildServiceProvider();
 
         // then
@@ -49,8 +48,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
-            .WithConcurrency(10);
+        services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed").WithConcurrency(10);
         var provider = services.BuildServiceProvider();
 
         // then
@@ -95,7 +93,8 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        var builder = services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
+        var builder = services
+            .AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
             .Topic("orders.created")
             .Group("my-group")
             .WithConcurrency(5);
@@ -168,12 +167,10 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        var act = () => services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
-            .WithConcurrency(0);
+        var act = () => services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed").WithConcurrency(0);
 
         // then
-        act.Should().Throw<ArgumentOutOfRangeException>()
-            .WithMessage("*Concurrency must be greater than 0*");
+        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*Concurrency must be greater than 0*");
     }
 
     [Fact]
@@ -243,7 +240,8 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var act = () => builder.Build();
 
         // then
-        act.Should().Throw<NotSupportedException>()
+        act.Should()
+            .Throw<NotSupportedException>()
             .WithMessage("*Build() is not supported for ServiceCollection-based consumer registration*");
     }
 
@@ -304,7 +302,8 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        services.AddConsumer<TestOrderHandler, TestOrderEvent>("initial.topic")
+        services
+            .AddConsumer<TestOrderHandler, TestOrderEvent>("initial.topic")
             .Topic("changed.topic")
             .Group("group-1")
             .WithConcurrency(3)

@@ -1,7 +1,7 @@
 using Demo;
 using Demo.Contracts.DomainEvents;
 using Demo.Contracts.IntegrationEvents;
-using Framework.Abstractions;
+using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Messages;

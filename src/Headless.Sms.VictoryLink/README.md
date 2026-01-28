@@ -1,4 +1,4 @@
-# Framework.Sms.VictoryLink
+# Headless.Sms.VictoryLink
 
 VictoryLink SMS gateway implementation.
 
@@ -16,7 +16,7 @@ Provides SMS sending via VictoryLink API, a regional SMS provider serving the Mi
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.VictoryLink
+dotnet add package Headless.Sms.VictoryLink
 ```
 
 ## Quick Start
@@ -50,7 +50,7 @@ builder.Services.AddVictoryLinkSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 

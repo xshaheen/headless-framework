@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.FluentValidation.Resources;
-using Framework.Primitives;
+using Headless.Primitives;
 
 namespace FluentValidation.Resources;
 

@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using Framework.Checks;
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;

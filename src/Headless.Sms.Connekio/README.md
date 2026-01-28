@@ -1,4 +1,4 @@
-# Framework.Sms.Connekio
+# Headless.Sms.Connekio
 
 Connekio SMS gateway implementation.
 
@@ -16,7 +16,7 @@ Provides SMS sending via Connekio API, supporting both single and batch SMS deli
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Connekio
+dotnet add package Headless.Sms.Connekio
 ```
 
 ## Quick Start
@@ -52,7 +52,7 @@ builder.Services.AddConnekioSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 

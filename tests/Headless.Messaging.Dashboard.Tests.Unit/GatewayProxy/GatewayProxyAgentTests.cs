@@ -1,14 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Framework.Testing.Tests;
-using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Tests.GatewayProxy;
 
@@ -65,10 +63,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
         discoveryProvider.GetNode("node1", null).Returns(Task.FromResult<Node?>(node));
 
-        var responseMessage = new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent("OK"),
-        };
+        var responseMessage = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
         var requester = Substitute.For<IHttpRequester>();
         requester.GetResponse(Arg.Any<HttpRequestMessage>()).Returns(Task.FromResult(responseMessage));
 
@@ -140,7 +135,8 @@ public sealed class GatewayProxyAgentTests : TestBase
         discoveryProvider.GetNode("node1", null).Returns(Task.FromResult<Node?>(node));
 
         var requester = Substitute.For<IHttpRequester>();
-        requester.GetResponse(Arg.Any<HttpRequestMessage>())
+        requester
+            .GetResponse(Arg.Any<HttpRequestMessage>())
             .Returns<HttpResponseMessage>(_ => throw new HttpRequestException("Connection failed"));
 
         var agent = _CreateAgent(context, discoveryProvider, requester, withConsulOptions: true);
@@ -179,12 +175,14 @@ public sealed class GatewayProxyAgentTests : TestBase
         INodeDiscoveryProvider? discoveryProvider = null,
         IHttpRequester? requester = null,
         bool withConsulOptions = false,
-        string? nodeName = null)
+        string? nodeName = null
+    )
     {
         discoveryProvider ??= Substitute.For<INodeDiscoveryProvider>();
         requester ??= Substitute.For<IHttpRequester>();
         var requestMapper = Substitute.For<IRequestMapper>();
-        requestMapper.Map(Arg.Any<HttpRequest>())
+        requestMapper
+            .Map(Arg.Any<HttpRequest>())
             .Returns(Task.FromResult(new HttpRequestMessage(HttpMethod.Get, "http://example.com")));
 
         var services = new ServiceCollection()
@@ -201,13 +199,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         var sp = services.BuildServiceProvider();
         context.RequestServices = sp;
 
-        return new GatewayProxyAgent(
-            LoggerFactory,
-            requestMapper,
-            requester,
-            sp,
-            discoveryProvider
-        );
+        return new GatewayProxyAgent(LoggerFactory, requestMapper, requester, sp, discoveryProvider);
     }
 
     private static DefaultHttpContext _CreateHttpContext()

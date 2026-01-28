@@ -1,5 +1,5 @@
 ﻿using System.Collections.Concurrent;
-using Framework.Checks;
+using Headless.Checks;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 

@@ -2,13 +2,13 @@
 
 using System.Text.Encodings.Web;
 
-namespace Headless.Recaptcha.Internals;
+namespace Headless.ReCaptcha.Internals;
 
 internal static class ReCaptchaJsonOptions
 {
     internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
-        TypeInfoResolver = Framework.Recaptcha.Internals.ReCaptchaJsonSerializerContext.Default,
+        TypeInfoResolver = ReCaptchaJsonSerializerContext.Default,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         NumberHandling = JsonNumberHandling.AllowReadingFromString,

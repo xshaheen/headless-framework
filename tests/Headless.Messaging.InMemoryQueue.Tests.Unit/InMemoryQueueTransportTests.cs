@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -63,9 +63,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
                 {
                     await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
                 }
-                catch (OperationCanceledException)
-                {
-                }
+                catch (OperationCanceledException) { }
             },
             AbortToken
         );
@@ -137,9 +135,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
                 {
                     await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
                 }
-                catch (OperationCanceledException)
-                {
-                }
+                catch (OperationCanceledException) { }
             },
             AbortToken
         );
@@ -189,9 +185,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
                 {
                     await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
                 }
-                catch (OperationCanceledException)
-                {
-                }
+                catch (OperationCanceledException) { }
             },
             AbortToken
         );
@@ -268,9 +262,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
                 {
                     await _consumerClient.ListeningAsync(TimeSpan.FromSeconds(30), cts.Token);
                 }
-                catch (OperationCanceledException)
-                {
-                }
+                catch (OperationCanceledException) { }
             },
             AbortToken
         );

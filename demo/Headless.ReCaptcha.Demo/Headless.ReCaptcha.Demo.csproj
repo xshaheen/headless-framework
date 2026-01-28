@@ -6,6 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.ReCaptcha\Headless.ReCaptcha.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Serializer.Json\Framework.Serializer.Json.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
   </ItemGroup>
 </Project>

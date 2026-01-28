@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.RabbitMq;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 using RabbitMQ.Client;
 
 namespace Tests;

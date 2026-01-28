@@ -24,9 +24,9 @@
 All packages are available on NuGet. Install only what you need:
 
 ```bash
-dotnet add package Framework.Api
-dotnet add package Framework.Orm.EntityFramework
-dotnet add package Framework.Caching.Foundatio.Redis
+dotnet add package Headless.Api
+dotnet add package Headless.Orm.EntityFramework
+dotnet add package Headless.Caching.Redis
 # ... and many more
 ```
 
@@ -41,216 +41,216 @@ dotnet add package Framework.Caching.Foundatio.Redis
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Api](src/Framework.Api/README.md) | ASP.NET Core API utilities and conventions |
-| [Framework.Api.Abstractions](src/Framework.Api.Abstractions/README.md) | API abstractions and contracts |
-| [Framework.Api.DataProtection](src/Framework.Api.DataProtection/README.md) | Data protection key storage |
-| [Framework.Api.FluentValidation](src/Framework.Api.FluentValidation/README.md) | FluentValidation integration for APIs |
-| [Framework.Api.Logging.Serilog](src/Framework.Api.Logging.Serilog/README.md) | Serilog logging integration |
-| [Framework.Api.MinimalApi](src/Framework.Api.MinimalApi/README.md) | Minimal API utilities |
-| [Framework.Api.Mvc](src/Framework.Api.Mvc/README.md) | MVC-specific utilities |
+| [Headless.Api](src/Headless.Api/README.md) | ASP.NET Core API utilities and conventions |
+| [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | API abstractions and contracts |
+| [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | Data protection key storage |
+| [Headless.Api.FluentValidation](src/Headless.Api.FluentValidation/README.md) | FluentValidation integration for APIs |
+| [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
+| [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |
+| [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | MVC-specific utilities |
 
 ### Core
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Base](src/Framework.Base/README.md) | Core primitives and utilities |
-| [Framework.BuildingBlocks](src/Framework.BuildingBlocks/README.md) | Domain-Driven Design building blocks |
-| [Framework.Checks](src/Framework.Checks/README.md) | Guard clauses and argument validation |
-| [Framework.Domain](src/Framework.Domain/README.md) | Domain entities and events |
-| [Framework.Specifications](src/Framework.Specifications/README.md) | Specification pattern implementation |
+| [Headless.Base](src/Headless.Base/README.md) | Core primitives and utilities |
+| [Headless.BuildingBlocks](src/Headless.BuildingBlocks/README.md) | Domain-Driven Design building blocks |
+| [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
+| [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
+| [Headless.Specifications](src/Headless.Specifications/README.md) | Specification pattern implementation |
 
 ### Blob Storage
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Blobs.Abstractions](src/Framework.Blobs.Abstractions/README.md) | Blob storage interfaces |
-| [Framework.Blobs.Aws](src/Framework.Blobs.Aws/README.md) | AWS S3 blob storage |
-| [Framework.Blobs.Azure](src/Framework.Blobs.Azure/README.md) | Azure Blob storage |
-| [Framework.Blobs.FileSystem](src/Framework.Blobs.FileSystem/README.md) | Local filesystem storage |
-| [Framework.Blobs.Redis](src/Framework.Blobs.Redis/README.md) | Redis blob storage |
-| [Framework.Blobs.SshNet](src/Framework.Blobs.SshNet/README.md) | SFTP blob storage |
+| [Headless.Blobs.Abstractions](src/Headless.Blobs.Abstractions/README.md) | Blob storage interfaces |
+| [Headless.Blobs.Aws](src/Headless.Blobs.Aws/README.md) | AWS S3 blob storage |
+| [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Azure Blob storage |
+| [Headless.Blobs.FileSystem](src/Headless.Blobs.FileSystem/README.md) | Local filesystem storage |
+| [Headless.Blobs.Redis](src/Headless.Blobs.Redis/README.md) | Redis blob storage |
+| [Headless.Blobs.SshNet](src/Headless.Blobs.SshNet/README.md) | SFTP blob storage |
 
 ### Caching
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Caching.Abstractions](src/Framework.Caching.Abstractions/README.md) | Caching interfaces |
-| [Framework.Caching.Foundatio.Memory](src/Framework.Caching.Foundatio.Memory/README.md) | In-memory caching |
-| [Framework.Caching.Foundatio.Redis](src/Framework.Caching.Foundatio.Redis/README.md) | Redis caching |
+| [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | Caching interfaces |
+| [Headless.Caching.Foundatio.Memory](src/Headless.Caching.Foundatio.Memory/README.md) | In-memory caching |
+| [Headless.Caching.Foundatio.Redis](src/Headless.Caching.Foundatio.Redis/README.md) | Redis caching |
 
 ### Email
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Emails.Abstractions](src/Framework.Emails.Abstractions/README.md) | Email sending interfaces |
-| [Framework.Emails.Core](src/Framework.Emails.Core/README.md) | Core email implementation |
-| [Framework.Emails.Aws](src/Framework.Emails.Aws/README.md) | AWS SES email provider |
-| [Framework.Emails.Dev](src/Framework.Emails.Dev/README.md) | Development email provider |
-| [Framework.Emails.Mailkit](src/Framework.Emails.Mailkit/README.md) | MailKit SMTP provider |
+| [Headless.Emails.Abstractions](src/Headless.Emails.Abstractions/README.md) | Email sending interfaces |
+| [Headless.Emails.Core](src/Headless.Emails.Core/README.md) | Core email implementation |
+| [Headless.Emails.Aws](src/Headless.Emails.Aws/README.md) | AWS SES email provider |
+| [Headless.Emails.Dev](src/Headless.Emails.Dev/README.md) | Development email provider |
+| [Headless.Emails.Mailkit](src/Headless.Emails.Mailkit/README.md) | MailKit SMTP provider |
 
 ### Feature Management
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Features.Abstractions](src/Framework.Features.Abstractions/README.md) | Feature flag interfaces |
-| [Framework.Features.Core](src/Framework.Features.Core/README.md) | Feature management implementation |
-| [Framework.Features.Storage.EntityFramework](src/Framework.Features.Storage.EntityFramework/README.md) | EF Core feature storage |
+| [Headless.Features.Abstractions](src/Headless.Features.Abstractions/README.md) | Feature flag interfaces |
+| [Headless.Features.Core](src/Headless.Features.Core/README.md) | Feature management implementation |
+| [Headless.Features.Storage.EntityFramework](src/Headless.Features.Storage.EntityFramework/README.md) | EF Core feature storage |
 
 ### Identity
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Identity.Storage.EntityFramework](src/Framework.Identity.Storage.EntityFramework/README.md) | EF Core identity storage |
+| [Headless.Identity.Storage.EntityFramework](src/Headless.Identity.Storage.EntityFramework/README.md) | EF Core identity storage |
 
 ### Imaging
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Imaging.Abstractions](src/Framework.Imaging.Abstractions/README.md) | Image processing interfaces |
-| [Framework.Imaging.Core](src/Framework.Imaging.Core/README.md) | Core image processing |
-| [Framework.Imaging.ImageSharp](src/Framework.Imaging.ImageSharp/README.md) | ImageSharp implementation |
+| [Headless.Imaging.Abstractions](src/Headless.Imaging.Abstractions/README.md) | Image processing interfaces |
+| [Headless.Imaging.Core](src/Headless.Imaging.Core/README.md) | Core image processing |
+| [Headless.Imaging.ImageSharp](src/Headless.Imaging.ImageSharp/README.md) | ImageSharp implementation |
 
 ### Logging
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Logging.Serilog](src/Framework.Logging.Serilog/README.md) | Serilog logging utilities |
+| [Headless.Logging.Serilog](src/Headless.Logging.Serilog/README.md) | Serilog logging utilities |
 
 ### Media
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Media.Indexing.Abstractions](src/Framework.Media.Indexing.Abstractions/README.md) | Media indexing interfaces |
-| [Framework.Media.Indexing](src/Framework.Media.Indexing/README.md) | Media indexing implementation |
+| [Headless.Media.Indexing.Abstractions](src/Headless.Media.Indexing.Abstractions/README.md) | Media indexing interfaces |
+| [Headless.Media.Indexing](src/Headless.Media.Indexing/README.md) | Media indexing implementation |
 
 ### Messaging
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Domain.LocalPublisher](src/Framework.Domain.LocalPublisher/README.md) | In-process messaging |
+| [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process messaging |
 
 ### OpenAPI
 
 | Package | Description |
 |---------|-------------|
-| [Framework.OpenApi.Nswag](src/Framework.OpenApi.Nswag/README.md) | NSwag OpenAPI generation |
-| [Framework.OpenApi.Nswag.OData](src/Framework.OpenApi.Nswag.OData/README.md) | NSwag OData support |
-| [Framework.OpenApi.Scalar](src/Framework.OpenApi.Scalar/README.md) | Scalar API documentation |
+| [Headless.OpenApi.Nswag](src/Headless.OpenApi.Nswag/README.md) | NSwag OpenAPI generation |
+| [Headless.OpenApi.Nswag.OData](src/Headless.OpenApi.Nswag.OData/README.md) | NSwag OData support |
+| [Headless.OpenApi.Scalar](src/Headless.OpenApi.Scalar/README.md) | Scalar API documentation |
 
 ### ORM
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Orm.EntityFramework](src/Framework.Orm.EntityFramework/README.md) | Entity Framework Core utilities |
-| [Framework.Orm.Couchbase](src/Framework.Orm.Couchbase/README.md) | Couchbase ORM utilities |
+| [Headless.Orm.EntityFramework](src/Headless.Orm.EntityFramework/README.md) | Entity Framework Core utilities |
+| [Headless.Orm.Couchbase](src/Headless.Orm.Couchbase/README.md) | Couchbase ORM utilities |
 
 ### Payments
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Payments.Paymob.CashIn](src/Framework.Payments.Paymob.CashIn/README.md) | Paymob cash-in payments |
-| [Framework.Payments.Paymob.CashOut](src/Framework.Payments.Paymob.CashOut/README.md) | Paymob cash-out payments |
-| [Framework.Payments.Paymob.Services](src/Framework.Payments.Paymob.Services/README.md) | Paymob shared services |
+| [Headless.Payments.Paymob.CashIn](src/Headless.Payments.Paymob.CashIn/README.md) | Paymob cash-in payments |
+| [Headless.Payments.Paymob.CashOut](src/Headless.Payments.Paymob.CashOut/README.md) | Paymob cash-out payments |
+| [Headless.Payments.Paymob.Services](src/Headless.Payments.Paymob.Services/README.md) | Paymob shared services |
 
 ### Permissions
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Permissions.Abstractions](src/Framework.Permissions.Abstractions/README.md) | Permission system interfaces |
-| [Framework.Permissions.Core](src/Framework.Permissions.Core/README.md) | Permission system implementation |
-| [Framework.Permissions.Storage.EntityFramework](src/Framework.Permissions.Storage.EntityFramework/README.md) | EF Core permission storage |
+| [Headless.Permissions.Abstractions](src/Headless.Permissions.Abstractions/README.md) | Permission system interfaces |
+| [Headless.Permissions.Core](src/Headless.Permissions.Core/README.md) | Permission system implementation |
+| [Headless.Permissions.Storage.EntityFramework](src/Headless.Permissions.Storage.EntityFramework/README.md) | EF Core permission storage |
 
 ### Push Notifications
 
 | Package | Description |
 |---------|-------------|
-| [Framework.PushNotifications.Abstractions](src/Framework.PushNotifications.Abstractions/README.md) | Push notification interfaces |
-| [Framework.PushNotifications.Dev](src/Framework.PushNotifications.Dev/README.md) | Development push provider |
-| [Framework.PushNotifications.Firebase](src/Framework.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
+| [Headless.PushNotifications.Abstractions](src/Headless.PushNotifications.Abstractions/README.md) | Push notification interfaces |
+| [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
+| [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
 
 ### Queueing
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Queueing.Abstractions](src/Framework.Queueing.Abstractions/README.md) | Queue interfaces |
-| [Framework.Queueing.Foundatio](src/Framework.Queueing.Foundatio/README.md) | Foundatio queuing |
+| [Headless.Queueing.Abstractions](src/Headless.Queueing.Abstractions/README.md) | Queue interfaces |
+| [Headless.Queueing.Foundatio](src/Headless.Queueing.Foundatio/README.md) | Foundatio queuing |
 
 ### Resource Locking
 
 | Package | Description |
 |---------|-------------|
-| [Framework.ResourceLocks.Abstractions](src/Framework.ResourceLocks.Abstractions/README.md) | Distributed locking interfaces |
-| [Framework.ResourceLocks.Core](src/Framework.ResourceLocks.Core/README.md) | Distributed locking implementation |
-| [Framework.ResourceLocks.Cache](src/Framework.ResourceLocks.Cache/README.md) | Cache-based locking |
-| [Framework.ResourceLocks.Redis](src/Framework.ResourceLocks.Redis/README.md) | Redis-based locking |
+| [Headless.ResourceLocks.Abstractions](src/Headless.ResourceLocks.Abstractions/README.md) | Distributed locking interfaces |
+| [Headless.ResourceLocks.Core](src/Headless.ResourceLocks.Core/README.md) | Distributed locking implementation |
+| [Headless.ResourceLocks.Cache](src/Headless.ResourceLocks.Cache/README.md) | Cache-based locking |
+| [Headless.ResourceLocks.Redis](src/Headless.ResourceLocks.Redis/README.md) | Redis-based locking |
 
 ### Serialization
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Serializer.Abstractions](src/Framework.Serializer.Abstractions/README.md) | Serialization interfaces |
-| [Framework.Serializer.Json](src/Framework.Serializer.Json/README.md) | System.Text.Json serializer |
-| [Framework.Serializer.MessagePack](src/Framework.Serializer.MessagePack/README.md) | MessagePack serializer |
+| [Headless.Serializer.Abstractions](src/Headless.Serializer.Abstractions/README.md) | Serialization interfaces |
+| [Headless.Serializer.Json](src/Headless.Serializer.Json/README.md) | System.Text.Json serializer |
+| [Headless.Serializer.MessagePack](src/Headless.Serializer.MessagePack/README.md) | MessagePack serializer |
 
 ### Settings
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Settings.Abstractions](src/Framework.Settings.Abstractions/README.md) | Dynamic settings interfaces |
-| [Framework.Settings.Core](src/Framework.Settings.Core/README.md) | Settings management implementation |
-| [Framework.Settings.Storage.EntityFramework](src/Framework.Settings.Storage.EntityFramework/README.md) | EF Core settings storage |
+| [Headless.Settings.Abstractions](src/Headless.Settings.Abstractions/README.md) | Dynamic settings interfaces |
+| [Headless.Settings.Core](src/Headless.Settings.Core/README.md) | Settings management implementation |
+| [Headless.Settings.Storage.EntityFramework](src/Headless.Settings.Storage.EntityFramework/README.md) | EF Core settings storage |
 
 ### SMS
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Sms.Abstractions](src/Framework.Sms.Abstractions/README.md) | SMS sending interfaces |
-| [Framework.Sms.Aws](src/Framework.Sms.Aws/README.md) | AWS SNS SMS provider |
-| [Framework.Sms.Cequens](src/Framework.Sms.Cequens/README.md) | Cequens SMS provider |
-| [Framework.Sms.Connekio](src/Framework.Sms.Connekio/README.md) | Connekio SMS provider |
-| [Framework.Sms.Dev](src/Framework.Sms.Dev/README.md) | Development SMS provider |
-| [Framework.Sms.Infobip](src/Framework.Sms.Infobip/README.md) | Infobip SMS provider |
-| [Framework.Sms.Twilio](src/Framework.Sms.Twilio/README.md) | Twilio SMS provider |
-| [Framework.Sms.VictoryLink](src/Framework.Sms.VictoryLink/README.md) | VictoryLink SMS provider |
-| [Framework.Sms.Vodafone](src/Framework.Sms.Vodafone/README.md) | Vodafone SMS provider |
+| [Headless.Sms.Abstractions](src/Headless.Sms.Abstractions/README.md) | SMS sending interfaces |
+| [Headless.Sms.Aws](src/Headless.Sms.Aws/README.md) | AWS SNS SMS provider |
+| [Headless.Sms.Cequens](src/Headless.Sms.Cequens/README.md) | Cequens SMS provider |
+| [Headless.Sms.Connekio](src/Headless.Sms.Connekio/README.md) | Connekio SMS provider |
+| [Headless.Sms.Dev](src/Headless.Sms.Dev/README.md) | Development SMS provider |
+| [Headless.Sms.Infobip](src/Headless.Sms.Infobip/README.md) | Infobip SMS provider |
+| [Headless.Sms.Twilio](src/Headless.Sms.Twilio/README.md) | Twilio SMS provider |
+| [Headless.Sms.VictoryLink](src/Headless.Sms.VictoryLink/README.md) | VictoryLink SMS provider |
+| [Headless.Sms.Vodafone](src/Headless.Sms.Vodafone/README.md) | Vodafone SMS provider |
 
 ### SQL
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Sql.Abstractions](src/Framework.Sql.Abstractions/README.md) | SQL connection interfaces |
-| [Framework.Sql.PostgreSql](src/Framework.Sql.PostgreSql/README.md) | PostgreSQL connection factory |
-| [Framework.Sql.SqlServer](src/Framework.Sql.SqlServer/README.md) | SQL Server connection factory |
-| [Framework.Sql.Sqlite](src/Framework.Sql.Sqlite/README.md) | SQLite connection factory |
+| [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | SQL connection interfaces |
+| [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory |
+| [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory |
+| [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory |
 
 ### Testing
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Testing](src/Framework.Testing/README.md) | Testing utilities and base classes |
-| [Framework.Testing.Testcontainers](src/Framework.Testing.Testcontainers/README.md) | Testcontainers fixtures |
+| [Headless.Testing](src/Headless.Testing/README.md) | Testing utilities and base classes |
+| [Headless.Testing.Testcontainers](src/Headless.Testing.Testcontainers/README.md) | Testcontainers fixtures |
 
 ### TUS (Resumable Uploads)
 
 | Package | Description |
 |---------|-------------|
-| [Framework.Tus](src/Framework.Tus/README.md) | TUS protocol utilities |
-| [Framework.Tus.Azure](src/Framework.Tus.Azure/README.md) | Azure Blob TUS store |
-| [Framework.Tus.ResourceLock](src/Framework.Tus.ResourceLock/README.md) | TUS file locking |
+| [Headless.Tus](src/Headless.Tus/README.md) | TUS protocol utilities |
+| [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | Azure Blob TUS store |
+| [Headless.Tus.ResourceLock](src/Headless.Tus.ResourceLock/README.md) | TUS file locking |
 
 ### Utilities
 
 | Package | Description |
 |---------|-------------|
-| [Framework.FluentValidation](src/Framework.FluentValidation/README.md) | FluentValidation extensions |
-| [Framework.Generator.Primitives](src/Framework.Generator.Primitives/README.md) | Primitive types source generator |
-| [Framework.Generator.Primitives.Abstractions](src/Framework.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
-| [Framework.Hosting](src/Framework.Hosting/README.md) | .NET hosting utilities |
-| [Framework.NetTopologySuite](src/Framework.NetTopologySuite/README.md) | Geospatial utilities |
-| [Framework.Recaptcha](src/Framework.Recaptcha/README.md) | Google reCAPTCHA integration |
-| [Framework.Redis](src/Framework.Redis/README.md) | Redis utilities |
-| [Framework.Sitemaps](src/Framework.Sitemaps/README.md) | XML sitemap generation |
-| [Framework.Slugs](src/Framework.Slugs/README.md) | URL slug generation |
+| [Headless.FluentValidation](src/Headless.FluentValidation/README.md) | FluentValidation extensions |
+| [Headless.Generator.Primitives](src/Headless.Generator.Primitives/README.md) | Primitive types source generator |
+| [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
+| [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
+| [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
+| [Headless.Recaptcha](src/Headless.Recaptcha/README.md) | Google reCAPTCHA integration |
+| [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |
+| [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | XML sitemap generation |
+| [Headless.Slugs](src/Headless.Slugs/README.md) | URL slug generation |
 
 ## Quick Start
 
@@ -288,8 +288,8 @@ app.Run();
 
 Each feature follows the **abstraction + provider pattern**:
 
-- `Framework.*.Abstractions` — Interfaces and contracts
-- `Framework.*.<Provider>` — Concrete implementation
+- `Headless.*.Abstractions` — Interfaces and contracts
+- `Headless.*.<Provider>` — Concrete implementation
 
 This enables easy swapping of implementations and testing with mocks.
 

@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Snappier" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
+    <ProjectReference
+      Include="..\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+      ExcludeAssets="runtime"
+    />
+    <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
+    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
+    <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
+  </ItemGroup>
+  <PropertyGroup Label="Primitives Generator Settings">
+    <PrimitiveTypeConverters>true</PrimitiveTypeConverters>
+    <PrimitiveJsonConverters>true</PrimitiveJsonConverters>
+    <PrimitiveXmlConverters>false</PrimitiveXmlConverters>
+    <PrimitiveNswagSwaggerConverters>false</PrimitiveNswagSwaggerConverters>
+    <PrimitiveSwashbuckleSwaggerConverters>false</PrimitiveSwashbuckleSwaggerConverters>
+    <PrimitiveEntityFrameworkValueConverters>false</PrimitiveEntityFrameworkValueConverters>
+    <PrimitiveDapperConverters>false</PrimitiveDapperConverters>
+  </PropertyGroup>
+  <ItemGroup Label="Primitives Generator Settings">
+    <CompilerVisibleProperty Include="PrimitiveJsonConverters" />
+    <CompilerVisibleProperty Include="PrimitiveXmlConverters" />
+    <CompilerVisibleProperty Include="PrimitiveTypeConverters" />
+    <CompilerVisibleProperty Include="PrimitiveSwashbuckleSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveNswagSwaggerConverters" />
+    <CompilerVisibleProperty Include="PrimitiveEntityFrameworkValueConverters" />
+    <CompilerVisibleProperty Include="PrimitiveDapperConverters" />
+  </ItemGroup>
+</Project>

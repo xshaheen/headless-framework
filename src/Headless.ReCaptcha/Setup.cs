@@ -1,16 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Recaptcha;
-using Headless.Recaptcha.Contracts;
-using Headless.Recaptcha.Services;
-using Headless.Recaptcha.V2;
-using Headless.Recaptcha.V3;
+using Headless.ReCaptcha.Contracts;
+using Headless.ReCaptcha.Services;
+using Headless.ReCaptcha.V2;
+using Headless.ReCaptcha.V3;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Recaptcha;
+namespace Headless.ReCaptcha;
 
 [PublicAPI]
 public static class ReCaptchaSetup

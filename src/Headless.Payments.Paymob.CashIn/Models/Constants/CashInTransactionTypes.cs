@@ -1,0 +1,13 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Headless.Payments.Paymob.CashIn.Models.Constants;
+
+public static class CashInTransactionTypes
+{
+    public const string Auth = "auth";
+    public const string Capture = "capture";
+    public const string Type3ds = "3ds";
+    public const string Refund = "refund";
+    public const string Standalone = "standalone";
+    public const string Void = "void";
+}

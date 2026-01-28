@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Pulsar;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using MessagingHeaders = Headless.Messaging.Messages.Headers;
 
@@ -66,7 +64,8 @@ public sealed class PulsarTransportTests : TestBase
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = _CreateTransportMessage("msg-123", "TestTopic");
 
-        _connectionFactory.CreateProducerAsync(Arg.Any<string>())
+        _connectionFactory
+            .CreateProducerAsync(Arg.Any<string>())
             .ThrowsAsync(new InvalidOperationException("Connection failed"));
 
         // when
@@ -74,8 +73,7 @@ public sealed class PulsarTransportTests : TestBase
 
         // then - BUG: Exception is NOT wrapped in PublisherSentFailedException
         // because CreateProducerAsync is called before the try-catch block
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Connection failed");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Connection failed");
     }
 
     [Fact]
@@ -98,7 +96,8 @@ public sealed class PulsarTransportTests : TestBase
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = _CreateTransportMessage("msg-123", "orders.created");
 
-        _connectionFactory.CreateProducerAsync(Arg.Any<string>())
+        _connectionFactory
+            .CreateProducerAsync(Arg.Any<string>())
             .ThrowsAsync(new InvalidOperationException("Expected"));
 
         // when

@@ -11,7 +11,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
-    <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
 </Project>

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.RedisStreams;
+using Headless.Testing.Tests;
 using StackExchange.Redis;
 
 namespace Tests;

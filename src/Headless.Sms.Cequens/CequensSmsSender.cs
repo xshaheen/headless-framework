@@ -3,7 +3,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Encodings.Web;
-using Framework.Checks;
+using Headless.Checks;
 using Headless.Sms.Cequens.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

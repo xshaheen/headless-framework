@@ -3,9 +3,9 @@
 #pragma warning disable CA2201 // Do not raise reserved exception types - test code intentionally tests generic exception handling
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException - test code is verifying exception type handling
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Retry;
+using Headless.Testing.Tests;
 
 namespace Tests.Retry;
 
@@ -116,11 +116,15 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var results = new System.Collections.Concurrent.ConcurrentBag<TimeSpan?>();
 
         // when
-        Parallel.For(0, 1000, i =>
-        {
-            var delay = strategy.GetNextDelay(i % 10);
-            results.Add(delay);
-        });
+        Parallel.For(
+            0,
+            1000,
+            i =>
+            {
+                var delay = strategy.GetNextDelay(i % 10);
+                results.Add(delay);
+            }
+        );
 
         // then - all results should be the same fixed interval
         results.Should().HaveCount(1000);

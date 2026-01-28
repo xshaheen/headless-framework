@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Encodings.Web;
-using Framework.Checks;
-using Framework.Http;
+using Headless.Checks;
+using Headless.Http;
 using Headless.Sms.Connekio.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

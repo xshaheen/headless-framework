@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NATS.Client;
 using NATS.Client.JetStream;
-using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using MessagingHeaders = Headless.Messaging.Messages.Headers;
 

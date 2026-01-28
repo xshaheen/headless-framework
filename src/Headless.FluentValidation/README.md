@@ -1,4 +1,4 @@
-# Framework.FluentValidation
+# Headless.FluentValidation
 
 Extension library for FluentValidation providing enterprise-grade validators and utilities.
 
@@ -20,13 +20,13 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 ## Installation
 
 ```bash
-dotnet add package Framework.FluentValidation
+dotnet add package Headless.FluentValidation
 ```
 
 ## Quick Start
 
 ```csharp
-using Framework.FluentValidation;
+using Headless.FluentValidation;
 
 public sealed class UserValidator : AbstractValidator<User>
 {
@@ -82,7 +82,7 @@ No configuration required.
 
 - `FluentValidation`
 - `libphonenumber-csharp`
-- `Framework.Base`
+- `Headless.Base`
 
 ## Side Effects
 

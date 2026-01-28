@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Recaptcha.Contracts;
-using Headless.Recaptcha.Internals;
+using Headless.ReCaptcha.Contracts;
+using Headless.ReCaptcha.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Recaptcha.V2;
+namespace Headless.ReCaptcha.V2;
 
 /// <summary>
 /// Verify requests with a user challenge. It has three types of challenges:

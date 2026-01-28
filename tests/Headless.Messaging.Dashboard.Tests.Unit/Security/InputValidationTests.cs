@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Dashboard;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Primitives;
 
 namespace Tests.Security;
@@ -36,9 +36,9 @@ public sealed class InputValidationTests : TestBase
     }
 
     [Theory]
-    [InlineData("10000", 20)]  // Should be clamped to max
-    [InlineData("1000", 20)]   // Should be clamped to max
-    [InlineData("500", 20)]    // May be acceptable depending on policy
+    [InlineData("10000", 20)] // Should be clamped to max
+    [InlineData("1000", 20)] // Should be clamped to max
+    [InlineData("500", 20)] // May be acceptable depending on policy
     public void perPage_should_be_clamped_to_maximum_allowed(string requestedSize, int defaultValue)
     {
         // This test documents that large page sizes should be clamped
@@ -135,7 +135,7 @@ public sealed class InputValidationTests : TestBase
     [InlineData("SUCCEEDED")] // Case mismatch
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("<script>")]  // XSS attempt
+    [InlineData("<script>")] // XSS attempt
     public void status_parameter_should_handle_invalid_values(string invalidStatus)
     {
         // Document that invalid status values should be handled gracefully

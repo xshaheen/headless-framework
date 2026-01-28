@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text;
-using System.Text.Json;
-using Framework.Testing.Tests;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Serialization;
@@ -72,10 +70,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
     public async Task should_handle_null_message_value()
     {
         // given
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            { "headless-msg-id", "789" },
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", "789" } };
         var message = new Message(headers, value: null);
 
         // when
@@ -90,10 +85,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
     public async Task should_handle_empty_body_on_deserialize()
     {
         // given
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            { "headless-msg-id", "empty" },
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", "empty" } };
         var transport = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
 
         // when
@@ -147,10 +139,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
     public void should_serialize_message_to_string()
     {
         // given
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            { "headless-msg-id", "string-test" },
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", "string-test" } };
         var message = new Message(headers, new TestPayload { Name = "StringSerialize" });
 
         // when
@@ -167,11 +156,11 @@ public sealed class JsonUtf8SerializerTests : TestBase
     {
         // given
         var json = """
-        {
-            "Headers": { "headless-msg-id": "from-string" },
-            "Value": { "Name": "FromString", "Value": 123 }
-        }
-        """;
+            {
+                "Headers": { "headless-msg-id": "from-string" },
+                "Value": { "Name": "FromString", "Value": 123 }
+            }
+            """;
 
         // when
         var message = _serializer.Deserialize(json);

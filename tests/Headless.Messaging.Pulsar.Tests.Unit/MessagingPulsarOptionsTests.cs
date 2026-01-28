@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Testing.Tests;
 using Headless.Messaging.Pulsar;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -21,11 +21,7 @@ public sealed class MessagingPulsarOptionsTests : TestBase
     public void should_have_enable_client_log_property()
     {
         // given
-        var options = new MessagingPulsarOptions
-        {
-            ServiceUrl = "pulsar://localhost:6650",
-            EnableClientLog = true,
-        };
+        var options = new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650", EnableClientLog = true };
 
         // when, then
         options.EnableClientLog.Should().BeTrue();

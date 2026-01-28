@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
-using Framework.Testing.Tests;
 using Headless.Messaging.Kafka;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
@@ -42,11 +42,7 @@ public sealed class MessagingKafkaOptionsTests : TestBase
     public void should_allow_custom_connection_pool_size()
     {
         // given, when
-        var options = new MessagingKafkaOptions
-        {
-            Servers = "localhost:9092",
-            ConnectionPoolSize = 25,
-        };
+        var options = new MessagingKafkaOptions { Servers = "localhost:9092", ConnectionPoolSize = 25 };
 
         // then
         options.ConnectionPoolSize.Should().Be(25);
@@ -71,11 +67,7 @@ public sealed class MessagingKafkaOptionsTests : TestBase
         var options = new MessagingKafkaOptions
         {
             Servers = "localhost:9092",
-            TopicOptions = new KafkaTopicOptions
-            {
-                NumPartitions = 3,
-                ReplicationFactor = 2,
-            },
+            TopicOptions = new KafkaTopicOptions { NumPartitions = 3, ReplicationFactor = 2 },
         };
 
         // then
@@ -139,11 +131,7 @@ public sealed class MessagingKafkaOptionsTests : TestBase
         ) => [new("custom-header", "custom-value")];
 
         // when
-        var options = new MessagingKafkaOptions
-        {
-            Servers = "localhost:9092",
-            CustomHeadersBuilder = builder,
-        };
+        var options = new MessagingKafkaOptions { Servers = "localhost:9092", CustomHeadersBuilder = builder };
 
         // then
         options.CustomHeadersBuilder.Should().NotBeNull();

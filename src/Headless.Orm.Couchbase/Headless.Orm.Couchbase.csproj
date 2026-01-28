@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Couchbase.Extensions.Compression.Snappier" />
+    <PackageReference Include="Couchbase.Extensions.DependencyInjection" />
+    <PackageReference Include="Couchbase.Extensions.MultiOp" />
+    <PackageReference Include="Couchbase.Transactions" />
+    <PackageReference Include="Linq2Couchbase" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
+  </ItemGroup>
+</Project>

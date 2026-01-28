@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using Framework.Testing.Tests;
-using Headless.Messaging.OpenTelemetry;
+using Headless.Testing.Tests;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -132,8 +130,7 @@ public sealed class SetupTests : TestBase
         var activities = new List<Activity>();
 
         // when
-        var result = Sdk.CreateTracerProviderBuilder()
-            .AddMessagingInstrumentation();
+        var result = Sdk.CreateTracerProviderBuilder().AddMessagingInstrumentation();
 
         // then
         result.Should().NotBeNull();
@@ -146,8 +143,7 @@ public sealed class SetupTests : TestBase
         // given
 
         // when
-        var result = Sdk.CreateMeterProviderBuilder()
-            .AddMessagingInstrumentation();
+        var result = Sdk.CreateMeterProviderBuilder().AddMessagingInstrumentation();
 
         // then
         result.Should().NotBeNull();

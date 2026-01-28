@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
-using Framework.Checks;
+using Headless.Checks;
 
 namespace Headless.Messaging.Messages;
 

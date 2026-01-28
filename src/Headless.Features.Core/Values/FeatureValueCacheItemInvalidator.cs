@@ -1,0 +1,26 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Caching;
+using Headless.Domain;
+using Headless.Features.Entities;
+
+namespace Headless.Features.Values;
+
+public sealed class FeatureValueCacheItemInvalidator(ICache<FeatureValueCacheItem> cache)
+    : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
+{
+    public async ValueTask HandleAsync(
+        EntityChangedEventData<FeatureValueRecord> message,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var cacheKey = _CalculateCacheKey(message.Entity.Name, message.Entity.ProviderName, message.Entity.ProviderKey);
+
+        await cache.RemoveAsync(cacheKey, cancellationToken);
+    }
+
+    private static string _CalculateCacheKey(string name, string providerName, string? providerKey)
+    {
+        return FeatureValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+    }
+}
