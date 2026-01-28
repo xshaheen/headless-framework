@@ -10,7 +10,7 @@ public static class WebHelper
 {
     private const int _MaxCacheSize = 1000;
 
-    private static readonly ConcurrentDictionary<string, string?> _deviceInfoCache = new();
+    private static readonly ConcurrentDictionary<string, string?> _DeviceInfoCache = new(StringComparer.Ordinal);
 
     [ThreadStatic]
     private static DeviceDetector? _detector;
@@ -22,19 +22,19 @@ public static class WebHelper
             return null;
         }
 
-        if (_deviceInfoCache.TryGetValue(userAgent, out var cached))
+        if (_DeviceInfoCache.TryGetValue(userAgent, out var cached))
         {
             return cached;
         }
 
         var result = _ParseDeviceInfo(userAgent);
 
-        if (_deviceInfoCache.Count >= _MaxCacheSize)
+        if (_DeviceInfoCache.Count >= _MaxCacheSize)
         {
-            _deviceInfoCache.Clear();
+            _DeviceInfoCache.Clear();
         }
 
-        _deviceInfoCache.TryAdd(userAgent, result);
+        _DeviceInfoCache.TryAdd(userAgent, result);
 
         return result;
     }
