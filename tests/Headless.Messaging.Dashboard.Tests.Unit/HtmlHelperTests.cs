@@ -1,3 +1,5 @@
+using System;
+using System.Reflection;
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Dashboard;
@@ -11,7 +13,13 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_format_void_method()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.VoidMethod))!;
+        var method = typeof(TestClass).GetMethod(
+            nameof(TestClass.VoidMethod),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        )!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -26,7 +34,13 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_format_async_task_method()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.AsyncTaskMethod))!;
+        var method = typeof(TestClass).GetMethod(
+            nameof(TestClass.AsyncTaskMethod),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        )!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -42,7 +56,13 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_format_async_task_with_result_method()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.AsyncTaskWithResultMethod))!;
+        var method = typeof(TestClass).GetMethod(
+            nameof(TestClass.AsyncTaskWithResultMethod),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        )!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -58,7 +78,7 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_format_method_with_string_parameter()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.MethodWithStringParam))!;
+        var method = typeof(TestClass).GetMethod(nameof(TestClass.MethodWithStringParam), [typeof(string)])!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -74,7 +94,13 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_format_method_with_int_return_type()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.IntReturningMethod))!;
+        var method = typeof(TestClass).GetMethod(
+            nameof(TestClass.IntReturningMethod),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        )!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -88,7 +114,7 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_format_method_with_complex_parameter()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.MethodWithComplexParam))!;
+        var method = typeof(TestClass).GetMethod(nameof(TestClass.MethodWithComplexParam), [typeof(ComplexType)])!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -103,7 +129,13 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_include_keyword_span_class()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.VoidMethod))!;
+        var method = typeof(TestClass).GetMethod(
+            nameof(TestClass.VoidMethod),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        )!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -116,7 +148,7 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_include_type_span_class_for_complex_types()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.MethodWithComplexParam))!;
+        var method = typeof(TestClass).GetMethod(nameof(TestClass.MethodWithComplexParam), [typeof(ComplexType)])!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -129,7 +161,13 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_handle_method_with_no_parameters()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.NoParamMethod))!;
+        var method = typeof(TestClass).GetMethod(
+            nameof(TestClass.NoParamMethod),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        )!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);
@@ -142,7 +180,13 @@ public sealed class HtmlHelperTests : TestBase
     public void MethodEscaped_should_handle_valuetask_method()
     {
         // given
-        var method = typeof(TestClass).GetMethod(nameof(TestClass.ValueTaskMethod))!;
+        var method = typeof(TestClass).GetMethod(
+            nameof(TestClass.ValueTaskMethod),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
+        )!;
 
         // when
         var result = HtmlHelper.MethodEscaped(method);

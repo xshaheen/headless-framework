@@ -1,8 +1,8 @@
 namespace Headless.Ticker;
 
-public sealed class RestartThrottleManager(Action onRestartTriggered)
+public sealed class RestartThrottleManager(Action onRestartTriggered) : IDisposable
 {
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private Timer? _debounceTimer;
     private volatile bool _restartPending;
 
@@ -38,5 +38,10 @@ public sealed class RestartThrottleManager(Action onRestartTriggered)
                 onRestartTriggered();
             }
         }
+    }
+
+    public void Dispose()
+    {
+        _debounceTimer?.Dispose();
     }
 }

@@ -46,6 +46,6 @@ internal static partial class CronScheduleCache
 
     public static bool Invalidate(string expression) => _Cache.TryRemove(_Normalize(expression), out _);
 
-    [GeneratedRegex(@"\s+")]
+    [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex _ReplaceRegex();
 }

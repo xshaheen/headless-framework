@@ -20,7 +20,7 @@ public class AuthMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        var path = context.Request.Path.Value?.ToLower() ?? "";
+        var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
 
         // Skip authentication for:
         // 1. Static files (handled by static files middleware)
@@ -33,7 +33,7 @@ public class AuthMiddleware
         }
 
         // Only protect API endpoints
-        if (!path.StartsWith("/api/"))
+        if (!path.StartsWith("/api/", StringComparison.Ordinal))
         {
             await _next(context);
             return;
@@ -62,14 +62,14 @@ public class AuthMiddleware
 
     private static bool _IsExcludedPath(string path)
     {
-        return path.Contains("/assets/")
-            || path.EndsWith(".js")
-            || path.EndsWith(".css")
-            || path.EndsWith(".ico")
-            || path.EndsWith(".png")
-            || path.EndsWith(".jpg")
-            || path.EndsWith(".svg")
-            || path.Contains("/negotiate")
+        return path.Contains("/assets/", StringComparison.Ordinal)
+            || path.EndsWith(".js", StringComparison.Ordinal)
+            || path.EndsWith(".css", StringComparison.Ordinal)
+            || path.EndsWith(".ico", StringComparison.Ordinal)
+            || path.EndsWith(".png", StringComparison.Ordinal)
+            || path.EndsWith(".jpg", StringComparison.Ordinal)
+            || path.EndsWith(".svg", StringComparison.Ordinal)
+            || path.Contains("/negotiate", StringComparison.Ordinal)
             || string.Equals(path, "/api/auth/validate", StringComparison.Ordinal)
             || string.Equals(path, "/api/auth/info", StringComparison.Ordinal);
     }

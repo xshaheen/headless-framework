@@ -6,7 +6,6 @@ using Headless.Api.Abstractions;
 using Headless.Api.Middlewares;
 using Headless.Caching;
 using Headless.Constants;
-using Headless.Constants;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;

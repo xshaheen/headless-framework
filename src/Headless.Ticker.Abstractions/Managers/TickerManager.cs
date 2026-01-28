@@ -252,7 +252,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
     {
         if (cronTicker is null)
         {
-            return new TickerResult<TCronTicker>(new Exception($"Cron ticker must not be null!"));
+            return new TickerResult<TCronTicker>(
+                new ArgumentNullException(nameof(cronTicker), "Cron ticker must not be null!")
+            );
         }
 
         if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != cronTicker?.Function))
@@ -613,7 +615,7 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         {
             if (cronTicker is null)
             {
-                errors.Add(new Exception("Cron ticker must not be null!"));
+                errors.Add(new ArgumentNullException(nameof(cronTickers), "Cron ticker must not be null!"));
                 continue;
             }
 

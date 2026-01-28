@@ -100,11 +100,13 @@ internal class TickerQSchedulerBackgroundService : BackgroundService, ITickerQHo
                 await _internalTickerManager.SetTickersInProgress(_executionContext.Functions, cancellationToken);
 
                 foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
+                {
                     _ = _taskScheduler.QueueAsync(
                         async ct => await _taskHandler.ExecuteTaskAsync(function, false, ct),
                         function.CachedPriority,
                         stoppingToken
                     );
+                }
 
                 _executionContext.SetFunctions(null);
             }
@@ -186,5 +188,12 @@ internal class TickerQSchedulerBackgroundService : BackgroundService, ITickerQHo
         _taskScheduler.Freeze();
         Interlocked.Exchange(ref _started, 0);
         await base.StopAsync(cancellationToken);
+    }
+
+    public override void Dispose()
+    {
+        _restartThrottle.Dispose();
+        _schedulerLoopCancellationTokenSource?.Dispose();
+        base.Dispose();
     }
 }

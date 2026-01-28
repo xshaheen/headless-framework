@@ -97,10 +97,11 @@ public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
     public void should_accept_valid_identifier_patterns(string schema)
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions();
-
-        // when
-        options.Schema = schema;
+        var options = new SqlServerEntityFrameworkMessagingOptions
+        {
+            // when
+            Schema = schema,
+        };
 
         // then
         options.Schema.Should().Be(schema);

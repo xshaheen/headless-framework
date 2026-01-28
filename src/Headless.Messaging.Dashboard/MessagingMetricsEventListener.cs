@@ -78,7 +78,7 @@ internal class MessagingMetricsEventListener : EventListener
 
         if ((string)val[0] == MessageDiagnosticListenerNames.PublishedPerSec)
         {
-            PublishedPerSec.Add(Convert.ToInt32(val[3]));
+            PublishedPerSec.Add(Convert.ToInt32(val[3], CultureInfo.InvariantCulture));
         }
         //else if ((string)val[0] == MessageDiagnosticListenerNames.ConsumePerSec)
         //{
@@ -88,11 +88,11 @@ internal class MessagingMetricsEventListener : EventListener
         //}
         else if ((string)val[0] == MessageDiagnosticListenerNames.InvokeSubscriberPerSec)
         {
-            InvokeSubscriberPerSec.Add(Convert.ToInt32(val[3]));
+            InvokeSubscriberPerSec.Add(Convert.ToInt32(val[3], CultureInfo.InvariantCulture));
         }
         else if ((string)val[0] == MessageDiagnosticListenerNames.InvokeSubscriberElapsedMs)
         {
-            var v = Convert.ToInt32(val[2]);
+            var v = Convert.ToInt32(val[2], CultureInfo.InvariantCulture);
             InvokeSubscriberElapsedMs.Add(v == 0 ? null : v);
         }
     }

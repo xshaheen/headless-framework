@@ -94,7 +94,7 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         //       TimeTickerEntity graph after we successfully acquire the lock.
         var timeTickersToUpdate = _TimeTickers
             .Values.Where(x => x.ExecutionTime != null)
-            .Where(x => x.Status == TickerStatus.Idle || x.Status == TickerStatus.Queued)
+            .Where(x => x.Status is TickerStatus.Idle or TickerStatus.Queued)
             .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .ToArray();
 
@@ -368,7 +368,7 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(count);
     }
 
-    private int _AddTickerWithChildren(TTimeTicker ticker, Guid? parentId = null)
+    private static int _AddTickerWithChildren(TTimeTicker ticker, Guid? parentId = null)
     {
         var count = 0;
 
@@ -417,7 +417,7 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(count);
     }
 
-    private int _UpdateTickerWithChildren(TTimeTicker ticker, Guid? parentId = null)
+    private static int _UpdateTickerWithChildren(TTimeTicker ticker, Guid? parentId = null)
     {
         var count = 0;
 
@@ -804,7 +804,7 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var occurrencesToUpdate = _CronOccurrences
-            .Values.Where(x => x.Status == TickerStatus.Idle || x.Status == TickerStatus.Queued)
+            .Values.Where(x => x.Status is TickerStatus.Idle or TickerStatus.Queued)
             .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .ToArray();
 
@@ -1110,7 +1110,7 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return root;
     }
 
-    private List<TTimeTicker> _BuildChildrenHierarchy(Guid parentId)
+    private static List<TTimeTicker> _BuildChildrenHierarchy(Guid parentId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children) || children.IsEmpty)
         {
@@ -1272,7 +1272,7 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             );
     }
 
-    private TTimeTicker _CloneTicker(TTimeTicker ticker)
+    private static TTimeTicker _CloneTicker(TTimeTicker ticker)
     {
         var cloned = new TTimeTicker
         {
@@ -1302,7 +1302,7 @@ internal class TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return cloned;
     }
 
-    private CronTickerOccurrenceEntity<TCronTicker> _CloneCronOccurrence(
+    private static CronTickerOccurrenceEntity<TCronTicker> _CloneCronOccurrence(
         CronTickerOccurrenceEntity<TCronTicker> occurrence
     )
     {

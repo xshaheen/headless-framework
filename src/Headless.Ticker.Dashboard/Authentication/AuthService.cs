@@ -68,7 +68,7 @@ public class AuthService : IAuthService
         };
     }
 
-    private string? _GetAuthorizationValue(HttpContext context)
+    private static string? _GetAuthorizationValue(HttpContext context)
     {
         // Try Authorization header first
         var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
@@ -164,7 +164,7 @@ public class AuthService : IAuthService
         }
     }
 
-    private Task<AuthResult> _AuthenticateHostAsync(HttpContext context)
+    private static Task<AuthResult> _AuthenticateHostAsync(HttpContext context)
     {
         // Delegate to host application's authentication
         if (context.User?.Identity?.IsAuthenticated == true)

@@ -28,7 +28,7 @@ public class ServiceBusProcessorFacade : IAsyncDisposable
         {
             throw new ArgumentNullException(
                 nameof(serviceBusProcessor),
-                "Either serviceBusProcessor or serviceBusSessionProcessor must be provided"
+                @"Either serviceBusProcessor or serviceBusSessionProcessor must be provided"
             );
         }
 
@@ -45,6 +45,8 @@ public class ServiceBusProcessorFacade : IAsyncDisposable
             : _serviceBusProcessor!.StartProcessingAsync(cancellationToken);
     }
 
+#pragma warning disable CA1003, MA0046
+    // CA1003/MA0046: Must use Func<T, Task> to match Azure SDK's ServiceBusProcessor event signatures
     public event Func<ProcessMessageEventArgs, Task> ProcessMessageAsync
     {
         add => _serviceBusProcessor!.ProcessMessageAsync += value;
@@ -82,8 +84,12 @@ public class ServiceBusProcessorFacade : IAsyncDisposable
             }
         }
     }
+#pragma warning restore CA1003, MA0046
 
+#pragma warning disable CA1816
+    // CA1816: Class is not sealed; SuppressFinalize helps derived types avoid re-implementing IDisposable
     public async ValueTask DisposeAsync()
+#pragma warning restore CA1816
     {
         if (_serviceBusProcessor is not null)
         {

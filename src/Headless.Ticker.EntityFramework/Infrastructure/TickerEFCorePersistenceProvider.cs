@@ -249,7 +249,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         Expression<Func<CronTickerOccurrenceEntity<TCronTicker>, bool>> predicate,
         int pageNumber,
         int pageSize,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
@@ -271,7 +271,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
     public async Task<int> InsertCronTickerOccurrences(
         CronTickerOccurrenceEntity<TCronTicker>[] cronTickerOccurrences,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
@@ -286,7 +286,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
     public async Task<int> RemoveCronTickerOccurrences(
         Guid[] cronTickerOccurrences,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Headless.Ticker.Hubs;
 
-internal class TickerQNotificationHubSender : ITickerQNotificationHubSender
+internal sealed class TickerQNotificationHubSender : ITickerQNotificationHubSender, IDisposable
 {
     private readonly IHubContext<TickerQNotificationHub> _hubContext;
     private readonly Timer _timeTickerUpdateTimer;
@@ -146,5 +146,10 @@ internal class TickerQNotificationHubSender : ITickerQNotificationHubSender
     public async Task CanceledTickerNotifyAsync(Guid id)
     {
         await _hubContext.Clients.All.SendAsync("CanceledTickerNotification", id);
+    }
+
+    public void Dispose()
+    {
+        _timeTickerUpdateTimer.Dispose();
     }
 }
