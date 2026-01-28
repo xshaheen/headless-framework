@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Xml;
 
-namespace Framework.Sitemaps;
+namespace Headless.Sitemaps;
 
 /// <summary>Sitemap file builder</summary>
 /// <remarks>https://developers.google.com/search/docs/advanced/sitemaps/build-sitemap</remarks>

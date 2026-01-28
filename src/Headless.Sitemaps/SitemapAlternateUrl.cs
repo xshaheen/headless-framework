@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Sitemaps;
+namespace Headless.Sitemaps;
 
 /// <summary>Represents sitemap alternate URL node.</summary>
 [PublicAPI]

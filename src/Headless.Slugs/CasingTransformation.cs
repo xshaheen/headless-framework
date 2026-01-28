@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Framework.Slugs;
+namespace Headless.Slugs;
 
 public enum CasingTransformation
 {

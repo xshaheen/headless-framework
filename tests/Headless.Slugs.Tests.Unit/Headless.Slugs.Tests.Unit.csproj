@@ -14,6 +14,6 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Slugs\Framework.Slugs.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Slugs\Headless.Slugs.csproj" />
   </ItemGroup>
 </Project>

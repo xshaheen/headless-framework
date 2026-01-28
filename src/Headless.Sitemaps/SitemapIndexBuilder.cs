@@ -2,7 +2,7 @@
 
 using System.Xml;
 
-namespace Framework.Sitemaps;
+namespace Headless.Sitemaps;
 
 /// <summary>Sitemap index file builder.</summary>
 /// <remarks>https://developers.google.com/search/docs/advanced/sitemaps/large-sitemaps</remarks>

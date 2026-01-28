@@ -214,10 +214,10 @@
         <Project Path="src/Framework.PushNotifications.Abstractions/Framework.PushNotifications.Abstractions.csproj" />
     </Folder>
     <Folder Name="/Seo/">
-        <Project Path="src/Framework.Sitemaps/Framework.Sitemaps.csproj" />
-        <Project Path="src/Framework.Slugs/Framework.Slugs.csproj" />
-        <Project Path="tests/Framework.Sitemaps.Tests.Unit/Framework.Sitemaps.Tests.Unit.csproj" />
-        <Project Path="tests/Framework.Slugs.Tests.Unit/Framework.Slugs.Tests.Unit.csproj" />
+        <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />
+        <Project Path="src\Headless.Slugs\Headless.Slugs.csproj" />
+        <Project Path="tests\Headless.Sitemaps.Tests.Unit\Headless.Sitemaps.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Slugs.Tests.Unit\Headless.Slugs.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Serializers/">
         <Project Path="src/Framework.Serializer.Json/Framework.Serializer.Json.csproj" />

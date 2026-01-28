@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Xml;
-using Framework.Sitemaps.Internals;
+using Headless.Sitemaps.Internals;
 
-namespace Framework.Sitemaps;
+namespace Headless.Sitemaps;
 
 public static class SitemapConstants
 {
