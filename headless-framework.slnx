@@ -59,6 +59,8 @@
         <Project Path="src/Framework.Sql.Sqlite/Framework.Sql.Sqlite.csproj" />
         <Project Path="src/Framework.Sql.SqlServer/Framework.Sql.SqlServer.csproj" />
         <Project Path="src/Framework.Sql.Abstractions/Framework.Sql.Abstractions.csproj" />
+        <Project Path="tests/Framework.Redis.Tests.Integration/Framework.Redis.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Redis.Tests.Unit/Framework.Redis.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Sql.PostgreSql.Tests.Integration/Framework.Sql.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Sql.Sqlite.Tests.Integration/Framework.Sql.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Sql.SqlServer.Tests.Integration/Framework.Sql.SqlServer.Tests.Integration.csproj" />
@@ -122,7 +124,6 @@
         <Project Path="src/Framework.Media.Indexing.Abstractions/Framework.Media.Indexing.Abstractions.csproj" />
         <Project Path="tests/Framework.Media.Indexing.Tests.Unit/Framework.Media.Indexing.Tests.Unit.csproj" />
     </Folder>
-    <Folder Name="/Messaging/" />
     <Folder Name="/Messaging/Demo/">
         <Project Path="demo/Framework.Ticker.Api.Demo/Framework.Ticker.Api.Demo.csproj" />
         <Project Path="demo/Framework.Ticker.Console.Demo/Framework.Ticker.Console.Demo.csproj" />
@@ -163,6 +164,8 @@
     </Folder>
     <Folder Name="/Messaging/Tests/">
         <Project Path="tests/Framework.Ticker.Tests.Unit/Framework.Ticker.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AwsSqs.Tests.Integration/Headless.Messaging.AwsSqs.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.AwsSqs.Tests.Unit/Headless.Messaging.AwsSqs.Tests.Unit.csproj" />
@@ -250,16 +253,6 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
-    </Folder>
-    <Folder Name="/src/" />
-    <Folder Name="/tests/">
-        <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
-    </Folder>
-    <Folder Name="/src/" />
-    <Folder Name="/tests/">
-        <Project Path="tests/Framework.Redis.Tests.Integration/Framework.Redis.Tests.Integration.csproj" />
-        <Project Path="tests/Framework.Redis.Tests.Unit/Framework.Redis.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
