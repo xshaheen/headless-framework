@@ -124,6 +124,7 @@
         <Project Path="src/Framework.Media.Indexing.Abstractions/Framework.Media.Indexing.Abstractions.csproj" />
         <Project Path="tests/Framework.Media.Indexing.Tests.Unit/Framework.Media.Indexing.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Messaging/" />
     <Folder Name="/Messaging/Demo/">
         <Project Path="demo/Framework.Ticker.Api.Demo/Framework.Ticker.Api.Demo.csproj" />
         <Project Path="demo/Framework.Ticker.Console.Demo/Framework.Ticker.Console.Demo.csproj" />
@@ -255,8 +256,8 @@
         <File Path="README.md" />
     </Folder>
     <Folder Name="/Validations/">
-        <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
-        <Project Path="tests/Framework.FluentValidation.Tests.Unit/Framework.FluentValidation.Tests.Unit.csproj" />
+        <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
+        <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
     </Folder>
     <Project Path="build/_build.csproj">
         <Build Project="false" />

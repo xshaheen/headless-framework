@@ -20,7 +20,7 @@
     <ProjectReference Include="..\Framework.Api.Abstractions\Framework.Api.Abstractions.csproj" />
     <ProjectReference Include="..\Framework.BuildingBlocks\Framework.BuildingBlocks.csproj" />
     <ProjectReference Include="..\Framework.Caching.Abstractions\Framework.Caching.Abstractions.csproj" />
-    <ProjectReference Include="..\Framework.FluentValidation\Framework.FluentValidation.csproj" />
+    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
     <ProjectReference Include="..\Framework.Api.FluentValidation\Framework.Api.FluentValidation.csproj" />
     <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
   </ItemGroup>
