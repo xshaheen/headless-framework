@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Twilio.AspNet.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Framework.Hosting\Framework.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

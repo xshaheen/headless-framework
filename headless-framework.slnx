@@ -50,8 +50,8 @@
         <Project Path="src/Framework.Caching.Abstractions/Framework.Caching.Abstractions.csproj" />
     </Folder>
     <Folder Name="/Captcha/">
-        <Project Path="demo/Framework.Recaptcha.Demo/Framework.Recaptcha.Demo.csproj" />
-        <Project Path="src/Framework.Recaptcha/Framework.Recaptcha.csproj" />
+        <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
+        <Project Path="src/Headless.ReCaptcha/Headless.ReCaptcha.csproj" />
     </Folder>
     <Folder Name="/Database/">
         <Project Path="src/Framework.Redis/Framework.Redis.csproj" />
@@ -232,15 +232,15 @@
         <Project Path="tests/Framework.Settings.Tests.Integration/Framework.Settings.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Sms/">
-        <Project Path="src/Framework.Sms.Aws/Framework.Sms.Aws.csproj" />
-        <Project Path="src/Framework.Sms.Cequens/Framework.Sms.Cequens.csproj" />
-        <Project Path="src/Framework.Sms.Connekio/Framework.Sms.Connekio.csproj" />
-        <Project Path="src/Framework.Sms.Dev/Framework.Sms.Dev.csproj" />
-        <Project Path="src/Framework.Sms.Infobip/Framework.Sms.Infobip.csproj" />
-        <Project Path="src/Framework.Sms.Twilio/Framework.Sms.Twilio.csproj" />
-        <Project Path="src/Framework.Sms.VictoryLink/Framework.Sms.VictoryLink.csproj" />
-        <Project Path="src/Framework.Sms.Vodafone/Framework.Sms.Vodafone.csproj" />
-        <Project Path="src/Framework.Sms.Abstractions/Framework.Sms.Abstractions.csproj" />
+        <Project Path="src\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
+        <Project Path="src\Headless.Sms.Aws\Headless.Sms.Aws.csproj" />
+        <Project Path="src\Headless.Sms.Cequens\Headless.Sms.Cequens.csproj" />
+        <Project Path="src\Headless.Sms.Connekio\Headless.Sms.Connekio.csproj" />
+        <Project Path="src\Headless.Sms.Dev\Headless.Sms.Dev.csproj" />
+        <Project Path="src\Headless.Sms.Infobip\Headless.Sms.Infobip.csproj" />
+        <Project Path="src\Headless.Sms.Twilio\Headless.Sms.Twilio.csproj" />
+        <Project Path="src\Headless.Sms.VictoryLink\Headless.Sms.VictoryLink.csproj" />
+        <Project Path="src\Headless.Sms.Vodafone\Headless.Sms.Vodafone.csproj" />
     </Folder>
     <Folder Name="/Solution Items/">
         <File Path=".editorconfig" />
