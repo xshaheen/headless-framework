@@ -59,12 +59,12 @@ public sealed class ApiKeyAuthenticationHandler<TUser, TUserId>(
 
         if (!await signInManager.CanSignInAsync(apiKeyUser))
         {
-            return AuthenticateResult.Fail($"User {apiKeyUser.UserName} is not allowed to login.");
+            return AuthenticateResult.Fail("Authentication failed.");
         }
 
         if (userManager.SupportsUserLockout && await userManager.IsLockedOutAsync(apiKeyUser))
         {
-            return AuthenticateResult.Fail($"User {apiKeyUser.UserName} is currently locked out.");
+            return AuthenticateResult.Fail("Authentication failed.");
         }
 
         var claimsPrincipal = await signInManager.CreateUserPrincipalAsync(apiKeyUser);

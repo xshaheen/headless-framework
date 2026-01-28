@@ -291,7 +291,10 @@ public sealed class SlugTests
     {
         var options = new SlugOptions
         {
-            Replacements = new Dictionary<string, string> { { "@", " at " } }.ToFrozenDictionary(),
+            Replacements = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "@", " at " },
+            }.ToFrozenDictionary(),
             MaximumLength = 0,
         };
 
@@ -313,7 +316,10 @@ public sealed class SlugTests
         // Replacements happen first, then filtering by AllowedRanges
         var options = new SlugOptions
         {
-            Replacements = new Dictionary<string, string> { { "&", "AND" } }.ToFrozenDictionary(),
+            Replacements = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "&", "AND" },
+            }.ToFrozenDictionary(),
             MaximumLength = 0,
         };
 

@@ -21,9 +21,9 @@ public class HttpClientHttpRequester(ILoggerFactory loggerFactory, IHttpClientCa
         {
             return await httpClient.SendAsync(request);
         }
-        catch (Exception exception)
+        catch (Exception e)
         {
-            _logger.LogError("Error making http request, exception:" + exception.Message);
+            _logger.LogError(e, "Error making http request, exception:{Message}", e.Message);
             throw;
         }
         finally
@@ -34,12 +34,7 @@ public class HttpClientHttpRequester(ILoggerFactory loggerFactory, IHttpClientCa
 
     private IHttpClient _GetHttpClient(string cacheKey, IHttpClientBuilder builder)
     {
-        var httpClient = cacheHandlers.Get(cacheKey);
-
-        if (httpClient == null)
-        {
-            httpClient = builder.Create();
-        }
+        var httpClient = cacheHandlers.Get(cacheKey) ?? builder.Create();
 
         return httpClient;
     }

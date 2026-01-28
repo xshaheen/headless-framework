@@ -21,7 +21,7 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
     {
         _redisOptions = options.Value;
         _loggerFactory = loggerFactory;
-        _Init().GetAwaiter().GetResult();
+        _Init();
     }
 
     private AsyncLazyRedisConnection? QuietConnection
@@ -68,11 +68,11 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
         return (await _connections.OrderBy(static c => c.CreatedConnection!.ConnectionCapacity).First()).Connection;
     }
 
-    private async Task _Init()
+    private void _Init()
     {
         try
         {
-            await _poolLock.WaitAsync();
+            _poolLock.Wait();
 
             if (!_connections.IsEmpty)
             {

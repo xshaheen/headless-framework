@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
-public class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory loggerFactory) : IProcessor
+public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory loggerFactory) : IProcessor
 {
     private readonly ILogger _logger = loggerFactory.CreateLogger<InfiniteRetryProcessor>();
 

@@ -139,26 +139,12 @@ public static class HttpContextExtensions
 
     public static string? GetUserAgent(this HttpContext httpContext)
     {
-        var values = httpContext.Request.Headers._GetOrDefault(HeaderNames.UserAgent);
-
-        foreach (var value in values)
-        {
-            return value;
-        }
-
-        return null;
+        return httpContext.Request.Headers._GetOrDefault(HeaderNames.UserAgent).FirstOrDefault();
     }
 
     public static string? GetCorrelationId(this HttpContext httpContext)
     {
-        var values = httpContext.Request.Headers._GetOrDefault(HttpHeaderNames.CorrelationId);
-
-        foreach (var value in values)
-        {
-            return value;
-        }
-
-        return null;
+        return httpContext.Request.Headers._GetOrDefault(HttpHeaderNames.CorrelationId).FirstOrDefault();
     }
 
     public static Task ExecuteResultAsync(this HttpContext httpContext, IActionResult result)

@@ -26,9 +26,9 @@ public class RequestMapper : IRequestMapper
 
             return requestMessage;
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            throw new Exception($"Error when parsing incoming request, exception: {ex.Message}");
+            throw new InvalidOperationException($"Error when parsing incoming request, exception: {e.Message}", e);
         }
     }
 
@@ -87,7 +87,7 @@ public class RequestMapper : IRequestMapper
         return content;
     }
 
-    private HttpMethod _MapMethod(HttpRequest request)
+    private static HttpMethod _MapMethod(HttpRequest request)
     {
         return new HttpMethod(request.Method);
     }
@@ -108,20 +108,18 @@ public class RequestMapper : IRequestMapper
         }
     }
 
-    private async Task<byte[]> _ToByteArray(Stream stream)
+    private static async Task<byte[]> _ToByteArray(Stream stream)
     {
-        using (stream)
+        await using (stream)
         {
-            using (var memStream = new MemoryStream())
-            {
-                await stream.CopyToAsync(memStream);
-                return memStream.ToArray();
-            }
+            await using var memStream = new MemoryStream();
+            await stream.CopyToAsync(memStream);
+            return memStream.ToArray();
         }
     }
 
     private bool _IsSupportedHeader(KeyValuePair<string, StringValues> header)
     {
-        return !_unsupportedHeaders.Contains(header.Key.ToLower());
+        return !_unsupportedHeaders.Contains(header.Key.ToLowerInvariant());
     }
 }

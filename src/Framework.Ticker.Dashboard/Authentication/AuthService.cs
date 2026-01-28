@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
@@ -95,7 +97,12 @@ public class AuthService : IAuthService
                 ? authHeader[6..]
                 : authHeader;
 
-            if (string.Equals(credentials, _config.BasicCredentials, StringComparison.Ordinal))
+            if (
+                CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(credentials),
+                    Encoding.UTF8.GetBytes(_config.BasicCredentials ?? string.Empty)
+                )
+            )
             {
                 // Decode to get username for display
                 var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(credentials));
@@ -123,7 +130,12 @@ public class AuthService : IAuthService
                 _ => authHeader,
             };
 
-            if (string.Equals(token, _config.ApiKey, StringComparison.Ordinal))
+            if (
+                CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(token),
+                    Encoding.UTF8.GetBytes(_config.ApiKey ?? string.Empty)
+                )
+            )
             {
                 return Task.FromResult(AuthResult.Success("api-user"));
             }

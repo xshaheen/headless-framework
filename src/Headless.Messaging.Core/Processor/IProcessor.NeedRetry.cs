@@ -40,7 +40,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
         _dataStorage = dataStorage;
         _ttl = _waitingInterval.Add(TimeSpan.FromSeconds(10));
 
-        _instance = string.Concat(Helper.GetInstanceHostname(), "_", SnowflakeIdLongIdGenerator.GenerateWorkerId());
+        _instance = (
+            (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"
+        ).ToString(CultureInfo.InvariantCulture);
 
         _CheckSafeOptionsSet();
     }

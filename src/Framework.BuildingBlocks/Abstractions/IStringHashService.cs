@@ -14,7 +14,10 @@ public interface IStringHashService
 
 public sealed class StringHashOptions
 {
-    public int Iterations { get; init; } = 1000;
+    /// <summary>
+    /// PBKDF2 iteration count. Default is 600,000 per OWASP 2023 recommendation for SHA-256.
+    /// </summary>
+    public int Iterations { get; init; } = 600_000;
 
     public int Size { get; init; } = 128;
 
