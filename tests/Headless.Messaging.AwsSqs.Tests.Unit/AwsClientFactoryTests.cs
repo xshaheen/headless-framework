@@ -42,11 +42,7 @@ public sealed class AwsClientFactoryTests
     public void should_create_sns_client_with_service_url()
     {
         // given
-        var options = new AmazonSqsOptions
-        {
-            Region = RegionEndpoint.USEast1,
-            SnsServiceUrl = "http://localhost:4566",
-        };
+        var options = new AmazonSqsOptions { Region = RegionEndpoint.USEast1, SnsServiceUrl = "http://localhost:4566" };
 
         // when
         using var client = AwsClientFactory.CreateSnsClient(options);
@@ -107,11 +103,7 @@ public sealed class AwsClientFactoryTests
     public void should_create_sqs_client_with_service_url()
     {
         // given
-        var options = new AmazonSqsOptions
-        {
-            Region = RegionEndpoint.USEast1,
-            SqsServiceUrl = "http://localhost:4566",
-        };
+        var options = new AmazonSqsOptions { Region = RegionEndpoint.USEast1, SqsServiceUrl = "http://localhost:4566" };
 
         // when
         using var client = AwsClientFactory.CreateSqsClient(options);
@@ -143,7 +135,12 @@ public sealed class AwsClientFactoryTests
     public void should_ignore_whitespace_service_url()
     {
         // given - whitespace service URL should be treated as null (use region)
-        var options = new AmazonSqsOptions { Region = RegionEndpoint.USEast1, SqsServiceUrl = "   ", SnsServiceUrl = "   " };
+        var options = new AmazonSqsOptions
+        {
+            Region = RegionEndpoint.USEast1,
+            SqsServiceUrl = "   ",
+            SnsServiceUrl = "   ",
+        };
 
         // when
         using var sqsClient = AwsClientFactory.CreateSqsClient(options);

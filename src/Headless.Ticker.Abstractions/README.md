@@ -1,11 +1,10 @@
-# Headless.Ticker.Utilities
+# Headless.Ticker.Abstractions
 
-Simple utilities for queuing and executing cron/time-based jobs in the background.  
-Part of the [TickerQ](https://github.com/arcenox/TickerQ) suite by [Arcenox](https://arcenox.com).
+Simple utilities for queuing and executing cron/time-based jobs in the background.
 
 ---
 
 ## 📦 Installation
-
+[Headless.Ticker.Abstractions.csproj](Headless.Ticker.Abstractions.csproj)
 ```bash
-dotnet add package Headless.Ticker.Utilities
+dotnet add package Headless.Ticker.Abstractions

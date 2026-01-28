@@ -1,6 +1,6 @@
 using Headless.Ticker.Base;
 
-namespace Demo;
+namespace Headless.Ticker.Api.Demo;
 
 public class SampleJobs
 {

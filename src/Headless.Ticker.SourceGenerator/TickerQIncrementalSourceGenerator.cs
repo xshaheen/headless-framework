@@ -414,13 +414,13 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         sb.AppendLine("using Microsoft.Extensions.DependencyInjection;");
 
         // Include TickerQ using statements
-        sb.AppendLine("using Headless.Ticker.Utilities;");
-        sb.AppendLine("using Headless.Ticker.Utilities.Enums;");
+        sb.AppendLine("using Headless.Ticker;");
+        sb.AppendLine("using Headless.Ticker.Enums;");
 
-        // Include Base utilities if ToGenericContextWithRequest is used
+        // Include Base namespace if ToGenericContextWithRequest is used
         if (includeBaseUtilities)
         {
-            sb.AppendLine("using Headless.Ticker.Utilities.Base;");
+            sb.AppendLine("using Headless.Ticker.Base;");
         }
 
         // Include root namespace (assembly name) as using statement
@@ -754,8 +754,8 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
 
                     return attributeName == "TickerQConstructorAttribute"
                         || attributeName == "TickerQConstructor"
-                        || fullName == "Headless.Ticker.Utilities.TickerQConstructorAttribute"
-                        || fullName == "Headless.Ticker.Utilities.TickerQConstructor";
+                        || fullName == "Headless.Ticker.Base.TickerQConstructorAttribute"
+                        || fullName == "Headless.Ticker.Base.TickerQConstructor";
                 });
         });
 

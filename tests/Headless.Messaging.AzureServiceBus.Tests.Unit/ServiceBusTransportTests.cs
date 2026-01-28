@@ -43,9 +43,7 @@ public sealed class ServiceBusTransportTests
     public async Task should_have_correct_broker_address_when_using_namespace()
     {
         // given
-        var options = Options.Create(
-            new AzureServiceBusOptions { Namespace = "sb://custom.servicebus.windows.net/" }
-        );
+        var options = Options.Create(new AzureServiceBusOptions { Namespace = "sb://custom.servicebus.windows.net/" });
 
         // when
         await using var transport = new AzureServiceBusTransport(
@@ -174,10 +172,7 @@ public sealed class ServiceBusTransportTests
         );
 
         var transportMessage = new TransportMessage(
-            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                { Headers.MessageName, "SomeMessage" },
-            },
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { Headers.MessageName, "SomeMessage" } },
             body: null
         );
 

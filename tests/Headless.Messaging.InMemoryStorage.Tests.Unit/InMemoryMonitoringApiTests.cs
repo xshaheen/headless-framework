@@ -19,7 +19,9 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly ISerializer _serializer = Substitute.For<ISerializer>();
     private readonly ILongIdGenerator _idGenerator = Substitute.For<ILongIdGenerator>();
-    private readonly IOptions<MessagingOptions> _options = Options.Create(new MessagingOptions { FailedRetryCount = 3 });
+    private readonly IOptions<MessagingOptions> _options = Options.Create(
+        new MessagingOptions { FailedRetryCount = 3 }
+    );
     private readonly InMemoryDataStorage _storage;
     private readonly InMemoryMonitoringApi _sut;
     private long _idCounter = 1000;
@@ -93,16 +95,33 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_return_statistics()
     {
         // given
-        var pubSucceeded = await _storage.StoreMessageAsync("topic", _CreateMessage("ps-1"), cancellationToken: AbortToken);
+        var pubSucceeded = await _storage.StoreMessageAsync(
+            "topic",
+            _CreateMessage("ps-1"),
+            cancellationToken: AbortToken
+        );
         await _storage.ChangePublishStateAsync(pubSucceeded, StatusName.Succeeded, cancellationToken: AbortToken);
 
-        var pubFailed = await _storage.StoreMessageAsync("topic", _CreateMessage("pf-1"), cancellationToken: AbortToken);
+        var pubFailed = await _storage.StoreMessageAsync(
+            "topic",
+            _CreateMessage("pf-1"),
+            cancellationToken: AbortToken
+        );
         await _storage.ChangePublishStateAsync(pubFailed, StatusName.Failed, cancellationToken: AbortToken);
 
-        var pubDelayed = await _storage.StoreMessageAsync("topic", _CreateMessage("pd-1"), cancellationToken: AbortToken);
+        var pubDelayed = await _storage.StoreMessageAsync(
+            "topic",
+            _CreateMessage("pd-1"),
+            cancellationToken: AbortToken
+        );
         await _storage.ChangePublishStateAsync(pubDelayed, StatusName.Delayed, cancellationToken: AbortToken);
 
-        var recvSucceeded = await _storage.StoreReceivedMessageAsync("topic", "group", _CreateMessage("rs-1"), AbortToken);
+        var recvSucceeded = await _storage.StoreReceivedMessageAsync(
+            "topic",
+            "group",
+            _CreateMessage("rs-1"),
+            AbortToken
+        );
         await _storage.ChangeReceiveStateAsync(recvSucceeded, StatusName.Succeeded, AbortToken);
 
         var recvFailed = await _storage.StoreReceivedMessageAsync("topic", "group", _CreateMessage("rf-1"), AbortToken);
@@ -181,8 +200,16 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_query_published_messages()
     {
         // given
-        var msg1 = await _storage.StoreMessageAsync("orders.created", _CreateMessage("qp-1"), cancellationToken: AbortToken);
-        var msg2 = await _storage.StoreMessageAsync("users.created", _CreateMessage("qp-2"), cancellationToken: AbortToken);
+        var msg1 = await _storage.StoreMessageAsync(
+            "orders.created",
+            _CreateMessage("qp-1"),
+            cancellationToken: AbortToken
+        );
+        var msg2 = await _storage.StoreMessageAsync(
+            "users.created",
+            _CreateMessage("qp-2"),
+            cancellationToken: AbortToken
+        );
         await _storage.ChangePublishStateAsync(msg1, StatusName.Succeeded, cancellationToken: AbortToken);
         await _storage.ChangePublishStateAsync(msg2, StatusName.Failed, cancellationToken: AbortToken);
 
@@ -364,7 +391,9 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // given
         var message = _CreateMessage("view-test");
         await _storage.StoreMessageAsync("test.topic.name", message, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["view-test"].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        InMemoryDataStorage.PublishedMessages["view-test"].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddHours(1);
         InMemoryDataStorage.PublishedMessages["view-test"].Retries = 3;
 
         var query = new MessageQuery
