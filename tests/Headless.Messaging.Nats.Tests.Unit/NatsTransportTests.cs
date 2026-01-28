@@ -50,7 +50,7 @@ public sealed class NatsTransportTests : TestBase
         connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
         jetStream
             .PublishAsync(Arg.Any<Msg>(), Arg.Any<PublishOptions>())
-            .Throws(new NATSException("Connection closed")); // Force an exception to test the flow
+            .ThrowsAsync(new NATSException("Connection closed")); // Force an exception to test the flow
 
         // when
         await transport.SendAsync(message);
@@ -73,7 +73,7 @@ public sealed class NatsTransportTests : TestBase
         connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
         jetStream
             .PublishAsync(Arg.Any<Msg>(), Arg.Any<PublishOptions>())
-            .Throws(new InvalidOperationException("Publish failed"));
+            .ThrowsAsync(new InvalidOperationException("Publish failed"));
 
         // when
         var result = await transport.SendAsync(message);
@@ -97,7 +97,7 @@ public sealed class NatsTransportTests : TestBase
         connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
         jetStream
             .PublishAsync(Arg.Any<Msg>(), Arg.Any<PublishOptions>())
-            .Throws(new NATSException("NATS connection closed"));
+            .ThrowsAsync(new NATSException("NATS connection closed"));
 
         // when
         var result = await transport.SendAsync(message);
@@ -131,7 +131,7 @@ public sealed class NatsTransportTests : TestBase
         Msg? capturedMsg = null;
         jetStream
             .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<PublishOptions>())
-            .Throws(new NATSException("Test exception")); // Force exception after capture
+            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when
         await transport.SendAsync(message);
@@ -157,7 +157,7 @@ public sealed class NatsTransportTests : TestBase
         Msg? capturedMsg = null;
         jetStream
             .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<PublishOptions>())
-            .Throws(new NATSException("Test exception")); // Force exception after capture
+            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when
         await transport.SendAsync(message);
@@ -182,7 +182,7 @@ public sealed class NatsTransportTests : TestBase
         PublishOptions? capturedOptions = null;
         jetStream
             .PublishAsync(Arg.Any<Msg>(), Arg.Do<PublishOptions>(o => capturedOptions = o))
-            .Throws(new NATSException("Test exception")); // Force exception after capture
+            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when
         await transport.SendAsync(message);
@@ -196,9 +196,11 @@ public sealed class NatsTransportTests : TestBase
     public async Task should_dispose_without_error()
     {
         // given
-        var transport = new NatsTransport(_logger, _pool);
+        await using var transport = new NatsTransport(_logger, _pool);
 
         // when
+        // ReSharper disable once DisposeOnUsingVariable
+        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await transport.DisposeAsync();
 
         // then
@@ -228,7 +230,7 @@ public sealed class NatsTransportTests : TestBase
         Msg? capturedMsg = null;
         jetStream
             .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<PublishOptions>())
-            .Throws(new NATSException("Test exception")); // Force exception after capture
+            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when
         await transport.SendAsync(message);

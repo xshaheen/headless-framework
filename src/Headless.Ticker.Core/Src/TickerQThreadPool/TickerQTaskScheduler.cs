@@ -27,10 +27,17 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
 
     // Thread-local flag to detect if we're on a TickerQ worker thread
     [ThreadStatic]
-    public static bool IsTickerQWorkerThread;
+#pragma warning disable IDE1006 // ReSharper disable once InconsistentNaming
+    internal static bool IsTickerQWorkerThread;
+#pragma warning restore IDE1006
 
+#pragma warning disable CA2019
+    // CA2019: ThreadStatic inline init only runs for the first thread, but this is intentional.
+    // The -1 sentinel is only a backup; the real check is IsTickerQWorkerThread at line 415.
     [ThreadStatic]
+    // ReSharper disable once ThreadStaticFieldHasInitializer
     private static int _threadWorkerIndex = -1;
+#pragma warning restore CA2019
 
     public TickerQTaskScheduler(
         int maxConcurrency,
@@ -50,7 +57,7 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new ConcurrentQueue<WorkItem>[maxConcurrency];
-        for (int i = 0; i < maxConcurrency; i++)
+        for (var i = 0; i < maxConcurrency; i++)
         {
             _workerQueues[i] = new ConcurrentQueue<WorkItem>();
         }
@@ -63,7 +70,7 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
     /// Queues work to be executed by the scheduler.
     /// The priority parameter is ignored in this simplified version.
     /// </summary>
-    public async ValueTask QueueAsync(
+    public async Task QueueAsync(
         Func<CancellationToken, Task> work,
         TickerTaskPriority priority, // Kept for backward compatibility but ignored
         CancellationToken cancellationToken = default
@@ -71,10 +78,7 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(work);
 
-        if (_disposed)
-        {
-            throw new ObjectDisposedException(nameof(TickerQTaskScheduler));
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_isFrozen)
         {
@@ -228,8 +232,8 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
 
         while (!_shutdownCts.Token.IsCancellationRequested && !_disposed)
         {
-            WorkItem workItem = default;
-            bool foundWork = false;
+            WorkItem workItem;
+            var foundWork = false;
 
             // 1. Try local queue first (fastest path)
             if (localQueue.TryDequeue(out workItem))
@@ -259,8 +263,8 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
                 if (DateTime.UtcNow - lastWorkTime > _idleWorkerTimeout)
                 {
                     // Check ALL queues for any remaining work before exiting
-                    bool anyWorkRemaining = false;
-                    for (int i = 0; i < _maxConcurrency; i++)
+                    var anyWorkRemaining = false;
+                    for (var i = 0; i < _maxConcurrency; i++)
                     {
                         if (!_workerQueues[i].IsEmpty)
                         {
@@ -301,7 +305,7 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         var startIndex = (thiefWorkerId + 1) % _maxConcurrency;
 
         // First pass: steal from queues with multiple items
-        for (int i = 0; i < _maxConcurrency - 1; i++)
+        for (var i = 0; i < _maxConcurrency - 1; i++)
         {
             var victimIndex = (startIndex + i) % _maxConcurrency;
             if (victimIndex == thiefWorkerId)
@@ -319,7 +323,7 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         }
 
         // Second pass: steal even single items if we're desperate
-        for (int i = 0; i < _maxConcurrency - 1; i++)
+        for (var i = 0; i < _maxConcurrency - 1; i++)
         {
             var victimIndex = (startIndex + i) % _maxConcurrency;
             if (victimIndex == thiefWorkerId)
@@ -486,8 +490,8 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         text += $"Total Queued (counter): {_totalQueuedTasks}\n\n";
         text += "Queue Distribution:\n";
 
-        int totalInQueues = 0;
-        for (int i = 0; i < _maxConcurrency; i++)
+        var totalInQueues = 0;
+        for (var i = 0; i < _maxConcurrency; i++)
         {
             var count = _workerQueues[i].Count;
             totalInQueues += count;

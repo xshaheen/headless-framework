@@ -32,7 +32,7 @@ public class RequestMapper : IRequestMapper
         }
     }
 
-    private string _BuildAbsolute(
+    private static string _BuildAbsolute(
         string scheme,
         HostString host,
         PathString pathBase = new(),
@@ -68,12 +68,12 @@ public class RequestMapper : IRequestMapper
             .ToString();
     }
 
-    private string _GetEncodedUrl(HttpRequest request)
+    private static string _GetEncodedUrl(HttpRequest request)
     {
         return _BuildAbsolute(request.Scheme, request.Host, request.PathBase, request.Path, request.QueryString);
     }
 
-    private async Task<HttpContent?> _MapContent(HttpRequest request)
+    private static async Task<HttpContent?> _MapContent(HttpRequest request)
     {
         if (request.Body == null)
         {
@@ -92,7 +92,7 @@ public class RequestMapper : IRequestMapper
         return new HttpMethod(request.Method);
     }
 
-    private Uri _MapUri(HttpRequest request)
+    private static Uri _MapUri(HttpRequest request)
     {
         return new Uri(_GetEncodedUrl(request));
     }

@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions.Extensions;
 using Headless.Constants;
-using Headless.Constants;
 using Headless.Http;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;

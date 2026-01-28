@@ -44,7 +44,7 @@ public sealed class RedisTransportTests : TestBase
     public async Task should_publish_message_to_stream()
     {
         // given
-        var headers = new Dictionary<string, string?>
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "test-id-123",
             [Headers.MessageName] = "test-topic",
@@ -66,7 +66,7 @@ public sealed class RedisTransportTests : TestBase
     public async Task should_return_failed_result_when_publish_throws()
     {
         // given
-        var headers = new Dictionary<string, string?>
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "test-id-123",
             [Headers.MessageName] = "test-topic",
@@ -89,7 +89,7 @@ public sealed class RedisTransportTests : TestBase
     public async Task should_include_message_headers_in_stream_entry()
     {
         // given
-        var headers = new Dictionary<string, string?>
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "msg-001",
             [Headers.MessageName] = "orders.created",

@@ -16,7 +16,7 @@ public sealed class RedisMessageTests : TestBase
     public void should_convert_transport_message_to_stream_entries()
     {
         // given
-        var headers = new Dictionary<string, string?>
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "msg-123",
             [Headers.MessageName] = "test.topic",
@@ -37,7 +37,7 @@ public sealed class RedisMessageTests : TestBase
     public void should_serialize_headers_as_json()
     {
         // given
-        var headers = new Dictionary<string, string?>
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "msg-456",
             [Headers.MessageName] = "orders.created",
@@ -61,7 +61,11 @@ public sealed class RedisMessageTests : TestBase
     public void should_serialize_body_as_json()
     {
         // given
-        var headers = new Dictionary<string, string?> { [Headers.MessageId] = "id", [Headers.MessageName] = "name" };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "id",
+            [Headers.MessageName] = "name",
+        };
         var body = new byte[] { 1, 2, 3, 4, 5 };
         var message = new TransportMessage(headers, body);
 
@@ -78,7 +82,11 @@ public sealed class RedisMessageTests : TestBase
     {
         // given
         var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?> { [Headers.MessageId] = "msg-789", [Headers.MessageName] = "users.updated" }
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "msg-789",
+                [Headers.MessageName] = "users.updated",
+            }
         );
         var bodyJson = JsonSerializer.Serialize(new byte[] { 10, 20, 30 });
 
@@ -99,7 +107,11 @@ public sealed class RedisMessageTests : TestBase
     {
         // given
         var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?> { [Headers.MessageId] = "id", [Headers.MessageName] = "name" }
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "id",
+                [Headers.MessageName] = "name",
+            }
         );
         var bodyJson = JsonSerializer.Serialize(Array.Empty<byte>());
 
@@ -118,7 +130,11 @@ public sealed class RedisMessageTests : TestBase
     {
         // given
         var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?> { [Headers.MessageId] = "id", [Headers.MessageName] = "name" }
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "id",
+                [Headers.MessageName] = "name",
+            }
         );
         var bodyJson = JsonSerializer.Serialize(Array.Empty<byte>());
 
@@ -161,7 +177,11 @@ public sealed class RedisMessageTests : TestBase
     {
         // given
         var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?> { [Headers.MessageId] = "id", [Headers.MessageName] = "name" }
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "id",
+                [Headers.MessageName] = "name",
+            }
         );
         var values = new NameValueEntry[] { new("headers", headersJson) };
         var streamEntry = new StreamEntry("1234567-0", values);
@@ -188,7 +208,11 @@ public sealed class RedisMessageTests : TestBase
     {
         // given
         var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?> { [Headers.MessageId] = "id", [Headers.MessageName] = "name" }
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "id",
+                [Headers.MessageName] = "name",
+            }
         );
         var values = new NameValueEntry[] { new("headers", headersJson), new("body", "not-valid-json") };
         var streamEntry = new StreamEntry("1234567-0", values);
@@ -203,7 +227,11 @@ public sealed class RedisMessageTests : TestBase
     {
         // given
         var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?> { [Headers.MessageId] = "id", [Headers.MessageName] = "name" }
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "id",
+                [Headers.MessageName] = "name",
+            }
         );
         var values = new NameValueEntry[] { new("headers", headersJson), new("body", RedisValue.EmptyString) };
         var streamEntry = new StreamEntry("1234567-0", values);

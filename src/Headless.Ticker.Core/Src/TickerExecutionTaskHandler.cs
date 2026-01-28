@@ -200,7 +200,7 @@ internal class TickerExecutionTaskHandler(
 
             try
             {
-                if (await _WaitForRetry(context, cancellationToken, attempt, cancellationTokenSource))
+                if (await _WaitForRetry(context, attempt, cancellationTokenSource, cancellationToken))
                 {
                     break;
                 }
@@ -333,9 +333,7 @@ internal class TickerExecutionTaskHandler(
                 false
             );
 
-            var handler = serviceProvider.GetService(typeof(ITickerExceptionHandler)) as ITickerExceptionHandler;
-
-            if (handler != null)
+            if (serviceProvider.GetService(typeof(ITickerExceptionHandler)) is ITickerExceptionHandler handler)
             {
                 await handler.HandleExceptionAsync(lastException, context.TickerId, context.Type);
             }
@@ -350,9 +348,9 @@ internal class TickerExecutionTaskHandler(
 
     private async Task<bool> _WaitForRetry(
         InternalFunctionContext context,
-        CancellationToken cancellationToken,
         int attempt,
-        CancellationTokenSource cancellationTokenSource
+        CancellationTokenSource cancellationTokenSource,
+        CancellationToken cancellationToken
     )
     {
         if (attempt == 0)

@@ -105,6 +105,7 @@ internal sealed class RabbitMqConsumerClient(
 
     public ValueTask DisposeAsync()
     {
+        _consumer?.Dispose();
         _channel?.Dispose();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;

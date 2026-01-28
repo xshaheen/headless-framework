@@ -123,7 +123,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var tableExists = await connection.QueryFirstOrDefaultAsync<int>(
             """
@@ -153,21 +153,27 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var tableExists = await connection.QueryFirstOrDefaultAsync<int?>(
-            """
-            SELECT 1 FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'Lock'
-            """,
-            new { Schema = schema }
+            new CommandDefinition(
+                """
+                SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'Lock'
+                """,
+                new { Schema = schema },
+                cancellationToken: AbortToken
+            )
         );
 
         tableExists.Should().BeNull();
 
         // cleanup
         await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
         );
     }
 
@@ -183,24 +189,30 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var indexes = await connection.QueryAsync<string>(
-            """
-            SELECT i.name
-            FROM sys.indexes i
-            INNER JOIN sys.tables t ON i.object_id = t.object_id
-            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-            WHERE s.name = @Schema AND t.name = 'Published' AND i.name IS NOT NULL
-            """,
-            new { Schema = schema }
+            new CommandDefinition(
+                """
+                SELECT i.name
+                FROM sys.indexes i
+                INNER JOIN sys.tables t ON i.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = @Schema AND t.name = 'Published' AND i.name IS NOT NULL
+                """,
+                new { Schema = schema },
+                cancellationToken: AbortToken
+            )
         );
 
         indexes.Should().HaveCountGreaterThanOrEqualTo(2); // At least PK + some indexes
 
         // cleanup
         await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]",
+                AbortToken
+            )
         );
     }
 
@@ -217,7 +229,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var tableCount = await connection.QueryFirstOrDefaultAsync<int>(
             """

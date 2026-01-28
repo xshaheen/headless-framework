@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Headless.Ticker.Authentication;
 using Headless.Ticker.Endpoints;
@@ -12,8 +13,17 @@ using Microsoft.Extensions.FileProviders;
 
 namespace Headless.Ticker.DependencyInjection;
 
-internal static class ServiceCollectionExtensions
+internal static partial class ServiceCollectionExtensions
 {
+    private static readonly JsonSerializerOptions _JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    [GeneratedRegex(@"(?is)<head\b[^>]*>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex _HeadOpenRegex();
+
     internal static void AddDashboardService<TTimeTicker, TCronTicker>(
         this IServiceCollection services,
         DashboardOptionsBuilder config
@@ -204,14 +214,7 @@ internal static class ServiceCollectionExtensions
         };
 
         // Serialize without over-escaping, but make sure it won't break </script>
-        var json = JsonSerializer.Serialize(
-            envConfig,
-            new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            }
-        );
+        var json = JsonSerializer.Serialize(envConfig, _JsonOptions);
 
         json = _SanitizeForInlineScript(json);
 
@@ -235,7 +238,7 @@ internal static class ServiceCollectionExtensions
 
         var fullInjection = baseTag + script;
         // Prefer inject immediately after opening <head ...>
-        var headOpen = Regex.Match(htmlContent, "(?is)<head\\b[^>]*>");
+        var headOpen = _HeadOpenRegex().Match(htmlContent);
         if (headOpen.Success)
         {
             return htmlContent.Insert(headOpen.Index + headOpen.Length, fullInjection);

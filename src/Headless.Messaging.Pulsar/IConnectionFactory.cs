@@ -39,7 +39,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
     {
         foreach (var value in _topicProducers.Values)
         {
-            _ = (await value.AnyContext()).DisposeAsync();
+            await (await value.AnyContext()).DisposeAsync();
         }
     }
 

@@ -25,7 +25,10 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_hide_node_when_visibility_is_hide()
     {
         // given
-        var tags = new Dictionary<string, string> { ["headless.messaging.visibility"] = "hide" };
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["headless.messaging.visibility"] = "hide",
+        };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -38,7 +41,10 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_show_node_when_visibility_is_show()
     {
         // given
-        var tags = new Dictionary<string, string> { ["headless.messaging.visibility"] = "show" };
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["headless.messaging.visibility"] = "show",
+        };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -52,7 +58,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     {
         // given
         _options.ShowOnlyExplicitVisibleNodes = true;
-        var tags = new Dictionary<string, string> { ["some-other-tag"] = "value" };
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal) { ["some-other-tag"] = "value" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -67,7 +73,10 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
         // given
         _options.ShowOnlyExplicitVisibleNodes = false;
         var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _options);
-        var tags = new Dictionary<string, string> { ["headless.messaging.something"] = "value" };
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["headless.messaging.something"] = "value",
+        };
 
         // when
         var result = _InvokeFilterNodesByTags(tags, provider);
@@ -80,7 +89,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_extract_portIndex_from_tag()
     {
         // given
-        var tags = new Dictionary<string, string>
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["headless.messaging.visibility"] = "show",
             ["headless.messaging.portIndex"] = "2",
@@ -97,7 +106,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_extract_portName_from_tag()
     {
         // given
-        var tags = new Dictionary<string, string>
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["headless.messaging.visibility"] = "show",
             ["headless.messaging.portName"] = "http",
@@ -126,7 +135,10 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_be_case_insensitive_for_tag_prefix()
     {
         // given
-        var tags = new Dictionary<string, string> { ["HEADLESS.MESSAGING.visibility"] = "show" };
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["HEADLESS.MESSAGING.visibility"] = "show",
+        };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -139,7 +151,10 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_be_case_insensitive_for_visibility_value()
     {
         // given
-        var tags = new Dictionary<string, string> { ["headless.messaging.visibility"] = "HIDE" };
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["headless.messaging.visibility"] = "HIDE",
+        };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -152,7 +167,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_ignore_non_headless_tags()
     {
         // given
-        var tags = new Dictionary<string, string> { ["app"] = "my-app", ["version"] = "1.0" };
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal) { ["app"] = "my-app", ["version"] = "1.0" };
 
         // when
         var result = _InvokeFilterNodesByTags(tags);
@@ -165,7 +180,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_use_last_portIndex_when_multiple_exist()
     {
         // given - simulating multiple portIndex tags (unlikely but testing behavior)
-        var tags = new Dictionary<string, string>
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["headless.messaging.visibility"] = "show",
             ["headless.messaging.portIndex"] = "3",
@@ -182,7 +197,7 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
     public void FilterNodesByTags_should_handle_invalid_portIndex_value()
     {
         // given
-        var tags = new Dictionary<string, string>
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["headless.messaging.visibility"] = "show",
             ["headless.messaging.portIndex"] = "invalid",

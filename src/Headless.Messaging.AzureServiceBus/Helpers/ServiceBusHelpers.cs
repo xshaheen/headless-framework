@@ -9,7 +9,10 @@ public static class ServiceBusHelpers
         var host = (@namespace, connectionString) switch
         {
             _ when string.IsNullOrWhiteSpace(@namespace) && string.IsNullOrWhiteSpace(connectionString) =>
-                throw new ArgumentException("Either connection string or namespace are required."),
+                throw new ArgumentException(
+                    "Either connection string or namespace are required.",
+                    nameof(connectionString)
+                ),
             _ when string.IsNullOrWhiteSpace(connectionString)
                     || (!string.IsNullOrWhiteSpace(@namespace) && !string.IsNullOrWhiteSpace(connectionString)) =>
                 @namespace!,

@@ -22,7 +22,8 @@ public static class ServiceExtension
         if (efCoreOptionBuilder.PoolSize <= 0)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(efCoreOptionBuilder.PoolSize),
+                nameof(efConfiguration),
+                efCoreOptionBuilder.PoolSize,
                 "Pool size must be greater than 0"
             );
         }
