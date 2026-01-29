@@ -53,8 +53,6 @@
     <PackageVersion Include="FlexLabs.EntityFrameworkCore.Upsert" Version="[10.0.0-beta1,11.0.0)" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
-    <PackageVersion Include="Foundatio" Version="12.0.0" />
-    <PackageVersion Include="Foundatio.Redis" Version="12.0.0" />
     <PackageVersion Include="Humanizer" Version="3.0.1" />
     <PackageVersion Include="Humanizer.Core" Version="3.0.1" />
     <PackageVersion Include="IdGen" Version="3.0.7" />
