@@ -1520,6 +1520,532 @@ public sealed class InMemoryCacheTests : TestBase
 
     #endregion
 
+    #region Memory Management
+
+    [Fact]
+    public void should_throw_when_max_memory_size_without_size_calculator()
+    {
+        // given
+        var options = new InMemoryCacheOptions { MaxMemorySize = 1024 };
+
+        // when
+        var act = () => _CreateCache(options);
+
+        // then
+        act.Should().Throw<ArgumentException>()
+            .Which.Message.Should().Contain("SizeCalculator");
+    }
+
+    [Fact]
+    public void should_throw_when_max_entry_size_without_size_calculator()
+    {
+        // given
+        var options = new InMemoryCacheOptions { MaxEntrySize = 100 };
+
+        // when
+        var act = () => _CreateCache(options);
+
+        // then
+        act.Should().Throw<ArgumentException>()
+            .Which.Message.Should().Contain("SizeCalculator");
+    }
+
+    [Fact]
+    public async Task should_track_memory_size_on_upsert()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 100,
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().Be(200);
+    }
+
+    [Fact]
+    public async Task should_update_memory_size_on_replace()
+    {
+        // given
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal) { ["small"] = 50, ["large"] = 150 };
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = v => v is string s ? sizeMap.GetValueOrDefault(s, 100) : 100,
+        };
+        using var cache = _CreateCache(options);
+        await cache.UpsertAsync("key1", "small", TimeSpan.FromMinutes(5), AbortToken);
+        var initialSize = cache.CurrentMemorySize;
+
+        // when
+        await cache.UpsertAsync("key1", "large", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().Be(initialSize + 100); // 150 - 50 = 100 delta
+    }
+
+    [Fact]
+    public async Task should_decrease_memory_size_on_remove()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 100,
+        };
+        using var cache = _CreateCache(options);
+        await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        await cache.RemoveAsync("key1", AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task should_reset_memory_size_on_flush()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 100,
+        };
+        using var cache = _CreateCache(options);
+        await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        await cache.FlushAsync(AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_evict_when_max_memory_exceeded()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 250, // Only allows ~2 entries
+            SizeCalculator = _ => 100,
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertAsync("key3", "value3", TimeSpan.FromMinutes(5), AbortToken);
+
+        // Allow compaction to run
+        await Task.Delay(100, AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().BeLessThanOrEqualTo(250);
+    }
+
+    [Fact]
+    public async Task should_skip_entry_when_exceeds_max_entry_size()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxEntrySize = 50,
+            SizeCalculator = _ => 100, // All entries are 100 bytes
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        var result = await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().BeFalse();
+        (await cache.ExistsAsync("key1", AbortToken)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_throw_when_entry_exceeds_max_entry_size_and_throw_enabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxEntrySize = 50,
+            SizeCalculator = _ => 100,
+            ShouldThrowOnMaxEntrySizeExceeded = true,
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        var act = () => cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<MaxEntrySizeExceededException>();
+    }
+
+    [Fact]
+    public async Task should_allow_entry_when_within_max_entry_size()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxEntrySize = 150,
+            SizeCalculator = _ => 100,
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        var result = await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        (await cache.ExistsAsync("key1", AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_track_memory_with_fixed_sizing()
+    {
+        // given - fixed sizing where each entry is 100 bytes
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 1000,
+            SizeCalculator = _ => 100, // Fixed size
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        for (var i = 0; i < 5; i++)
+        {
+            await cache.UpsertAsync($"key{i}", $"value{i}", TimeSpan.FromMinutes(5), AbortToken);
+        }
+
+        // then
+        cache.CurrentMemorySize.Should().Be(500);
+    }
+
+    [Fact]
+    public async Task should_track_memory_with_dynamic_sizing()
+    {
+        // given - dynamic sizing based on string length
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = v => v is string s ? s.Length * 2 : 100, // Simple size calculation
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        await cache.UpsertAsync("key1", "short", TimeSpan.FromMinutes(5), AbortToken); // 5*2 = 10
+        await cache.UpsertAsync("key2", "longer", TimeSpan.FromMinutes(5), AbortToken); // 6*2 = 12
+
+        // then
+        cache.CurrentMemorySize.Should().Be(22);
+    }
+
+    [Fact]
+    public async Task should_handle_negative_size_from_calculator()
+    {
+        // given - calculator that returns negative for some values
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = v => v is string s && s == "skip" ? -1 : 100,
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        await cache.UpsertAsync("key1", "skip", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("key2", "keep", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then - negative sizes are treated as 0
+        cache.CurrentMemorySize.Should().Be(100); // Only key2 counted
+    }
+
+    [Fact]
+    public async Task should_track_memory_on_try_insert()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 100,
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        await cache.TryInsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task should_not_track_memory_on_failed_try_insert()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 100,
+        };
+        using var cache = _CreateCache(options);
+        await cache.UpsertAsync("key1", "existing", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        await cache.TryInsertAsync("key1", "new", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then - size should remain unchanged
+        cache.CurrentMemorySize.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task should_track_memory_on_increment()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 8, // Size of a long/double
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        await cache.IncrementAsync("counter", 1L, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().Be(8);
+    }
+
+    [Fact]
+    public async Task should_track_memory_on_set_add()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 50,
+        };
+        using var cache = _CreateCache(options);
+
+        // when
+        await cache.SetAddAsync("set1", new[] { 1, 2, 3 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        cache.CurrentMemorySize.Should().Be(50);
+    }
+
+    [Fact]
+    public async Task should_reset_memory_on_dispose()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 10000,
+            SizeCalculator = _ => 100,
+        };
+        var cache = _CreateCache(options);
+        await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        cache.Dispose();
+
+        // then
+        cache.CurrentMemorySize.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_prefer_larger_items_for_eviction_when_memory_constrained()
+    {
+        // given - cache with memory constraint
+        var sizeMap = new Dictionary<string, long>(StringComparer.Ordinal)
+        {
+            ["small1"] = 50,
+            ["small2"] = 50,
+            ["large"] = 200,
+        };
+        var options = new InMemoryCacheOptions
+        {
+            MaxMemorySize = 250, // Will trigger eviction when adding large
+            SizeCalculator = v => v is string s ? sizeMap.GetValueOrDefault(s, 100) : 100,
+        };
+        using var cache = _CreateCache(options);
+
+        // Add entries with time gaps
+        await cache.UpsertAsync("key1", "small1", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+        await cache.UpsertAsync("key2", "small2", TimeSpan.FromMinutes(5), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(10));
+
+        // when - add large entry that exceeds limit
+        await cache.UpsertAsync("key3", "large", TimeSpan.FromMinutes(5), AbortToken);
+        await Task.Delay(100, AbortToken); // Allow compaction
+
+        // then - eviction should have occurred
+        cache.CurrentMemorySize.Should().BeLessThanOrEqualTo(250);
+    }
+
+    #endregion
+
+    #region Serialization Error Handling
+
+    [Fact]
+    public async Task should_return_no_value_on_get_when_serialization_error_and_throw_disabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            CloneValues = false, // Don't clone on store
+            ShouldThrowOnSerializationError = false,
+        };
+        using var cache = _CreateCache(options);
+
+        // Store a value that will fail serialization on get
+        await cache.UpsertAsync("key1", 42, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - try to get as wrong type (which may cause serialization issues)
+        var result = await cache.GetAsync<TestClass>("key1", AbortToken);
+
+        // then - should return NoValue instead of throwing
+        result.HasValue.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_throw_on_invalid_type_conversion_when_throw_enabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            CloneValues = false,
+            ShouldThrowOnSerializationError = true,
+        };
+        using var cache = _CreateCache(options);
+        await cache.UpsertAsync("key1", 42, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - try to get as wrong type
+        var act = () => cache.GetAsync<TestClass>("key1", AbortToken);
+
+        // then - should throw
+        await act.Should().ThrowAsync<Exception>();
+    }
+
+    #endregion
+
+    #region Case Sensitivity
+
+    [Fact]
+    public async Task should_treat_keys_as_case_sensitive()
+    {
+        // given
+        using var cache = _CreateCache();
+
+        // when
+        await cache.UpsertAsync("test", "lowercase", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("Test", "capitalized", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("TEST", "uppercase", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        (await cache.GetAsync<string>("test", AbortToken)).Value.Should().Be("lowercase");
+        (await cache.GetAsync<string>("Test", AbortToken)).Value.Should().Be("capitalized");
+        (await cache.GetAsync<string>("TEST", AbortToken)).Value.Should().Be("uppercase");
+    }
+
+    #endregion
+
+    #region Very Long Expiration
+
+    [Fact]
+    public async Task should_handle_very_long_expiration()
+    {
+        // given
+        using var cache = _CreateCache();
+
+        // when - use a very long but valid expiration (100 years)
+        await cache.UpsertAsync("key", "value", TimeSpan.FromDays(365 * 100), AbortToken);
+        _timeProvider.Advance(TimeSpan.FromDays(365 * 50)); // Advance 50 years
+
+        // then - still valid
+        var result = await cache.GetAsync<string>("key", AbortToken);
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be("value");
+    }
+
+    #endregion
+
+    #region Concurrent Operations
+
+    [Fact]
+    public async Task should_handle_concurrent_add_only_one_succeeds()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var successCount = 0;
+
+        // when
+        var tasks = Enumerable.Range(0, 10)
+            .Select(async i =>
+            {
+                if (await cache.TryInsertAsync(key, i, TimeSpan.FromMinutes(5), AbortToken))
+                {
+                    Interlocked.Increment(ref successCount);
+                }
+            });
+
+        await Task.WhenAll(tasks);
+
+        // then
+        successCount.Should().Be(1);
+    }
+
+    #endregion
+
+    #region RemoveByPrefix Special Characters
+
+    [Fact]
+    public async Task should_treat_regex_special_chars_as_literals_in_prefix()
+    {
+        // given
+        using var cache = _CreateCache();
+        await cache.UpsertAsync("test.*key", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("test.other", "value2", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when - asterisk should be treated as literal, not regex
+        var removed = await cache.RemoveByPrefixAsync("test.*", AbortToken);
+
+        // then
+        removed.Should().Be(1);
+        (await cache.ExistsAsync("test.other", AbortToken)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_remove_by_prefix_with_brackets()
+    {
+        // given
+        using var cache = _CreateCache();
+        await cache.UpsertAsync("[test]key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("[test]key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.UpsertAsync("other", "value3", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var removed = await cache.RemoveByPrefixAsync("[test]", AbortToken);
+
+        // then
+        removed.Should().Be(2);
+        (await cache.ExistsAsync("other", AbortToken)).Should().BeTrue();
+    }
+
+    #endregion
+
     private sealed class TestClass
     {
         public int Value { get; set; }

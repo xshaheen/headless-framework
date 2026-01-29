@@ -9,16 +9,44 @@ using Nito.AsyncEx;
 namespace Headless.Caching;
 
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
-public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOptions options) : IInMemoryCache, IDisposable
+public sealed class InMemoryCache : IInMemoryCache, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new();
     private readonly AsyncLock _lock = new();
     private readonly CancellationTokenSource _disposedCts = new();
-    private readonly string _keyPrefix = options.KeyPrefix ?? "";
-    private readonly int? _maxItems = options.MaxItems;
-    private readonly bool _shouldClone = options.CloneValues;
+    private readonly TimeProvider _timeProvider;
+    private readonly string _keyPrefix;
+    private readonly int? _maxItems;
+    private readonly bool _shouldClone;
+    private readonly long? _maxMemorySize;
+    private readonly long? _maxEntrySize;
+    private readonly Func<object?, long>? _sizeCalculator;
+    private readonly bool _shouldThrowOnMaxEntrySizeExceeded;
+    private readonly bool _shouldThrowOnSerializationError;
+    private long _currentMemorySize;
     private DateTime _lastMaintenance;
     private bool _isDisposed;
+
+    /// <summary>Gets the current memory size in bytes used by the cache.</summary>
+    public long CurrentMemorySize => Interlocked.Read(ref _currentMemorySize);
+
+    public InMemoryCache(TimeProvider timeProvider, InMemoryCacheOptions options)
+    {
+        _timeProvider = timeProvider;
+        _keyPrefix = options.KeyPrefix ?? "";
+        _maxItems = options.MaxItems;
+        _shouldClone = options.CloneValues;
+        _maxMemorySize = options.MaxMemorySize;
+        _maxEntrySize = options.MaxEntrySize;
+        _sizeCalculator = options.SizeCalculator;
+        _shouldThrowOnMaxEntrySizeExceeded = options.ShouldThrowOnMaxEntrySizeExceeded;
+        _shouldThrowOnSerializationError = options.ShouldThrowOnSerializationError;
+
+        if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
+        {
+            throw new ArgumentException("SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.", nameof(options));
+        }
+    }
 
     #region Update
 
@@ -36,8 +64,15 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return Task.FromResult(false);
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var entry = new CacheEntry(value, expiresAt, timeProvider, _shouldClone);
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(value);
+
+        if (!_ValidateEntrySize(entrySize))
+        {
+            return Task.FromResult(false);
+        }
+
+        var entry = new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
 
         return _SetInternalAsync(key, entry);
     }
@@ -67,6 +102,8 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
         foreach (var (k, v) in value)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (await UpsertAsync(k, v, expiration, cancellationToken).AnyContext())
             {
                 count++;
@@ -90,8 +127,15 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return Task.FromResult(false);
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var entry = new CacheEntry(value, expiresAt, timeProvider, _shouldClone);
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(value);
+
+        if (!_ValidateEntrySize(entrySize))
+        {
+            return Task.FromResult(false);
+        }
+
+        var entry = new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
 
         return _SetInternalAsync(key, entry, addOnly: true);
     }
@@ -102,9 +146,9 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        key = _GetKey(key);
+        var prefixedKey = _GetKey(key);
 
-        if (!_memory.ContainsKey(key))
+        if (!_memory.ContainsKey(prefixedKey))
         {
             return Task.FromResult(false);
         }
@@ -126,8 +170,16 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return false;
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var newSize = _CalculateEntrySize(value);
+
+        if (!_ValidateEntrySize(newSize))
+        {
+            return false;
+        }
+
         var wasExpectedValue = false;
+        long sizeDelta = 0;
 
         _memory.TryUpdate(key, (_, existingEntry) =>
         {
@@ -135,13 +187,21 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
             if (Equals(currentValue, expected))
             {
+                var oldSize = existingEntry.Size;
                 existingEntry.Value = value;
                 existingEntry.ExpiresAt = expiresAt;
+                existingEntry.Size = newSize;
+                sizeDelta = newSize - oldSize;
                 wasExpectedValue = true;
             }
 
             return existingEntry;
         });
+
+        if (wasExpectedValue && sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
 
         await _StartMaintenanceAsync().AnyContext();
 
@@ -162,12 +222,17 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return 0;
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var newEntry = new CacheEntry(amount, expiresAt, timeProvider, _shouldClone);
-
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(amount);
+        var newEntry = new CacheEntry(amount, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
+        
         var result = _memory.AddOrUpdate(
             key,
-            _ => newEntry,
+            _ =>
+            {
+                                Interlocked.Add(ref _currentMemorySize, entrySize);
+                return newEntry;
+            },
             (_, existingEntry) =>
             {
                 double? currentValue = null;
@@ -207,12 +272,17 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return 0;
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var newEntry = new CacheEntry(amount, expiresAt, timeProvider, _shouldClone);
-
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(amount);
+        var newEntry = new CacheEntry(amount, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
+        
         var result = _memory.AddOrUpdate(
             key,
-            _ => newEntry,
+            _ =>
+            {
+                                Interlocked.Add(ref _currentMemorySize, entrySize);
+                return newEntry;
+            },
             (_, existingEntry) =>
             {
                 long? currentValue = null;
@@ -252,13 +322,18 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return 0;
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var newEntry = new CacheEntry(value, expiresAt, timeProvider, _shouldClone);
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(value);
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
         var difference = value;
-
+        
         _memory.AddOrUpdate(
             key,
-            _ => newEntry,
+            _ =>
+            {
+                                Interlocked.Add(ref _currentMemorySize, entrySize);
+                return newEntry;
+            },
             (_, existingEntry) =>
             {
                 double? currentValue = null;
@@ -307,13 +382,18 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return 0;
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var newEntry = new CacheEntry(value, expiresAt, timeProvider, _shouldClone);
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(value);
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
         var difference = value;
-
+        
         _memory.AddOrUpdate(
             key,
-            _ => newEntry,
+            _ =>
+            {
+                                Interlocked.Add(ref _currentMemorySize, entrySize);
+                return newEntry;
+            },
             (_, existingEntry) =>
             {
                 long? currentValue = null;
@@ -362,13 +442,18 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return 0;
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var newEntry = new CacheEntry(value, expiresAt, timeProvider, _shouldClone);
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(value);
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
         var difference = value;
-
+        
         _memory.AddOrUpdate(
             key,
-            _ => newEntry,
+            _ =>
+            {
+                                Interlocked.Add(ref _currentMemorySize, entrySize);
+                return newEntry;
+            },
             (_, existingEntry) =>
             {
                 double? currentValue = null;
@@ -417,13 +502,18 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return 0;
         }
 
-        var expiresAt = expiration.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
-        var newEntry = new CacheEntry(value, expiresAt, timeProvider, _shouldClone);
+        var expiresAt = expiration.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value) : (DateTime?)null;
+        var entrySize = _CalculateEntrySize(value);
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
         var difference = value;
-
+        
         _memory.AddOrUpdate(
             key,
-            _ => newEntry,
+            _ =>
+            {
+                                Interlocked.Add(ref _currentMemorySize, entrySize);
+                return newEntry;
+            },
             (_, existingEntry) =>
             {
                 long? currentValue = null;
@@ -473,17 +563,22 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return 0;
         }
 
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = expiration.HasValue ? utcNow.Add(expiration.Value) : (DateTime?)null;
 
         if (value is string stringValue)
         {
             var items = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { { stringValue, expiresAt } };
-            var entry = new CacheEntry(items, expiresAt, timeProvider, _shouldClone);
-
+            var entrySize = _CalculateEntrySize(items);
+            var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
+            
             _memory.AddOrUpdate(
                 key,
-                _ => entry,
+                _ =>
+                {
+                                        Interlocked.Add(ref _currentMemorySize, entrySize);
+                    return entry;
+                },
                 (existingKey, existingEntry) =>
                 {
                     if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
@@ -518,11 +613,16 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
                 return 0;
             }
 
-            var entry = new CacheEntry(items, expiresAt, timeProvider, _shouldClone);
-
+            var entrySize = _CalculateEntrySize(items);
+            var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone, _shouldThrowOnSerializationError, entrySize);
+            
             _memory.AddOrUpdate(
                 key,
-                _ => entry,
+                _ =>
+                {
+                                        Interlocked.Add(ref _currentMemorySize, entrySize);
+                    return entry;
+                },
                 (existingKey, existingEntry) =>
                 {
                     if (existingEntry.Value is not IDictionary<object, DateTime?> dictionary)
@@ -576,7 +676,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             var value = existingEntry.GetValue<T>();
             return Task.FromResult(new CacheValue<T>(value, true));
         }
-        catch
+        catch (Exception) when (!_shouldThrowOnSerializationError)
         {
             return Task.FromResult(CacheValue<T>.NoValue);
         }
@@ -661,7 +761,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return Task.FromResult<TimeSpan?>(null);
         }
 
-        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Value.Subtract(timeProvider.GetUtcNow().UtcDateTime));
+        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
     public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100, CancellationToken cancellationToken = default)
@@ -680,7 +780,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return new CacheValue<ICollection<T>>([], false);
         }
 
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var nonExpiredKeys = dictionaryCacheValue.Value!
             .Where(kvp => kvp.Value is null || kvp.Value >= utcNow)
             .Select(kvp => kvp.Key)
@@ -718,6 +818,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return Task.FromResult(false);
         }
 
+        Interlocked.Add(ref _currentMemorySize, -entry.Size);
         return Task.FromResult(!entry.IsExpired);
     }
 
@@ -759,8 +860,9 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         {
             Argument.IsNotNullOrEmpty(key);
 
-            if (_memory.TryRemove(_GetKey(key), out _))
+            if (_memory.TryRemove(_GetKey(key), out var entry))
             {
+                Interlocked.Add(ref _currentMemorySize, -entry.Size);
                 removed++;
             }
         }
@@ -777,6 +879,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         {
             var count = _memory.Count;
             _memory.Clear();
+            Interlocked.Exchange(ref _currentMemorySize, 0);
             return Task.FromResult(count);
         }
 
@@ -798,8 +901,9 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
         foreach (var key in keysToRemove)
         {
-            if (_memory.TryRemove(key, out _))
+            if (_memory.TryRemove(key, out var entry))
             {
+                Interlocked.Add(ref _currentMemorySize, -entry.Size);
                 removed++;
             }
         }
@@ -903,6 +1007,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
     {
         cancellationToken.ThrowIfCancellationRequested();
         _memory.Clear();
+        Interlocked.Exchange(ref _currentMemorySize, 0);
         return Task.CompletedTask;
     }
 
@@ -919,6 +1024,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
         _isDisposed = true;
         _memory.Clear();
+        Interlocked.Exchange(ref _currentMemorySize, 0);
         _disposedCts.Cancel();
         _disposedCts.Dispose();
     }
@@ -930,18 +1036,10 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
     private IReadOnlyList<string> _GetKeys(string prefix)
     {
-        if (string.IsNullOrEmpty(prefix))
-        {
-            return _memory.Where(kvp => !kvp.Value.IsExpired)
-                .OrderBy(kvp => kvp.Value.LastAccessTicks)
-                .ThenBy(kvp => kvp.Value.InstanceNumber)
-                .Select(kvp => kvp.Key)
-                .ToList();
-        }
+        var prefixedPrefix = string.IsNullOrEmpty(prefix) ? null : _GetKey(prefix);
 
-        prefix = _GetKey(prefix);
-
-        return _memory.Where(x => x.Key.StartsWith(prefix, StringComparison.Ordinal) && !x.Value.IsExpired)
+        return _memory
+            .Where(kvp => !kvp.Value.IsExpired && (prefixedPrefix is null || kvp.Key.StartsWith(prefixedPrefix, StringComparison.Ordinal)))
             .OrderBy(kvp => kvp.Value.LastAccessTicks)
             .ThenBy(kvp => kvp.Value.InstanceNumber)
             .Select(kvp => kvp.Key)
@@ -962,15 +1060,21 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         }
 
         var wasUpdated = true;
+        long sizeDelta = 0;
 
         if (addOnly)
         {
-            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
+            _memory.AddOrUpdate(key, _ =>
+            {
+                sizeDelta = entry.Size;
+                return entry;
+            }, (_, existingEntry) =>
             {
                 wasUpdated = false;
 
                 if (existingEntry.IsExpired)
                 {
+                    sizeDelta = entry.Size - existingEntry.Size;
                     wasUpdated = true;
                     return entry;
                 }
@@ -980,7 +1084,20 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         }
         else
         {
-            _memory.AddOrUpdate(key, entry, (_, _) => entry);
+            _memory.AddOrUpdate(key, _ =>
+            {
+                sizeDelta = entry.Size;
+                return entry;
+            }, (_, existingEntry) =>
+            {
+                sizeDelta = entry.Size - existingEntry.Size;
+                return entry;
+            });
+        }
+
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
         await _StartMaintenanceAsync(_ShouldCompact).AnyContext();
@@ -988,7 +1105,10 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         return wasUpdated;
     }
 
-    private bool _ShouldCompact => !_disposedCts.IsCancellationRequested && _maxItems.HasValue && _memory.Count > _maxItems;
+    private bool _ShouldCompact =>
+        !_disposedCts.IsCancellationRequested &&
+        ((_maxItems.HasValue && _memory.Count > _maxItems) ||
+         (_maxMemorySize.HasValue && Interlocked.Read(ref _currentMemorySize) > _maxMemorySize));
 
     private async Task _StartMaintenanceAsync(bool compactImmediately = false)
     {
@@ -997,7 +1117,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return;
         }
 
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
 
         if (compactImmediately)
         {
@@ -1025,15 +1145,16 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
             while (_ShouldCompact && removalCount < maxRemovals)
             {
-                var keyToRemove = _FindLeastRecentlyUsed();
+                var keyToRemove = _FindLeastRecentlyUsedOrLargest();
 
                 if (keyToRemove is null)
                 {
                     break;
                 }
 
-                if (_memory.TryRemove(keyToRemove, out _))
+                if (_memory.TryRemove(keyToRemove, out var removedEntry))
                 {
+                    Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
                     removalCount++;
                 }
                 else
@@ -1044,33 +1165,57 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         }
     }
 
-    private string? _FindLeastRecentlyUsed()
+    private string? _FindLeastRecentlyUsedOrLargest()
     {
-        (string? Key, long LastAccessTicks, long InstanceNumber) oldest = (null, long.MaxValue, 0);
+        // When memory-constrained, prefer evicting larger items that are also less frequently used
+        // When item-count constrained, prefer evicting least recently used (LRU)
+        var isMemoryConstrained = _maxMemorySize.HasValue && Interlocked.Read(ref _currentMemorySize) > _maxMemorySize;
+        (string? Key, long LastAccessTicks, long InstanceNumber, long Size) best = (null, long.MaxValue, 0, 0);
 
         foreach (var kvp in _memory)
         {
             var isExpired = kvp.Value.IsExpired;
 
-            if (isExpired ||
-                kvp.Value.LastAccessTicks < oldest.LastAccessTicks ||
-                (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
-            {
-                oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
-            }
-
             if (isExpired)
             {
-                break;
+                // Always prefer expired items first
+                return kvp.Key;
+            }
+
+            var isBetter = false;
+
+            if (isMemoryConstrained)
+            {
+                // When memory constrained: prefer larger items, breaking ties by LRU
+                if (kvp.Value.Size > best.Size ||
+                    (kvp.Value.Size == best.Size && kvp.Value.LastAccessTicks < best.LastAccessTicks) ||
+                    (kvp.Value.Size == best.Size && kvp.Value.LastAccessTicks == best.LastAccessTicks && kvp.Value.InstanceNumber < best.InstanceNumber))
+                {
+                    isBetter = true;
+                }
+            }
+            else
+            {
+                // Standard LRU
+                if (kvp.Value.LastAccessTicks < best.LastAccessTicks ||
+                    (kvp.Value.LastAccessTicks == best.LastAccessTicks && kvp.Value.InstanceNumber < best.InstanceNumber))
+                {
+                    isBetter = true;
+                }
+            }
+
+            if (isBetter)
+            {
+                best = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber, kvp.Value.Size);
             }
         }
 
-        return oldest.Key;
+        return best.Key;
     }
 
     private async Task _DoMaintenanceAsync()
     {
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime.AddMilliseconds(50);
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime.AddMilliseconds(50);
         var lastAccessMaximumTicks = utcNow.AddMilliseconds(-300).Ticks;
 
         try
@@ -1093,7 +1238,10 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
                 if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
                 {
-                    _memory.TryRemove(kvp.Key, out _);
+                    if (_memory.TryRemove(kvp.Key, out var removedEntry))
+                    {
+                        Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                    }
                 }
             }
         }
@@ -1110,7 +1258,7 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
     private void _ExpireListValues<T>(IDictionary<T, DateTime?> dictionary)
     {
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
 
         foreach (var expiredKey in expiredValueKeys)
@@ -1121,13 +1269,40 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
 
     private void _ExpireListValuesObject(IDictionary<object, DateTime?> dictionary)
     {
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
 
         foreach (var expiredKey in expiredValueKeys)
         {
             dictionary.Remove(expiredKey);
         }
+    }
+
+    private long _CalculateEntrySize(object? value)
+    {
+        if (_sizeCalculator is null)
+        {
+            return 0;
+        }
+
+        var size = _sizeCalculator(value);
+        return size < 0 ? 0 : size;
+    }
+
+    private bool _ValidateEntrySize(long entrySize)
+    {
+        if (!_maxEntrySize.HasValue || entrySize <= _maxEntrySize.Value)
+        {
+            return true;
+        }
+
+        if (_shouldThrowOnMaxEntrySizeExceeded)
+        {
+            throw new MaxEntrySizeExceededException($"Entry size {entrySize} exceeds maximum allowed size of {_maxEntrySize.Value} bytes.");
+        }
+
+        // Skip entry - it's too large
+        return false;
     }
 
     #endregion
@@ -1138,19 +1313,22 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
     {
         private static long _InstanceCount;
         private readonly bool _shouldClone;
+        private readonly bool _shouldThrowOnSerializationError;
         private readonly TimeProvider _timeProvider;
         private object? _cacheValue;
 
-        public CacheEntry(object? value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone)
+        public CacheEntry(object? value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone, bool shouldThrowOnSerializationError = true, long size = 0)
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && _TypeRequiresCloning(value?.GetType());
+            _shouldThrowOnSerializationError = shouldThrowOnSerializationError;
             _cacheValue = _shouldClone ? _DeepClone(value) : value;
 
             var utcNow = _timeProvider.GetUtcNow();
             LastAccessTicks = utcNow.Ticks;
             LastModifiedTicks = utcNow.Ticks;
             ExpiresAt = expiresAt;
+            Size = size;
             InstanceNumber = Interlocked.Increment(ref _InstanceCount);
         }
 
@@ -1163,6 +1341,8 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
         internal long LastAccessTicks { get; private set; }
 
         internal long LastModifiedTicks { get; private set; }
+
+        internal long Size { get; set; }
 
         internal object? Value
         {
@@ -1233,16 +1413,23 @@ public sealed class InMemoryCache(TimeProvider timeProvider, InMemoryCacheOption
             return underlying is not null && _IsNumeric(underlying);
         }
 
-        private static object? _DeepClone(object? value)
+        private object? _DeepClone(object? value)
         {
             if (value is null)
             {
                 return null;
             }
 
-            // Use System.Text.Json for deep cloning
-            var json = System.Text.Json.JsonSerializer.Serialize(value, value.GetType());
-            return System.Text.Json.JsonSerializer.Deserialize(json, value.GetType());
+            try
+            {
+                // Use System.Text.Json for deep cloning
+                var json = System.Text.Json.JsonSerializer.Serialize(value, value.GetType());
+                return System.Text.Json.JsonSerializer.Deserialize(json, value.GetType());
+            }
+            catch (Exception) when (!_shouldThrowOnSerializationError)
+            {
+                return value;
+            }
         }
     }
 
