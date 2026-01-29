@@ -1,7 +1,12 @@
+using System.Collections;
+using System.Text.Json;
+
 namespace Headless.Ticker.Infrastructure.Dashboard;
 
 internal static class JsonExampleGenerator
 {
+    private static readonly JsonSerializerOptions _JsonOptions = new() { WriteIndented = true };
+
     private static object? _GenerateExample(Type type) => _Generate(type);
 
     private static object? _Generate(Type type)
@@ -36,8 +41,8 @@ internal static class JsonExampleGenerator
         {
             var elementType = type.GetGenericArguments()[0];
             var listType = typeof(List<>).MakeGenericType(elementType);
-            var list = Activator.CreateInstance(listType);
-            list!.GetType().GetMethod("Add")!.Invoke(list, [_Generate(elementType)]);
+            var list = (IList)Activator.CreateInstance(listType)!;
+            list.Add(_Generate(elementType));
             return list;
         }
 
@@ -88,7 +93,7 @@ internal static class JsonExampleGenerator
 
     private static string _GenerateExampleJson(Type type)
     {
-        return JsonSerializer.Serialize(_GenerateExample(type), new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(_GenerateExample(type), _JsonOptions);
     }
 
     public static bool TryGenerateExampleJson(Type type, out string json)

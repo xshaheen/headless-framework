@@ -58,10 +58,12 @@ public static class TickerCancellationTokenManager
             {
                 details.CancellationSource?.Dispose();
             }
+#pragma warning disable ERP022 // Disposal errors during cleanup should not crash the scheduler.
             catch
             {
                 // Ignore disposal errors
             }
+#pragma warning restore ERP022
 
             // Remove from parent index if it exists
             if (details.ParentId != Guid.Empty)
@@ -111,10 +113,13 @@ public static class TickerCancellationTokenManager
             {
                 kvp.Value?.Dispose();
             }
+            // ERP022: Disposal errors during cleanup should not crash the scheduler.
+#pragma warning disable ERP022
             catch
             {
                 // Ignore disposal errors during cleanup
             }
+#pragma warning restore ERP022
         }
 
         _ParentIdIndex.Clear();

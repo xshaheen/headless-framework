@@ -107,12 +107,14 @@ internal class TickerQFallbackBackgroundService(
                 // Host is shutting down – exit gracefully.
                 break;
             }
+#pragma warning disable ERP022 // Background service must continue running even if individual operations fail.
             catch (Exception)
             {
                 // Swallow unexpected exceptions so they don't bubble up
                 // and stop the host; wait a bit before retrying.
                 await Task.Delay(_fallbackJobPeriod, stoppingToken);
             }
+#pragma warning restore ERP022
         }
     }
 

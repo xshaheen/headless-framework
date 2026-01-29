@@ -140,7 +140,7 @@ public sealed class AzureServiceBusConsumerClientTests
     public async Task should_dispose_without_error_when_not_connected()
     {
         // given
-        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
 
         // when
         var act = async () => await client.DisposeAsync();

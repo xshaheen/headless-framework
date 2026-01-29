@@ -111,10 +111,12 @@ public class AuthService : IAuthService
 
             return Task.FromResult(AuthResult.Failure("Invalid credentials"));
         }
+#pragma warning disable ERP022 // Authentication should return failure results, not throw exceptions.
         catch
         {
             return Task.FromResult(AuthResult.Failure("Invalid basic auth format"));
         }
+#pragma warning restore ERP022
     }
 
     private Task<AuthResult> _AuthenticateApiKeyAsync(string authHeader)
@@ -141,10 +143,13 @@ public class AuthService : IAuthService
 
             return Task.FromResult(AuthResult.Failure("Invalid token"));
         }
+        // ERP022: Authentication should return failure results, not throw exceptions.
+#pragma warning disable ERP022
         catch
         {
             return Task.FromResult(AuthResult.Failure("Invalid bearer token format"));
         }
+#pragma warning restore ERP022
     }
 
     private Task<AuthResult> _AuthenticateCustomAsync(string authHeader)
@@ -158,10 +163,13 @@ public class AuthService : IAuthService
 
             return Task.FromResult(AuthResult.Failure("Custom authentication failed"));
         }
+        // ERP022: Authentication should return failure results, not throw exceptions.
+#pragma warning disable ERP022
         catch
         {
             return Task.FromResult(AuthResult.Failure("Custom authentication error"));
         }
+#pragma warning restore ERP022
     }
 
     private static Task<AuthResult> _AuthenticateHostAsync(HttpContext context)

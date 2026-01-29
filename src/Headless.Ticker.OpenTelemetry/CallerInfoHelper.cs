@@ -53,10 +53,12 @@ internal static class CallerInfoHelper
 
             return "Unknown";
         }
+#pragma warning disable ERP022 // Telemetry code must never crash the caller - returning "Unknown" is the safe fallback.
         catch
         {
             return "Unknown";
         }
+#pragma warning restore ERP022
     }
 
     /// <summary>
@@ -92,9 +94,12 @@ internal static class CallerInfoHelper
 
             return "Unknown";
         }
+        // ERP022: Telemetry code must never crash the caller - returning "Unknown" is the safe fallback.
+#pragma warning disable ERP022
         catch
         {
             return "Unknown";
         }
+#pragma warning restore ERP022
     }
 }
