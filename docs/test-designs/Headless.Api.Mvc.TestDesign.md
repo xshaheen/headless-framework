@@ -313,8 +313,8 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Api.Mvc\Framework.Api.Mvc.csproj" />
-    <ProjectReference Include="..\Framework.Testing\Framework.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
+    <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
 ```
@@ -429,4 +429,4 @@ public static class MockServiceProvider
 2. Environment attributes are inverse of each other - test both together
 3. RedirectToCanonicalUrlRule has complex logic with multiple attribute checks
 4. ApiControllerBase tests require mock HttpContext with RequestServices
-5. The `ToUriComponents()` extension is used in redirect helpers - verify it exists in Framework.Base
+5. The `ToUriComponents()` extension is used in redirect helpers - verify it exists in Headless.Base

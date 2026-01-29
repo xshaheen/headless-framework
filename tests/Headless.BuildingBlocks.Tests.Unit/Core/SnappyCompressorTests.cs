@@ -31,7 +31,7 @@ public sealed partial class SnappyCompressorTests
     public void compress_should_compress_and_return_valid_memory()
     {
         // given
-        var testObject = new SnappyCompressorEntityTest(1, "Framework", _clock.UtcNow);
+        var testObject = new SnappyCompressorEntityTest(1, "Headless", _clock.UtcNow);
         var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
         // when
@@ -45,7 +45,7 @@ public sealed partial class SnappyCompressorTests
     public void decompress_should_return_original_object_from_compressed_data()
     {
         // given
-        var testObject = new SnappyCompressorEntityTest(1, "Framework", _clock.UtcNow);
+        var testObject = new SnappyCompressorEntityTest(1, "Headless", _clock.UtcNow);
         var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         var compressedData = SnappyCompressor.Compress(testObject, jsonOptions);
 
@@ -55,7 +55,7 @@ public sealed partial class SnappyCompressorTests
         // then
         decompressedObject.Should().NotBeNull();
         decompressedObject.Id.Should().Be(1);
-        decompressedObject.Name.Should().Be("Framework");
+        decompressedObject.Name.Should().Be("Headless");
         decompressedObject.DateCreated.Should().Be(_clock.UtcNow);
     }
 

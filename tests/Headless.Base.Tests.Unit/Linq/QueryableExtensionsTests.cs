@@ -10,8 +10,8 @@ public sealed class QueryableExtensionsTests
 
     private readonly List<QueryableTestEntity> _queryableTestEntities =
     [
-        new(1, "Framework"),
-        new(2, "Zad-charities"),
+        new(1, "Headless"),
+        new(2, "Charities"),
         new(3, "Storm"),
     ];
 
@@ -27,7 +27,7 @@ public sealed class QueryableExtensionsTests
 
         // then
         result.Should().HaveCount(2);
-        result.Select(e => e.Name).Should().BeEquivalentTo("Framework", "Zad-charities");
+        result.Select(e => e.Name).Should().BeEquivalentTo("Headless", "Charities");
     }
 
     [Fact]
@@ -57,6 +57,6 @@ public sealed class QueryableExtensionsTests
 
         // then
         result.Should().HaveCount(3);
-        result.Select(e => e.Name).Should().BeEquivalentTo("Framework", "Storm", "Zad-charities");
+        result.Select(e => e.Name).Should().BeEquivalentTo("Headless", "Storm", "Charities");
     }
 }

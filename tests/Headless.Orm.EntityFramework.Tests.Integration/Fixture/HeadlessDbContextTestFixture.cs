@@ -49,7 +49,7 @@ public sealed class HeadlessDbContextTestFixture : ICollectionFixture<HeadlessDb
     {
         return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
             .WithLabel("type", "permissions")
-            .WithDatabase("framework_test")
+            .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
             .Build();

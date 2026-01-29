@@ -1,24 +1,24 @@
-# Framework.Ticker Test Design
+# Headless.Ticker Test Design
 
 ## Package Overview
 
-Framework.Ticker provides a comprehensive job scheduling system with support for both time-based (one-time) and cron-based (recurring) tickers. The system consists of 7 packages:
+Headless.Ticker.provides a comprehensive job scheduling system with support for both time-based (one-time) and cron-based (recurring) tickers. The system consists of 7 packages:
 
 | Package | Purpose | Test Priority |
 |---------|---------|---------------|
-| Framework.Ticker.Abstractions | Core interfaces, entities, managers | High |
-| Framework.Ticker.Core | Scheduler, dispatcher, execution handler | High |
-| Framework.Ticker.EntityFramework | EF Core persistence provider | High |
-| Framework.Ticker.Caching.Redis | Redis-based caching and heartbeat | Medium |
-| Framework.Ticker.Dashboard | REST API and SignalR hub for monitoring | Medium |
-| Framework.Ticker.OpenTelemetry | Tracing and metrics instrumentation | Low |
-| Framework.Ticker.SourceGenerator | Compile-time function discovery | Low |
+| Headless.Ticker.Abstractions | Core interfaces, entities, managers | High |
+| Headless.Ticker.Core | Scheduler, dispatcher, execution handler | High |
+| Headless.Ticker.EntityFramework | EF Core persistence provider | High |
+| Headless.Ticker.Caching.Redis | Redis-based caching and heartbeat | Medium |
+| Headless.Ticker.Dashboard | REST API and SignalR hub for monitoring | Medium |
+| Headless.Ticker.OpenTelemetry | Tracing and metrics instrumentation | Low |
+| Headless.Ticker.SourceGenerator | Compile-time function discovery | Low |
 
 ## Architecture Summary
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    Framework.Ticker Architecture                  │
+│                    Headless.Ticker.Architecture                  │
 ├──────────────────────────────────────────────────────────────────┤
 │  Dashboard (REST API + SignalR)                                   │
 │    ├─ DashboardEndpoints (CRUD operations)                       │
@@ -66,7 +66,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ## Test Design by Package
 
-### 1. Framework.Ticker.Abstractions
+### 1. Headless.Ticker.Abstractions
 
 #### 1.1 CronScheduleCache (Unit)
 **File:** `CronScheduleCache.cs`
@@ -175,7 +175,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ---
 
-### 2. Framework.Ticker.Core
+### 2. Headless.Ticker.Core
 
 #### 2.1 TickerQSchedulerBackgroundService (Unit)
 **File:** `BackgroundServices/TickerQSchedulerBackgroundService.cs`
@@ -258,7 +258,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ---
 
-### 3. Framework.Ticker.EntityFramework
+### 3. Headless.Ticker.EntityFramework
 
 #### 3.1 TickerEfCorePersistenceProvider (Integration)
 **File:** `Infrastructure/TickerEfCorePersistenceProvider.cs`
@@ -308,7 +308,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ---
 
-### 4. Framework.Ticker.Caching.Redis
+### 4. Headless.Ticker.Caching.Redis
 
 #### 4.1 TickerQRedisContext (Integration)
 **File:** `TickerQRedisContext.cs`
@@ -330,7 +330,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ---
 
-### 5. Framework.Ticker.Dashboard
+### 5. Headless.Ticker.Dashboard
 
 #### 5.1 DashboardEndpoints (Integration)
 **File:** `Endpoints/DashboardEndpoints.cs`
@@ -410,7 +410,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ---
 
-### 6. Framework.Ticker.OpenTelemetry
+### 6. Headless.Ticker.OpenTelemetry
 
 #### 6.1 Instrumentation (Unit)
 **Files:** `Instrumentation/*.cs`
@@ -426,7 +426,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ---
 
-### 7. Framework.Ticker.SourceGenerator
+### 7. Headless.Ticker.SourceGenerator
 
 #### 7.1 Function Discovery (Unit)
 **Note:** Source generators are typically tested via compilation verification
@@ -459,11 +459,11 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ### New Test Projects Needed
 
-1. **Framework.Ticker.Tests.Unit** (exists - extend)
+1. **Headless.Ticker.Tests.Unit** (exists - extend)
    - Add Core scheduler tests
    - Add persistence provider tests
 
-2. **Framework.Ticker.Tests.Integration** (new)
+2. **Headless.Ticker.Tests.Integration** (new)
    - EF Core provider tests with SQL Server/PostgreSQL
    - Redis caching tests
    - Dashboard API tests

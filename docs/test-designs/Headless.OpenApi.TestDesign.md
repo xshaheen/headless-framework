@@ -1,13 +1,13 @@
-# Framework.OpenApi Test Design
+# Headless.OpenApi Test Design
 
 ## Overview
 
-The Framework.OpenApi packages provide OpenAPI documentation generation for ASP.NET Core APIs using NSwag, with additional support for Scalar UI and OData query parameters. Features include FluentValidation schema processing, ProblemDetails examples, and building blocks primitive mappings.
+The Headless.OpenApi packages provide OpenAPI documentation generation for ASP.NET Core APIs using NSwag, with additional support for Scalar UI and OData query parameters. Features include FluentValidation schema processing, ProblemDetails examples, and building blocks primitive mappings.
 
 ### Packages
-1. **Framework.OpenApi.Nswag** - NSwag-based OpenAPI generation with FluentValidation integration
-2. **Framework.OpenApi.Nswag.OData** - OData query parameter documentation
-3. **Framework.OpenApi.Scalar** - Scalar UI integration for OpenAPI
+1. **Headless.OpenApi.Nswag** - NSwag-based OpenAPI generation with FluentValidation integration
+2. **Headless.OpenApi.Nswag.OData** - OData query parameter documentation
+3. **Headless.OpenApi.Scalar** - Scalar UI integration for OpenAPI
 
 ### Key Components
 - **NswagSetup** - DI registration and middleware configuration
@@ -21,7 +21,7 @@ The Framework.OpenApi packages provide OpenAPI documentation generation for ASP.
 
 ---
 
-## 1. Framework.OpenApi.Nswag
+## 1. Headless.OpenApi.Nswag
 
 ### 1.1 NswagSetup - AddHeadlessNswagOpenApi Tests
 
@@ -57,7 +57,7 @@ The Framework.OpenApi packages provide OpenAPI documentation generation for ASP.
 | 18 | should_map_account_id_to_string | Unit | AccountId → String |
 | 19 | should_map_user_id_to_string | Unit | UserId → String |
 
-### 1.4 NswagSetup - MapFrameworkNswagOpenApiVersions Tests
+### 1.4 NswagSetup - MapHeadlessNswagOpenApiVersions Tests
 
 | # | Test Case | Type | Description |
 |---|-----------|------|-------------|
@@ -66,7 +66,7 @@ The Framework.OpenApi packages provide OpenAPI documentation generation for ASP.
 | 22 | should_configure_swagger_ui | Integration | SwaggerUiSettings applied |
 | 23 | should_set_document_path | Integration | /openapi/{groupName}.json |
 
-### 1.5 NswagSetup - MapFrameworkNswagOpenApi Tests
+### 1.5 NswagSetup - MapHeadlessNswagOpenApi Tests
 
 | # | Test Case | Type | Description |
 |---|-----------|------|-------------|
@@ -169,7 +169,7 @@ The Framework.OpenApi packages provide OpenAPI documentation generation for ASP.
 
 ---
 
-## 2. Framework.OpenApi.Nswag.OData
+## 2. Headless.OpenApi.Nswag.OData
 
 ### 2.1 ODataOperationFilter Tests
 
@@ -192,9 +192,9 @@ The Framework.OpenApi packages provide OpenAPI documentation generation for ASP.
 
 ---
 
-## 3. Framework.OpenApi.Scalar
+## 3. Headless.OpenApi.Scalar
 
-### 3.1 ScalarSetup - MapFrameworkScalarOpenApi Tests
+### 3.1 ScalarSetup - MapHeadlessScalarOpenApi Tests
 
 | # | Test Case | Type | Description |
 |---|-----------|------|-------------|
@@ -252,7 +252,7 @@ The Framework.OpenApi packages provide OpenAPI documentation generation for ASP.
 ### Test Project Structure
 ```
 tests/
-├── Framework.OpenApi.Nswag.Tests.Unit/              (NEW - 76 tests)
+├── Headless.OpenApi.Nswag.Tests.Unit/              (NEW - 76 tests)
 │   ├── Setup/
 │   │   └── NswagSetupTests.cs
 │   ├── SchemaProcessors/
@@ -264,11 +264,11 @@ tests/
 │   │   └── ForbiddenResponseOperationProcessorTests.cs
 │   └── Models/
 │       └── ProblemDetailsModelsTests.cs
-├── Framework.OpenApi.Nswag.OData.Tests.Unit/        (NEW - 14 tests)
+├── Headless.OpenApi.Nswag.OData.Tests.Unit/        (NEW - 14 tests)
 │   └── ODataOperationFilterTests.cs
-├── Framework.OpenApi.Scalar.Tests.Unit/             (NEW - 6 tests)
+├── Headless.OpenApi.Scalar.Tests.Unit/             (NEW - 6 tests)
 │   └── ScalarSetupTests.cs
-└── Framework.OpenApi.Tests.Integration/             (NEW - 6 tests)
+└── Headless.OpenApi.Tests.Integration/             (NEW - 6 tests)
     └── OpenApiGenerationTests.cs
 ```
 

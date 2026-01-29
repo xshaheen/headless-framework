@@ -14,7 +14,7 @@ public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFix
 {
     private readonly IContainer _sftpContainer = new ContainerBuilder("atmoz/sftp:latest")
         .WithPortBinding(22, true)
-        .WithCommand("framework:password:::storage")
+        .WithCommand("headless:password:::storage")
         .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server listening on"))
         .Build();
 
@@ -27,7 +27,7 @@ public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFix
     public OptionsMonitorWrapper<SshBlobStorageOptions> OptionsMonitor { get; private set; } = null!;
 
     public string GetConnectionString() =>
-        $"sftp://framework:password@{_sftpContainer.Hostname}:{_sftpContainer.GetMappedPublicPort(22)}";
+        $"sftp://headless:password@{_sftpContainer.Hostname}:{_sftpContainer.GetMappedPublicPort(22)}";
 
     /// <summary>This runs before all the test run and Called just after the constructor</summary>
     public async ValueTask InitializeAsync()

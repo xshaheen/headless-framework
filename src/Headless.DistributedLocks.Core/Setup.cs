@@ -48,9 +48,7 @@ public static class AddResourceLockExtensions
             ));
 
             services
-                .AddConsumer<ResourceLockProvider.LockReleasedConsumer, ResourceLockReleased>(
-                    "framework.locks.released"
-                )
+                .AddConsumer<ResourceLockProvider.LockReleasedConsumer, ResourceLockReleased>("headless.locks.released")
                 .WithConcurrency(1);
 
             return services;

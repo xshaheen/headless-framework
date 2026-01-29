@@ -1,34 +1,34 @@
 # Copilot Instructions
 
-This is a modern headless .NET Core framework for building web/general applications.
-
 ## Project Overview
 
 **headless-framework** is a modular .NET 10 framework for building APIs and backend services. Composed of ~94 NuGet packages organized by functional domains (API, Blobs, Caching, Messaging, ORM, etc.). Unopinionated, zero lock-in design.
 
+**This is a framework, not a finished application.**
+It is designed to support multiple projects and packages, both internal and external. As such, it may contain abstractions, extension points, and utility classes or methods that are not directly used within this repository. These elements exist deliberately to enable extensibility, customization, and reuse by downstream consumers and future integrations.
+
 ## Build Commands
 
 ```bash
-# NUKE build system (prefer these)
-./build.sh Compile    # Build solution
-./build.sh Test       # Run all tests
-./build.sh Pack       # Create NuGet packages
-./build.sh Clean      # Clean outputs
-
 # Direct dotnet (faster for single projects)
 dotnet build src/Headless.Orm.EntityFramework
 dotnet test tests/Headless.Base.Tests.Unit
 dotnet test --filter "FullyQualifiedName~method_name"  # Single test
-dotnet csharpier .    # Format code
+csharpier format .    # Format code. You should run after changes.
 ```
+
+**Coverage targets:**
+- **Line coverage**: ≥85% (minimum: 80%)
+- **Branch coverage**: ≥80% (minimum: 70%)
+- **Mutation score**: ≥70% (goal: 85%+)
 
 ## Architecture Pattern
 
 Each feature follows **abstraction + provider pattern**:
-- `Framework.*.Abstraction` — interfaces and contracts
-- `Framework.*.<Provider>` — concrete implementation
+- `Headless.*.Abstractions` — interfaces and contracts
+- `Headless.*.<Provider>` — concrete implementation
 
-Example: `Framework.Caching.Abstraction` + `Framework.Caching.Redis`
+Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 ## Test Structure
 
@@ -36,22 +36,12 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Redis`
 - `*.Tests.Integration` — real deps via Testcontainers (requires Docker)
 - `*.Tests.Harness` — shared fixtures and builders
 
-**Naming**: `should_{action}_{expected}_when_{condition}`
-**Pattern**: Given-When-Then
 **Stack**: xUnit, AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
 
 ## Code Conventions (Strictly Enforced)
 
-**Naming**:
-| Element | Convention | Example |
-|---------|------------|---------|
-| Private fields | `_camelCase` | `_service` |
-| Private const/static | `_PascalCase` | `_DefaultValue` |
-| Private methods | `_PascalCase` | `_ValidateInput()` |
-| Public methods | `PascalCase` | `ProcessAsync()` |
-| Local functions | `camelCase` | `logError()` |
-
 **Required C# features**:
+
 - File-scoped namespaces: `namespace X;`
 - Primary constructors for DI
 - `required`/`init` for properties
@@ -59,11 +49,14 @@ Example: `Framework.Caching.Abstraction` + `Framework.Caching.Redis`
 - Collection expressions: `[]`
 - Pattern matching over old-style checks
 
-**Async**: Use `AnyContext()` extension (replaces `ConfigureAwait(false)`). Always pass `CancellationToken`.
-
 ## Package Management
 
-All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
+- All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
+
+## Documentation
+
+- Make sure to sync XML docs of the public APIs.
+- Make sure to sync project README.md files for each package (exist in `src/Headless.*` folders).
 
 ## Tools
 

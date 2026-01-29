@@ -88,7 +88,7 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
         return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
-            .WithDatabase("framework_test")
+            .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
             .Build();

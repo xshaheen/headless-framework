@@ -27,10 +27,10 @@ csharpier format .    # Format code. You should run after changes.
 ## Architecture Pattern
 
 Each feature follows **abstraction + provider pattern**:
-- `Framework.*.Abstractions` — interfaces and contracts
-- `Framework.*.<Provider>` — concrete implementation
+- `Headless.*.Abstractions` — interfaces and contracts
+- `Headless.*.<Provider>` — concrete implementation
 
-Example: `Framework.Caching.Abstractions` + `Framework.Caching.Redis`
+Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 ## Test Structure
 

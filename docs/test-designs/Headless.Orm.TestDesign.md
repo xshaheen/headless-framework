@@ -1,19 +1,19 @@
-# Framework.Orm Test Design
+# Headless.Orm Test Design
 
 ## Package Overview
 
-Framework.Orm provides ORM utilities and abstractions for Entity Framework Core and Couchbase. The system consists of 2 packages:
+Headless.Orm provides ORM utilities and abstractions for Entity Framework Core and Couchbase. The system consists of 2 packages:
 
 | Package | Purpose | Test Priority |
 |---------|---------|---------------|
-| Framework.Orm.EntityFramework | EF Core base context with auditing, multi-tenancy, messaging | High |
-| Framework.Orm.Couchbase | Couchbase bucket context and document sets | Medium |
+| Headless.Orm.EntityFramework | EF Core base context with auditing, multi-tenancy, messaging | High |
+| Headless.Orm.Couchbase | Couchbase bucket context and document sets | Medium |
 
 ## Architecture Summary
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                   Framework.Orm Architecture                      │
+│                   Headless.Orm Architecture                      │
 ├──────────────────────────────────────────────────────────────────┤
 │  HeadlessDbContext (abstract base)                               │
 │    ├─ Automatic auditing (Create, Update, Delete, Suspend)       │
@@ -69,7 +69,7 @@ Framework.Orm provides ORM utilities and abstractions for Entity Framework Core 
 
 ## Test Design by Package
 
-### 1. Framework.Orm.EntityFramework
+### 1. Headless.Orm.EntityFramework
 
 #### 1.1 HeadlessDbContext (Integration)
 **File:** `Contexts/HeadlessDbContext.cs`
@@ -197,7 +197,7 @@ Framework.Orm provides ORM utilities and abstractions for Entity Framework Core 
 |-----------|-------------|----------|
 | ApplyConfigurationsFromAssembly_should_load_configs | DI-aware loading | P2 |
 | ApplyConfigurationsFromAssembly_should_filter_by_predicate | Conditional loading | P3 |
-| ConfigureFrameworkConvention_should_apply | EntityTypeBuilder ext | P3 |
+| ConfigureHeadlessConvention_should_apply | EntityTypeBuilder ext | P3 |
 | AddBuildingBlocksPrimitivesConvertersMappings_should_register | Convention registration | P3 |
 | ToLookupAsync_should_group_by_key | IQueryable extension | P2 |
 | WhereInDateRange_DateOnly_should_filter | DateOnly range | P2 |
@@ -214,7 +214,7 @@ Framework.Orm provides ORM utilities and abstractions for Entity Framework Core 
 
 ---
 
-### 2. Framework.Orm.Couchbase
+### 2. Headless.Orm.Couchbase
 
 #### 2.1 CouchbaseBucketContext (Integration)
 **File:** `Context/CouchbaseBucketContext.cs`
@@ -264,12 +264,12 @@ Framework.Orm provides ORM utilities and abstractions for Entity Framework Core 
 - `tests/Headless.Orm.EntityFramework.Tests.Integration/` (extend)
 
 ### New Test Projects Needed
-1. **Framework.Orm.EntityFramework.Tests.Unit** (new)
+1. **Headless.Orm.EntityFramework.Tests.Unit** (new)
    - Value converter tests
    - DataGrid extension tests
    - Navigation tracker tests
 
-2. **Framework.Orm.Couchbase.Tests.Integration** (new)
+2. **Headless.Orm.Couchbase.Tests.Integration** (new)
    - Requires Couchbase container
 
 ### Test Fixtures

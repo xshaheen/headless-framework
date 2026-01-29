@@ -4,7 +4,7 @@ Demo project showing HTTP API endpoints for permission management operations.
 
 ## Overview
 
-This demo illustrates how to expose Framework.Permissions interfaces via REST API endpoints using Minimal API. Useful for agent-native architectures, webhooks, and cross-service permission management.
+This demo illustrates how to expose Headless.Permissions interfaces via REST API endpoints using Minimal API. Useful for agent-native architectures, webhooks, and cross-service permission management.
 
 ## Interactive Documentation
 

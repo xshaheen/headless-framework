@@ -16,7 +16,7 @@
 
 ## Package Analysis
 
-### Framework.Sms.Abstractions
+### Headless.Sms.Abstractions
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -24,7 +24,7 @@
 | `Contracts/SendSingleSmsRequest.cs` | SMS request with destinations | High |
 | `Contracts/SendSingleSmsResponse.cs` | SMS response with status | Medium |
 
-### Framework.Sms.Dev
+### Headless.Sms.Dev
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -32,7 +32,7 @@
 | `NoopSmsSender.cs` | No-op SMS sender | Low |
 | `Setup.cs` | DI registration | Low |
 
-### Framework.Sms.Aws
+### Headless.Sms.Aws
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -44,12 +44,12 @@
 
 | Package | Sender Class | Testable |
 |---------|-------------|----------|
-| `Framework.Sms.Cequens` | `CequensSmsSender.cs` | Integration |
-| `Framework.Sms.Connekio` | `ConnekioSmsSender.cs` | Integration |
-| `Framework.Sms.Infobip` | `InfobipSmsSender.cs` | Integration |
-| `Framework.Sms.Twilio` | `TwilioSmsSender.cs` | Integration |
-| `Framework.Sms.VictoryLink` | `VictoryLinkSmsSender.cs` | Integration |
-| `Framework.Sms.Vodafone` | `VodafoneSmsSender.cs` | Integration |
+| `Headless.Sms.Cequens` | `CequensSmsSender.cs` | Integration |
+| `Headless.Sms.Connekio` | `ConnekioSmsSender.cs` | Integration |
+| `Headless.Sms.Infobip` | `InfobipSmsSender.cs` | Integration |
+| `Headless.Sms.Twilio` | `TwilioSmsSender.cs` | Integration |
+| `Headless.Sms.VictoryLink` | `VictoryLinkSmsSender.cs` | Integration |
+| `Headless.Sms.Vodafone` | `VodafoneSmsSender.cs` | Integration |
 
 ## Current Test Coverage
 

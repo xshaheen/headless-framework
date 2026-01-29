@@ -186,7 +186,7 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 
 - [Headless.Tus](./src/Headless.Tus/README.md): Core TUS protocol utilities and extensions.
 - [Headless.Tus.Azure](./src/Headless.Tus.Azure/README.md): Azure Blob Storage TUS store implementation.
-- [Headless.Tus.ResourceLock](./src/Headless.Tus.ResourceLock/README.md): TUS file locking using Framework.ResourceLocks.
+- [Headless.Tus.ResourceLock](./src/Headless.Tus.ResourceLock/README.md): TUS file locking using Headless.ResourceLocks.
 
 ### Utilities
 

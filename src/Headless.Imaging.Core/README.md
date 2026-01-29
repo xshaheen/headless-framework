@@ -30,7 +30,7 @@ builder.Services
     {
         options.DefaultQuality = 85;
     })
-    .AddImageSharpContributors(); // From Framework.Imaging.ImageSharp
+    .AddImageSharpContributors(); // From Headless.Imaging.ImageSharp
 ```
 
 ## Configuration

@@ -66,7 +66,7 @@ public sealed class HeadlessEntityModelProcessor(
 
     private static void _ConfigureConvention(ModelBuilder builder, IMutableEntityType type)
     {
-        builder.Entity(type.ClrType).ConfigureFrameworkConvention();
+        builder.Entity(type.ClrType).ConfigureHeadlessConvention();
     }
 
     private void _ConfigureValueConverter(ModelBuilder builder, IMutableEntityType type)

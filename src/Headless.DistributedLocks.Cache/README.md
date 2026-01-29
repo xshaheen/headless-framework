@@ -4,7 +4,7 @@ Cache-based resource lock storage using ICache.
 
 ## Problem Solved
 
-Provides resource lock storage using the framework's `ICache` abstraction, suitable for single-instance deployments or when using a distributed cache like Redis.
+Provides resource lock storage using the headless's `ICache` abstraction, suitable for single-instance deployments or when using a distributed cache like Redis.
 
 ## Key Features
 

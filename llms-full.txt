@@ -1,4 +1,4 @@
-# Framework.Api.Abstractions
+# Headless.Api.Abstractions
 
 
 Defines core interfaces and contracts for HTTP request context, user identity, and web client information in ASP.NET Core applications.
@@ -17,7 +17,7 @@ Provides a standardized abstraction layer for accessing request-scoped context (
 ## Installation
 
 ```bash
-dotnet add package Framework.Api.Abstractions
+dotnet add package Headless.Api.Abstractions
 ```
 
 ## Usage
@@ -50,7 +50,7 @@ No configuration required. This package contains interfaces only.
 
 ## Dependencies
 
-- `Framework.BuildingBlocks`
+- `Headless.BuildingBlocks`
 
 ## Side Effects
 
@@ -58,7 +58,7 @@ None. This is an abstractions-only package.
 
 ---
 
-# Framework.Api.DataProtection
+# Headless.Api.DataProtection
 
 
 Extends ASP.NET Core Data Protection to persist encryption keys to blob storage providers.
@@ -76,7 +76,7 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 ## Installation
 
 ```bash
-dotnet add package Framework.Api.DataProtection
+dotnet add package Headless.Api.DataProtection
 ```
 
 ## Quick Start
@@ -102,8 +102,8 @@ No specific configuration. Depends on the underlying `IBlobStorage` configuratio
 
 ## Dependencies
 
-- `Framework.Blobs.Abstractions`
-- `Framework.Checks`
+- `Headless.Blobs.Abstractions`
+- `Headless.Checks`
 - `Azure.Extensions.AspNetCore.DataProtection.Blobs`
 - `Microsoft.AspNetCore.DataProtection`
 
@@ -113,7 +113,7 @@ No specific configuration. Depends on the underlying `IBlobStorage` configuratio
 
 ---
 
-# Framework.Api.FluentValidation
+# Headless.Api.FluentValidation
 
 
 FluentValidation extensions for validating ASP.NET Core `IFormFile` uploads including size, content type, and file signature verification.
@@ -134,14 +134,14 @@ Provides reusable, type-safe validators for file uploads with proper error messa
 ## Installation
 
 ```bash
-dotnet add package Framework.Api.FluentValidation
+dotnet add package Headless.Api.FluentValidation
 ```
 
 ## Quick Start
 
 ```csharp
 using FluentValidation;
-using Framework.FluentValidation;
+using Headless.FluentValidation;
 using FileSignatures;
 using FileSignatures.Formats;
 
@@ -164,7 +164,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.FluentValidation`
+- `Headless.FluentValidation`
 - `FileSignatures`
 - `Microsoft.AspNetCore.App` (framework reference)
 
@@ -174,7 +174,7 @@ None.
 
 ---
 
-# Framework.Api.Logging.Serilog
+# Headless.Api.Logging.Serilog
 
 
 Serilog integration for ASP.NET Core APIs with custom enrichers for request context.
@@ -188,12 +188,12 @@ Enriches Serilog log events with HTTP request context (client IP, user agent, us
 - Custom Serilog enricher middleware
 - Client info enrichment (IP, user agent)
 - Request context enrichment (user, tenant, correlation ID)
-- Integration with `Framework.Logging.Serilog` configuration
+- Integration with `Headless.Logging.Serilog` configuration
 
 ## Installation
 
 ```bash
-dotnet add package Framework.Api.Logging.Serilog
+dotnet add package Headless.Api.Logging.Serilog
 ```
 
 ## Quick Start
@@ -214,12 +214,12 @@ app.Run();
 
 ## Configuration
 
-Inherits Serilog configuration from `Framework.Logging.Serilog`. See that package for sink and enricher configuration.
+Inherits Serilog configuration from `Headless.Logging.Serilog`. See that package for sink and enricher configuration.
 
 ## Dependencies
 
-- `Framework.Api.Abstractions`
-- `Framework.Logging.Serilog`
+- `Headless.Api.Abstractions`
+- `Headless.Logging.Serilog`
 - `Serilog.Enrichers.ClientInfo`
 - `Microsoft.AspNetCore.App` (framework reference)
 
@@ -230,7 +230,7 @@ Inherits Serilog configuration from `Framework.Logging.Serilog`. See that packag
 
 ---
 
-# Framework.Api.MinimalApi
+# Headless.Api.MinimalApi
 
 
 Framework integration for ASP.NET Core Minimal APIs with JSON configuration, validation filters, and exception handling.
@@ -250,7 +250,7 @@ Provides consistent JSON serialization, validation, and exception handling for M
 ## Installation
 
 ```bash
-dotnet add package Framework.Api.MinimalApi
+dotnet add package Headless.Api.MinimalApi
 ```
 
 ## Quick Start
@@ -274,7 +274,7 @@ No additional configuration required. Uses framework JSON settings automatically
 
 ## Dependencies
 
-- `Framework.Api`
+- `Headless.Api`
 - `Asp.Versioning.Http`
 - `Microsoft.EntityFrameworkCore`
 
@@ -284,7 +284,7 @@ No additional configuration required. Uses framework JSON settings automatically
 
 ---
 
-# Framework.Api.Mvc
+# Headless.Api.Mvc
 
 
 Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JSON configuration, and common utilities.
@@ -306,7 +306,7 @@ Provides consistent MVC configuration, base controllers, exception filters, and 
 ## Installation
 
 ```bash
-dotnet add package Framework.Api.Mvc
+dotnet add package Headless.Api.Mvc
 ```
 
 ## Quick Start
@@ -345,7 +345,7 @@ No additional configuration required.
 
 ## Dependencies
 
-- `Framework.Api`
+- `Headless.Api`
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
 - `Microsoft.EntityFrameworkCore`
@@ -357,7 +357,7 @@ No additional configuration required.
 
 ---
 
-# Framework.Api
+# Headless.Api
 
 
 Core ASP.NET Core API infrastructure providing service registration, middleware, security, JWT handling, and common API utilities.
@@ -383,7 +383,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 ## Installation
 
 ```bash
-dotnet add package Framework.Api
+dotnet add package Headless.Api
 ```
 
 ## Quick Start
@@ -432,12 +432,12 @@ app.Run();
 
 ## Dependencies
 
-- `Framework.Api.Abstractions`
-- `Framework.BuildingBlocks`
-- `Framework.Caching.Abstractions`
-- `Framework.FluentValidation`
-- `Framework.Api.FluentValidation`
-- `Framework.Hosting`
+- `Headless.Api.Abstractions`
+- `Headless.BuildingBlocks`
+- `Headless.Caching.Abstractions`
+- `Headless.FluentValidation`
+- `Headless.Api.FluentValidation`
+- `Headless.Hosting`
 - `Asp.Versioning.Http`
 - `DeviceDetector.NET`
 - `FluentValidation`
@@ -457,7 +457,7 @@ app.Run();
 
 ---
 
-# Framework.Base
+# Headless.Base
 
 
 Foundational utility library providing extension methods, primitives, helpers, and common abstractions used throughout the framework.
@@ -482,7 +482,7 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 ## Installation
 
 ```bash
-dotnet add package Framework.Base
+dotnet add package Headless.Base
 ```
 
 ## Quick Start
@@ -526,7 +526,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Checks`
+- `Headless.Checks`
 - `CommunityToolkit.HighPerformance`
 - `Flurl`
 - `Humanizer.Core`
@@ -546,7 +546,7 @@ None.
 
 ---
 
-# Framework.Blobs.Abstractions
+# Headless.Blobs.Abstractions
 
 
 Defines the unified interface for blob/file storage operations across different providers (AWS S3, Azure Blob, FileSystem, Redis, SFTP).
@@ -570,7 +570,7 @@ Provides a provider-agnostic API for file storage operations, enabling seamless 
 ## Installation
 
 ```bash
-dotnet add package Framework.Blobs.Abstractions
+dotnet add package Headless.Blobs.Abstractions
 ```
 
 ## Usage
@@ -603,8 +603,8 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Framework.Base`
-- `Framework.Serializer.Json`
+- `Headless.Base`
+- `Headless.Serializer.Json`
 
 ## Side Effects
 
@@ -612,7 +612,7 @@ None. This is an abstractions package.
 
 ---
 
-# Framework.Blobs.Aws
+# Headless.Blobs.Aws
 
 
 AWS S3 implementation of the `IBlobStorage` interface for storing files in Amazon S3.
@@ -633,7 +633,7 @@ Provides seamless integration with AWS S3 for blob storage using the unified `IB
 ## Installation
 
 ```bash
-dotnet add package Framework.Blobs.Aws
+dotnet add package Headless.Blobs.Aws
 ```
 
 ## Quick Start
@@ -681,9 +681,9 @@ options.BucketName = "my-bucket";
 
 ## Dependencies
 
-- `Framework.Blobs.Abstractions`
-- `Framework.BuildingBlocks`
-- `Framework.Hosting`
+- `Headless.Blobs.Abstractions`
+- `Headless.BuildingBlocks`
+- `Headless.Hosting`
 - `AWSSDK.S3`
 - `AWSSDK.Extensions.NETCore.Setup`
 
@@ -695,7 +695,7 @@ options.BucketName = "my-bucket";
 
 ---
 
-# Framework.Blobs.Azure
+# Headless.Blobs.Azure
 
 
 Azure Blob Storage implementation of the `IBlobStorage` interface for storing files in Azure.
@@ -715,7 +715,7 @@ Provides seamless integration with Azure Blob Storage using the unified `IBlobSt
 ## Installation
 
 ```bash
-dotnet add package Framework.Blobs.Azure
+dotnet add package Headless.Blobs.Azure
 ```
 
 ## Quick Start
@@ -755,9 +755,9 @@ builder.Services.AddAzureBlobStorage(options =>
 
 ## Dependencies
 
-- `Framework.Blobs.Abstractions`
-- `Framework.BuildingBlocks`
-- `Framework.Hosting`
+- `Headless.Blobs.Abstractions`
+- `Headless.BuildingBlocks`
+- `Headless.Hosting`
 - `Azure.Storage.Blobs`
 - `Azure.Storage.Blobs.Batch`
 - `Microsoft.Extensions.Azure`
@@ -770,7 +770,7 @@ builder.Services.AddAzureBlobStorage(options =>
 
 ---
 
-# Framework.Blobs.FileSystem
+# Headless.Blobs.FileSystem
 
 
 Local file system implementation of the `IBlobStorage` interface for development and on-premises scenarios.
@@ -790,7 +790,7 @@ Provides local file system storage using the unified `IBlobStorage` abstraction,
 ## Installation
 
 ```bash
-dotnet add package Framework.Blobs.FileSystem
+dotnet add package Headless.Blobs.FileSystem
 ```
 
 ## Quick Start
@@ -824,8 +824,8 @@ options.BasePath = "/path/to/storage";
 
 ## Dependencies
 
-- `Framework.Blobs.Abstractions`
-- `Framework.Hosting`
+- `Headless.Blobs.Abstractions`
+- `Headless.Hosting`
 
 ## Side Effects
 
@@ -834,7 +834,7 @@ options.BasePath = "/path/to/storage";
 
 ---
 
-# Framework.Blobs.Redis
+# Headless.Blobs.Redis
 
 
 Redis implementation of the `IBlobStorage` interface for caching small blobs in Redis.
@@ -854,7 +854,7 @@ Provides high-speed blob storage for small files using Redis, suitable for tempo
 ## Installation
 
 ```bash
-dotnet add package Framework.Blobs.Redis
+dotnet add package Headless.Blobs.Redis
 ```
 
 ## Quick Start
@@ -884,9 +884,9 @@ builder.Services.AddRedisBlobStorage(options =>
 
 ## Dependencies
 
-- `Framework.Blobs.Abstractions`
-- `Framework.BuildingBlocks`
-- `Framework.Hosting`
+- `Headless.Blobs.Abstractions`
+- `Headless.BuildingBlocks`
+- `Headless.Hosting`
 - `StackExchange.Redis`
 
 ## Side Effects
@@ -896,7 +896,7 @@ builder.Services.AddRedisBlobStorage(options =>
 
 ---
 
-# Framework.Blobs.SshNet
+# Headless.Blobs.SshNet
 
 
 SFTP/SSH implementation of the `IBlobStorage` interface for storing files on remote servers via SFTP.
@@ -916,7 +916,7 @@ Provides blob storage via SFTP/SSH protocol for scenarios requiring file transfe
 ## Installation
 
 ```bash
-dotnet add package Framework.Blobs.SshNet
+dotnet add package Headless.Blobs.SshNet
 ```
 
 ## Quick Start
@@ -965,8 +965,8 @@ builder.Services.AddSshNetBlobStorage(options =>
 
 ## Dependencies
 
-- `Framework.Blobs.Abstractions`
-- `Framework.Hosting`
+- `Headless.Blobs.Abstractions`
+- `Headless.Hosting`
 - `SSH.NET`
 
 ## Side Effects
@@ -976,7 +976,7 @@ builder.Services.AddSshNetBlobStorage(options =>
 
 ---
 
-# Framework.BuildingBlocks
+# Headless.BuildingBlocks
 
 
 Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
@@ -1013,7 +1013,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 ## Installation
 
 ```bash
-dotnet add package Framework.BuildingBlocks
+dotnet add package Headless.BuildingBlocks
 ```
 
 ## Quick Start
@@ -1037,15 +1037,15 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
 
 ## Configuration
 
-No configuration required. Implementations are registered by `Framework.Api` or other host packages.
+No configuration required. Implementations are registered by `Headless.Api` or other host packages.
 
 ## Dependencies
 
-- `Framework.Checks`
-- `Framework.Base`
-- `Framework.Domains`
-- `Framework.Serializer.Json`
-- `Framework.Generator.Primitives` (source generator)
+- `Headless.Checks`
+- `Headless.Base`
+- `Headless.Domains`
+- `Headless.Serializer.Json`
+- `Headless.Generator.Primitives` (source generator)
 - `FluentValidation`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Snappier`
@@ -1056,7 +1056,7 @@ None. This is an abstractions/primitives package.
 
 ---
 
-# Framework.Caching.Abstractions
+# Headless.Caching.Abstractions
 
 
 Defines the unified caching interface for both in-memory and distributed cache implementations.
@@ -1081,7 +1081,7 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 ## Installation
 
 ```bash
-dotnet add package Framework.Caching.Abstractions
+dotnet add package Headless.Caching.Abstractions
 ```
 
 ## Usage
@@ -1120,7 +1120,7 @@ None. This is an abstractions package.
 
 ---
 
-# Framework.Caching.Memory
+# Headless.Caching.Memory
 
 
 In-memory cache implementation for single-instance applications.
@@ -1140,7 +1140,7 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 ## Installation
 
 ```bash
-dotnet add package Framework.Caching.Memory
+dotnet add package Headless.Caching.Memory
 ```
 
 ## Quick Start
@@ -1172,8 +1172,8 @@ options.ShouldCloneValues = false;   // Clone values on get/set
 
 ## Dependencies
 
-- `Framework.Caching.Abstractions`
-- `Framework.Hosting`
+- `Headless.Caching.Abstractions`
+- `Headless.Hosting`
 
 ## Side Effects
 
@@ -1184,7 +1184,7 @@ options.ShouldCloneValues = false;   // Clone values on get/set
 
 ---
 
-# Framework.Caching.Redis
+# Headless.Caching.Redis
 
 
 Redis distributed cache implementation for multi-instance applications.
@@ -1205,7 +1205,7 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 ## Installation
 
 ```bash
-dotnet add package Framework.Caching.Redis
+dotnet add package Headless.Caching.Redis
 ```
 
 ## Quick Start
@@ -1244,10 +1244,10 @@ options.KeyPrefix = "myapp:";
 
 ## Dependencies
 
-- `Framework.Caching.Abstractions`
-- `Framework.Hosting`
-- `Framework.Redis`
-- `Framework.Serializer.Json`
+- `Headless.Caching.Abstractions`
+- `Headless.Hosting`
+- `Headless.Redis`
+- `Headless.Serializer.Json`
 - `Foundatio.Redis`
 
 ## Side Effects
@@ -1258,7 +1258,7 @@ options.KeyPrefix = "myapp:";
 
 ---
 
-# Framework.Checks
+# Headless.Checks
 
 
 Guard clause library for argument validation and defensive programming.
@@ -1278,7 +1278,7 @@ Provides a fluent, expressive API for validating method arguments and ensuring p
 ## Installation
 
 ```bash
-dotnet add package Framework.Checks
+dotnet add package Headless.Checks
 ```
 
 ## Quick Start
@@ -1286,7 +1286,7 @@ dotnet add package Framework.Checks
 ### Argument Validation
 
 ```csharp
-using Framework.Checks;
+using Headless.Checks;
 
 public void CreateUser(string name, int age, List<string> roles)
 {
@@ -1311,7 +1311,7 @@ public void CreateUser(string name, int age, List<string> roles)
 ### Runtime Assertions
 
 ```csharp
-using Framework.Checks;
+using Headless.Checks;
 
 public void ProcessOrder()
 {
@@ -1354,7 +1354,7 @@ Provides in-memory local message publishing that resolves handlers from the DI c
 ## Installation
 
 ```bash
-dotnet add package Framework.Domains.LocalMessagePublisher.DI
+dotnet add package Headless.Domains.LocalMessagePublisher.DI
 ```
 
 ## Quick Start
@@ -1411,8 +1411,8 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Domains`
-- `Framework.Hosting`
+- `Headless.Domains`
+- `Headless.Hosting`
 
 ## Side Effects
 
@@ -1421,7 +1421,7 @@ No configuration required.
 ---
 
 
-# Framework.Emails.Abstractions
+# Headless.Emails.Abstractions
 
 
 Defines the unified interface for sending emails across different providers (AWS SES, SMTP/MailKit, development).
@@ -1439,7 +1439,7 @@ Provides a provider-agnostic email sending API, enabling seamless switching betw
 ## Installation
 
 ```bash
-dotnet add package Framework.Emails.Abstractions
+dotnet add package Headless.Emails.Abstractions
 ```
 
 ## Usage
@@ -1477,7 +1477,7 @@ None.
 
 ---
 
-# Framework.Emails.Aws
+# Headless.Emails.Aws
 
 
 AWS SES (Simple Email Service) v2 implementation of the email sending abstraction.
@@ -1496,7 +1496,7 @@ Provides email sending via AWS SES using the unified `IEmailSender` abstraction,
 ## Installation
 
 ```bash
-dotnet add package Framework.Emails.Aws
+dotnet add package Headless.Emails.Aws
 ```
 
 ## Quick Start
@@ -1530,7 +1530,7 @@ builder.Services.AddAwsSesEmailSender(new AWSOptions
 
 ## Dependencies
 
-- `Framework.Emails.Core`
+- `Headless.Emails.Core`
 - `AWSSDK.SimpleEmailV2`
 - `AWSSDK.Extensions.NETCore.Setup`
 
@@ -1541,7 +1541,7 @@ builder.Services.AddAwsSesEmailSender(new AWSOptions
 
 ---
 
-# Framework.Emails.Core
+# Headless.Emails.Core
 
 
 Core utilities and MimeKit integration for email implementations.
@@ -1560,7 +1560,7 @@ Provides shared conversion logic to bridge framework email contracts with MimeKi
 ## Installation
 
 ```bash
-dotnet add package Framework.Emails.Core
+dotnet add package Headless.Emails.Core
 ```
 
 ## Usage
@@ -1576,8 +1576,8 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Emails.Abstractions`
-- `Framework.Hosting`
+- `Headless.Emails.Abstractions`
+- `Headless.Hosting`
 - `MailKit`
 
 ## Side Effects
@@ -1586,7 +1586,7 @@ None. This is a utility package.
 
 ---
 
-# Framework.Emails.Dev
+# Headless.Emails.Dev
 
 
 Development email implementations for local testing and debugging.
@@ -1605,7 +1605,7 @@ Provides safe email implementations for development/testing that don't send real
 ## Installation
 
 ```bash
-dotnet add package Framework.Emails.Dev
+dotnet add package Headless.Emails.Dev
 ```
 
 ## Quick Start
@@ -1642,8 +1642,8 @@ services.AddDevEmailSender("emails.txt"); // Path to output file
 
 ## Dependencies
 
-- `Framework.Emails.Abstractions`
-- `Framework.Hosting`
+- `Headless.Emails.Abstractions`
+- `Headless.Hosting`
 
 ## Side Effects
 
@@ -1652,7 +1652,7 @@ services.AddDevEmailSender("emails.txt"); // Path to output file
 
 ---
 
-# Framework.Emails.Mailkit
+# Headless.Emails.Mailkit
 
 
 SMTP implementation of the email abstraction using MailKit.
@@ -1672,7 +1672,7 @@ Provides email sending via standard SMTP protocol using MailKit, supporting any 
 ## Installation
 
 ```bash
-dotnet add package Framework.Emails.Mailkit
+dotnet add package Headless.Emails.Mailkit
 ```
 
 ## Quick Start
@@ -1722,7 +1722,7 @@ builder.Services.AddMailKitEmailSender(options =>
 
 ## Dependencies
 
-- `Framework.Emails.Core`
+- `Headless.Emails.Core`
 
 ## Side Effects
 
@@ -1730,7 +1730,7 @@ builder.Services.AddMailKitEmailSender(options =>
 
 ---
 
-# Framework.Features.Abstractions
+# Headless.Features.Abstractions
 
 
 Defines the unified interface for feature management and feature flags across different storage providers.
@@ -1751,7 +1751,7 @@ Provides a provider-agnostic feature management API, enabling dynamic feature to
 ## Installation
 
 ```bash
-dotnet add package Framework.Features.Abstractions
+dotnet add package Headless.Features.Abstractions
 ```
 
 ## Usage
@@ -1800,7 +1800,7 @@ None.
 
 ---
 
-# Framework.Features.Core
+# Headless.Features.Core
 
 
 Core implementation of feature management with caching, value providers, and definition management.
@@ -1821,7 +1821,7 @@ Provides the full feature management implementation including hierarchical value
 ## Installation
 
 ```bash
-dotnet add package Framework.Features.Core
+dotnet add package Headless.Features.Core
 ```
 
 ## Quick Start
@@ -1861,10 +1861,10 @@ services.AddFeaturesManagementCore(options =>
 
 ## Dependencies
 
-- `Framework.Features.Abstractions`
-- `Framework.Domains`
-- `Framework.Caching.Abstractions`
-- `Framework.ResourceLocks.Abstractions`
+- `Headless.Features.Abstractions`
+- `Headless.Domains`
+- `Headless.Caching.Abstractions`
+- `Headless.ResourceLocks.Abstractions`
 
 ## Side Effects
 
@@ -1875,7 +1875,7 @@ services.AddFeaturesManagementCore(options =>
 
 ---
 
-# Framework.Features.Storage.EntityFramework
+# Headless.Features.Storage.EntityFramework
 
 
 Entity Framework Core storage implementation for feature management.
@@ -1895,7 +1895,7 @@ Provides persistent storage for feature definitions and values using Entity Fram
 ## Installation
 
 ```bash
-dotnet add package Framework.Features.Storage.EntityFramework
+dotnet add package Headless.Features.Storage.EntityFramework
 ```
 
 ## Quick Start
@@ -1935,7 +1935,7 @@ No additional configuration required beyond DbContext setup.
 
 ## Dependencies
 
-- `Framework.Features.Core`
+- `Headless.Features.Core`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
@@ -1946,7 +1946,7 @@ No additional configuration required beyond DbContext setup.
 
 ---
 
-# Framework.FluentValidation
+# Headless.FluentValidation
 
 
 Extension library for FluentValidation providing enterprise-grade validators and utilities.
@@ -1969,13 +1969,13 @@ Provides a comprehensive suite of common validators (phone numbers, national IDs
 ## Installation
 
 ```bash
-dotnet add package Framework.FluentValidation
+dotnet add package Headless.FluentValidation
 ```
 
 ## Quick Start
 
 ```csharp
-using Framework.FluentValidation;
+using Headless.FluentValidation;
 
 public sealed class UserValidator : AbstractValidator<User>
 {
@@ -2031,7 +2031,7 @@ No configuration required.
 
 - `FluentValidation`
 - `libphonenumber-csharp`
-- `Framework.Base`
+- `Headless.Base`
 
 ## Side Effects
 
@@ -2039,7 +2039,7 @@ None.
 
 ---
 
-# Framework.Generator.Primitives.Abstractions
+# Headless.Generator.Primitives.Abstractions
 
 
 Abstractions and attributes for the domain primitives source generator.
@@ -2062,13 +2062,13 @@ Provides the runtime contracts and attributes needed to define strongly-typed do
 ## Installation
 
 ```bash
-dotnet add package Framework.Generator.Primitives.Abstractions
+dotnet add package Headless.Generator.Primitives.Abstractions
 ```
 
 ## Quick Start
 
 ```csharp
-using Framework.Generator.Primitives;
+using Headless.Generator.Primitives;
 
 [StringLength(1, 100)]
 public readonly partial struct ProductName : IPrimitive<string>
@@ -2112,7 +2112,7 @@ None.
 
 ---
 
-# Framework.Generator.Primitives
+# Headless.Generator.Primitives
 
 
 Roslyn source generator for creating strongly-typed domain primitives.
@@ -2137,7 +2137,7 @@ Automatically generates boilerplate code for domain primitives including constru
 ## Installation
 
 ```bash
-dotnet add package Framework.Generator.Primitives
+dotnet add package Headless.Generator.Primitives
 ```
 
 ## Quick Start
@@ -2185,7 +2185,7 @@ modelBuilder.Entity<User>()
 
 ## Dependencies
 
-- `Framework.Generator.Primitives.Abstractions`
+- `Headless.Generator.Primitives.Abstractions`
 - `Microsoft.CodeAnalysis.CSharp` (compile-time only)
 
 ## Side Effects
@@ -2195,7 +2195,7 @@ modelBuilder.Entity<User>()
 
 ---
 
-# Framework.Hosting
+# Headless.Hosting
 
 
 Core hosting utilities and extensions for ASP.NET Core applications.
@@ -2217,7 +2217,7 @@ Provides essential DI extensions, configuration helpers, options validation, and
 ## Installation
 
 ```bash
-dotnet add package Framework.Hosting
+dotnet add package Headless.Hosting
 ```
 
 ## Quick Start
@@ -2279,7 +2279,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Checks`
+- `Headless.Checks`
 - `Microsoft.Extensions.Hosting`
 - `Microsoft.Extensions.Options`
 
@@ -2289,7 +2289,7 @@ None directly. Utilities for managing service registration.
 
 ---
 
-# Framework.Identity.Storage.EntityFramework
+# Headless.Identity.Storage.EntityFramework
 
 
 Entity Framework Core integration for ASP.NET Core Identity with framework extensions.
@@ -2308,7 +2308,7 @@ Provides a pre-configured Identity DbContext base class with framework-specific 
 ## Installation
 
 ```bash
-dotnet add package Framework.Identity.Storage.EntityFramework
+dotnet add package Headless.Identity.Storage.EntityFramework
 ```
 
 ## Quick Start
@@ -2339,7 +2339,7 @@ No additional configuration required beyond DbContext options.
 
 ## Dependencies
 
-- `Framework.Orm.EntityFramework`
+- `Headless.Orm.EntityFramework`
 - `Microsoft.AspNetCore.Identity.EntityFrameworkCore`
 
 ## Side Effects
@@ -2349,7 +2349,7 @@ No additional configuration required beyond DbContext options.
 
 ---
 
-# Framework.Imaging.Abstractions
+# Headless.Imaging.Abstractions
 
 
 Defines the unified interface for image processing operations.
@@ -2370,7 +2370,7 @@ Provides a provider-agnostic API for image resizing and compression, enabling se
 ## Installation
 
 ```bash
-dotnet add package Framework.Imaging.Abstractions
+dotnet add package Headless.Imaging.Abstractions
 ```
 
 ## Usage
@@ -2406,7 +2406,7 @@ None.
 
 ---
 
-# Framework.Imaging.Core
+# Headless.Imaging.Core
 
 
 Core image processing implementation with contributor-based extensibility.
@@ -2426,7 +2426,7 @@ Provides the orchestration layer for image processing, delegating to registered 
 ## Installation
 
 ```bash
-dotnet add package Framework.Imaging.Core
+dotnet add package Headless.Imaging.Core
 ```
 
 ## Quick Start
@@ -2439,7 +2439,7 @@ builder.Services
     {
         options.DefaultQuality = 85;
     })
-    .AddImageSharpContributors(); // From Framework.Imaging.ImageSharp
+    .AddImageSharpContributors(); // From Headless.Imaging.ImageSharp
 ```
 
 ## Configuration
@@ -2457,8 +2457,8 @@ services.AddImaging(options =>
 
 ## Dependencies
 
-- `Framework.Imaging.Abstractions`
-- `Framework.Hosting`
+- `Headless.Imaging.Abstractions`
+- `Headless.Hosting`
 
 ## Side Effects
 
@@ -2467,7 +2467,7 @@ services.AddImaging(options =>
 
 ---
 
-# Framework.Imaging.ImageSharp
+# Headless.Imaging.ImageSharp
 
 
 ImageSharp-based implementation for image resizing and compression.
@@ -2487,7 +2487,7 @@ Provides high-performance, cross-platform image processing using SixLabors.Image
 ## Installation
 
 ```bash
-dotnet add package Framework.Imaging.ImageSharp
+dotnet add package Headless.Imaging.ImageSharp
 ```
 
 ## Quick Start
@@ -2520,7 +2520,7 @@ services.AddImaging()
 
 ## Dependencies
 
-- `Framework.Imaging.Core`
+- `Headless.Imaging.Core`
 - `SixLabors.ImageSharp`
 
 ## Side Effects
@@ -2530,7 +2530,7 @@ services.AddImaging()
 
 ---
 
-# Framework.Logging.Serilog
+# Headless.Logging.Serilog
 
 
 Serilog configuration factory with sensible defaults and structured logging setup.
@@ -2551,7 +2551,7 @@ Provides pre-configured Serilog logger configurations for bootstrap and producti
 ## Installation
 
 ```bash
-dotnet add package Framework.Logging.Serilog
+dotnet add package Headless.Logging.Serilog
 ```
 
 ## Quick Start
@@ -2593,7 +2593,7 @@ builder.Host.UseSerilog((context, services, config) =>
 
 ## Dependencies
 
-- `Framework.Base`
+- `Headless.Base`
 - `Serilog`
 - `Serilog.AspNetCore`
 - `Serilog.Enrichers.*`
@@ -2607,7 +2607,7 @@ builder.Host.UseSerilog((context, services, config) =>
 
 ---
 
-# Framework.Media.Indexing.Abstractions
+# Headless.Media.Indexing.Abstractions
 
 
 Defines the interface for extracting text from media files for indexing.
@@ -2625,7 +2625,7 @@ Provides a unified API for extracting textual content from various document form
 ## Installation
 
 ```bash
-dotnet add package Framework.Media.Indexing.Abstractions
+dotnet add package Headless.Media.Indexing.Abstractions
 ```
 
 ## Usage
@@ -2657,7 +2657,7 @@ None.
 
 ---
 
-# Framework.Media.Indexing
+# Headless.Media.Indexing
 
 
 Text extraction implementations for common document formats.
@@ -2676,7 +2676,7 @@ Provides text extraction from PDF, Word (.docx), and PowerPoint (.pptx) document
 ## Installation
 
 ```bash
-dotnet add package Framework.Media.Indexing
+dotnet add package Headless.Media.Indexing
 ```
 
 ## Quick Start
@@ -2709,7 +2709,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Media.Indexing.Abstractions`
+- `Headless.Media.Indexing.Abstractions`
 - `itext7` (PDF)
 - `DocumentFormat.OpenXml` (Word, PowerPoint)
 
@@ -2719,7 +2719,7 @@ None.
 
 ---
 
-# Framework.NetTopologySuite
+# Headless.NetTopologySuite
 
 
 NetTopologySuite extensions for geospatial operations and SQL Server geography compatibility.
@@ -2741,7 +2741,7 @@ Provides robust geometry manipulation utilities, precision handling, and SQL Ser
 ## Installation
 
 ```bash
-dotnet add package Framework.NetTopologySuite
+dotnet add package Headless.NetTopologySuite
 ```
 
 ## Quick Start
@@ -2792,7 +2792,7 @@ No configuration required.
 
 - `NetTopologySuite`
 - `NetTopologySuite.Features`
-- `Framework.Checks`
+- `Headless.Checks`
 
 ## Side Effects
 
@@ -2800,7 +2800,7 @@ None.
 
 ---
 
-# Framework.OpenApi.Nswag.OData
+# Headless.OpenApi.Nswag.OData
 
 
 NSwag operation filter for OData query parameter documentation.
@@ -2818,7 +2818,7 @@ Automatically documents OData query parameters ($filter, $orderby, $top, $skip, 
 ## Installation
 
 ```bash
-dotnet add package Framework.OpenApi.Nswag.OData
+dotnet add package Headless.OpenApi.Nswag.OData
 ```
 
 ## Quick Start
@@ -2827,7 +2827,7 @@ dotnet add package Framework.OpenApi.Nswag.OData
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessNswagOpenApi(
-    setupFrameworkAction: null,
+    setupHeadlessAction: null,
     setupGeneratorActions: settings =>
     {
         settings.OperationProcessors.Add(new ODataOperationFilter());
@@ -2841,7 +2841,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.OpenApi.Nswag`
+- `Headless.OpenApi.Nswag`
 
 ## Side Effects
 
@@ -2849,7 +2849,7 @@ None.
 
 ---
 
-# Framework.OpenApi.Nswag
+# Headless.OpenApi.Nswag
 
 
 NSwag OpenAPI document generation with framework-specific processors and defaults.
@@ -2870,7 +2870,7 @@ Provides pre-configured NSwag OpenAPI generation with FluentValidation schema en
 ## Installation
 
 ```bash
-dotnet add package Framework.OpenApi.Nswag
+dotnet add package Headless.OpenApi.Nswag
 ```
 
 ## Quick Start
@@ -2886,9 +2886,9 @@ builder.Services.AddHeadlessNswagOpenApi(options =>
 
 var app = builder.Build();
 
-app.MapFrameworkNswagOpenApi();
+app.MapHeadlessNswagOpenApi();
 // or for versioned APIs:
-app.MapFrameworkNswagOpenApiVersions();
+app.MapHeadlessNswagOpenApiVersions();
 ```
 
 ## Configuration
@@ -2907,7 +2907,7 @@ services.AddHeadlessNswagOpenApi(options =>
 
 ## Dependencies
 
-- `Framework.Api.Abstractions`
+- `Headless.Api.Abstractions`
 - `NSwag.AspNetCore`
 - `FluentValidation`
 
@@ -2918,7 +2918,7 @@ services.AddHeadlessNswagOpenApi(options =>
 
 ---
 
-# Framework.OpenApi.Scalar
+# Headless.OpenApi.Scalar
 
 
 Scalar API documentation UI integration for OpenAPI.
@@ -2938,7 +2938,7 @@ Provides a modern, beautiful API documentation UI using Scalar as an alternative
 ## Installation
 
 ```bash
-dotnet add package Framework.OpenApi.Scalar
+dotnet add package Headless.OpenApi.Scalar
 ```
 
 ## Quick Start
@@ -2959,7 +2959,7 @@ app.MapHeadlessScalarOpenApi();
 ### Options
 
 ```csharp
-app.MapFrameworkScalarOpenApi(options =>
+app.MapHeadlessScalarOpenApi(options =>
 {
     options.DarkMode = true;
     options.Layout = ScalarLayout.Modern;
@@ -2976,7 +2976,7 @@ app.MapFrameworkScalarOpenApi(options =>
 
 ---
 
-# Framework.Orm.Couchbase
+# Headless.Orm.Couchbase
 
 
 Couchbase integration with bucket context and cluster management.
@@ -2997,7 +2997,7 @@ Provides a structured approach to Couchbase database access with bucket contexts
 ## Installation
 
 ```bash
-dotnet add package Framework.Orm.Couchbase
+dotnet add package Headless.Orm.Couchbase
 ```
 
 ## Quick Start
@@ -3032,7 +3032,7 @@ services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider
 ## Dependencies
 
 - `CouchbaseNetClient`
-- `Framework.BuildingBlocks`
+- `Headless.BuildingBlocks`
 
 ## Side Effects
 
@@ -3041,7 +3041,7 @@ services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider
 
 ---
 
-# Framework.Orm.EntityFramework
+# Headless.Orm.EntityFramework
 
 
 Entity Framework Core integration with framework conventions, global filters, and DDD support.
@@ -3064,7 +3064,7 @@ Provides a feature-rich DbContext base class with automatic auditing, soft delet
 ## Installation
 
 ```bash
-dotnet add package Framework.Orm.EntityFramework
+dotnet add package Headless.Orm.EntityFramework
 ```
 
 ## Quick Start
@@ -3112,8 +3112,8 @@ var allProducts = await dbContext.Products
 
 ## Dependencies
 
-- `Framework.Domains`
-- `Framework.BuildingBlocks`
+- `Headless.Domains`
+- `Headless.BuildingBlocks`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
@@ -3124,7 +3124,7 @@ var allProducts = await dbContext.Products
 
 ---
 
-# Framework.Payments.Paymob.CashIn
+# Headless.Payments.Paymob.CashIn
 
 
 Paymob Accept integration for cash-in (payment collection) operations.
@@ -3147,7 +3147,7 @@ Provides a comprehensive client for Paymob Accept payment gateway, supporting mu
 ## Installation
 
 ```bash
-dotnet add package Framework.Payments.Paymob.CashIn
+dotnet add package Headless.Payments.Paymob.CashIn
 ```
 
 ## Quick Start
@@ -3213,7 +3213,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 ## Dependencies
 
-- `Framework.Base`
+- `Headless.Base`
 
 ## Side Effects
 
@@ -3222,7 +3222,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 ---
 
-# Framework.Payments.Paymob.CashOut
+# Headless.Payments.Paymob.CashOut
 
 
 Paymob integration for cash-out (disbursement) operations.
@@ -3242,7 +3242,7 @@ Provides a client for Paymob disbursement API, enabling payouts to bank accounts
 ## Installation
 
 ```bash
-dotnet add package Framework.Payments.Paymob.CashOut
+dotnet add package Headless.Payments.Paymob.CashOut
 ```
 
 ## Quick Start
@@ -3295,7 +3295,7 @@ public class DisbursementService(IPaymobCashOutBroker broker)
 
 ## Dependencies
 
-- `Framework.Base`
+- `Headless.Base`
 
 ## Side Effects
 
@@ -3304,7 +3304,7 @@ public class DisbursementService(IPaymobCashOutBroker broker)
 
 ---
 
-# Framework.Payments.Paymob.Services
+# Headless.Payments.Paymob.Services
 
 
 Higher-level services for Paymob payment operations.
@@ -3323,7 +3323,7 @@ Provides service-layer abstractions over Paymob cash-in operations with addition
 ## Installation
 
 ```bash
-dotnet add package Framework.Payments.Paymob.Services
+dotnet add package Headless.Payments.Paymob.Services
 ```
 
 ## Quick Start
@@ -3340,11 +3340,11 @@ builder.Services.AddPaymobServices();
 
 ## Configuration
 
-No additional configuration required beyond `Framework.Payments.Paymob.CashIn`.
+No additional configuration required beyond `Headless.Payments.Paymob.CashIn`.
 
 ## Dependencies
 
-- `Framework.Payments.Paymob.CashIn`
+- `Headless.Payments.Paymob.CashIn`
 
 ## Side Effects
 
@@ -3352,7 +3352,7 @@ Registers payment service implementations.
 
 ---
 
-# Framework.Permissions.Abstractions
+# Headless.Permissions.Abstractions
 
 
 Defines the unified interface for permission management across different providers.
@@ -3373,7 +3373,7 @@ Provides a provider-agnostic permission management API, enabling dynamic permiss
 ## Installation
 
 ```bash
-dotnet add package Framework.Permissions.Abstractions
+dotnet add package Headless.Permissions.Abstractions
 ```
 
 ## Usage
@@ -3416,7 +3416,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Framework.BuildingBlocks`
+- `Headless.BuildingBlocks`
 
 ## Side Effects
 
@@ -3424,7 +3424,7 @@ None.
 
 ---
 
-# Framework.Permissions.Core
+# Headless.Permissions.Core
 
 
 Core implementation of permission management with caching, providers, and authorization.
@@ -3446,7 +3446,7 @@ Provides the full permission management implementation including hierarchical gr
 ## Installation
 
 ```bash
-dotnet add package Framework.Permissions.Core
+dotnet add package Headless.Permissions.Core
 ```
 
 ## Quick Start
@@ -3488,10 +3488,10 @@ services.AddPermissionsManagementCore(options =>
 
 ## Dependencies
 
-- `Framework.Permissions.Abstractions`
-- `Framework.Domains`
-- `Framework.Caching.Abstractions`
-- `Framework.ResourceLocks.Abstractions`
+- `Headless.Permissions.Abstractions`
+- `Headless.Domains`
+- `Headless.Caching.Abstractions`
+- `Headless.ResourceLocks.Abstractions`
 
 ## Side Effects
 
@@ -3502,7 +3502,7 @@ services.AddPermissionsManagementCore(options =>
 
 ---
 
-# Framework.Permissions.Storage.EntityFramework
+# Headless.Permissions.Storage.EntityFramework
 
 
 Entity Framework Core storage implementation for permission management.
@@ -3522,7 +3522,7 @@ Provides persistent storage for permission definitions and grants using Entity F
 ## Installation
 
 ```bash
-dotnet add package Framework.Permissions.Storage.EntityFramework
+dotnet add package Headless.Permissions.Storage.EntityFramework
 ```
 
 ## Quick Start
@@ -3561,7 +3561,7 @@ No additional configuration required beyond DbContext setup.
 
 ## Dependencies
 
-- `Framework.Permissions.Core`
+- `Headless.Permissions.Core`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
@@ -3571,7 +3571,7 @@ No additional configuration required beyond DbContext setup.
 
 ---
 
-# Framework.PushNotifications.Abstractions
+# Headless.PushNotifications.Abstractions
 
 
 Defines the unified interface for push notification services.
@@ -3590,7 +3590,7 @@ Provides a provider-agnostic push notification API, enabling seamless switching 
 ## Installation
 
 ```bash
-dotnet add package Framework.PushNotifications.Abstractions
+dotnet add package Headless.PushNotifications.Abstractions
 ```
 
 ## Usage
@@ -3633,7 +3633,7 @@ None.
 
 ---
 
-# Framework.PushNotifications.Dev
+# Headless.PushNotifications.Dev
 
 
 Development push notification implementation that does nothing.
@@ -3651,7 +3651,7 @@ Provides a no-op push notification implementation for development/testing enviro
 ## Installation
 
 ```bash
-dotnet add package Framework.PushNotifications.Dev
+dotnet add package Headless.PushNotifications.Dev
 ```
 
 ## Quick Start
@@ -3671,7 +3671,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.PushNotifications.Abstractions`
+- `Headless.PushNotifications.Abstractions`
 
 ## Side Effects
 
@@ -3679,7 +3679,7 @@ No configuration required.
 
 ---
 
-# Framework.PushNotifications.Firebase
+# Headless.PushNotifications.Firebase
 
 
 Firebase Cloud Messaging (FCM) implementation for push notifications.
@@ -3699,7 +3699,7 @@ Provides push notification delivery via Firebase Cloud Messaging using the `IPus
 ## Installation
 
 ```bash
-dotnet add package Framework.PushNotifications.Firebase
+dotnet add package Headless.PushNotifications.Firebase
 ```
 
 ## Quick Start
@@ -3738,7 +3738,7 @@ services.AddFirebasePushNotificationService(options =>
 
 ## Dependencies
 
-- `Framework.PushNotifications.Abstractions`
+- `Headless.PushNotifications.Abstractions`
 - `FirebaseAdmin`
 
 ## Side Effects
@@ -3750,7 +3750,7 @@ services.AddFirebasePushNotificationService(options =>
 
 
 
-# Framework.Recaptcha
+# Headless.Recaptcha
 
 
 Google reCAPTCHA v2 and v3 integration with verification services and tag helpers.
@@ -3770,7 +3770,7 @@ Provides complete Google reCAPTCHA integration including server-side verificatio
 ## Installation
 
 ```bash
-dotnet add package Framework.Recaptcha
+dotnet add package Headless.Recaptcha
 ```
 
 ## Quick Start
@@ -3844,7 +3844,7 @@ public class LoginController(IReCaptchaSiteVerifyV3 recaptcha)
 
 ---
 
-# Framework.Redis
+# Headless.Redis
 
 
 Redis utilities and Lua script management for StackExchange.Redis.
@@ -3863,7 +3863,7 @@ Provides Redis helper extensions and centralized Lua script loading/execution fo
 ## Installation
 
 ```bash
-dotnet add package Framework.Redis
+dotnet add package Headless.Redis
 ```
 
 ## Quick Start
@@ -3905,7 +3905,7 @@ None.
 
 ---
 
-# Framework.ResourceLocks.Abstractions
+# Headless.ResourceLocks.Abstractions
 
 
 Defines the unified interface for distributed resource locking.
@@ -3925,7 +3925,7 @@ Provides a provider-agnostic distributed locking API, enabling coordination acro
 ## Installation
 
 ```bash
-dotnet add package Framework.ResourceLocks.Abstractions
+dotnet add package Headless.ResourceLocks.Abstractions
 ```
 
 ## Usage
@@ -3966,7 +3966,7 @@ None.
 
 ---
 
-# Framework.ResourceLocks.Cache
+# Headless.ResourceLocks.Cache
 
 
 Cache-based resource lock storage using ICache.
@@ -3984,7 +3984,7 @@ Provides resource lock storage using the framework's `ICache` abstraction, suita
 ## Installation
 
 ```bash
-dotnet add package Framework.ResourceLocks.Cache
+dotnet add package Headless.ResourceLocks.Cache
 ```
 
 ## Quick Start
@@ -4006,8 +4006,8 @@ No additional configuration required.
 
 ## Dependencies
 
-- `Framework.ResourceLocks.Core`
-- `Framework.Caching.Abstractions`
+- `Headless.ResourceLocks.Core`
+- `Headless.Caching.Abstractions`
 
 ## Side Effects
 
@@ -4016,7 +4016,7 @@ No additional configuration required.
 
 ---
 
-# Framework.ResourceLocks.Core
+# Headless.ResourceLocks.Core
 
 
 Core implementation of distributed resource locking with storage abstraction.
@@ -4036,7 +4036,7 @@ Provides the lock provider implementation with automatic renewal, expiration han
 ## Installation
 
 ```bash
-dotnet add package Framework.ResourceLocks.Core
+dotnet add package Headless.ResourceLocks.Core
 ```
 
 ## Quick Start
@@ -4070,7 +4070,7 @@ services.AddResourceLock(options =>
 
 ## Dependencies
 
-- `Framework.ResourceLocks.Abstractions`
+- `Headless.ResourceLocks.Abstractions`
 
 ## Side Effects
 
@@ -4079,7 +4079,7 @@ services.AddResourceLock(options =>
 
 ---
 
-# Framework.ResourceLocks.Redis
+# Headless.ResourceLocks.Redis
 
 
 Redis-based resource lock storage using StackExchange.Redis.
@@ -4098,7 +4098,7 @@ Provides high-performance distributed locking using Redis with atomic Lua script
 ## Installation
 
 ```bash
-dotnet add package Framework.ResourceLocks.Redis
+dotnet add package Headless.ResourceLocks.Redis
 ```
 
 ## Quick Start
@@ -4120,8 +4120,8 @@ No additional configuration beyond Redis connection.
 
 ## Dependencies
 
-- `Framework.ResourceLocks.Core`
-- `Framework.Redis`
+- `Headless.ResourceLocks.Core`
+- `Headless.Redis`
 - `StackExchange.Redis`
 
 ## Side Effects
@@ -4131,7 +4131,7 @@ No additional configuration beyond Redis connection.
 
 ---
 
-# Framework.Serializer.Abstractions
+# Headless.Serializer.Abstractions
 
 
 Defines unified interfaces for serialization and deserialization.
@@ -4151,7 +4151,7 @@ Provides provider-agnostic serialization contracts supporting both text (JSON) a
 ## Installation
 
 ```bash
-dotnet add package Framework.Serializer.Abstractions
+dotnet add package Headless.Serializer.Abstractions
 ```
 
 ## Usage
@@ -4185,7 +4185,7 @@ None.
 
 ---
 
-# Framework.Serializer.Json
+# Headless.Serializer.Json
 
 
 System.Text.Json implementation of the serializer abstractions.
@@ -4209,7 +4209,7 @@ Provides high-performance JSON serialization using System.Text.Json with customi
 ## Installation
 
 ```bash
-dotnet add package Framework.Serializer.Json
+dotnet add package Headless.Serializer.Json
 ```
 
 ## Quick Start
@@ -4260,7 +4260,7 @@ public sealed class CustomJsonOptionsProvider : IJsonOptionsProvider
 
 ## Dependencies
 
-- `Framework.Serializer.Abstractions`
+- `Headless.Serializer.Abstractions`
 
 ## Side Effects
 
@@ -4268,7 +4268,7 @@ None.
 
 ---
 
-# Framework.Serializer.MessagePack
+# Headless.Serializer.MessagePack
 
 
 MessagePack binary serialization implementation.
@@ -4288,7 +4288,7 @@ Provides compact, high-performance binary serialization using MessagePack format
 ## Installation
 
 ```bash
-dotnet add package Framework.Serializer.MessagePack
+dotnet add package Headless.Serializer.MessagePack
 ```
 
 ## Quick Start
@@ -4336,7 +4336,7 @@ builder.Services.AddSingleton<IBinarySerializer>(
 
 ## Dependencies
 
-- `Framework.Serializer.Abstractions`
+- `Headless.Serializer.Abstractions`
 - `MessagePack`
 
 ## Side Effects
@@ -4345,7 +4345,7 @@ None.
 
 ---
 
-# Framework.Settings.Abstractions
+# Headless.Settings.Abstractions
 
 
 Defines interfaces for dynamic application settings management.
@@ -4366,7 +4366,7 @@ Provides a provider-agnostic API for managing application settings with support 
 ## Installation
 
 ```bash
-dotnet add package Framework.Settings.Abstractions
+dotnet add package Headless.Settings.Abstractions
 ```
 
 ## Usage
@@ -4414,7 +4414,7 @@ None.
 
 ---
 
-# Framework.Settings.Core
+# Headless.Settings.Core
 
 
 Core implementation of dynamic settings management with hierarchical value providers.
@@ -4440,7 +4440,7 @@ Provides full settings management implementation with multiple value providers (
 ## Installation
 
 ```bash
-dotnet add package Framework.Settings.Core
+dotnet add package Headless.Settings.Core
 ```
 
 ## Quick Start
@@ -4527,10 +4527,10 @@ services.AddSettingsManagementCore(options =>
 
 ## Dependencies
 
-- `Framework.Settings.Abstractions`
-- `Framework.Caching.Abstractions`
-- `Framework.ResourceLocks.Abstractions`
-- `Framework.Domains`
+- `Headless.Settings.Abstractions`
+- `Headless.Caching.Abstractions`
+- `Headless.ResourceLocks.Abstractions`
+- `Headless.Domains`
 
 ## Side Effects
 
@@ -4541,7 +4541,7 @@ services.AddSettingsManagementCore(options =>
 
 ---
 
-# Framework.Settings.Storage.EntityFramework
+# Headless.Settings.Storage.EntityFramework
 
 
 Entity Framework Core storage for settings management.
@@ -4561,7 +4561,7 @@ Provides EF Core repository implementations for storing setting definitions and 
 ## Installation
 
 ```bash
-dotnet add package Framework.Settings.Storage.EntityFramework
+dotnet add package Headless.Settings.Storage.EntityFramework
 ```
 
 ## Quick Start
@@ -4604,8 +4604,8 @@ No additional configuration beyond DbContext setup.
 
 ## Dependencies
 
-- `Framework.Settings.Core`
-- `Framework.Orm.EntityFramework`
+- `Headless.Settings.Core`
+- `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
@@ -4616,7 +4616,7 @@ No additional configuration beyond DbContext setup.
 
 ---
 
-# Framework.Sitemaps
+# Headless.Sitemaps
 
 
 XML sitemap generation utilities for SEO.
@@ -4637,7 +4637,7 @@ Provides builders and models for generating XML sitemaps and sitemap indexes com
 ## Installation
 
 ```bash
-dotnet add package Framework.Sitemaps
+dotnet add package Headless.Sitemaps
 ```
 
 ## Usage
@@ -4710,7 +4710,7 @@ None.
 
 ---
 
-# Framework.Slugs
+# Headless.Slugs
 
 
 URL-friendly slug generation from text.
@@ -4732,7 +4732,7 @@ Converts arbitrary text into URL-safe slugs with proper Unicode normalization, c
 ## Installation
 
 ```bash
-dotnet add package Framework.Slugs
+dotnet add package Headless.Slugs
 ```
 
 ## Usage
@@ -4800,7 +4800,7 @@ None.
 
 ---
 
-# Framework.Sms.Abstractions
+# Headless.Sms.Abstractions
 
 
 Defines the unified interface for SMS sending.
@@ -4818,7 +4818,7 @@ Provides a provider-agnostic SMS sending API, enabling consistent SMS functional
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Abstractions
+dotnet add package Headless.Sms.Abstractions
 ```
 
 ## Usage
@@ -4858,7 +4858,7 @@ None.
 
 ---
 
-# Framework.Sms.Aws
+# Headless.Sms.Aws
 
 
 AWS SNS SMS implementation.
@@ -4877,7 +4877,7 @@ Provides SMS sending via Amazon Simple Notification Service (SNS), supporting tr
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Aws
+dotnet add package Headless.Sms.Aws
 ```
 
 ## Quick Start
@@ -4920,7 +4920,7 @@ builder.Services.AddAwsSnsSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 - `AWSSDK.SimpleNotificationService`
 - `AWSSDK.Extensions.NETCore.Setup`
 
@@ -4931,7 +4931,7 @@ builder.Services.AddAwsSnsSmsSender(options =>
 
 ---
 
-# Framework.Sms.Cequens
+# Headless.Sms.Cequens
 
 
 Cequens SMS gateway implementation.
@@ -4950,7 +4950,7 @@ Provides SMS sending via Cequens API, a regional SMS provider popular in the Mid
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Cequens
+dotnet add package Headless.Sms.Cequens
 ```
 
 ## Quick Start
@@ -4984,7 +4984,7 @@ builder.Services.AddCequensSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 
@@ -4993,7 +4993,7 @@ builder.Services.AddCequensSmsSender(options =>
 
 ---
 
-# Framework.Sms.Connekio
+# Headless.Sms.Connekio
 
 
 Connekio SMS gateway implementation.
@@ -5012,7 +5012,7 @@ Provides SMS sending via Connekio API, supporting both single and batch SMS deli
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Connekio
+dotnet add package Headless.Sms.Connekio
 ```
 
 ## Quick Start
@@ -5048,7 +5048,7 @@ builder.Services.AddConnekioSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 
@@ -5057,7 +5057,7 @@ builder.Services.AddConnekioSmsSender(options =>
 
 ---
 
-# Framework.Sms.Dev
+# Headless.Sms.Dev
 
 
 Development SMS implementations for testing.
@@ -5075,7 +5075,7 @@ Provides development-only SMS senders that either log messages to a file or sile
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Dev
+dotnet add package Headless.Sms.Dev
 ```
 
 ## Quick Start
@@ -5108,7 +5108,7 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 
@@ -5117,7 +5117,7 @@ No configuration required.
 
 ---
 
-# Framework.Sms.Infobip
+# Headless.Sms.Infobip
 
 
 Infobip SMS gateway implementation.
@@ -5136,7 +5136,7 @@ Provides SMS sending via Infobip's global messaging platform with comprehensive 
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Infobip
+dotnet add package Headless.Sms.Infobip
 ```
 
 ## Quick Start
@@ -5170,7 +5170,7 @@ builder.Services.AddInfobipSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 
@@ -5178,7 +5178,7 @@ builder.Services.AddInfobipSmsSender(options =>
 
 ---
 
-# Framework.Sms.Twilio
+# Headless.Sms.Twilio
 
 
 Twilio SMS implementation.
@@ -5197,7 +5197,7 @@ Provides SMS sending via Twilio's messaging API with support for sender numbers 
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Twilio
+dotnet add package Headless.Sms.Twilio
 ```
 
 ## Quick Start
@@ -5244,7 +5244,7 @@ builder.Services.AddTwilioSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 - `Twilio`
 
 ## Side Effects
@@ -5253,7 +5253,7 @@ builder.Services.AddTwilioSmsSender(options =>
 
 ---
 
-# Framework.Sms.VictoryLink
+# Headless.Sms.VictoryLink
 
 
 VictoryLink SMS gateway implementation.
@@ -5272,7 +5272,7 @@ Provides SMS sending via VictoryLink API, a regional SMS provider serving the Mi
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.VictoryLink
+dotnet add package Headless.Sms.VictoryLink
 ```
 
 ## Quick Start
@@ -5306,7 +5306,7 @@ builder.Services.AddVictoryLinkSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 
@@ -5314,7 +5314,7 @@ builder.Services.AddVictoryLinkSmsSender(options =>
 
 ---
 
-# Framework.Sms.Vodafone
+# Headless.Sms.Vodafone
 
 
 Vodafone SMS gateway implementation.
@@ -5333,7 +5333,7 @@ Provides SMS sending via Vodafone's enterprise messaging API with OAuth2 authent
 ## Installation
 
 ```bash
-dotnet add package Framework.Sms.Vodafone
+dotnet add package Headless.Sms.Vodafone
 ```
 
 ## Quick Start
@@ -5369,7 +5369,7 @@ builder.Services.AddVodafoneSmsSender(options =>
 
 ## Dependencies
 
-- `Framework.Sms.Abstractions`
+- `Headless.Sms.Abstractions`
 
 ## Side Effects
 
@@ -5377,7 +5377,7 @@ builder.Services.AddVodafoneSmsSender(options =>
 
 ---
 
-# Framework.Sql.Abstractions
+# Headless.Sql.Abstractions
 
 
 Defines interfaces for SQL database connection management.
@@ -5395,7 +5395,7 @@ Provides provider-agnostic interfaces for SQL connection creation and validation
 ## Installation
 
 ```bash
-dotnet add package Framework.Sql.Abstractions
+dotnet add package Headless.Sql.Abstractions
 ```
 
 ## Usage
@@ -5429,7 +5429,7 @@ None.
 
 ---
 
-# Framework.Sql.PostgreSql
+# Headless.Sql.PostgreSql
 
 
 PostgreSQL connection factory using Npgsql.
@@ -5447,7 +5447,7 @@ Provides PostgreSQL-specific implementation of the SQL connection factory, enabl
 ## Installation
 
 ```bash
-dotnet add package Framework.Sql.PostgreSql
+dotnet add package Headless.Sql.PostgreSql
 ```
 
 ## Quick Start
@@ -5492,7 +5492,7 @@ services.AddSingleton<ISqlConnectionFactory>(sp =>
 
 ## Dependencies
 
-- `Framework.Sql.Abstractions`
+- `Headless.Sql.Abstractions`
 - `Npgsql`
 
 ## Side Effects
@@ -5501,7 +5501,7 @@ None (manual registration required).
 
 ---
 
-# Framework.Sql.Sqlite
+# Headless.Sql.Sqlite
 
 
 SQLite connection factory using Microsoft.Data.Sqlite.
@@ -5520,7 +5520,7 @@ Provides SQLite-specific implementation of the SQL connection factory, ideal for
 ## Installation
 
 ```bash
-dotnet add package Framework.Sql.Sqlite
+dotnet add package Headless.Sql.Sqlite
 ```
 
 ## Quick Start
@@ -5567,7 +5567,7 @@ services.AddSingleton<ISqlConnectionFactory>(
 
 ## Dependencies
 
-- `Framework.Sql.Abstractions`
+- `Headless.Sql.Abstractions`
 - `Microsoft.Data.Sqlite`
 
 ## Side Effects
@@ -5576,7 +5576,7 @@ None (manual registration required).
 
 ---
 
-# Framework.Sql.SqlServer
+# Headless.Sql.SqlServer
 
 
 SQL Server connection factory using Microsoft.Data.SqlClient.
@@ -5594,7 +5594,7 @@ Provides SQL Server-specific implementation of the SQL connection factory, enabl
 ## Installation
 
 ```bash
-dotnet add package Framework.Sql.SqlServer
+dotnet add package Headless.Sql.SqlServer
 ```
 
 ## Quick Start
@@ -5639,7 +5639,7 @@ services.AddSingleton<ISqlConnectionFactory>(sp =>
 
 ## Dependencies
 
-- `Framework.Sql.Abstractions`
+- `Headless.Sql.Abstractions`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects
@@ -5648,7 +5648,7 @@ None (manual registration required).
 
 ---
 
-# Framework.Testing.Testcontainers
+# Headless.Testing.Testcontainers
 
 
 Testcontainers fixtures for integration testing.
@@ -5667,7 +5667,7 @@ Provides pre-configured Testcontainers fixtures for common infrastructure (Redis
 ## Installation
 
 ```bash
-dotnet add package Framework.Testing.Testcontainers
+dotnet add package Headless.Testing.Testcontainers
 ```
 
 ## Quick Start
@@ -5708,7 +5708,7 @@ No configuration required. Containers use sensible defaults.
 
 ## Dependencies
 
-- `Framework.Testing`
+- `Headless.Testing`
 - `Testcontainers`
 - `Testcontainers.Redis`
 - `Testcontainers.Xunit`
@@ -5720,7 +5720,7 @@ No configuration required. Containers use sensible defaults.
 
 ---
 
-# Framework.Testing
+# Headless.Testing
 
 
 Core testing utilities and base classes for xUnit tests.
@@ -5742,7 +5742,7 @@ Provides reusable test infrastructure including base classes, retry attributes, 
 ## Installation
 
 ```bash
-dotnet add package Framework.Testing
+dotnet add package Headless.Testing
 ```
 
 ## Quick Start
@@ -5825,7 +5825,7 @@ None.
 
 ---
 
-# Framework.Tus.Azure
+# Headless.Tus.Azure
 
 
 Azure Blob Storage TUS store implementation.
@@ -5850,7 +5850,7 @@ Provides a full-featured TUS protocol store using Azure Blob Storage for resumab
 ## Installation
 
 ```bash
-dotnet add package Framework.Tus.Azure
+dotnet add package Headless.Tus.Azure
 ```
 
 ## Quick Start
@@ -5893,7 +5893,7 @@ var options = new TusAzureStoreOptions
 
 ## Dependencies
 
-- `Framework.Tus`
+- `Headless.Tus`
 - `Azure.Storage.Blobs`
 - `tusdotnet`
 
@@ -5903,10 +5903,10 @@ var options = new TusAzureStoreOptions
 
 ---
 
-# Framework.Tus.ResourceLock
+# Headless.Tus.ResourceLock
 
 
-TUS file locking using Framework.ResourceLocks.
+TUS file locking using Headless.ResourceLocks.
 
 ## Problem Solved
 
@@ -5921,7 +5921,7 @@ Provides a TUS file lock provider implementation using the framework's distribut
 ## Installation
 
 ```bash
-dotnet add package Framework.Tus.ResourceLock
+dotnet add package Headless.Tus.ResourceLock
 ```
 
 ## Quick Start
@@ -5957,8 +5957,8 @@ No additional configuration required beyond resource lock setup.
 
 ## Dependencies
 
-- `Framework.Tus`
-- `Framework.ResourceLocks.Abstractions`
+- `Headless.Tus`
+- `Headless.ResourceLocks.Abstractions`
 - `tusdotnet`
 
 ## Side Effects
@@ -5967,7 +5967,7 @@ No additional configuration required beyond resource lock setup.
 
 ---
 
-# Framework.Tus
+# Headless.Tus
 
 
 Core TUS protocol utilities and extensions.
@@ -5986,12 +5986,12 @@ Provides shared utilities and base functionality for TUS (resumable file upload)
 ## Installation
 
 ```bash
-dotnet add package Framework.Tus
+dotnet add package Headless.Tus
 ```
 
 ## Usage
 
-This is a base package typically used by specific TUS store implementations (Azure, local filesystem). See `Framework.Tus.Azure` for a complete implementation.
+This is a base package typically used by specific TUS store implementations (Azure, local filesystem). See `Headless.Tus.Azure` for a complete implementation.
 
 ## Configuration
 
@@ -6007,14 +6007,14 @@ None.
 
 ---
 
-# Framework.Caching.Memory
+# Headless.Caching.Memory
 
 > **Note:** This package is currently a placeholder and contains no implementation.
 
 ## Status
 
 This package directory exists for future development. Functionality may be available through:
-- `Framework.Caching.Memory` - In-memory caching implementation
+- `Headless.Caching.Memory` - In-memory caching implementation
 
 ## Installation
 
@@ -6022,14 +6022,14 @@ Not available for installation.
 
 ---
 
-# Framework.Cap.Dashboard
+# Headless.Cap.Dashboard
 
 > **Note:** This package is currently a placeholder and contains no implementation.
 
 ## Status
 
 This package directory exists for future development. Dashboard functionality is available through:
-- `Framework.Messages.Dashboard` - Web dashboard for messaging system
+- `Headless.Messages.Dashboard` - Web dashboard for messaging system
 
 ## Installation
 
@@ -6037,7 +6037,7 @@ Not available for installation.
 
 ---
 
-# Framework.Domain
+# Headless.Domain
 
 Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
 
@@ -6060,7 +6060,7 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 ## Installation
 
 ```bash
-dotnet add package Framework.Domains
+dotnet add package Headless.Domains
 ```
 
 ## Quick Start
@@ -6128,7 +6128,7 @@ None.
 
 ---
 
-# Framework.Domain.DistributedMessagePublisher.Cap
+# Headless.Domain.DistributedMessagePublisher.Cap
 
 CAP-based implementation of `IDistributedMessagePublisher` for reliable distributed messaging with transactional outbox pattern.
 
@@ -6148,7 +6148,7 @@ Provides reliable distributed message publishing using CAP (eventually consisten
 ## Installation
 
 ```bash
-dotnet add package Framework.Domains.DistributedMessagePublisher.Cap
+dotnet add package Headless.Domains.DistributedMessagePublisher.Cap
 ```
 
 ## Quick Start
@@ -6203,9 +6203,9 @@ Configured via CAP options. See CAP documentation for broker-specific settings.
 
 ## Dependencies
 
-- `Framework.Domains`
-- `Framework.Base`
-- `Framework.Serializer.Json`
+- `Headless.Domains`
+- `Headless.Base`
+- `Headless.Serializer.Json`
 - `DotNetCore.CAP`
 - `DotNetCore.CAP.Dashboard`
 
@@ -6216,7 +6216,7 @@ Configured via CAP options. See CAP documentation for broker-specific settings.
 
 ---
 
-# Framework.Domain.LocalMessagePublisher.DI
+# Headless.Domain.LocalMessagePublisher.DI
 
 DI-based implementation of `ILocalMessagePublisher` for in-process domain event handling.
 
@@ -6235,7 +6235,7 @@ Provides in-memory local message publishing that resolves handlers from the DI c
 ## Installation
 
 ```bash
-dotnet add package Framework.Domains.LocalMessagePublisher.DI
+dotnet add package Headless.Domains.LocalMessagePublisher.DI
 ```
 
 ## Quick Start
@@ -6292,8 +6292,8 @@ No configuration required.
 
 ## Dependencies
 
-- `Framework.Domains`
-- `Framework.Hosting`
+- `Headless.Domains`
+- `Headless.Hosting`
 
 ## Side Effects
 
@@ -6301,7 +6301,7 @@ No configuration required.
 
 ---
 
-# Framework.Messages.Abstractions
+# Headless.Messages.Abstractions
 
 Core abstractions for type-safe, high-performance message consumption and publishing with outbox pattern support.
 
@@ -6321,7 +6321,7 @@ Provides standardized interfaces for building reliable distributed messaging sys
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.Abstractions
+dotnet add package Headless.Messages.Abstractions
 ```
 
 ## Quick Start
@@ -6370,14 +6370,14 @@ public sealed class OrderService(IOutboxPublisher publisher)
 ## Configuration
 
 No configuration required. This is an abstractions package. Implementations are provided by:
-- `Framework.Messages.Core` (base implementation)
-- Transport packages: `Framework.Messages.RabbitMQ`, `Framework.Messages.Kafka`, etc.
-- Storage packages: `Framework.Messages.PostgreSql`, `Framework.Messages.SqlServer`, etc.
+- `Headless.Messages.Core` (base implementation)
+- Transport packages: `Headless.Messages.RabbitMQ`, `Headless.Messages.Kafka`, etc.
+- Storage packages: `Headless.Messages.PostgreSql`, `Headless.Messages.SqlServer`, etc.
 
 ## Dependencies
 
-- `Framework.Base`
-- `Framework.Checks`
+- `Headless.Base`
+- `Headless.Checks`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 
@@ -6387,7 +6387,7 @@ None. This is an abstractions package.
 
 ---
 
-# Framework.Messages.AmazonSQS
+# Headless.Messages.AmazonSQS
 
 Amazon SQS and SNS transport provider for the messaging system.
 
@@ -6406,7 +6406,7 @@ Enables reliable message delivery using AWS SQS queues and SNS topics with autom
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.AmazonSQS
+dotnet add package Headless.Messages.AmazonSQS
 ```
 
 ## Quick Start
@@ -6440,7 +6440,7 @@ options.UseAmazonSQS(sqs =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `AWSSDK.SimpleNotificationService`
 - `AWSSDK.SQS`
 
@@ -6452,7 +6452,7 @@ options.UseAmazonSQS(sqs =>
 
 ---
 
-# Framework.Messages.AzureServiceBus
+# Headless.Messages.AzureServiceBus
 
 Azure Service Bus transport provider for the messaging system.
 
@@ -6471,7 +6471,7 @@ Enables enterprise messaging using Azure Service Bus with topics, subscriptions,
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.AzureServiceBus
+dotnet add package Headless.Messages.AzureServiceBus
 ```
 
 ## Quick Start
@@ -6505,7 +6505,7 @@ options.UseAzureServiceBus(asb =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `Azure.Messaging.ServiceBus`
 
 ## Side Effects
@@ -6516,7 +6516,7 @@ options.UseAzureServiceBus(asb =>
 
 ---
 
-# Framework.Messages.Core
+# Headless.Messages.Core
 
 Core implementation of the type-safe messaging system with outbox pattern, message processing, and consumer lifecycle management.
 
@@ -6536,7 +6536,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.Core
+dotnet add package Headless.Messages.Core
 ```
 
 ## Quick Start
@@ -6594,9 +6594,9 @@ builder.Services.AddMessages(options =>
 
 ## Dependencies
 
-- `Framework.Messages.Abstractions`
-- `Framework.Base`
-- `Framework.Checks`
+- `Headless.Messages.Abstractions`
+- `Headless.Base`
+- `Headless.Checks`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)
 
@@ -6608,7 +6608,7 @@ builder.Services.AddMessages(options =>
 
 ---
 
-# Framework.Messages.Dashboard
+# Headless.Messages.Dashboard
 
 Web-based dashboard for monitoring and managing distributed messaging infrastructure.
 
@@ -6627,7 +6627,7 @@ Provides real-time visibility into message processing, failures, retries, and sy
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.Dashboard
+dotnet add package Headless.Messages.Dashboard
 ```
 
 ## Quick Start
@@ -6663,7 +6663,7 @@ options.UseDashboard(dashboard =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - Embedded web UI assets
 
 ## Side Effects
@@ -6674,7 +6674,7 @@ options.UseDashboard(dashboard =>
 
 ---
 
-# Framework.Messages.Dashboard.K8s
+# Headless.Messages.Dashboard.K8s
 
 Kubernetes-aware node discovery for the messaging dashboard in clustered environments.
 
@@ -6693,7 +6693,7 @@ Enables automatic discovery and monitoring of messaging nodes in Kubernetes clus
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.Dashboard.K8s
+dotnet add package Headless.Messages.Dashboard.K8s
 ```
 
 ## Quick Start
@@ -6729,7 +6729,7 @@ options.UseK8sDiscovery(k8s =>
 
 ## Dependencies
 
-- `Framework.Messages.Dashboard`
+- `Headless.Messages.Dashboard`
 - `KubernetesClient`
 
 ## Side Effects
@@ -6740,7 +6740,7 @@ options.UseK8sDiscovery(k8s =>
 
 ---
 
-# Framework.Messages.InMemoryQueue
+# Headless.Messages.InMemoryQueue
 
 In-memory message queue transport for testing and development.
 
@@ -6759,7 +6759,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.InMemoryQueue
+dotnet add package Headless.Messages.InMemoryQueue
 ```
 
 ## Quick Start
@@ -6780,7 +6780,7 @@ No configuration required. Just call `UseInMemoryQueue()`.
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 
 ## Side Effects
 
@@ -6788,7 +6788,7 @@ None. Messages are stored in memory only and lost on restart.
 
 ---
 
-# Framework.Messages.InMemoryStorage
+# Headless.Messages.InMemoryStorage
 
 In-memory outbox storage for testing and development.
 
@@ -6807,7 +6807,7 @@ Provides ephemeral message storage without database dependencies for local devel
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.InMemoryStorage
+dotnet add package Headless.Messages.InMemoryStorage
 ```
 
 ## Quick Start
@@ -6828,7 +6828,7 @@ No configuration required. Just call `UseInMemoryStorage()`.
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 
 ## Side Effects
 
@@ -6836,7 +6836,7 @@ None. All messages are stored in memory and lost on restart. Not suitable for pr
 
 ---
 
-# Framework.Messages.Kafka
+# Headless.Messages.Kafka
 
 Apache Kafka transport provider for the messaging system.
 
@@ -6855,7 +6855,7 @@ Enables high-throughput, distributed event streaming using Apache Kafka with con
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.Kafka
+dotnet add package Headless.Messages.Kafka
 ```
 
 ## Quick Start
@@ -6887,7 +6887,7 @@ options.UseKafka(kafka =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `Confluent.Kafka`
 
 ## Side Effects
@@ -6898,7 +6898,7 @@ options.UseKafka(kafka =>
 
 ---
 
-# Framework.Messages.NATS
+# Headless.Messages.NATS
 
 NATS messaging system transport provider for the messaging system.
 
@@ -6917,7 +6917,7 @@ Enables lightweight, cloud-native messaging using NATS with JetStream for persis
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.NATS
+dotnet add package Headless.Messages.NATS
 ```
 
 ## Quick Start
@@ -6949,7 +6949,7 @@ options.UseNATS(nats =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `NATS.Client`
 
 ## Side Effects
@@ -6960,7 +6960,7 @@ options.UseNATS(nats =>
 
 ---
 
-# Framework.Messages.OpenTelemetry
+# Headless.Messages.OpenTelemetry
 
 OpenTelemetry instrumentation for distributed tracing and metrics in the messaging system.
 
@@ -6979,7 +6979,7 @@ Provides automatic tracing spans, metrics, and context propagation for message p
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.OpenTelemetry
+dotnet add package Headless.Messages.OpenTelemetry
 ```
 
 ## Quick Start
@@ -6987,7 +6987,7 @@ dotnet add package Framework.Messages.OpenTelemetry
 ```csharp
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
-        .AddSource("Framework.Messages")
+        .AddSource("Headless.Messages")
         .AddJaegerExporter());
 
 builder.Services.AddMessages(options =>
@@ -7019,7 +7019,7 @@ options.UseOpenTelemetry(otel =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `OpenTelemetry.Api`
 - `OpenTelemetry.Extensions.Hosting`
 
@@ -7031,7 +7031,7 @@ options.UseOpenTelemetry(otel =>
 
 ---
 
-# Framework.Messages.PostgreSql
+# Headless.Messages.PostgreSql
 
 PostgreSQL outbox storage provider for the messaging system.
 
@@ -7050,7 +7050,7 @@ Provides durable, transactional message storage using PostgreSQL with automatic 
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.PostgreSql
+dotnet add package Headless.Messages.PostgreSql
 ```
 
 ## Quick Start
@@ -7083,7 +7083,7 @@ options.UsePostgreSql(config =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `Npgsql`
 
 ## Side Effects
@@ -7097,7 +7097,7 @@ options.UsePostgreSql(config =>
 
 ---
 
-# Framework.Messages.Pulsar
+# Headless.Messages.Pulsar
 
 Apache Pulsar transport provider for the messaging system.
 
@@ -7116,7 +7116,7 @@ Enables cloud-native, multi-tenant messaging using Apache Pulsar with geo-replic
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.Pulsar
+dotnet add package Headless.Messages.Pulsar
 ```
 
 ## Quick Start
@@ -7149,7 +7149,7 @@ options.UsePulsar(pulsar =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `DotPulsar`
 
 ## Side Effects
@@ -7160,7 +7160,7 @@ options.UsePulsar(pulsar =>
 
 ---
 
-# Framework.Messages.RabbitMQ
+# Headless.Messages.RabbitMQ
 
 RabbitMQ transport provider for the messaging system.
 
@@ -7179,7 +7179,7 @@ Enables reliable message delivery using RabbitMQ with exchanges, queues, routing
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.RabbitMQ
+dotnet add package Headless.Messages.RabbitMQ
 ```
 
 ## Quick Start
@@ -7223,7 +7223,7 @@ options.UseRabbitMQ(rmq =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `RabbitMQ.Client`
 
 ## Side Effects
@@ -7234,7 +7234,7 @@ options.UseRabbitMQ(rmq =>
 
 ---
 
-# Framework.Messages.RedisStreams
+# Headless.Messages.RedisStreams
 
 Redis Streams transport provider for the messaging system.
 
@@ -7253,7 +7253,7 @@ Enables lightweight, high-performance message streaming using Redis Streams with
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.RedisStreams
+dotnet add package Headless.Messages.RedisStreams
 ```
 
 ## Quick Start
@@ -7285,7 +7285,7 @@ options.UseRedisStreams(redis =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `StackExchange.Redis`
 
 ## Side Effects
@@ -7297,7 +7297,7 @@ options.UseRedisStreams(redis =>
 
 ---
 
-# Framework.Messages.SqlServer
+# Headless.Messages.SqlServer
 
 SQL Server outbox storage provider for the messaging system.
 
@@ -7316,7 +7316,7 @@ Provides durable, transactional message storage using SQL Server with automatic 
 ## Installation
 
 ```bash
-dotnet add package Framework.Messages.SqlServer
+dotnet add package Headless.Messages.SqlServer
 ```
 
 ## Quick Start
@@ -7349,7 +7349,7 @@ options.UseSqlServer(config =>
 
 ## Dependencies
 
-- `Framework.Messages.Core`
+- `Headless.Messages.Core`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects
@@ -7363,7 +7363,7 @@ options.UseSqlServer(config =>
 
 ---
 
-# Framework.ResourceLocks.InMemory
+# Headless.ResourceLocks.InMemory
 
 In-memory resource lock provider for single-instance deployments, development, and testing.
 
@@ -7382,7 +7382,7 @@ Provides lightweight distributed locking and throttling using in-memory storage 
 ## Installation
 
 ```bash
-dotnet add package Framework.ResourceLocks.InMemory
+dotnet add package Headless.ResourceLocks.InMemory
 ```
 
 ## Quick Start
@@ -7445,9 +7445,9 @@ builder.Services.AddKeyedInMemoryThrottlingResourceLock("api", new ThrottlingRes
 
 ## Dependencies
 
-- `Framework.ResourceLocks.Cache`
-- `Framework.Caching.Memory`
-- `Framework.Messaging.Foundatio`
+- `Headless.ResourceLocks.Cache`
+- `Headless.Caching.Memory`
+- `Headless.Messaging.Foundatio`
 
 ## Side Effects
 
@@ -7455,16 +7455,16 @@ None. Locks are stored in memory only and lost on restart. Not suitable for mult
 
 ---
 
-# Framework.Send.Abstractions
+# Headless.Send.Abstractions
 
 > **Note:** This package is currently a placeholder and contains no implementation.
 
 ## Status
 
 This package directory exists for future development. Sending functionality is currently available through:
-- `Framework.Emails.Abstractions` - Email sending abstractions
-- `Framework.Sms.Abstractions` - SMS sending abstractions
-- `Framework.PushNotifications.Abstractions` - Push notification abstractions
+- `Headless.Emails.Abstractions` - Email sending abstractions
+- `Headless.Sms.Abstractions` - SMS sending abstractions
+- `Headless.PushNotifications.Abstractions` - Push notification abstractions
 
 ## Installation
 
@@ -7472,16 +7472,16 @@ Not available for installation.
 
 ---
 
-# Framework.Send.Core
+# Headless.Send.Core
 
 > **Note:** This package is currently a placeholder and contains no implementation.
 
 ## Status
 
 This package directory exists for future development. Sending functionality is currently available through:
-- `Framework.Emails.Core` - Email sending core implementation
-- `Framework.Sms.*` - SMS provider implementations
-- `Framework.PushNotifications.*` - Push notification implementations
+- `Headless.Emails.Core` - Email sending core implementation
+- `Headless.Sms.*` - SMS provider implementations
+- `Headless.PushNotifications.*` - Push notification implementations
 
 ## Installation
 
@@ -7489,7 +7489,7 @@ Not available for installation.
 
 ---
 
-# Framework.Ticker.Abstractions
+# Headless.Ticker.Abstractions
 
 Simple utilities for queuing and executing cron/time-based jobs in the background.
 Part of the [TickerQ](https://github.com/arcenox/TickerQ) suite by [Arcenox](https://arcenox.com).
@@ -7499,10 +7499,10 @@ Part of the [TickerQ](https://github.com/arcenox/TickerQ) suite by [Arcenox](htt
 ## 📦 Installation
 
 ```bash
-dotnet add package Framework.Ticker.Utilities
+dotnet add package Headless.Ticker.Utilities
 ---
 
-# Framework.Ticker.Caching.Redis
+# Headless.Ticker.Caching.Redis
 
 Redis-backed distributed coordination for TickerQ with node heartbeat monitoring and dead node detection.
 
@@ -7521,7 +7521,7 @@ Enables multi-instance TickerQ deployments with Redis-based node registry, heart
 ## Installation
 
 ```bash
-dotnet add package Framework.Ticker.Caching.Redis
+dotnet add package Headless.Ticker.Caching.Redis
 ```
 
 ## Quick Start
@@ -7555,7 +7555,7 @@ options.UseRedisCoordination(redis =>
 
 ## Dependencies
 
-- `Framework.Ticker.Abstractions`
+- `Headless.Ticker.Abstractions`
 - `Microsoft.Extensions.Caching.StackExchangeRedis`
 
 ## Side Effects
@@ -7567,7 +7567,7 @@ options.UseRedisCoordination(redis =>
 
 ---
 
-# Framework.Ticker.Core
+# Headless.Ticker.Core
 
 Core implementation of TickerQ, a high-performance background job scheduler for .NET with cron expressions and time-based scheduling.
 
@@ -7588,7 +7588,7 @@ Provides reliable, distributed background job scheduling with cron expressions, 
 ## Installation
 
 ```bash
-dotnet add package Framework.Ticker.Core
+dotnet add package Headless.Ticker.Core
 ```
 
 ## Quick Start
@@ -7663,8 +7663,8 @@ app.UseTickerQ(TickerQStartMode.Manual);    // Wait for manual trigger
 
 ## Dependencies
 
-- `Framework.Ticker.Abstractions`
-- `Framework.Base`
+- `Headless.Ticker.Abstractions`
+- `Headless.Base`
 
 ## Side Effects
 
@@ -7675,7 +7675,7 @@ app.UseTickerQ(TickerQStartMode.Manual);    // Wait for manual trigger
 
 ---
 
-# Framework.Ticker.Dashboard
+# Headless.Ticker.Dashboard
 
 Simple, clean authentication for your TickerQ Dashboard.
 
@@ -7765,7 +7765,7 @@ That's it! Simple and clean. 🎉
 
 ---
 
-# Framework.Ticker.EntityFramework
+# Headless.Ticker.EntityFramework
 
 Entity Framework Core integration for [TickerQ](https://github.com/arcenox/TickerQ), a high-performance background job scheduler for .NET.
 
@@ -7776,10 +7776,10 @@ This package enables persistence of time-based and cron-based jobs using EF Core
 ## 📦 Installation
 
 ```bash
-dotnet add package Framework.Ticker.EntityFrameworkCore
+dotnet add package Headless.Ticker.EntityFrameworkCore
 ---
 
-# Framework.Ticker.OpenTelemetry
+# Headless.Ticker.OpenTelemetry
 
 OpenTelemetry instrumentation package for TickerQ job scheduler with distributed tracing support.
 
@@ -7796,7 +7796,7 @@ OpenTelemetry instrumentation package for TickerQ job scheduler with distributed
 ## Installation
 
 ```bash
-dotnet add package Framework.Ticker.Instrumentation.OpenTelemetry
+dotnet add package Headless.Ticker.Instrumentation.OpenTelemetry
 ```
 
 ## Usage
@@ -7804,7 +7804,7 @@ dotnet add package Framework.Ticker.Instrumentation.OpenTelemetry
 ### Basic Setup
 
 ```csharp
-using Framework.Ticker.Instrumentation.OpenTelemetry;
+using Headless.Ticker.Instrumentation.OpenTelemetry;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7856,40 +7856,40 @@ builder.Services.AddOpenTelemetry()
 
 ### Job Execution Activities
 ```
-Framework.Ticker.job.execute.timeticker (main job execution span)
-├── Framework.Ticker.job.enqueued (when job starts execution)
-├── Framework.Ticker.job.completed (on successful completion)
-├── Framework.Ticker.job.failed (on failure)
-├── Framework.Ticker.job.cancelled (on cancellation)
-├── Framework.Ticker.job.skipped (when skipped)
-├── Framework.Ticker.seeding.started (for data seeding)
-└── Framework.Ticker.seeding.completed (seeding completion)
+Headless.Ticker.job.execute.timeticker (main job execution span)
+├── Headless.Ticker.job.enqueued (when job starts execution)
+├── Headless.Ticker.job.completed (on successful completion)
+├── Headless.Ticker.job.failed (on failure)
+├── Headless.Ticker.job.cancelled (on cancellation)
+├── Headless.Ticker.job.skipped (when skipped)
+├── Headless.Ticker.seeding.started (for data seeding)
+└── Headless.Ticker.seeding.completed (seeding completion)
 ```
 
 ### Tags Added to Activities
 
 | Tag | Description | Example |
 |-----|-------------|---------|
-| `Framework.Ticker.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
-| `Framework.Ticker.job.type` | Type of ticker | `TimeTicker`, `CronTicker` |
-| `Framework.Ticker.job.function` | Function name being executed | `ProcessEmails` |
-| `Framework.Ticker.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
-| `Framework.Ticker.job.machine` | Machine executing the job | `web-server-01` |
-| `Framework.Ticker.job.parent_id` | Parent job ID (for child jobs) | `parent-job-guid` |
-| `Framework.Ticker.job.enqueued_from` | Where the job was enqueued from | `UserController.CreateUser (Program.cs:42)` |
-| `Framework.Ticker.job.is_due` | Whether the job was due | `true`, `false` |
-| `Framework.Ticker.job.is_child` | Whether this is a child job | `true`, `false` |
-| `Framework.Ticker.job.retries` | Maximum retry attempts | `3` |
-| `Framework.Ticker.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
-| `Framework.Ticker.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
-| `Framework.Ticker.job.final_retry_count` | Final retry count reached | `2` |
-| `Framework.Ticker.job.execution_time_ms` | Execution time in milliseconds | `1250` |
-| `Framework.Ticker.job.success` | Whether execution was successful | `true`, `false` |
-| `Framework.Ticker.job.error_type` | Exception type for failures | `SqlException`, `TimeoutException` |
-| `Framework.Ticker.job.error_message` | Error message | `Connection timeout` |
-| `Framework.Ticker.job.error_stack_trace` | Full stack trace | `at MyService.ProcessData()...` |
-| `Framework.Ticker.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
-| `Framework.Ticker.job.skip_reason` | Reason for skipping | `Another instance is already running` |
+| `Headless.Ticker.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
+| `Headless.Ticker.job.type` | Type of ticker | `TimeTicker`, `CronTicker` |
+| `Headless.Ticker.job.function` | Function name being executed | `ProcessEmails` |
+| `Headless.Ticker.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
+| `Headless.Ticker.job.machine` | Machine executing the job | `web-server-01` |
+| `Headless.Ticker.job.parent_id` | Parent job ID (for child jobs) | `parent-job-guid` |
+| `Headless.Ticker.job.enqueued_from` | Where the job was enqueued from | `UserController.CreateUser (Program.cs:42)` |
+| `Headless.Ticker.job.is_due` | Whether the job was due | `true`, `false` |
+| `Headless.Ticker.job.is_child` | Whether this is a child job | `true`, `false` |
+| `Headless.Ticker.job.retries` | Maximum retry attempts | `3` |
+| `Headless.Ticker.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
+| `Headless.Ticker.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
+| `Headless.Ticker.job.final_retry_count` | Final retry count reached | `2` |
+| `Headless.Ticker.job.execution_time_ms` | Execution time in milliseconds | `1250` |
+| `Headless.Ticker.job.success` | Whether execution was successful | `true`, `false` |
+| `Headless.Ticker.job.error_type` | Exception type for failures | `SqlException`, `TimeoutException` |
+| `Headless.Ticker.job.error_message` | Error message | `Connection timeout` |
+| `Headless.Ticker.job.error_stack_trace` | Full stack trace | `at MyService.ProcessData()...` |
+| `Headless.Ticker.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
+| `Headless.Ticker.job.skip_reason` | Reason for skipping | `Another instance is already running` |
 
 ## Logging Output
 
@@ -7936,11 +7936,11 @@ builder.Logging.AddNLog();
 
 - .NET 8.0 or later
 - OpenTelemetry 1.7.0 or later
-- Framework.Ticker.Utilities (automatically included)
+- Headless.Ticker.Abstractions (automatically included)
 
 ---
 
-# Framework.Ticker.SourceGenerator
+# Headless.Ticker.SourceGenerator
 
 C# source generator for TickerQ that generates boilerplate code for background job registration and execution.
 
@@ -7960,7 +7960,7 @@ Eliminates reflection overhead and manual job registration by generating compile
 ## Installation
 
 ```bash
-dotnet add package Framework.Ticker.SourceGenerator
+dotnet add package Headless.Ticker.SourceGenerator
 ```
 
 ## Quick Start

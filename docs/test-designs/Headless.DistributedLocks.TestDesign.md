@@ -12,7 +12,7 @@
 
 ## Package Analysis
 
-### Framework.DistributedLocks.Abstractions
+### Headless.DistributedLocks.Abstractions
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -23,7 +23,7 @@
 | `ThrottlingLocks/IThrottlingResourceLockProvider.cs` | Throttling provider | Low (interface) |
 | `ThrottlingLocks/IResourceThrottlingLock.cs` | Throttling lock handle | Low (interface) |
 
-### Framework.DistributedLocks.Core
+### Headless.DistributedLocks.Core
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -38,14 +38,14 @@
 | `ThrottlingLocks/IThrottlingDistributedLockstorage.cs` | Throttling storage | Low (interface) |
 | `Setup.cs` | DI registration | Low |
 
-### Framework.DistributedLocks.Cache
+### Headless.DistributedLocks.Cache
 
 | File | Purpose | Testable |
 |------|---------|----------|
 | `CacheDistributedLockstorage.cs` | ICache-backed storage | High (integration) |
 | `CacheThrottlingDistributedLockstorage.cs` | Cache throttling storage | High (integration) |
 
-### Framework.DistributedLocks.Redis
+### Headless.DistributedLocks.Redis
 
 | File | Purpose | Testable |
 |------|---------|----------|

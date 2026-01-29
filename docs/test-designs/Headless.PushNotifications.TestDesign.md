@@ -1,13 +1,13 @@
-# Framework.PushNotifications Test Design
+# Headless.PushNotifications Test Design
 
 ## Overview
 
-The Framework.PushNotifications packages provide push notification services with Firebase Cloud Messaging (FCM) support. Features include automatic retry with exponential backoff for transient errors, batch sending with chunking (500 tokens per batch), and proper error classification.
+The Headless.PushNotifications packages provide push notification services with Firebase Cloud Messaging (FCM) support. Features include automatic retry with exponential backoff for transient errors, batch sending with chunking (500 tokens per batch), and proper error classification.
 
 ### Packages
-1. **Framework.PushNotifications.Abstractions** - Interfaces and response models
-2. **Framework.PushNotifications.Firebase** - FCM implementation with Polly resilience
-3. **Framework.PushNotifications.Dev** - No-op implementation for development/testing
+1. **Headless.PushNotifications.Abstractions** - Interfaces and response models
+2. **Headless.PushNotifications.Firebase** - FCM implementation with Polly resilience
+3. **Headless.PushNotifications.Dev** - No-op implementation for development/testing
 
 ### Key Components
 - **IPushNotificationService** - Core interface for sending notifications
@@ -21,7 +21,7 @@ The Framework.PushNotifications packages provide push notification services with
 
 ---
 
-## 1. Framework.PushNotifications.Abstractions
+## 1. Headless.PushNotifications.Abstractions
 
 ### 1.1 PushNotificationResponse Tests
 
@@ -62,7 +62,7 @@ The Framework.PushNotifications packages provide push notification services with
 
 ---
 
-## 2. Framework.PushNotifications.Firebase
+## 2. Headless.PushNotifications.Firebase
 
 ### 2.1 FcmPushNotificationService - SendToDeviceAsync Tests
 
@@ -177,7 +177,7 @@ The Framework.PushNotifications packages provide push notification services with
 
 ---
 
-## 3. Framework.PushNotifications.Dev
+## 3. Headless.PushNotifications.Dev
 
 ### 3.1 NoopPushNotificationService Tests
 
@@ -237,7 +237,7 @@ The Framework.PushNotifications packages provide push notification services with
 ### Test Project Structure
 ```
 tests/
-├── Framework.PushNotifications.Tests.Unit/          (NEW - 106 tests)
+├── Headless.PushNotifications.Tests.Unit/          (NEW - 106 tests)
 │   ├── Abstractions/
 │   │   ├── PushNotificationResponseTests.cs
 │   │   └── BatchPushNotificationResponseTests.cs
@@ -249,7 +249,7 @@ tests/
 │   │   └── FirebaseOptionsValidatorTests.cs
 │   └── Dev/
 │       └── NoopPushNotificationServiceTests.cs
-└── Framework.PushNotifications.Tests.Integration/   (NEW - 13 tests)
+└── Headless.PushNotifications.Tests.Integration/   (NEW - 13 tests)
     └── FcmIntegrationTests.cs
 ```
 

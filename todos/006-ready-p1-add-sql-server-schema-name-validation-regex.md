@@ -10,7 +10,7 @@ dependencies: []
 
 ## Problem Statement
 
-SqlServerEntityFrameworkMessagingOptions.cs only validates length, not characters. Allows SQL injection via schema name.
+SqlServerEntityMessagingOptions.cs only validates length, not characters. Allows SQL injection via schema name.
 
 ## Findings
 

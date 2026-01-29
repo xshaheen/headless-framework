@@ -14,6 +14,6 @@ public sealed class NpgsqlTestFixture(IMessageSink messageSink)
 {
     protected override PostgreSqlBuilder Configure()
     {
-        return base.Configure().WithDatabase("framework_test").WithUsername("postgres").WithPassword("postgres");
+        return base.Configure().WithDatabase("headless_test").WithUsername("postgres").WithPassword("postgres");
     }
 }

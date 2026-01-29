@@ -10,7 +10,7 @@
 
 ## Package Analysis
 
-### Framework.Imaging.Abstractions
+### Headless.Imaging.Abstractions
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -24,7 +24,7 @@
 | `Contracts/ImageProcessState.cs` | Processing state enum | Low (enum) |
 | `Contracts/ImageProcessResult.cs` | Base result class | Medium |
 
-### Framework.Imaging.Core
+### Headless.Imaging.Core
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -36,7 +36,7 @@
 | `AddImagingBuilder.cs` | DI builder | Low |
 | `Setup.cs` | DI registration | Low |
 
-### Framework.Imaging.ImageSharp
+### Headless.Imaging.ImageSharp
 
 | File | Purpose | Testable |
 |------|---------|----------|

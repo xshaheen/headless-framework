@@ -1,12 +1,12 @@
-# Framework.Generator Test Design
+# Headless.Generator Test Design
 
 ## Overview
 
-The Framework.Generator packages provide Roslyn source generators for creating strongly-typed primitive value types with built-in validation, serialization, and ORM support.
+The Headless.Generator packages provide Roslyn source generators for creating strongly-typed primitive value types with built-in validation, serialization, and ORM support.
 
 ### Packages
-1. **Framework.Generator.Primitives.Abstractions** - Attributes, interfaces, and helpers for generated primitives
-2. **Framework.Generator.Primitives** - Roslyn incremental source generator
+1. **Headless.Generator.Primitives.Abstractions** - Attributes, interfaces, and helpers for generated primitives
+2. **Headless.Generator.Primitives** - Roslyn incremental source generator
 
 ### Key Components
 - **PrimitiveGenerator** - Main IIncrementalGenerator implementation
@@ -19,7 +19,7 @@ The Framework.Generator packages provide Roslyn source generators for creating s
 
 ---
 
-## 1. Framework.Generator.Primitives.Abstractions
+## 1. Headless.Generator.Primitives.Abstractions
 
 ### 1.1 PrimitiveValidationResult Tests
 
@@ -86,7 +86,7 @@ The Framework.Generator packages provide Roslyn source generators for creating s
 
 ---
 
-## 2. Framework.Generator.Primitives (Source Generator)
+## 2. Headless.Generator.Primitives (Source Generator)
 
 ### 2.1 Parser Tests
 
@@ -184,7 +184,7 @@ The Framework.Generator packages provide Roslyn source generators for creating s
 ### Test Project Structure
 ```
 tests/
-├── Framework.Generator.Primitives.Abstractions.Tests.Unit/  (NEW - 23 tests)
+├── Headless.Generator.Primitives.Abstractions.Tests.Unit/  (NEW - 23 tests)
 │   ├── PrimitiveValidationResultTests.cs
 │   ├── InvalidPrimitiveValueExceptionTests.cs
 │   ├── Attributes/
@@ -193,7 +193,7 @@ tests/
 │       ├── DateOnlyExtensionsTests.cs
 │       ├── ToXmlStringExtensionsTests.cs
 │       └── XmlReaderExtensionsTests.cs
-└── Framework.Generator.Primitives.Tests.Unit/               (NEW - 27 tests)
+└── Headless.Generator.Primitives.Tests.Unit/               (NEW - 27 tests)
     ├── ParserTests.cs
     ├── Emitters/
     │   ├── CoreEmitterTests.cs

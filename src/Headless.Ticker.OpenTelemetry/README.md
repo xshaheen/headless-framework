@@ -75,40 +75,40 @@ builder.Services.AddOpenTelemetry()
 
 ### Job Execution Activities
 ```
-Framework.Ticker.job.execute.timeticker (main job execution span)
-├── Framework.Ticker.job.enqueued (when job starts execution)
-├── Framework.Ticker.job.completed (on successful completion)
-├── Framework.Ticker.job.failed (on failure)
-├── Framework.Ticker.job.cancelled (on cancellation)
-├── Framework.Ticker.job.skipped (when skipped)
-├── Framework.Ticker.seeding.started (for data seeding)
-└── Framework.Ticker.seeding.completed (seeding completion)
+headless.ticker.job.execute.timeticker (main job execution span)
+├── headless.ticker.job.enqueued (when job starts execution)
+├── headless.ticker.job.completed (on successful completion)
+├── headless.ticker.job.failed (on failure)
+├── headless.ticker.job.cancelled (on cancellation)
+├── headless.ticker.job.skipped (when skipped)
+├── headless.ticker.seeding.started (for data seeding)
+└── headless.ticker.seeding.completed (seeding completion)
 ```
 
 ### Tags Added to Activities
 
 | Tag | Description | Example |
 |-----|-------------|---------|
-| `Headless.Ticker.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
-| `Headless.Ticker.job.type` | Type of ticker | `TimeTicker`, `CronTicker` |
-| `Headless.Ticker.job.function` | Function name being executed | `ProcessEmails` |
-| `Headless.Ticker.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
-| `Headless.Ticker.job.machine` | Machine executing the job | `web-server-01` |
-| `Headless.Ticker.job.parent_id` | Parent job ID (for child jobs) | `parent-job-guid` |
-| `Headless.Ticker.job.enqueued_from` | Where the job was enqueued from | `UserController.CreateUser (Program.cs:42)` |
-| `Headless.Ticker.job.is_due` | Whether the job was due | `true`, `false` |
-| `Headless.Ticker.job.is_child` | Whether this is a child job | `true`, `false` |
-| `Headless.Ticker.job.retries` | Maximum retry attempts | `3` |
-| `Headless.Ticker.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
-| `Headless.Ticker.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
-| `Headless.Ticker.job.final_retry_count` | Final retry count reached | `2` |
-| `Headless.Ticker.job.execution_time_ms` | Execution time in milliseconds | `1250` |
-| `Headless.Ticker.job.success` | Whether execution was successful | `true`, `false` |
-| `Headless.Ticker.job.error_type` | Exception type for failures | `SqlException`, `TimeoutException` |
-| `Headless.Ticker.job.error_message` | Error message | `Connection timeout` |
-| `Headless.Ticker.job.error_stack_trace` | Full stack trace | `at MyService.ProcessData()...` |
-| `Headless.Ticker.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
-| `Headless.Ticker.job.skip_reason` | Reason for skipping | `Another instance is already running` |
+| `headless.ticker.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
+| `headless.ticker.job.type` | Type of ticker | `TimeTicker`, `CronTicker` |
+| `headless.ticker.job.function` | Function name being executed | `ProcessEmails` |
+| `headless.ticker.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
+| `headless.ticker.job.machine` | Machine executing the job | `web-server-01` |
+| `headless.ticker.job.parent_id` | Parent job ID (for child jobs) | `parent-job-guid` |
+| `headless.ticker.job.enqueued_from` | Where the job was enqueued from | `UserController.CreateUser (Program.cs:42)` |
+| `headless.ticker.job.is_due` | Whether the job was due | `true`, `false` |
+| `headless.ticker.job.is_child` | Whether this is a child job | `true`, `false` |
+| `headless.ticker.job.retries` | Maximum retry attempts | `3` |
+| `headless.ticker.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
+| `headless.ticker.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
+| `headless.ticker.job.final_retry_count` | Final retry count reached | `2` |
+| `headless.ticker.job.execution_time_ms` | Execution time in milliseconds | `1250` |
+| `headless.ticker.job.success` | Whether execution was successful | `true`, `false` |
+| `headless.ticker.job.error_type` | Exception type for failures | `SqlException`, `TimeoutException` |
+| `headless.ticker.job.error_message` | Error message | `Connection timeout` |
+| `headless.ticker.job.error_stack_trace` | Full stack trace | `at MyService.ProcessData()...` |
+| `headless.ticker.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
+| `headless.ticker.job.skip_reason` | Reason for skipping | `Another instance is already running` |
 
 ## Logging Output
 
@@ -155,4 +155,4 @@ builder.Logging.AddNLog();
 
 - .NET 8.0 or later
 - OpenTelemetry 1.7.0 or later
-- Framework.Ticker.Utilities (automatically included)
+- Headless.Ticker.Abstractions (automatically included)

@@ -195,7 +195,7 @@ public static class TickerQServiceExtensions
             tickerExecutionContext.ExternalProviderApplicationAction = null;
         }
 
-        // Dashboard integration is handled by Framework.Ticker.Dashboard package via DashboardApplicationAction
+        // Dashboard integration is handled by Headless.Ticker.Dashboard package via DashboardApplicationAction
         // It will be invoked when UseTickerQ is called from ASP.NET Core specific extension
     }
 

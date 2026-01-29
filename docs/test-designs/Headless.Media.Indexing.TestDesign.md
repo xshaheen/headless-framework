@@ -9,13 +9,13 @@
 
 ## Package Analysis
 
-### Framework.Media.Indexing.Abstractions
+### Headless.Media.Indexing.Abstractions
 
 | File | Purpose | Testable |
 |------|---------|----------|
 | `IMediaFileTextProvider.cs` | Interface for extracting text from media files | Low (interface) |
 
-### Framework.Media.Indexing
+### Headless.Media.Indexing
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -120,7 +120,7 @@
 
 4. **Snapshot testing** - PDF test uses Verify for snapshot assertion.
 
-5. **Interface-only package** - `Framework.Media.Indexing.Abstractions` contains only `IMediaFileTextProvider` interface with no testable logic.
+5. **Interface-only package** - `Headless.Media.Indexing.Abstractions` contains only `IMediaFileTextProvider` interface with no testable logic.
 
 ---
 

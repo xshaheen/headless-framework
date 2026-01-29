@@ -24,7 +24,7 @@ dotnet add package Headless.OpenApi.Nswag.OData
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddHeadlessNswagOpenApi(
-    setupFrameworkAction: null,
+    setupHeadlessAction: null,
     setupGeneratorActions: settings =>
     {
         settings.OperationProcessors.Add(new ODataOperationFilter());

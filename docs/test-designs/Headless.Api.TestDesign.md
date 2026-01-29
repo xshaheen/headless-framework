@@ -1,7 +1,7 @@
 # Test Case Design: Headless.Api
 
 **Package:** `src/Headless.Api`
-**Test Projects:** `Framework.Api.Tests.Unit`, `Framework.Api.Tests.Integration`
+**Test Projects:** `Headless.Api.Tests.Unit`, `Headless.Api.Tests.Integration`
 **Generated:** 2026-01-25
 
 ## Current Test Coverage
