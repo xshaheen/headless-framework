@@ -1,16 +1,16 @@
 ---
 status: done
 priority: p2
-issue_id: "008"
+issue_id: "014"
 tags: []
 dependencies: []
 ---
 
-# Replace static locks with instance-level locks
+# Track consumer tasks for graceful shutdown
 
 ## Problem Statement
 
-AWS SQS, Kafka, NATS consumer clients use static Lock causing contention across all instances during concurrent initialization.
+IConsumerRegister.Default.cs:131-171 discards consumer loop tasks with _ = Task.Factory.StartNew() and sets _compositeTask = Task.CompletedTask.
 
 ## Findings
 
@@ -30,7 +30,7 @@ AWS SQS, Kafka, NATS consumer clients use static Lock causing contention across 
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [x] Use instance-level Lock or Lazy<T> initialization pattern
+- [x] Capture started tasks and wait on them during Dispose for graceful shutdown
 
 ## Notes
 
@@ -54,9 +54,13 @@ Source: Workflow automation
 
 **By:** Agent
 **Actions:**
-- Replaced static locks with instance-level locks in 4 files:
-  - `src/Headless.Messaging.AwsSqs/AmazonSqsConsumerClient.cs`
-  - `src/Headless.Messaging.Kafka/KafkaConsumerClient.cs`
-  - `src/Headless.Messaging.Nats/NATSConsumerClient.cs`
-  - `src/Headless.Messaging.InMemoryQueue/MemoryQueue.cs`
+- Collect consumer tasks in List<Task> instead of discarding
+- Use .Unwrap() to get inner Task from Task<Task> returned by StartNew
+- Set _compositeTask = Task.WhenAll(consumerTasks) for graceful shutdown
+- Status changed: ready -> done
+
+### 2026-01-29 - Completed
+
+**By:** Agent
+**Actions:**
 - Status changed: ready → done

@@ -1,16 +1,16 @@
 ---
 status: done
 priority: p2
-issue_id: "011"
+issue_id: "008"
 tags: []
 dependencies: []
 ---
 
-# Fix or remove broken WithConcurrency configuration
+# Replace static locks with instance-level locks
 
 ## Problem Statement
 
-ConsumerBuilder.WithConcurrency() sets ConsumerMetadata.Concurrency but value never propagates to MethodMatcherCache.GroupConcurrent which always defaults to 1.
+AWS SQS, Kafka, NATS consumer clients use static Lock causing contention across all instances during concurrent initialization.
 
 ## Findings
 
@@ -30,7 +30,7 @@ ConsumerBuilder.WithConcurrency() sets ConsumerMetadata.Concurrency but value ne
 [To be filled during triage]
 
 ## Acceptance Criteria
-- [x] Either propagate value through to consumer clients OR remove the broken API to avoid confusion
+- [x] Use instance-level Lock or Lazy<T> initialization pattern
 
 ## Notes
 
@@ -50,12 +50,19 @@ Source: Workflow automation
 **Actions:**
 - Status changed: pending → ready
 
-### 2026-01-25 - Fixed
+### 2026-01-25 - Completed
 
 **By:** Agent
 **Actions:**
-- Added `Concurrency` property to `ConsumerExecutorDescriptor`
-- Updated `ConsumerServiceSelector` to propagate `Concurrency` from `ConsumerMetadata`
-- Updated `MethodMatcherCache` to use maximum concurrency per group instead of hardcoded 1
-- Added unit tests for concurrency propagation
+- Replaced static locks with instance-level locks in 4 files:
+  - `src/Headless.Messaging.AwsSqs/AmazonSqsConsumerClient.cs`
+  - `src/Headless.Messaging.Kafka/KafkaConsumerClient.cs`
+  - `src/Headless.Messaging.Nats/NATSConsumerClient.cs`
+  - `src/Headless.Messaging.InMemoryQueue/MemoryQueue.cs`
+- Status changed: ready → done
+
+### 2026-01-29 - Completed
+
+**By:** Agent
+**Actions:**
 - Status changed: ready → done

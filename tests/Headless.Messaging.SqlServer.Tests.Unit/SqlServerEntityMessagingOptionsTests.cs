@@ -5,23 +5,23 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
+public sealed class SqlServerEntityMessagingOptionsTests : TestBase
 {
     [Fact]
     public void should_have_default_schema_set()
     {
         // when
-        var options = new SqlServerEntityFrameworkMessagingOptions();
+        var options = new SqlServerEntityMessagingOptions();
 
         // then
-        options.Schema.Should().Be(SqlServerEntityFrameworkMessagingOptions.DefaultSchema);
+        options.Schema.Should().Be(SqlServerEntityMessagingOptions.DefaultSchema);
     }
 
     [Fact]
     public void should_accept_valid_schema_name()
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions();
+        var options = new SqlServerEntityMessagingOptions();
         const string validSchema = "my_custom_schema";
 
         // when
@@ -38,7 +38,7 @@ public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
     public void should_throw_when_schema_is_null_or_whitespace(string? schema)
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions();
+        var options = new SqlServerEntityMessagingOptions();
 
         // when
         var act = () => options.Schema = schema!;
@@ -51,24 +51,22 @@ public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
     public void should_throw_when_schema_exceeds_max_length()
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions();
-        var longSchema = new string('a', SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength + 1);
+        var options = new SqlServerEntityMessagingOptions();
+        var longSchema = new string('a', SqlServerEntityMessagingOptions.MaxSchemaLength + 1);
 
         // when
         var act = () => options.Schema = longSchema;
 
         // then
-        act.Should()
-            .Throw<ArgumentException>()
-            .WithMessage($"*{SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength}*");
+        act.Should().Throw<ArgumentException>().WithMessage($"*{SqlServerEntityMessagingOptions.MaxSchemaLength}*");
     }
 
     [Fact]
     public void should_accept_schema_at_max_length()
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions();
-        var maxLengthSchema = new string('a', SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength);
+        var options = new SqlServerEntityMessagingOptions();
+        var maxLengthSchema = new string('a', SqlServerEntityMessagingOptions.MaxSchemaLength);
 
         // when
         options.Schema = maxLengthSchema;
@@ -81,7 +79,7 @@ public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
     public void should_have_max_schema_length_of_128()
     {
         // SQL Server identifier limit
-        SqlServerEntityFrameworkMessagingOptions.MaxSchemaLength.Should().Be(128);
+        SqlServerEntityMessagingOptions.MaxSchemaLength.Should().Be(128);
     }
 
     [Theory]
@@ -97,7 +95,7 @@ public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
     public void should_accept_valid_identifier_patterns(string schema)
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions
+        var options = new SqlServerEntityMessagingOptions
         {
             // when
             Schema = schema,
@@ -123,7 +121,7 @@ public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
     public void should_throw_for_invalid_identifier_patterns(string schema)
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions();
+        var options = new SqlServerEntityMessagingOptions();
 
         // when
         var act = () => options.Schema = schema;
@@ -142,7 +140,7 @@ public sealed class SqlServerEntityFrameworkMessagingOptionsTests : TestBase
     public void should_reject_sql_injection_patterns(string schema)
     {
         // given
-        var options = new SqlServerEntityFrameworkMessagingOptions();
+        var options = new SqlServerEntityMessagingOptions();
 
         // when
         var act = () => options.Schema = schema;
