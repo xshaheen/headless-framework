@@ -114,6 +114,7 @@ public sealed class RedisCache(
 
             foreach (var slotGroup in pairs.GroupBy(p => options.ConnectionMultiplexer.HashSlot(p.Key)))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var count = await _SetAllInternalAsync(slotGroup.ToArray(), expiration).AnyContext();
                 successCount += count;
             }
@@ -710,6 +711,8 @@ public sealed class RedisCache(
         {
             foreach (var batch in redisKeys.Chunk(_BatchSize))
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 foreach (var hashSlotGroup in batch.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
                 {
                     var hashSlotKeys = hashSlotGroup.ToArray();
@@ -735,6 +738,8 @@ public sealed class RedisCache(
         {
             foreach (var batch in redisKeys.Chunk(_BatchSize))
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 try
                 {
                     var count = await _Database.KeyDeleteAsync(batch).AnyContext();
