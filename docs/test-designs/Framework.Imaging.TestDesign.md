@@ -1,9 +1,9 @@
-# Test Case Design: Framework.Imaging (All Packages)
+# Test Case Design: Headless.Imaging (All Packages)
 
 **Packages:**
-- `src/Framework.Imaging.Abstractions`
-- `src/Framework.Imaging.Core`
-- `src/Framework.Imaging.ImageSharp`
+- `src/Headless.Imaging.Abstractions`
+- `src/Headless.Imaging.Core`
+- `src/Headless.Imaging.ImageSharp`
 
 **Test Projects:** None (new projects needed)
 **Generated:** 2026-01-25
@@ -54,7 +54,7 @@
 
 ## Missing: ImageResizer Tests
 
-**File:** `tests/Framework.Imaging.Tests.Unit/ImageResizerTests.cs`
+**File:** `tests/Headless.Imaging.Tests.Unit/ImageResizerTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -72,7 +72,7 @@
 
 ## Missing: ImageCompressor Tests
 
-**File:** `tests/Framework.Imaging.Tests.Unit/ImageCompressorTests.cs`
+**File:** `tests/Headless.Imaging.Tests.Unit/ImageCompressorTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -88,7 +88,7 @@
 
 ## Missing: ImageProcessState Tests
 
-**File:** `tests/Framework.Imaging.Tests.Unit/Contracts/ImageProcessResultTests.cs`
+**File:** `tests/Headless.Imaging.Tests.Unit/Contracts/ImageProcessResultTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -101,7 +101,7 @@
 
 ## Missing: ImageSharpImageResizerContributor Tests (Integration)
 
-**File:** `tests/Framework.Imaging.ImageSharp.Tests.Integration/ImageSharpImageResizerContributorTests.cs`
+**File:** `tests/Headless.Imaging.ImageSharp.Tests.Integration/ImageSharpImageResizerContributorTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -118,7 +118,7 @@
 
 ## Missing: ImageSharpImageCompressorContributor Tests (Integration)
 
-**File:** `tests/Framework.Imaging.ImageSharp.Tests.Integration/ImageSharpImageCompressorContributorTests.cs`
+**File:** `tests/Headless.Imaging.ImageSharp.Tests.Integration/ImageSharpImageCompressorContributorTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|

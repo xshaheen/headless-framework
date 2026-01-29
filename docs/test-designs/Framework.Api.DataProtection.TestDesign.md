@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Api.DataProtection
+# Test Case Design: Headless.Api.DataProtection
 
-**Package:** `src/Framework.Api.DataProtection`
+**Package:** `src/Headless.Api.DataProtection`
 **Test Projects:** None existing - **needs creation**
 **Generated:** 2026-01-25
 
@@ -15,7 +15,7 @@
 
 ## 1. BlobStorageDataProtectionXmlRepository Tests
 
-**File:** `tests/Framework.Api.DataProtection.Tests.Unit/BlobStorageDataProtectionXmlRepositoryTests.cs`
+**File:** `tests/Headless.Api.DataProtection.Tests.Unit/BlobStorageDataProtectionXmlRepositoryTests.cs`
 
 ### Constructor Tests
 
@@ -72,7 +72,7 @@
 
 ## 2. DataProtectionBuilderExtensions Tests
 
-**File:** `tests/Framework.Api.DataProtection.Tests.Unit/DataProtectionBuilderExtensionsTests.cs`
+**File:** `tests/Headless.Api.DataProtection.Tests.Unit/DataProtectionBuilderExtensionsTests.cs`
 
 ### PersistKeysToBlobStorage(storage, loggerFactory) Tests
 
@@ -195,7 +195,7 @@ public static class DataProtectionTestHelpers
 
 For full integration testing with real blob storage:
 
-**File:** `tests/Framework.Api.DataProtection.Tests.Integration/BlobStorageDataProtectionIntegrationTests.cs`
+**File:** `tests/Headless.Api.DataProtection.Tests.Integration/BlobStorageDataProtectionIntegrationTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|

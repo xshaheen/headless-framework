@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Api.Abstractions
+# Test Case Design: Headless.Api.Abstractions
 
-**Package:** `src/Framework.Api.Abstractions`
+**Package:** `src/Headless.Api.Abstractions`
 **Test Projects:** None needed (abstractions only)
 **Generated:** 2026-01-25
 

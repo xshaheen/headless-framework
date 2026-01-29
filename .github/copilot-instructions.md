@@ -16,8 +16,8 @@ This is a modern headless .NET Core framework for building web/general applicati
 ./build.sh Clean      # Clean outputs
 
 # Direct dotnet (faster for single projects)
-dotnet build src/Framework.Orm.EntityFramework
-dotnet test tests/Framework.Base.Tests.Unit
+dotnet build src/Headless.Orm.EntityFramework
+dotnet test tests/Headless.Base.Tests.Unit
 dotnet test --filter "FullyQualifiedName~method_name"  # Single test
 dotnet csharpier .    # Format code
 ```
@@ -28,7 +28,7 @@ Each feature follows **abstraction + provider pattern**:
 - `Framework.*.Abstraction` — interfaces and contracts
 - `Framework.*.<Provider>` — concrete implementation
 
-Example: `Framework.Caching.Abstraction` + `Framework.Caching.Foundatio.Redis`
+Example: `Framework.Caching.Abstraction` + `Framework.Caching.Redis`
 
 ## Test Structure
 

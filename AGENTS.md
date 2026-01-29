@@ -13,7 +13,7 @@
 - `./build.sh Test`: run all test projects and write results to `artifacts/test-results`.
 - `./build.sh Pack`: create NuGet packages in `artifacts/packages-results`.
 - `dotnet build headless-framework.slnx`: quick local build of the solution.
-- `dotnet test tests/Framework.Messages.Core.Tests.Unit`: run a single test project.
+- `dotnet test tests/Headless.Messages.Core.Tests.Unit`: run a single test project.
 
 ## Coding Style & Naming Conventions
 - Follow `.editorconfig`: C# uses 4 spaces, web assets use 2 spaces, max line length is 120.
@@ -28,7 +28,7 @@
 ## Commit & Pull Request Guidelines
 - Commit messages follow Conventional Commits (examples: `feat: add ...`, `fix: resolve ...`, `docs: update ...`, `chore: ...`).
 - PRs should include a concise summary, affected packages/projects, and test evidence (command + result).
-- Attach screenshots or gifs when modifying dashboard UI (`src/Framework.*.Dashboard/wwwroot`).
+- Attach screenshots or gifs when modifying dashboard UI (`src/Headless.*.Dashboard/wwwroot`).
 
 ## Configuration Notes
 - .NET SDK version is pinned by `global.json`; use the build scripts to align tooling.

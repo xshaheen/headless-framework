@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Api.Mvc
+# Test Case Design: Headless.Api.Mvc
 
-**Package:** `src/Framework.Api.Mvc`
+**Package:** `src/Headless.Api.Mvc`
 **Test Projects:** None existing - **needs creation**
 **Generated:** 2026-01-25
 
@@ -26,7 +26,7 @@
 
 ## 1. MvcApiExceptionFilter Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Filters/MvcApiExceptionFilterTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Filters/MvcApiExceptionFilterTests.cs`
 
 ### Happy Path Tests
 
@@ -68,7 +68,7 @@
 
 ## 2. BlockInEnvironmentAttribute Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Filters/BlockInEnvironmentAttributeTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Filters/BlockInEnvironmentAttributeTests.cs`
 
 | Test Case | Scenario | Expected |
 |-----------|----------|----------|
@@ -81,7 +81,7 @@
 
 ## 3. RequireEnvironmentAttribute Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Filters/RequireEnvironmentAttributeTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Filters/RequireEnvironmentAttributeTests.cs`
 
 | Test Case | Scenario | Expected |
 |-----------|----------|----------|
@@ -94,7 +94,7 @@
 
 ## 4. NoTrailingSlashAttribute Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Filters/NoTrailingSlashAttributeTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Filters/NoTrailingSlashAttributeTests.cs`
 
 | Test Case | Scenario | Expected |
 |-----------|----------|----------|
@@ -108,7 +108,7 @@
 
 ## 5. RedirectToCanonicalUrlRule Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Middlewares/RedirectToCanonicalUrlRuleTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Middlewares/RedirectToCanonicalUrlRuleTests.cs`
 
 ### Constructor Tests
 
@@ -162,7 +162,7 @@
 
 ## 6. ApiControllerBase Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Controllers/ApiControllerBaseTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Controllers/ApiControllerBaseTests.cs`
 
 ### Service Resolution Tests
 
@@ -200,7 +200,7 @@
 
 ## 7. ApiResultMvcExtensions Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Extensions/ApiResultMvcExtensionsTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Extensions/ApiResultMvcExtensionsTests.cs`
 
 ### ApiResult<T> Tests
 
@@ -232,7 +232,7 @@
 
 ## 8. ControllerBaseExtensions Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Extensions/ControllerBaseExtensionsTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Extensions/ControllerBaseExtensionsTests.cs`
 
 ### ChallengeOrForbid Tests
 
@@ -257,7 +257,7 @@
 
 ## 9. ActionDescriptorExtensions Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Extensions/ActionDescriptorExtensionsTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Extensions/ActionDescriptorExtensionsTests.cs`
 
 | Test Case | Scenario | Expected |
 |-----------|----------|----------|
@@ -276,7 +276,7 @@
 
 ## 10. ConfigureMvcApiOptions Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Options/ConfigureMvcApiOptionsTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Options/ConfigureMvcApiOptionsTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -291,7 +291,7 @@
 
 ## 11. ConfigureMvcJsonOptions Tests
 
-**File:** `tests/Framework.Api.Mvc.Tests.Unit/Options/ConfigureMvcJsonOptionsTests.cs`
+**File:** `tests/Headless.Api.Mvc.Tests.Unit/Options/ConfigureMvcJsonOptionsTests.cs`
 
 | Test Case | Scenario | Expected |
 |-----------|----------|----------|
@@ -307,7 +307,7 @@
 ### Required Test Project Setup
 
 ```xml
-<!-- tests/Framework.Api.Mvc.Tests.Unit/Framework.Api.Mvc.Tests.Unit.csproj -->
+<!-- tests/Headless.Api.Mvc.Tests.Unit/Headless.Api.Mvc.Tests.Unit.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>

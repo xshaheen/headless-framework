@@ -1,9 +1,9 @@
-# Test Case Design: Framework.Serializer (All Packages)
+# Test Case Design: Headless.Serializer (All Packages)
 
 **Packages:**
-- `src/Framework.Serializer.Abstractions`
-- `src/Framework.Serializer.Json`
-- `src/Framework.Serializer.MessagePack`
+- `src/Headless.Serializer.Abstractions`
+- `src/Headless.Serializer.Json`
+- `src/Headless.Serializer.MessagePack`
 
 **Test Projects:** `Framework.Serializer.Tests.Unit` (existing)
 **Generated:** 2026-01-25
@@ -63,7 +63,7 @@
 
 ## Missing: SerializerExtensions Tests
 
-**File:** `tests/Framework.Serializer.Tests.Unit/SerializerExtensionsTests.cs`
+**File:** `tests/Headless.Serializer.Tests.Unit/SerializerExtensionsTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -76,7 +76,7 @@
 
 ## Missing: EmptyStringAsNullJsonConverter Tests
 
-**File:** `tests/Framework.Serializer.Tests.Unit/Converters/EmptyStringAsNullJsonConverterTests.cs`
+**File:** `tests/Headless.Serializer.Tests.Unit/Converters/EmptyStringAsNullJsonConverterTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -91,7 +91,7 @@
 
 ## Missing: JsonPropertiesModifiers Tests
 
-**File:** `tests/Framework.Serializer.Tests.Unit/Modifiers/JsonPropertiesModifiersTests.cs`
+**File:** `tests/Headless.Serializer.Tests.Unit/Modifiers/JsonPropertiesModifiersTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -103,7 +103,7 @@
 
 ## Missing: SystemJsonSerializer Additional Tests
 
-**File:** `tests/Framework.Serializer.Tests.Unit/SystemJsonSerializerTests.cs`
+**File:** `tests/Headless.Serializer.Tests.Unit/SystemJsonSerializerTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -117,7 +117,7 @@
 
 ## Missing: MessagePackSerializer Additional Tests
 
-**File:** `tests/Framework.Serializer.Tests.Unit/MessagePackSerializerTests.cs`
+**File:** `tests/Headless.Serializer.Tests.Unit/MessagePackSerializerTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|

@@ -56,7 +56,7 @@ Framework.Orm provides ORM utilities and abstractions for Entity Framework Core 
 
 ## Existing Test Coverage
 
-**Location:** `tests/Framework.Orm.EntityFramework.Tests.Integration/`
+**Location:** `tests/Headless.Orm.EntityFramework.Tests.Integration/`
 
 | Test File | Coverage Area | Test Count |
 |-----------|--------------|------------|
@@ -261,7 +261,7 @@ Framework.Orm provides ORM utilities and abstractions for Entity Framework Core 
 ## Test Infrastructure Requirements
 
 ### Existing Test Project
-- `tests/Framework.Orm.EntityFramework.Tests.Integration/` (extend)
+- `tests/Headless.Orm.EntityFramework.Tests.Integration/` (extend)
 
 ### New Test Projects Needed
 1. **Framework.Orm.EntityFramework.Tests.Unit** (new)

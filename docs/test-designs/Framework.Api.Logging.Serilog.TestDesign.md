@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Api.Logging.Serilog
+# Test Case Design: Headless.Api.Logging.Serilog
 
-**Package:** `src/Framework.Api.Logging.Serilog`
+**Package:** `src/Headless.Api.Logging.Serilog`
 **Test Projects:** None existing - **needs creation**
 **Generated:** 2026-01-25
 
@@ -18,7 +18,7 @@
 
 ## 1. SanitizedHeaderEnricher Tests
 
-**File:** `tests/Framework.Api.Logging.Serilog.Tests.Unit/Enrichers/SanitizedHeaderEnricherTests.cs`
+**File:** `tests/Headless.Api.Logging.Serilog.Tests.Unit/Enrichers/SanitizedHeaderEnricherTests.cs`
 
 ### Happy Path Tests
 
@@ -72,7 +72,7 @@
 
 ## 2. SanitizedHeaderEnricherExtensions Tests
 
-**File:** `tests/Framework.Api.Logging.Serilog.Tests.Unit/Enrichers/SanitizedHeaderEnricherExtensionsTests.cs`
+**File:** `tests/Headless.Api.Logging.Serilog.Tests.Unit/Enrichers/SanitizedHeaderEnricherExtensionsTests.cs`
 
 ### WithSanitizedRequestHeader (without ServiceProvider) Tests
 
@@ -99,7 +99,7 @@
 
 ## 3. SerilogEnrichersMiddleware Tests
 
-**File:** `tests/Framework.Api.Logging.Serilog.Tests.Unit/SerilogEnrichersMiddlewareTests.cs`
+**File:** `tests/Headless.Api.Logging.Serilog.Tests.Unit/SerilogEnrichersMiddlewareTests.cs`
 
 ### Property Pushing Tests
 
@@ -131,7 +131,7 @@
 
 ## 4. ApiSerilogFactory Tests
 
-**File:** `tests/Framework.Api.Logging.Serilog.Tests.Unit/ApiSerilogFactoryTests.cs`
+**File:** `tests/Headless.Api.Logging.Serilog.Tests.Unit/ApiSerilogFactoryTests.cs`
 
 ### Bootstrap Logger Tests
 
@@ -169,7 +169,7 @@
 
 ## 5. AddSerilogExtensions Tests
 
-**File:** `tests/Framework.Api.Logging.Serilog.Tests.Unit/AddSerilogExtensionsTests.cs`
+**File:** `tests/Headless.Api.Logging.Serilog.Tests.Unit/AddSerilogExtensionsTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -185,7 +185,7 @@
 ### Required Test Project Setup
 
 ```xml
-<!-- tests/Framework.Api.Logging.Serilog.Tests.Unit/Framework.Api.Logging.Serilog.Tests.Unit.csproj -->
+<!-- tests/Headless.Api.Logging.Serilog.Tests.Unit/Headless.Api.Logging.Serilog.Tests.Unit.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -330,7 +330,7 @@ public class LogContextCapture : IDisposable
 
 For full integration testing:
 
-**File:** `tests/Framework.Api.Logging.Serilog.Tests.Integration/`
+**File:** `tests/Headless.Api.Logging.Serilog.Tests.Integration/`
 
 | Test Case | Description |
 |-----------|-------------|

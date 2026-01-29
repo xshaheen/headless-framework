@@ -1,18 +1,18 @@
-# Test Case Design: Framework.ResourceLocks (All Packages)
+# Test Case Design: Headless.DistributedLocks (All Packages)
 
 **Packages:**
-- `src/Framework.ResourceLocks.Abstractions`
-- `src/Framework.ResourceLocks.Core`
-- `src/Framework.ResourceLocks.Cache`
-- `src/Framework.ResourceLocks.Redis`
-- `src/Framework.ResourceLocks.InMemory`
+- `src/Headless.DistributedLocks.Abstractions`
+- `src/Headless.DistributedLocks.Core`
+- `src/Headless.DistributedLocks.Cache`
+- `src/Headless.DistributedLocks.Redis`
+- `src/Headless.DistributedLocks.InMemory`
 
 **Test Projects:** None (new projects needed)
 **Generated:** 2026-01-25
 
 ## Package Analysis
 
-### Framework.ResourceLocks.Abstractions
+### Framework.DistributedLocks.Abstractions
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -23,34 +23,34 @@
 | `ThrottlingLocks/IThrottlingResourceLockProvider.cs` | Throttling provider | Low (interface) |
 | `ThrottlingLocks/IResourceThrottlingLock.cs` | Throttling lock handle | Low (interface) |
 
-### Framework.ResourceLocks.Core
+### Framework.DistributedLocks.Core
 
 | File | Purpose | Testable |
 |------|---------|----------|
 | `RegularLocks/ResourceLockProvider.cs` | IResourceLockProvider impl | High |
 | `RegularLocks/DisposableResourceLock.cs` | IResourceLock impl | High |
-| `RegularLocks/IResourceLockStorage.cs` | Storage interface | Low (interface) |
+| `RegularLocks/IDistributedLockstorage.cs` | Storage interface | Low (interface) |
 | `RegularLocks/ResourceLockOptions.cs` | Lock configuration | Medium |
 | `RegularLocks/ResourceLockReleased.cs` | Lock release message | Low |
 | `ThrottlingLocks/ThrottlingResourceLockProvider.cs` | Throttling impl | High |
 | `ThrottlingLocks/ResourceThrottlingLock.cs` | Throttling lock impl | Medium |
 | `ThrottlingLocks/ThrottlingResourceLockOptions.cs` | Throttling options | Medium |
-| `ThrottlingLocks/IThrottlingResourceLockStorage.cs` | Throttling storage | Low (interface) |
+| `ThrottlingLocks/IThrottlingDistributedLockstorage.cs` | Throttling storage | Low (interface) |
 | `Setup.cs` | DI registration | Low |
 
-### Framework.ResourceLocks.Cache
+### Framework.DistributedLocks.Cache
 
 | File | Purpose | Testable |
 |------|---------|----------|
-| `CacheResourceLockStorage.cs` | ICache-backed storage | High (integration) |
-| `CacheThrottlingResourceLockStorage.cs` | Cache throttling storage | High (integration) |
+| `CacheDistributedLockstorage.cs` | ICache-backed storage | High (integration) |
+| `CacheThrottlingDistributedLockstorage.cs` | Cache throttling storage | High (integration) |
 
-### Framework.ResourceLocks.Redis
+### Framework.DistributedLocks.Redis
 
 | File | Purpose | Testable |
 |------|---------|----------|
-| `RedisResourceLockStorage.cs` | Redis-backed storage | High (integration) |
-| `RedisThrottlingResourceLockStorage.cs` | Redis throttling storage | High (integration) |
+| `RedisDistributedLockstorage.cs` | Redis-backed storage | High (integration) |
+| `RedisThrottlingDistributedLockstorage.cs` | Redis throttling storage | High (integration) |
 | `Setup.cs` | DI registration | Low |
 
 ## Current Test Coverage
@@ -61,7 +61,7 @@
 
 ## Missing: ResourceLockProviderExtensions Tests
 
-**File:** `tests/Framework.ResourceLocks.Tests.Unit/ResourceLockProviderExtensionsTests.cs`
+**File:** `tests/Headless.DistributedLocks.Tests.Unit/ResourceLockProviderExtensionsTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -73,7 +73,7 @@
 
 ## Missing: ResourceLockProvider Tests
 
-**File:** `tests/Framework.ResourceLocks.Tests.Unit/RegularLocks/ResourceLockProviderTests.cs`
+**File:** `tests/Headless.DistributedLocks.Tests.Unit/RegularLocks/ResourceLockProviderTests.cs`
 
 ### TryAcquireAsync Tests
 
@@ -134,7 +134,7 @@
 
 ## Missing: DisposableResourceLock Tests
 
-**File:** `tests/Framework.ResourceLocks.Tests.Unit/RegularLocks/DisposableResourceLockTests.cs`
+**File:** `tests/Headless.DistributedLocks.Tests.Unit/RegularLocks/DisposableResourceLockTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -149,7 +149,7 @@
 
 ## Missing: ThrottlingResourceLockProvider Tests
 
-**File:** `tests/Framework.ResourceLocks.Tests.Unit/ThrottlingLocks/ThrottlingResourceLockProviderTests.cs`
+**File:** `tests/Headless.DistributedLocks.Tests.Unit/ThrottlingLocks/ThrottlingResourceLockProviderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -162,9 +162,9 @@
 
 ---
 
-## Missing: CacheResourceLockStorage Tests (Integration)
+## Missing: CacheDistributedLockstorage Tests (Integration)
 
-**File:** `tests/Framework.ResourceLocks.Cache.Tests.Integration/CacheResourceLockStorageTests.cs`
+**File:** `tests/Headless.DistributedLocks.Cache.Tests.Integration/CacheDistributedLockstorageTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -179,9 +179,9 @@
 
 ---
 
-## Missing: RedisResourceLockStorage Tests (Integration)
+## Missing: RedisDistributedLockstorage Tests (Integration)
 
-**File:** `tests/Framework.ResourceLocks.Redis.Tests.Integration/RedisResourceLockStorageTests.cs`
+**File:** `tests/Headless.DistributedLocks.Redis.Tests.Integration/RedisDistributedLockstorageTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -197,7 +197,7 @@
 ### Mock Storage
 
 ```csharp
-public sealed class FakeResourceLockStorage : IResourceLockStorage
+public sealed class FakeDistributedLockstorage : IDistributedLockstorage
 {
     private readonly ConcurrentDictionary<string, (string LockId, DateTimeOffset? Expiry)> _locks = new();
 
@@ -230,8 +230,8 @@ public sealed class FakeResourceLockStorage : IResourceLockStorage
 | ResourceLockProvider | 0 | 24 | 0 | 24 |
 | DisposableResourceLock | 0 | 6 | 0 | 6 |
 | ThrottlingResourceLockProvider | 0 | 6 | 0 | 6 |
-| CacheResourceLockStorage | 0 | 0 | 8 | 8 |
-| RedisResourceLockStorage | 0 | 0 | 4 | 4 |
+| CacheDistributedLockstorage | 0 | 0 | 8 | 8 |
+| RedisDistributedLockstorage | 0 | 0 | 4 | 4 |
 | **Total** | **0** | **39** | **12** | **51** |
 
 ---
@@ -270,7 +270,7 @@ IResourceLockProvider
 └── GetActiveLocksCountAsync() → int
 
 ResourceLockProvider
-├── IResourceLockStorage (pluggable backend)
+├── IDistributedLockstorage (pluggable backend)
 ├── IOutboxPublisher (for lock release messages)
 ├── ILongIdGenerator (lock IDs)
 ├── Metrics (counter, histogram)
@@ -278,8 +278,8 @@ ResourceLockProvider
 └── Exponential backoff with jitter
 
 Storage Implementations:
-├── CacheResourceLockStorage (ICache)
-├── RedisResourceLockStorage (direct Redis)
+├── CacheDistributedLockstorage (ICache)
+├── RedisDistributedLockstorage (direct Redis)
 └── InMemory (ConcurrentDictionary)
 
 Lock Lifecycle:

@@ -50,7 +50,7 @@ Framework.Ticker provides a comprehensive job scheduling system with support for
 
 ## Existing Test Coverage
 
-**Location:** `tests/Framework.Ticker.Tests.Unit/`
+**Location:** `tests/Headless.Ticker.Tests.Unit/`
 
 | Test File | Coverage Area | Test Count |
 |-----------|--------------|------------|

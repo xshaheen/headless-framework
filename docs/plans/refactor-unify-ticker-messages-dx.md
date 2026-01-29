@@ -484,12 +484,12 @@ services.AddMessaging(m =>
 - Background processor polls for due messages (immediate + delayed)
 
 **Files**:
-- `src/Framework.Messages.Abstractions/ConsumeContext.cs` - Add scheduling properties
-- `src/Framework.Messages.Core/Storage/IDataStorage.cs` - Update interface for unified schema
-- `src/Framework.Messages.Core/Internal/MessageEntity.cs` - Add MessageType enum, scheduling fields
-- `src/Framework.Messages.Core/Internal/ScheduledMessageProcessor.cs` - NEW - polls Messages table for due messages
-- `src/Framework.Messages.PostgreSql/PostgreSqlDataStorage.cs` - Implement unified schema
-- `src/Framework.Messages.SqlServer/SqlServerDataStorage.cs` - Implement unified schema
+- `src/Headless.Messages.Abstractions/ConsumeContext.cs` - Add scheduling properties
+- `src/Headless.Messages.Core/Storage/IDataStorage.cs` - Update interface for unified schema
+- `src/Headless.Messages.Core/Internal/MessageEntity.cs` - Add MessageType enum, scheduling fields
+- `src/Headless.Messages.Core/Internal/ScheduledMessageProcessor.cs` - NEW - polls Messages table for due messages
+- `src/Headless.Messages.PostgreSql/PostgreSqlDataStorage.cs` - Implement unified schema
+- `src/Headless.Messages.SqlServer/SqlServerDataStorage.cs` - Implement unified schema
 
 **Migration**:
 ```sql
@@ -527,12 +527,12 @@ WHERE scheduled_for IS NOT NULL;
 - Dashboard shows upcoming recurring jobs
 
 **Files**:
-- `src/Framework.Messages.Abstractions/IMessagingBuilder.cs` - Add Cron() extension
-- `src/Framework.Messages.Abstractions/Attributes/RecurringJobAttribute.cs` - NEW
-- `src/Framework.Messages.Core/Internal/RecurringJobScheduler.cs` - NEW - cron expression evaluation
-- `src/Framework.Messages.Core/Internal/RecurringJobSeedingService.cs` - NEW - IHostedService for seeding
-- `src/Framework.Messages.Core/DependencyInjection/ConsumerBuilder.cs` - Add Cron(), ExecutionMode() methods
-- `src/Framework.Messages.Dashboard/Pages/RecurringJobs.razor` - NEW - recurring jobs UI
+- `src/Headless.Messages.Abstractions/IMessagingBuilder.cs` - Add Cron() extension
+- `src/Headless.Messages.Abstractions/Attributes/RecurringJobAttribute.cs` - NEW
+- `src/Headless.Messages.Core/Internal/RecurringJobScheduler.cs` - NEW - cron expression evaluation
+- `src/Headless.Messages.Core/Internal/RecurringJobSeedingService.cs` - NEW - IHostedService for seeding
+- `src/Headless.Messages.Core/DependencyInjection/ConsumerBuilder.cs` - Add Cron(), ExecutionMode() methods
+- `src/Headless.Messages.Dashboard/Pages/RecurringJobs.razor` - NEW - recurring jobs UI
 
 **Registration Examples**:
 ```csharp
@@ -603,11 +603,11 @@ while (!cancellationToken.IsCancellationRequested)
 - Re-publish failed messages
 
 **Files**:
-- `src/Framework.Messages.Dashboard/Pages/Index.razor` - Update with tabs for Immediate/Delayed/Recurring
-- `src/Framework.Messages.Dashboard/Pages/FailedMessages.razor` - NEW - DLQ view
-- `src/Framework.Messages.Dashboard/Pages/RecurringJobs.razor` - Recurring jobs management
-- `src/Framework.Messages.Dashboard/Shared/MessageTypeFilter.cs` - NEW - filter component
-- `src/Framework.Messages.Dashboard/Api/MessagingController.cs` - Add endpoints for manual trigger, pause/resume
+- `src/Headless.Messages.Dashboard/Pages/Index.razor` - Update with tabs for Immediate/Delayed/Recurring
+- `src/Headless.Messages.Dashboard/Pages/FailedMessages.razor` - NEW - DLQ view
+- `src/Headless.Messages.Dashboard/Pages/RecurringJobs.razor` - Recurring jobs management
+- `src/Headless.Messages.Dashboard/Shared/MessageTypeFilter.cs` - NEW - filter component
+- `src/Headless.Messages.Dashboard/Api/MessagingController.cs` - Add endpoints for manual trigger, pause/resume
 
 **Dashboard Views**:
 
@@ -710,7 +710,7 @@ services.AddMessaging(m =>
 5. Deploy and remove `Framework.Ticker.*` packages
 ```
 
-**Roslyn Analyzer** (`src/Framework.Messages.Analyzers/TickerFunctionAnalyzer.cs`):
+**Roslyn Analyzer** (`src/Headless.Messages.Analyzers/TickerFunctionAnalyzer.cs`):
 - Detects `[TickerFunction]` usage
 - Suggests: "Migrate to IConsume<T> for better performance and type safety"
 - Code fix: Auto-generate `IConsume<T>` handler class from `[TickerFunction]` method
@@ -987,7 +987,7 @@ erDiagram
 
 **Updated Guides**:
 - `README.md` - Update package count, add Messaging section
-- `src/Framework.Messages.*/README.md` - Update with recurring job examples
+- `src/Headless.Messages.*/README.md` - Update with recurring job examples
 - `docs/architecture/messaging-architecture.md` - NEW - System design doc
 
 **API Reference**:
@@ -1073,16 +1073,16 @@ All critical questions resolved following Ticker's existing patterns for consist
 - `plans/refactor-iconsume-part2-conventions-assembly-scanning.md` - Part 2: Convention system
 
 **Repository Analysis**:
-- Framework.Ticker packages: 7 packages (`src/Framework.Ticker.*`)
-- Framework.Messages packages: 16 packages (`src/Framework.Messages.*`)
+- Framework.Ticker packages: 7 packages (`src/Headless.Ticker.*`)
+- Framework.Messages packages: 16 packages (`src/Headless.Messages.*`)
 - Overlapping concerns: Persistence, retry, locks, monitoring, OpenTelemetry
 
 **Code References**:
-- `src/Framework.Messages.Abstractions/IConsume.cs:15` - Current `IConsume<T>` interface
-- `src/Framework.Messages.Abstractions/ConsumeContext.cs:8` - Current context (needs scheduling properties)
-- `src/Framework.Ticker.Abstractions/Entities/CronTickerEntity.cs:7` - Cron job entity (migrate to Messages schema)
-- `src/Framework.Ticker.Core/TickerQSchedulerBackgroundService.cs:23` - Scheduler logic (port to Messages)
-- `src/Framework.Messages.Core/Internal/CompiledMessageDispatcher.cs:12` - Compiled expression dispatch (keep)
+- `src/Headless.Messages.Abstractions/IConsume.cs:15` - Current `IConsume<T>` interface
+- `src/Headless.Messages.Abstractions/ConsumeContext.cs:8` - Current context (needs scheduling properties)
+- `src/Headless.Ticker.Abstractions/Entities/CronTickerEntity.cs:7` - Cron job entity (migrate to Messages schema)
+- `src/Headless.Ticker.Core/TickerQSchedulerBackgroundService.cs:23` - Scheduler logic (port to Messages)
+- `src/Headless.Messages.Core/Internal/CompiledMessageDispatcher.cs:12` - Compiled expression dispatch (keep)
 
 ### External
 

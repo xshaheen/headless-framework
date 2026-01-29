@@ -1120,10 +1120,10 @@ None. This is an abstractions package.
 
 ---
 
-# Framework.Caching.Foundatio.Memory
+# Framework.Caching.Memory
 
 
-In-memory cache implementation using Foundatio for single-instance applications.
+In-memory cache implementation for single-instance applications.
 
 ## Problem Solved
 
@@ -1131,7 +1131,7 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 
 ## Key Features
 
-- Full `IInMemoryCache` implementation using Foundatio
+- Full `IInMemoryCache` implementation
 - Can serve as default `ICache` or alongside distributed cache
 - Supports strongly-typed `ICache<T>` pattern
 - Automatic memory management with configurable limits
@@ -1140,7 +1140,7 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 ## Installation
 
 ```bash
-dotnet add package Framework.Caching.Foundatio.Memory
+dotnet add package Framework.Caching.Memory
 ```
 
 ## Quick Start
@@ -1174,7 +1174,6 @@ options.ShouldCloneValues = false;   // Clone values on get/set
 
 - `Framework.Caching.Abstractions`
 - `Framework.Hosting`
-- `Foundatio`
 
 ## Side Effects
 
@@ -1185,10 +1184,10 @@ options.ShouldCloneValues = false;   // Clone values on get/set
 
 ---
 
-# Framework.Caching.Foundatio.Redis
+# Framework.Caching.Redis
 
 
-Redis distributed cache implementation using Foundatio for multi-instance applications.
+Redis distributed cache implementation for multi-instance applications.
 
 ## Problem Solved
 
@@ -1196,7 +1195,7 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 
 ## Key Features
 
-- Full `IDistributedCache` implementation using Foundatio.Redis
+- Full `IDistributedCache` implementation
 - Built on StackExchange.Redis
 - Supports strongly-typed `IDistributedCache<T>` pattern
 - Prefix-based key management
@@ -1206,7 +1205,7 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 ## Installation
 
 ```bash
-dotnet add package Framework.Caching.Foundatio.Redis
+dotnet add package Framework.Caching.Redis
 ```
 
 ## Quick Start
@@ -6015,7 +6014,7 @@ None.
 ## Status
 
 This package directory exists for future development. Functionality may be available through:
-- `Framework.Caching.Foundatio.Memory` - In-memory caching implementation
+- `Framework.Caching.Memory` - In-memory caching implementation
 
 ## Installation
 
@@ -7447,7 +7446,7 @@ builder.Services.AddKeyedInMemoryThrottlingResourceLock("api", new ThrottlingRes
 ## Dependencies
 
 - `Framework.ResourceLocks.Cache`
-- `Framework.Caching.Foundatio.Memory`
+- `Framework.Caching.Memory`
 - `Framework.Messaging.Foundatio`
 
 ## Side Effects
@@ -7492,7 +7491,7 @@ Not available for installation.
 
 # Framework.Ticker.Abstractions
 
-Simple utilities for queuing and executing cron/time-based jobs in the background.  
+Simple utilities for queuing and executing cron/time-based jobs in the background.
 Part of the [TickerQ](https://github.com/arcenox/TickerQ) suite by [Arcenox](https://arcenox.com).
 
 ---
@@ -7740,7 +7739,7 @@ services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
 ## 🔧 Fluent API Methods
 
 - `WithBasicAuth(username, password)` - Enable username/password authentication
-- `WithApiKey(apiKey)` - Enable API key authentication  
+- `WithApiKey(apiKey)` - Enable API key authentication
 - `WithHostAuthentication(policy)` - Use your app's existing auth with optional policy (e.g., "AdminPolicy")
 - `SetBasePath(path)` - Set dashboard URL path
 - `SetBackendDomain(domain)` - Set backend API domain
@@ -7759,7 +7758,7 @@ The dashboard automatically detects your authentication method:
 
 The frontend automatically adapts based on your backend configuration:
 - Shows appropriate login UI
-- Handles SignalR authentication 
+- Handles SignalR authentication
 - Supports both header and query parameter auth (for WebSockets)
 
 That's it! Simple and clean. 🎉
@@ -8035,4 +8034,3 @@ Generates `TickerQInstanceFactoryExtensions.g.cs` at compile time with:
 - Request type registrations
 
 ---
-
