@@ -14,6 +14,8 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
     : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
         ICollectionFixture<RedisTestFixture>
 {
+    private HeadlessRedisScriptsLoader? _scriptLoader;
+
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
 
     public RedisResourceLockStorage LockStorage { get; private set; } = null!;
@@ -33,18 +35,19 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
         await ConnectionMultiplexer.FlushAllAsync();
 
-        var scriptLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
-        await scriptLoader.LoadScriptsAsync();
+        _scriptLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
+        await _scriptLoader.LoadScriptsAsync();
 
-        LockStorage = new(ConnectionMultiplexer, scriptLoader);
-        ThrottlingLockStorage = new(ConnectionMultiplexer, scriptLoader);
+        LockStorage = new(ConnectionMultiplexer, _scriptLoader);
+        ThrottlingLockStorage = new(ConnectionMultiplexer, _scriptLoader);
 
         await ConnectionMultiplexer.FlushAllAsync();
     }
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await base.DisposeAsyncCore();
+        _scriptLoader?.Dispose();
         await ConnectionMultiplexer.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 }

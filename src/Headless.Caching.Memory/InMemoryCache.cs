@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,7 +12,7 @@ namespace Headless.Caching;
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
 public sealed class InMemoryCache : IInMemoryCache, IDisposable
 {
-    private readonly ConcurrentDictionary<string, CacheEntry> _memory = new();
+    private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
     private readonly AsyncLock _lock = new();
     private readonly CancellationTokenSource _disposedCts = new();
     private readonly ILogger _logger;
@@ -1046,7 +1045,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         var removed = 0;
 
-        foreach (var key in cacheKeys.Distinct())
+        foreach (var key in cacheKeys.Distinct(StringComparer.Ordinal))
         {
             Argument.IsNotNullOrEmpty(key);
 
@@ -1077,11 +1076,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var keys = _memory.Keys.ToList();
         var keysToRemove = new List<string>(keys.Count);
 
-        var regex = new Regex(string.Concat("^", Regex.Escape(prefix), ".*?$"), RegexOptions.Singleline);
-
         foreach (var key in keys)
         {
-            if (regex.IsMatch(key))
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
             {
                 keysToRemove.Add(key);
             }
@@ -1118,7 +1115,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         if (value is string stringValue)
         {
-            var items = new HashSet<string>([stringValue]);
+            var items = new HashSet<string>([stringValue], StringComparer.Ordinal);
 
             _memory.TryUpdate(
                 key,
@@ -1645,12 +1642,14 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 || _IsNumeric(t)
             )
             {
-                return (T?)Convert.ChangeType(val, t);
+                return (T?)Convert.ChangeType(val, t, CultureInfo.InvariantCulture);
             }
 
             if (t == typeof(bool?) || t == typeof(char?) || t == typeof(DateTime?) || _IsNullableNumeric(t))
             {
-                return val is null ? default : (T?)Convert.ChangeType(val, Nullable.GetUnderlyingType(t)!);
+                return val is null
+                    ? default
+                    : (T?)Convert.ChangeType(val, Nullable.GetUnderlyingType(t)!, CultureInfo.InvariantCulture);
             }
 
             return (T?)val;

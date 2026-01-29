@@ -10,28 +10,25 @@ using StackExchange.Redis;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
+// ReSharper disable DisposeOnUsingVariable
 /// <summary>
 /// Unit tests for <see cref="RedisConsumerClient"/>.
 /// </summary>
 public sealed class RedisConsumerClientTests : TestBase
 {
-    private readonly IRedisStreamManager _mockStreamManager;
-    private readonly IOptions<MessagingRedisOptions> _options;
+    private readonly IRedisStreamManager _mockStreamManager = Substitute.For<IRedisStreamManager>();
 
-    public RedisConsumerClientTests()
-    {
-        _mockStreamManager = Substitute.For<IRedisStreamManager>();
-        _options = Options.Create(
-            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
-        );
-    }
+    private readonly IOptions<MessagingRedisOptions> _options = Options.Create(
+        new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+    );
 
     [Fact]
-    public void should_return_correct_broker_address()
+    public async Task should_return_correct_broker_address()
     {
         // given
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when
         var address = client.BrokerAddress;
@@ -103,7 +100,7 @@ public sealed class RedisConsumerClientTests : TestBase
     {
         // given
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
 
         // when & then
         var action = async () => await client.DisposeAsync();

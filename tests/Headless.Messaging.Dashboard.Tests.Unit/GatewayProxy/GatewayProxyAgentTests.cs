@@ -132,7 +132,7 @@ public sealed class GatewayProxyAgentTests : TestBase
         };
 
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
-        discoveryProvider.GetNode("node1", null).Returns(Task.FromResult<Node?>(node));
+        discoveryProvider.GetNode("node1", null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Node?>(node));
 
         var requester = Substitute.For<IHttpRequester>();
         requester

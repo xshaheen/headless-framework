@@ -47,12 +47,7 @@ public sealed class AuthorizationTests : TestBase
         // The AllowAnonymousIf extension method should throw
         // when anonymous is not allowed but no policy is provided
         var mockBuilder = Substitute.For<IEndpointConventionBuilder>();
-        var act = () =>
-            MessagingBuilderExtension.AllowAnonymousIf(
-                mockBuilder,
-                options.AllowAnonymousExplicit,
-                options.AuthorizationPolicy
-            );
+        var act = () => mockBuilder.AllowAnonymousIf(options.AllowAnonymousExplicit, options.AuthorizationPolicy);
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*Authorization Policy must be configured*");
@@ -130,7 +125,10 @@ public sealed class AuthorizationTests : TestBase
             "AllowAnonymousIf",
             System.Reflection.BindingFlags.Static
                 | System.Reflection.BindingFlags.NonPublic
-                | System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.Public,
+            null,
+            [typeof(IEndpointConventionBuilder), typeof(bool), typeof(string?[])],
+            null
         );
 
         method.Should().NotBeNull("AllowAnonymousIf extension method should exist");
