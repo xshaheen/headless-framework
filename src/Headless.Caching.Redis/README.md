@@ -1,6 +1,6 @@
-# Headless.Caching.Foundatio.Redis
+# Headless.Caching.Redis
 
-Redis distributed cache implementation using Foundatio for multi-instance applications.
+Redis distributed cache implementation for multi-instance applications.
 
 ## Problem Solved
 
@@ -8,17 +8,18 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 
 ## Key Features
 
-- Full `IDistributedCache` implementation using Foundatio.Redis
-- Built on StackExchange.Redis
+- Full `IDistributedCache` implementation using StackExchange.Redis
 - Supports strongly-typed `IDistributedCache<T>` pattern
 - Prefix-based key management
-- Atomic operations (increment, compare-and-swap)
-- Set operations
+- Atomic operations (increment, compare-and-swap, SetIfHigher/Lower)
+- Set/list operations with pagination
+- Lua scripts for atomic multi-key operations
+- Redis Cluster support
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Caching.Foundatio.Redis
+dotnet add package Headless.Caching.Redis
 ```
 
 ## Quick Start
@@ -61,7 +62,7 @@ options.KeyPrefix = "myapp:";
 - `Headless.Hosting`
 - `Headless.Redis`
 - `Headless.Serializer.Json`
-- `Foundatio.Redis`
+- `StackExchange.Redis`
 
 ## Side Effects
 

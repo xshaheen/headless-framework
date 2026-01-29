@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Caching;
 
 [PublicAPI]
-public static class InMemoryFoundatioSetup
+public static class InMemoryCacheSetup
 {
     extension(IServiceCollection services)
     {
@@ -41,7 +41,7 @@ public static class InMemoryFoundatioSetup
         private IServiceCollection _AddCacheCore(bool isDefault)
         {
             services.AddSingletonOptionValue<InMemoryCacheOptions>();
-            services.TryAddSingleton<IInMemoryCache, InMemoryCachingFoundatioAdapter>();
+            services.TryAddSingleton<IInMemoryCache, InMemoryCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
             services.TryAddSingleton(typeof(IInMemoryCache<>), typeof(InMemoryCache<>));
 

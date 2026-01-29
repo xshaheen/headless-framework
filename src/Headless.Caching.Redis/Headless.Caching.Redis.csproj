@@ -4,9 +4,6 @@
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Foundatio.Redis" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Redis\Headless.Redis.csproj" />
