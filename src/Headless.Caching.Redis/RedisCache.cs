@@ -11,6 +11,18 @@ using StackExchange.Redis;
 namespace Headless.Caching;
 
 /// <summary>Redis cache implementation with atomic operations and cluster support.</summary>
+/// <remarks>
+/// <para>
+/// <b>Cancellation Token Behavior:</b> Cancellation is checked at the start of each operation.
+/// Once a batch operation begins (e.g., <see cref="UpsertAllAsync{T}"/>, <see cref="RemoveAllAsync"/>),
+/// it will complete atomically without further cancellation checks. This ensures consumers don't
+/// observe partial results from batch operations.
+/// </para>
+/// <para>
+/// Exception: <see cref="RemoveByPrefixAsync"/> and <see cref="GetAllKeysByPrefixAsync"/> use streaming
+/// SCAN and support cancellation during iteration since they may process unbounded key sets.
+/// </para>
+/// </remarks>
 public sealed class RedisCache(
     ISerializer serializer,
     TimeProvider timeProvider,
@@ -114,7 +126,6 @@ public sealed class RedisCache(
 
             foreach (var slotGroup in pairs.GroupBy(p => options.ConnectionMultiplexer.HashSlot(p.Key)))
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 var count = await _SetAllInternalAsync(slotGroup.ToArray(), expiration).AnyContext();
                 successCount += count;
             }
@@ -711,8 +722,6 @@ public sealed class RedisCache(
         {
             foreach (var batch in redisKeys.Chunk(_BatchSize))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
                 foreach (var hashSlotGroup in batch.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
                 {
                     var hashSlotKeys = hashSlotGroup.ToArray();
@@ -738,8 +747,6 @@ public sealed class RedisCache(
         {
             foreach (var batch in redisKeys.Chunk(_BatchSize))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
                 try
                 {
                     var count = await _Database.KeyDeleteAsync(batch).AnyContext();
