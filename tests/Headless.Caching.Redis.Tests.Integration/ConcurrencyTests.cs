@@ -9,7 +9,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var incrementCount = 100;
 
@@ -29,7 +29,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var baseKey = "concurrent-upsert:";
         var count = 50;
 
@@ -51,7 +51,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "initial", TimeSpan.FromMinutes(5), AbortToken);
         var iterations = 50;
@@ -76,7 +76,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var concurrency = 10;
 
@@ -95,7 +95,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var values = Enumerable.Range(1, 100).ToList();
         Faker.Random.Shuffle(values);
@@ -116,7 +116,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var values = Enumerable.Range(1, 100).ToList();
         Faker.Random.Shuffle(values);
@@ -137,7 +137,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var prefix = "concurrent-remove:";
         for (var i = 0; i < 50; i++)
         {

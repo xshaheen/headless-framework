@@ -9,7 +9,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -25,7 +25,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
         await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
@@ -43,7 +43,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var keys = new List<string>();
         for (var i = 0; i < 3; i++)
         {
@@ -68,7 +68,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
 
         // when
         var result = await cache.GetAllAsync<string>([], AbortToken);
@@ -82,7 +82,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var prefix = "test:";
         await cache.UpsertAsync($"{prefix}key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync($"{prefix}key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
@@ -101,7 +101,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var prefix = "prefix:";
         await cache.UpsertAsync($"{prefix}key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync($"{prefix}key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
@@ -121,7 +121,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var existingKey = Faker.Random.AlphaNumeric(10);
         var missingKey = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(existingKey, "value", TimeSpan.FromMinutes(5), AbortToken);
@@ -140,7 +140,7 @@ public sealed class GetTests(RedisCacheFixture fixture) : RedisCacheTestBase(fix
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var prefix = "count:";
         await cache.UpsertAsync($"{prefix}key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync($"{prefix}key2", "value2", TimeSpan.FromMinutes(5), AbortToken);

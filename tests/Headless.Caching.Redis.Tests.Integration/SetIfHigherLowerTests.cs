@@ -11,7 +11,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -26,7 +26,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfHigherAsync(key, 50L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -42,7 +42,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfHigherAsync(key, 100L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -62,7 +62,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -77,7 +77,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfHigherAsync(key, 50.5, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -93,7 +93,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfHigherAsync(key, 100.5, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -113,7 +113,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -128,7 +128,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfLowerAsync(key, 100L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -144,7 +144,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfLowerAsync(key, 50L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -164,7 +164,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -179,7 +179,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfLowerAsync(key, 100.5, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -195,7 +195,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfLowerAsync(key, 50.5, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -215,7 +215,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfHigherAsync(key, 100L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -233,7 +233,7 @@ public sealed class SetIfHigherLowerTests(RedisCacheFixture fixture) : RedisCach
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.SetIfLowerAsync(key, 100L, TimeSpan.FromMinutes(5), AbortToken);
 

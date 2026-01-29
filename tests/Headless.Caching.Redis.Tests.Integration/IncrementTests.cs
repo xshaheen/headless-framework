@@ -11,7 +11,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -26,7 +26,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.IncrementAsync(key, 10L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -42,7 +42,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.IncrementAsync(key, 20L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -58,7 +58,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -75,7 +75,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.IncrementAsync(key, 10L, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -97,7 +97,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -112,7 +112,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.IncrementAsync(key, 10.5, TimeSpan.FromMinutes(5), AbortToken);
 
@@ -128,7 +128,7 @@ public sealed class IncrementTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.IncrementAsync(key, 20.0, TimeSpan.FromMinutes(5), AbortToken);
 

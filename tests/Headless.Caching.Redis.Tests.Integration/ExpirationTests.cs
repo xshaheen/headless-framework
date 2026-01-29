@@ -9,7 +9,7 @@ public sealed class ExpirationTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var expiration = TimeSpan.FromMinutes(5);
         await cache.UpsertAsync(key, "value", expiration, AbortToken);
@@ -28,7 +28,7 @@ public sealed class ExpirationTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -43,7 +43,7 @@ public sealed class ExpirationTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "value", expiration: null, AbortToken);
 
@@ -59,7 +59,7 @@ public sealed class ExpirationTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "value", TimeSpan.FromMilliseconds(100), AbortToken);
 
@@ -76,7 +76,7 @@ public sealed class ExpirationTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(1), AbortToken);
 
