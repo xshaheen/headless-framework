@@ -141,7 +141,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.FromResult(true));
+            .Returns(new ValueTask<bool>(true));
         var middleware = _CreateMiddleware(cache: cache);
         var context = _CreateContext("abc-123");
         var nextCalled = false;
@@ -178,7 +178,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.FromResult(false));
+            .Returns(new ValueTask<bool>(false));
         var middleware = _CreateMiddleware(cache: cache);
         var context = _CreateContext("dup-001");
         var nextCalled = false;

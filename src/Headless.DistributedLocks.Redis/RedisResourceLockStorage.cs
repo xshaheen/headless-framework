@@ -13,45 +13,44 @@ public sealed class RedisResourceLockStorage(
 {
     private IDatabase Db => multiplexer.GetDatabase();
 
-    public async Task<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
+    public async ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
     {
         Argument.IsNotNullOrEmpty(key);
 
         return await Db.StringSetAsync(key, lockId, ttl, When.NotExists, CommandFlags.None);
     }
 
-    public Task<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
+    public async ValueTask<bool> ReplaceIfEqualAsync(
+        string key,
+        string expectedId,
+        string newId,
+        TimeSpan? newTtl = null
+    )
     {
         Argument.IsNotNullOrEmpty(key);
 
-        return scriptsLoader.ReplaceIfEqualAsync(Db, key, newId, expectedId, newTtl);
+        return await scriptsLoader.ReplaceIfEqualAsync(Db, key, newId, expectedId, newTtl);
     }
 
-    public Task<bool> RemoveIfEqualAsync(string key, string expectedId)
+    public async ValueTask<bool> RemoveIfEqualAsync(string key, string expectedId)
     {
         Argument.IsNotNullOrEmpty(key);
 
-        return scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId);
+        return await scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId);
     }
 
-    public async Task<TimeSpan?> GetExpirationAsync(string key)
-    {
-        return await Db.KeyTimeToLiveAsync(key);
-    }
+    public async ValueTask<TimeSpan?> GetExpirationAsync(string key) => await Db.KeyTimeToLiveAsync(key);
 
-    public async Task<bool> ExistsAsync(string key)
-    {
-        return await Db.KeyExistsAsync(key);
-    }
+    public async ValueTask<bool> ExistsAsync(string key) => await Db.KeyExistsAsync(key);
 
-    public async Task<string?> GetAsync(string key)
+    public async ValueTask<string?> GetAsync(string key)
     {
         var value = await Db.StringGetAsync(key);
 
         return value.HasValue ? value.ToString() : null;
     }
 
-    public async Task<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix)
+    public async ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix)
     {
         var server = multiplexer.GetServers()[0];
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
@@ -82,7 +81,7 @@ public sealed class RedisResourceLockStorage(
         return result;
     }
 
-    public async Task<int> GetCountAsync(string prefix = "")
+    public async ValueTask<int> GetCountAsync(string prefix = "")
     {
         var server = multiplexer.GetServers().First();
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";

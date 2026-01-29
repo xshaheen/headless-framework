@@ -73,213 +73,149 @@ public static class InMemoryCacheSetup
 
     private sealed class InMemoryCacheDistributedCacheAdapter(IInMemoryCache inMemoryCache) : IDistributedCache
     {
-        public Task<bool> UpsertAsync<T>(
+        public ValueTask<bool> UpsertAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.UpsertAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.UpsertAsync(key, value, expiration, cancellationToken);
 
-        public Task<int> UpsertAllAsync<T>(
+        public ValueTask<int> UpsertAllAsync<T>(
             IDictionary<string, T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.UpsertAllAsync(value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.UpsertAllAsync(value, expiration, cancellationToken);
 
-        public Task<bool> TryInsertAsync<T>(
+        public ValueTask<bool> TryInsertAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.TryInsertAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.TryInsertAsync(key, value, expiration, cancellationToken);
 
-        public Task<bool> TryReplaceAsync<T>(
+        public ValueTask<bool> TryReplaceAsync<T>(
             string key,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.TryReplaceAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.TryReplaceAsync(key, value, expiration, cancellationToken);
 
-        public Task<bool> TryReplaceIfEqualAsync<T>(
+        public ValueTask<bool> TryReplaceIfEqualAsync<T>(
             string key,
             T? expected,
             T? value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
 
-        public Task<double> IncrementAsync(
+        public ValueTask<double> IncrementAsync(
             string key,
             double amount,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.IncrementAsync(key, amount, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.IncrementAsync(key, amount, expiration, cancellationToken);
 
-        public Task<long> IncrementAsync(
+        public ValueTask<long> IncrementAsync(
             string key,
             long amount,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.IncrementAsync(key, amount, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.IncrementAsync(key, amount, expiration, cancellationToken);
 
-        public Task<double> SetIfHigherAsync(
+        public ValueTask<double> SetIfHigherAsync(
             string key,
             double value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.SetIfHigherAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.SetIfHigherAsync(key, value, expiration, cancellationToken);
 
-        public Task<long> SetIfHigherAsync(
+        public ValueTask<long> SetIfHigherAsync(
             string key,
             long value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.SetIfHigherAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.SetIfHigherAsync(key, value, expiration, cancellationToken);
 
-        public Task<double> SetIfLowerAsync(
+        public ValueTask<double> SetIfLowerAsync(
             string key,
             double value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.SetIfLowerAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.SetIfLowerAsync(key, value, expiration, cancellationToken);
 
-        public Task<long> SetIfLowerAsync(
+        public ValueTask<long> SetIfLowerAsync(
             string key,
             long value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.SetIfLowerAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.SetIfLowerAsync(key, value, expiration, cancellationToken);
 
-        public Task<long> SetAddAsync<T>(
+        public ValueTask<long> SetAddAsync<T>(
             string key,
             IEnumerable<T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.SetAddAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.SetAddAsync(key, value, expiration, cancellationToken);
 
-        public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
             IEnumerable<string> cacheKeys,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.GetAllAsync<T>(cacheKeys, cancellationToken);
-        }
+        ) => inMemoryCache.GetAllAsync<T>(cacheKeys, cancellationToken);
 
-        public Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
+        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
             string prefix,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.GetByPrefixAsync<T>(prefix, cancellationToken);
-        }
+        ) => inMemoryCache.GetByPrefixAsync<T>(prefix, cancellationToken);
 
-        public Task<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
             string prefix,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
-        }
+        ) => inMemoryCache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
 
-        public Task<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.GetAsync<T>(key, cancellationToken);
-        }
+        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
+            inMemoryCache.GetAsync<T>(key, cancellationToken);
 
-        public Task<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.GetCountAsync(prefix, cancellationToken);
-        }
+        public ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+            inMemoryCache.GetCountAsync(prefix, cancellationToken);
 
-        public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.ExistsAsync(key, cancellationToken);
-        }
+        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
+            inMemoryCache.ExistsAsync(key, cancellationToken);
 
-        public Task<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.GetExpirationAsync(key, cancellationToken);
-        }
+        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
+            inMemoryCache.GetExpirationAsync(key, cancellationToken);
 
-        public Task<CacheValue<ICollection<T>>> GetSetAsync<T>(
+        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
             string key,
             int? pageIndex = null,
             int pageSize = 100,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
-        }
+        ) => inMemoryCache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
 
-        public Task<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.RemoveAsync(key, cancellationToken);
-        }
+        public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
+            inMemoryCache.RemoveAsync(key, cancellationToken);
 
-        public Task<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.RemoveIfEqualAsync(key, expected, cancellationToken);
-        }
+        public ValueTask<bool> RemoveIfEqualAsync<T>(
+            string key,
+            T? expected,
+            CancellationToken cancellationToken = default
+        ) => inMemoryCache.RemoveIfEqualAsync(key, expected, cancellationToken);
 
-        public Task<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.RemoveAllAsync(cacheKeys, cancellationToken);
-        }
+        public ValueTask<int> RemoveAllAsync(
+            IEnumerable<string> cacheKeys,
+            CancellationToken cancellationToken = default
+        ) => inMemoryCache.RemoveAllAsync(cacheKeys, cancellationToken);
 
-        public Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.RemoveByPrefixAsync(prefix, cancellationToken);
-        }
+        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+            inMemoryCache.RemoveByPrefixAsync(prefix, cancellationToken);
 
-        public Task<long> SetRemoveAsync<T>(
+        public ValueTask<long> SetRemoveAsync<T>(
             string key,
             IEnumerable<T> value,
             TimeSpan? expiration,
             CancellationToken cancellationToken = default
-        )
-        {
-            return inMemoryCache.SetRemoveAsync(key, value, expiration, cancellationToken);
-        }
+        ) => inMemoryCache.SetRemoveAsync(key, value, expiration, cancellationToken);
 
-        public Task FlushAsync(CancellationToken cancellationToken = default)
-        {
-            return inMemoryCache.FlushAsync(cancellationToken);
-        }
+        public ValueTask FlushAsync(CancellationToken cancellationToken = default) =>
+            inMemoryCache.FlushAsync(cancellationToken);
     }
 }

@@ -94,7 +94,7 @@ public sealed class ResourceLockProvider(
                 // Try to acquire the lock
                 try
                 {
-                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires).AnyContext();
+                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires);
                 }
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
@@ -263,7 +263,7 @@ public sealed class ResourceLockProvider(
                 {
                     var (storage, resource, lockId) = state;
 
-                    return storage.RemoveIfEqualAsync(resource, lockId);
+                    return storage.RemoveIfEqualAsync(resource, lockId).AsTask();
                 },
                 maxAttempts: _MaxReleaseRetryAttempts,
                 timeProvider: timeProvider,
@@ -306,7 +306,7 @@ public sealed class ResourceLockProvider(
             {
                 var (storage, resource, lockId, ttl) = state;
 
-                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl);
+                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl).AsTask();
             },
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
@@ -323,7 +323,7 @@ public sealed class ResourceLockProvider(
 
         return await Run.WithRetriesAsync(
             (_storage, resource),
-            static x => x._storage.ExistsAsync(x.resource),
+            static x => x._storage.ExistsAsync(x.resource).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
@@ -339,7 +339,7 @@ public sealed class ResourceLockProvider(
 
         return Run.WithRetriesAsync(
             (_storage, resource),
-            static x => x._storage.GetExpirationAsync(x.resource),
+            static x => x._storage.GetExpirationAsync(x.resource).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
@@ -351,7 +351,7 @@ public sealed class ResourceLockProvider(
 
         var lockId = await Run.WithRetriesAsync(
                 (_storage, resource),
-                static x => x._storage.GetAsync(x.resource),
+                static x => x._storage.GetAsync(x.resource).AsTask(),
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -376,7 +376,7 @@ public sealed class ResourceLockProvider(
     {
         var locks = await Run.WithRetriesAsync(
                 _storage,
-                static storage => storage.GetAllByPrefixAsync(""),
+                static storage => storage.GetAllByPrefixAsync("").AsTask(),
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -404,7 +404,7 @@ public sealed class ResourceLockProvider(
     {
         return Run.WithRetriesAsync(
             _storage,
-            static storage => storage.GetCountAsync(""),
+            static storage => storage.GetCountAsync("").AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );

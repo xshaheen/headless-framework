@@ -65,16 +65,25 @@ public sealed class RedisCache(
 
     #region Update
 
-    public Task<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> UpsertAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _SetInternalAsync(_GetKey(key), value, expiration);
+        return await _SetInternalAsync(_GetKey(key), value, expiration);
     }
 
-    public async Task<int> UpsertAllAsync<T>(IDictionary<string, T> value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<int> UpsertAllAsync<T>(
+        IDictionary<string, T> value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(value);
         Argument.IsPositive(expiration);
@@ -119,25 +128,41 @@ public sealed class RedisCache(
         return await _SetAllInternalAsync(pairs, expiration).AnyContext();
     }
 
-    public Task<bool> TryInsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> TryInsertAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _SetInternalAsync(_GetKey(key), value, expiration, When.NotExists);
+        return await _SetInternalAsync(_GetKey(key), value, expiration, When.NotExists);
     }
 
-    public Task<bool> TryReplaceAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> TryReplaceAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _SetInternalAsync(_GetKey(key), value, expiration, When.Exists);
+        return await _SetInternalAsync(_GetKey(key), value, expiration, When.Exists);
     }
 
-    public async Task<bool> TryReplaceIfEqualAsync<T>(string key, T? expected, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> TryReplaceIfEqualAsync<T>(
+        string key,
+        T? expected,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
@@ -157,15 +182,28 @@ public sealed class RedisCache(
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        var redisResult = await _Database.ScriptEvaluateAsync(
-            _replaceIfEqual!,
-            new { key = (RedisKey)_GetKey(key), value = redisValue, expected = expectedValue, expires = expiresArg }
-        ).AnyContext();
+        var redisResult = await _Database
+            .ScriptEvaluateAsync(
+                _replaceIfEqual!,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    value = redisValue,
+                    expected = expectedValue,
+                    expires = expiresArg,
+                }
+            )
+            .AnyContext();
 
         return (int)redisResult > 0;
     }
 
-    public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<double> IncrementAsync(
+        string key,
+        double amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
@@ -182,15 +220,27 @@ public sealed class RedisCache(
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        var result = await _Database.ScriptEvaluateAsync(
-            _incrementWithExpire!,
-            new { key = (RedisKey)_GetKey(key), value = amount, expires = expiresArg }
-        ).AnyContext();
+        var result = await _Database
+            .ScriptEvaluateAsync(
+                _incrementWithExpire!,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    value = amount,
+                    expires = expiresArg,
+                }
+            )
+            .AnyContext();
 
         return (double)result;
     }
 
-    public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<long> IncrementAsync(
+        string key,
+        long amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
@@ -207,15 +257,27 @@ public sealed class RedisCache(
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        var result = await _Database.ScriptEvaluateAsync(
-            _incrementWithExpire!,
-            new { key = (RedisKey)_GetKey(key), value = amount, expires = expiresArg }
-        ).AnyContext();
+        var result = await _Database
+            .ScriptEvaluateAsync(
+                _incrementWithExpire!,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    value = amount,
+                    expires = expiresArg,
+                }
+            )
+            .AnyContext();
 
         return (long)result;
     }
 
-    public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<double> SetIfHigherAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
@@ -232,15 +294,27 @@ public sealed class RedisCache(
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        var result = await _Database.ScriptEvaluateAsync(
-            _setIfHigher!,
-            new { key = (RedisKey)_GetKey(key), value, expires = expiresArg }
-        ).AnyContext();
+        var result = await _Database
+            .ScriptEvaluateAsync(
+                _setIfHigher!,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    value,
+                    expires = expiresArg,
+                }
+            )
+            .AnyContext();
 
         return (double)result;
     }
 
-    public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<long> SetIfHigherAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
@@ -257,15 +331,27 @@ public sealed class RedisCache(
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        var result = await _Database.ScriptEvaluateAsync(
-            _setIfHigher!,
-            new { key = (RedisKey)_GetKey(key), value, expires = expiresArg }
-        ).AnyContext();
+        var result = await _Database
+            .ScriptEvaluateAsync(
+                _setIfHigher!,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    value,
+                    expires = expiresArg,
+                }
+            )
+            .AnyContext();
 
         return (long)result;
     }
 
-    public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<double> SetIfLowerAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
@@ -282,15 +368,27 @@ public sealed class RedisCache(
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        var result = await _Database.ScriptEvaluateAsync(
-            _setIfLower!,
-            new { key = (RedisKey)_GetKey(key), value, expires = expiresArg }
-        ).AnyContext();
+        var result = await _Database
+            .ScriptEvaluateAsync(
+                _setIfLower!,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    value,
+                    expires = expiresArg,
+                }
+            )
+            .AnyContext();
 
         return (double)result;
     }
 
-    public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<long> SetIfLowerAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
@@ -307,15 +405,27 @@ public sealed class RedisCache(
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        var result = await _Database.ScriptEvaluateAsync(
-            _setIfLower!,
-            new { key = (RedisKey)_GetKey(key), value, expires = expiresArg }
-        ).AnyContext();
+        var result = await _Database
+            .ScriptEvaluateAsync(
+                _setIfLower!,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    value,
+                    expires = expiresArg,
+                }
+            )
+            .AnyContext();
 
         return (long)result;
     }
 
-    public async Task<long> SetAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<long> SetAddAsync<T>(
+        string key,
+        IEnumerable<T> value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
@@ -344,8 +454,7 @@ public sealed class RedisCache(
         else
         {
             redisValues.AddRange(
-                value.Where(v => v is not null)
-                    .Select(v => new SortedSetEntry(_ToRedisValue(v), expiresAtMilliseconds))
+                value.Where(v => v is not null).Select(v => new SortedSetEntry(_ToRedisValue(v), expiresAtMilliseconds))
             );
         }
 
@@ -370,7 +479,7 @@ public sealed class RedisCache(
 
     #region Get
 
-    public async Task<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+    public async ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
@@ -379,7 +488,10 @@ public sealed class RedisCache(
         return _RedisValueToCacheValue<T>(redisValue);
     }
 
-    public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(cacheKeys);
         cancellationToken.ThrowIfCancellationRequested();
@@ -428,13 +540,19 @@ public sealed class RedisCache(
         }
     }
 
-    public async Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix, CancellationToken cancellationToken = default)
+    public async ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
+        string prefix,
+        CancellationToken cancellationToken = default
+    )
     {
         var keys = await GetAllKeysByPrefixAsync(prefix, cancellationToken).AnyContext();
         return await GetAllAsync<T>(keys, cancellationToken).AnyContext();
     }
 
-    public async Task<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    public async ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -453,7 +571,9 @@ public sealed class RedisCache(
                 continue;
             }
 
-            await foreach (var key in server.KeysAsync(pattern: pattern, pageSize: chunkSize).WithCancellation(cancellationToken))
+            await foreach (
+                var key in server.KeysAsync(pattern: pattern, pageSize: chunkSize).WithCancellation(cancellationToken)
+            )
             {
                 keys.Add(key!);
             }
@@ -462,15 +582,15 @@ public sealed class RedisCache(
         return keys;
     }
 
-    public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _Database.KeyExistsAsync(_GetKey(key));
+        return await _Database.KeyExistsAsync(_GetKey(key));
     }
 
-    public async Task<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    public async ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -478,15 +598,20 @@ public sealed class RedisCache(
         return keys.Count;
     }
 
-    public Task<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+    public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _Database.KeyTimeToLiveAsync(_GetKey(key));
+        return await _Database.KeyTimeToLiveAsync(_GetKey(key));
     }
 
-    public async Task<CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100, CancellationToken cancellationToken = default)
+    public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+        string key,
+        int? pageIndex = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(pageSize);
@@ -497,28 +622,32 @@ public sealed class RedisCache(
 
         if (!pageIndex.HasValue)
         {
-            var set = await _Database.SortedSetRangeByScoreAsync(
-                key,
-                timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                double.PositiveInfinity,
-                Exclude.Start,
-                flags: options.ReadMode
-            ).AnyContext();
+            var set = await _Database
+                .SortedSetRangeByScoreAsync(
+                    key,
+                    timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                    double.PositiveInfinity,
+                    Exclude.Start,
+                    flags: options.ReadMode
+                )
+                .AnyContext();
 
             return _RedisValuesToCacheValue<T>(set);
         }
         else
         {
             var skip = (pageIndex.Value - 1) * pageSize;
-            var set = await _Database.SortedSetRangeByScoreAsync(
-                key,
-                timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
-                double.PositiveInfinity,
-                Exclude.Start,
-                skip: skip,
-                take: pageSize,
-                flags: options.ReadMode
-            ).AnyContext();
+            var set = await _Database
+                .SortedSetRangeByScoreAsync(
+                    key,
+                    timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                    double.PositiveInfinity,
+                    Exclude.Start,
+                    skip: skip,
+                    take: pageSize,
+                    flags: options.ReadMode
+                )
+                .AnyContext();
 
             return _RedisValuesToCacheValue<T>(set);
         }
@@ -528,15 +657,19 @@ public sealed class RedisCache(
 
     #region Remove
 
-    public Task<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _Database.KeyDeleteAsync(_GetKey(key));
+        return await _Database.KeyDeleteAsync(_GetKey(key));
     }
 
-    public async Task<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> RemoveIfEqualAsync<T>(
+        string key,
+        T? expected,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
@@ -544,15 +677,17 @@ public sealed class RedisCache(
         await _LoadScriptsAsync().AnyContext();
 
         var expectedValue = _ToRedisValue(expected);
-        var redisResult = await _Database.ScriptEvaluateAsync(
-            _removeIfEqual!,
-            new { key = (RedisKey)_GetKey(key), expected = expectedValue }
-        ).AnyContext();
+        var redisResult = await _Database
+            .ScriptEvaluateAsync(_removeIfEqual!, new { key = (RedisKey)_GetKey(key), expected = expectedValue })
+            .AnyContext();
 
         return (int)redisResult > 0;
     }
 
-    public async Task<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
+    public async ValueTask<int> RemoveAllAsync(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(cacheKeys);
         cancellationToken.ThrowIfCancellationRequested();
@@ -587,7 +722,12 @@ public sealed class RedisCache(
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Unable to delete {HashSlot} keys ({Keys})", hashSlotGroup.Key, hashSlotKeys);
+                        _logger.LogError(
+                            ex,
+                            "Unable to delete {HashSlot} keys ({Keys})",
+                            hashSlotGroup.Key,
+                            hashSlotKeys
+                        );
                     }
                 }
             }
@@ -611,7 +751,7 @@ public sealed class RedisCache(
         return (int)deleted;
     }
 
-    public async Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    public async ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
@@ -642,7 +782,11 @@ public sealed class RedisCache(
 
             var keys = new List<RedisKey>();
 
-            await foreach (var key in server.KeysAsync(pattern: $"{_GetKey(prefix)}*", pageSize: _BatchSize).WithCancellation(cancellationToken))
+            await foreach (
+                var key in server
+                    .KeysAsync(pattern: $"{_GetKey(prefix)}*", pageSize: _BatchSize)
+                    .WithCancellation(cancellationToken)
+            )
             {
                 keys.Add(key);
 
@@ -662,7 +806,12 @@ public sealed class RedisCache(
         return (int)deleted;
     }
 
-    public async Task<long> SetRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default)
+    public async ValueTask<long> SetRemoveAsync<T>(
+        string key,
+        IEnumerable<T> value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(value);
@@ -698,11 +847,11 @@ public sealed class RedisCache(
         return removed;
     }
 
-    public Task FlushAsync(CancellationToken cancellationToken = default)
+    public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return options.ConnectionMultiplexer.FlushAllAsync();
+        await options.ConnectionMultiplexer.FlushAllAsync();
     }
 
     #endregion
@@ -801,7 +950,12 @@ public sealed class RedisCache(
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
+                _logger.LogError(
+                    ex,
+                    "Unable to deserialize value {Value} to type {Type}",
+                    redisValue,
+                    typeof(T).FullName
+                );
                 throw;
             }
         }
@@ -809,7 +963,12 @@ public sealed class RedisCache(
         return new CacheValue<ICollection<T>>(result, result.Count > 0);
     }
 
-    private async Task<bool> _SetInternalAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always)
+    private async Task<bool> _SetInternalAsync<T>(
+        string key,
+        T value,
+        TimeSpan? expiresIn = null,
+        When when = When.Always
+    )
     {
         if (expiresIn is { Ticks: <= 0 })
         {
@@ -829,7 +988,9 @@ public sealed class RedisCache(
         {
             if (_SupportsMsetexCommand())
             {
-                var success = await _Database.StringSetAsync(pairs, When.Always, new Expiration(expiresIn.Value)).AnyContext();
+                var success = await _Database
+                    .StringSetAsync(pairs, When.Always, new Expiration(expiresIn.Value))
+                    .AnyContext();
                 return success ? pairs.Length : 0;
             }
 
@@ -979,7 +1140,9 @@ public sealed class RedisCache(
 
     private async Task _SetListExpirationAsync(string key)
     {
-        var items = await _Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending).AnyContext();
+        var items = await _Database
+            .SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending)
+            .AnyContext();
 
         if (items.Length is 0)
         {
@@ -1002,11 +1165,9 @@ public sealed class RedisCache(
 
     private async Task _RemoveExpiredListValuesAsync(string key)
     {
-        var expiredValues = await _Database.SortedSetRemoveRangeByScoreAsync(
-            key,
-            0,
-            timeProvider.GetUtcNow().ToUnixTimeMilliseconds()
-        ).AnyContext();
+        var expiredValues = await _Database
+            .SortedSetRemoveRangeByScoreAsync(key, 0, timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
+            .AnyContext();
 
         if (expiredValues > 0)
         {

@@ -14,8 +14,9 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         var incrementCount = 100;
 
         // when
-        var tasks = Enumerable.Range(0, incrementCount)
-            .Select(_ => cache.IncrementAsync(key, 1L, TimeSpan.FromMinutes(5), AbortToken));
+        var tasks = Enumerable
+            .Range(0, incrementCount)
+            .Select(_ => cache.IncrementAsync(key, 1L, TimeSpan.FromMinutes(5), AbortToken).AsTask());
         await Task.WhenAll(tasks);
 
         // then
@@ -33,8 +34,11 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         var count = 50;
 
         // when
-        var tasks = Enumerable.Range(0, count)
-            .Select(i => cache.UpsertAsync($"{baseKey}{i}", $"value-{i}", TimeSpan.FromMinutes(5), AbortToken));
+        var tasks = Enumerable
+            .Range(0, count)
+            .Select(i =>
+                cache.UpsertAsync($"{baseKey}{i}", $"value-{i}", TimeSpan.FromMinutes(5), AbortToken).AsTask()
+            );
         await Task.WhenAll(tasks);
 
         // then
@@ -53,12 +57,14 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         var iterations = 50;
 
         // when - concurrent reads and writes
-        var readTasks = Enumerable.Range(0, iterations)
-            .Select(_ => cache.GetAsync<string>(key, AbortToken));
-        var writeTasks = Enumerable.Range(0, iterations)
-            .Select(i => cache.UpsertAsync(key, $"value-{i}", TimeSpan.FromMinutes(5), AbortToken));
+        var readTasks = Enumerable
+            .Range(0, iterations)
+            .Select(_ => (Task)cache.GetAsync<string>(key, AbortToken).AsTask());
+        var writeTasks = Enumerable
+            .Range(0, iterations)
+            .Select(i => (Task)cache.UpsertAsync(key, $"value-{i}", TimeSpan.FromMinutes(5), AbortToken).AsTask());
 
-        await Task.WhenAll(readTasks.Concat<Task>(writeTasks));
+        await Task.WhenAll(readTasks.Concat(writeTasks));
 
         // then - should complete without errors
         var exists = await cache.ExistsAsync(key, AbortToken);
@@ -75,8 +81,9 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         var concurrency = 10;
 
         // when - multiple attempts to insert same key
-        var tasks = Enumerable.Range(0, concurrency)
-            .Select(i => cache.TryInsertAsync(key, $"value-{i}", TimeSpan.FromMinutes(5), AbortToken));
+        var tasks = Enumerable
+            .Range(0, concurrency)
+            .Select(i => cache.TryInsertAsync(key, $"value-{i}", TimeSpan.FromMinutes(5), AbortToken).AsTask());
         var results = await Task.WhenAll(tasks);
 
         // then - exactly one should succeed
@@ -95,7 +102,8 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
 
         // when - concurrent set if higher with random order
         var tasks = values.Select(v =>
-            cache.SetIfHigherAsync(key, (long)v, TimeSpan.FromMinutes(5), AbortToken));
+            cache.SetIfHigherAsync(key, (long)v, TimeSpan.FromMinutes(5), AbortToken).AsTask()
+        );
         await Task.WhenAll(tasks);
 
         // then - should have the highest value
@@ -115,7 +123,8 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
 
         // when - concurrent set if lower with random order
         var tasks = values.Select(v =>
-            cache.SetIfLowerAsync(key, (long)v, TimeSpan.FromMinutes(5), AbortToken));
+            cache.SetIfLowerAsync(key, (long)v, TimeSpan.FromMinutes(5), AbortToken).AsTask()
+        );
         await Task.WhenAll(tasks);
 
         // then - should have the lowest value
@@ -141,8 +150,8 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
 
         var tasks = new[]
         {
-            cache.RemoveAllAsync(keys1, AbortToken),
-            cache.RemoveAllAsync(keys2, AbortToken),
+            cache.RemoveAllAsync(keys1, AbortToken).AsTask(),
+            cache.RemoveAllAsync(keys2, AbortToken).AsTask(),
         };
         var results = await Task.WhenAll(tasks);
 

@@ -79,24 +79,24 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Headless.Media.Indexing.Abstractions](./src/Headless.Media.Indexing.Abstractions/README.md): Defines the interface for extracting text from media files for indexing.
 - [Headless.Media.Indexing](./src/Headless.Media.Indexing/README.md): Text extraction implementations for PDF, Word, and PowerPoint documents.
 
-### Messages (Distributed Message Bus)
+### Messaging (Distributed Message Bus)
 
-- [Headless.Messages.Abstractions](./src/Headless.Messages.Abstractions/README.md): Standardized interfaces for reliable distributed messaging with compile-time type safety and transactional outbox patterns.
-- [Headless.Messages.Core](./src/Headless.Messages.Core/README.md): Foundational runtime for reliable distributed messaging with transactional outbox, automatic retries, delayed delivery, and type-safe consumer orchestration.
-- [Headless.Messages.Dashboard](./src/Headless.Messages.Dashboard/README.md): Real-time web UI for monitoring message processing, failures, retries, and system health.
-- [Headless.Messages.Dashboard.K8s](./src/Headless.Messages.Dashboard.K8s/README.md): Automatic discovery and monitoring of messaging nodes in Kubernetes clusters.
-- [Headless.Messages.OpenTelemetry](./src/Headless.Messages.OpenTelemetry/README.md): Automatic tracing, metrics, and context propagation for message publishing and consumption.
-- [Headless.Messages.AmazonSQS](./src/Headless.Messages.AmazonSQS/README.md): AWS SQS and SNS transport with automatic queue creation and dead-letter queues.
-- [Headless.Messages.AzureServiceBus](./src/Headless.Messages.AzureServiceBus/README.md): Azure Service Bus transport with topics, subscriptions, and sessions.
-- [Headless.Messages.Kafka](./src/Headless.Messages.Kafka/README.md): Apache Kafka transport with consumer groups, partitions, and exactly-once semantics.
-- [Headless.Messages.NATS](./src/Headless.Messages.NATS/README.md): NATS with JetStream transport for cloud-native messaging.
-- [Headless.Messages.Pulsar](./src/Headless.Messages.Pulsar/README.md): Apache Pulsar transport with geo-replication and tiered storage.
-- [Headless.Messages.RabbitMQ](./src/Headless.Messages.RabbitMQ/README.md): RabbitMQ transport with exchanges, queues, and AMQP features.
-- [Headless.Messages.RedisStreams](./src/Headless.Messages.RedisStreams/README.md): Redis Streams transport with consumer groups and at-least-once delivery.
-- [Headless.Messages.InMemoryQueue](./src/Headless.Messages.InMemoryQueue/README.md): In-memory queue transport for local development and testing.
-- [Headless.Messages.PostgreSql](./src/Headless.Messages.PostgreSql/README.md): PostgreSQL storage for durable, transactional message persistence.
-- [Headless.Messages.SqlServer](./src/Headless.Messages.SqlServer/README.md): SQL Server storage for durable message persistence in Windows environments.
-- [Headless.Messages.InMemoryStorage](./src/Headless.Messages.InMemoryStorage/README.md): Ephemeral message storage for development and testing.
+- [Headless.Messaging.Abstractions](./src/Headless.Messaging.Abstractions/README.md): Standardized interfaces for reliable distributed messaging with compile-time type safety and transactional outbox patterns.
+- [Headless.Messaging.Core](./src/Headless.Messaging.Core/README.md): Foundational runtime for reliable distributed messaging with transactional outbox, automatic retries, delayed delivery, and type-safe consumer orchestration.
+- [Headless.Messaging.Dashboard](./src/Headless.Messaging.Dashboard/README.md): Real-time web UI for monitoring message processing, failures, retries, and system health.
+- [Headless.Messaging.Dashboard.K8s](./src/Headless.Messaging.Dashboard.K8s/README.md): Automatic discovery and monitoring of messaging nodes in Kubernetes clusters.
+- [Headless.Messaging.OpenTelemetry](./src/Headless.Messaging.OpenTelemetry/README.md): Automatic tracing, metrics, and context propagation for message publishing and consumption.
+- [Headless.Messaging.AwsSqs](./src/Headless.Messaging.AwsSqs/README.md): AWS SQS and SNS transport with automatic queue creation and dead-letter queues.
+- [Headless.Messaging.AzureServiceBus](./src/Headless.Messaging.AzureServiceBus/README.md): Azure Service Bus transport with topics, subscriptions, and sessions.
+- [Headless.Messaging.Kafka](./src/Headless.Messaging.Kafka/README.md): Apache Kafka transport with consumer groups, partitions, and exactly-once semantics.
+- [Headless.Messaging.Nats](./src/Headless.Messaging.Nats/README.md): NATS with JetStream transport for cloud-native messaging.
+- [Headless.Messaging.Pulsar](./src/Headless.Messaging.Pulsar/README.md): Apache Pulsar transport with geo-replication and tiered storage.
+- [Headless.Messaging.RabbitMq](./src/Headless.Messaging.RabbitMq/README.md): RabbitMQ transport with exchanges, queues, and AMQP features.
+- [Headless.Messaging.RedisStreams](./src/Headless.Messaging.RedisStreams/README.md): Redis Streams transport with consumer groups and at-least-once delivery.
+- [Headless.Messaging.InMemoryQueue](./src/Headless.Messaging.InMemoryQueue/README.md): In-memory queue transport for local development and testing.
+- [Headless.Messaging.PostgreSql](./src/Headless.Messaging.PostgreSql/README.md): PostgreSQL storage for durable, transactional message persistence.
+- [Headless.Messaging.SqlServer](./src/Headless.Messaging.SqlServer/README.md): SQL Server storage for durable message persistence in Windows environments.
+- [Headless.Messaging.InMemoryStorage](./src/Headless.Messaging.InMemoryStorage/README.md): Ephemeral message storage for development and testing.
 
 
 ### OpenAPI

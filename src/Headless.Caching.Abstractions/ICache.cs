@@ -10,7 +10,7 @@ public interface ICache
     #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>
-    Task<bool> UpsertAsync<T>(
+    ValueTask<bool> UpsertAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
@@ -18,7 +18,7 @@ public interface ICache
     );
 
     /// <summary>Upsert all async.</summary>
-    Task<int> UpsertAllAsync<T>(
+    ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
@@ -26,21 +26,21 @@ public interface ICache
 
     /// <summary>Tries the add.</summary>
     /// <returns><see langword="true"/>, if set/add success, <see langword="false"/> if <paramref name="key"/> already exists.</returns>
-    Task<bool> TryInsertAsync<T>(
+    ValueTask<bool> TryInsertAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<bool> TryReplaceAsync<T>(
+    ValueTask<bool> TryReplaceAsync<T>(
         string key,
         T? value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<bool> TryReplaceIfEqualAsync<T>(
+    ValueTask<bool> TryReplaceIfEqualAsync<T>(
         string key,
         T? expected,
         T? value,
@@ -48,49 +48,49 @@ public interface ICache
         CancellationToken cancellationToken = default
     );
 
-    Task<double> IncrementAsync(
+    ValueTask<double> IncrementAsync(
         string key,
         double amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<long> IncrementAsync(
+    ValueTask<long> IncrementAsync(
         string key,
         long amount,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<double> SetIfHigherAsync(
+    ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<long> SetIfHigherAsync(
+    ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<double> SetIfLowerAsync(
+    ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<long> SetIfLowerAsync(
+    ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    Task<long> SetAddAsync<T>(
+    ValueTask<long> SetAddAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
@@ -102,33 +102,36 @@ public interface ICache
     #region Get
 
     /// <summary>Gets all.</summary>
-    Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+    ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>Gets the by prefix.</summary>
-    Task<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
+    ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
         string prefix,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>Gets all keys by prefix.</summary>
-    Task<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
+    ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Gets the specified cache key.</summary>
-    Task<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default);
+    ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the count async.</summary>
-    Task<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
+    ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
 
     /// <summary>Check if the key exists in the cache.</summary>
-    Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
+    ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the expiration of specify cache key.</summary>
-    Task<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default);
+    ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default);
 
-    Task<CacheValue<ICollection<T>>> GetSetAsync<T>(
+    ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
         string key,
         int? pageIndex = null,
         int pageSize = 100,
@@ -140,19 +143,19 @@ public interface ICache
     #region Remove
 
     /// <summary>Remove the specified cache key.</summary>
-    Task<bool> RemoveAsync(string key, CancellationToken cancellationToken = default);
+    ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Remove only if equal the expected value.</summary>
-    Task<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default);
+    ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default);
 
     /// <summary>Removes all.</summary>
-    Task<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
+    ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
 
     /// <summary>Removes cached item by cache key's prefix.</summary>
-    Task<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
+    ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
     /// <summary>Remove some values from set.</summary>
-    Task<long> SetRemoveAsync<T>(
+    ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
         TimeSpan? expiration,
@@ -160,7 +163,7 @@ public interface ICache
     );
 
     /// <summary>Flush all cached item.</summary>
-    Task FlushAsync(CancellationToken cancellationToken = default);
+    ValueTask FlushAsync(CancellationToken cancellationToken = default);
 
     #endregion
 }
