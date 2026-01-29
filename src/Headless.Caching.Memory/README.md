@@ -1,6 +1,6 @@
-# Headless.Caching.Foundatio.Memory
+# Headless.Caching.Memory
 
-In-memory cache implementation using Foundatio for single-instance applications.
+In-memory cache implementation for single-instance applications.
 
 ## Problem Solved
 
@@ -8,16 +8,17 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 
 ## Key Features
 
-- Full `IInMemoryCache` implementation using Foundatio
+- Full `IInMemoryCache` implementation
 - Can serve as default `ICache` or alongside distributed cache
 - Supports strongly-typed `ICache<T>` pattern
-- Automatic memory management with configurable limits
+- Automatic memory management with configurable limits (MaxItems + LRU eviction)
 - Can act as `IDistributedCache` adapter for single-instance scenarios
+- Optional value cloning for isolation
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Caching.Foundatio.Memory
+dotnet add package Headless.Caching.Memory
 ```
 
 ## Quick Start
@@ -32,6 +33,7 @@ builder.Services.AddInMemoryCache();
 builder.Services.AddInMemoryCache(options =>
 {
     options.MaxItems = 10000;
+    options.CloneValues = true;
 });
 
 // As non-default (use alongside distributed cache)
@@ -43,15 +45,15 @@ builder.Services.AddInMemoryCache(isDefault: false);
 ### Options
 
 ```csharp
-options.MaxItems = 10000;            // Maximum cached items
-options.ShouldCloneValues = false;   // Clone values on get/set
+options.MaxItems = 10000;       // Maximum cached items (LRU eviction when exceeded)
+options.CloneValues = false;    // Clone values on get/set for isolation
+options.KeyPrefix = "myapp:";   // Optional key prefix
 ```
 
 ## Dependencies
 
 - `Headless.Caching.Abstractions`
 - `Headless.Hosting`
-- `Foundatio`
 
 ## Side Effects
 

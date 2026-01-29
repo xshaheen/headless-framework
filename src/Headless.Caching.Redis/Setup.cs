@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Caching;
 
 [PublicAPI]
-public static class RedisFoundatioSetup
+public static class RedisCacheSetup
 {
     extension(IServiceCollection services)
     {
@@ -38,7 +38,7 @@ public static class RedisFoundatioSetup
             services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
 
             services.AddSingletonOptionValue<RedisCacheOptions>();
-            services.TryAddSingleton<IDistributedCache, RedisCachingFoundatioAdapter>();
+            services.TryAddSingleton<IDistributedCache, RedisCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
             services.TryAddSingleton(typeof(IDistributedCache<>), typeof(DistributedCache<>));
 
