@@ -80,7 +80,7 @@ public sealed class PulsarTransportTests : TestBase
     public async Task should_dispose_without_error()
     {
         // given
-        var transport = new PulsarTransport(_logger, _connectionFactory);
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
 
         // when
         var act = async () => await transport.DisposeAsync();

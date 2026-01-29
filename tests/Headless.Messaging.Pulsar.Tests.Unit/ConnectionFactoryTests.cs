@@ -20,10 +20,10 @@ public sealed class ConnectionFactoryTests : TestBase
     }
 
     [Fact]
-    public void should_have_correct_servers_address()
+    public async Task should_have_correct_servers_address()
     {
         // given
-        var factory = new ConnectionFactory(_logger, _options);
+        await using var factory = new ConnectionFactory(_logger, _options);
 
         // when
         var address = factory.ServersAddress;
@@ -33,10 +33,10 @@ public sealed class ConnectionFactoryTests : TestBase
     }
 
     [Fact]
-    public void should_create_client_with_service_url()
+    public async Task should_create_client_with_service_url()
     {
         // given
-        var factory = new ConnectionFactory(_logger, _options);
+        await using var factory = new ConnectionFactory(_logger, _options);
 
         // when, then - RentClient creates PulsarClient with the service URL
         // Since we can't mock PulsarClientBuilder easily, we verify the ServersAddress

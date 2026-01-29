@@ -78,7 +78,7 @@ public sealed class RedisConnectionPoolTests : TestBase
             }
         );
 
-        var pool = new RedisConnectionPool(options, LoggerFactory);
+        using var pool = new RedisConnectionPool(options, LoggerFactory);
 
         // when & then - dispose should not throw
         var action = () => pool.Dispose();
@@ -97,7 +97,7 @@ public sealed class RedisConnectionPoolTests : TestBase
             }
         );
 
-        var pool = new RedisConnectionPool(options, LoggerFactory);
+        using var pool = new RedisConnectionPool(options, LoggerFactory);
 
         // when & then - multiple dispose calls should not throw
         var action = () =>

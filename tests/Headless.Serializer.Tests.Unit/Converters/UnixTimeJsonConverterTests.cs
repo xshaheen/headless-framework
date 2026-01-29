@@ -29,9 +29,7 @@ public sealed class UnixTimeJsonConverterTests
     public void unix_time_converter_should_throw_exception_for_invalid_timestamp_json()
     {
         // given
-#pragma warning disable JSON001 // Invalid JSON pattern
         const string invalidJson = "invalid_timestamp";
-#pragma warning restore JSON001 // Invalid JSON pattern
 
         // when
         Action act = () => JsonSerializer.Deserialize<DateTimeOffset>(invalidJson, _jsonSerializerOptions);

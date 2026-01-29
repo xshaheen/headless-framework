@@ -269,9 +269,7 @@ public sealed class MessageTests : TestBase
             [Headers.Exception] = "OldException-->Old message",
         };
         var message = new Message(headers, null);
-#pragma warning disable MA0015 // This is intentional for testing
         var exception = new ArgumentException("New error", "testParam");
-#pragma warning restore MA0015
 
         // when
         message.AddOrUpdateException(exception);

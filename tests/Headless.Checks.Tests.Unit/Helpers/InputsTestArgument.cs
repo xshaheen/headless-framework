@@ -2,7 +2,6 @@
 
 namespace Tests.Helpers;
 
-#pragma warning disable MA0096 // A class that implements IComparable<T> should also implement IEquatable<T>
 internal sealed record InputsTestArgument : IComparable, IComparable<InputsTestArgument>
 {
     public int IntValue { get; set; } = 5;

@@ -3,7 +3,6 @@ using Headless.Threading;
 
 namespace Tests.Threading;
 
-#pragma warning disable VSTHRD003 // Avoid awaiting foreign Tasks
 public sealed class AsyncDuplicateLockTests : TestBase
 {
     [Fact]

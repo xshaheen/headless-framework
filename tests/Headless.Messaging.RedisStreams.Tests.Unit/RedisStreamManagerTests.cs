@@ -14,9 +14,7 @@ namespace Tests;
 public sealed class RedisStreamManagerTests : TestBase
 {
     private readonly IRedisConnectionPool _mockConnectionPool;
-#pragma warning disable CA2213
     private readonly IConnectionMultiplexer _mockMultiplexer;
-#pragma warning restore CA2213
     private readonly IDatabase _mockDatabase;
     private readonly RedisStreamManager _sut;
 

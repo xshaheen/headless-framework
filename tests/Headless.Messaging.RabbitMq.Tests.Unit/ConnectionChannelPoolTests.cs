@@ -206,12 +206,10 @@ public sealed class ConnectionChannelPoolTests : TestBase
                 {
                     await pool.Rent();
                 }
-#pragma warning disable ERP022
                 catch
                 {
                     // expected: all calls should fail due to invalid host
                 }
-#pragma warning restore ERP022
             })
             .ToList();
 

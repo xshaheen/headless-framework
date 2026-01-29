@@ -7,7 +7,6 @@ using Headless.Ticker.Interfaces.Managers;
 
 namespace Tests;
 
-#pragma warning disable REFL017
 public sealed class TickerOptionsBuilderTests
 {
     private sealed class FakeTimeTicker : TimeTickerEntity<FakeTimeTicker>;

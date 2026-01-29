@@ -4,7 +4,6 @@ using Headless.Checks;
 
 namespace Tests;
 
-#pragma warning disable CA2263 // Use the generic
 public sealed class TypeTests
 {
     [Fact]

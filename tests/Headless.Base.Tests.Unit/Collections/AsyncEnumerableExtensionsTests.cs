@@ -420,14 +420,14 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     [Fact]
     public async Task concat_async_should_respect_cancellation_token()
     {
-        // given
+        // given - intentionally using separate CTS to test mid-iteration cancellation
         using var cts = new CancellationTokenSource();
-        var first = CreateSlowAsyncEnumerable([1, 2, 3], TimeSpan.FromMilliseconds(50));
-        var second = CreateAsyncEnumerable([4, 5, 6]);
+        var first = CreateSlowAsyncEnumerable([1, 2, 3], TimeSpan.FromMilliseconds(50), AbortToken);
+        var second = CreateAsyncEnumerable([4, 5, 6], AbortToken);
 
         // when
         var items = new List<int>();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        var act = async () =>
         {
             await foreach (var item in first.ConcatAsync(second, cts.Token))
             {
@@ -437,7 +437,8 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
                     await cts.CancelAsync();
                 }
             }
-        });
+        };
+        await act.Should().ThrowAsync<OperationCanceledException>();
 
         // then
         items.Should().HaveCountLessThan(6);

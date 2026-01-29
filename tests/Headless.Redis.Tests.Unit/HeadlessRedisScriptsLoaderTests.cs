@@ -40,7 +40,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         var multiplexer = Substitute.For<IConnectionMultiplexer>();
 
         // when
-        var sut = new HeadlessRedisScriptsLoader(multiplexer);
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // then
         sut.IncrementWithExpireScript.Should().BeNull();

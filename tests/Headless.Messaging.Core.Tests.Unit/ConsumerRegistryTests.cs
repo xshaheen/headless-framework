@@ -471,9 +471,7 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.Register(metadata2);
 
         // when
-#pragma warning disable CA2263 // Is intended to test non-generic overload
         var found = registry.FindByMessageType(typeof(OtherMessage)).ToList();
-#pragma warning restore CA2263
 
         // then
         found.Should().HaveCount(1);

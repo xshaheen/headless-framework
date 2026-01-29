@@ -354,7 +354,6 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 
     private sealed record TagFilterResult(bool HideNode, int FilteredPortIndex, string FilteredPortName);
 
-#pragma warning disable REFL009 // Expected reflection usage
     private TagFilterResult _InvokeFilterNodesByTags(
         IDictionary<string, string> tags,
         K8sNodeDiscoveryProvider? provider = null
@@ -375,7 +374,6 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
             (string)resultType.GetProperty("FilteredPortName")!.GetValue(result)!
         );
     }
-#pragma warning restore REFL009
 
     private static int _InvokeGetPortByNameOrIndex(V1Service? service, string filterPortName, int filterPortIndex)
     {

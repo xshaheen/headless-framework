@@ -645,7 +645,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var semaphore = _GetSemaphore(client);
         var activeTasks = 0;
         var maxConcurrent = 0;
-        var lockObj = new object();
+        var lockObj = new Lock();
         var messagesProcessed = 0;
         var tcs = new TaskCompletionSource();
 
@@ -726,7 +726,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         );
 
         // Wait for messages to be processed or timeout
-        await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(4), AbortToken));
+        _ = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(4), AbortToken));
         await cts.CancelAsync();
         await listeningTask;
 

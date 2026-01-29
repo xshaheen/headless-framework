@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable xUnit1051 // Tests verify ToCancellationTokenSource behavior - not using test cancellation tokens
-
 namespace Tests.Core;
 
 public sealed class TimeSpanExtensionsTests

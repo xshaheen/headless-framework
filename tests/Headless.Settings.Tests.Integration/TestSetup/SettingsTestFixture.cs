@@ -79,9 +79,7 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
     private async Task _RunMigrationAsync()
     {
         var migrationScript = await File.ReadAllTextAsync("TestSetup/postgre-init.sql");
-#pragma warning disable CA2100 // Review SQL queries for security vulnerabilities
         await using var command = new NpgsqlCommand(migrationScript, SqlConnection);
-#pragma warning restore CA2100
         await command.ExecuteNonQueryAsync();
     }
 

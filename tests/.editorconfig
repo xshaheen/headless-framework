@@ -1,0 +1,109 @@
+# Tests-specific analyzer configuration
+# These rules are relaxed for test code where patterns like mock setup,
+# intentional test fixtures, and cancellation testing are common.
+
+[*.cs]
+
+# CA2012: ValueTask should be directly awaited
+# NSubstitute .Returns(ValueTask.FromResult(...)) is a false positive - each call returns fresh ValueTask
+dotnet_diagnostic.CA2012.severity = none
+
+# CA1508: Avoid dead conditional code
+# Tests intentionally verify edge cases like Equals(null) returning false
+dotnet_diagnostic.CA1508.severity = none
+
+# CA1822: Member can be static
+# Test fixture classes often have instance methods for reflection testing
+dotnet_diagnostic.CA1822.severity = none
+
+# CA5398: Avoid hardcoded SslProtocols
+# Tests verify specific TLS protocol configurations work correctly
+dotnet_diagnostic.CA5398.severity = none
+
+# IDE0017: Object initialization can be simplified
+# Tests may intentionally test property setters separately from construction
+dotnet_diagnostic.IDE0017.severity = suggestion
+
+# xUnit1051: Use TestContext.Current.CancellationToken
+# Tests that test cancellation behavior need manual CancellationTokenSource control
+dotnet_diagnostic.xUnit1051.severity = suggestion
+
+# CA2000: Dispose objects before losing scope
+# Mock setups delegate lifecycle to consuming code; test-scoped objects cleaned up by test framework
+dotnet_diagnostic.CA2000.severity = suggestion
+
+# EPC13: Task result should be observed
+# Complex async test patterns may intentionally not observe intermediate tasks
+dotnet_diagnostic.EPC13.severity = suggestion
+
+# VSTHRD003: Avoid awaiting foreign Tasks
+# Tests capture tasks for later assertion which is valid test pattern
+dotnet_diagnostic.VSTHRD003.severity = none
+
+# CA2213: Disposable fields should be disposed
+# Mock objects and test fixtures often don't need explicit disposal
+dotnet_diagnostic.CA2213.severity = none
+
+# FAA0002: Use AwesomeAssertions
+# Some tests intentionally use xUnit Assert for specific scenarios
+dotnet_diagnostic.FAA0002.severity = suggestion
+
+# xUnit1045/xUnit1046: TheoryData type arguments might not be serializable
+# Parameterized tests often use non-serializable types for complex test scenarios
+dotnet_diagnostic.xUnit1045.severity = suggestion
+dotnet_diagnostic.xUnit1046.severity = suggestion
+
+# CA2100: Review SQL queries for security vulnerabilities
+# Test fixtures use parameterized cleanup SQL; no user input involved
+dotnet_diagnostic.CA2100.severity = suggestion
+
+# REFL009/REFL016/REFL017: Reflection member analysis
+# Tests verify reflection behavior on internal/dynamic members
+dotnet_diagnostic.REFL009.severity = suggestion
+dotnet_diagnostic.REFL016.severity = suggestion
+dotnet_diagnostic.REFL017.severity = suggestion
+
+# MA0015: Specify the parameter name in ArgumentException
+# Tests intentionally verify exception type without caring about param name
+dotnet_diagnostic.MA0015.severity = suggestion
+
+# JSON001: Invalid JSON pattern
+# Tests intentionally use invalid JSON to verify error handling
+dotnet_diagnostic.JSON001.severity = suggestion
+
+# CA2201: Do not raise reserved exception types
+# Tests verify generic exception handling behavior
+dotnet_diagnostic.CA2201.severity = suggestion
+
+# CA2263: Use the generic overload
+# Tests may intentionally test non-generic overloads
+dotnet_diagnostic.CA2263.severity = suggestion
+
+# AL1003: Should not have non-obsolete empty constructors
+# Generated snapshot files from source generators include these
+dotnet_diagnostic.AL1003.severity = none
+
+# MA0045: Do not use blocking calls in sync method
+# Stream tests verify synchronous behavior explicitly
+dotnet_diagnostic.MA0045.severity = suggestion
+
+# MA0096: IComparable without IEquatable
+# Test helper classes focus on comparison behavior only
+dotnet_diagnostic.MA0096.severity = suggestion
+
+# ERP022: Unobserved exception in catch block
+# Specific test cleanup may swallow exceptions intentionally
+dotnet_diagnostic.ERP022.severity = suggestion
+
+# CA2225: Operator overloads have named alternates
+# Generated primitive types and tests don't need named alternates
+dotnet_diagnostic.CA2225.severity = suggestion
+
+# AsyncFixer03/VSTHRD100: Async void method
+# Tests may have intentional async void methods for testing reflection
+dotnet_diagnostic.AsyncFixer03.severity = suggestion
+dotnet_diagnostic.VSTHRD100.severity = suggestion
+
+# ReSharper - DisposeOnUsingVariable
+# Test objects often managed by test framework or intentionally not disposed
+resharper_dispose_on_using_variable_highlighting = none

@@ -21,9 +21,8 @@ public abstract class RedisCacheTestBase(RedisCacheFixture fixture) : TestBase
             KeyPrefix = keyPrefix ?? "",
         };
 
-        var scriptsLoader = new HeadlessRedisScriptsLoader(Fixture.ConnectionMultiplexer);
         var logger = LoggerFactory.CreateLogger<RedisCache>();
-        return new RedisCache(new SystemJsonSerializer(), TimeProvider.System, options, scriptsLoader, logger);
+        return new RedisCache(new SystemJsonSerializer(), TimeProvider.System, options, Fixture.ScriptsLoader, logger);
     }
 
     protected async Task FlushAsync()

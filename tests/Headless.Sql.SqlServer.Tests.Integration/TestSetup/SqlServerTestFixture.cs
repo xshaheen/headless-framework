@@ -65,9 +65,7 @@ public sealed class SqlServerTestFixture : ICollectionFixture<SqlServerTestFixtu
             catch
             {
                 await Task.Delay(1000);
-#pragma warning disable ERP022
             }
-#pragma warning restore ERP022
         }
         throw new TimeoutException("SQL Server did not become ready in time.");
     }

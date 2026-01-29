@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA2201 // Do not raise reserved exception types - test code intentionally tests generic exception handling
-#pragma warning disable MA0015 // Specify the parameter name in ArgumentException - test code is verifying exception type handling
-
 using System.Collections.Concurrent;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Retry;
