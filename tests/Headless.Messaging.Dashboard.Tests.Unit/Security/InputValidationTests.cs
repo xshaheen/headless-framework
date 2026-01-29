@@ -107,12 +107,12 @@ public sealed class InputValidationTests : TestBase
         // but additional security checks may be needed
 
         // Valid ID parsing
-        long.TryParse("123456789", out var validId).Should().BeTrue();
+        long.TryParse("123456789", CultureInfo.InvariantCulture, out var validId).Should().BeTrue();
         validId.Should().Be(123456789);
 
         // Invalid ID should fail parsing
-        long.TryParse("not-a-number", out _).Should().BeFalse();
-        long.TryParse("-1", out var negativeId).Should().BeTrue();
+        long.TryParse("not-a-number", CultureInfo.InvariantCulture, out _).Should().BeFalse();
+        long.TryParse("-1", CultureInfo.InvariantCulture, out var negativeId).Should().BeTrue();
         negativeId.Should().Be(-1); // Negative IDs may be invalid for messages
 
         // When fixed: negative IDs should be rejected at application level

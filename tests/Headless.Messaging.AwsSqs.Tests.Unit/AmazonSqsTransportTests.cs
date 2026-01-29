@@ -47,7 +47,7 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>())
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new ListTopicsResponse
                 {
@@ -93,7 +93,7 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>())
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new ListTopicsResponse
                 {
@@ -144,7 +144,9 @@ public sealed class AmazonSqsTransportTests : TestBase
         await using var transport = new AmazonSqsTransport(logger, _CreateOptions());
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
-        snsClient.ListTopicsAsync(Arg.Any<string?>()).Returns(new ListTopicsResponse { Topics = [] });
+        snsClient
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new ListTopicsResponse { Topics = [] });
         snsClient
             .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:NewTopic" });
@@ -176,7 +178,7 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>())
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new ListTopicsResponse
                 {
@@ -211,7 +213,9 @@ public sealed class AmazonSqsTransportTests : TestBase
         await using var transport = new AmazonSqsTransport(logger, _CreateOptions());
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
-        snsClient.ListTopicsAsync(Arg.Any<string?>()).Returns(new ListTopicsResponse { Topics = [] });
+        snsClient
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new ListTopicsResponse { Topics = [] });
         snsClient
             .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CreateTopicResponse { TopicArn = string.Empty }); // Empty ARN indicates failure
@@ -238,7 +242,9 @@ public sealed class AmazonSqsTransportTests : TestBase
         await using var transport = new AmazonSqsTransport(logger, _CreateOptions());
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
-        snsClient.ListTopicsAsync(Arg.Any<string?>()).Returns(new ListTopicsResponse { Topics = [] });
+        snsClient
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new ListTopicsResponse { Topics = [] });
         snsClient
             .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:my-topic_name" });
@@ -275,7 +281,7 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>())
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new ListTopicsResponse
                 {
@@ -312,7 +318,7 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>())
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new ListTopicsResponse
                 {
@@ -336,7 +342,7 @@ public sealed class AmazonSqsTransportTests : TestBase
         await transport.SendAsync(message);
 
         // then - ListTopicsAsync should only be called once due to caching
-        await snsClient.Received(1).ListTopicsAsync(Arg.Any<string?>());
+        await snsClient.Received(1).ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -348,7 +354,7 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>())
+            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(
                 new ListTopicsResponse
                 {
@@ -407,7 +413,7 @@ public sealed class AmazonSqsTransportTests : TestBase
     {
         var snsClientField = typeof(AmazonSqsTransport).GetField(
             "_snsClient",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         snsClientField!.SetValue(transport, snsClient);
     }

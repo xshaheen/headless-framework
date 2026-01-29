@@ -14,9 +14,10 @@ namespace Tests;
 public sealed class RedisStreamManagerTests : TestBase
 {
     private readonly IRedisConnectionPool _mockConnectionPool;
+#pragma warning disable CA2213
     private readonly IConnectionMultiplexer _mockMultiplexer;
+#pragma warning restore CA2213
     private readonly IDatabase _mockDatabase;
-    private readonly IOptions<MessagingRedisOptions> _options;
     private readonly RedisStreamManager _sut;
 
     public RedisStreamManagerTests()
@@ -28,7 +29,7 @@ public sealed class RedisStreamManagerTests : TestBase
         _mockConnectionPool.ConnectAsync().Returns(Task.FromResult(_mockMultiplexer));
         _mockMultiplexer.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(_mockDatabase);
 
-        _options = Options.Create(
+        var options = Options.Create(
             new MessagingRedisOptions
             {
                 Configuration = ConfigurationOptions.Parse("localhost:6379"),
@@ -37,7 +38,7 @@ public sealed class RedisStreamManagerTests : TestBase
         );
 
         var logger = LoggerFactory.CreateLogger<RedisStreamManager>();
-        _sut = new RedisStreamManager(_mockConnectionPool, _options, logger);
+        _sut = new RedisStreamManager(_mockConnectionPool, options, logger);
     }
 
     [Fact]

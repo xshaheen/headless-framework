@@ -1,4 +1,4 @@
-﻿using Headless.Caching;
+using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Cache;
 
@@ -6,17 +6,10 @@ namespace Tests;
 
 public sealed class MemoryResourceThrottlingLockProviderTests : ResourceThrottlingLockProviderTestsBase
 {
-    private readonly InMemoryCachingFoundatioAdapter _cache;
+    private readonly InMemoryCache _cache = new(TimeProvider.System, new InMemoryCacheOptions());
 
-    public MemoryResourceThrottlingLockProviderTests()
-    {
-        _cache = new InMemoryCachingFoundatioAdapter(TimeProvider, new InMemoryCacheOptions());
-    }
-
-    protected override IThrottlingResourceLockStorage GetLockStorage()
-    {
-        return new CacheThrottlingResourceLockStorage(_cache);
-    }
+    protected override IThrottlingResourceLockStorage GetLockStorage() =>
+        new CacheThrottlingResourceLockStorage(_cache);
 
     protected override ValueTask DisposeAsyncCore()
     {
@@ -25,14 +18,8 @@ public sealed class MemoryResourceThrottlingLockProviderTests : ResourceThrottli
     }
 
     [Fact]
-    public override Task should_throttle_calls_async()
-    {
-        return base.should_throttle_calls_async();
-    }
+    public override Task should_throttle_calls_async() => base.should_throttle_calls_async();
 
     [Fact(Skip = "In-memory cache does not support concurrent operations as it is not thread-safe.")]
-    public override Task should_throttle_concurrent_calls_async()
-    {
-        return base.should_throttle_concurrent_calls_async();
-    }
+    public override Task should_throttle_concurrent_calls_async() => base.should_throttle_concurrent_calls_async();
 }

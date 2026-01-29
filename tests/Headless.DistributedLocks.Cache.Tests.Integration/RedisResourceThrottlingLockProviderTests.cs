@@ -1,4 +1,4 @@
-﻿using Headless.Caching;
+using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Cache;
 using Headless.Redis;
@@ -8,47 +8,29 @@ using Tests.TestSetup;
 namespace Tests;
 
 [Collection<CacheTestFixture>]
-public sealed class RedisResourceThrottlingLockProviderTests : ResourceThrottlingLockProviderTestsBase
+public sealed class RedisResourceThrottlingLockProviderTests(CacheTestFixture fixture)
+    : ResourceThrottlingLockProviderTestsBase
 {
-    private readonly CacheTestFixture _fixture;
-    private readonly RedisCachingFoundatioAdapter _cache;
-
-    public RedisResourceThrottlingLockProviderTests(CacheTestFixture fixture)
-    {
-        _cache = new RedisCachingFoundatioAdapter(
-            new SystemJsonSerializer(),
-            TimeProvider,
-            new RedisCacheOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer }
-        );
-
-        _fixture = fixture;
-    }
-
     protected override IThrottlingResourceLockStorage GetLockStorage()
     {
-        return new CacheThrottlingResourceLockStorage(_cache);
+        var cache = new RedisCache(
+            new SystemJsonSerializer(),
+            TimeProvider,
+            new RedisCacheOptions { ConnectionMultiplexer = fixture.ConnectionMultiplexer },
+            fixture.ScriptsLoader
+        );
+
+        return new CacheThrottlingResourceLockStorage(cache);
     }
 
     public override async ValueTask InitializeAsync()
     {
-        await _fixture.ConnectionMultiplexer.FlushAllAsync();
-    }
-
-    protected override ValueTask DisposeAsyncCore()
-    {
-        _cache.Dispose();
-        return base.DisposeAsyncCore();
+        await fixture.ConnectionMultiplexer.FlushAllAsync();
     }
 
     [Fact]
-    public override Task should_throttle_calls_async()
-    {
-        return base.should_throttle_calls_async();
-    }
+    public override Task should_throttle_calls_async() => base.should_throttle_calls_async();
 
     [Fact]
-    public override Task should_throttle_concurrent_calls_async()
-    {
-        return base.should_throttle_concurrent_calls_async();
-    }
+    public override Task should_throttle_concurrent_calls_async() => base.should_throttle_concurrent_calls_async();
 }

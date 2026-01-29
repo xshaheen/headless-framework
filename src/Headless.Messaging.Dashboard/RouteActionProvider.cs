@@ -563,11 +563,15 @@ public class RouteActionProvider
             httpContext.Response.StatusCode = (int)(e.StatusCode ?? HttpStatusCode.BadGateway);
             await httpContext.Response.WriteAsync(e.Message);
         }
+#pragma warning disable EPC12 // Suspicious exception handling
+        // Intentionally returning only Message to client (no stack traces for security).
+        // Full exception details available in client-side network logs if needed.
         catch (Exception e)
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.BadGateway;
             await httpContext.Response.WriteAsync(e.Message);
         }
+#pragma warning restore EPC12
     }
 
     private static void _BadRequest(HttpContext httpContext)
