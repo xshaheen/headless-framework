@@ -115,7 +115,7 @@ public sealed class RedisCache(
             foreach (var slotGroup in pairs.GroupBy(p => options.ConnectionMultiplexer.HashSlot(p.Key)))
             {
                 var count = await _SetAllInternalAsync(slotGroup.ToArray(), expiration).AnyContext();
-                Interlocked.Add(ref successCount, count);
+                successCount += count;
             }
 
             return successCount;
@@ -717,7 +717,7 @@ public sealed class RedisCache(
                     try
                     {
                         var count = await _Database.KeyDeleteAsync(hashSlotKeys).AnyContext();
-                        Interlocked.Add(ref deleted, count);
+                        deleted += count;
                     }
                     catch (Exception ex)
                     {
@@ -738,7 +738,7 @@ public sealed class RedisCache(
                 try
                 {
                     var count = await _Database.KeyDeleteAsync(batch).AnyContext();
-                    Interlocked.Add(ref deleted, count);
+                    deleted += count;
                 }
                 catch (Exception ex)
                 {
@@ -1139,7 +1139,7 @@ public sealed class RedisCache(
             {
                 var dbSize = await server.DatabaseSizeAsync().AnyContext();
                 await server.FlushDatabaseAsync().AnyContext();
-                Interlocked.Add(ref deleted, dbSize);
+                deleted += dbSize;
             }
             catch (Exception ex)
             {
@@ -1159,7 +1159,7 @@ public sealed class RedisCache(
             foreach (var slotGroup in keys.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
             {
                 var count = await _Database.KeyDeleteAsync(slotGroup.ToArray()).AnyContext();
-                Interlocked.Add(ref deleted, count);
+                deleted += count;
             }
         }
         else
