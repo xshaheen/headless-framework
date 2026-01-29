@@ -1,4 +1,4 @@
-# Headless .NET Framework
+# .NET Headless Framework
 
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 

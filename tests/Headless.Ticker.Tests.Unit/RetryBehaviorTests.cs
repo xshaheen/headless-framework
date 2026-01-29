@@ -71,7 +71,7 @@ public sealed class RetryBehaviorTests
         attempts.Last().RetryCount.Should().Be(2);
     }
 
-    private record Attempt(DateTime Timestamp, int RetryCount);
+    private sealed record Attempt(DateTime Timestamp, int RetryCount);
 
     // Helpers
     private static (

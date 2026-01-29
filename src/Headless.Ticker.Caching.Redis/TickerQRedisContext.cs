@@ -139,10 +139,14 @@ internal class TickerQRedisContext : ITickerQRedisContext
                 }
             }
         }
+#pragma warning disable ERP022, RCS1075
+        // ERP022/RCS1075: Cache failures are expected and should not affect business logic.
+        // Fall back to factory when cache is unavailable.
         catch (Exception)
         {
-            // ignored
+            // Cache miss or failure - continue with factory
         }
+#pragma warning restore ERP022, RCS1075
 
         var result = await factory(cancellationToken);
 
@@ -161,10 +165,13 @@ internal class TickerQRedisContext : ITickerQRedisContext
 
             await _cache.SetAsync(cacheKey, bufferWriter.WrittenMemory.ToArray(), cancellationToken);
         }
+        // ERP022/RCS1075: Cache set failures should not affect the result returned to caller.
+#pragma warning disable ERP022, RCS1075
         catch (Exception)
         {
-            // ignored
+            // Cache set failure - result already computed, just can't cache it
         }
+#pragma warning restore ERP022, RCS1075
 
         return null;
     }

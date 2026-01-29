@@ -47,10 +47,12 @@ public class StringToByteArrayConverter : JsonConverter<byte[]>
             var stringValue = TickerHelper.ReadTickerRequestAsString(value);
             writer.WriteStringValue(stringValue);
         }
+#pragma warning disable ERP022  // Fallback to raw byte array when string deserialization fails.
         catch
         {
             // If can't deserialize, write as byte array
             JsonSerializer.Serialize(writer, value, options);
         }
+#pragma warning restore ERP022
     }
 }

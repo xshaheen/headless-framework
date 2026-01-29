@@ -449,10 +449,12 @@ internal class TickerExecutionTaskHandler(
         {
             return ExecuteTaskAsync(context, isDue, cancellationToken);
         }
+#pragma warning disable ERP022 // Scheduler must continue running even if task execution throws synchronously.
         catch
         {
             // ignored
         }
+#pragma warning restore ERP022
 
         return Task.CompletedTask;
     }

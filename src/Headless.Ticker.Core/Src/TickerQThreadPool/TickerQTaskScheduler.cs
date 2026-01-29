@@ -97,10 +97,12 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
                         {
                             await work(cancellationToken);
                         }
+#pragma warning disable ERP022 // Scheduler must continue running even if task execution throws.
                         catch
                         {
                             /* swallow */
                         }
+#pragma warning restore ERP022
                     },
                     CancellationToken.None,
                     TaskCreationOptions.LongRunning,
@@ -372,10 +374,13 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
                                     _ = t.Exception;
                                 }
                             }
+                            // ERP022: Worker thread must continue running.
+#pragma warning disable ERP022
                             catch
                             {
                                 // Swallow continuation exceptions
                             }
+#pragma warning restore ERP022
                         },
                         CancellationToken.None,
                         TaskContinuationOptions.ExecuteSynchronously,
@@ -389,10 +394,13 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
                     {
                         await task;
                     }
+                    // ERP022: Worker thread must continue running.
+#pragma warning disable ERP022
                     catch
                     {
                         // Swallow exceptions to keep worker alive
                     }
+#pragma warning restore ERP022
                 }
             }
         }
@@ -400,11 +408,14 @@ public sealed class TickerQTaskScheduler : IAsyncDisposable
         {
             // Expected - task was cancelled
         }
+        // ERP022/RCS1075: Worker thread must continue running even if tasks fail.
+#pragma warning disable ERP022, RCS1075
         catch (Exception)
         {
             // Log error if needed, but don't crash the worker
             // Errors are swallowed to prevent worker thread crashes
         }
+#pragma warning restore ERP022, RCS1075
     }
 
     /// <summary>

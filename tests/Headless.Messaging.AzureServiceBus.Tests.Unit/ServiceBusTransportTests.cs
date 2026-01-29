@@ -187,7 +187,10 @@ public sealed class ServiceBusTransportTests
     public async Task should_dispose_without_error_when_no_messages_sent()
     {
         // given
-        var transport = new AzureServiceBusTransport(NullLogger<AzureServiceBusTransport>.Instance, _options);
+        await using var transport = new AzureServiceBusTransport(
+            NullLogger<AzureServiceBusTransport>.Instance,
+            _options
+        );
 
         // when
         var act = async () => await transport.DisposeAsync();

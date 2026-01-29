@@ -45,7 +45,7 @@ public static class MessagesSqlServerSetup
             return options.UseEntityFramework<TContext>(_ => { });
         }
 
-        public MessagingOptions UseEntityFramework<TContext>(Action<SqlServerEntityFrameworkMessagingOptions> configure)
+        public MessagingOptions UseEntityFramework<TContext>(Action<SqlServerEntityMessagingOptions> configure)
             where TContext : DbContext
         {
             Argument.IsNotNull(configure);
