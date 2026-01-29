@@ -43,19 +43,19 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     [Route("~/adonet/transaction")]
     public async Task<IActionResult> AdonetWithTransaction()
     {
-        using (var connection = new NpgsqlConnection(AppConstants.DbConnectionString))
+        await using (var connection = new NpgsqlConnection(AppConstants.DbConnectionString))
         {
-            using var transaction = connection.BeginTransaction(producer, autoCommit: false);
+            await using var transaction = await connection.BeginTransactionAsync(producer, autoCommit: false);
 
             //your business code
-            connection.Execute(
+            await connection.ExecuteAsync(
                 "INSERT INTO \"Persons\"(\"Name\",\"Age\",\"CreateTime\") VALUES('Lucy',25, NOW())",
                 transaction: (IDbTransaction?)transaction.DbTransaction
             );
 
             await producer.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
 
-            transaction.Commit();
+            await transaction.CommitAsync();
         }
 
         await producer.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
@@ -66,15 +66,15 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     [Route("~/ef/transaction")]
     public async Task<IActionResult> EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
     {
-        using (dbContext.Database.BeginTransaction(producer, autoCommit: false))
+        await using (await dbContext.Database.BeginTransactionAsync(producer, autoCommit: false))
         {
             dbContext.Persons.Add(new Person { Name = "ef.transaction", Age = 11 });
 
-            dbContext.SaveChanges();
+            await dbContext.SaveChangesAsync();
 
             await producer.PublishAsync("sample.kafka.postgrsql", DateTime.UtcNow);
 
-            dbContext.Database.CommitTransaction();
+            await dbContext.Database.CommitTransactionAsync();
         }
         return Ok();
     }
