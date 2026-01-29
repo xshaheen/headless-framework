@@ -6,15 +6,11 @@ namespace Headless.Caching;
 [PublicAPI]
 public sealed class MaxEntrySizeExceededException : Exception
 {
-    public MaxEntrySizeExceededException()
-    {
-    }
+    public MaxEntrySizeExceededException() { }
 
-    public MaxEntrySizeExceededException(string message) : base(message)
-    {
-    }
+    public MaxEntrySizeExceededException(string message)
+        : base(message) { }
 
-    public MaxEntrySizeExceededException(string message, Exception innerException) : base(message, innerException)
-    {
-    }
+    public MaxEntrySizeExceededException(string message, Exception innerException)
+        : base(message, innerException) { }
 }
