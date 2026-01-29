@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA1508 // Avoid dead conditional code - intentional for null-handling tests
 #pragma warning disable MA0011 // Use IFormatProvider - testing parameterless ToString()
 
 using Headless.Primitives;

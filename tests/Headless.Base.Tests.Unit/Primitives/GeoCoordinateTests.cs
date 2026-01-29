@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA1508 // Avoid dead conditional code - intentional for null-handling tests
-
 using Headless.Primitives;
 
 namespace Tests.Primitives;

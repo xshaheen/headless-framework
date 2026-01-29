@@ -11,7 +11,6 @@ using MessagingHeaders = Headless.Messaging.Messages.Headers;
 
 namespace Tests;
 
-#pragma warning disable CA2213 // Disposable fields should be disposed - mock object
 public sealed class KafkaTransportTests : TestBase
 {
     private readonly ILogger<KafkaTransport> _logger = NullLogger<KafkaTransport>.Instance;
@@ -26,7 +25,6 @@ public sealed class KafkaTransportTests : TestBase
         _pool.ServersAddress.Returns("localhost:9092");
         _pool.RentProducer().Returns(_producer);
     }
-#pragma warning restore CA2213
 
     [Fact]
     public async Task should_have_correct_broker_address()

@@ -62,9 +62,7 @@ public sealed class SingleOrCollectionJsonConverterTests
     public void single_or_collection_converter_should_throw_exception_for_invalid_json()
     {
         // given
-#pragma warning disable JSON001 // Invalid JSON pattern
         const string json = "[{\"Id\": 1, \"Name\": \"Item 1\"}, {\"Id\": 2}";
-#pragma warning restore JSON001 // Invalid JSON pattern
 
         // when
         Action act = () => JsonSerializer.Deserialize<List<MyItem>>(json, _jsonOptions);

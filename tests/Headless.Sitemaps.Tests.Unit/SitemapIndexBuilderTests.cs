@@ -5,7 +5,6 @@ using Headless.Sitemaps;
 namespace Tests;
 
 // ReSharper disable AccessToDisposedClosure
-#pragma warning disable xUnit1045 // Avoid using TheoryData type arguments that might not be serializable
 public sealed class SitemapIndexBuilderTests : SitemapTestBase
 {
     public static readonly TheoryData<List<SitemapReference>, string> TestData = new()

@@ -37,9 +37,8 @@ public sealed class MethodInfoExtensionsTests
     {
         public static void NonAsyncMethod() { }
 
-#pragma warning disable AsyncFixer03, VSTHRD100 // ReSharper disable once AsyncVoidMethod
+        // ReSharper disable once AsyncVoidMethod
         public static async void AsyncVoidMethod() => await Task.Delay(10);
-#pragma warning restore AsyncFixer03, VSTHRD100
 
         public static async Task AsyncTaskMethod() => await Task.CompletedTask;
 

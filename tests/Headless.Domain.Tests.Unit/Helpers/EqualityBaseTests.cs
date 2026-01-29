@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA1508 // Analyzer sees null comparisons as dead code, but we're testing them
-
 using Headless.Domain;
 
 namespace Tests.Helpers;

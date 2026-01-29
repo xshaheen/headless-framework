@@ -59,9 +59,7 @@ public sealed class CollectionItemJsonConverterTests
     public void json_collection_item_converter_should_throw_on_invalid_json()
     {
         // given
-#pragma warning disable JSON001 // Invalid JSON pattern
         const string json = "[\"item1\", \"item2\", \"item3\"";
-#pragma warning restore JSON001 // Invalid JSON pattern
 
         // when
         Action act = () => JsonSerializer.Deserialize<IEnumerable<string>>(json, _options);

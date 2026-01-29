@@ -4,8 +4,6 @@ using Headless.Testing.Tests;
 
 namespace Tests.IO;
 
-#pragma warning disable FAA0002 // Use AwesomeAsserion instead
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
 public sealed class ReadOnlySequenceStreamTests : TestBase
 {
     private static readonly ReadOnlySequence<byte> _DefaultSequence = ReadOnlySequence<byte>.Empty;

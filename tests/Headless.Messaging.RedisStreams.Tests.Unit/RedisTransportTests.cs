@@ -29,6 +29,12 @@ public sealed class RedisTransportTests : TestBase
         _sut = new RedisTransport(_mockStreamManager, _options, logger);
     }
 
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        await _sut.DisposeAsync();
+        await base.DisposeAsyncCore();
+    }
+
     [Fact]
     public void should_return_correct_broker_address()
     {

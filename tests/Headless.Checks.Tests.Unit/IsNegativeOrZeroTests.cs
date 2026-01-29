@@ -5,7 +5,6 @@ using Tests.Helpers;
 
 namespace Tests;
 
-#pragma warning disable xUnit1045 // Avoid using TheoryData type arguments that might not be serializable
 public sealed class IsNegativeOrZeroTests
 {
     private readonly InputsTestArgument _validValues = new()

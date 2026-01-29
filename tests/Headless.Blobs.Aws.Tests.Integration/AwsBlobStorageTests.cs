@@ -23,9 +23,7 @@ public sealed class AwsBlobStorageTests(AwsBlobStorageFixture fixture) : BlobSto
         };
 
         var awsCredentials = new BasicAWSCredentials("xxx", "xxx");
-#pragma warning disable CA2000
         var amazonS3Client = new AmazonS3Client(awsCredentials, s3Config);
-#pragma warning restore CA2000
 
         var mimeTypeProvider = new MimeTypeProvider();
         var clock = new Clock(TimeProvider.System);

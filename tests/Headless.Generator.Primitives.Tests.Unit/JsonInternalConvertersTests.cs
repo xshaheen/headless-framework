@@ -2,7 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA2225
 public sealed class JsonInternalConvertersTests
 {
     [Fact]

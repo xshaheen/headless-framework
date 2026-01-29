@@ -13,9 +13,7 @@ public sealed class ObjectPropertiesHelperTests
         [IgnoreMe]
         public string? IgnoredProperty { get; set; }
 
-#pragma warning disable CA1822 // Mark members as static
         public string ReadOnlyProp => "readonly";
-#pragma warning restore CA1822 // Mark members as static
 
         public string InitOnlyProp { get; init; } = string.Empty;
 

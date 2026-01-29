@@ -5,7 +5,6 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-#pragma warning disable REFL009 // The referenced member Capacity is not known to exist in object
 public sealed class CircularBufferTests : TestBase
 {
     // CircularBuffer is internal, so we need to use reflection to create and test it

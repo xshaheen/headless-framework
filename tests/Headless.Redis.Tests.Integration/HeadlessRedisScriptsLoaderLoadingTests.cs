@@ -11,7 +11,7 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     public async Task LoadScriptsAsync_should_load_all_scripts()
     {
         // given
-        var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
+        using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
 
         // when
         var act = async () => await loader.LoadScriptsAsync();
@@ -24,7 +24,7 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     public async Task LoadScriptsAsync_should_populate_script_properties()
     {
         // given
-        var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
+        using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
 
         // when
         await loader.LoadScriptsAsync();
@@ -41,7 +41,7 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     public async Task LoadScriptsAsync_should_be_idempotent()
     {
         // given
-        var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
+        using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
 
         // when
         await loader.LoadScriptsAsync();

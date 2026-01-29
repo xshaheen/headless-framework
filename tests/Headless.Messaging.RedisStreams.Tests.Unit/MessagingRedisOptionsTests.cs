@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging.RedisStreams;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
@@ -151,10 +152,10 @@ public sealed class MessagingRedisOptionsTests : TestBase
 
     private static string _GetEndpoint(MessagingRedisOptions options)
     {
-        // Access internal Endpoint property via reflection
+        // Access internal Endpoint property via reflection (can't use nameof for internal members)
         var property = typeof(MessagingRedisOptions).GetProperty(
             "Endpoint",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         return (string)property!.GetValue(options)!;
     }

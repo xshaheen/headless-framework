@@ -14,6 +14,7 @@ public sealed class RedisCacheFixture(IMessageSink messageSink)
         ICollectionFixture<RedisCacheFixture>
 {
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
+    public HeadlessRedisScriptsLoader ScriptsLoader { get; private set; } = null!;
 
     protected override RedisBuilder Configure()
     {
@@ -27,11 +28,15 @@ public sealed class RedisCacheFixture(IMessageSink messageSink)
 
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
         await ConnectionMultiplexer.FlushAllAsync();
+
+        ScriptsLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
+        await ScriptsLoader.LoadScriptsAsync();
     }
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await base.DisposeAsyncCore();
+        ScriptsLoader.Dispose();
         await ConnectionMultiplexer.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 }

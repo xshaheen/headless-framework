@@ -346,9 +346,7 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
         return ValueTask.CompletedTask;
     }
 
-#pragma warning disable CA1822 // Intended to be an instance method for testing purposes
     public void BadMethod()
-#pragma warning restore CA1822
     {
         // Missing ConsumeContext parameter
     }

@@ -7,16 +7,6 @@
 **This is a framework, not a finished application.**
 It is designed to support multiple projects and packages, both internal and external. As such, it may contain abstractions, extension points, and utility classes or methods that are not directly used within this repository. These elements exist deliberately to enable extensibility, customization, and reuse by downstream consumers and future integrations.
 
-## Build Commands
-
-```bash
-# Direct dotnet (faster for single projects)
-dotnet build src/Headless.Orm.EntityFramework
-dotnet test tests/Headless.Base.Tests.Unit
-dotnet test --filter "FullyQualifiedName~method_name"  # Single test
-csharpier format .    # Format code. You should run after changes.
-```
-
 **Coverage targets:**
 - **Line coverage**: ≥85% (minimum: 80%)
 - **Branch coverage**: ≥80% (minimum: 70%)

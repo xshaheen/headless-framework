@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Testing.Tests;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Persistence;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

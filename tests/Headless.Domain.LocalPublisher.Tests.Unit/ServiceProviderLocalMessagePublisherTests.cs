@@ -81,9 +81,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
     {
         public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
         {
-#pragma warning disable MA0015
             throw new TargetInvocationException(new ArgumentException("Inner exception message"));
-#pragma warning restore MA0015
         }
     }
 
