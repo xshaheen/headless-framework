@@ -58,7 +58,7 @@ public sealed class RabbitMqBasicConsumer(
                             var args = new LogMessageEventArgs
                             {
                                 LogType = MqLogType.ConsumeError,
-                                Reason = $"Error consuming message: {ex.Message}",
+                                Reason = $"Error consuming message: {ex}",
                             };
 
                             logCallback(args);
