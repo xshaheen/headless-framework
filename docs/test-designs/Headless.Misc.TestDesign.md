@@ -1,24 +1,24 @@
-# Framework Miscellaneous Packages Test Design
+# Headless Framework Miscellaneous Packages Test Design
 
 ## Overview
 
 This test design covers smaller utility packages that don't warrant individual test design documents.
 
 ### Packages Covered
-1. **Framework.Redis** - Redis Lua scripts and connection extensions
-2. **Framework.Recaptcha** - Google reCAPTCHA v2/v3 verification
-3. **Framework.Sitemaps** - XML sitemap generation
-4. **Framework.Slugs** - URL slug generation
-5. **Framework.NetTopologySuite** - Geography/geometry utilities
-6. **Framework.Logging.Serilog** - Serilog configuration factory
-7. **Framework.Media.Indexing** - Document text extraction (PDF, Word, PowerPoint)
+1. **Headless.Redis** - Redis Lua scripts and connection extensions
+2. **Headless.Recaptcha** - Google reCAPTCHA v2/v3 verification
+3. **Headless.Sitemaps** - XML sitemap generation
+4. **Headless.Slugs** - URL slug generation
+5. **Headless.NetTopologySuite** - Geography/geometry utilities
+6. **Headless.Logging.Serilog** - Serilog configuration factory
+7. **Headless.Media.Indexing** - Document text extraction (PDF, Word, PowerPoint)
 
 ### Existing Tests
 **No existing tests found for any of these packages**
 
 ---
 
-## 1. Framework.Redis
+## 1. Headless.Redis
 
 ### 1.1 HeadlessRedisScriptsLoader - LoadScriptsAsync Tests
 
@@ -96,7 +96,7 @@ This test design covers smaller utility packages that don't warrant individual t
 
 ---
 
-## 2. Framework.Recaptcha
+## 2. Headless.Recaptcha
 
 ### 2.1 ReCaptchaSiteVerifyV2 Tests
 
@@ -150,7 +150,7 @@ This test design covers smaller utility packages that don't warrant individual t
 
 ---
 
-## 3. Framework.Sitemaps
+## 3. Headless.Sitemaps
 
 ### 3.1 SitemapIndexBuilder Tests
 
@@ -196,7 +196,7 @@ This test design covers smaller utility packages that don't warrant individual t
 
 ---
 
-## 4. Framework.Slugs
+## 4. Headless.Slugs
 
 ### 4.1 Slug.Create Tests
 
@@ -230,7 +230,7 @@ This test design covers smaller utility packages that don't warrant individual t
 
 ---
 
-## 5. Framework.NetTopologySuite
+## 5. Headless.NetTopologySuite
 
 ### 5.1 GeoExtensions Tests
 
@@ -247,7 +247,7 @@ This test design covers smaller utility packages that don't warrant individual t
 
 ---
 
-## 6. Framework.Logging.Serilog
+## 6. Headless.Logging.Serilog
 
 ### 6.1 SerilogFactory Tests
 
@@ -268,7 +268,7 @@ This test design covers smaller utility packages that don't warrant individual t
 
 ---
 
-## 7. Framework.Media.Indexing
+## 7. Headless.Media.Indexing
 
 ### 7.1 PdfMediaFileTextProvider Tests
 
@@ -304,13 +304,13 @@ This test design covers smaller utility packages that don't warrant individual t
 
 | Package | Unit Tests | Integration Tests | Total |
 |---------|------------|-------------------|-------|
-| Framework.Redis | 5 | 24 | 29 |
-| Framework.Recaptcha | 17 | 3 | 20 |
-| Framework.Sitemaps | 22 | 0 | 22 |
-| Framework.Slugs | 20 | 0 | 20 |
-| Framework.NetTopologySuite | 3 | 0 | 3 |
-| Framework.Logging.Serilog | 7 | 0 | 7 |
-| Framework.Media.Indexing | 2 | 6 | 8 |
+| Headless.Redis | 5 | 24 | 29 |
+| Headless.Recaptcha | 17 | 3 | 20 |
+| Headless.Sitemaps | 22 | 0 | 22 |
+| Headless.Slugs | 20 | 0 | 20 |
+| Headless.NetTopologySuite | 3 | 0 | 3 |
+| Headless.Logging.Serilog | 7 | 0 | 7 |
+| Headless.Media.Indexing | 2 | 6 | 8 |
 | **Total** | **76** | **33** | **109** |
 
 ### Test Distribution
@@ -322,26 +322,26 @@ This test design covers smaller utility packages that don't warrant individual t
 ### Test Project Structure
 ```
 tests/
-├── Framework.Redis.Tests.Integration/           (NEW - 24 tests)
+├── Headless.Redis.Tests.Integration/           (NEW - 24 tests)
 │   ├── HeadlessRedisScriptsLoaderTests.cs
 │   └── ConnectionMultiplexerExtensionsTests.cs
-├── Framework.Redis.Tests.Unit/                  (NEW - 5 tests)
+├── Headless.Redis.Tests.Unit/                  (NEW - 5 tests)
 │   └── RedisScriptsTests.cs
-├── Framework.Recaptcha.Tests.Unit/              (NEW - 20 tests)
+├── Headless.Recaptcha.Tests.Unit/              (NEW - 20 tests)
 │   ├── V2/ReCaptchaSiteVerifyV2Tests.cs
 │   ├── V3/ReCaptchaSiteVerifyV3Tests.cs
 │   └── TagHelpers/TagHelperTests.cs
-├── Framework.Sitemaps.Tests.Unit/               (NEW - 22 tests)
+├── Headless.Sitemaps.Tests.Unit/               (NEW - 22 tests)
 │   ├── SitemapIndexBuilderTests.cs
 │   ├── SitemapUrlTests.cs
 │   └── SitemapUrlsTests.cs
-├── Framework.Slugs.Tests.Unit/                  (NEW - 20 tests)
+├── Headless.Slugs.Tests.Unit/                  (NEW - 20 tests)
 │   └── SlugTests.cs
-├── Framework.NetTopologySuite.Tests.Unit/       (NEW - 3 tests)
+├── Headless.NetTopologySuite.Tests.Unit/       (NEW - 3 tests)
 │   └── GeoExtensionsTests.cs
-├── Framework.Logging.Serilog.Tests.Unit/        (NEW - 7 tests)
+├── Headless.Logging.Serilog.Tests.Unit/        (NEW - 7 tests)
 │   └── SerilogFactoryTests.cs
-└── Framework.Media.Indexing.Tests.Integration/  (NEW - 8 tests)
+└── Headless.Media.Indexing.Tests.Integration/  (NEW - 8 tests)
     └── MediaFileTextProviderTests.cs
 ```
 

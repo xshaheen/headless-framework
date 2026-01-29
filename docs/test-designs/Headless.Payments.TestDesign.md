@@ -1,13 +1,13 @@
-# Framework.Payments.Paymob Test Design
+# Headless.Payments.Paymob Test Design
 
 ## Overview
 
-The Framework.Payments.Paymob packages provide integration with Paymob's payment gateway for Egyptian market, supporting cash-in (accepting payments) and cash-out (disbursements) operations across multiple payment methods including cards, wallets (Vodafone, Etisalat, Orange), kiosks, and bank transfers.
+The Headless.Payments.Paymob packages provide integration with Paymob's payment gateway for Egyptian market, supporting cash-in (accepting payments) and cash-out (disbursements) operations across multiple payment methods including cards, wallets (Vodafone, Etisalat, Orange), kiosks, and bank transfers.
 
 ### Packages
-1. **Framework.Payments.Paymob.CashIn** - Low-level API broker for accepting payments
-2. **Framework.Payments.Paymob.CashOut** - Low-level API broker for disbursements
-3. **Framework.Payments.Paymob.Services** - High-level services wrapping brokers with business logic
+1. **Headless.Payments.Paymob.CashIn** - Low-level API broker for accepting payments
+2. **Headless.Payments.Paymob.CashOut** - Low-level API broker for disbursements
+3. **Headless.Payments.Paymob.Services** - High-level services wrapping brokers with business logic
 
 ### Key Components
 - **IPaymobCashInBroker** - Creates orders, payment keys, validates HMAC signatures
@@ -18,12 +18,12 @@ The Framework.Payments.Paymob packages provide integration with Paymob's payment
 - **ICashOutService** - High-level cash-out operations
 
 ### Existing Tests
-- **Framework.Payments.Paymob.CashIn.Tests.Unit** - 21 tests (authenticator, broker operations, validation)
-- **Framework.Payments.Paymob.CashOut.Tests.Unit** - 0 tests (fixture exists but no tests)
+- **Headless.Payments.Paymob.CashIn.Tests.Unit** - 21 tests (authenticator, broker operations, validation)
+- **Headless.Payments.Paymob.CashOut.Tests.Unit** - 0 tests (fixture exists but no tests)
 
 ---
 
-## 1. Framework.Payments.Paymob.CashIn
+## 1. Headless.Payments.Paymob.CashIn
 
 ### 1.1 PaymobCashInAuthenticator - RequestAuthenticationTokenAsync Tests
 
@@ -182,7 +182,7 @@ The Framework.Payments.Paymob packages provide integration with Paymob's payment
 
 ---
 
-## 2. Framework.Payments.Paymob.CashOut
+## 2. Headless.Payments.Paymob.CashOut
 
 ### 2.1 PaymobCashOutAuthenticator - GetAccessTokenAsync Tests
 
@@ -281,7 +281,7 @@ The Framework.Payments.Paymob packages provide integration with Paymob's payment
 
 ---
 
-## 3. Framework.Payments.Paymob.Services
+## 3. Headless.Payments.Paymob.Services
 
 ### 3.1 PaymobCashInService - StartAsync (Card) Tests
 
@@ -458,22 +458,22 @@ The Framework.Payments.Paymob packages provide integration with Paymob's payment
 ### Test Project Structure
 ```
 tests/
-├── Framework.Payments.Paymob.CashIn.Tests.Unit/     (EXISTING - 21 tests)
+├── Headless.Payments.Paymob.CashIn.Tests.Unit/     (EXISTING - 21 tests)
 │   ├── PaymobCashInAuthenticatorTests.*.cs
 │   ├── PaymobCashInBrokerTests.*.cs
 │   └── Internal/
 │       └── AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverterTests.cs
-├── Framework.Payments.Paymob.CashOut.Tests.Unit/    (NEEDS TESTS - ~44 tests)
+├── Headless.Payments.Paymob.CashOut.Tests.Unit/    (NEEDS TESTS - ~44 tests)
 │   ├── PaymobCashOutAuthenticatorTests.cs
 │   ├── PaymobCashOutBrokerTests.cs
 │   └── Models/
 │       └── CashOutTransactionTests.cs
-├── Framework.Payments.Paymob.Services.Tests.Unit/   (NEW - ~62 tests)
+├── Headless.Payments.Paymob.Services.Tests.Unit/   (NEW - ~62 tests)
 │   ├── CashIn/
 │   │   └── PaymobCashInServiceTests.cs
 │   └── CashOut/
 │       └── PaymobCashOutServiceTests.cs
-└── Framework.Payments.Paymob.Tests.Integration/     (NEW - 6 tests)
+└── Headless.Payments.Paymob.Tests.Integration/     (NEW - 6 tests)
     ├── CashInIntegrationTests.cs
     └── CashOutIntegrationTests.cs
 ```

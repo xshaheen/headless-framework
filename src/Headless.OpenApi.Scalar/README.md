@@ -38,7 +38,7 @@ app.MapHeadlessScalarOpenApi();
 ### Options
 
 ```csharp
-app.MapFrameworkScalarOpenApi(options =>
+app.MapHeadlessScalarOpenApi(options =>
 {
     options.DarkMode = true;
     options.Layout = ScalarLayout.Modern;

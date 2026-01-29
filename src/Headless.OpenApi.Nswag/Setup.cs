@@ -28,18 +28,18 @@ public static class NswagSetup
 
     public static IServiceCollection AddHeadlessNswagOpenApi(
         this IServiceCollection services,
-        Action<HeadlessNswagOptions>? setupFrameworkAction = null,
+        Action<HeadlessNswagOptions>? setupHeadlessAction = null,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings>? setupGeneratorActions = null
     )
     {
-        var frameworkOptions = _BuildOptions(setupFrameworkAction);
+        var headlessOptions = _BuildOptions(setupHeadlessAction);
 
         services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
-                _ConfigureGeneratorSettings(settings, serviceProvider, frameworkOptions);
+                _ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
                 setupGeneratorActions?.Invoke(settings);
-                _ConfigureHeadlessGeneratorSettings(settings, frameworkOptions);
+                _ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
             }
         );
 
@@ -48,18 +48,18 @@ public static class NswagSetup
 
     public static IServiceCollection AddHeadlessNswagOpenApi(
         this IServiceCollection services,
-        Action<HeadlessNswagOptions>? setupFrameworkAction,
+        Action<HeadlessNswagOptions>? setupHeadlessAction,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider>? setupGeneratorActions
     )
     {
-        var frameworkOptions = _BuildOptions(setupFrameworkAction);
+        var headlessOptions = _BuildOptions(setupHeadlessAction);
 
         services.AddOpenApiDocument(
             (settings, serviceProvider) =>
             {
-                _ConfigureGeneratorSettings(settings, serviceProvider, frameworkOptions);
+                _ConfigureGeneratorSettings(settings, serviceProvider, headlessOptions);
                 setupGeneratorActions?.Invoke(settings, serviceProvider);
-                _ConfigureHeadlessGeneratorSettings(settings, frameworkOptions);
+                _ConfigureHeadlessGeneratorSettings(settings, headlessOptions);
             }
         );
 
@@ -262,7 +262,7 @@ public static class NswagSetup
     private static void _ConfigureGeneratorSettings(
         AspNetCoreOpenApiDocumentGeneratorSettings settings,
         IServiceProvider serviceProvider,
-        HeadlessNswagOptions frameworkOptions
+        HeadlessNswagOptions headlessOptions
     )
     {
         // General Settings
@@ -279,7 +279,7 @@ public static class NswagSetup
         settings.SchemaSettings.DefaultDictionaryValueReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull;
         // Schema Processors
         settings.SchemaSettings.SchemaProcessors.Add(
-            new FluentValidationSchemaProcessor(serviceProvider, frameworkOptions)
+            new FluentValidationSchemaProcessor(serviceProvider, headlessOptions)
         );
         settings.SchemaSettings.SchemaProcessors.Add(new NullabilityAsRequiredSchemaProcessor());
         // Operation Processors
@@ -291,26 +291,26 @@ public static class NswagSetup
 
     private static void _ConfigureHeadlessGeneratorSettings(
         AspNetCoreOpenApiDocumentGeneratorSettings settings,
-        HeadlessNswagOptions frameworkOptions
+        HeadlessNswagOptions headlessOptions
     )
     {
-        if (frameworkOptions.AddBearerSecurity)
+        if (headlessOptions.AddBearerSecurity)
         {
             settings.AddSecurity(_BearerDefinitionName, [], _GetBearerSecurityDefinition());
             settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor(_BearerDefinitionName));
         }
 
-        if (frameworkOptions.AddApiKeySecurity)
+        if (headlessOptions.AddApiKeySecurity)
         {
             settings.AddSecurity(
                 _ApiKeyDefinitionName,
                 [],
-                _GetApiKeySecurityDefinition(frameworkOptions.ApiKeyHeaderName)
+                _GetApiKeySecurityDefinition(headlessOptions.ApiKeyHeaderName)
             );
             settings.OperationProcessors.Add(new AspNetCoreOperationSecurityScopeProcessor(_ApiKeyDefinitionName));
         }
 
-        if (frameworkOptions.AddPrimitiveMappings)
+        if (headlessOptions.AddPrimitiveMappings)
         {
             settings.SchemaSettings.AddBuildingBlocksPrimitiveMappings();
         }

@@ -87,7 +87,7 @@ No configuration required.
 
 ## Dependencies
 
-- Framework.Base
+- Headless.Base
 
 ## Side Effects
 

@@ -62,4 +62,4 @@ Could add compile-time validation that RFC URLs are correct format:
 | Constants Classes | 5 |
 | **Recommended Tests** | **0-4** |
 
-**Rationale:** Abstractions packages define contracts, not behavior. The implementations are tested in `Framework.Api.Tests.Unit` where `HttpRequestContext`, `HttpWebClientInfoProvider`, etc. implement these interfaces.
+**Rationale:** Abstractions packages define contracts, not behavior. The implementations are tested in `Headless.Api.Tests.Unit` where `HttpRequestContext`, `HttpWebClientInfoProvider`, etc. implement these interfaces.

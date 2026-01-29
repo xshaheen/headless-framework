@@ -12,7 +12,7 @@
 
 ## Package Analysis
 
-### Framework.Emails.Abstractions
+### Headless.Emails.Abstractions
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -20,20 +20,20 @@
 | `Contracts/SendSingleEmailRequest.cs` | Request record with From, Destination, Subject, attachments | Medium |
 | `Contracts/SendSingleEmailResponse.cs` | Response with success/failure state | Medium |
 
-### Framework.Emails.Core
+### Headless.Emails.Core
 
 | File | Purpose | Testable |
 |------|---------|----------|
 | `EmailToMimMessageConverter.cs` | Convert SendSingleEmailRequest to MimeMessage | High |
 
-### Framework.Emails.Aws
+### Headless.Emails.Aws
 
 | File | Purpose | Testable |
 |------|---------|----------|
 | `AwsSesEmailSender.cs` | IEmailSender using AWS SES v2 | High (integration) |
 | `Setup.cs` | DI registration | Low |
 
-### Framework.Emails.Mailkit
+### Headless.Emails.Mailkit
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -42,7 +42,7 @@
 | `SmtpClientPooledObjectPolicy.cs` | ObjectPool policy for SmtpClient | Medium |
 | `Setup.cs` | DI registration | Low |
 
-### Framework.Emails.Dev
+### Headless.Emails.Dev
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -215,10 +215,10 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Emails.Abstractions\Framework.Emails.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Emails.Core\Framework.Emails.Core.csproj" />
-    <ProjectReference Include="..\..\src\Framework.Emails.Dev\Framework.Emails.Dev.csproj" />
-    <ProjectReference Include="..\Framework.Testing\Framework.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Emails.Core\Headless.Emails.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
+    <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
 ```

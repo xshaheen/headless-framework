@@ -1,11 +1,11 @@
-# Framework.Identity Test Design
+# Headless.Identity Test Design
 
 ## Overview
 
-The Framework.Identity.Storage.EntityFramework package provides a specialized ASP.NET Core Identity DbContext that integrates with the Headless Framework's entity processing, transaction management, and message publishing capabilities.
+The Headless.Identity.Storage.EntityFramework package provides a specialized ASP.NET Core Identity DbContext that integrates with the Headless Framework's entity processing, transaction management, and message publishing capabilities.
 
 ### Packages
-1. **Framework.Identity.Storage.EntityFramework** - HeadlessIdentityDbContext base class
+1. **Headless.Identity.Storage.EntityFramework** - HeadlessIdentityDbContext base class
 
 ### Key Components
 - **HeadlessIdentityDbContext** - Abstract generic base class extending IdentityDbContext
@@ -19,7 +19,7 @@ The Framework.Identity.Storage.EntityFramework package provides a specialized AS
 
 ---
 
-## 1. Framework.Identity.Storage.EntityFramework
+## 1. Headless.Identity.Storage.EntityFramework
 
 ### 1.1 HeadlessIdentityDbContext - SaveChanges Tests
 
@@ -149,7 +149,7 @@ The Framework.Identity.Storage.EntityFramework package provides a specialized AS
 ### Test Project Structure
 ```
 tests/
-└── Framework.Identity.Tests.Integration/        (NEW - 45 tests)
+└── Headless.Identity.Tests.Integration/        (NEW - 45 tests)
     ├── TestSetup/
     │   ├── TestUser.cs
     │   ├── TestRole.cs
@@ -174,4 +174,4 @@ tests/
 
 4. **Message Publishing Order**: Local messages publish before SaveChanges, distributed messages after - this order is critical for consistency.
 
-5. **Integration with HeadlessDbContext**: Much of the behavior mirrors Framework.Orm.EntityFramework - tests should focus on Identity-specific aspects.
+5. **Integration with HeadlessDbContext**: Much of the behavior mirrors Headless.Orm.EntityFramework - tests should focus on Identity-specific aspects.

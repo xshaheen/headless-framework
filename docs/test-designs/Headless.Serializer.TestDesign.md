@@ -5,19 +5,19 @@
 - `src/Headless.Serializer.Json`
 - `src/Headless.Serializer.MessagePack`
 
-**Test Projects:** `Framework.Serializer.Tests.Unit` (existing)
+**Test Projects:** `Headless.Serializer.Tests.Unit` (existing)
 **Generated:** 2026-01-25
 
 ## Package Analysis
 
-### Framework.Serializer.Abstractions
+### Headless.Serializer.Abstractions
 
 | File | Purpose | Testable |
 |------|---------|----------|
 | `ISerializer.cs` | Serializer interface hierarchy | Low (interface) |
 | `SerializerExtensions.cs` | Extension methods for ISerializer | High |
 
-### Framework.Serializer.Json
+### Headless.Serializer.Json
 
 | File | Purpose | Testable |
 |------|---------|----------|
@@ -37,7 +37,7 @@
 | `Modifiers/JsonPropertiesModifiers.cs` | Property modifiers | Medium |
 | `Modifiers/SystemJsonTypeInfoResolver.cs` | Type info resolver | Medium |
 
-### Framework.Serializer.MessagePack
+### Headless.Serializer.MessagePack
 
 | File | Purpose | Testable |
 |------|---------|----------|

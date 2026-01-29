@@ -24,8 +24,9 @@ dotnet add package Headless.Identity.Storage.EntityFramework
 ```csharp
 public class AppDbContext : HeadlessIdentityDbContext<
     AppUser, AppRole, Guid,
-    AppUserClaim, AppUserRole, AppUserLogin,
-    AppRoleClaim, AppUserToken>
+    AppUserClaim, AppUserRole,
+    AppUserLogin, AppRoleClaim, AppUserToken
+>
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 }

@@ -77,11 +77,11 @@ public static class EntityTypeBuilderExtensions
     }
 
     /// <summary>
-    /// Configures all framework conventions for the given entity type builder.
+    /// Configures all headless conventions for the given entity type builder.
     /// Applies concurrency stamp, extra properties, delete audit, create audit,
     /// update audit, and suspend audit configurations.
     /// </summary>
-    public static void ConfigureFrameworkConvention(this EntityTypeBuilder builder)
+    public static void ConfigureHeadlessConvention(this EntityTypeBuilder builder)
     {
         builder.TryConfigureConcurrencyStamp();
         builder.TryConfigureExtraProperties();

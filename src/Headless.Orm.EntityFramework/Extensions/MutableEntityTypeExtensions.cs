@@ -10,7 +10,7 @@ namespace Microsoft.EntityFrameworkCore;
 [PublicAPI]
 public static class MutableEntityTypeExtensions
 {
-    public static void ConfigureFrameworkValueGenerated(this IMutableEntityType entityType)
+    public static void ConfigureHeadlessValueGenerated(this IMutableEntityType entityType)
     {
         if (entityType.ClrType.IsAssignableTo(typeof(IEntity<long>)))
         {

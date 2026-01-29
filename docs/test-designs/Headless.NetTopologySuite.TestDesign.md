@@ -1,12 +1,12 @@
 # Test Case Design: Headless.NetTopologySuite
 
 **Package:** `src/Headless.NetTopologySuite`
-**Test Project:** `Framework.NetTopologySuite.Tests.Unit` (to be created)
+**Test Project:** `Headless.NetTopologySuite.Tests.Unit` (to be created)
 **Generated:** 2026-01-25
 
 ## Package Overview
 
-Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySuite library:
+Headless.NetTopologySuite provides geospatial utilities wrapping NetTopologySuite library:
 - `GeoConstants` - Pre-configured precision models, SRID, geometry factories, GeoJSON converters
 - `GeoExtensions` - 30+ extension methods for geometry manipulation, validation, SQL Server compatibility
 
@@ -14,7 +14,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 - `NetTopologySuite` - Core geometry library
 - `NetTopologySuite.IO.GeoJSON4STJ` - System.Text.Json GeoJSON support
-- `Framework.Base` - Base framework (Checks, etc.)
+- `Headless.Base` - Base headless framework (Checks, etc.)
 
 ---
 

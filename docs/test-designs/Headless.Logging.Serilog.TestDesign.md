@@ -155,8 +155,8 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Logging.Serilog\Framework.Logging.Serilog.csproj" />
-    <ProjectReference Include="..\Framework.Testing\Framework.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
+    <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
 ```

@@ -1,8 +1,8 @@
-# Unify Framework.Ticker + Framework.Messages into Single Messaging System
+# Unify Headless.Ticker + Headless.Messaging into Single Messaging System
 
 ## Overview
 
-Merge Framework.Ticker (7 packages - background job scheduling with cron) and Framework.Messages (16 packages - distributed messaging with outbox) into a unified developer experience for immediate messages, delayed messages, and recurring scheduled jobs.
+Merge Headless.Ticker (7 packages - background job scheduling with cron) and Headless.Messaging (16 packages - distributed messaging with outbox) into a unified developer experience for immediate messages, delayed messages, and recurring scheduled jobs.
 
 **Current Pain Points:**
 - Two separate systems for scheduling vs. messaging (cognitive overhead)
@@ -28,7 +28,7 @@ Merge Framework.Ticker (7 packages - background job scheduling with cron) and Fr
 
 Framework currently has **two independent systems** solving overlapping problems:
 
-**Framework.Ticker** (Background Job Scheduling):
+**Headless.Ticker** (Background Job Scheduling):
 - Cron expressions for recurring jobs (`[TickerFunction]` attribute)
 - Time-based scheduling (`ITimeTickerManager`)
 - Custom thread pool with concurrency control
@@ -36,7 +36,7 @@ Framework currently has **two independent systems** solving overlapping problems
 - Dashboard for monitoring scheduled jobs
 - Source generator for compile-time registration
 
-**Framework.Messages** (Distributed Messaging):
+**Headless.Messages** (Distributed Messaging):
 - Type-safe message consumption (`IConsume<T>` - new, `[CapSubscribe]` - legacy)
 - Outbox pattern for transactional publishing
 - Multiple transports (RabbitMQ, Kafka, Azure Service Bus, etc.)
@@ -145,16 +145,16 @@ services.AddMessaging(m =>
 #### 3. Package References (BREAKING)
 **Before:**
 ```xml
-<PackageReference Include="Framework.Ticker.Core" />
-<PackageReference Include="Framework.Ticker.EntityFramework" />
-<PackageReference Include="Framework.Ticker.Dashboard" />
+<PackageReference Include="Headless.Ticker.Core" />
+<PackageReference Include="Headless.Ticker.EntityFramework" />
+<PackageReference Include="Headless.Ticker.Dashboard" />
 ```
 
 **After:**
 ```xml
-<PackageReference Include="Framework.Messages.Core" />
-<PackageReference Include="Framework.Messages.PostgreSql" />
-<PackageReference Include="Framework.Messages.Dashboard" />
+<PackageReference Include="Headless.Messages.Core" />
+<PackageReference Include="Headless.Messages.PostgreSql" />
+<PackageReference Include="Headless.Messages.Dashboard" />
 ```
 
 #### 4. Database Schema (BREAKING - Requires Migration)
@@ -663,7 +663,7 @@ while (!cancellationToken.IsCancellationRequested)
 
 **Migration Guide** (`docs/migration/ticker-to-messaging.md`):
 ```markdown
-# Migrating from Framework.Ticker to Framework.Messages
+# Migrating from Headless.Ticker.to Headless.Messaging
 
 ## Before (Ticker)
 ```csharp
@@ -703,11 +703,11 @@ services.AddMessaging(m =>
 - Payload serialization: Binary (`byte[]`) → JSON (`JSONB`)
 
 ## Migration Steps
-1. Install `Framework.Messages.Core` + storage provider
+1. Install `Headless.Messages.Core` + storage provider
 2. Create `IConsume<T>` handlers (copy logic from `[TickerFunction]` methods)
 3. Register handlers with `.Cron(...)` configuration
 4. Test in staging environment
-5. Deploy and remove `Framework.Ticker.*` packages
+5. Deploy and remove `Headless.Ticker.*` packages
 ```
 
 **Roslyn Analyzer** (`src/Headless.Messages.Analyzers/TickerFunctionAnalyzer.cs`):
@@ -1019,7 +1019,7 @@ All critical questions resolved following Ticker's existing patterns for consist
 
 ### 4. Message Type Migration for Existing CAP Data
 **Decision:** N/A - No migration needed
-- Framework.Messages not in production yet
+- Headless.Messages not in production yet
 - Fresh schema from day one with `message_type NOT NULL`
 - No backfill logic required
 
@@ -1073,8 +1073,8 @@ All critical questions resolved following Ticker's existing patterns for consist
 - `plans/refactor-iconsume-part2-conventions-assembly-scanning.md` - Part 2: Convention system
 
 **Repository Analysis**:
-- Framework.Ticker packages: 7 packages (`src/Headless.Ticker.*`)
-- Framework.Messages packages: 16 packages (`src/Headless.Messages.*`)
+- Headless.Ticker.packages: 7 packages (`src/Headless.Ticker.*`)
+- Headless.Messaging packages: 16 packages (`src/Headless.Messages.*`)
 - Overlapping concerns: Persistence, retry, locks, monitoring, OpenTelemetry
 
 **Code References**:

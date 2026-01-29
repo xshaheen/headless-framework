@@ -14,7 +14,7 @@ public static class HeadlessDiagnostics
 
     static HeadlessDiagnostics()
     {
-        var product = typeof(HeadlessDiagnostics).Assembly.GetAssemblyProduct() ?? "Framework";
+        var product = typeof(HeadlessDiagnostics).Assembly.GetAssemblyProduct() ?? "Headless Framework";
         var version = typeof(HeadlessDiagnostics).Assembly.GetAssemblyVersion() ?? "1.0.0";
 
         ActivitySource = new(product, version);

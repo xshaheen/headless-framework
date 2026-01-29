@@ -191,8 +191,8 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Api.Logging.Serilog\Framework.Api.Logging.Serilog.csproj" />
-    <ProjectReference Include="..\Framework.Testing\Framework.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.Logging.Serilog\Headless.Api.Logging.Serilog.csproj" />
+    <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
 ```

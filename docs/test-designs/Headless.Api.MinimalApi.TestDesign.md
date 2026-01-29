@@ -170,8 +170,8 @@ var next = Substitute.For<EndpointFilterDelegate>();
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Framework.Api.MinimalApi\Framework.Api.MinimalApi.csproj" />
-    <ProjectReference Include="..\Framework.Testing\Framework.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
+    <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
 ```

@@ -34,9 +34,9 @@ builder.Services.AddHeadlessNswagOpenApi(options =>
 
 var app = builder.Build();
 
-app.MapFrameworkNswagOpenApi();
+app.MapHeadlessNswagOpenApi();
 // or for versioned APIs:
-app.MapFrameworkNswagOpenApiVersions();
+app.MapHeadlessNswagOpenApiVersions();
 ```
 
 ## Configuration

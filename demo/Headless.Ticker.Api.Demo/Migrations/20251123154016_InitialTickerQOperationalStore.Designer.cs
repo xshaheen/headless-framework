@@ -20,7 +20,7 @@ namespace Headless.Ticker.Sample.WebApi.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
 
-            modelBuilder.Entity("Headless.Ticker.Utilities.Entities.CronTickerEntity", b =>
+            modelBuilder.Entity("Headless.Ticker.Entities.CronTickerEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
@@ -63,7 +63,7 @@ namespace Headless.Ticker.Sample.WebApi.Migrations
                     b.ToTable("CronTickers", "ticker");
                 });
 
-            modelBuilder.Entity("Headless.Ticker.Utilities.Entities.CronTickerOccurrenceEntity<Framework.Ticker.Utilities.Entities.CronTickerEntity>", b =>
+            modelBuilder.Entity("Headless.Ticker.Entities.CronTickerOccurrenceEntity<Headless.Ticker.Entities.CronTickerEntity>", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
@@ -122,7 +122,7 @@ namespace Headless.Ticker.Sample.WebApi.Migrations
                     b.ToTable("CronTickerOccurrences", "ticker");
                 });
 
-            modelBuilder.Entity("Headless.Ticker.Utilities.Entities.TimeTickerEntity", b =>
+            modelBuilder.Entity("Headless.Ticker.Entities.TimeTickerEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -198,9 +198,9 @@ namespace Headless.Ticker.Sample.WebApi.Migrations
                     b.ToTable("TimeTickers", "ticker");
                 });
 
-            modelBuilder.Entity("Headless.Ticker.Utilities.Entities.CronTickerOccurrenceEntity<Framework.Ticker.Utilities.Entities.CronTickerEntity>", b =>
+            modelBuilder.Entity("Headless.Ticker.Entities.CronTickerOccurrenceEntity<Headless.Ticker.Entities.CronTickerEntity>", b =>
                 {
-                    b.HasOne("Headless.Ticker.Utilities.Entities.CronTickerEntity", "CronTicker")
+                    b.HasOne("Headless.Ticker.Entities.CronTickerEntity", "CronTicker")
                         .WithMany()
                         .HasForeignKey("CronTickerId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -209,9 +209,9 @@ namespace Headless.Ticker.Sample.WebApi.Migrations
                     b.Navigation("CronTicker");
                 });
 
-            modelBuilder.Entity("Headless.Ticker.Utilities.Entities.TimeTickerEntity", b =>
+            modelBuilder.Entity("Headless.Ticker.Entities.TimeTickerEntity", b =>
                 {
-                    b.HasOne("Headless.Ticker.Utilities.Entities.TimeTickerEntity", "Parent")
+                    b.HasOne("Headless.Ticker.Entities.TimeTickerEntity", "Parent")
                         .WithMany("Children")
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.NoAction);
@@ -219,7 +219,7 @@ namespace Headless.Ticker.Sample.WebApi.Migrations
                     b.Navigation("Parent");
                 });
 
-            modelBuilder.Entity("Headless.Ticker.Utilities.Entities.TimeTickerEntity", b =>
+            modelBuilder.Entity("Headless.Ticker.Entities.TimeTickerEntity", b =>
                 {
                     b.Navigation("Children");
                 });

@@ -128,7 +128,7 @@ public sealed class IsOneOfTests
     {
         // given
         const string argument = "invalid";
-        var values = new List<string> { "zad", "framework", "storm" };
+        var values = new List<string> { "zad", "headless", "storm" };
 
         // when
         var listAction = () => Argument.IsOneOf(argument, values);
@@ -136,7 +136,7 @@ public sealed class IsOneOfTests
 
         // then
         const string message =
-            "The argument \"argument\"=\"invalid\" must be one of [zad,framework,storm]. (Parameter 'argument')";
+            "The argument \"argument\"=\"invalid\" must be one of [zad,headless,storm]. (Parameter 'argument')";
 
         listAction.Should().ThrowExactly<ArgumentException>().WithMessage(message);
         spanAction.Should().ThrowExactly<ArgumentException>().WithMessage(message);
@@ -165,8 +165,8 @@ public sealed class IsOneOfTests
     public void is_one_of_string_should_respect_string_comparer()
     {
         // given
-        const string argument = "framework";
-        var validValues = new List<string> { "zad", "framework", "storm" };
+        const string argument = "headless";
+        var validValues = new List<string> { "zad", "headless", "storm" };
 
         // when & then
         Argument.IsOneOf(argument, validValues, StringComparer.OrdinalIgnoreCase);
