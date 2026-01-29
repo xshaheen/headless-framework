@@ -9,7 +9,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
 
@@ -27,7 +27,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -42,7 +42,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
         await cache.UpsertAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
@@ -61,7 +61,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
         var wrongExpected = Faker.Lorem.Sentence();
@@ -81,7 +81,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var keys = new List<string>();
         for (var i = 0; i < 3; i++)
         {
@@ -107,7 +107,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
 
         // when
         var result = await cache.RemoveAllAsync([], AbortToken);
@@ -121,7 +121,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var prefix = "removeprefix:";
         await cache.UpsertAsync($"{prefix}key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync($"{prefix}key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
@@ -145,7 +145,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         for (var i = 0; i < 5; i++)
         {
             await cache.UpsertAsync(Faker.Random.AlphaNumeric(10), "value", TimeSpan.FromMinutes(5), AbortToken);

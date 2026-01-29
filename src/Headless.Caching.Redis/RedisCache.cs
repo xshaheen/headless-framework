@@ -6,7 +6,6 @@ using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Headless.Caching;
@@ -16,25 +15,20 @@ public sealed class RedisCache(
     ISerializer serializer,
     TimeProvider timeProvider,
     RedisCacheOptions options,
+    HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null
-) : IDistributedCache, IDisposable
+) : IDistributedCache
 {
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
-    private readonly AsyncLock _lock = new();
 
-    private bool _scriptsLoaded;
-    private bool? _supportsMsetEx;
-    private bool? _isCluster;
-
-    private LoadedLuaScript? _incrementWithExpire;
-    private LoadedLuaScript? _removeIfEqual;
-    private LoadedLuaScript? _replaceIfEqual;
-    private LoadedLuaScript? _setIfHigher;
-    private LoadedLuaScript? _setIfLower;
+    private volatile bool _supportsMsetEx;
+    private bool _supportsMsetExChecked;
+    private volatile bool _isCluster;
+    private bool _isClusterChecked;
 
     private IDatabase _Database => options.ConnectionMultiplexer.GetDatabase();
 
@@ -42,9 +36,9 @@ public sealed class RedisCache(
     {
         get
         {
-            if (_isCluster.HasValue)
+            if (_isClusterChecked)
             {
-                return _isCluster.Value;
+                return _isCluster;
             }
 
             foreach (var endpoint in options.ConnectionMultiplexer.GetEndPoints())
@@ -54,11 +48,13 @@ public sealed class RedisCache(
                 if (server.IsConnected && server.ServerType == ServerType.Cluster)
                 {
                     _isCluster = true;
+                    _isClusterChecked = true;
                     return true;
                 }
             }
 
             _isCluster = false;
+            _isClusterChecked = true;
             return false;
         }
     }
@@ -174,7 +170,7 @@ public sealed class RedisCache(
             return false;
         }
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var redisValue = _ToRedisValue(value);
         var expectedValue = _ToRedisValue(expected);
@@ -184,7 +180,7 @@ public sealed class RedisCache(
 
         var redisResult = await _Database
             .ScriptEvaluateAsync(
-                _replaceIfEqual!,
+                scriptsLoader.ReplaceIfEqualScript!,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -215,14 +211,14 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
         var result = await _Database
             .ScriptEvaluateAsync(
-                _incrementWithExpire!,
+                scriptsLoader.IncrementWithExpireScript!,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -252,14 +248,14 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
         var result = await _Database
             .ScriptEvaluateAsync(
-                _incrementWithExpire!,
+                scriptsLoader.IncrementWithExpireScript!,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -289,14 +285,14 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
         var result = await _Database
             .ScriptEvaluateAsync(
-                _setIfHigher!,
+                scriptsLoader.SetIfHigherScript!,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -326,14 +322,14 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
         var result = await _Database
             .ScriptEvaluateAsync(
-                _setIfHigher!,
+                scriptsLoader.SetIfHigherScript!,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -363,14 +359,14 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
         var result = await _Database
             .ScriptEvaluateAsync(
-                _setIfLower!,
+                scriptsLoader.SetIfLowerScript!,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -400,14 +396,14 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
         var result = await _Database
             .ScriptEvaluateAsync(
-                _setIfLower!,
+                scriptsLoader.SetIfLowerScript!,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -674,11 +670,14 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await _LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expectedValue = _ToRedisValue(expected);
         var redisResult = await _Database
-            .ScriptEvaluateAsync(_removeIfEqual!, new { key = (RedisKey)_GetKey(key), expected = expectedValue })
+            .ScriptEvaluateAsync(
+                scriptsLoader.RemoveIfEqualScript!,
+                new { key = (RedisKey)_GetKey(key), expected = expectedValue }
+            )
             .AnyContext();
 
         return (int)redisResult > 0;
@@ -858,12 +857,6 @@ public sealed class RedisCache(
 
     #region Helpers
 
-    public void Dispose()
-    {
-        options.ConnectionMultiplexer.ConnectionRestored -= _ConnectionMultiplexerOnConnectionRestored;
-        options.ConnectionMultiplexer.ConnectionFailed -= _ConnectionMultiplexerOnConnectionFailed;
-    }
-
     private string _GetKey(string key)
     {
         return string.IsNullOrEmpty(_keyPrefix) ? key : _keyPrefix + key;
@@ -1012,9 +1005,9 @@ public sealed class RedisCache(
 
     private bool _SupportsMsetexCommand()
     {
-        if (_supportsMsetEx.HasValue)
+        if (_supportsMsetExChecked)
         {
-            return _supportsMsetEx.Value;
+            return _supportsMsetEx;
         }
 
         // Redis 8.4 RC1 is internally versioned as 8.3.224
@@ -1039,6 +1032,7 @@ public sealed class RedisCache(
                 if (server.Version < minVersion)
                 {
                     _supportsMsetEx = false;
+                    _supportsMsetExChecked = true;
                     return false;
                 }
             }
@@ -1047,6 +1041,7 @@ public sealed class RedisCache(
         if (foundConnectedPrimary)
         {
             _supportsMsetEx = true;
+            _supportsMsetExChecked = true;
             return true;
         }
 
@@ -1079,61 +1074,6 @@ public sealed class RedisCache(
         }
 
         return (long)expiresIn.Value.TotalMilliseconds;
-    }
-
-    private async Task _LoadScriptsAsync()
-    {
-        if (_scriptsLoaded)
-        {
-            return;
-        }
-
-        using (await _lock.LockAsync().AnyContext())
-        {
-            if (_scriptsLoaded)
-            {
-                return;
-            }
-
-            var incrementWithExpire = LuaScript.Prepare(RedisScripts.IncrementWithExpire);
-            var removeIfEqual = LuaScript.Prepare(RedisScripts.RemoveIfEqual);
-            var replaceIfEqual = LuaScript.Prepare(RedisScripts.ReplaceIfEqual);
-            var setIfHigher = LuaScript.Prepare(RedisScripts.SetIfHigher);
-            var setIfLower = LuaScript.Prepare(RedisScripts.SetIfLower);
-
-            foreach (var endpoint in options.ConnectionMultiplexer.GetEndPoints())
-            {
-                var server = options.ConnectionMultiplexer.GetServer(endpoint);
-
-                if (server.IsReplica)
-                {
-                    continue;
-                }
-
-                _incrementWithExpire = await incrementWithExpire.LoadAsync(server).AnyContext();
-                _removeIfEqual = await removeIfEqual.LoadAsync(server).AnyContext();
-                _replaceIfEqual = await replaceIfEqual.LoadAsync(server).AnyContext();
-                _setIfHigher = await setIfHigher.LoadAsync(server).AnyContext();
-                _setIfLower = await setIfLower.LoadAsync(server).AnyContext();
-            }
-
-            options.ConnectionMultiplexer.ConnectionRestored += _ConnectionMultiplexerOnConnectionRestored;
-            options.ConnectionMultiplexer.ConnectionFailed += _ConnectionMultiplexerOnConnectionFailed;
-
-            _scriptsLoaded = true;
-        }
-    }
-
-    private void _ConnectionMultiplexerOnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
-    {
-        _logger.LogInformation("Redis connection restored");
-        _scriptsLoaded = false;
-        _supportsMsetEx = null;
-    }
-
-    private void _ConnectionMultiplexerOnConnectionFailed(object? sender, ConnectionFailedEventArgs e)
-    {
-        _logger.LogWarning("Redis connection failed: {FailureType}", e.FailureType);
     }
 
     private const long _MaxUnixEpochMilliseconds = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z

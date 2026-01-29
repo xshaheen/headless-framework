@@ -9,7 +9,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();
@@ -29,7 +29,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
 
@@ -47,14 +47,20 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();
         await cache.UpsertAsync(key, originalValue, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await cache.TryReplaceIfEqualAsync(key, originalValue, newValue, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.TryReplaceIfEqualAsync(
+            key,
+            originalValue,
+            newValue,
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
 
         // then
         result.Should().BeTrue();
@@ -67,7 +73,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var wrongExpected = Faker.Lorem.Sentence();
@@ -75,7 +81,13 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
         await cache.UpsertAsync(key, originalValue, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await cache.TryReplaceIfEqualAsync(key, wrongExpected, newValue, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.TryReplaceIfEqualAsync(
+            key,
+            wrongExpected,
+            newValue,
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
 
         // then
         result.Should().BeFalse();
@@ -88,7 +100,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var expected = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();

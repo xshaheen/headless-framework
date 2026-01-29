@@ -9,7 +9,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var values = new List<string> { "value1", "value2", "value3" };
 
@@ -25,7 +25,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var values = new List<string> { "value1", "value2", "value3" };
         await cache.SetAddAsync(key, values, TimeSpan.FromMinutes(5), AbortToken);
@@ -44,7 +44,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var values = Enumerable.Range(1, 10).Select(i => $"value{i}").ToList();
         await cache.SetAddAsync(key, values, TimeSpan.FromMinutes(5), AbortToken);
@@ -62,7 +62,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var values = new List<string> { "value1", "value2", "value3" };
         await cache.SetAddAsync(key, values, TimeSpan.FromMinutes(5), AbortToken);
@@ -82,7 +82,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -97,7 +97,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -112,7 +112,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when - passing string directly (will be treated as enumerable of chars if not handled)
@@ -129,7 +129,7 @@ public sealed class SetOperationsTests(RedisCacheFixture fixture) : RedisCacheTe
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var values = new List<TestSetObject>
         {

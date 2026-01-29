@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -38,6 +39,7 @@ public static class RedisCacheSetup
             services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
 
             services.AddSingletonOptionValue<RedisCacheOptions>();
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
             services.TryAddSingleton<IDistributedCache, RedisCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
             services.TryAddSingleton(typeof(IDistributedCache<>), typeof(DistributedCache<>));

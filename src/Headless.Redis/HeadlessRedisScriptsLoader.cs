@@ -11,10 +11,11 @@ public sealed class HeadlessRedisScriptsLoader(
     IConnectionMultiplexer multiplexer,
     TimeProvider? timeProvider = null,
     ILogger<HeadlessRedisScriptsLoader>? logger = null
-)
+) : IDisposable
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private bool _scriptsLoaded;
+    private volatile bool _scriptsLoaded;
+    private bool _eventsSubscribed;
     private readonly AsyncLock _loadScriptsLock = new();
 
     public LoadedLuaScript? IncrementWithExpireScript { get; private set; }
@@ -94,11 +95,40 @@ public sealed class HeadlessRedisScriptsLoader(
 
             _scriptsLoaded = true;
 
+            // Subscribe to connection events for automatic script reload on reconnection
+            if (!_eventsSubscribed)
+            {
+                multiplexer.ConnectionRestored += _OnConnectionRestored;
+                _eventsSubscribed = true;
+            }
+
             if (traceEnabled)
             {
                 logger!.LogTrace("Scripts loaded successfully in {Elapsed:g}", _timeProvider.GetElapsedTime(timestamp));
             }
         }
+    }
+
+    /// <summary>Resets the scripts loaded state, forcing a reload on next operation.</summary>
+    public void ResetScripts()
+    {
+        _scriptsLoaded = false;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        if (_eventsSubscribed)
+        {
+            multiplexer.ConnectionRestored -= _OnConnectionRestored;
+            _eventsSubscribed = false;
+        }
+    }
+
+    private void _OnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
+    {
+        logger?.LogInformation("Redis connection restored, resetting script state");
+        _scriptsLoaded = false;
     }
 
     public async Task<bool> ReplaceIfEqualAsync(

@@ -9,7 +9,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
 
@@ -28,7 +28,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = new TestObject { Id = Faker.Random.Guid(), Name = Faker.Name.FullName() };
 
@@ -49,7 +49,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -67,7 +67,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();
@@ -87,7 +87,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
 
@@ -105,7 +105,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
 
@@ -123,7 +123,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [Faker.Random.AlphaNumeric(10)] = Faker.Lorem.Sentence(),
@@ -148,7 +148,7 @@ public sealed class UpsertTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
 
         // when

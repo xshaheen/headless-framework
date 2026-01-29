@@ -9,7 +9,7 @@ public sealed class TryInsertTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
 
@@ -27,7 +27,7 @@ public sealed class TryInsertTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();
@@ -47,7 +47,7 @@ public sealed class TryInsertTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        using var cache = CreateCache();
+        var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
