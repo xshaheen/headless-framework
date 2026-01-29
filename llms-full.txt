@@ -1248,7 +1248,6 @@ options.KeyPrefix = "myapp:";
 - `Headless.Hosting`
 - `Headless.Redis`
 - `Headless.Serializer.Json`
-- `Foundatio.Redis`
 
 ## Side Effects
 
@@ -7447,7 +7446,7 @@ builder.Services.AddKeyedInMemoryThrottlingResourceLock("api", new ThrottlingRes
 
 - `Headless.ResourceLocks.Cache`
 - `Headless.Caching.Memory`
-- `Headless.Messaging.Foundatio`
+- `Headless.Messaging.Abstractions`
 
 ## Side Effects
 

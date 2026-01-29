@@ -13,7 +13,7 @@ public sealed class CacheThrottlingResourceLockStorage(ICache cache) : IThrottli
 
     public async Task<long> IncrementAsync(string resource, TimeSpan ttl)
     {
-        return await cache.IncrementAsync(resource, 1, ttl);
+        return await cache.IncrementAsync(resource, 1L, ttl);
     }
 
     public ValueTask DisposeAsync()

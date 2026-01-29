@@ -4,39 +4,29 @@ namespace Headless.DistributedLocks.Cache;
 
 public sealed class CacheResourceLockStorage(ICache cache) : IResourceLockStorage
 {
-    public Task<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
-    {
-        return cache.TryInsertAsync(key, lockId, ttl);
-    }
+    public ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null) =>
+        cache.TryInsertAsync(key, lockId, ttl);
 
-    public Task<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
-    {
-        return cache.TryReplaceIfEqualAsync(key, expectedId, newId, newTtl);
-    }
+    public ValueTask<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null) =>
+        cache.TryReplaceIfEqualAsync(key, expectedId, newId, newTtl);
 
-    public Task<bool> RemoveIfEqualAsync(string key, string expectedId)
-    {
-        return cache.RemoveIfEqualAsync(key, expectedId);
-    }
+    public ValueTask<bool> RemoveIfEqualAsync(string key, string expectedId) =>
+        cache.RemoveIfEqualAsync(key, expectedId);
 
-    public Task<TimeSpan?> GetExpirationAsync(string key)
-    {
-        return cache.GetExpirationAsync(key);
-    }
+    public ValueTask<TimeSpan?> GetExpirationAsync(string key) =>
+        cache.GetExpirationAsync(key);
 
-    public Task<bool> ExistsAsync(string key)
-    {
-        return cache.ExistsAsync(key);
-    }
+    public ValueTask<bool> ExistsAsync(string key) =>
+        cache.ExistsAsync(key);
 
-    public async Task<string?> GetAsync(string key)
+    public async ValueTask<string?> GetAsync(string key)
     {
         var result = await cache.GetAsync<string>(key);
 
         return result.HasValue ? result.Value : null;
     }
 
-    public async Task<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix)
+    public async ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix)
     {
         var all = await cache.GetByPrefixAsync<string>(prefix);
 
@@ -44,8 +34,6 @@ public sealed class CacheResourceLockStorage(ICache cache) : IResourceLockStorag
             .ToDictionary(kv => kv.Key, kv => kv.Value.Value!, StringComparer.Ordinal);
     }
 
-    public Task<int> GetCountAsync(string prefix = "")
-    {
-        return cache.GetCountAsync(prefix);
-    }
+    public ValueTask<int> GetCountAsync(string prefix = "") =>
+        cache.GetCountAsync(prefix);
 }

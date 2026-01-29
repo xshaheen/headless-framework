@@ -6,7 +6,7 @@ namespace Headless.Caching;
 
 public static class CacheExtensions
 {
-    public static async Task<CacheValue<T>> GetOrAddAsync<T>(
+    public static async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         this ICache cache,
         string key,
         Func<Task<T?>> factory,

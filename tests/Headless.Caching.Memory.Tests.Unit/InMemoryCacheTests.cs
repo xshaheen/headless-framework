@@ -80,7 +80,7 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        var act = () => cache.UpsertAsync(key, 42, TimeSpan.Zero, AbortToken);
+        var act = async () => await cache.UpsertAsync(key, 42, TimeSpan.Zero, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -153,7 +153,7 @@ public sealed class InMemoryCacheTests : TestBase
         var values = new Dictionary<string, int>(StringComparer.Ordinal) { ["key1"] = 1, ["key2"] = 2 };
 
         // when
-        var act = () => cache.UpsertAllAsync(values, TimeSpan.Zero, AbortToken);
+        var act = async () => await cache.UpsertAllAsync(values, TimeSpan.Zero, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -222,7 +222,7 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        var act = () => cache.TryInsertAsync(key, 42, TimeSpan.Zero, AbortToken);
+        var act = async () => await cache.TryInsertAsync(key, 42, TimeSpan.Zero, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -373,7 +373,7 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        var act = () => cache.IncrementAsync(key, 5.5, TimeSpan.Zero, AbortToken);
+        var act = async () => await cache.IncrementAsync(key, 5.5, TimeSpan.Zero, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -435,7 +435,7 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
-        var act = () => cache.IncrementAsync(key, 5L, TimeSpan.Zero, AbortToken);
+        var act = async () => await cache.IncrementAsync(key, 5L, TimeSpan.Zero, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -1486,7 +1486,9 @@ public sealed class InMemoryCacheTests : TestBase
 
         // then
         result.HasValue.Should().BeTrue();
-        result.Value.Should().BeEquivalentTo(new Dictionary<string, int>(StringComparer.Ordinal) { ["a"] = 1, ["b"] = 2 });
+        result
+            .Value.Should()
+            .BeEquivalentTo(new Dictionary<string, int>(StringComparer.Ordinal) { ["a"] = 1, ["b"] = 2 });
     }
 
     #endregion
@@ -1532,8 +1534,7 @@ public sealed class InMemoryCacheTests : TestBase
         var act = () => _CreateCache(options);
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .Which.Message.Should().Contain("SizeCalculator");
+        act.Should().Throw<ArgumentException>().Which.Message.Should().Contain("SizeCalculator");
     }
 
     [Fact]
@@ -1546,19 +1547,14 @@ public sealed class InMemoryCacheTests : TestBase
         var act = () => _CreateCache(options);
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .Which.Message.Should().Contain("SizeCalculator");
+        act.Should().Throw<ArgumentException>().Which.Message.Should().Contain("SizeCalculator");
     }
 
     [Fact]
     public async Task should_track_memory_size_on_upsert()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxMemorySize = 10000,
-            SizeCalculator = _ => 100,
-        };
+        var options = new InMemoryCacheOptions { MaxMemorySize = 10000, SizeCalculator = _ => 100 };
         using var cache = _CreateCache(options);
 
         // when
@@ -1594,11 +1590,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_decrease_memory_size_on_remove()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxMemorySize = 10000,
-            SizeCalculator = _ => 100,
-        };
+        var options = new InMemoryCacheOptions { MaxMemorySize = 10000, SizeCalculator = _ => 100 };
         using var cache = _CreateCache(options);
         await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
@@ -1614,11 +1606,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_reset_memory_size_on_flush()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxMemorySize = 10000,
-            SizeCalculator = _ => 100,
-        };
+        var options = new InMemoryCacheOptions { MaxMemorySize = 10000, SizeCalculator = _ => 100 };
         using var cache = _CreateCache(options);
         await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
@@ -1687,7 +1675,7 @@ public sealed class InMemoryCacheTests : TestBase
         using var cache = _CreateCache(options);
 
         // when
-        var act = () => cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
+        var act = async () => await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         await act.Should().ThrowAsync<MaxEntrySizeExceededException>();
@@ -1697,11 +1685,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_allow_entry_when_within_max_entry_size()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxEntrySize = 150,
-            SizeCalculator = _ => 100,
-        };
+        var options = new InMemoryCacheOptions { MaxEntrySize = 150, SizeCalculator = _ => 100 };
         using var cache = _CreateCache(options);
 
         // when
@@ -1775,11 +1759,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_track_memory_on_try_insert()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxMemorySize = 10000,
-            SizeCalculator = _ => 100,
-        };
+        var options = new InMemoryCacheOptions { MaxMemorySize = 10000, SizeCalculator = _ => 100 };
         using var cache = _CreateCache(options);
 
         // when
@@ -1793,11 +1773,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_not_track_memory_on_failed_try_insert()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxMemorySize = 10000,
-            SizeCalculator = _ => 100,
-        };
+        var options = new InMemoryCacheOptions { MaxMemorySize = 10000, SizeCalculator = _ => 100 };
         using var cache = _CreateCache(options);
         await cache.UpsertAsync("key1", "existing", TimeSpan.FromMinutes(5), AbortToken);
 
@@ -1830,11 +1806,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_track_memory_on_set_add()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxMemorySize = 10000,
-            SizeCalculator = _ => 50,
-        };
+        var options = new InMemoryCacheOptions { MaxMemorySize = 10000, SizeCalculator = _ => 50 };
         using var cache = _CreateCache(options);
 
         // when
@@ -1848,11 +1820,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_reset_memory_on_dispose()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            MaxMemorySize = 10000,
-            SizeCalculator = _ => 100,
-        };
+        var options = new InMemoryCacheOptions { MaxMemorySize = 10000, SizeCalculator = _ => 100 };
         var cache = _CreateCache(options);
         await cache.UpsertAsync("key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
 
@@ -1923,16 +1891,12 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_throw_on_invalid_type_conversion_when_throw_enabled()
     {
         // given
-        var options = new InMemoryCacheOptions
-        {
-            CloneValues = false,
-            ShouldThrowOnSerializationError = true,
-        };
+        var options = new InMemoryCacheOptions { CloneValues = false, ShouldThrowOnSerializationError = true };
         using var cache = _CreateCache(options);
         await cache.UpsertAsync("key1", 42, TimeSpan.FromMinutes(5), AbortToken);
 
         // when - try to get as wrong type
-        var act = () => cache.GetAsync<TestClass>("key1", AbortToken);
+        var act = async () => await cache.GetAsync<TestClass>("key1", AbortToken);
 
         // then - should throw
         await act.Should().ThrowAsync<Exception>();
@@ -1954,7 +1918,9 @@ public sealed class InMemoryCacheTests : TestBase
         await cache.UpsertAsync("TEST", "uppercase", TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        (await cache.GetAsync<string>("test", AbortToken)).Value.Should().Be("lowercase");
+        (await cache.GetAsync<string>("test", AbortToken))
+            .Value.Should()
+            .Be("lowercase");
         (await cache.GetAsync<string>("Test", AbortToken)).Value.Should().Be("capitalized");
         (await cache.GetAsync<string>("TEST", AbortToken)).Value.Should().Be("uppercase");
     }
@@ -1992,7 +1958,8 @@ public sealed class InMemoryCacheTests : TestBase
         var successCount = 0;
 
         // when
-        var tasks = Enumerable.Range(0, 10)
+        var tasks = Enumerable
+            .Range(0, 10)
             .Select(async i =>
             {
                 if (await cache.TryInsertAsync(key, i, TimeSpan.FromMinutes(5), AbortToken))
