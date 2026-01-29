@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace Headless.Messaging.SqlServer;
 
-public partial class SqlServerEntityFrameworkMessagingOptions
+public partial class SqlServerEntityMessagingOptions
 {
     public const string DefaultSchema = "messages";
 

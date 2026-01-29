@@ -57,3 +57,9 @@ Source: Workflow automation
 - Added `FOR UPDATE SKIP LOCKED` to PostgreSQL `_GetMessagesOfNeedRetryAsync` query
 - Added `UPDLOCK` hint to SQL Server `_GetMessagesOfNeedRetryAsync` query (changed from `WITH (READPAST)` to `WITH (UPDLOCK, READPAST)`)
 - Status changed: ready → done
+
+### 2026-01-29 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
