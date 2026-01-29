@@ -60,6 +60,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         CancellationToken cancellationToken = default
     )
     {
+        _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
@@ -306,9 +307,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 {
                     currentValue = existingEntry.GetValue<double?>();
                 }
-                catch
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
-                    // ignore
+                    // Type conversion failed - treat as new value
                 }
 
                 existingEntry.Value = currentValue.HasValue ? currentValue.Value + amount : amount;
@@ -370,9 +371,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 {
                     currentValue = existingEntry.GetValue<long?>();
                 }
-                catch
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
-                    // ignore
+                    // Type conversion failed - treat as new value
                 }
 
                 existingEntry.Value = currentValue.HasValue ? currentValue.Value + amount : amount;
@@ -435,9 +436,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 {
                     currentValue = existingEntry.GetValue<double?>();
                 }
-                catch
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
-                    // ignore
+                    // Type conversion failed - treat as if no current value
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value)
@@ -509,9 +510,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 {
                     currentValue = existingEntry.GetValue<long?>();
                 }
-                catch
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
-                    // ignore
+                    // Type conversion failed - treat as if no current value
                 }
 
                 if (currentValue.HasValue && currentValue.Value < value)
@@ -583,9 +584,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 {
                     currentValue = existingEntry.GetValue<double?>();
                 }
-                catch
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
-                    // ignore
+                    // Type conversion failed - treat as if no current value
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value)
@@ -657,9 +658,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 {
                     currentValue = existingEntry.GetValue<long?>();
                 }
-                catch
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
                 {
-                    // ignore
+                    // Type conversion failed - treat as if no current value
                 }
 
                 if (currentValue.HasValue && currentValue.Value > value)
@@ -817,6 +818,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default)
     {
+        _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -881,6 +883,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
+        _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -983,6 +986,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
+        _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -1198,6 +1202,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     public ValueTask FlushAsync(CancellationToken cancellationToken = default)
     {
+        _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
         _memory.Clear();
         Interlocked.Exchange(ref _currentMemorySize, 0);
@@ -1220,6 +1225,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         Interlocked.Exchange(ref _currentMemorySize, 0);
         _disposedCts.Cancel();
         _disposedCts.Dispose();
+    }
+
+    private void _ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
     }
 
     private string _GetKey(string key)
@@ -1373,19 +1383,39 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private string? _FindLeastRecentlyUsedOrLargest()
     {
+        // Redis-style random sampling: sample a few entries and evict the best candidate.
+        // This is O(k) where k is sample size, instead of O(n) scanning entire dictionary.
+        const int sampleSize = 5;
+        var keysSnapshot = _memory.Keys.ToArray();
+        var keysCount = keysSnapshot.Length;
+
+        if (keysCount is 0)
+        {
+            return null;
+        }
+
         // When memory-constrained, prefer evicting larger items that are also less frequently used
         // When item-count constrained, prefer evicting least recently used (LRU)
         var isMemoryConstrained = _maxMemorySize.HasValue && Interlocked.Read(ref _currentMemorySize) > _maxMemorySize;
         (string? Key, long LastAccessTicks, long InstanceNumber, long Size) best = (null, long.MaxValue, 0, 0);
 
-        foreach (var kvp in _memory)
-        {
-            var isExpired = kvp.Value.IsExpired;
+        // For small caches, scan all entries. Otherwise sample randomly.
+        var indicesToSample =
+            keysCount <= sampleSize ? Enumerable.Range(0, keysCount) : _GenerateRandomIndices(sampleSize, keysCount);
 
-            if (isExpired)
+        foreach (var index in indicesToSample)
+        {
+            var key = keysSnapshot[index];
+
+            if (!_memory.TryGetValue(key, out var entry))
+            {
+                continue;
+            }
+
+            if (entry.IsExpired)
             {
                 // Always prefer expired items first
-                return kvp.Key;
+                return key;
             }
 
             var isBetter = false;
@@ -1394,12 +1424,12 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             {
                 // When memory constrained: prefer larger items, breaking ties by LRU
                 if (
-                    kvp.Value.Size > best.Size
-                    || (kvp.Value.Size == best.Size && kvp.Value.LastAccessTicks < best.LastAccessTicks)
+                    entry.Size > best.Size
+                    || (entry.Size == best.Size && entry.LastAccessTicks < best.LastAccessTicks)
                     || (
-                        kvp.Value.Size == best.Size
-                        && kvp.Value.LastAccessTicks == best.LastAccessTicks
-                        && kvp.Value.InstanceNumber < best.InstanceNumber
+                        entry.Size == best.Size
+                        && entry.LastAccessTicks == best.LastAccessTicks
+                        && entry.InstanceNumber < best.InstanceNumber
                     )
                 )
                 {
@@ -1410,11 +1440,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             {
                 // Standard LRU
                 if (
-                    kvp.Value.LastAccessTicks < best.LastAccessTicks
-                    || (
-                        kvp.Value.LastAccessTicks == best.LastAccessTicks
-                        && kvp.Value.InstanceNumber < best.InstanceNumber
-                    )
+                    entry.LastAccessTicks < best.LastAccessTicks
+                    || (entry.LastAccessTicks == best.LastAccessTicks && entry.InstanceNumber < best.InstanceNumber)
                 )
                 {
                     isBetter = true;
@@ -1423,11 +1450,24 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
             if (isBetter)
             {
-                best = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber, kvp.Value.Size);
+                best = (key, entry.LastAccessTicks, entry.InstanceNumber, entry.Size);
             }
         }
 
         return best.Key;
+    }
+
+    private static IEnumerable<int> _GenerateRandomIndices(int count, int maxExclusive)
+    {
+        // Use HashSet to avoid duplicates
+        var indices = new HashSet<int>(count);
+
+        while (indices.Count < count)
+        {
+            indices.Add(Random.Shared.Next(maxExclusive));
+        }
+
+        return indices;
     }
 
     private async Task _DoMaintenanceAsync()
