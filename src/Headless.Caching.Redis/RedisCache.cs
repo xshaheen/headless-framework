@@ -40,7 +40,6 @@ public sealed class RedisCache(
     private volatile bool _supportsMsetEx;
     private bool _supportsMsetExChecked;
     private volatile bool _isCluster;
-    private bool _isClusterChecked;
 
     private IDatabase _Database => options.ConnectionMultiplexer.GetDatabase();
 
@@ -48,7 +47,7 @@ public sealed class RedisCache(
     {
         get
         {
-            if (_isClusterChecked)
+            if (field)
             {
                 return _isCluster;
             }
@@ -60,13 +59,13 @@ public sealed class RedisCache(
                 if (server.IsConnected && server.ServerType == ServerType.Cluster)
                 {
                     _isCluster = true;
-                    _isClusterChecked = true;
+                    field = true;
                     return true;
                 }
             }
 
             _isCluster = false;
-            _isClusterChecked = true;
+            field = true;
             return false;
         }
     }

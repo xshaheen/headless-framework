@@ -56,6 +56,20 @@ options.ConnectionString = "localhost:6379";
 options.KeyPrefix = "myapp:";
 ```
 
+## Cancellation Token Behavior
+
+Cancellation is checked **at the start** of each operation. Once an operation begins, it completes without interruption:
+
+| Operation Type | Cancellation Behavior |
+|---------------|----------------------|
+| Single-key ops (`GetAsync`, `UpsertAsync`, etc.) | Checked before Redis call; operation completes atomically |
+| Batch ops (`UpsertAllAsync`, `RemoveAllAsync`) | Checked before batch starts; all keys processed atomically |
+| SCAN-based ops (`RemoveByPrefixAsync`, `GetAllKeysByPrefixAsync`) | Cancellable during iteration (unbounded key sets) |
+
+This design ensures consumers never observe partial results from batch operations.
+
+> **Note:** StackExchange.Redis doesn't support `CancellationToken` in its API. Timeouts are configured via `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`.
+
 ## Dependencies
 
 - `Headless.Caching.Abstractions`
