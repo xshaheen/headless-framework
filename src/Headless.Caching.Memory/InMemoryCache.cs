@@ -4,6 +4,8 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Headless.Checks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nito.AsyncEx;
 
 namespace Headless.Caching;
@@ -14,6 +16,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new();
     private readonly AsyncLock _lock = new();
     private readonly CancellationTokenSource _disposedCts = new();
+    private readonly ILogger _logger;
     private readonly TimeProvider _timeProvider;
     private readonly string _keyPrefix;
     private readonly int? _maxItems;
@@ -30,8 +33,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     /// <summary>Gets the current memory size in bytes used by the cache.</summary>
     public long CurrentMemorySize => Interlocked.Read(ref _currentMemorySize);
 
-    public InMemoryCache(TimeProvider timeProvider, InMemoryCacheOptions options)
+    public InMemoryCache(TimeProvider timeProvider, InMemoryCacheOptions options, ILogger<InMemoryCache>? logger = null)
     {
+        _logger = logger ?? NullLogger<InMemoryCache>.Instance;
         _timeProvider = timeProvider;
         _keyPrefix = options.KeyPrefix ?? "";
         _maxItems = options.MaxItems;
@@ -1502,9 +1506,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            _logger.LogWarning(ex, "Cache maintenance task failed");
         }
 
         if (_ShouldCompact)
