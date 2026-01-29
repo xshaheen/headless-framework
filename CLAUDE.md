@@ -13,8 +13,8 @@ It is designed to support multiple projects and packages, both internal and exte
 
 ```bash
 # Direct dotnet (faster for single projects)
-dotnet build src/Framework.Orm.EntityFramework
-dotnet test tests/Framework.Base.Tests.Unit
+dotnet build src/Headless.Orm.EntityFramework
+dotnet test tests/Headless.Base.Tests.Unit
 dotnet test --filter "FullyQualifiedName~method_name"  # Single test
 csharpier format .    # Format code. You should run after changes.
 ```
@@ -58,7 +58,7 @@ Example: `Framework.Caching.Abstractions` + `Framework.Caching.Redis`
 ## Documentation
 
 - Make sure to sync XML docs of the public APIs.
-- Make sure to sync project README.md files for each package (exist in `src/Framework.*` folders).
+- Make sure to sync project README.md files for each package (exist in `src/Headless.*` folders).
 
 ## Tools
 

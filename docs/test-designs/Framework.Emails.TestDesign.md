@@ -1,11 +1,11 @@
-# Test Case Design: Framework.Emails (All Packages)
+# Test Case Design: Headless.Emails (All Packages)
 
 **Packages:**
-- `src/Framework.Emails.Abstractions`
-- `src/Framework.Emails.Core`
-- `src/Framework.Emails.Aws`
-- `src/Framework.Emails.Mailkit`
-- `src/Framework.Emails.Dev`
+- `src/Headless.Emails.Abstractions`
+- `src/Headless.Emails.Core`
+- `src/Headless.Emails.Aws`
+- `src/Headless.Emails.Mailkit`
+- `src/Headless.Emails.Dev`
 
 **Test Projects:** None (new projects needed)
 **Generated:** 2026-01-25
@@ -58,7 +58,7 @@
 
 ## Missing: EmailRequestAddress Tests
 
-**File:** `tests/Framework.Emails.Tests.Unit/Contracts/EmailRequestAddressTests.cs`
+**File:** `tests/Headless.Emails.Tests.Unit/Contracts/EmailRequestAddressTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -73,7 +73,7 @@
 
 ## Missing: EmailRequestDestination Tests
 
-**File:** `tests/Framework.Emails.Tests.Unit/Contracts/EmailRequestDestinationTests.cs`
+**File:** `tests/Headless.Emails.Tests.Unit/Contracts/EmailRequestDestinationTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -85,7 +85,7 @@
 
 ## Missing: SendSingleEmailRequest Tests
 
-**File:** `tests/Framework.Emails.Tests.Unit/Contracts/SendSingleEmailRequestTests.cs`
+**File:** `tests/Headless.Emails.Tests.Unit/Contracts/SendSingleEmailRequestTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -100,7 +100,7 @@
 
 ## Missing: EmailToMimMessageConverter Tests
 
-**File:** `tests/Framework.Emails.Tests.Unit/EmailToMimMessageConverterTests.cs`
+**File:** `tests/Headless.Emails.Tests.Unit/EmailToMimMessageConverterTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -120,7 +120,7 @@
 
 ## Missing: DevEmailSender Tests
 
-**File:** `tests/Framework.Emails.Tests.Unit/DevEmailSenderTests.cs`
+**File:** `tests/Headless.Emails.Tests.Unit/DevEmailSenderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -142,7 +142,7 @@
 
 ## Missing: NoopEmailSender Tests
 
-**File:** `tests/Framework.Emails.Tests.Unit/NoopEmailSenderTests.cs`
+**File:** `tests/Headless.Emails.Tests.Unit/NoopEmailSenderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -153,7 +153,7 @@
 
 ## Missing: MailkitEmailSender Tests (Integration)
 
-**File:** `tests/Framework.Emails.Mailkit.Tests.Integration/MailkitEmailSenderTests.cs`
+**File:** `tests/Headless.Emails.Mailkit.Tests.Integration/MailkitEmailSenderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -172,7 +172,7 @@
 
 ## Missing: AwsSesEmailSender Tests (Integration)
 
-**File:** `tests/Framework.Emails.Aws.Tests.Integration/AwsSesEmailSenderTests.cs`
+**File:** `tests/Headless.Emails.Aws.Tests.Integration/AwsSesEmailSenderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -193,7 +193,7 @@
 
 ## Missing: SmtpClientPooledObjectPolicy Tests
 
-**File:** `tests/Framework.Emails.Tests.Unit/SmtpClientPooledObjectPolicyTests.cs`
+**File:** `tests/Headless.Emails.Tests.Unit/SmtpClientPooledObjectPolicyTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -209,7 +209,7 @@
 ### Required Test Project Setup
 
 ```xml
-<!-- tests/Framework.Emails.Tests.Unit/Framework.Emails.Tests.Unit.csproj -->
+<!-- tests/Headless.Emails.Tests.Unit/Headless.Emails.Tests.Unit.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>

@@ -1,10 +1,10 @@
-# Test Case Design: Framework.Media.Indexing + Abstractions
+# Test Case Design: Headless.Media.Indexing + Abstractions
 
 **Packages:**
-- `src/Framework.Media.Indexing.Abstractions`
-- `src/Framework.Media.Indexing`
+- `src/Headless.Media.Indexing.Abstractions`
+- `src/Headless.Media.Indexing`
 
-**Test Project:** `tests/Framework.Media.Indexing.Tests.Unit`
+**Test Project:** `tests/Headless.Media.Indexing.Tests.Unit`
 **Generated:** 2026-01-25
 
 ## Package Analysis
@@ -64,7 +64,7 @@
 
 ## Missing: PdfMediaFileTextProvider Tests
 
-**File:** `tests/Framework.Media.Indexing.Tests.Unit/PdfMediaFileTextProviderTests.cs`
+**File:** `tests/Headless.Media.Indexing.Tests.Unit/PdfMediaFileTextProviderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -111,7 +111,7 @@
 
 1. **Non-seekable stream handling** - `PdfMediaFileTextProvider` has special logic for non-seekable streams (copies to MemoryStream). This is the primary untested code path.
 
-2. **Test file dependencies** - Tests use real files in `tests/Framework.Media.Indexing.Tests.Unit/Files/`:
+2. **Test file dependencies** - Tests use real files in `tests/Headless.Media.Indexing.Tests.Unit/Files/`:
    - `TestPdf.pdf`
    - `TestWORD.docx`
    - `TestPPTX.pptx`

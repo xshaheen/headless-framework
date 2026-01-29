@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Logging.Serilog
+# Test Case Design: Headless.Logging.Serilog
 
-**Package:** `src/Framework.Logging.Serilog`
+**Package:** `src/Headless.Logging.Serilog`
 **Test Projects:** None existing - **needs creation**
 **Generated:** 2026-01-25
 
@@ -15,7 +15,7 @@
 
 ## 1. SerilogOptions Tests
 
-**File:** `tests/Framework.Logging.Serilog.Tests.Unit/SerilogOptionsTests.cs`
+**File:** `tests/Headless.Logging.Serilog.Tests.Unit/SerilogOptionsTests.cs`
 
 ### Default Values Tests
 
@@ -43,7 +43,7 @@
 
 ## 2. SerilogFactory Tests
 
-**File:** `tests/Framework.Logging.Serilog.Tests.Unit/SerilogFactoryTests.cs`
+**File:** `tests/Headless.Logging.Serilog.Tests.Unit/SerilogFactoryTests.cs`
 
 ### OutputTemplate Tests
 
@@ -133,7 +133,7 @@
 
 ## 3. IPAddress Destructure Tests
 
-**File:** `tests/Framework.Logging.Serilog.Tests.Unit/IPAddressDestructureTests.cs`
+**File:** `tests/Headless.Logging.Serilog.Tests.Unit/IPAddressDestructureTests.cs`
 
 | Test Case | Input | Expected |
 |-----------|-------|----------|
@@ -149,7 +149,7 @@
 ### Required Test Project Setup
 
 ```xml
-<!-- tests/Framework.Logging.Serilog.Tests.Unit/Framework.Logging.Serilog.Tests.Unit.csproj -->
+<!-- tests/Headless.Logging.Serilog.Tests.Unit/Headless.Logging.Serilog.Tests.Unit.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -276,7 +276,7 @@ This package is primarily configuration/factory code. Testing focuses on:
 
 ### Integration Test Considerations
 
-**File:** `tests/Framework.Logging.Serilog.Tests.Integration/`
+**File:** `tests/Headless.Logging.Serilog.Tests.Integration/`
 
 | Test Case | Description |
 |-----------|-------------|

@@ -214,7 +214,7 @@ tests/
    - Expected files generated
    - Generated code compiles
 
-3. **Incremental Generator**: Framework.Generator.Primitives uses IIncrementalGenerator - tests should verify incremental behavior.
+3. **Incremental Generator**: Headless.Generator.Primitives uses IIncrementalGenerator - tests should verify incremental behavior.
 
 4. **Cross-Framework**: Abstractions target net10.0, Generator targets netstandard2.0 - tests should cover both.
 

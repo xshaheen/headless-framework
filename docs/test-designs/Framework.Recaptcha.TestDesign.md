@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Recaptcha
+# Test Case Design: Headless.Recaptcha
 
-**Package:** `src/Framework.Recaptcha`
+**Package:** `src/Headless.Recaptcha`
 **Test Projects:** None existing - **needs creation**
 **Generated:** 2026-01-25
 
@@ -32,7 +32,7 @@
 
 ## 1. ReCaptchaOptionsValidator Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/Contracts/ReCaptchaOptionsValidatorTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/Contracts/ReCaptchaOptionsValidatorTests.cs`
 
 | Test Case | Input | Expected |
 |-----------|-------|----------|
@@ -49,7 +49,7 @@
 
 ## 2. Response Error Parsing Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/Contracts/ReCaptchaSiteVerifyV2ResponseTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/Contracts/ReCaptchaSiteVerifyV2ResponseTests.cs`
 
 ### ParseErrors Tests
 
@@ -80,7 +80,7 @@
 | `should_have_ChallengeTimeStamp_when_Success_true` | Nullable analysis compliance |
 | `should_have_ErrorCodes_when_Success_false` | Nullable analysis compliance |
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/Contracts/ReCaptchaSiteVerifyV3ResponseTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/Contracts/ReCaptchaSiteVerifyV3ResponseTests.cs`
 
 Same tests as V2 plus:
 
@@ -93,7 +93,7 @@ Same tests as V2 plus:
 
 ## 3. ReCaptchaErrorExtensions Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/Internals/ReCaptchaErrorExtensionsTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/Internals/ReCaptchaErrorExtensionsTests.cs`
 
 | Test Case | Input | Expected |
 |-----------|-------|----------|
@@ -110,7 +110,7 @@ Same tests as V2 plus:
 
 ## 4. StringExtensions Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/Internals/StringExtensionsTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/Internals/StringExtensionsTests.cs`
 
 ### RemovePostFix Tests
 
@@ -136,7 +136,7 @@ Same tests as V2 plus:
 
 ## 5. CultureInfoReCaptchaLanguageCodeProvider Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/Services/CultureInfoReCaptchaLanguageCodeProviderTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/Services/CultureInfoReCaptchaLanguageCodeProviderTests.cs`
 
 | Test Case | Culture | Expected |
 |-----------|---------|----------|
@@ -148,7 +148,7 @@ Same tests as V2 plus:
 
 ## 6. ReCaptchaSiteVerifyV2 Tests (HTTP Mocking)
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/V2/ReCaptchaSiteVerifyV2Tests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/V2/ReCaptchaSiteVerifyV2Tests.cs`
 
 ### Success Cases
 
@@ -181,7 +181,7 @@ Same tests as V2 plus:
 
 ## 7. ReCaptchaSiteVerifyV3 Tests (HTTP Mocking)
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/V3/ReCaptchaSiteVerifyV3Tests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/V3/ReCaptchaSiteVerifyV3Tests.cs`
 
 Same structure as V2 tests, plus:
 
@@ -196,7 +196,7 @@ Same structure as V2 tests, plus:
 
 ### ReCaptchaV2DivTagHelper Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/V2/TagHelpers/ReCaptchaV2DivTagHelperTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/V2/TagHelpers/ReCaptchaV2DivTagHelperTests.cs`
 
 | Test Case | Properties Set | Expected Output |
 |-----------|----------------|-----------------|
@@ -212,7 +212,7 @@ Same structure as V2 tests, plus:
 
 ### ReCaptchaV2ElementTagHelper Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/V2/TagHelpers/ReCaptchaV2ElementTagHelperTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/V2/TagHelpers/ReCaptchaV2ElementTagHelperTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -222,7 +222,7 @@ Same structure as V2 tests, plus:
 
 ### ReCaptchaV2ScriptTagHelper Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/V2/TagHelpers/ReCaptchaV2ScriptTagHelperTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/V2/TagHelpers/ReCaptchaV2ScriptTagHelperTests.cs`
 
 | Test Case | Properties | Expected |
 |-----------|------------|----------|
@@ -240,7 +240,7 @@ Same structure as V2 tests, plus:
 
 ### ReCaptchaV3ScriptTagHelper Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/V3/TagHelpers/ReCaptchaV3ScriptTagHelperTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/V3/TagHelpers/ReCaptchaV3ScriptTagHelperTests.cs`
 
 | Test Case | Properties | Expected |
 |-----------|------------|----------|
@@ -250,7 +250,7 @@ Same structure as V2 tests, plus:
 
 ### ReCaptchaV3ScriptJsTagHelper Tests (Security Critical)
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/V3/TagHelpers/ReCaptchaV3ScriptJsTagHelperTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/V3/TagHelpers/ReCaptchaV3ScriptJsTagHelperTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -282,7 +282,7 @@ Same structure as V2 tests, plus:
 
 ## 9. Setup/DI Tests
 
-**File:** `tests/Framework.Recaptcha.Tests.Unit/SetupTests.cs`
+**File:** `tests/Headless.Recaptcha.Tests.Unit/SetupTests.cs`
 
 ### AddReCaptchaV2 Tests
 
@@ -319,7 +319,7 @@ Same structure as V2 tests, plus:
 ### Required Test Project Setup
 
 ```xml
-<!-- tests/Framework.Recaptcha.Tests.Unit/Framework.Recaptcha.Tests.Unit.csproj -->
+<!-- tests/Headless.Recaptcha.Tests.Unit/Headless.Recaptcha.Tests.Unit.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>

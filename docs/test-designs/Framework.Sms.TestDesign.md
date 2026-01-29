@@ -1,15 +1,15 @@
-# Test Case Design: Framework.Sms (All Packages)
+# Test Case Design: Headless.Sms (All Packages)
 
 **Packages:**
-- `src/Framework.Sms.Abstractions`
-- `src/Framework.Sms.Aws`
-- `src/Framework.Sms.Cequens`
-- `src/Framework.Sms.Connekio`
-- `src/Framework.Sms.Dev`
-- `src/Framework.Sms.Infobip`
-- `src/Framework.Sms.Twilio`
-- `src/Framework.Sms.VictoryLink`
-- `src/Framework.Sms.Vodafone`
+- `src/Headless.Sms.Abstractions`
+- `src/Headless.Sms.Aws`
+- `src/Headless.Sms.Cequens`
+- `src/Headless.Sms.Connekio`
+- `src/Headless.Sms.Dev`
+- `src/Headless.Sms.Infobip`
+- `src/Headless.Sms.Twilio`
+- `src/Headless.Sms.VictoryLink`
+- `src/Headless.Sms.Vodafone`
 
 **Test Projects:** None (new projects needed)
 **Generated:** 2026-01-25
@@ -59,7 +59,7 @@
 
 ## Missing: SmsRequestDestination Tests
 
-**File:** `tests/Framework.Sms.Tests.Unit/Contracts/SmsRequestDestinationTests.cs`
+**File:** `tests/Headless.Sms.Tests.Unit/Contracts/SmsRequestDestinationTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -72,7 +72,7 @@
 
 ## Missing: SendSingleSmsRequest Tests
 
-**File:** `tests/Framework.Sms.Tests.Unit/Contracts/SendSingleSmsRequestTests.cs`
+**File:** `tests/Headless.Sms.Tests.Unit/Contracts/SendSingleSmsRequestTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -87,7 +87,7 @@
 
 ## Missing: DevSmsSender Tests
 
-**File:** `tests/Framework.Sms.Tests.Unit/DevSmsSenderTests.cs`
+**File:** `tests/Headless.Sms.Tests.Unit/DevSmsSenderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -104,7 +104,7 @@
 
 ## Missing: NoopSmsSender Tests
 
-**File:** `tests/Framework.Sms.Tests.Unit/NoopSmsSenderTests.cs`
+**File:** `tests/Headless.Sms.Tests.Unit/NoopSmsSenderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -115,7 +115,7 @@
 
 ## Missing: AwsSnsSmsSender Tests (Integration)
 
-**File:** `tests/Framework.Sms.Aws.Tests.Integration/AwsSnsSmsSenderTests.cs`
+**File:** `tests/Headless.Sms.Aws.Tests.Integration/AwsSnsSmsSenderTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|

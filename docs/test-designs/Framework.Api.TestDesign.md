@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Api
+# Test Case Design: Headless.Api
 
-**Package:** `src/Framework.Api`
+**Package:** `src/Headless.Api`
 **Test Projects:** `Framework.Api.Tests.Unit`, `Framework.Api.Tests.Integration`
 **Generated:** 2026-01-25
 
@@ -18,7 +18,7 @@
 
 ### 1.1 ApiKeyAuthenticationHandler Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Identity/Authentication/ApiKeyAuthenticationHandlerTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Identity/Authentication/ApiKeyAuthenticationHandlerTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -41,7 +41,7 @@
 
 ### 1.2 BasicAuthenticationHandler Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Identity/Authentication/BasicAuthenticationHandlerTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Identity/Authentication/BasicAuthenticationHandlerTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -66,7 +66,7 @@
 
 ### 1.3 DynamicAuthenticationSchemeProvider Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Identity/Schemes/DynamicAuthenticationSchemeProviderTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Identity/Schemes/DynamicAuthenticationSchemeProviderTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -86,7 +86,7 @@
 
 ### 2.1 StatusCodesRewriterMiddleware Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Middlewares/StatusCodesRewriterMiddlewareTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Middlewares/StatusCodesRewriterMiddlewareTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -105,7 +105,7 @@
 
 ### 2.2 ServerTimingMiddleware Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Middlewares/ServerTimingMiddlewareTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Middlewares/ServerTimingMiddlewareTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -121,7 +121,7 @@
 
 ### 2.3 RequestCanceledMiddleware Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Middlewares/RequestCanceledMiddlewareTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Middlewares/RequestCanceledMiddlewareTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -138,7 +138,7 @@
 
 ### 3.1 JwtTokenFactory Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Security/Jwt/JwtTokenFactoryTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Security/Jwt/JwtTokenFactoryTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -174,7 +174,7 @@
 
 ### 4.1 ProblemDetailsCreator Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Abstractions/ProblemDetailsCreatorTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Abstractions/ProblemDetailsCreatorTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -210,7 +210,7 @@
 
 ### 5.1 TotpTokenProvider Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Identity/TokenProviders/TotpTokenProviderTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Identity/TokenProviders/TotpTokenProviderTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -242,7 +242,7 @@
 
 ### 6.1 HttpCurrentUser Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Abstractions/HttpCurrentUserTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Abstractions/HttpCurrentUserTests.cs`
 
 | Test Case | Property/Method | Description |
 |-----------|-----------------|-------------|
@@ -281,7 +281,7 @@
 
 ### 7.1 ApiValidationRequestPreProcessor Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Mediator/ApiValidationRequestPreProcessorTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Mediator/ApiValidationRequestPreProcessorTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -311,7 +311,7 @@
 
 ### 8.1 HttpContextExtensions Tests
 
-**File:** `tests/Framework.Api.Tests.Unit/Extensions/HttpContextExtensionsTests.cs`
+**File:** `tests/Headless.Api.Tests.Unit/Extensions/HttpContextExtensionsTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -338,7 +338,7 @@
 
 ### 9.1 Authentication Integration Tests
 
-**File:** `tests/Framework.Api.Tests.Integration/Identity/AuthenticationIntegrationTests.cs`
+**File:** `tests/Headless.Api.Tests.Integration/Identity/AuthenticationIntegrationTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|

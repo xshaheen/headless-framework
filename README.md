@@ -168,13 +168,6 @@ dotnet add package Headless.Caching.Redis
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
 
-### Queueing
-
-| Package | Description |
-|---------|-------------|
-| [Headless.Queueing.Abstractions](src/Headless.Queueing.Abstractions/README.md) | Queue interfaces |
-| [Headless.Queueing.Foundatio](src/Headless.Queueing.Foundatio/README.md) | Foundatio queuing |
-
 ### Resource Locking
 
 | Package | Description |
@@ -261,7 +254,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessApi();
 
 // Add caching
-builder.Services.AddFoundatioRedisCache(options =>
+builder.Services.AddHeadlessRedisCache(options =>
 {
     options.ConnectionString = "localhost:6379";
 });

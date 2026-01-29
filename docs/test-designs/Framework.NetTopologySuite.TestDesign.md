@@ -1,6 +1,6 @@
-# Test Case Design: Framework.NetTopologySuite
+# Test Case Design: Headless.NetTopologySuite
 
-**Package:** `src/Framework.NetTopologySuite`
+**Package:** `src/Headless.NetTopologySuite`
 **Test Project:** `Framework.NetTopologySuite.Tests.Unit` (to be created)
 **Generated:** 2026-01-25
 
@@ -32,7 +32,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 1. GeoConstants Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoConstantsTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoConstantsTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -54,7 +54,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 2. GeoExtensions - Point Creation Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/PointCreationTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/PointCreationTests.cs`
 
 | Test Case | Input | Expected |
 |-----------|-------|----------|
@@ -67,7 +67,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 3. GeoExtensions - Precision Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/PrecisionTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/PrecisionTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -81,7 +81,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 4. GeoExtensions - Permissive Operations Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/PermissiveOperationsTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/PermissiveOperationsTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -105,7 +105,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 5. GeoExtensions - SQL Geography Sanitization Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/SanitizeForSqlGeographyTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/SanitizeForSqlGeographyTests.cs`
 
 | Test Case | Input | Expected |
 |-----------|-------|----------|
@@ -127,7 +127,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 6. GeoExtensions - Orientation Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/OrientationTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/OrientationTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -149,7 +149,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 7. GeoExtensions - Fix Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/FixTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/FixTests.cs`
 
 | Test Case | Input | Expected |
 |-----------|-------|----------|
@@ -162,7 +162,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 8. GeoExtensions - Simplify Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/SimplifyTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/SimplifyTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -179,7 +179,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 9. GeoExtensions - Polygon Creation Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/PolygonCreationTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/PolygonCreationTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -194,7 +194,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 10. GeoExtensions - Conversion Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/ConversionTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/ConversionTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|
@@ -215,7 +215,7 @@ Framework.NetTopologySuite provides geospatial utilities wrapping NetTopologySui
 
 ### 11. GeoExtensions - Utility Tests
 
-**File:** `tests/Framework.NetTopologySuite.Tests.Unit/GeoExtensions/UtilityTests.cs`
+**File:** `tests/Headless.NetTopologySuite.Tests.Unit/GeoExtensions/UtilityTests.cs`
 
 | Test Case | Description |
 |-----------|-------------|

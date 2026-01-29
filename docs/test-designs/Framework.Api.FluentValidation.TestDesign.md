@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Api.FluentValidation
+# Test Case Design: Headless.Api.FluentValidation
 
-**Package:** `src/Framework.Api.FluentValidation`
+**Package:** `src/Headless.Api.FluentValidation`
 **Test Projects:** `Framework.Api.FluentValidation.Tests.Unit`
 **Generated:** 2026-01-25
 

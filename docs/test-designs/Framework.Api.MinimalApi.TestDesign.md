@@ -1,6 +1,6 @@
-# Test Case Design: Framework.Api.MinimalApi
+# Test Case Design: Headless.Api.MinimalApi
 
-**Package:** `src/Framework.Api.MinimalApi`
+**Package:** `src/Headless.Api.MinimalApi`
 **Test Projects:** None existing - **needs creation**
 **Generated:** 2026-01-25
 
@@ -19,7 +19,7 @@
 
 ## 1. MinimalApiExceptionFilter Tests
 
-**File:** `tests/Framework.Api.MinimalApi.Tests.Unit/Filters/MinimalApiExceptionFilterTests.cs`
+**File:** `tests/Headless.Api.MinimalApi.Tests.Unit/Filters/MinimalApiExceptionFilterTests.cs`
 
 ### Happy Path Tests
 
@@ -69,7 +69,7 @@ var next = Substitute.For<EndpointFilterDelegate>();
 
 ## 2. MinimalApiValidatorFilter Tests
 
-**File:** `tests/Framework.Api.MinimalApi.Tests.Unit/Filters/MinimalApiValidatorFilterTests.cs`
+**File:** `tests/Headless.Api.MinimalApi.Tests.Unit/Filters/MinimalApiValidatorFilterTests.cs`
 
 ### Happy Path Tests
 
@@ -109,7 +109,7 @@ var next = Substitute.For<EndpointFilterDelegate>();
 
 ## 3. ApiResultExtensions Tests
 
-**File:** `tests/Framework.Api.MinimalApi.Tests.Unit/Extensions/ApiResultExtensionsTests.cs`
+**File:** `tests/Headless.Api.MinimalApi.Tests.Unit/Extensions/ApiResultExtensionsTests.cs`
 
 ### ApiResult<T> Tests
 
@@ -149,7 +149,7 @@ var next = Substitute.For<EndpointFilterDelegate>();
 
 ## 4. RouteBuilderExtensions Tests
 
-**File:** `tests/Framework.Api.MinimalApi.Tests.Unit/Filters/RouteBuilderExtensionsTests.cs`
+**File:** `tests/Headless.Api.MinimalApi.Tests.Unit/Filters/RouteBuilderExtensionsTests.cs`
 
 | Test Case | Method | Description |
 |-----------|--------|-------------|
@@ -164,7 +164,7 @@ var next = Substitute.For<EndpointFilterDelegate>();
 ### Required Test Project Setup
 
 ```xml
-<!-- tests/Framework.Api.MinimalApi.Tests.Unit/Framework.Api.MinimalApi.Tests.Unit.csproj -->
+<!-- tests/Headless.Api.MinimalApi.Tests.Unit/Headless.Api.MinimalApi.Tests.Unit.csproj -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -256,4 +256,4 @@ public class MinimalApiIntegrationTests : IClassFixture<WebApplicationFactory<Pr
 }
 ```
 
-Place in: `tests/Framework.Api.MinimalApi.Tests.Integration/`
+Place in: `tests/Headless.Api.MinimalApi.Tests.Integration/`
