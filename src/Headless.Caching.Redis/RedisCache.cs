@@ -22,6 +22,10 @@ namespace Headless.Caching;
 /// Exception: <see cref="RemoveByPrefixAsync"/> and <see cref="GetAllKeysByPrefixAsync"/> use streaming
 /// SCAN and support cancellation during iteration since they may process unbounded key sets.
 /// </para>
+/// <para>
+/// <b>Limitation:</b> The literal string "@@NULL" cannot be stored as a cache value since it is used
+/// internally as a sentinel to distinguish null from missing keys.
+/// </para>
 /// </remarks>
 public sealed class RedisCache(
     ISerializer serializer,
@@ -31,6 +35,10 @@ public sealed class RedisCache(
     ILogger<RedisCache>? logger = null
 ) : IDistributedCache
 {
+    /// <summary>
+    /// Sentinel value used to distinguish null from missing keys in Redis.
+    /// WARNING: The literal string "@@NULL" cannot be stored as a cache value.
+    /// </summary>
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
 
@@ -38,36 +46,25 @@ public sealed class RedisCache(
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
 
     private volatile bool _supportsMsetEx;
-    private bool _supportsMsetExChecked;
-    private volatile bool _isCluster;
+    private volatile bool _supportsMsetExChecked;
+    private readonly Lazy<bool> _isClusterLazy = new(() => _CheckIsCluster(options.ConnectionMultiplexer));
+    private readonly IDatabase _database = options.ConnectionMultiplexer.GetDatabase();
 
-    private IDatabase _Database => options.ConnectionMultiplexer.GetDatabase();
+    private bool IsCluster => _isClusterLazy.Value;
 
-    private bool _IsCluster
+    private static bool _CheckIsCluster(IConnectionMultiplexer connectionMultiplexer)
     {
-        get
+        foreach (var endpoint in connectionMultiplexer.GetEndPoints())
         {
-            if (field)
+            var server = connectionMultiplexer.GetServer(endpoint);
+
+            if (server is { IsConnected: true, ServerType: ServerType.Cluster })
             {
-                return _isCluster;
+                return true;
             }
-
-            foreach (var endpoint in options.ConnectionMultiplexer.GetEndPoints())
-            {
-                var server = options.ConnectionMultiplexer.GetServer(endpoint);
-
-                if (server.IsConnected && server.ServerType == ServerType.Cluster)
-                {
-                    _isCluster = true;
-                    field = true;
-                    return true;
-                }
-            }
-
-            _isCluster = false;
-            field = true;
-            return false;
         }
+
+        return false;
     }
 
     #region Update
@@ -119,7 +116,7 @@ public sealed class RedisCache(
             pairs[index++] = new KeyValuePair<RedisKey, RedisValue>(_GetKey(kvp.Key), _ToRedisValue(kvp.Value));
         }
 
-        if (_IsCluster)
+        if (IsCluster)
         {
             var successCount = 0;
 
@@ -187,9 +184,9 @@ public sealed class RedisCache(
         var expectedValue = _ToRedisValue(expected);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var redisResult = await _Database
+        var redisResult = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.ReplaceIfEqualScript!,
                 new
@@ -225,9 +222,9 @@ public sealed class RedisCache(
         await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _Database
+        var result = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.IncrementWithExpireScript!,
                 new
@@ -262,9 +259,9 @@ public sealed class RedisCache(
         await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _Database
+        var result = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.IncrementWithExpireScript!,
                 new
@@ -299,9 +296,9 @@ public sealed class RedisCache(
         await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _Database
+        var result = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.SetIfHigherScript!,
                 new
@@ -336,9 +333,9 @@ public sealed class RedisCache(
         await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _Database
+        var result = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.SetIfHigherScript!,
                 new
@@ -373,9 +370,9 @@ public sealed class RedisCache(
         await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _Database
+        var result = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.SetIfLowerScript!,
                 new
@@ -410,9 +407,9 @@ public sealed class RedisCache(
         await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
-        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _Database
+        var result = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.SetIfLowerScript!,
                 new
@@ -472,7 +469,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var added = await _Database.SortedSetAddAsync(key, [.. redisValues]).AnyContext();
+        var added = await _database.SortedSetAddAsync(key, [.. redisValues]).AnyContext();
 
         if (added > 0)
         {
@@ -491,7 +488,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var redisValue = await _Database.StringGetAsync(_GetKey(key), options.ReadMode).AnyContext();
+        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).AnyContext();
         return _RedisValueToCacheValue<T>(redisValue);
     }
 
@@ -516,14 +513,14 @@ public sealed class RedisCache(
             return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
         }
 
-        if (_IsCluster)
+        if (IsCluster)
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
 
             foreach (var hashSlotGroup in redisKeys.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
             {
                 var hashSlotKeys = hashSlotGroup.ToArray();
-                var values = await _Database.StringGetAsync(hashSlotKeys, options.ReadMode).AnyContext();
+                var values = await _database.StringGetAsync(hashSlotKeys, options.ReadMode).AnyContext();
 
                 for (var i = 0; i < hashSlotKeys.Length; i++)
                 {
@@ -536,7 +533,7 @@ public sealed class RedisCache(
         else
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
-            var values = await _Database.StringGetAsync([.. redisKeys], options.ReadMode).AnyContext();
+            var values = await _database.StringGetAsync([.. redisKeys], options.ReadMode).AnyContext();
 
             for (var i = 0; i < redisKeys.Count; i++)
             {
@@ -594,7 +591,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _Database.KeyExistsAsync(_GetKey(key));
+        return await _database.KeyExistsAsync(_GetKey(key));
     }
 
     public async ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -610,7 +607,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _Database.KeyTimeToLiveAsync(_GetKey(key));
+        return await _database.KeyTimeToLiveAsync(_GetKey(key));
     }
 
     public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
@@ -629,7 +626,7 @@ public sealed class RedisCache(
 
         if (!pageIndex.HasValue)
         {
-            var set = await _Database
+            var set = await _database
                 .SortedSetRangeByScoreAsync(
                     key,
                     timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
@@ -644,7 +641,7 @@ public sealed class RedisCache(
         else
         {
             var skip = (pageIndex.Value - 1) * pageSize;
-            var set = await _Database
+            var set = await _database
                 .SortedSetRangeByScoreAsync(
                     key,
                     timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
@@ -669,7 +666,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _Database.KeyDeleteAsync(_GetKey(key));
+        return await _database.KeyDeleteAsync(_GetKey(key));
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -684,7 +681,7 @@ public sealed class RedisCache(
         await scriptsLoader.LoadScriptsAsync().AnyContext();
 
         var expectedValue = _ToRedisValue(expected);
-        var redisResult = await _Database
+        var redisResult = await _database
             .ScriptEvaluateAsync(
                 scriptsLoader.RemoveIfEqualScript!,
                 new { key = (RedisKey)_GetKey(key), expected = expectedValue }
@@ -717,7 +714,7 @@ public sealed class RedisCache(
 
         long deleted = 0;
 
-        if (_IsCluster)
+        if (IsCluster)
         {
             foreach (var batch in redisKeys.Chunk(_BatchSize))
             {
@@ -727,7 +724,7 @@ public sealed class RedisCache(
 
                     try
                     {
-                        var count = await _Database.KeyDeleteAsync(hashSlotKeys).AnyContext();
+                        var count = await _database.KeyDeleteAsync(hashSlotKeys).AnyContext();
                         deleted += count;
                     }
                     catch (Exception ex)
@@ -748,7 +745,7 @@ public sealed class RedisCache(
             {
                 try
                 {
-                    var count = await _Database.KeyDeleteAsync(batch).AnyContext();
+                    var count = await _database.KeyDeleteAsync(batch).AnyContext();
                     deleted += count;
                 }
                 catch (Exception ex)
@@ -766,11 +763,6 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (string.IsNullOrEmpty(prefix))
-        {
-            return await _FlushAllAsync().AnyContext();
-        }
-
         var endpoints = options.ConnectionMultiplexer.GetEndPoints();
 
         if (endpoints.Length is 0)
@@ -778,7 +770,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var isCluster = _IsCluster;
+        var isCluster = IsCluster;
         long deleted = 0;
 
         foreach (var endpoint in endpoints)
@@ -847,7 +839,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var removed = await _Database.SortedSetRemoveAsync(key, [.. redisValues]).AnyContext();
+        var removed = await _database.SortedSetRemoveAsync(key, [.. redisValues]).AnyContext();
 
         if (removed > 0)
         {
@@ -870,7 +862,7 @@ public sealed class RedisCache(
 
     private string _GetKey(string key)
     {
-        return string.IsNullOrEmpty(_keyPrefix) ? key : _keyPrefix + key;
+        return string.IsNullOrEmpty(_keyPrefix) ? key : $"{_keyPrefix}:{key}";
     }
 
     private RedisValue _ToRedisValue<T>(T? value)
@@ -976,14 +968,14 @@ public sealed class RedisCache(
     {
         if (expiresIn is { Ticks: <= 0 })
         {
-            await _Database.KeyDeleteAsync(key).AnyContext();
+            await _database.KeyDeleteAsync(key).AnyContext();
             return false;
         }
 
         expiresIn = _NormalizeExpiration(expiresIn);
         var redisValue = _ToRedisValue(value);
 
-        return await _Database.StringSetAsync(key, redisValue, expiresIn, when).AnyContext();
+        return await _database.StringSetAsync(key, redisValue, expiresIn, when).AnyContext();
     }
 
     private async Task<int> _SetAllInternalAsync(KeyValuePair<RedisKey, RedisValue>[] pairs, TimeSpan? expiresIn)
@@ -992,7 +984,7 @@ public sealed class RedisCache(
         {
             if (_SupportsMsetexCommand())
             {
-                var success = await _Database
+                var success = await _database
                     .StringSetAsync(pairs, When.Always, new Expiration(expiresIn.Value))
                     .AnyContext();
                 return success ? pairs.Length : 0;
@@ -1003,14 +995,14 @@ public sealed class RedisCache(
 
             foreach (var pair in pairs)
             {
-                tasks.Add(_Database.StringSetAsync(pair.Key, pair.Value, expiresIn, When.Always));
+                tasks.Add(_database.StringSetAsync(pair.Key, pair.Value, expiresIn, When.Always));
             }
 
             var results = await Task.WhenAll(tasks).AnyContext();
             return results.Count(r => r);
         }
 
-        var msetSuccess = await _Database.StringSetAsync(pairs).AnyContext();
+        var msetSuccess = await _database.StringSetAsync(pairs).AnyContext();
         return msetSuccess ? pairs.Length : 0;
     }
 
@@ -1036,7 +1028,7 @@ public sealed class RedisCache(
         {
             var server = options.ConnectionMultiplexer.GetServer(endpoint);
 
-            if (server.IsConnected && !server.IsReplica)
+            if (server is { IsConnected: true, IsReplica: false })
             {
                 foundConnectedPrimary = true;
 
@@ -1091,7 +1083,7 @@ public sealed class RedisCache(
 
     private async Task _SetListExpirationAsync(string key)
     {
-        var items = await _Database
+        var items = await _database
             .SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending)
             .AnyContext();
 
@@ -1104,19 +1096,19 @@ public sealed class RedisCache(
 
         if (highestExpirationInMs >= _MaxUnixEpochMilliseconds)
         {
-            await _Database.KeyPersistAsync(key).AnyContext();
+            await _database.KeyPersistAsync(key).AnyContext();
             return;
         }
 
         var furthestExpirationUtc = DateTimeOffset.FromUnixTimeMilliseconds(highestExpirationInMs);
         var expiresIn = furthestExpirationUtc - timeProvider.GetUtcNow();
 
-        await _Database.KeyExpireAsync(key, expiresIn).AnyContext();
+        await _database.KeyExpireAsync(key, expiresIn).AnyContext();
     }
 
     private async Task _RemoveExpiredListValuesAsync(string key)
     {
-        var expiredValues = await _Database
+        var expiredValues = await _database
             .SortedSetRemoveRangeByScoreAsync(key, 0, timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
             .AnyContext();
 
@@ -1169,13 +1161,13 @@ public sealed class RedisCache(
         {
             foreach (var slotGroup in keys.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
             {
-                var count = await _Database.KeyDeleteAsync(slotGroup.ToArray()).AnyContext();
+                var count = await _database.KeyDeleteAsync(slotGroup.ToArray()).AnyContext();
                 deleted += count;
             }
         }
         else
         {
-            deleted = await _Database.KeyDeleteAsync(keys).AnyContext();
+            deleted = await _database.KeyDeleteAsync(keys).AnyContext();
         }
 
         return deleted;
