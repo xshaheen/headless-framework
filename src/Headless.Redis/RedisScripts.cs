@@ -6,7 +6,7 @@ public static class RedisScripts
 {
     public const string ReplaceIfEqual = """
         local currentVal = redis.call('get', @key)
-        if (currentVal == false or currentVal == @expected) then
+        if (currentVal ~= false and currentVal == @expected) then
           if (@expires ~= nil and @expires ~= '') then
             return redis.call('set', @key, @value, 'PX', @expires) and 1 or 0
           else
@@ -33,17 +33,14 @@ public static class RedisScripts
             if (@expires ~= nil and @expires ~= '') then
               redis.call('pexpire', @key, math.ceil(@expires))
             end
-            return tonumber(@value) - c
-          else
-            return 0
           end
         else
           redis.call('set', @key, @value)
           if (@expires ~= nil and @expires ~= '') then
             redis.call('pexpire', @key, math.ceil(@expires))
           end
-          return tonumber(@value)
         end
+        return redis.call('get', @key)
         """;
 
     public const string SetIfLower = """
@@ -54,32 +51,25 @@ public static class RedisScripts
             if (@expires ~= nil and @expires ~= '') then
               redis.call('pexpire', @key, math.ceil(@expires))
             end
-            return c - tonumber(@value)
-          else
-            return 0
           end
         else
           redis.call('set', @key, @value)
           if (@expires ~= nil and @expires ~= '') then
             redis.call('pexpire', @key, math.ceil(@expires))
           end
-          return tonumber(@value)
         end
+        return redis.call('get', @key)
         """;
 
     public const string IncrementWithExpire = """
         if math.modf(@value) == 0 then
-          local v = redis.call('incrby', @key, @value)
-          if (@expires ~= nil and @expires ~= '') then
-            redis.call('pexpire', @key, math.ceil(@expires))
-          end
-          return tonumber(v)
+          redis.call('incrby', @key, @value)
         else
-          local v = redis.call('incrbyfloat', @key, @value)
-          if (@expires ~= nil and @expires ~= '') then
-            redis.call('pexpire', @key, math.ceil(@expires))
-          end
-          return tonumber(v)
+          redis.call('incrbyfloat', @key, @value)
         end
+        if (@expires ~= nil and @expires ~= '') then
+          redis.call('pexpire', @key, math.ceil(@expires))
+        end
+        return redis.call('get', @key)
         """;
 }

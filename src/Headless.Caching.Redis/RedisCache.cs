@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
+using System.Globalization;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
@@ -77,7 +78,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         return await _SetInternalAsync(_GetKey(key), value, expiration);
@@ -210,7 +211,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -236,7 +237,7 @@ public sealed class RedisCache(
             )
             .AnyContext();
 
-        return (double)result;
+        return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> IncrementAsync(
@@ -247,7 +248,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -273,7 +274,7 @@ public sealed class RedisCache(
             )
             .AnyContext();
 
-        return (long)result;
+        return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<double> SetIfHigherAsync(
@@ -284,7 +285,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -310,7 +311,7 @@ public sealed class RedisCache(
             )
             .AnyContext();
 
-        return (double)result;
+        return double.Parse(result.ToString()!, CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetIfHigherAsync(
@@ -321,7 +322,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -347,7 +348,7 @@ public sealed class RedisCache(
             )
             .AnyContext();
 
-        return (long)result;
+        return long.Parse(result.ToString()!, CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<double> SetIfLowerAsync(
@@ -358,7 +359,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -384,7 +385,7 @@ public sealed class RedisCache(
             )
             .AnyContext();
 
-        return (double)result;
+        return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetIfLowerAsync(
@@ -395,7 +396,7 @@ public sealed class RedisCache(
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsPositive(expiration);
+        Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (expiration is { Ticks: <= 0 })
@@ -421,7 +422,7 @@ public sealed class RedisCache(
             )
             .AnyContext();
 
-        return (long)result;
+        return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
 
     public async ValueTask<long> SetAddAsync<T>(
@@ -862,7 +863,7 @@ public sealed class RedisCache(
 
     private string _GetKey(string key)
     {
-        return string.IsNullOrEmpty(_keyPrefix) ? key : $"{_keyPrefix}:{key}";
+        return string.IsNullOrEmpty(_keyPrefix) ? key : $"{_keyPrefix}{key}";
     }
 
     private RedisValue _ToRedisValue<T>(T? value)
