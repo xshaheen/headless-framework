@@ -8,7 +8,7 @@
 
 #nullable enable
 
-using Headless.Permissions;
+using Headless.Primitives;
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;

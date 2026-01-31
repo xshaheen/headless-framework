@@ -27,5 +27,36 @@
     <Compile Remove="Snapshots\**" />
     <EmbeddedResource Remove="Snapshots\**" />
     <None Remove="Snapshots\**" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_short_primitive#ShortPrimitiveJsonConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_short_primitive#ShortPrimitiveDapperTypeHandler.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_short_primitive#AddSwashbuckleSwaggerPrimitivesMappingsExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_sbyte_primitive#SBytePrimitiveValueConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_long_primitive#LongPrimitiveTypeConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_long_primitive#AddSwashbuckleSwaggerPrimitivesMappingsExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_long_primitive#AddPrimitivesValueConvertersExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_guid_primitive#GuidPrimitiveJsonConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_guid_primitive#GuidPrimitiveDapperTypeHandler.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_float_primitive#AddPrimitivesDapperTypeHandlersHelper.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_double_primitive#DoublePrimitiveValueConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_double_primitive#AddPrimitivesValueConvertersExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_byte_primitive#BytePrimitiveTypeConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_byte_primitive#BytePrimitiveJsonConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_byte_primitive#BytePrimitiveDapperTypeHandler.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_byte_primitive#AddSwashbuckleSwaggerPrimitivesMappingsExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_byte_primitive#AddPrimitivesValueConvertersExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_byte_primitive#AddPrimitivesDapperTypeHandlersHelper.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_byte_primitive#AddNswagSwaggerPrimitivesMappingsExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_bool_primitive#BoolPrimitiveValueConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_bool_primitive#BoolPrimitiveTypeConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_bool_primitive#BoolPrimitiveJsonConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_bool_primitive#BoolPrimitiveDapperTypeHandler.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_bool_primitive#AddSwashbuckleSwaggerPrimitivesMappingsExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_bool_primitive#AddPrimitivesDapperTypeHandlersHelper.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_bool_primitive#AddNswagSwaggerPrimitivesMappingsExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_TimeSpan_primitive#TimeSpanPrimitiveJsonConverter.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_TimeOnly_primitive#TimeOnlyPrimitiveDapperTypeHandler.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_TimeOnly_primitive#AddSwashbuckleSwaggerPrimitivesMappingsExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_TimeOnly_primitive#AddPrimitivesValueConvertersExtensions.g.received.cs" />
+    <None Remove="Snapshots\PrimitiveGeneratorTests.should_generate_all_converters_when_TimeOnly_primitive#AddNswagSwaggerPrimitivesMappingsExtensions.g.received.cs" />
   </ItemGroup>
 </Project>

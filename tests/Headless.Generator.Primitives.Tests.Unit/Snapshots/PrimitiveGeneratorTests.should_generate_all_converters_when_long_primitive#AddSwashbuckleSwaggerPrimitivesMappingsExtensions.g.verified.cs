@@ -8,7 +8,7 @@
 
 #nullable enable
 
-using Headless.Permissions;
+using Headless.Primitives;
 using Microsoft.Extensions.DependencyInjection;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using Headless.Generator.Primitives;
