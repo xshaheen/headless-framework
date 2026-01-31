@@ -8,7 +8,7 @@
 
 #nullable enable
 
-using Headless.Permissions;
+using Headless.Primitives;
 using System;
 using Headless.Generator.Primitives;
 using Microsoft.EntityFrameworkCore;

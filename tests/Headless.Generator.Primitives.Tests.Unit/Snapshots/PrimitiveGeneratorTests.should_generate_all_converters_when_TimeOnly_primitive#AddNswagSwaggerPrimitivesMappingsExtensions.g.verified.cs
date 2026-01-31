@@ -8,7 +8,7 @@
 
 #nullable enable
 
-using Headless.Permissions;
+using Headless.Primitives;
 using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema;
 using NJsonSchema.Generation;

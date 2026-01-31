@@ -10,7 +10,7 @@
 
 using System;
 using System.Globalization;
-using Headless.Permissions;
+using Headless.Primitives;
 using Headless.Generator.Primitives;
 
 namespace Headless.Primitives.Converters;

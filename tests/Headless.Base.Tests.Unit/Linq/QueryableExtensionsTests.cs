@@ -42,7 +42,7 @@ public sealed class QueryableExtensionsTests
 
         // then
         result.Should().HaveCount(2);
-        result.Should().BeEquivalentTo("Zad-charities", "Storm");
+        result.Should().BeEquivalentTo("Charities", "Storm");
     }
 
     [Fact]
