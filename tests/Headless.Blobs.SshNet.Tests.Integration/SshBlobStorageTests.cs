@@ -25,7 +25,7 @@ public sealed class SshBlobStorageTests(SshBlobStorageFixture fixture) : BlobSto
     public async Task can_create_ssh_file_storage_without_Connection_string_password()
     {
         // given
-        var options = new SshBlobStorageOptions { ConnectionString = "sftp://haedless@localhost:2222" };
+        var options = new SshBlobStorageOptions { ConnectionString = "sftp://headless@localhost:2222" };
         var optionsMonitor = new OptionsMonitorWrapper<SshBlobStorageOptions>(options);
 
         // when

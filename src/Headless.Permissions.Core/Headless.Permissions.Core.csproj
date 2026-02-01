@@ -4,7 +4,7 @@
     <RootNamespace>Headless.Permissions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Framework.Permissions.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Permissions.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authorization" />

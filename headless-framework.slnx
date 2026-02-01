@@ -67,6 +67,7 @@
         <Project Path="tests\Headless.Sql.Sqlite.Tests.Integration\Headless.Sql.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sql.SqlServer.Tests.Integration\Headless.Sql.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sql.Tests.Harness\Headless.Sql.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.Sql.Tests.Unit\Headless.Sql.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/DistributedLocks/">
         <Project Path="src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
@@ -213,6 +214,7 @@
         <Project Path="src\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
         <Project Path="src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
         <Project Path="tests\Headless.Permissions.Tests.Integration\Headless.Permissions.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Permissions.Tests.Unit\Headless.Permissions.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/PushNotifications/">
         <Project Path="src\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
