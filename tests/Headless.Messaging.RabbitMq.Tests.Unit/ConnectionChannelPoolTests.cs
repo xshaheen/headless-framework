@@ -106,8 +106,8 @@ public sealed class ConnectionChannelPoolTests : TestBase
         // when
         pool.Return(channel);
 
-        // then
-        await channel.Received(1).DisposeAsync();
+        // then - Return() uses sync Dispose(), not DisposeAsync()
+        channel.Received(1).Dispose();
     }
 
     [Fact]

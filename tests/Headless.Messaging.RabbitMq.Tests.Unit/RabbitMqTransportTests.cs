@@ -228,12 +228,11 @@ public sealed class RabbitMqTransportTests : TestBase
             body: "test-body"u8.ToArray()
         );
 
-        // when
-        var result = await transport.SendAsync(message);
-
-        // then
-        result.Succeeded.Should().BeFalse();
-        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        // when & then - validation fails before try-catch, throws exception
+        var act = async () => await transport.SendAsync(message);
+        await act.Should()
+            .ThrowAsync<ArgumentException>()
+            .WithMessage("*Topic name must contain only alphanumeric characters*");
     }
 
     [Fact]
@@ -251,12 +250,11 @@ public sealed class RabbitMqTransportTests : TestBase
             body: "test-body"u8.ToArray()
         );
 
-        // when
-        var result = await transport.SendAsync(message);
-
-        // then
-        result.Succeeded.Should().BeFalse();
-        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        // when & then - validation fails before try-catch, throws exception
+        var act = async () => await transport.SendAsync(message);
+        await act.Should()
+            .ThrowAsync<ArgumentOutOfRangeException>()
+            .WithMessage("*Topic name must not exceed 255 characters*");
     }
 
     [Fact]

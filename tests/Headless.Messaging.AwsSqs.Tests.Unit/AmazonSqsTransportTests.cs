@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Reflection;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -47,18 +48,17 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new ListTopicsResponse
-                {
-                    Topics = [new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:TestEvent" }],
-                }
-            );
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient);
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -93,18 +93,17 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new ListTopicsResponse
-                {
-                    Topics = [new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:TestEvent" }],
-                }
-            );
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient);
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -145,16 +144,14 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new ListTopicsResponse { Topics = [] });
-        snsClient
             .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:NewTopic" });
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient);
+        // Empty topic map forces CreateTopicAsync to be called
+        _SetSnsClient(transport, snsClient, []);
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "NewTopic" },
@@ -178,18 +175,17 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new ListTopicsResponse
-                {
-                    Topics = [new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:TestEvent" }],
-                }
-            );
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new AmazonSimpleNotificationServiceException("Network error"));
 
-        _SetSnsClient(transport, snsClient);
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "TestEvent" },
@@ -214,13 +210,11 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new ListTopicsResponse { Topics = [] });
-        snsClient
             .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CreateTopicResponse { TopicArn = string.Empty }); // Empty ARN indicates failure
 
-        _SetSnsClient(transport, snsClient);
+        // Empty topic map forces CreateTopicAsync to be called
+        _SetSnsClient(transport, snsClient, []);
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "NonExistent" },
@@ -243,16 +237,14 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(new ListTopicsResponse { Topics = [] });
-        snsClient
             .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:my-topic_name" });
         snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient);
+        // Empty topic map forces CreateTopicAsync to be called
+        _SetSnsClient(transport, snsClient, []);
 
         // Topic name with dots and colons should be normalized
         var message = new TransportMessage(
@@ -281,18 +273,17 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new ListTopicsResponse
-                {
-                    Topics = [new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:TestEvent" }],
-                }
-            );
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient);
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "TestEvent" },
@@ -318,18 +309,17 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new ListTopicsResponse
-                {
-                    Topics = [new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:TestEvent" }],
-                }
-            );
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient);
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "TestEvent" },
@@ -341,8 +331,11 @@ public sealed class AmazonSqsTransportTests : TestBase
         await transport.SendAsync(message);
         await transport.SendAsync(message);
 
-        // then - ListTopicsAsync should only be called once due to caching
-        await snsClient.Received(1).ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        // then - _topicArnMaps is pre-populated, so ListTopicsAsync should never be called
+        await snsClient.DidNotReceive().ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+
+        // All three messages should be published successfully
+        await snsClient.Received(3).PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -354,18 +347,17 @@ public sealed class AmazonSqsTransportTests : TestBase
 
         var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
         snsClient
-            .ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new ListTopicsResponse
-                {
-                    Topics = [new Topic { TopicArn = "arn:aws:sns:us-east-1:123456789:TestEvent" }],
-                }
-            );
-        snsClient
             .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishResponse { MessageId = "msg-123" });
 
-        _SetSnsClient(transport, snsClient);
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
 
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -409,12 +401,26 @@ public sealed class AmazonSqsTransportTests : TestBase
         snsClient.Received(1).Dispose();
     }
 
-    private static void _SetSnsClient(AmazonSqsTransport transport, IAmazonSimpleNotificationService snsClient)
+    private static void _SetSnsClient(
+        AmazonSqsTransport transport,
+        IAmazonSimpleNotificationService snsClient,
+        Dictionary<string, string>? topicArnMaps = null
+    )
     {
         var snsClientField = typeof(AmazonSqsTransport).GetField(
             "_snsClient",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         snsClientField!.SetValue(transport, snsClient);
+
+        // Must also set _topicArnMaps to prevent _FetchExistingTopicArns from overwriting the mock
+        var topicArnMapsField = typeof(AmazonSqsTransport).GetField(
+            "_topicArnMaps",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+        topicArnMapsField!.SetValue(
+            transport,
+            new ConcurrentDictionary<string, string>(topicArnMaps ?? [], StringComparer.Ordinal)
+        );
     }
 }

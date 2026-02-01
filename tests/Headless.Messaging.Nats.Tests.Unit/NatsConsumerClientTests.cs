@@ -226,32 +226,6 @@ public sealed class NatsConsumerClientTests : TestBase
             );
     }
 
-    /// <summary>
-    /// CRITICAL BUG TEST: Verifies that the connection lock is static, causing cross-instance contention.
-    /// Having a static lock means all NatsConsumerClient instances share the same lock, which can
-    /// cause performance issues and deadlocks in multi-consumer scenarios.
-    /// </summary>
-    [Fact]
-    public void should_use_instance_lock_not_static()
-    {
-        // given
-        var clientType = typeof(NatsConsumerClient);
-        var lockField = clientType.GetField("_ConnectionLock", BindingFlags.NonPublic | BindingFlags.Static);
-
-        // then
-        // CRITICAL BUG: This test documents that the lock is static (which is bad)
-        // The lock should be an instance field to prevent cross-instance contention
-        lockField
-            .Should()
-            .NotBeNull(
-                "BUG DETECTED: _ConnectionLock is static, causing cross-instance contention. "
-                    + "This should be an instance field instead."
-            );
-
-        // Verify it's actually static
-        lockField!.IsStatic.Should().BeTrue("The lock field is currently static - this is the documented bug");
-    }
-
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
     {
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);

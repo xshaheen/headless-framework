@@ -92,16 +92,14 @@ public sealed class AuthorizationTests : TestBase
     }
 
     [Fact]
-    public void default_options_allow_anonymous_access_to_all_data_endpoints()
+    public void default_options_require_authorization()
     {
-        // SECURITY CONCERN: Default options allow anonymous access
-        // This means sensitive message data is exposed by default
-
+        // Default options require authorization (secure by default)
         var options = new DashboardOptions();
 
-        options.AllowAnonymousExplicit.Should().BeTrue("Default allows anonymous - this is a security concern");
+        options.AllowAnonymousExplicit.Should().BeFalse("Default requires authorization - secure by default");
 
-        // Data endpoints that are exposed:
+        // Data endpoints that require authorization:
         // - /api/published/{status} - lists published messages
         // - /api/received/{status} - lists received messages
         // - /api/published/message/{id} - message content
@@ -136,9 +134,9 @@ public sealed class AuthorizationTests : TestBase
     }
 
     [Fact]
-    public void dangerous_endpoints_should_require_authentication()
+    public void dangerous_endpoints_require_authentication_by_default()
     {
-        // Document which endpoints can modify data and should require auth:
+        // Document which endpoints can modify data and require auth:
 
         // POST /api/published/requeue - re-publishes messages
         // POST /api/published/delete - deletes published messages
@@ -151,6 +149,8 @@ public sealed class AuthorizationTests : TestBase
         // 3. Potentially cause denial of service via mass requeue
 
         var options = new DashboardOptions();
-        options.AllowAnonymousExplicit.Should().BeTrue("DANGER: Data modification endpoints are anonymous by default");
+        options
+            .AllowAnonymousExplicit.Should()
+            .BeFalse("Data modification endpoints require authentication by default");
     }
 }
