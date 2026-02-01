@@ -24,7 +24,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(AbortToken);
 
         // then
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         var schemaExists = await connection.QueryFirstOrDefaultAsync<int>(
             "SELECT 1 FROM sys.schemas WHERE name = @Schema",
@@ -49,7 +49,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(AbortToken);
 
         // then
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
 
         var columns = await connection.QueryAsync<string>(
@@ -79,7 +79,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(AbortToken);
 
         // then
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
 
         var columns = await connection.QueryAsync<string>(
@@ -122,7 +122,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(AbortToken);
 
         // then
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var tableExists = await connection.QueryFirstOrDefaultAsync<int>(
@@ -152,7 +152,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(AbortToken);
 
         // then
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var tableExists = await connection.QueryFirstOrDefaultAsync<int?>(
@@ -188,7 +188,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(AbortToken);
 
         // then
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var indexes = await connection.QueryAsync<string>(
@@ -228,7 +228,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(AbortToken); // Should not throw
 
         // then
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var tableCount = await connection.QueryFirstOrDefaultAsync<int>(
@@ -273,7 +273,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await initializer.InitializeAsync(cts.Token);
 
         // then - should return early without error
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
 
         var schemaExists = await connection.QueryFirstOrDefaultAsync<int?>(
@@ -291,7 +291,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         services.AddLogging();
         services.Configure<SqlServerOptions>(x =>
         {
-            x.ConnectionString = fixture.Container.GetConnectionString();
+            x.ConnectionString = fixture.ConnectionString;
             x.Schema = schema;
         });
         services.Configure<MessagingOptions>(x =>

@@ -24,7 +24,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<SqlServerOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<SqlServerOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
@@ -49,7 +49,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
         await base.DisposeAsyncCore();

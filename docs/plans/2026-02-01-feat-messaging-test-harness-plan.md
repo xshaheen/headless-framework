@@ -121,7 +121,7 @@ Different transports support different features. Use capability flags to skip in
 | 4.5 | Migrate Pulsar tests to harness | S | |
 | 4.6 | Migrate Redis Streams tests to harness | S | |
 | 4.7 | ✅ Migrate PostgreSQL storage tests to harness | S | 22 storage tests + 3 PostgreSQL-specific |
-| 4.8 | Migrate SQL Server storage tests to harness | S | |
+| 4.8 | ✅ Migrate SQL Server storage tests to harness | S | 22 storage tests + 3 SqlServer-specific |
 
 ## Acceptance Criteria
 
